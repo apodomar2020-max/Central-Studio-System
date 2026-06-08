@@ -1,0 +1,20 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "_chf8cZJ7d6m1GJKiAWkV"
+uri = "file://artifacts/central/assets/images/icon.png"
+type = "image"
+title = "central app icon"
+
+[[generated]]
+id = "BC_1xgP-Hgjp_Y-ufOkc4"
+uri = "file://artifacts/central/assets/images/studio_hero.png"
+type = "image"
+title = "studio hero banner"
+
+[[generated]]
+id = "je9SDE-Im5B9qwnM1vjpm"
+uri = "file://artifacts/central/assets/images/stage_hero.png"
+type = "image"
+title = "stage hero banner"

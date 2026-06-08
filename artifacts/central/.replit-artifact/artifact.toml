@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Central Studio & Stage"
+version = "1.0.0"
+id = "artifacts/central"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 18743
+
+[services.development]
+run = "pnpm --filter @workspace/central run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/central", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/central", "run", "serve" ]
+
+[services.env]
+PORT = "18743"
+BASE_PATH = "/"

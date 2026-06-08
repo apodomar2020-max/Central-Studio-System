@@ -1,0 +1,1 @@
+- [Central mobile app architecture](central-app-arch.md) — Stage removed; Studio-only with 5 tabs; key gotchas for context/components

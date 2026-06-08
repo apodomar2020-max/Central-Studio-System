@@ -1,0 +1,177 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-border: var(--primary-border);
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary-border: var(--secondary-border);
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted-border: var(--muted-border);
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-border: var(--accent-border);
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-border: var(--destructive-border);
+
+  --color-stage: hsl(var(--stage));
+  --color-stage-foreground: hsl(var(--stage-foreground));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-primary-border: var(--sidebar-primary-border);
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-accent-border: var(--sidebar-accent-border);
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-serif);
+  --font-mono: var(--app-font-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Central Studio & Stage brand — permanently dark */
+:root {
+  /* Brand: Studio cyan #00B6D7, Stage purple #8A5CFF */
+  /* Background: #060C10, Card: #0E1619, CardLight: #162028, Border: #1E2E38 */
+
+  --background: 204 46% 4%;
+  --foreground: 0 0% 98%;
+
+  --card: 196 28% 8%;
+  --card-foreground: 0 0% 98%;
+  --card-border: 203 30% 14%;
+
+  --popover: 204 32% 6%;
+  --popover-foreground: 0 0% 98%;
+  --popover-border: 203 30% 16%;
+
+  /* Studio cyan primary */
+  --primary: 189 100% 42%;
+  --primary-foreground: 204 46% 4%;
+  --primary-border: #00c8ee33;
+
+  --secondary: 207 29% 12%;
+  --secondary-foreground: 0 0% 90%;
+  --secondary-border: #ffffff18;
+
+  --muted: 207 29% 12%;
+  --muted-foreground: 218 11% 55%;
+  --muted-border: #ffffff14;
+
+  --accent: 207 29% 16%;
+  --accent-foreground: 0 0% 98%;
+  --accent-border: #ffffff18;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --destructive-border: #ef444433;
+
+  /* Stage purple */
+  --stage: 257 100% 68%;
+  --stage-foreground: 0 0% 100%;
+
+  --border: 203 30% 17%;
+  --input: 207 29% 14%;
+  --ring: 189 100% 42%;
+
+  /* Sidebar: slightly different shade from main bg */
+  --sidebar: 204 46% 3%;
+  --sidebar-foreground: 0 0% 85%;
+  --sidebar-border: 203 25% 12%;
+  --sidebar-primary: 189 100% 42%;
+  --sidebar-primary-foreground: 204 46% 4%;
+  --sidebar-primary-border: #00c8ee22;
+  --sidebar-accent: 207 29% 12%;
+  --sidebar-accent-foreground: 0 0% 98%;
+  --sidebar-accent-border: #ffffff14;
+  --sidebar-ring: 189 100% 42%;
+
+  --chart-1: 189 100% 42%;
+  --chart-2: 257 100% 68%;
+  --chart-3: 173 58% 39%;
+  --chart-4: 43 100% 50%;
+  --chart-5: 0 72% 51%;
+
+  --radius: 0.625rem;
+
+  --app-font-sans: 'Inter', sans-serif;
+  --app-font-serif: Georgia, serif;
+  --app-font-mono: Menlo, monospace;
+
+  /* Button outline */
+  --button-outline: #ffffff22;
+  --badge-outline: #ffffff22;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Scrollbar styling to match brand */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(203 30% 20%);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(203 30% 28%);
+}
+
+/* Glow utilities */
+.glow-studio {
+  box-shadow: 0 0 20px #00B6D722, 0 0 40px #00B6D710;
+}
+.glow-stage {
+  box-shadow: 0 0 20px #8A5CFF22, 0 0 40px #8A5CFF10;
+}

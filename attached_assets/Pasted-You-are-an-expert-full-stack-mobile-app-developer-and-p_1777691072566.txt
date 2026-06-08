@@ -1,0 +1,661 @@
+You are an expert full-stack mobile app developer and product architect.
+
+Build a complete cross-platform mobile app for a dance studio brand called “Central Studio” in Egypt.
+
+The app has two connected experiences inside one app:
+
+1. Central Studio
+For learning, browsing dance classes, booking classes, offers, schedules, payments, notifications, and user profiles.
+
+2. Central Stage
+For professional dancers to create a full professional profile and become part of a talent database for future work opportunities such as events, ads, shows, workshops, music videos, and performances.
+
+The app must support Android and iOS. Use a clean, scalable architecture.
+
+Recommended stack:
+- Frontend: Flutter
+- Backend: Firebase or Supabase
+- Authentication: Email/phone OTP if possible
+- Database: Firestore or Supabase PostgreSQL
+- Storage: Firebase Storage or Supabase Storage
+- Notifications: Firebase Cloud Messaging
+- Payment integration should be prepared but can be mocked in MVP
+- Admin dashboard can be prepared as backend structure or simple web panel later
+
+Brand direction:
+- Central Studio: energetic, bright, youth-focused, dance-learning experience
+- Central Stage: premium, dark, professional, spotlight/talent experience
+- Colors:
+  - Studio Primary: #FFD400
+  - Studio Background: #0B0B0F
+  - Studio Card: #14141A
+  - Stage Primary: #8A5CFF
+  - Stage Accent: #B892FF
+  - Success: #22C55E
+  - Warning: #F59E0B
+  - Error: #EF4444
+  - Info: #3B82F6
+- The app should feel modern, premium, smooth, and mobile-first.
+
+Important product concept:
+The app starts by letting the user choose between:
+- Central Studio: Learn & Book Dance Classes
+- Central Stage: Professional Dancer Profile & Opportunities
+
+This choice is NOT permanent. The user can switch between Studio and Stage later from Profile or Settings.
+
+Core entry flow:
+1. Splash Screen
+2. Language Selection: Arabic / English
+3. Choose Your Central:
+   - Central Studio
+   - Central Stage
+
+Authentication logic:
+Users can browse without logging in.
+Login/Register is required only when:
+- Booking a class
+- Making payment
+- Creating a professional dancer profile
+- Saving bookings
+- Receiving personalized notifications
+- Applying for future opportunities
+
+User types:
+1. Student
+- Books dance classes
+- Tracks schedule
+- Gets notifications
+- Views offers and news
+
+2. Parent
+- Books classes for children
+- Manages child profile
+- Receives reminders
+- Tracks bookings
+
+3. Professional Dancer
+- Creates professional profile
+- Uploads photos/videos/links
+- Adds dance skills
+- Adds clothing sizes
+- Sets work availability
+
+4. Instructor
+- Views schedule
+- Manages attendance later
+- Tracks classes later
+
+5. Admin
+- Manages classes, bookings, offers, dancers, payments, notifications, and reports later
+
+Main Central Studio features:
+- Home
+- Dance Categories
+- Class List
+- Class Details
+- Booking Flow
+- Payment Choice
+- Booking Confirmation
+- My Bookings
+- Offers
+- News / Updates
+- Notifications
+- Profile
+- Settings
+
+Central Studio Home structure:
+- Header with logo, location, notification icon
+- Hero banner for offers/events
+- Quick actions:
+  - Book Class
+  - View Schedule
+  - Offers
+- Dance categories
+- Upcoming classes
+- Featured classes
+- Offers & packages
+- CTA to Central Stage: “Are you a professional dancer? Join Central Stage”
+- Bottom navigation:
+  - Home
+  - Classes
+  - Bookings
+  - Offers
+  - Profile
+
+Dance categories:
+The studio has 12+ dance styles. Use sample categories:
+- Hip Hop
+- Afro
+- Popping
+- Locking
+- Breaking
+- Salsa
+- Bachata
+- Contemporary
+- Zumba
+- Ballet
+- Jazz
+- House Dance
+
+Each dance type page should include:
+- Name
+- Description
+- Suitable age group: Kids / Adults / Seniors
+- Level: Beginner / Intermediate / Advanced
+- Instructor
+- Available classes
+- Price
+- Available seats
+- Book button
+
+Class details screen:
+Show:
+- Class name
+- Dance type
+- Instructor
+- Date
+- Time
+- Duration
+- Location
+- Age group
+- Level
+- Price
+- Available seats
+- Class policy
+- Booking status
+- CTA: Book Class
+
+Class states:
+- Available
+- Few Seats Left
+- Full
+- Waiting List
+
+Booking flow:
+1. Class Details
+2. Select Participant:
+   - Self
+   - Child
+   - Add new child
+3. Confirm Booking Details:
+   - Class
+   - Date/time
+   - Price
+   - Participant
+   - Cancellation policy
+4. Payment Choice:
+   - Pay Now
+   - Pay at Studio
+5. Booking Confirmation:
+   - Booking number
+   - Status
+   - Add to Calendar
+   - View My Bookings
+
+Payment logic:
+- Pay Now = Booking Confirmed + Payment Paid
+- Pay at Studio = Booking Pending + Payment Unpaid
+- Pay at Studio should show warning: “Your seat is not guaranteed until payment is completed.”
+- Payment gateway can be mocked in MVP, but structure should support Paymob / Fawry / Tap later.
+
+Booking statuses:
+- Confirmed
+- Pending Payment
+- Cancelled
+- Attended
+- No-show
+- Refunded
+
+My Bookings:
+Tabs:
+- Upcoming
+- Past
+- Cancelled
+
+Each booking card:
+- Class name
+- Date
+- Time
+- Instructor
+- Booking status
+- Payment status
+- Details button
+
+Notifications:
+Create notification structure for:
+- Booking confirmation
+- Reminder 24 hours before class
+- Reminder 2 hours before class
+- Class time changed
+- Class cancelled
+- New offers
+- Package/subscription expiration
+
+Central Stage features:
+- Stage Intro
+- Pro Hub
+- Create Professional Profile
+- Edit Professional Profile
+- Upload Photos
+- Add video/social links
+- Work Preferences
+- Profile Status
+- Opportunities Coming Soon
+- Profile
+- Settings
+
+Stage navigation:
+- Pro Hub
+- Profile
+- Updates
+- Settings
+Optional later:
+- Opportunities
+
+Stage Intro:
+Explain:
+- Central Stage connects professional dancers with opportunities
+- Create your profile
+- Get discovered for events, ads, shows, workshops, music videos, and performances
+
+Pro Hub:
+Show:
+- Profile status:
+  - Incomplete
+  - Under Review
+  - Approved
+  - Needs Update
+  - Rejected
+- Profile completion percentage
+- CTA: Complete Profile
+- Tips to improve profile
+- CTA: Explore Central Studio
+
+Professional profile creation flow:
+Step 1: Basic Info
+- Full name
+- Stage name optional
+- Phone number
+- Email
+- Age
+- Gender
+- Area / City
+- Address optional/private
+
+Step 2: Physical & Outfit Info
+- Height
+- Weight
+- T-shirt size
+- Pants size
+- Jacket size
+- Shoe size
+- Additional notes
+
+Step 3: Dance Skills
+- Dance styles
+- Main style
+- Secondary styles
+- Experience level
+- Years of experience
+- Teaching experience yes/no
+- Performance experience yes/no
+
+Step 4: Media
+- Profile photo
+- Full body photo
+- Performance photos
+- Video links
+- Instagram link
+- TikTok link
+- YouTube link
+
+For MVP, use image upload + external video links, not internal video upload.
+
+Step 5: Work Preferences
+- Available for work yes/no
+- Interested in:
+  - Events
+  - Ads
+  - Music Videos
+  - Stage Shows
+  - Corporate Events
+  - Workshops
+  - Teaching
+- Available days
+- Travel availability
+- Expected rate optional/private
+
+Step 6: Review & Submit
+- Show profile summary
+- Accept terms
+- Submit for review
+
+Profile statuses:
+- Pending Review
+- Approved
+- Needs Edits
+- Rejected
+
+Opportunities module:
+Prepare database and basic placeholder screen but mark as Coming Soon in MVP.
+Future opportunity fields:
+- Opportunity type: Event / Ad / Show / Music Video / Workshop
+- Date
+- Location
+- Requirements
+- Budget
+- Apply button
+- Application status:
+  - Applied
+  - Shortlisted
+  - Accepted
+  - Rejected
+  - Completed
+
+Shared features:
+- Login
+- Register
+- OTP Verification
+- Forgot Password
+- Notifications
+- Profile
+- Settings
+- Switch Mode
+- Language Settings
+- Notification Settings
+- Privacy & Security
+- Help & Support
+
+Switch Mode logic:
+From Studio to Stage:
+- If no Pro Profile exists, show Stage Intro + Create Pro Profile
+- If Pro Profile exists, go directly to Pro Hub
+
+From Stage to Studio:
+- Go to Studio Home
+- Use the same user account
+
+Database models required:
+
+User:
+- id
+- fullName
+- phone
+- email
+- age
+- gender
+- roles: student / parent / professionalDancer / instructor / admin
+- selectedMode: studio / stage
+- createdAt
+- updatedAt
+
+ChildProfile:
+- id
+- parentUserId
+- childName
+- age
+- gender
+- emergencyContact
+
+DanceType:
+- id
+- name
+- description
+- imageUrl
+- suitableAgeGroups
+- levels
+- isActive
+
+Instructor:
+- id
+- name
+- photoUrl
+- bio
+- danceStyles
+- phone
+- isActive
+
+DanceClass:
+- id
+- danceTypeId
+- instructorId
+- title
+- description
+- date
+- startTime
+- endTime
+- duration
+- location
+- room
+- price
+- capacity
+- bookedCount
+- availableSeats
+- level
+- ageGroup
+- genderAvailability
+- status: available / fewSeats / full / waitingList / cancelled
+- policy
+- createdAt
+- updatedAt
+
+Booking:
+- id
+- userId
+- participantType: self / child
+- childProfileId optional
+- classId
+- bookingDate
+- paymentMethod: online / cash
+- paymentStatus: paid / unpaid / refunded
+- bookingStatus: confirmed / pendingPayment / cancelled / attended / noShow / refunded
+- totalPrice
+- couponCode optional
+- createdAt
+- updatedAt
+
+Offer:
+- id
+- title
+- description
+- imageUrl
+- discountType
+- discountValue
+- startDate
+- endDate
+- isActive
+
+Notification:
+- id
+- userId
+- title
+- body
+- type
+- isRead
+- createdAt
+
+ProfessionalDancerProfile:
+- id
+- userId
+- fullName
+- stageName
+- phone
+- email
+- age
+- gender
+- area
+- address
+- height
+- weight
+- tshirtSize
+- pantsSize
+- jacketSize
+- shoeSize
+- danceStyles
+- mainStyle
+- secondaryStyles
+- experienceLevel
+- yearsOfExperience
+- teachingExperience
+- performanceExperience
+- profilePhotoUrl
+- fullBodyPhotoUrl
+- performancePhotoUrls
+- videoLinks
+- instagram
+- tiktok
+- youtube
+- availableForWork
+- interestedWorkTypes
+- availableDays
+- travelAvailability
+- expectedRate
+- profileStatus: incomplete / pendingReview / approved / needsEdits / rejected
+- completionPercentage
+- createdAt
+- updatedAt
+
+Opportunity:
+- id
+- title
+- type
+- date
+- location
+- requirements
+- budget
+- status
+- createdAt
+- updatedAt
+
+OpportunityApplication:
+- id
+- opportunityId
+- dancerProfileId
+- status: applied / shortlisted / accepted / rejected / completed
+- createdAt
+
+Admin requirements:
+Prepare admin/backend structure for:
+- Manage dance types
+- Manage classes and schedules
+- Manage instructors
+- Manage bookings
+- Manage payments
+- Manage offers
+- Manage news/updates
+- Send notifications
+- Review professional dancer profiles
+- Reports and analytics
+
+MVP scope:
+Build the app with:
+1. Splash
+2. Language selection
+3. Choose Central
+4. Studio Home
+5. Dance Categories
+6. Class List
+7. Class Details
+8. Booking Flow
+9. Pay at Studio
+10. Mock Pay Now
+11. Booking Confirmation
+12. My Bookings
+13. Offers
+14. Notifications
+15. User Profile
+16. Stage Intro
+17. Pro Hub
+18. Create Professional Profile
+19. Upload images
+20. Add social/video links
+21. Work Preferences
+22. Submit Profile
+23. Profile Status
+24. Settings
+25. Switch Mode
+
+UI requirements:
+- Use reusable components
+- Use bottom navigation for each mode
+- Use clean cards
+- Show booking status badges
+- Show available seats clearly
+- Use skeleton loaders
+- Use empty states
+- Use error states
+- Make layout responsive
+- Support Arabic and English localization structure, even if English UI is built first
+- Prepare RTL support for Arabic
+
+Important UX rules:
+- Do not force login at app start
+- Let user browse first
+- Ask for login only when user takes action
+- Make booking possible in as few steps as possible
+- Make Pay Now visually preferred
+- Make Pay at Studio available but marked as less guaranteed
+- Central Stage must feel separate but still connected to Central Studio
+- User can switch modes anytime
+
+Deliverables:
+1. Working Flutter app structure
+2. Clean folder architecture
+3. Reusable components
+4. Mock data for dance types/classes/offers
+5. Firebase/Supabase integration or service layer ready
+6. Authentication screens
+7. Booking flow working with local/mock database if backend is not ready
+8. Professional profile creation flow
+9. Clear comments in code
+10. README with setup steps
+
+Suggested folder structure:
+lib/
+  main.dart
+  app/
+    app.dart
+    routes.dart
+    theme.dart
+  core/
+    constants/
+    services/
+    utils/
+    widgets/
+  features/
+    entry/
+      screens/
+    auth/
+      screens/
+      services/
+    studio/
+      screens/
+      widgets/
+      models/
+      services/
+    booking/
+      screens/
+      widgets/
+      models/
+      services/
+    stage/
+      screens/
+      widgets/
+      models/
+      services/
+    profile/
+      screens/
+      widgets/
+    notifications/
+      screens/
+      services/
+    settings/
+      screens/
+  data/
+    mock_data.dart
+    repositories/
+
+Start by generating the complete project architecture and main screens using mock data. Then implement navigation and flows. Prioritize clean working MVP over complex features.
+
+The final result should be a usable prototype app that demonstrates the full Central Studio / Central Stage experience.

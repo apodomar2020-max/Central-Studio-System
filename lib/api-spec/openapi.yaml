@@ -1,0 +1,1503 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Central Studio & Stage Admin API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: dashboard
+  - name: instructors
+  - name: classes
+  - name: schedules
+  - name: pricePackages
+  - name: bookings
+  - name: students
+  - name: offers
+  - name: notifications
+  - name: marketing
+  - name: analytics
+  - name: packageOrders
+  - name: attendance
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /instructors:
+    get:
+      operationId: listInstructors
+      tags: [instructors]
+      summary: List all instructors
+      responses:
+        "200":
+          description: List of instructors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Instructor"
+    post:
+      operationId: createInstructor
+      tags: [instructors]
+      summary: Create instructor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInstructorBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instructor"
+
+  /instructors/{id}:
+    get:
+      operationId: getInstructor
+      tags: [instructors]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Instructor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instructor"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateInstructor
+      tags: [instructors]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInstructorBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instructor"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteInstructor
+      tags: [instructors]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /classes:
+    get:
+      operationId: listClasses
+      tags: [classes]
+      summary: List all classes
+      responses:
+        "200":
+          description: List of classes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Class"
+    post:
+      operationId: createClass
+      tags: [classes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClassBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Class"
+
+  /classes/{id}:
+    get:
+      operationId: getClass
+      tags: [classes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Class"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateClass
+      tags: [classes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClassBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Class"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteClass
+      tags: [classes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /schedules:
+    get:
+      operationId: listSchedules
+      tags: [schedules]
+      parameters:
+        - { name: classId, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: List of schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Schedule"
+    post:
+      operationId: createSchedule
+      tags: [schedules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScheduleBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+
+  /schedules/{id}:
+    get:
+      operationId: getSchedule
+      tags: [schedules]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateSchedule
+      tags: [schedules]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScheduleBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteSchedule
+      tags: [schedules]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /price-packages:
+    get:
+      operationId: listPricePackages
+      tags: [pricePackages]
+      responses:
+        "200":
+          description: List of price packages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PricePackage"
+    post:
+      operationId: createPricePackage
+      tags: [pricePackages]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePricePackageBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricePackage"
+
+  /price-packages/{id}:
+    get:
+      operationId: getPricePackage
+      tags: [pricePackages]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: PricePackage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricePackage"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updatePricePackage
+      tags: [pricePackages]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePricePackageBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricePackage"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deletePricePackage
+      tags: [pricePackages]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings:
+    get:
+      operationId: listBookings
+      tags: [bookings]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: List of bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+    post:
+      operationId: createBooking
+      tags: [bookings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+  /bookings/{id}:
+    get:
+      operationId: getBooking
+      tags: [bookings]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateBooking
+      tags: [bookings]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBookingBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteBooking
+      tags: [bookings]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /students:
+    get:
+      operationId: listStudents
+      tags: [students]
+      responses:
+        "200":
+          description: List of students
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Student"
+    post:
+      operationId: createStudent
+      tags: [students]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStudentBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+
+  /students/{id}:
+    get:
+      operationId: getStudent
+      tags: [students]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Student
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateStudent
+      tags: [students]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStudentBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteStudent
+      tags: [students]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /offers:
+    get:
+      operationId: listOffers
+      tags: [offers]
+      responses:
+        "200":
+          description: List of offers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Offer"
+    post:
+      operationId: createOffer
+      tags: [offers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOfferBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Offer"
+
+  /offers/{id}:
+    get:
+      operationId: getOffer
+      tags: [offers]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Offer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Offer"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateOffer
+      tags: [offers]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOfferBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Offer"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteOffer
+      tags: [offers]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+    post:
+      operationId: createNotification
+      tags: [notifications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNotificationBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  /notifications/{id}:
+    get:
+      operationId: getNotification
+      tags: [notifications]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateNotification
+      tags: [notifications]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteNotification
+      tags: [notifications]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /marketing/campaigns:
+    get:
+      operationId: listCampaigns
+      tags: [marketing]
+      summary: List all marketing campaigns
+      responses:
+        "200":
+          description: List of campaigns
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Campaign"
+    post:
+      operationId: createCampaign
+      tags: [marketing]
+      summary: Create campaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+
+  /marketing/campaigns/{id}:
+    get:
+      operationId: getCampaign
+      tags: [marketing]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Campaign
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateCampaign
+      tags: [marketing]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCampaignBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteCampaign
+      tags: [marketing]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /marketing/campaigns/{id}/send:
+    post:
+      operationId: sendCampaign
+      tags: [marketing]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendCampaignResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /dashboard/analytics:
+    get:
+      operationId: getAnalytics
+      tags: [analytics]
+      summary: Get dashboard chart analytics
+      responses:
+        "200":
+          description: Analytics data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardAnalytics"
+
+  /package-orders:
+    get:
+      operationId: listPackageOrders
+      tags: [packageOrders]
+      summary: List all package orders
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of package orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PackageOrder"
+    post:
+      operationId: createPackageOrder
+      tags: [packageOrders]
+      summary: Create a package order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePackageOrderBody"
+      responses:
+        "201":
+          description: Created package order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageOrder"
+
+  /package-orders/{id}:
+    get:
+      operationId: getPackageOrder
+      tags: [packageOrders]
+      summary: Get a package order by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Package order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageOrder"
+        "404":
+          description: Not found
+    patch:
+      operationId: updatePackageOrder
+      tags: [packageOrders]
+      summary: Update a package order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePackageOrderBody"
+      responses:
+        "200":
+          description: Updated package order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageOrder"
+    delete:
+      operationId: deletePackageOrder
+      tags: [packageOrders]
+      summary: Delete a package order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+
+  /attendance:
+    get:
+      operationId: listAttendance
+      tags: [attendance]
+      summary: List attendance records
+      parameters:
+        - name: studentEmail
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of attendance records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attendance"
+    post:
+      operationId: checkIn
+      tags: [attendance]
+      summary: Check in a student
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInBody"
+      responses:
+        "201":
+          description: Attendance record created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attendance"
+
+  /attendance/stats:
+    get:
+      operationId: getAttendanceStats
+      tags: [attendance]
+      summary: Get attendance statistics
+      parameters:
+        - name: period
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Attendance stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceStats"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    DashboardSummary:
+      type: object
+      required: [totalStudents, totalBookings, todayBookings, activeClasses, totalRevenue, pendingBookings, activeInstructors, totalOffers]
+      properties:
+        totalStudents: { type: integer }
+        totalBookings: { type: integer }
+        todayBookings: { type: integer }
+        activeClasses: { type: integer }
+        activeInstructors: { type: integer }
+        totalRevenue: { type: number }
+        pendingBookings: { type: integer }
+        totalOffers: { type: integer }
+
+    Instructor:
+      type: object
+      required: [id, name, specialties, experienceYears, isActive, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        bio: { type: ["string", "null"] }
+        photoUrl: { type: ["string", "null"] }
+        specialties: { type: array, items: { type: string } }
+        experienceYears: { type: integer }
+        rating: { type: ["number", "null"] }
+        isActive: { type: boolean }
+        createdAt: { type: string }
+
+    CreateInstructorBody:
+      type: object
+      required: [name, specialties, experienceYears]
+      properties:
+        name: { type: string }
+        bio: { type: ["string", "null"] }
+        photoUrl: { type: ["string", "null"] }
+        specialties: { type: array, items: { type: string } }
+        experienceYears: { type: integer }
+        rating: { type: ["number", "null"] }
+        isActive: { type: boolean }
+
+    UpdateInstructorBody:
+      type: object
+      properties:
+        name: { type: string }
+        bio: { type: ["string", "null"] }
+        photoUrl: { type: ["string", "null"] }
+        specialties: { type: array, items: { type: string } }
+        experienceYears: { type: integer }
+        rating: { type: ["number", "null"] }
+        isActive: { type: boolean }
+
+    Class:
+      type: object
+      required: [id, title, category, level, durationMins, capacity, isActive, createdAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        instructorId: { type: ["integer", "null"] }
+        category: { type: string }
+        level: { type: string }
+        durationMins: { type: integer }
+        capacity: { type: integer }
+        photoUrl: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        createdAt: { type: string }
+
+    CreateClassBody:
+      type: object
+      required: [title, category, level, durationMins, capacity]
+      properties:
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        instructorId: { type: ["integer", "null"] }
+        category: { type: string }
+        level: { type: string }
+        durationMins: { type: integer }
+        capacity: { type: integer }
+        photoUrl: { type: ["string", "null"] }
+        isActive: { type: boolean }
+
+    UpdateClassBody:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        instructorId: { type: ["integer", "null"] }
+        category: { type: string }
+        level: { type: string }
+        durationMins: { type: integer }
+        capacity: { type: integer }
+        photoUrl: { type: ["string", "null"] }
+        isActive: { type: boolean }
+
+    Schedule:
+      type: object
+      required: [id, classId, dayOfWeek, startTime, endTime, isRecurring, createdAt]
+      properties:
+        id: { type: integer }
+        classId: { type: integer }
+        dayOfWeek: { type: integer }
+        startTime: { type: string }
+        endTime: { type: string }
+        location: { type: ["string", "null"] }
+        isRecurring: { type: boolean }
+        effectiveFrom: { type: ["string", "null"] }
+        effectiveUntil: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    CreateScheduleBody:
+      type: object
+      required: [classId, dayOfWeek, startTime, endTime]
+      properties:
+        classId: { type: integer }
+        dayOfWeek: { type: integer }
+        startTime: { type: string }
+        endTime: { type: string }
+        location: { type: ["string", "null"] }
+        isRecurring: { type: boolean }
+        effectiveFrom: { type: ["string", "null"] }
+        effectiveUntil: { type: ["string", "null"] }
+
+    UpdateScheduleBody:
+      type: object
+      properties:
+        classId: { type: integer }
+        dayOfWeek: { type: integer }
+        startTime: { type: string }
+        endTime: { type: string }
+        location: { type: ["string", "null"] }
+        isRecurring: { type: boolean }
+        effectiveFrom: { type: ["string", "null"] }
+        effectiveUntil: { type: ["string", "null"] }
+
+    PricePackage:
+      type: object
+      required: [id, name, type, priceEgp, isActive, isFeatured, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        type: { type: string }
+        priceEgp: { type: number }
+        sessions: { type: ["integer", "null"] }
+        description: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        isFeatured: { type: boolean }
+        createdAt: { type: string }
+
+    CreatePricePackageBody:
+      type: object
+      required: [name, type, priceEgp]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        priceEgp: { type: number }
+        sessions: { type: ["integer", "null"] }
+        description: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        isFeatured: { type: boolean }
+
+    UpdatePricePackageBody:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string }
+        priceEgp: { type: number }
+        sessions: { type: ["integer", "null"] }
+        description: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        isFeatured: { type: boolean }
+
+    Booking:
+      type: object
+      required: [id, studentName, studentEmail, status, bookedAt, createdAt]
+      properties:
+        id: { type: integer }
+        studentName: { type: string }
+        studentEmail: { type: string }
+        studentPhone: { type: ["string", "null"] }
+        scheduleId: { type: ["integer", "null"] }
+        classId: { type: ["integer", "null"] }
+        packageId: { type: ["integer", "null"] }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+        bookedAt: { type: string }
+        createdAt: { type: string }
+
+    CreateBookingBody:
+      type: object
+      required: [studentName, studentEmail]
+      properties:
+        studentName: { type: string }
+        studentEmail: { type: string }
+        studentPhone: { type: ["string", "null"] }
+        scheduleId: { type: ["integer", "null"] }
+        classId: { type: ["integer", "null"] }
+        packageId: { type: ["integer", "null"] }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+        bookedAt: { type: string }
+
+    UpdateBookingBody:
+      type: object
+      properties:
+        studentName: { type: string }
+        studentEmail: { type: string }
+        studentPhone: { type: ["string", "null"] }
+        scheduleId: { type: ["integer", "null"] }
+        classId: { type: ["integer", "null"] }
+        packageId: { type: ["integer", "null"] }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+
+    Student:
+      type: object
+      required: [id, name, email, totalBookings, joinedAt, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        totalBookings: { type: integer }
+        joinedAt: { type: string }
+        createdAt: { type: string }
+
+    CreateStudentBody:
+      type: object
+      required: [name, email]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+
+    UpdateStudentBody:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        totalBookings: { type: integer }
+
+    Offer:
+      type: object
+      required: [id, title, discountPercent, isActive, createdAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        discountPercent: { type: integer }
+        validUntil: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        classIds: { type: array, items: { type: integer } }
+        createdAt: { type: string }
+
+    CreateOfferBody:
+      type: object
+      required: [title, discountPercent]
+      properties:
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        discountPercent: { type: integer }
+        validUntil: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        classIds: { type: array, items: { type: integer } }
+
+    UpdateOfferBody:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        discountPercent: { type: integer }
+        validUntil: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        classIds: { type: array, items: { type: integer } }
+
+    Notification:
+      type: object
+      required: [id, title, body, target, isDraft, createdAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        body: { type: string }
+        target: { type: string }
+        sentAt: { type: ["string", "null"] }
+        isDraft: { type: boolean }
+        createdAt: { type: string }
+
+    CreateNotificationBody:
+      type: object
+      required: [title, body, target]
+      properties:
+        title: { type: string }
+        body: { type: string }
+        target: { type: string }
+        isDraft: { type: boolean }
+
+    UpdateNotificationBody:
+      type: object
+      properties:
+        title: { type: string }
+        body: { type: string }
+        target: { type: string }
+        sentAt: { type: ["string", "null"] }
+        isDraft: { type: boolean }
+
+    Campaign:
+      type: object
+      required: [id, title, type, status, message, targetAudience, recipientCount, sentCount, createdAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        type: { type: string }
+        status: { type: string }
+        subject: { type: ["string", "null"] }
+        message: { type: string }
+        targetAudience: { type: string }
+        recipientCount: { type: integer }
+        sentCount: { type: integer }
+        scheduledAt: { type: ["string", "null"] }
+        sentAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    CreateCampaignBody:
+      type: object
+      required: [title, type, message]
+      properties:
+        title: { type: string }
+        type: { type: string }
+        status: { type: string }
+        subject: { type: ["string", "null"] }
+        message: { type: string }
+        targetAudience: { type: string }
+        scheduledAt: { type: ["string", "null"] }
+
+    UpdateCampaignBody:
+      type: object
+      properties:
+        title: { type: string }
+        type: { type: string }
+        status: { type: string }
+        subject: { type: ["string", "null"] }
+        message: { type: string }
+        targetAudience: { type: string }
+        scheduledAt: { type: ["string", "null"] }
+
+    SendCampaignResponse:
+      type: object
+      required: [success, sentCount]
+      properties:
+        success: { type: boolean }
+        sentCount: { type: integer }
+        sentAt: { type: ["string", "null"] }
+
+    StatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status: { type: string }
+        count: { type: integer }
+
+    DashboardAnalytics:
+      type: object
+      required: [bookingsByStatus, totalCampaigns]
+      properties:
+        bookingsByStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        totalCampaigns: { type: integer }
+
+    PackageOrder:
+      type: object
+      required: [id, studentName, studentEmail, packageName, totalCredits, remainingCredits, status, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        studentName: { type: string }
+        studentEmail: { type: string }
+        studentPhone: { type: ["string", "null"] }
+        packageId: { type: ["integer", "null"] }
+        packageName: { type: string }
+        totalCredits: { type: integer }
+        remainingCredits: { type: integer }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+        activatedAt: { type: ["string", "null"] }
+        expiresAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    CreatePackageOrderBody:
+      type: object
+      required: [studentName, studentEmail, packageName, totalCredits, remainingCredits]
+      properties:
+        studentName: { type: string }
+        studentEmail: { type: string }
+        studentPhone: { type: ["string", "null"] }
+        packageId: { type: ["integer", "null"] }
+        packageName: { type: string }
+        totalCredits: { type: integer }
+        remainingCredits: { type: integer }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+        activatedAt: { type: ["string", "null"] }
+        expiresAt: { type: ["string", "null"] }
+
+    UpdatePackageOrderBody:
+      type: object
+      properties:
+        status: { type: string }
+        remainingCredits: { type: integer }
+        notes: { type: ["string", "null"] }
+        activatedAt: { type: ["string", "null"] }
+        expiresAt: { type: ["string", "null"] }
+
+    Attendance:
+      type: object
+      required: [id, studentName, studentEmail, creditDeducted, checkedInAt, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        studentName: { type: string }
+        studentEmail: { type: string }
+        packageOrderId: { type: ["integer", "null"] }
+        classTitle: { type: ["string", "null"] }
+        creditDeducted: { type: boolean }
+        notes: { type: ["string", "null"] }
+        checkedInAt: { type: string }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    CheckInBody:
+      type: object
+      required: [studentEmail, studentName]
+      properties:
+        studentEmail: { type: string }
+        studentName: { type: string }
+        packageOrderId: { type: ["integer", "null"] }
+        classTitle: { type: ["string", "null"] }
+        creditDeducted: { type: boolean }
+        notes: { type: ["string", "null"] }
+
+    AttendanceStats:
+      type: object
+      required: [period, total, data]
+      properties:
+        period: { type: string }
+        total: { type: integer }
+        data:
+          type: array
+          items:
+            type: object
+            required: [label, count]
+            properties:
+              label: { type: string }
+              count: { type: integer }

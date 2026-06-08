@@ -1,0 +1,564 @@
+You are working on the Central Studio mobile app.
+
+I need you to update the app structure, navigation, booking logic, packages system, ballet flow, user profile, attendance logic, notifications, and separate Central Stage from Central Studio.
+
+Important: Central Stage should no longer be part of the Central Studio app. Remove Central Stage from this app completely. Central Studio will only focus on dance learning, bookings, packages, ballet assessment, attendance, notifications, and user profiles.
+
+---
+
+## 1. Bottom Navigation Update
+
+Update the fixed bottom navigation to include:
+
+1. Home  
+2. Classes  
+3. Booking  
+4. Packages  
+5. Profile  
+
+Replace the old Offers tab with Packages.
+
+The Booking tab should allow users to:
+- View upcoming bookings
+- View previous bookings
+- View cancelled bookings
+- If the user has no bookings, show an empty state with CTA: “Book a Class”
+- Allow the user to start a new booking from inside the Booking tab
+
+---
+
+## 2. Remove Quick Actions from Home
+
+Remove the section from the Home screen that contains:
+
+- Book Class
+- Schedule
+- Offers
+
+The Home screen should be cleaner and focused on upcoming classes and important updates.
+
+---
+
+## 3. Home Hero Update — Current Week Classes
+
+Update the top Hero section on the Home screen.
+
+Instead of showing offers, the Hero should show upcoming classes for the current week.
+
+Rules:
+- The week starts on Saturday and ends on Thursday.
+- Only fetch/display classes from the current week.
+- If today is Monday, show all classes/events from Monday onward until Thursday.
+- Do not show previous days from the same week.
+- The Hero can be a carousel of today/upcoming classes.
+- Each card should include:
+  - Dance type
+  - Date
+  - Time
+  - Instructor
+  - Available seats
+  - CTA: View / Book
+
+If there are no upcoming classes this week, show:
+“No upcoming classes this week”
+CTA: “Browse Classes”
+
+---
+
+## 4. New Booking Policy
+
+The app should support two booking types:
+
+### A. Single Class Booking
+
+This is for booking one class only.
+
+Flow:
+1. User selects dance type
+2. User selects an available class from the published schedule
+3. Schedule data should come from the system/backend
+4. User confirms booking
+5. User pays online or chooses pay at studio if available
+6. Booking is added to user bookings
+
+Single class booking should use the available classes published by the admin/system.
+
+---
+
+### B. Bundle / Package Booking
+
+Create a complete Packages system.
+
+Users can buy packages such as:
+- 4 classes
+- 8 classes
+- 12 classes
+- The system should support unlimited package sizes in the future
+
+Rules:
+- Each package expires 6 months after purchase.
+- A package is not restricted to one dance type.
+- Example: User buys a 4-class package and can attend 4 different dance styles.
+- The user can use package credits to book available classes.
+- Each class attendance should deduct 1 credit from the package balance.
+- Packages should be displayed in the new “Packages” bottom nav tab.
+
+Packages screen should include:
+- Available packages
+- Package name
+- Number of classes/credits
+- Price
+- Expiry period: 6 months
+- Buy package button
+- My active packages
+- Remaining credits
+- Expiry date
+- Package usage history
+
+Booking with package flow:
+1. User selects a class
+2. User chooses payment method
+3. If user has active package credits, show option: “Use Package Credit”
+4. If selected, reserve the class using 1 credit
+5. Credit should only be deducted when attendance is confirmed, not just when booking is created, unless the admin policy requires otherwise.
+6. Show package balance after booking/attendance
+
+---
+
+## 5. Classes Sorting / Filtering Update
+
+In the Classes section, update the top filters/sorting to:
+
+- Kids
+- Teens
+- Adults
+
+When the user selects one of these filters, show dance types/classes available for that age group only.
+
+Example:
+- Kids → show classes suitable for kids
+- Teens → show classes suitable for teens
+- Adults → show classes suitable for adults
+
+---
+
+## 6. Ballet Section — Separate Flow
+
+Create Ballet as a separate section, not a normal dance class booking flow.
+
+Ballet has special rules.
+
+Ballet should not be booked directly like other classes.
+
+When user chooses Ballet, send them to a Ballet Assessment page.
+
+### Ballet Flow:
+
+1. User selects Ballet
+2. App opens Ballet Assessment page
+3. User fills application form
+4. User selects available assessment appointment from backend/system
+5. User submits application
+6. Application status becomes Pending Assessment
+7. Admin/system reviews and updates result
+8. User receives push notification with result:
+   - Accepted
+   - Rejected
+   - Needs Follow-up
+9. If accepted, the system assigns the user to a Ballet level and class schedule
+10. User can then see assigned ballet classes in My Bookings / Classes
+
+### Ballet Levels:
+
+Ballet has:
+- Pre-Ballet
+- Ballet Level 1
+- Ballet Level 2
+- Ballet Level 3
+- Ballet Level 4
+- Ballet Level 5
+- Ballet Level 6
+- Ballet Level 7
+- Ballet Level 8
+- Ballet Level 9
+
+### Ballet Packages:
+
+Pre-Ballet:
+- 8 hours monthly
+- 1,950 EGP
+
+Ballet Levels 1–9:
+- 12 hours monthly
+- 2,650 EGP
+
+### Ballet Assessment Form Fields:
+
+Since most applications will be submitted by parents, create a parent-friendly form.
+
+Required fields:
+- Parent full name
+- Parent phone number
+- Parent email
+- Child full name
+- Child birthday
+- Child age
+- Child gender
+- Previous ballet/dance experience: Yes / No
+- If yes, describe experience
+- Medical notes or injuries
+- Preferred assessment date/time
+- Emergency contact name
+- Emergency contact phone
+- Notes
+
+Assessment appointment data should come from backend/system availability.
+
+### Ballet Statuses:
+
+- Not Applied
+- Application Submitted
+- Pending Assessment
+- Accepted
+- Rejected
+- Needs Follow-up
+- Assigned to Level
+- Active Ballet Student
+
+---
+
+## 7. User Profile Update
+
+Update the Profile page to become a full user account area.
+
+Profile should include:
+
+- Username
+- Email
+- Email verification status
+- Password management:
+  - Change password
+  - Forgot password
+- Phone number
+- Birthday
+- Children data
+
+Children data should include:
+- Child name
+- Birthday
+- Age
+- Gender
+- Medical notes
+- Emergency contact
+- Linked bookings
+- Linked ballet applications if any
+
+---
+
+## 8. Attendance System + Package Credit Deduction
+
+Create the structure for an attendance system.
+
+Recommended approach:
+
+### Option A: QR / Barcode Attendance
+
+Each booking should generate a unique QR code or barcode.
+
+At the studio:
+- Instructor/admin scans the user’s booking QR code
+- System marks attendance as Attended
+- If booking was made using a package, deduct 1 credit from the package balance
+- If booking was single paid class, mark as attended only
+
+### Option B: Admin Manual Attendance
+
+Admin/instructor opens the class attendance list and marks:
+- Attended
+- No-show
+- Cancelled
+
+If Attended:
+- Deduct 1 package credit if applicable
+
+### Recommended MVP:
+
+Implement both structure-wise, but prioritize Admin Manual Attendance first because it is easier and more reliable for MVP.
+
+Prepare QR/barcode logic for the next version.
+
+Attendance statuses:
+- Booked
+- Attended
+- No-show
+- Cancelled
+
+Package credit logic:
+- Package has totalCredits
+- Package has remainingCredits
+- Package has expiryDate
+- Credit is deducted when attendanceStatus becomes Attended
+- Do not deduct credits for Cancelled
+- For No-show, create a configurable admin policy:
+  - Deduct credit
+  - Or do not deduct credit
+
+---
+
+## 9. Push Notifications
+
+Add push notification structure to the system.
+
+Admin/system should be able to send push notifications for:
+
+- New offers
+- Class reminders
+- Class time changes
+- Booking confirmation
+- Package purchase confirmation
+- Package expiry reminder
+- Ballet assessment reminder
+- Ballet acceptance/rejection result
+- Important announcements
+
+Notification types:
+- booking
+- class_reminder
+- package
+- ballet
+- offer
+- system
+
+---
+
+## 10. Remove Central Stage From This App
+
+Remove or disable all Central Stage features from this application:
+
+- Remove Central Stage entry option
+- Remove Switch Mode
+- Remove Pro Hub
+- Remove professional dancer profile creation
+- Remove opportunities module
+- Remove Stage navigation
+
+Central Stage should become a separate future app/system, not part of this Central Studio app.
+
+---
+
+## 11. Database / Model Updates
+
+Add or update the following models:
+
+### User
+- id
+- username
+- email
+- emailVerified
+- phone
+- birthday
+- createdAt
+- updatedAt
+
+### ChildProfile
+- id
+- parentUserId
+- fullName
+- birthday
+- age
+- gender
+- medicalNotes
+- emergencyContactName
+- emergencyContactPhone
+
+### DanceType
+- id
+- name
+- description
+- ageGroups: Kids / Teens / Adults
+- isBallet: boolean
+- isActive
+
+### DanceClass
+- id
+- danceTypeId
+- instructorId
+- title
+- date
+- startTime
+- endTime
+- weekStartDate
+- weekEndDate
+- ageGroup
+- level
+- capacity
+- bookedCount
+- availableSeats
+- price
+- location
+- status
+
+### Booking
+- id
+- userId
+- childProfileId optional
+- classId
+- bookingType: single / package / ballet
+- paymentMethod: online / cash / packageCredit
+- paymentStatus
+- bookingStatus
+- attendanceStatus
+- packageId optional
+- createdAt
+- updatedAt
+
+### Package
+- id
+- title
+- numberOfCredits
+- price
+- validityMonths: 6
+- isActive
+
+### UserPackage
+- id
+- userId
+- packageId
+- totalCredits
+- remainingCredits
+- purchaseDate
+- expiryDate
+- status: active / expired / fullyUsed / cancelled
+
+### PackageUsage
+- id
+- userPackageId
+- bookingId
+- classId
+- creditDeducted
+- deductedAt
+- reason: attended / noShowPolicy
+
+### BalletApplication
+- id
+- parentUserId
+- childProfileId
+- parentName
+- parentPhone
+- parentEmail
+- childName
+- childBirthday
+- childAge
+- childGender
+- previousExperience
+- experienceDetails
+- medicalNotes
+- preferredAssessmentSlotId
+- emergencyContactName
+- emergencyContactPhone
+- notes
+- status
+- assignedLevel
+- assignedClassIds
+- createdAt
+- updatedAt
+
+### BalletAssessmentSlot
+- id
+- date
+- startTime
+- endTime
+- capacity
+- bookedCount
+- availableSeats
+- status
+
+### Notification
+- id
+- userId
+- title
+- body
+- type
+- isRead
+- createdAt
+
+---
+
+## 12. Required UI/UX Updates
+
+Update the app screens according to the new structure:
+
+Bottom Nav:
+- Home
+- Classes
+- Booking
+- Packages
+- Profile
+
+Home:
+- Hero = Current week upcoming classes
+- Remove quick actions
+- Show important updates only
+
+Classes:
+- Top filters: Kids / Teens / Adults
+- Dance types filtered by age group
+- Ballet as special separate flow
+
+Booking:
+- Upcoming bookings
+- Previous bookings
+- Empty state with Book Class CTA
+
+Packages:
+- Available packages
+- My packages
+- Remaining credits
+- Expiry date
+- Usage history
+
+Profile:
+- User account details
+- Verified email
+- Password actions
+- Phone
+- Birthday
+- Children data
+
+Ballet:
+- Assessment page
+- Ballet application form
+- Assessment slot picker
+- Status tracking
+
+---
+
+## 13. Implementation Priority
+
+Please implement in this order:
+
+1. Remove Central Stage from the app
+2. Update bottom navigation
+3. Update Home screen hero logic
+4. Update Classes filters
+5. Build Packages system
+6. Update Booking system to support single/package booking
+7. Add Ballet special assessment flow
+8. Update Profile page
+9. Add attendance structure
+10. Add push notification structure
+11. Update mock data and database models
+12. Test full user journey
+
+---
+
+## 14. Important Notes
+
+- Keep the app scalable.
+- Use mock data if backend is not ready.
+- Prepare service/repository layer for backend integration.
+- Do not hard-code logic inside UI widgets.
+- Make all new flows clean and easy to modify.
+- Keep code organized.
+- Add clear comments for business logic.
+- Prioritize working flow over final UI polish.
