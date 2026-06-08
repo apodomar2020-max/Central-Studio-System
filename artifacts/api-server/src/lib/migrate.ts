@@ -10,12 +10,16 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// The migrations folder lives in lib/db/migrations relative to the workspace root.
-// After esbuild bundles the server, __dirname points to dist/, so we walk up to
-// find the workspace root. In source (tsx dev mode) the path is the same.
+// The migrations folder lives at <workspace-root>/lib/db/migrations.
+// esbuild bundles everything into dist/index.mjs, so at runtime:
+//   __dirname = /app/artifacts/api-server/dist
+// Walking up 3 levels reaches the workspace root /app:
+//   ../   → /app/artifacts/api-server
+//   ../../ → /app/artifacts
+//   ../../../ → /app  (workspace root)
 const migrationsFolder = path.resolve(
   __dirname,
-  "../../../../lib/db/migrations",
+  "../../../lib/db/migrations",
 );
 
 export async function runMigrations(): Promise<void> {
