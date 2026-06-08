@@ -9,6 +9,11 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
+  "pnpm": {
+    "overrides": {
+      "minimatch": "^9.0.0"
+    }
+  },
   "devDependencies": {
     "@esbuild/darwin-arm64": "0.27.3",
     "prettier": "^3.8.1",
