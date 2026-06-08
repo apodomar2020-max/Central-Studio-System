@@ -22,7 +22,9 @@ import { timingSafeEqual } from "crypto";
 import type { NextFunction, Request, Response } from "express";
 import { logger } from "../lib/logger";
 
-const PUBLIC_PATHS = new Set(["/api/healthz"]);
+// Middleware is mounted at /api so Express strips that prefix —
+// req.path inside here is "/healthz", not "/api/healthz".
+const PUBLIC_PATHS = new Set(["/healthz"]);
 
 const secretKey = process.env["API_SECRET_KEY"];
 
