@@ -10,10 +10,6 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_URL": "http://localhost:3000",
-        "EXPO_PUBLIC_API_KEY": ""
       }
     },
     "preview": {
