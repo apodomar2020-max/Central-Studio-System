@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
+  ActivityIndicator,
   Modal,
   Platform,
   ScrollView,
@@ -15,16 +16,33 @@ import {
   View,
 } from "react-native";
 
+import { useListPricePackages } from "@workspace/api-client-react";
+import type { PricePackage } from "@workspace/api-client-react";
 import { useAppContext, type UserPackage } from "@/contexts/AppContext";
-import { PACKAGES, Package } from "@/data/mockData";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 
-function PackageCard({ pkg, onBuy, owned }: { pkg: Package; onBuy: () => void; owned?: boolean }) {
-  const accent = pkg.popular ? colors.studio.primary : "#8B5CF6";
+function PackageCard({
+  pkg,
+  onBuy,
+  owned,
+}: {
+  pkg: PricePackage;
+  onBuy: () => void;
+  owned?: boolean;
+}) {
+  const accent = pkg.isFeatured ? colors.studio.primary : "#8B5CF6";
+  const credits = pkg.sessions ?? 1;
+  const perClassPrice =
+    pkg.singleClassPriceEgp ?? (credits > 0 ? Math.round(pkg.priceEgp / credits) : 0);
+  const danceLabel =
+    pkg.allowedDanceTypes.length > 0
+      ? pkg.allowedDanceTypes.join(", ")
+      : "Any dance style";
+
   return (
-    <View style={[styles.pkgCard, pkg.popular && { borderColor: colors.studio.primary + "60" }]}>
-      {pkg.popular && (
+    <View style={[styles.pkgCard, pkg.isFeatured && { borderColor: colors.studio.primary + "60" }]}>
+      {pkg.isFeatured && (
         <View style={[styles.popularBadge, { backgroundColor: colors.studio.primary }]}>
           <Text style={styles.popularBadgeText}>MOST POPULAR</Text>
         </View>
@@ -35,12 +53,14 @@ function PackageCard({ pkg, onBuy, owned }: { pkg: Package; onBuy: () => void; o
       >
         <View style={styles.pkgTop}>
           <View style={[styles.pkgCreditsCircle, { backgroundColor: `${accent}20`, borderColor: `${accent}40` }]}>
-            <Text style={[styles.pkgCreditsNum, { color: accent }]}>{pkg.numberOfCredits}</Text>
+            <Text style={[styles.pkgCreditsNum, { color: accent }]}>{credits}</Text>
             <Text style={[styles.pkgCreditsLabel, { color: accent }]}>classes</Text>
           </View>
           <View style={styles.pkgInfo}>
-            <Text style={styles.pkgTitle}>{pkg.title}</Text>
-            <Text style={styles.pkgDesc}>{pkg.description}</Text>
+            <Text style={styles.pkgTitle}>{pkg.name}</Text>
+            {pkg.description ? (
+              <Text style={styles.pkgDesc}>{pkg.description}</Text>
+            ) : null}
             <View style={styles.pkgTags}>
               <View style={[styles.pkgTag, { backgroundColor: "#1E1E26" }]}>
                 <Ionicons name="time-outline" size={11} color="#9CA3AF" />
@@ -48,7 +68,7 @@ function PackageCard({ pkg, onBuy, owned }: { pkg: Package; onBuy: () => void; o
               </View>
               <View style={[styles.pkgTag, { backgroundColor: "#1E1E26" }]}>
                 <Ionicons name="infinite-outline" size={11} color="#9CA3AF" />
-                <Text style={styles.pkgTagText}>Any dance style</Text>
+                <Text style={styles.pkgTagText}>{danceLabel}</Text>
               </View>
             </View>
           </View>
@@ -58,10 +78,10 @@ function PackageCard({ pkg, onBuy, owned }: { pkg: Package; onBuy: () => void; o
           <View>
             <Text style={styles.pkgPriceLabel}>Price</Text>
             <Text style={[styles.pkgPrice, { color: accent }]}>
-              EGP {pkg.price.toLocaleString()}
+              EGP {pkg.priceEgp.toLocaleString()}
             </Text>
             <Text style={styles.pkgPerClass}>
-              EGP {Math.round(pkg.price / pkg.numberOfCredits)} / class
+              EGP {perClassPrice.toLocaleString()} / class
             </Text>
           </View>
           <TouchableOpacity
@@ -81,12 +101,15 @@ function PackageCard({ pkg, onBuy, owned }: { pkg: Package; onBuy: () => void; o
   );
 }
 
-function ActivePackageCard({ pkg, onUse }: {
-  pkg: ReturnType<typeof useAppContext>["userPackages"][0];
+function ActivePackageCard({
+  pkg,
+  onUse,
+}: {
+  pkg: UserPackage;
   onUse: () => void;
 }) {
   const pct = Math.round((pkg.remainingCredits / pkg.totalCredits) * 100);
-  const isExpired = new Date(pkg.expiryDate) < new Date();
+  const isExpired = pkg.expiryDate ? new Date(pkg.expiryDate) < new Date() : false;
   const statusColor = isExpired ? "#EF4444" : pkg.status === "fullyUsed" ? "#6B7280" : "#22C55E";
   const statusLabel = isExpired ? "Expired" : pkg.status === "fullyUsed" ? "Fully Used" : "Active";
 
@@ -118,13 +141,19 @@ function ActivePackageCard({ pkg, onUse }: {
       </View>
 
       <View style={styles.activeCardMeta}>
-        <View style={styles.metaItem}>
-          <Ionicons name="calendar-outline" size={13} color="#9CA3AF" />
-          <Text style={styles.metaItemText}>Expires {new Date(pkg.expiryDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</Text>
-        </View>
+        {pkg.expiryDate ? (
+          <View style={styles.metaItem}>
+            <Ionicons name="calendar-outline" size={13} color="#9CA3AF" />
+            <Text style={styles.metaItemText}>
+              Expires {new Date(pkg.expiryDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.metaItem}>
           <Ionicons name="receipt-outline" size={13} color="#9CA3AF" />
-          <Text style={styles.metaItemText}>Purchased {new Date(pkg.purchaseDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</Text>
+          <Text style={styles.metaItemText}>
+            Purchased {new Date(pkg.purchaseDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+          </Text>
         </View>
       </View>
 
@@ -195,20 +224,30 @@ function PendingPackageCard({ pkg, onCancel }: { pkg: UserPackage; onCancel: () 
 }
 
 export default function PackagesScreen() {
-  const { user, userPackages, purchasePackage, cancelPackage } = useAppContext();
+  const { user, userPackages, purchasePackage, cancelPackage, refreshUserPackages } = useAppContext();
+  const { data: packages, isLoading: packagesLoading } = useListPricePackages();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<"buy" | "mine">("buy");
-  const [confirmPkg, setConfirmPkg] = useState<Package | null>(null);
+  const [confirmPkg, setConfirmPkg] = useState<PricePackage | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
 
   const pendingPackages = userPackages.filter((p) => p.status === "pendingPayment");
-  const activePackages = userPackages.filter(
-    (p) => p.status === "active" && new Date(p.expiryDate) >= new Date()
+  const myActivePackages = userPackages.filter(
+    (p) => p.status === "active" && (!p.expiryDate || new Date(p.expiryDate) >= new Date())
   );
   const pastPackages = userPackages.filter(
-    (p) => p.status !== "pendingPayment" && (p.status !== "active" || new Date(p.expiryDate) < new Date())
+    (p) => p.status !== "pendingPayment" &&
+      (p.status !== "active" || (!!p.expiryDate && new Date(p.expiryDate) < new Date()))
   );
 
-  function handleBuy(pkg: Package) {
+  // Active packages the user already owns (for "Owned" badge on buy tab)
+  const ownedPackageIds = new Set(
+    userPackages
+      .filter((p) => p.status === "active" || p.status === "pendingPayment")
+      .map((p) => p.packageId)
+  );
+
+  function handleBuy(pkg: PricePackage) {
     if (!user) {
       Alert.alert("Sign In Required", "Please sign in to purchase a package.", [
         { text: "Sign In", onPress: () => router.push("/auth/login") },
@@ -219,16 +258,30 @@ export default function PackagesScreen() {
     setConfirmPkg(pkg);
   }
 
-  function confirmPurchase() {
+  async function confirmPurchase() {
     if (!confirmPkg) return;
-    purchasePackage(confirmPkg);
-    setConfirmPkg(null);
-    setActiveTab("mine");
-    Alert.alert(
-      "Request Submitted!",
-      `Your ${confirmPkg.title} request has been submitted. Our team will confirm payment and activate it shortly.`
-    );
+    setPurchasing(true);
+    try {
+      await purchasePackage({
+        id: confirmPkg.id,
+        name: confirmPkg.name,
+        sessions: confirmPkg.sessions ?? 1,
+        validityMonths: confirmPkg.validityMonths,
+      });
+      setConfirmPkg(null);
+      setActiveTab("mine");
+      Alert.alert(
+        "Request Submitted!",
+        `Your ${confirmPkg.name} request has been submitted. Our team will confirm payment and activate it shortly.`
+      );
+    } catch {
+      Alert.alert("Error", "Could not submit your request. Please try again.");
+    } finally {
+      setPurchasing(false);
+    }
   }
+
+  const visiblePackages = (packages ?? []).filter((p) => p.isActive);
 
   return (
     <View style={styles.container}>
@@ -242,7 +295,10 @@ export default function PackagesScreen() {
             <Text style={[styles.tabText, activeTab === "buy" && { color: "#000" }]}>Buy Package</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => setActiveTab("mine")}
+            onPress={() => {
+              setActiveTab("mine");
+              refreshUserPackages();
+            }}
             style={[styles.tab, activeTab === "mine" && { backgroundColor: colors.studio.primary }]}
           >
             <Text style={[styles.tabText, activeTab === "mine" && { color: "#000" }]}>
@@ -261,12 +317,26 @@ export default function PackagesScreen() {
             <View style={[styles.infoBanner, { borderColor: colors.studio.primary + "30" }]}>
               <Ionicons name="information-circle" size={18} color={colors.studio.primary} />
               <Text style={styles.infoBannerText}>
-                Packages work across all dance styles. Each class attendance deducts 1 credit. Valid for 6 months from purchase.
+                Packages work across dance styles. Each class attendance deducts 1 credit.
               </Text>
             </View>
-            {PACKAGES.map((pkg) => (
-              <PackageCard key={pkg.id} pkg={pkg} onBuy={() => handleBuy(pkg)} />
-            ))}
+            {packagesLoading ? (
+              <ActivityIndicator color={colors.studio.primary} style={{ marginTop: 40 }} />
+            ) : visiblePackages.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyTitle}>No packages available</Text>
+                <Text style={styles.emptyDesc}>Check back soon for new packages.</Text>
+              </View>
+            ) : (
+              visiblePackages.map((pkg) => (
+                <PackageCard
+                  key={pkg.id}
+                  pkg={pkg}
+                  onBuy={() => handleBuy(pkg)}
+                  owned={ownedPackageIds.has(String(pkg.id))}
+                />
+              ))
+            )}
           </>
         )}
 
@@ -301,10 +371,10 @@ export default function PackagesScreen() {
                     ))}
                   </>
                 )}
-                {activePackages.length > 0 && (
+                {myActivePackages.length > 0 && (
                   <>
                     <Text style={[styles.groupLabel, { marginTop: pendingPackages.length > 0 ? 16 : 0 }]}>Active</Text>
-                    {activePackages.map((p) => (
+                    {myActivePackages.map((p) => (
                       <ActivePackageCard
                         key={p.id}
                         pkg={p}
@@ -317,11 +387,7 @@ export default function PackagesScreen() {
                   <>
                     <Text style={[styles.groupLabel, { marginTop: 16 }]}>Past</Text>
                     {pastPackages.map((p) => (
-                      <ActivePackageCard
-                        key={p.id}
-                        pkg={p}
-                        onUse={() => {}}
-                      />
+                      <ActivePackageCard key={p.id} pkg={p} onUse={() => {}} />
                     ))}
                   </>
                 )}
@@ -344,11 +410,16 @@ export default function PackagesScreen() {
             {confirmPkg && (
               <>
                 <View style={[styles.modalPackageSummary, { borderColor: colors.studio.primary + "30" }]}>
-                  <Text style={styles.modalPkgName}>{confirmPkg.title}</Text>
-                  <Text style={styles.modalPkgCredits}>{confirmPkg.numberOfCredits} class credits</Text>
-                  <Text style={styles.modalPkgValidity}>{confirmPkg.validityMonths} months validity · Any dance style</Text>
+                  <Text style={styles.modalPkgName}>{confirmPkg.name}</Text>
+                  <Text style={styles.modalPkgCredits}>{confirmPkg.sessions ?? 1} class credits</Text>
+                  <Text style={styles.modalPkgValidity}>
+                    {confirmPkg.validityMonths} months validity ·{" "}
+                    {confirmPkg.allowedDanceTypes.length > 0
+                      ? confirmPkg.allowedDanceTypes.join(", ")
+                      : "Any dance style"}
+                  </Text>
                   <Text style={[styles.modalPkgPrice, { color: colors.studio.primary }]}>
-                    EGP {confirmPkg.price.toLocaleString()}
+                    EGP {confirmPkg.priceEgp.toLocaleString()}
                   </Text>
                 </View>
                 <View style={styles.modalBtns}>
@@ -359,7 +430,7 @@ export default function PackagesScreen() {
                     style={{ flex: 1 }}
                   />
                   <AppButton
-                    title="Confirm Purchase"
+                    title={purchasing ? "Submitting…" : "Confirm Purchase"}
                     onPress={confirmPurchase}
                     style={{ flex: 1 }}
                   />

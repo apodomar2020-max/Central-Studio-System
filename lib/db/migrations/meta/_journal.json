@@ -17,5 +17,13 @@
       "tag": "0001_add_student_password",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1749628800000,
+      "tag": "0002_package_updates",
+      "breakpoints": true
+    }
   ]
 }

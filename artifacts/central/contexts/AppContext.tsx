@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { customFetch } from "@workspace/api-client-react";
 
 export interface User {
   id: string;
@@ -130,8 +131,9 @@ interface AppContextType {
   addBooking: (booking: Booking) => void;
   userPackages: UserPackage[];
   packageUsageHistory: PackageUsage[];
-  purchasePackage: (pkg: Package) => UserPackage;
-  cancelPackage: (userPackageId: string) => void;
+  purchasePackage: (pkg: { id: number; name: string; sessions: number | null; validityMonths: number }) => Promise<void>;
+  cancelPackage: (userPackageId: string) => Promise<void>;
+  refreshUserPackages: () => Promise<void>;
   usePackageCredit: (userPackageId: string, bookingId: string, className: string) => boolean;
   baletApplications: BalletApplication[];
   submitBalletApplication: (app: Omit<BalletApplication, "id" | "createdAt" | "status">) => boolean;
@@ -175,20 +177,27 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   const [referralCode, setReferralCode] = useState("");
   const [referralCredits, setReferralCredits] = useState(0);
 
+  const isMountedRef = useRef(true);
+  // Track user in a ref so callbacks can access it without re-creating
+  const userRef = useRef<User | null>(null);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   useEffect(() => {
     loadPersistedState();
   }, []);
 
   async function loadPersistedState() {
     try {
-      const [lang, onboarded, usr, bks, chldrn, pkgs, usage, ballets, notifs, bannerDismissed, refCode, refCredits] =
+      const [lang, onboarded, usr, bks, chldrn, usage, ballets, notifs, bannerDismissed, refCode, refCredits] =
         await Promise.all([
           AsyncStorage.getItem("language"),
           AsyncStorage.getItem("isOnboarded"),
           AsyncStorage.getItem("user"),
           AsyncStorage.getItem("bookings"),
           AsyncStorage.getItem("children"),
-          AsyncStorage.getItem("userPackages"),
           AsyncStorage.getItem("packageUsageHistory"),
           AsyncStorage.getItem("baletApplications"),
           AsyncStorage.getItem("notifications"),
@@ -200,10 +209,12 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       if (lang) setLanguageState(lang as "en" | "ar");
       if (onboarded === "true") setIsOnboardedState(true);
       const parsedUser = usr ? (JSON.parse(usr) as User) : null;
-      if (parsedUser) setUserState(parsedUser);
+      if (parsedUser) {
+        setUserState(parsedUser);
+        userRef.current = parsedUser;
+      }
       if (bks) setBookings(JSON.parse(bks));
       if (chldrn) setChildren(JSON.parse(chldrn));
-      if (pkgs) setUserPackages(JSON.parse(pkgs));
       if (usage) setPackageUsageHistory(JSON.parse(usage));
       if (ballets) setBaletApplications(JSON.parse(ballets));
       if (notifs) setNotifications(JSON.parse(notifs));
@@ -216,8 +227,41 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         setReferralCode(generated);
         await AsyncStorage.setItem("referralCode", generated);
       }
+      // Load packages from API for the persisted user
+      if (parsedUser) {
+        fetchAndSetPackages(parsedUser.email).catch(() => {});
+      }
     } catch {}
     setIsLoading(false);
+  }
+
+  /** Fetch this user's package orders from the API and update local state. */
+  async function fetchAndSetPackages(email: string) {
+    try {
+      const orders = await customFetch<Array<{
+        id: number; packageId?: number | null; packageName: string;
+        totalCredits: number; remainingCredits: number;
+        status: string; activatedAt?: string | null;
+        expiresAt?: string | null; createdAt: string;
+        studentEmail: string;
+      }>>(`/api/package-orders`);
+
+      const mine = orders.filter((o) => o.studentEmail === email);
+      const mapped: UserPackage[] = mine.map((o) => ({
+        id: String(o.id),
+        packageId: String(o.packageId ?? 0),
+        packageTitle: o.packageName,
+        totalCredits: o.totalCredits,
+        remainingCredits: o.remainingCredits,
+        purchaseDate: o.createdAt.slice(0, 10),
+        expiryDate: o.expiresAt?.slice(0, 10) ?? "",
+        status: o.status as UserPackage["status"],
+      }));
+
+      if (isMountedRef.current) setUserPackages(mapped);
+    } catch {
+      // Network unavailable — keep whatever was in state
+    }
   }
 
   const setLanguage = useCallback(async (lang: "en" | "ar") => {
@@ -232,6 +276,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   const setUser = useCallback(async (usr: User | null) => {
     setUserState(usr);
+    userRef.current = usr;
     if (usr) {
       await AsyncStorage.setItem("user", JSON.stringify(usr));
       const existing = await AsyncStorage.getItem("referralCode");
@@ -240,8 +285,11 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         setReferralCode(generated);
         await AsyncStorage.setItem("referralCode", generated);
       }
+      // Load this user's packages from the API
+      fetchAndSetPackages(usr.email).catch(() => {});
     } else {
       await AsyncStorage.removeItem("user");
+      setUserPackages([]);
     }
   }, []);
 
@@ -277,39 +325,29 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     });
   }, []);
 
+  const refreshUserPackages = useCallback(async () => {
+    const usr = userRef.current;
+    if (usr) await fetchAndSetPackages(usr.email);
+  }, []);
+
   const purchasePackage = useCallback(
-    (pkg: Package): UserPackage => {
-      const today = new Date().toISOString().slice(0, 10);
-      const expiry = addMonths(today, pkg.validityMonths);
-      const userPkg: UserPackage = {
-        id: `upkg-${Date.now()}`,
-        packageId: pkg.id,
-        packageTitle: pkg.title,
-        totalCredits: pkg.numberOfCredits,
-        remainingCredits: pkg.numberOfCredits,
-        purchaseDate: today,
-        expiryDate: expiry,
-        status: "pendingPayment",
-      };
-      setUserPackages((prev) => {
-        const updated = [userPkg, ...prev];
-        AsyncStorage.setItem("userPackages", JSON.stringify(updated));
-        return updated;
+    async (pkg: { id: number; name: string; sessions: number | null; validityMonths: number }): Promise<void> => {
+      const usr = userRef.current;
+      if (!usr) return;
+      await customFetch("/api/package-orders", {
+        method: "POST",
+        body: JSON.stringify({
+          studentName: usr.fullName,
+          studentEmail: usr.email,
+          studentPhone: usr.phone ?? null,
+          packageId: pkg.id,
+          packageName: pkg.name,
+          totalCredits: pkg.sessions ?? 1,
+          remainingCredits: pkg.sessions ?? 1,
+        }),
       });
-      const notif: AppNotification = {
-        id: `notif-${Date.now()}`,
-        title: "Package Request Submitted",
-        body: `Your ${pkg.title} request is pending payment confirmation. We'll activate it shortly.`,
-        type: "package",
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      };
-      setNotifications((prev) => {
-        const updated = [notif, ...prev];
-        AsyncStorage.setItem("notifications", JSON.stringify(updated));
-        return updated;
-      });
-      return userPkg;
+      // Refresh the list so the new pending order shows up immediately
+      await fetchAndSetPackages(usr.email);
     },
     []
   );
@@ -354,14 +392,17 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     []
   );
 
-  const cancelPackage = useCallback((userPackageId: string) => {
-    setUserPackages((prev) => {
-      const pkg = prev.find((p) => p.id === userPackageId);
-      if (!pkg || pkg.status !== "pendingPayment") return prev;
-      const updated = prev.filter((p) => p.id !== userPackageId);
-      AsyncStorage.setItem("userPackages", JSON.stringify(updated));
-      return updated;
-    });
+  const cancelPackage = useCallback(async (userPackageId: string): Promise<void> => {
+    const usr = userRef.current;
+    try {
+      await customFetch(`/api/package-orders/${userPackageId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+    } catch {
+      // Best-effort — still refresh list even if the PATCH failed
+    }
+    if (usr) await fetchAndSetPackages(usr.email);
   }, []);
 
   const submitBalletApplication = useCallback(
@@ -429,6 +470,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         packageUsageHistory,
         purchasePackage,
         cancelPackage,
+        refreshUserPackages,
         usePackageCredit,
         baletApplications,
         submitBalletApplication,

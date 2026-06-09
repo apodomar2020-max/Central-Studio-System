@@ -272,6 +272,9 @@ export const ListPricePackagesResponseItem = zod.object({
   description: zod.string().nullish(),
   isActive: zod.boolean(),
   isFeatured: zod.boolean(),
+  validityMonths: zod.number(),
+  singleClassPriceEgp: zod.number().nullish(),
+  allowedDanceTypes: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 export const ListPricePackagesResponse = zod.array(
@@ -286,6 +289,9 @@ export const CreatePricePackageBody = zod.object({
   description: zod.string().nullish(),
   isActive: zod.boolean().optional(),
   isFeatured: zod.boolean().optional(),
+  validityMonths: zod.number().optional(),
+  singleClassPriceEgp: zod.number().nullish(),
+  allowedDanceTypes: zod.array(zod.string()).optional(),
 });
 
 export const GetPricePackageParams = zod.object({
@@ -301,6 +307,9 @@ export const GetPricePackageResponse = zod.object({
   description: zod.string().nullish(),
   isActive: zod.boolean(),
   isFeatured: zod.boolean(),
+  validityMonths: zod.number(),
+  singleClassPriceEgp: zod.number().nullish(),
+  allowedDanceTypes: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 
@@ -316,6 +325,9 @@ export const UpdatePricePackageBody = zod.object({
   description: zod.string().nullish(),
   isActive: zod.boolean().optional(),
   isFeatured: zod.boolean().optional(),
+  validityMonths: zod.number().optional(),
+  singleClassPriceEgp: zod.number().nullish(),
+  allowedDanceTypes: zod.array(zod.string()).optional(),
 });
 
 export const UpdatePricePackageResponse = zod.object({
@@ -327,6 +339,9 @@ export const UpdatePricePackageResponse = zod.object({
   description: zod.string().nullish(),
   isActive: zod.boolean(),
   isFeatured: zod.boolean(),
+  validityMonths: zod.number(),
+  singleClassPriceEgp: zod.number().nullish(),
+  allowedDanceTypes: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 

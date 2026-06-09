@@ -36,10 +36,13 @@ const formSchema = z.object({
   description: z.string().nullish(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
+  validityMonths: z.coerce.number().int().min(1).default(6),
+  singleClassPriceEgp: z.coerce.number().nullish(),
+  allowedDanceTypes: z.string().default(""),
 });
 
 type FormValues = z.input<typeof formSchema>;
-type Package = { id: number; name: string; type: string; priceEgp: number; sessions?: number | null; description?: string | null; isActive: boolean; isFeatured: boolean };
+type Package = { id: number; name: string; type: string; priceEgp: number; sessions?: number | null; description?: string | null; isActive: boolean; isFeatured: boolean; validityMonths: number; singleClassPriceEgp?: number | null; allowedDanceTypes: string[] };
 
 export default function Packages() {
   const { data: packages, isLoading } = useListPricePackages();
@@ -52,28 +55,38 @@ export default function Packages() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false },
+    defaultValues: { name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "" },
   });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false });
+    form.reset({ name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "" });
     setOpen(true);
   };
 
   const openEdit = (p: Package) => {
     setEditing(p);
-    form.reset({ name: p.name, type: p.type, priceEgp: p.priceEgp, sessions: p.sessions ?? undefined, description: p.description ?? "", isActive: p.isActive, isFeatured: p.isFeatured });
+    form.reset({
+      name: p.name, type: p.type, priceEgp: p.priceEgp, sessions: p.sessions ?? undefined,
+      description: p.description ?? "", isActive: p.isActive, isFeatured: p.isFeatured,
+      validityMonths: p.validityMonths, singleClassPriceEgp: p.singleClassPriceEgp ?? undefined,
+      allowedDanceTypes: p.allowedDanceTypes.join(", "),
+    });
     setOpen(true);
   };
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
+    // Convert comma-separated dance types string to array
+    const allowedDanceTypes = parsed.allowedDanceTypes
+      ? parsed.allowedDanceTypes.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const data = { ...parsed, allowedDanceTypes };
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListPricePackagesQueryKey() }); setOpen(false); };
     if (editing) {
-      updatePackage.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
+      updatePackage.mutate({ id: editing.id, data }, { onSuccess: invalidate });
     } else {
-      createPackage.mutate({ data: parsed }, { onSuccess: invalidate });
+      createPackage.mutate({ data }, { onSuccess: invalidate });
     }
   };
 
@@ -177,6 +190,29 @@ export default function Packages() {
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl><Textarea data-testid="input-package-description" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="validityMonths" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Validity (months)</FormLabel>
+                    <FormControl><Input type="number" min={1} data-testid="input-package-validity" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="singleClassPriceEgp" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Per-class price (EGP, optional)</FormLabel>
+                    <FormControl><Input type="number" min={0} placeholder="Auto-calculated" data-testid="input-package-class-price" {...field} value={field.value ?? ""} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <FormField control={form.control} name="allowedDanceTypes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Allowed dance types (comma-separated, blank = all)</FormLabel>
+                  <FormControl><Input placeholder="e.g. Hip Hop, Ballet, Jazz" data-testid="input-package-dance-types" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

@@ -167,6 +167,10 @@ export interface PricePackage {
   description?: string | null;
   isActive: boolean;
   isFeatured: boolean;
+  validityMonths: number;
+  /** @nullable */
+  singleClassPriceEgp?: number | null;
+  allowedDanceTypes: string[];
   createdAt: string;
 }
 
@@ -180,6 +184,10 @@ export interface CreatePricePackageBody {
   description?: string | null;
   isActive?: boolean;
   isFeatured?: boolean;
+  validityMonths?: number;
+  /** @nullable */
+  singleClassPriceEgp?: number | null;
+  allowedDanceTypes?: string[];
 }
 
 export interface UpdatePricePackageBody {
@@ -192,6 +200,10 @@ export interface UpdatePricePackageBody {
   description?: string | null;
   isActive?: boolean;
   isFeatured?: boolean;
+  validityMonths?: number;
+  /** @nullable */
+  singleClassPriceEgp?: number | null;
+  allowedDanceTypes?: string[];
 }
 
 export interface Booking {
