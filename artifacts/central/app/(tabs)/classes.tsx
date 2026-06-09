@@ -2,11 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Platform,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -50,6 +51,11 @@ export default function ClassesScreen() {
 
   const isLoading = classesQuery.isLoading || instructorsQuery.isLoading;
   const isError = classesQuery.isError || instructorsQuery.isError;
+  const isRefreshing = classesQuery.isRefetching || instructorsQuery.isRefetching;
+  const onRefresh = useCallback(() => {
+    classesQuery.refetch();
+    instructorsQuery.refetch();
+  }, [classesQuery, instructorsQuery]);
 
   // Map API rows to the mobile data model. Fall back to mockData only when the
   // API request failed (data is undefined); an empty-but-successful response
@@ -178,7 +184,7 @@ export default function ClassesScreen() {
           activeOpacity={0.85}
         >
           <View style={[styles.balletIcon, { backgroundColor: BALLET_CATEGORY.color + "20" }]}>
-            <Ionicons name="diamond" size={20} color={BALLET_CATEGORY.color} />
+            <Ionicons name={BALLET_CATEGORY.icon as any} size={20} color={BALLET_CATEGORY.color} />
           </View>
           <View style={styles.balletText}>
             <Text style={styles.balletTitle}>Ballet</Text>
@@ -236,6 +242,14 @@ export default function ClassesScreen() {
         }
         contentContainerStyle={[styles.list, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.studio.primary}
+            colors={[colors.studio.primary]}
+          />
+        }
       />
         </>
       )}

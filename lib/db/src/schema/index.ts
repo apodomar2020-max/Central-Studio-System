@@ -10,3 +10,5 @@ export * from "./marketingCampaigns";
 export * from "./packageOrders";
 export * from "./attendance";
 export * from "./heroItems";
+export * from "./emailOtps";
+export * from "./systemUsers";

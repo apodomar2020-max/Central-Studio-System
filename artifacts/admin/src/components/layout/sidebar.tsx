@@ -13,8 +13,11 @@ import {
   ShoppingBag,
   ScanLine,
   ImagePlay,
+  ShieldCheck,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const studioNav = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -33,6 +36,10 @@ const generalNav = [
   { name: "Marketing", href: "/marketing", icon: Megaphone },
   { name: "Package Orders", href: "/package-orders", icon: ShoppingBag },
   { name: "Attendance", href: "/attendance", icon: ScanLine },
+];
+
+const systemNav = [
+  { name: "System Users", href: "/system-users", icon: ShieldCheck },
 ];
 
 function NavItem({
@@ -85,6 +92,7 @@ function NavItem({
 
 export function Sidebar() {
   const [location] = useLocation();
+  const { user, logout } = useAdminAuth();
 
   const isActive = (href: string) =>
     href === "/"
@@ -144,6 +152,30 @@ export function Sidebar() {
             ))}
           </nav>
         </div>
+
+        {/* System section — Super Admin only */}
+        {user?.isSuperAdmin && (
+          <>
+            <div className="mx-4 border-t" style={{ borderColor: "hsl(203 25% 12%)" }} />
+            <div>
+              <div className="px-4 mb-1">
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-[#8A5CFF]/60">
+                  System
+                </span>
+              </div>
+              <nav className="space-y-0.5 pr-2">
+                {systemNav.map((item) => (
+                  <NavItem
+                    key={item.name}
+                    item={item}
+                    isActive={isActive(item.href)}
+                    accent="stage"
+                  />
+                ))}
+              </nav>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Footer */}
@@ -151,8 +183,15 @@ export function Sidebar() {
         className="px-4 py-3 border-t"
         style={{ borderColor: "hsl(203 25% 10%)" }}
       >
-        <p className="text-[11px] text-[#4E6070]">Central Studio</p>
-        <p className="text-[10px] text-[#344A5A]">Admin Operations</p>
+        <p className="text-[11px] text-[#8A9AB0] truncate">{user?.fullName ?? "Admin"}</p>
+        <p className="text-[10px] text-[#4E6070] truncate">{user?.username}</p>
+        <button
+          onClick={logout}
+          className="mt-2 flex items-center gap-1.5 text-[10px] text-[#4E6070] hover:text-[#8A9AB0] transition-colors"
+        >
+          <LogOut className="h-3 w-3" />
+          Sign out
+        </button>
       </div>
     </div>
   );

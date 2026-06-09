@@ -3,12 +3,13 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   ActivityIndicator,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -225,7 +226,13 @@ function PendingPackageCard({ pkg, onCancel }: { pkg: UserPackage; onCancel: () 
 
 export default function PackagesScreen() {
   const { user, userPackages, purchasePackage, cancelPackage, refreshUserPackages } = useAppContext();
-  const { data: packages, isLoading: packagesLoading } = useListPricePackages();
+  const { data: packages, isLoading: packagesLoading, isRefetching: isRefetchingPackages, refetch: refetchPackages } = useListPricePackages();
+
+  const isRefreshing = isRefetchingPackages;
+  const onRefresh = useCallback(() => {
+    refetchPackages();
+    refreshUserPackages();
+  }, [refetchPackages, refreshUserPackages]);
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<"buy" | "mine">("buy");
   const [confirmPkg, setConfirmPkg] = useState<PricePackage | null>(null);
@@ -313,6 +320,14 @@ export default function PackagesScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.studio.primary}
+            colors={[colors.studio.primary]}
+          />
+        }
       >
         {activeTab === "buy" && (
           <>

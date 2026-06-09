@@ -43,9 +43,11 @@ function coerceLevel(level: string): DanceClass["level"] {
     case "Beginner":
     case "Intermediate":
     case "Advanced":
+    case "All Levels":
       return level;
     default:
-      return "Beginner";
+      // Unknown value from DB — treat as "All Levels" so nothing gets hidden
+      return "All Levels";
   }
 }
 

@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -120,7 +121,9 @@ export default function NotificationsScreen() {
   const { notifications: localNotifs, markNotificationRead } = useAppContext();
 
   // API broadcast notifications
-  const { data: apiNotifs, isLoading } = useListNotifications();
+  const { data: apiNotifs, isLoading, isRefetching, refetch } = useListNotifications();
+
+  const onRefresh = useCallback(() => { refetch(); }, [refetch]);
 
   // Locally-persisted set of read API notification IDs
   const [apiReadIds, setApiReadIds] = useState<Set<string>>(new Set());
@@ -209,6 +212,14 @@ export default function NotificationsScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 60 : 40 }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefetching}
+              onRefresh={onRefresh}
+              tintColor={colors.studio.primary}
+              colors={[colors.studio.primary]}
+            />
+          }
         >
           {all.length === 0 ? (
             <View style={styles.empty}>

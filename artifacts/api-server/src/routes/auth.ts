@@ -65,6 +65,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       name: studentsTable.name,
       email: studentsTable.email,
       phone: studentsTable.phone,
+      emailVerified: studentsTable.emailVerified,
       joinedAt: studentsTable.joinedAt,
     });
 
@@ -115,6 +116,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       name: student.name,
       email: student.email,
       phone: student.phone,
+      emailVerified: student.emailVerified,
       joinedAt: student.joinedAt,
     },
   });

@@ -15,11 +15,14 @@ import analyticsRouter from "./analytics";
 import packageOrdersRouter from "./packageOrders";
 import attendanceRouter from "./attendance";
 import heroItemsRouter from "./heroItems";
+import emailOtpRouter from "./emailOtp";
+import adminAuthRouter from "./adminAuth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(emailOtpRouter);
 router.use(dashboardRouter);
 router.use(analyticsRouter);
 router.use(instructorsRouter);
@@ -34,5 +37,6 @@ router.use(marketingRouter);
 router.use(attendanceRouter);
 router.use(packageOrdersRouter);
 router.use(heroItemsRouter);
+router.use(adminAuthRouter);
 
 export default router;

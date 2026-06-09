@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 
+import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
@@ -24,9 +25,20 @@ export default function VerifyEmailScreen() {
   const insets = useSafeAreaInsets();
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
-  const [resendCountdown, setResendCountdown] = useState(60);
-  const [sent, setSent] = useState(true);
+  const [resendCountdown, setResendCountdown] = useState(0);
+  const [sent, setSent] = useState(false);
   const refs = useRef<(TextInput | null)[]>([]);
+
+  // Auto-send OTP as soon as the screen opens (if not already verified)
+  useEffect(() => {
+    if (!user?.id || user.emailVerified || sent) return;
+    customFetch("/api/auth/send-email-otp", {
+      method: "POST",
+      body: JSON.stringify({ studentId: user.id }),
+    })
+      .then(() => { setSent(true); setResendCountdown(60); })
+      .catch(() => { setSent(true); }); // still show UI even if first send fails
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (resendCountdown <= 0) return;
@@ -81,24 +93,42 @@ export default function VerifyEmailScreen() {
   async function handleVerify() {
     const full = code.join("");
     if (full.length < CODE_LENGTH) { Alert.alert("Incomplete", "Please enter all 6 digits."); return; }
+    if (!user?.id) { Alert.alert("Error", "You must be signed in to verify your email."); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1400));
-    setLoading(false);
-    if (user) {
+    try {
+      await customFetch("/api/auth/verify-email-otp", {
+        method: "POST",
+        body: JSON.stringify({ studentId: user.id, code: full }),
+      });
+      // Mark verified in local state
       await setUser({ ...user, emailVerified: true });
+      Alert.alert("Email Verified!", "Your email has been verified successfully.", [
+        { text: "Continue", onPress: () => router.back() },
+      ]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Invalid or expired code.";
+      Alert.alert("Verification Failed", msg);
+    } finally {
+      setLoading(false);
     }
-    Alert.alert("Email Verified!", "Your email has been verified successfully.", [
-      { text: "Continue", onPress: () => router.back() },
-    ]);
   }
 
   async function handleResend() {
-    if (resendCountdown > 0) return;
+    if (resendCountdown > 0 || !user?.id) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setResendCountdown(60);
-    setSent(true);
-    Alert.alert("Email Sent", `A new verification code has been sent to ${user?.email}.`);
+    try {
+      await customFetch("/api/auth/send-email-otp", {
+        method: "POST",
+        body: JSON.stringify({ studentId: user.id }),
+      });
+      setResendCountdown(60);
+      setSent(true);
+      Alert.alert("Email Sent", `A new verification code has been sent to ${user?.email}.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not send code.";
+      Alert.alert("Failed to Send", msg);
+    }
   }
 
   return (

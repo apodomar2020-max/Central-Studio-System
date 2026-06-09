@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Dimensions,
   FlatList,
@@ -11,6 +11,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -349,7 +350,7 @@ export default function StudioHomeScreen() {
   const insets = useSafeAreaInsets();
 
   // Live instructors — fall back to mock data while loading so the section is never empty
-  const { data: apiInstructors } = useListInstructors();
+  const { data: apiInstructors, refetch: refetchInstructors, isRefetching: isRefetchingInstructors } = useListInstructors();
   const instructors = apiInstructors?.length
     ? apiInstructors.filter((i) => i.isActive).map(mapApiInstructorToMobile)
     : INSTRUCTORS;
@@ -362,8 +363,15 @@ export default function StudioHomeScreen() {
   }, [instructors]);
 
   // Live upcoming classes — join schedules + classes for the current Egyptian week
-  const { data: apiSchedules } = useListSchedules();
-  const { data: apiClasses } = useListClasses();
+  const { data: apiSchedules, refetch: refetchSchedules, isRefetching: isRefetchingSchedules } = useListSchedules();
+  const { data: apiClasses, refetch: refetchClasses, isRefetching: isRefetchingClasses } = useListClasses();
+
+  const isRefreshing = isRefetchingInstructors || isRefetchingSchedules || isRefetchingClasses;
+  const onRefresh = useCallback(() => {
+    refetchInstructors();
+    refetchSchedules();
+    refetchClasses();
+  }, [refetchInstructors, refetchSchedules, refetchClasses]);
 
   const weekClasses = React.useMemo<DanceClass[]>(() => {
     if (!apiSchedules?.length || !apiClasses?.length) {
@@ -373,6 +381,11 @@ export default function StudioHomeScreen() {
 
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
+
+    // Current time as "HH:MM" in 24h format for same-day comparison
+    const nowH = String(today.getHours()).padStart(2, "0");
+    const nowM = String(today.getMinutes()).padStart(2, "0");
+    const currentTime24 = `${nowH}:${nowM}`;
 
     // Egyptian week: Saturday → Thursday
     const dayOfWeek = today.getDay();
@@ -395,6 +408,10 @@ export default function StudioHomeScreen() {
       const mapped = mapScheduleAndClassToMobile(sched, cls, weekStart);
       if (mapped.isBallet) continue;
       if (mapped.date < todayStr || mapped.date > thuStr) continue;
+
+      // For today's classes: skip any whose start time has already arrived.
+      // sched.startTime is "HH:MM" (24h) — string comparison is safe here.
+      if (mapped.date === todayStr && sched.startTime <= currentTime24) continue;
 
       // Deduplicate: only one entry per class per day
       const key = `${mapped.id}-${mapped.date}`;
@@ -439,6 +456,14 @@ export default function StudioHomeScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.studio.primary}
+            colors={[colors.studio.primary]}
+          />
+        }
       >
         {showNewStudentBanner && <NewStudentBanner onDismiss={dismissNewStudentBanner} />}
 
@@ -446,10 +471,7 @@ export default function StudioHomeScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Dance Styles</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/classes")}>
-              <Text style={[styles.seeAll, { color: colors.studio.primary }]}>See All</Text>
-            </TouchableOpacity>
+            <Text style={styles.sectionTitle}>Our Instructors</Text>
           </View>
           <FlatList
             data={instructors}

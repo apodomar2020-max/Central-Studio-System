@@ -2,8 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
-import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useState } from "react";
+import { FlatList, Platform, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
@@ -14,9 +14,16 @@ import { Booking } from "@/contexts/AppContext";
 const TABS = ["Upcoming", "Past", "Cancelled"] as const;
 
 export default function BookingsScreen() {
-  const { bookings, user } = useAppContext();
+  const { bookings, user, refreshUserPackages } = useAppContext();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Upcoming");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await refreshUserPackages();
+    setIsRefreshing(false);
+  }, [refreshUserPackages]);
 
   function filterBookings(tab: typeof activeTab): Booking[] {
     switch (tab) {
@@ -129,6 +136,14 @@ export default function BookingsScreen() {
           renderItem={({ item }) => <BookingCard item={item} />}
           contentContainerStyle={[styles.list, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.studio.primary}
+              colors={[colors.studio.primary]}
+            />
+          }
         />
       )}
     </View>

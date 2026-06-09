@@ -42,7 +42,7 @@ export interface DanceClass {
   price: number;
   capacity: number;
   bookedCount: number;
-  level: "Beginner" | "Intermediate" | "Advanced";
+  level: "Beginner" | "Intermediate" | "Advanced" | "All Levels";
   ageGroup: AgeGroup;
   status: "available" | "fewSeats" | "full" | "waitingList";
   policy: string;
@@ -148,7 +148,7 @@ export const DANCE_CATEGORIES: DanceCategory[] = [
     id: "c7",
     name: "Ballet",
     description: "Classical technique building grace, strength, and discipline. Assessment required.",
-    icon: "diamond",
+    icon: "accessibility",
     color: "#A78BFA",
     imageColor: "#1A0D2D",
     ageGroups: ["Kids", "Teens", "Adults"],
