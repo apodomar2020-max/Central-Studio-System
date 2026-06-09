@@ -11,7 +11,7 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 
@@ -19,13 +19,13 @@ const router: IRouter = Router();
 
 const RegisterBody = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.email("Invalid email address"),
+  email: z.string().email("Invalid email address"),
   phone: z.string().optional(),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 const LoginBody = z.object({
-  email: z.email("Invalid email address"),
+  email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
 });
 
