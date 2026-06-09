@@ -3,11 +3,13 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React from "react";
+import React, { useRef, useState } from "react";
 import {
   Dimensions,
   FlatList,
   Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -25,6 +27,8 @@ import {
   DanceClass,
   Instructor,
 } from "@/data/mockData";
+import { useListHeroItems } from "@workspace/api-client-react";
+import type { HeroItem } from "@workspace/api-client-react";
 import colors from "@/constants/colors";
 import NewStudentBanner from "@/components/NewStudentBanner";
 
@@ -38,6 +42,134 @@ const NOTIF_ICON_MAP: Record<string, string> = {
   offer: "pricetag",
   system: "information-circle",
 };
+
+// ─── Hero Carousel ────────────────────────────────────────────────────────────
+
+const HERO_HEIGHT = 230;
+const HERO_MARGIN = 16;
+const HERO_WIDTH = SCREEN_WIDTH - HERO_MARGIN * 2;
+
+/** Single slide inside the carousel */
+function HeroSlide({ item }: { item: HeroItem }) {
+  return (
+    <View style={styles.heroSlide}>
+      <Image
+        source={{ uri: item.imageUrl }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+      />
+      <LinearGradient
+        colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.52)", "rgba(0,0,0,0.92)"]}
+        locations={[0, 0.45, 1]}
+        style={styles.heroBannerGradient}
+      >
+        {item.tagline ? (
+          <Text style={styles.heroBannerTagline}>{item.tagline.toUpperCase()}</Text>
+        ) : null}
+        <Text style={styles.heroBannerTitle}>{item.title}</Text>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            // buttonRoute is an Expo Router path; push it directly
+            router.push(item.buttonRoute as any);
+          }}
+          style={styles.heroBannerBtn}
+        >
+          <Text style={styles.heroBannerBtnText}>{item.buttonText}</Text>
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
+  );
+}
+
+/** Static fallback shown before any hero items exist in the DB */
+function HeroStaticFallback() {
+  return (
+    <View style={styles.heroBanner}>
+      <Image
+        source={{ uri: "https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80" }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+      />
+      <LinearGradient
+        colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.52)", "rgba(0,0,0,0.92)"]}
+        locations={[0, 0.45, 1]}
+        style={styles.heroBannerGradient}
+      >
+        <Text style={styles.heroBannerTagline}>EGYPT'S TOP DANCE SCHOOL</Text>
+        <Text style={styles.heroBannerTitle}>Explore The Art{"\n"}Of Movement</Text>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/(tabs)/classes");
+          }}
+          style={styles.heroBannerBtn}
+        >
+          <Text style={styles.heroBannerBtnText}>Get Started</Text>
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
+  );
+}
+
+function HeroCarousel() {
+  const { data: allItems } = useListHeroItems();
+  const items = (allItems ?? []).filter((i) => i.isActive);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / HERO_WIDTH);
+    setActiveIndex(idx);
+  };
+
+  // No live slides yet → show static fallback so home screen always looks good
+  if (!items.length) {
+    return <HeroStaticFallback />;
+  }
+
+  // Single slide → no need for a FlatList / dots
+  if (items.length === 1) {
+    return (
+      <View style={styles.heroBanner}>
+        <HeroSlide item={items[0]} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.heroBanner}>
+      <FlatList
+        data={items}
+        keyExtractor={(i) => String(i.id)}
+        renderItem={({ item }) => <HeroSlide item={item} />}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={onScroll}
+        snapToInterval={HERO_WIDTH}
+        decelerationRate="fast"
+        bounces={false}
+        style={{ borderRadius: 20 }}
+      />
+      {/* Pagination dots */}
+      <View style={styles.heroDots}>
+        {items.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.heroDot,
+              i === activeIndex
+                ? { backgroundColor: "#FFFFFF", width: 16 }
+                : { backgroundColor: "rgba(255,255,255,0.4)", width: 6 },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function InstructorCard({ instructor }: { instructor: Instructor }) {
   return (
@@ -243,30 +375,7 @@ export default function StudioHomeScreen() {
       >
         {showNewStudentBanner && <NewStudentBanner onDismiss={dismissNewStudentBanner} />}
 
-        <View style={styles.heroBanner}>
-          <Image
-            source={{ uri: "https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80" }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.52)", "rgba(0,0,0,0.92)"]}
-            locations={[0, 0.45, 1]}
-            style={styles.heroBannerGradient}
-          >
-            <Text style={styles.heroBannerTagline}>Egypt's Top Dance School</Text>
-            <Text style={styles.heroBannerTitle}>Explore The Art{"\n"}Of Movement</Text>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push("/(tabs)/classes");
-              }}
-              style={styles.heroBannerBtn}
-            >
-              <Text style={styles.heroBannerBtnText}>Get Started</Text>
-            </TouchableOpacity>
-          </LinearGradient>
-        </View>
+        <HeroCarousel />
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -372,7 +481,13 @@ const styles = StyleSheet.create({
   notifBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#FFF" },
   scroll: { paddingTop: 40 },
 
-  heroBanner: { marginHorizontal: 16, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: 230 },
+  heroBanner: { marginHorizontal: HERO_MARGIN, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: HERO_HEIGHT },
+  heroSlide: { width: HERO_WIDTH, height: HERO_HEIGHT },
+  heroDots: {
+    position: "absolute", bottom: 10, left: 0, right: 0,
+    flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 5,
+  },
+  heroDot: { height: 6, borderRadius: 3 },
   heroBannerGradient: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "flex-end",

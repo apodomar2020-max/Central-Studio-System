@@ -12,6 +12,7 @@ import {
   Megaphone,
   ShoppingBag,
   ScanLine,
+  ImagePlay,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ const studioNav = [
   { name: "Bookings", href: "/bookings", icon: Ticket },
   { name: "Students", href: "/students", icon: UserSquare2 },
   { name: "Offers", href: "/offers", icon: Tag },
+  { name: "Hero Slides", href: "/hero-items", icon: ImagePlay },
 ];
 
 const generalNav = [
