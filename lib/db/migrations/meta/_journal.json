@@ -9,5 +9,13 @@
       "tag": "0000_dusty_aqueduct",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1749455400000,
+      "tag": "0001_add_student_password",
+      "breakpoints": true
+    }
   ]
 }

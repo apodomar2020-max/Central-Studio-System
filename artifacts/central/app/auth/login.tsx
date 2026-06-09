@@ -35,18 +35,43 @@ export default function LoginScreen() {
     setError("");
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await new Promise((r) => setTimeout(r, 1000));
-    const mockUser: User = {
-      id: Date.now().toString() + Math.random().toString(36).slice(2),
-      fullName: email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      phone: "+20 100 000 0000",
-      email: email.trim(),
-      emailVerified: true,
-      role: "student",
-    };
-    await setUser(mockUser);
-    setLoading(false);
-    router.back();
+
+    try {
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+      const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
+      const response = await fetch(`${apiUrl}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error ?? "Login failed. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      const { student } = data;
+      const user: User = {
+        id: String(student.id),
+        fullName: student.name,
+        phone: student.phone ?? "",
+        email: student.email,
+        emailVerified: true,
+        role: "student",
+      };
+      await setUser(user);
+      setLoading(false);
+      router.replace("/(tabs)/");
+    } catch {
+      setError("Network error. Please check your connection.");
+      setLoading(false);
+    }
   }
 
   return (

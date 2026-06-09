@@ -8,6 +8,7 @@ export const studentsTable = pgTable("students", {
   email: text("email").notNull().unique(),
   phone: text("phone"),
   notes: text("notes"),
+  passwordHash: text("password_hash"),
   totalBookings: integer("total_bookings").notNull().default(0),
   joinedAt: timestamp("joined_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
