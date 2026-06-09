@@ -28,8 +28,14 @@ router.post("/hero-items", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.insert(heroItemsTable).values(parsed.data).returning();
-  res.status(201).json(GetHeroItemResponse.parse(row));
+  try {
+    const [row] = await db.insert(heroItemsTable).values(parsed.data).returning();
+    res.status(201).json(GetHeroItemResponse.parse(row));
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined;
+    res.status(500).json({ error: cause ? `${msg} | ${cause}` : msg });
+  }
 });
 
 router.get("/hero-items/:id", async (req, res): Promise<void> => {
