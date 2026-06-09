@@ -266,7 +266,7 @@ export default function PackagesScreen() {
         id: confirmPkg.id,
         name: confirmPkg.name,
         sessions: confirmPkg.sessions ?? 1,
-        validityMonths: 0,
+        validityMonths: confirmPkg.validityMonths,
       });
       setConfirmPkg(null);
       setActiveTab("mine");
@@ -274,10 +274,8 @@ export default function PackagesScreen() {
         "Request Submitted!",
         `Your ${confirmPkg.name} request has been submitted. Our team will confirm payment and activate it shortly.`
       );
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Unknown error";
-      Alert.alert("Request Failed", `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`);
+    } catch {
+      Alert.alert("Error", "Could not submit your request. Please try again.");
     } finally {
       setPurchasing(false);
     }

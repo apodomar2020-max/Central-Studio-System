@@ -40,11 +40,6 @@ export const ListInstructorsResponseItem = zod.object({
   experienceYears: zod.number(),
   rating: zod.number().nullish(),
   isActive: zod.boolean(),
-  instagramUrl: zod.string().nullish(),
-  tiktokUrl: zod.string().nullish(),
-  youtubeUrl: zod.string().nullish(),
-  teachingLevel: zod.string().nullish(),
-  achievements: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 export const ListInstructorsResponse = zod.array(ListInstructorsResponseItem);
@@ -60,11 +55,6 @@ export const CreateInstructorBody = zod.object({
   experienceYears: zod.number(),
   rating: zod.number().nullish(),
   isActive: zod.boolean().optional(),
-  instagramUrl: zod.string().nullish(),
-  tiktokUrl: zod.string().nullish(),
-  youtubeUrl: zod.string().nullish(),
-  teachingLevel: zod.string().nullish(),
-  achievements: zod.array(zod.string()).optional(),
 });
 
 export const GetInstructorParams = zod.object({
@@ -80,11 +70,6 @@ export const GetInstructorResponse = zod.object({
   experienceYears: zod.number(),
   rating: zod.number().nullish(),
   isActive: zod.boolean(),
-  instagramUrl: zod.string().nullish(),
-  tiktokUrl: zod.string().nullish(),
-  youtubeUrl: zod.string().nullish(),
-  teachingLevel: zod.string().nullish(),
-  achievements: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 
@@ -100,11 +85,6 @@ export const UpdateInstructorBody = zod.object({
   experienceYears: zod.number().optional(),
   rating: zod.number().nullish(),
   isActive: zod.boolean().optional(),
-  instagramUrl: zod.string().nullish(),
-  tiktokUrl: zod.string().nullish(),
-  youtubeUrl: zod.string().nullish(),
-  teachingLevel: zod.string().nullish(),
-  achievements: zod.array(zod.string()).optional(),
 });
 
 export const UpdateInstructorResponse = zod.object({
@@ -116,11 +96,6 @@ export const UpdateInstructorResponse = zod.object({
   experienceYears: zod.number(),
   rating: zod.number().nullish(),
   isActive: zod.boolean(),
-  instagramUrl: zod.string().nullish(),
-  tiktokUrl: zod.string().nullish(),
-  youtubeUrl: zod.string().nullish(),
-  teachingLevel: zod.string().nullish(),
-  achievements: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 
@@ -904,79 +879,4 @@ export const GetAttendanceStatsResponse = zod.object({
       count: zod.number(),
     }),
   ),
-});
-
-/**
- * @summary List all hero items
- */
-export const ListHeroItemsResponseItem = zod.object({
-  id: zod.number(),
-  imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string(),
-  buttonRoute: zod.string(),
-  sortOrder: zod.number(),
-  isActive: zod.boolean(),
-  createdAt: zod.string(),
-});
-export const ListHeroItemsResponse = zod.array(ListHeroItemsResponseItem);
-
-/**
- * @summary Create hero item
- */
-export const CreateHeroItemBody = zod.object({
-  imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string().optional(),
-  buttonRoute: zod.string().optional(),
-  sortOrder: zod.number().int().optional(),
-  isActive: zod.boolean().optional(),
-});
-
-export const GetHeroItemParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const GetHeroItemResponse = zod.object({
-  id: zod.number(),
-  imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string(),
-  buttonRoute: zod.string(),
-  sortOrder: zod.number(),
-  isActive: zod.boolean(),
-  createdAt: zod.string(),
-});
-
-export const UpdateHeroItemParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const UpdateHeroItemBody = zod.object({
-  imageUrl: zod.string().optional(),
-  tagline: zod.string().nullish(),
-  title: zod.string().optional(),
-  buttonText: zod.string().optional(),
-  buttonRoute: zod.string().optional(),
-  sortOrder: zod.number().int().optional(),
-  isActive: zod.boolean().optional(),
-});
-
-export const UpdateHeroItemResponse = zod.object({
-  id: zod.number(),
-  imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string(),
-  buttonRoute: zod.string(),
-  sortOrder: zod.number(),
-  isActive: zod.boolean(),
-  createdAt: zod.string(),
-});
-
-export const DeleteHeroItemParams = zod.object({
-  id: zod.coerce.number(),
 });
