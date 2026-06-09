@@ -3,11 +3,13 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React from "react";
+import React, { useRef, useState } from "react";
 import {
   Dimensions,
   FlatList,
   Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,13 +20,15 @@ import {
 
 import { useAppContext } from "@/contexts/AppContext";
 import {
-  DANCE_CLASSES,
   INSTRUCTORS,
   getCurrentWeekClasses,
   getInstructor,
   DanceClass,
   Instructor,
 } from "@/data/mockData";
+import { useListHeroItems, useListInstructors, useListSchedules, useListClasses } from "@workspace/api-client-react";
+import type { HeroItem } from "@workspace/api-client-react";
+import { mapApiInstructorToMobile, mapScheduleAndClassToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import NewStudentBanner from "@/components/NewStudentBanner";
 
@@ -39,12 +43,143 @@ const NOTIF_ICON_MAP: Record<string, string> = {
   system: "information-circle",
 };
 
+// ─── Hero Carousel ────────────────────────────────────────────────────────────
+
+const HERO_HEIGHT = 230;
+const HERO_MARGIN = 16;
+const HERO_WIDTH = SCREEN_WIDTH - HERO_MARGIN * 2;
+
+/** Single slide inside the carousel */
+function HeroSlide({ item }: { item: HeroItem }) {
+  return (
+    <View style={styles.heroSlide}>
+      <Image
+        source={{ uri: item.imageUrl }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+      />
+      <LinearGradient
+        colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.52)", "rgba(0,0,0,0.92)"]}
+        locations={[0, 0.45, 1]}
+        style={styles.heroBannerGradient}
+      >
+        {item.tagline ? (
+          <Text style={styles.heroBannerTagline}>{item.tagline.toUpperCase()}</Text>
+        ) : null}
+        <Text style={styles.heroBannerTitle}>{item.title}</Text>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            // buttonRoute is an Expo Router path; push it directly
+            router.push(item.buttonRoute as any);
+          }}
+          style={styles.heroBannerBtn}
+        >
+          <Text style={styles.heroBannerBtnText}>{item.buttonText}</Text>
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
+  );
+}
+
+/** Static fallback shown before any hero items exist in the DB */
+function HeroStaticFallback() {
+  return (
+    <View style={styles.heroBanner}>
+      <Image
+        source={{ uri: "https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80" }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+      />
+      <LinearGradient
+        colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.52)", "rgba(0,0,0,0.92)"]}
+        locations={[0, 0.45, 1]}
+        style={styles.heroBannerGradient}
+      >
+        <Text style={styles.heroBannerTagline}>EGYPT'S TOP DANCE SCHOOL</Text>
+        <Text style={styles.heroBannerTitle}>Explore The Art{"\n"}Of Movement</Text>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/(tabs)/classes");
+          }}
+          style={styles.heroBannerBtn}
+        >
+          <Text style={styles.heroBannerBtnText}>Get Started</Text>
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
+  );
+}
+
+function HeroCarousel() {
+  const { data: allItems } = useListHeroItems();
+  const items = (allItems ?? []).filter((i) => i.isActive);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / HERO_WIDTH);
+    setActiveIndex(idx);
+  };
+
+  // No live slides yet → show static fallback so home screen always looks good
+  if (!items.length) {
+    return <HeroStaticFallback />;
+  }
+
+  // Single slide → no need for a FlatList / dots
+  if (items.length === 1) {
+    return (
+      <View style={styles.heroBanner}>
+        <HeroSlide item={items[0]} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.heroBanner}>
+      <FlatList
+        data={items}
+        keyExtractor={(i) => String(i.id)}
+        renderItem={({ item }) => <HeroSlide item={item} />}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={onScroll}
+        snapToInterval={HERO_WIDTH}
+        decelerationRate="fast"
+        bounces={false}
+        style={{ borderRadius: 20 }}
+      />
+      {/* Pagination dots */}
+      <View style={styles.heroDots}>
+        {items.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.heroDot,
+              i === activeIndex
+                ? { backgroundColor: "#FFFFFF", width: 16 }
+                : { backgroundColor: "rgba(255,255,255,0.4)", width: 6 },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function InstructorCard({ instructor }: { instructor: Instructor }) {
   return (
     <TouchableOpacity
       style={styles.instructorCard}
       activeOpacity={0.85}
-      onPress={() => router.push("/(tabs)/classes")}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } });
+      }}
     >
       {instructor.photoUrl ? (
         <Image
@@ -78,7 +213,7 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
             </Text>
           </View>
           <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/(tabs)/classes"); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } }); }}
             style={[styles.instructorPlusBtn, { borderColor: instructor.photoColor + "80" }]}
           >
             <Ionicons name="add" size={14} color={instructor.photoColor} />
@@ -89,9 +224,14 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
   );
 }
 
-function ClassListCard({ item }: { item: DanceClass }) {
-  const instructor = getInstructor(item.instructorId);
-  const cat = DANCE_CLASSES.find((c) => c.categoryId === item.categoryId);
+function ClassListCard({
+  item,
+  instructorMap,
+}: {
+  item: DanceClass;
+  instructorMap?: Map<string, Instructor>;
+}) {
+  const instructor = instructorMap?.get(item.instructorId) ?? getInstructor(item.instructorId);
   const available = item.capacity - item.bookedCount;
 
   const today = new Date().toISOString().slice(0, 10);
@@ -208,7 +348,66 @@ export default function StudioHomeScreen() {
   const showNewStudentBanner = bookings.length === 0 && !newStudentBannerDismissed;
   const insets = useSafeAreaInsets();
 
-  const weekClasses = getCurrentWeekClasses();
+  // Live instructors — fall back to mock data while loading so the section is never empty
+  const { data: apiInstructors } = useListInstructors();
+  const instructors = apiInstructors?.length
+    ? apiInstructors.filter((i) => i.isActive).map(mapApiInstructorToMobile)
+    : INSTRUCTORS;
+
+  // Instructor lookup map keyed by string ID (works for both "i1" mock and "1" API ids)
+  const instructorMap = React.useMemo(() => {
+    const m = new Map<string, Instructor>();
+    instructors.forEach((i) => m.set(i.id, i));
+    return m;
+  }, [instructors]);
+
+  // Live upcoming classes — join schedules + classes for the current Egyptian week
+  const { data: apiSchedules } = useListSchedules();
+  const { data: apiClasses } = useListClasses();
+
+  const weekClasses = React.useMemo<DanceClass[]>(() => {
+    if (!apiSchedules?.length || !apiClasses?.length) {
+      // Fall back to mock data while the API is loading
+      return getCurrentWeekClasses();
+    }
+
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    // Egyptian week: Saturday → Thursday
+    const dayOfWeek = today.getDay();
+    const daysSinceSat = (dayOfWeek + 1) % 7;
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - daysSinceSat);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const thursdayDate = new Date(weekStart);
+    thursdayDate.setDate(weekStart.getDate() + 5);
+    const thuStr = thursdayDate.toISOString().slice(0, 10);
+
+    const classMap = new Map(apiClasses.map((c) => [c.id, c]));
+
+    const result: DanceClass[] = [];
+    for (const sched of apiSchedules) {
+      const cls = classMap.get(sched.classId);
+      if (!cls || !cls.isActive) continue;
+
+      const mapped = mapScheduleAndClassToMobile(sched, cls, weekStart);
+      if (mapped.isBallet) continue;
+      if (mapped.date < todayStr || mapped.date > thuStr) continue;
+
+      // Deduplicate: only one entry per class per day
+      const key = `${mapped.id}-${mapped.date}`;
+      if (!result.some((r) => `${r.id}-${r.date}` === key)) {
+        result.push(mapped);
+      }
+    }
+
+    return result.sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.startTime.localeCompare(b.startTime);
+    });
+  }, [apiSchedules, apiClasses]);
 
   return (
     <View style={styles.container}>
@@ -243,30 +442,7 @@ export default function StudioHomeScreen() {
       >
         {showNewStudentBanner && <NewStudentBanner onDismiss={dismissNewStudentBanner} />}
 
-        <View style={styles.heroBanner}>
-          <Image
-            source={{ uri: "https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80" }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.52)", "rgba(0,0,0,0.92)"]}
-            locations={[0, 0.45, 1]}
-            style={styles.heroBannerGradient}
-          >
-            <Text style={styles.heroBannerTagline}>Egypt's Top Dance School</Text>
-            <Text style={styles.heroBannerTitle}>Explore The Art{"\n"}Of Movement</Text>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push("/(tabs)/classes");
-              }}
-              style={styles.heroBannerBtn}
-            >
-              <Text style={styles.heroBannerBtnText}>Get Started</Text>
-            </TouchableOpacity>
-          </LinearGradient>
-        </View>
+        <HeroCarousel />
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -276,7 +452,7 @@ export default function StudioHomeScreen() {
             </TouchableOpacity>
           </View>
           <FlatList
-            data={INSTRUCTORS}
+            data={instructors}
             keyExtractor={(i) => i.id}
             renderItem={({ item }) => <InstructorCard instructor={item} />}
             horizontal
@@ -305,7 +481,7 @@ export default function StudioHomeScreen() {
           ) : (
             <View style={{ paddingHorizontal: 20, gap: 12 }}>
               {weekClasses.map((cls) => (
-                <ClassListCard key={cls.id} item={cls} />
+                <ClassListCard key={`${cls.id}-${cls.date}`} item={cls} instructorMap={instructorMap} />
               ))}
             </View>
           )}
@@ -372,7 +548,13 @@ const styles = StyleSheet.create({
   notifBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#FFF" },
   scroll: { paddingTop: 40 },
 
-  heroBanner: { marginHorizontal: 16, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: 230 },
+  heroBanner: { marginHorizontal: HERO_MARGIN, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: HERO_HEIGHT },
+  heroSlide: { width: HERO_WIDTH, height: HERO_HEIGHT },
+  heroDots: {
+    position: "absolute", bottom: 10, left: 0, right: 0,
+    flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 5,
+  },
+  heroDot: { height: 6, borderRadius: 3 },
   heroBannerGradient: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "flex-end",

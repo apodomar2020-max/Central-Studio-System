@@ -60,6 +60,9 @@ import type {
   UpdatePricePackageBody,
   UpdateScheduleBody,
   UpdateStudentBody,
+  HeroItem,
+  CreateHeroItemBody,
+  UpdateHeroItemBody,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -4637,3 +4640,200 @@ export function useGetAttendanceStats<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+// ─── Hero Items ───────────────────────────────────────────────────────────────
+
+/**
+ * @summary List all hero items (active only, ordered by sortOrder)
+ */
+export const getListHeroItemsUrl = () => `/api/hero-items`;
+
+export const listHeroItems = async (
+  options?: RequestInit,
+): Promise<HeroItem[]> => {
+  return customFetch<HeroItem[]>(getListHeroItemsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListHeroItemsQueryKey = () =>
+  [`/api/hero-items`] as const;
+
+export const getListHeroItemsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listHeroItems>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listHeroItems>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getListHeroItemsQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listHeroItems>>> = ({
+    signal,
+  }) => listHeroItems({ signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listHeroItems>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListHeroItemsQueryResult = NonNullable<Awaited<ReturnType<typeof listHeroItems>>>;
+export type ListHeroItemsQueryError = ErrorType<unknown>;
+
+export function useListHeroItems<
+  TData = Awaited<ReturnType<typeof listHeroItems>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listHeroItems>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListHeroItemsQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create hero item
+ */
+export const getCreateHeroItemUrl = () => `/api/hero-items`;
+
+export const createHeroItem = async (
+  createHeroItemBody: BodyType<CreateHeroItemBody>,
+  options?: SecondParameter<typeof customFetch>,
+): Promise<HeroItem> => {
+  return customFetch<HeroItem>(getCreateHeroItemUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createHeroItemBody),
+  });
+};
+
+export type CreateHeroItemMutationResult = NonNullable<Awaited<ReturnType<typeof createHeroItem>>>;
+export type CreateHeroItemMutationBody = BodyType<CreateHeroItemBody>;
+export type CreateHeroItemMutationError = ErrorType<unknown>;
+
+export const useCreateHeroItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createHeroItem>>,
+    TError,
+    { data: BodyType<CreateHeroItemBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createHeroItem>>,
+  TError,
+  { data: BodyType<CreateHeroItemBody> },
+  TContext
+> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createHeroItem>>,
+    { data: BodyType<CreateHeroItemBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+    return createHeroItem(data, requestOptions);
+  };
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+/**
+ * @summary Update hero item
+ */
+export const getUpdateHeroItemUrl = (id: number) => `/api/hero-items/${id}`;
+
+export const updateHeroItem = async (
+  id: number,
+  updateHeroItemBody: BodyType<UpdateHeroItemBody>,
+  options?: SecondParameter<typeof customFetch>,
+): Promise<HeroItem> => {
+  return customFetch<HeroItem>(getUpdateHeroItemUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateHeroItemBody),
+  });
+};
+
+export type UpdateHeroItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateHeroItem>>>;
+export type UpdateHeroItemMutationError = ErrorType<unknown>;
+
+export const useUpdateHeroItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateHeroItem>>,
+    TError,
+    { id: number; data: BodyType<UpdateHeroItemBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateHeroItem>>,
+  TError,
+  { id: number; data: BodyType<UpdateHeroItemBody> },
+  TContext
+> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateHeroItem>>,
+    { id: number; data: BodyType<UpdateHeroItemBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+    return updateHeroItem(id, data, requestOptions);
+  };
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+/**
+ * @summary Delete hero item
+ */
+export const getDeleteHeroItemUrl = (id: number) => `/api/hero-items/${id}`;
+
+export const deleteHeroItem = async (
+  id: number,
+  options?: SecondParameter<typeof customFetch>,
+): Promise<void> => {
+  return customFetch<void>(getDeleteHeroItemUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export type DeleteHeroItemMutationResult = NonNullable<Awaited<ReturnType<typeof deleteHeroItem>>>;
+export type DeleteHeroItemMutationError = ErrorType<unknown>;
+
+export const useDeleteHeroItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteHeroItem>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteHeroItem>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteHeroItem>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+    return deleteHeroItem(id, requestOptions);
+  };
+  return useMutation({ mutationFn, ...mutationOptions });
+};

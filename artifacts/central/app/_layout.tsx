@@ -51,6 +51,7 @@ function RootLayoutNav() {
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen name="class/[id]" options={{ animation: "slide_from_right" }} />
+      <Stack.Screen name="instructor/[id]" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="booking/flow" options={{ animation: "slide_from_right" }} />
       <Stack.Screen
         name="booking/confirmation"
