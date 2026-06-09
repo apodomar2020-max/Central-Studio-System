@@ -36,6 +36,15 @@ export interface Instructor {
   /** @nullable */
   rating?: number | null;
   isActive: boolean;
+  /** @nullable */
+  instagramUrl?: string | null;
+  /** @nullable */
+  tiktokUrl?: string | null;
+  /** @nullable */
+  youtubeUrl?: string | null;
+  /** @nullable */
+  teachingLevel?: string | null;
+  achievements: string[];
   createdAt: string;
 }
 
@@ -50,6 +59,15 @@ export interface CreateInstructorBody {
   /** @nullable */
   rating?: number | null;
   isActive?: boolean;
+  /** @nullable */
+  instagramUrl?: string | null;
+  /** @nullable */
+  tiktokUrl?: string | null;
+  /** @nullable */
+  youtubeUrl?: string | null;
+  /** @nullable */
+  teachingLevel?: string | null;
+  achievements?: string[];
 }
 
 export interface UpdateInstructorBody {
@@ -63,6 +81,15 @@ export interface UpdateInstructorBody {
   /** @nullable */
   rating?: number | null;
   isActive?: boolean;
+  /** @nullable */
+  instagramUrl?: string | null;
+  /** @nullable */
+  tiktokUrl?: string | null;
+  /** @nullable */
+  youtubeUrl?: string | null;
+  /** @nullable */
+  teachingLevel?: string | null;
+  achievements?: string[];
 }
 
 export interface Class {
@@ -521,3 +548,38 @@ export type ListAttendanceParams = {
 export type GetAttendanceStatsParams = {
   period?: string;
 };
+
+export interface HeroItem {
+  id: number;
+  imageUrl: string;
+  /** @nullable */
+  tagline?: string | null;
+  title: string;
+  buttonText: string;
+  buttonRoute: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateHeroItemBody {
+  imageUrl: string;
+  /** @nullable */
+  tagline?: string | null;
+  title: string;
+  buttonText?: string;
+  buttonRoute?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateHeroItemBody {
+  imageUrl?: string;
+  /** @nullable */
+  tagline?: string | null;
+  title?: string;
+  buttonText?: string;
+  buttonRoute?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}

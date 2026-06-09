@@ -11,6 +11,13 @@ export const instructorsTable = pgTable("instructors", {
   experienceYears: integer("experience_years").notNull().default(0),
   rating: real("rating"),
   isActive: boolean("is_active").notNull().default(true),
+  // Social media links
+  instagramUrl: text("instagram_url"),
+  tiktokUrl: text("tiktok_url"),
+  youtubeUrl: text("youtube_url"),
+  // Profile extras
+  teachingLevel: text("teaching_level"), // e.g. "All Levels", "Beginner", "Advanced"
+  achievements: text("achievements").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 });
