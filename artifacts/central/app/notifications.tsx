@@ -1,10 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useState } from "react";
+import React from "react";
 import {
-  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -12,57 +10,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useListNotifications } from "@workspace/api-client-react";
-import type { Notification as ApiNotification } from "@workspace/api-client-react";
 
 import { useAppContext } from "@/contexts/AppContext";
+import { NOTIFICATIONS, AppNotification } from "@/data/mockData";
 import colors from "@/constants/colors";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type NotifType = "booking" | "class_reminder" | "package" | "ballet" | "offer" | "system";
-
-interface DisplayNotif {
-  id: string;
-  title: string;
-  body: string;
-  type: NotifType;
-  isRead: boolean;
-  createdAt: string;
-  /** "local" = generated in-app (AppContext); "api" = admin broadcast */
-  source: "local" | "api";
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function timeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(isoDate).toLocaleDateString("en-EG", { month: "short", day: "numeric" });
-}
-
-/** Best-effort type inference from notification title/body for API broadcasts */
-function inferType(n: ApiNotification): NotifType {
-  const text = (n.title + " " + n.body).toLowerCase();
-  if (text.includes("book") || text.includes("reserv")) return "booking";
-  if (text.includes("class") || text.includes("reminder")) return "class_reminder";
-  if (text.includes("package") || text.includes("credit")) return "package";
-  if (text.includes("ballet")) return "ballet";
-  if (text.includes("offer") || text.includes("discount") || text.includes("%")) return "offer";
-  return "system";
-}
-
-const READ_KEY = "api_notif_read_ids";
-
-// ─── Icon/colour maps ─────────────────────────────────────────────────────────
-
-const TYPE_ICONS: Record<NotifType, string> = {
+const TYPE_ICONS: Record<string, string> = {
   booking: "calendar",
   class_reminder: "time",
   package: "card",
@@ -71,7 +24,7 @@ const TYPE_ICONS: Record<NotifType, string> = {
   system: "information-circle",
 };
 
-const TYPE_COLORS: Record<NotifType, string> = {
+const TYPE_COLORS: Record<string, string> = {
   booking: colors.studio.primary,
   class_reminder: "#F59E0B",
   package: "#22C55E",
@@ -80,15 +33,7 @@ const TYPE_COLORS: Record<NotifType, string> = {
   system: "#6B7280",
 };
 
-// ─── NotifItem ────────────────────────────────────────────────────────────────
-
-function NotifItem({
-  notif,
-  onPress,
-}: {
-  notif: DisplayNotif;
-  onPress: (n: DisplayNotif) => void;
-}) {
+function NotifItem({ notif }: { notif: AppNotification }) {
   const iconName = TYPE_ICONS[notif.type] ?? "notifications";
   const iconColor = TYPE_COLORS[notif.type] ?? "#9CA3AF";
 
@@ -96,7 +41,6 @@ function NotifItem({
     <TouchableOpacity
       style={[styles.notifCard, !notif.isRead && styles.notifCardUnread]}
       activeOpacity={0.8}
-      onPress={() => onPress(notif)}
     >
       {!notif.isRead && <View style={[styles.unreadDot, { backgroundColor: colors.studio.primary }]} />}
       <View style={[styles.notifIconWrap, { backgroundColor: iconColor + "20" }]}>
@@ -105,7 +49,7 @@ function NotifItem({
       <View style={styles.notifContent}>
         <View style={styles.notifTopRow}>
           <Text style={styles.notifTitle} numberOfLines={1}>{notif.title}</Text>
-          <Text style={styles.notifTime}>{timeAgo(notif.createdAt)}</Text>
+          <Text style={styles.notifTime}>{notif.timeAgo}</Text>
         </View>
         <Text style={styles.notifBody} numberOfLines={3}>{notif.body}</Text>
       </View>
@@ -113,77 +57,13 @@ function NotifItem({
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
-  const { notifications: localNotifs, markNotificationRead } = useAppContext();
+  const { unreadNotifications } = useAppContext();
 
-  // API broadcast notifications
-  const { data: apiNotifs, isLoading } = useListNotifications();
-
-  // Locally-persisted set of read API notification IDs
-  const [apiReadIds, setApiReadIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    AsyncStorage.getItem(READ_KEY).then((raw) => {
-      if (raw) {
-        try { setApiReadIds(new Set(JSON.parse(raw))); } catch {}
-      }
-    });
-  }, []);
-
-  const markApiRead = useCallback(async (id: string) => {
-    setApiReadIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      AsyncStorage.setItem(READ_KEY, JSON.stringify([...next]));
-      return next;
-    });
-  }, []);
-
-  // Build merged, sorted notification list
-  const all: DisplayNotif[] = React.useMemo(() => {
-    const apiItems: DisplayNotif[] = (apiNotifs ?? [])
-      .filter((n) => !n.isDraft)
-      .map((n) => ({
-        id: `api-${n.id}`,
-        title: n.title,
-        body: n.body,
-        type: inferType(n),
-        isRead: apiReadIds.has(`api-${n.id}`),
-        createdAt: n.sentAt ?? n.createdAt,
-        source: "api" as const,
-      }));
-
-    const localItems: DisplayNotif[] = localNotifs.map((n) => ({
-      id: n.id,
-      title: n.title,
-      body: n.body,
-      type: n.type,
-      isRead: n.isRead,
-      createdAt: n.createdAt,
-      source: "local" as const,
-    }));
-
-    // Merge and sort newest first
-    return [...apiItems, ...localItems].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  }, [apiNotifs, apiReadIds, localNotifs]);
-
+  const all = NOTIFICATIONS;
   const unread = all.filter((n) => !n.isRead);
   const read = all.filter((n) => n.isRead);
-  const unreadCount = unread.length;
-
-  const handlePress = useCallback((notif: DisplayNotif) => {
-    if (notif.isRead) return;
-    if (notif.source === "api") {
-      markApiRead(notif.id);
-    } else {
-      markNotificationRead(notif.id);
-    }
-  }, [markApiRead, markNotificationRead]);
 
   return (
     <View style={styles.container}>
@@ -193,58 +73,44 @@ export default function NotificationsScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         <View style={styles.headerRight}>
-          {unreadCount > 0 && (
+          {unreadNotifications > 0 && (
             <View style={[styles.countBadge, { backgroundColor: colors.studio.primary + "20" }]}>
-              <Text style={[styles.countText, { color: colors.studio.primary }]}>{unreadCount} new</Text>
+              <Text style={[styles.countText, { color: colors.studio.primary }]}>{unreadNotifications} new</Text>
             </View>
           )}
         </View>
       </View>
 
-      {isLoading && all.length === 0 ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={colors.studio.primary} />
-        </View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 60 : 40 }]}
-        >
-          {all.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="notifications-off-outline" size={48} color="#4B5563" />
-              <Text style={styles.emptyTitle}>No notifications yet</Text>
-              <Text style={styles.emptyDesc}>
-                You'll be notified about bookings, class reminders, and special offers here.
-              </Text>
-            </View>
-          ) : (
-            <>
-              {unread.length > 0 && (
-                <View style={styles.group}>
-                  <Text style={styles.groupLabel}>New</Text>
-                  {unread.map((n) => (
-                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
-                  ))}
-                </View>
-              )}
-              {read.length > 0 && (
-                <View style={styles.group}>
-                  <Text style={styles.groupLabel}>Earlier</Text>
-                  {read.map((n) => (
-                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
-                  ))}
-                </View>
-              )}
-            </>
-          )}
-        </ScrollView>
-      )}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 60 : 40 }]}
+      >
+        {all.length === 0 ? (
+          <View style={styles.empty}>
+            <Ionicons name="notifications-off-outline" size={48} color="#4B5563" />
+            <Text style={styles.emptyTitle}>No notifications yet</Text>
+            <Text style={styles.emptyDesc}>You'll be notified about bookings, class reminders, and special offers here.</Text>
+          </View>
+        ) : (
+          <>
+            {unread.length > 0 && (
+              <View style={styles.group}>
+                <Text style={styles.groupLabel}>New</Text>
+                {unread.map((n) => <NotifItem key={n.id} notif={n} />)}
+              </View>
+            )}
+            {read.length > 0 && (
+              <View style={styles.group}>
+                <Text style={styles.groupLabel}>Earlier</Text>
+                {read.map((n) => <NotifItem key={n.id} notif={n} />)}
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
     </View>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.studio.background },
@@ -261,16 +127,12 @@ const styles = StyleSheet.create({
   headerRight: { width: 60, alignItems: "flex-end" },
   countBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   countText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
   empty: { alignItems: "center", paddingTop: 80, gap: 12 },
   emptyTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   emptyDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
   group: { marginBottom: 24, gap: 8 },
-  groupLabel: {
-    fontSize: 12, fontFamily: "Inter_700Bold", color: "#6B7280",
-    letterSpacing: 1, textTransform: "uppercase", marginBottom: 4,
-  },
+  groupLabel: { fontSize: 12, fontFamily: "Inter_700Bold", color: "#6B7280", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 },
   notifCard: {
     flexDirection: "row", alignItems: "flex-start", gap: 12,
     backgroundColor: "#0E1619", borderRadius: 14, borderWidth: 1,

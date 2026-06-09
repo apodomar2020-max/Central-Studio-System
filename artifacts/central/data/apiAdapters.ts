@@ -10,6 +10,7 @@
 import type {
   Class as ApiClass,
   Instructor as ApiInstructor,
+  Schedule as ApiSchedule,
 } from "@workspace/api-client-react";
 
 import { DANCE_CATEGORIES, type AgeGroup, type DanceClass, type Instructor } from "./mockData";
@@ -70,6 +71,64 @@ export function mapApiInstructorToMobile(api: ApiInstructor): Instructor {
     photoColor: colorForId(api.id),
     initials: initialsFromName(api.name),
     photoUrl: api.photoUrl ?? undefined,
+  };
+}
+
+/** "18:00" → "6:00 PM", "09:30" → "9:30 AM" */
+function formatTime(timeStr: string): string {
+  const [hoursStr = "0", minsStr = "00"] = timeStr.split(":");
+  const hours = parseInt(hoursStr, 10);
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const h = hours % 12 || 12;
+  return `${h}:${minsStr} ${ampm}`;
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * Given a recurring schedule + its class and the Saturday that starts the
+ * Egyptian work week, produce a DanceClass the home-screen can display.
+ *
+ * The returned `id` is the API class ID (as a string), which is what the
+ * booking flow and class-detail screen expect.
+ */
+export function mapScheduleAndClassToMobile(
+  schedule: ApiSchedule,
+  cls: ApiClass,
+  weekStart: Date, // the Saturday of the current Egyptian week
+): DanceClass {
+  // Map dayOfWeek (0=Sun…6=Sat) to an offset from Saturday
+  // Sat=0, Sun=1, Mon=2, Tue=3, Wed=4, Thu=5, Fri=6
+  const offset = (schedule.dayOfWeek - 6 + 7) % 7;
+  const dateObj = new Date(weekStart);
+  dateObj.setDate(weekStart.getDate() + offset);
+  const dateStr = dateObj.toISOString().slice(0, 10);
+
+  const category = findCategoryByName(cls.category);
+
+  return {
+    id: String(cls.id),
+    categoryId: category?.id ?? cls.category,
+    categoryName: cls.category,
+    instructorId: cls.instructorId != null ? String(cls.instructorId) : "",
+    title: cls.title,
+    description: cls.description ?? "",
+    date: dateStr,
+    dayOfWeek: DAY_NAMES[schedule.dayOfWeek] ?? "",
+    startTime: formatTime(schedule.startTime),
+    endTime: formatTime(schedule.endTime),
+    duration: `${cls.durationMins} min`,
+    location: schedule.location ?? "Central Studio, Zamalek",
+    room: "",
+    price: 0, // price not exposed on the schedules API yet
+    capacity: cls.capacity,
+    bookedCount: 0, // booking counts not aggregated on the API yet
+    level: coerceLevel(cls.level),
+    ageGroup: "Adults" as AgeGroup,
+    status: "available" as const,
+    policy: "",
+    featured: false,
+    isBallet: category?.isBallet ?? false,
   };
 }
 
