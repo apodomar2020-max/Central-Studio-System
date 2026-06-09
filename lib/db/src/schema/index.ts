@@ -9,4 +9,3 @@ export * from "./notifications";
 export * from "./marketingCampaigns";
 export * from "./packageOrders";
 export * from "./attendance";
-export * from "./heroItems";

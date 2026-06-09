@@ -18,7 +18,6 @@ import Notifications from "@/pages/notifications";
 import Marketing from "@/pages/marketing";
 import PackageOrders from "@/pages/package-orders";
 import AttendancePage from "@/pages/attendance";
-import HeroItems from "@/pages/hero-items";
 
 // Wire the API client to the backend.
 // In development, Vite proxies /api to the api-server so no base URL is needed.
@@ -62,7 +61,6 @@ function Router() {
       <Route path="/marketing" component={Marketing} />
       <Route path="/package-orders" component={PackageOrders} />
       <Route path="/attendance" component={AttendancePage} />
-      <Route path="/hero-items" component={HeroItems} />
       <Route component={NotFound} />
     </Switch>
   );

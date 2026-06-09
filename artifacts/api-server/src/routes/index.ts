@@ -14,7 +14,6 @@ import marketingRouter from "./marketing";
 import analyticsRouter from "./analytics";
 import packageOrdersRouter from "./packageOrders";
 import attendanceRouter from "./attendance";
-import heroItemsRouter from "./heroItems";
 
 const router: IRouter = Router();
 
@@ -33,6 +32,5 @@ router.use(notificationsRouter);
 router.use(marketingRouter);
 router.use(attendanceRouter);
 router.use(packageOrdersRouter);
-router.use(heroItemsRouter);
 
 export default router;

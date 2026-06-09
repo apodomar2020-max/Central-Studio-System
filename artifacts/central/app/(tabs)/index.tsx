@@ -27,8 +27,9 @@ import {
   DanceClass,
   Instructor,
 } from "@/data/mockData";
-import { useListHeroItems } from "@workspace/api-client-react";
+import { useListHeroItems, useListInstructors } from "@workspace/api-client-react";
 import type { HeroItem } from "@workspace/api-client-react";
+import { mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import NewStudentBanner from "@/components/NewStudentBanner";
 
@@ -176,7 +177,10 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
     <TouchableOpacity
       style={styles.instructorCard}
       activeOpacity={0.85}
-      onPress={() => router.push("/(tabs)/classes")}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } });
+      }}
     >
       {instructor.photoUrl ? (
         <Image
@@ -210,7 +214,7 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
             </Text>
           </View>
           <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/(tabs)/classes"); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } }); }}
             style={[styles.instructorPlusBtn, { borderColor: instructor.photoColor + "80" }]}
           >
             <Ionicons name="add" size={14} color={instructor.photoColor} />
@@ -342,6 +346,12 @@ export default function StudioHomeScreen() {
 
   const weekClasses = getCurrentWeekClasses();
 
+  // Live instructors — fall back to mock data while loading so the section is never empty
+  const { data: apiInstructors } = useListInstructors();
+  const instructors = apiInstructors?.length
+    ? apiInstructors.filter((i) => i.isActive).map(mapApiInstructorToMobile)
+    : INSTRUCTORS;
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 40 : insets.top + 40 }]}>
@@ -385,7 +395,7 @@ export default function StudioHomeScreen() {
             </TouchableOpacity>
           </View>
           <FlatList
-            data={INSTRUCTORS}
+            data={instructors}
             keyExtractor={(i) => i.id}
             renderItem={({ item }) => <InstructorCard instructor={item} />}
             horizontal
