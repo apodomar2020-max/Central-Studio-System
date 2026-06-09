@@ -89,10 +89,14 @@ export default function HeroItems() {
       ...values,
       tagline: values.tagline || null,
     };
+    const onError = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Failed to save: ${msg}`);
+    };
     if (editing) {
-      updateItem.mutate({ id: editing.id, data }, { onSuccess: invalidate });
+      updateItem.mutate({ id: editing.id, data }, { onSuccess: invalidate, onError });
     } else {
-      createItem.mutate({ data }, { onSuccess: invalidate });
+      createItem.mutate({ data }, { onSuccess: invalidate, onError });
     }
   };
 
