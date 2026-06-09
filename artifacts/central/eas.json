@@ -22,7 +22,9 @@
       },
       "channel": "preview",
       "env": {
-        "EXPO_NO_FROZEN_LOCKFILE": "1"
+        "EXPO_NO_FROZEN_LOCKFILE": "1",
+        "EXPO_PUBLIC_API_URL": "https://supportive-magic-production-b800.up.railway.app",
+        "EXPO_PUBLIC_API_KEY": "34c0dbe7c8891faaa734dcd2fdf1c7592b890f8f75988ab5e863b155f0d97665"
       }
     },
     "production": {
@@ -33,7 +35,9 @@
       "ios": {},
       "channel": "production",
       "env": {
-        "EXPO_NO_FROZEN_LOCKFILE": "1"
+        "EXPO_NO_FROZEN_LOCKFILE": "1",
+        "EXPO_PUBLIC_API_URL": "https://supportive-magic-production-b800.up.railway.app",
+        "EXPO_PUBLIC_API_KEY": "34c0dbe7c8891faaa734dcd2fdf1c7592b890f8f75988ab5e863b155f0d97665"
       }
     }
   },
