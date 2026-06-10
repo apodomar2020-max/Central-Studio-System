@@ -285,7 +285,7 @@ router.get("/admin/roles", requireAdminAuth, async (_req, res): Promise<void> =>
 // ─── POST /api/admin/roles ────────────────────────────────────────────────────
 const CreateRoleBody = z.object({
   name: z.string().min(2),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   permissions: z.record(z.object({
     view: z.boolean().default(false),
     create: z.boolean().default(false),

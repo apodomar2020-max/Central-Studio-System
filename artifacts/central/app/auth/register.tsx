@@ -94,7 +94,7 @@ export default function RegisterScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
       <TouchableOpacity
-        onPress={() => router.back()}
+        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)/"); }}
         style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
       >
         <Ionicons name="close" size={22} color="#9CA3AF" />
