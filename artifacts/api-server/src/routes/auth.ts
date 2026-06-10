@@ -1,19 +1,32 @@
 /**
  * Authentication routes — /api/auth/*
  *
- * These routes are still protected by the API key middleware (the shared app
- * secret baked into the APK), but they additionally handle user-level
- * credentials (email + password) for registration and login.
- *
- * POST /api/auth/register  — create a new student account
- * POST /api/auth/login     — verify credentials, return student data
+ * POST /api/auth/register          — create a new student account
+ * POST /api/auth/login             — verify credentials, return student data
+ * POST /api/auth/forgot-password   — send OTP code to email for password reset
+ * POST /api/auth/reset-password    — verify OTP and set a new password
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { db, studentsTable } from "@workspace/db";
+import { db, studentsTable, emailOtpsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+
+const OTP_TTL_SECONDS = 600; // 10 minutes
+
+function generateOtp(): string {
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
+}
+
+async function sendPasswordResetEmail(to: string, code: string): Promise<void> {
+  if (process.env["NODE_ENV"] !== "production") {
+    logger.info({ to, code }, "DEV MODE — Password reset OTP (not sent via email)");
+    return;
+  }
+  // TODO: replace with real email provider (Resend, SendGrid, Nodemailer, etc.)
+  logger.warn({ to }, "Email provider not configured — password reset OTP not sent");
+}
 
 const router: IRouter = Router();
 
@@ -120,6 +133,99 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       joinedAt: student.joinedAt,
     },
   });
+});
+
+// ─── POST /api/auth/forgot-password ──────────────────────────────────────────
+const ForgotPasswordBody = z.object({
+  email: z.string().email("Invalid email address"),
+});
+
+router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+  const parsed = ForgotPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+
+  const { email } = parsed.data;
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const [student] = await db
+    .select({ id: studentsTable.id, email: studentsTable.email })
+    .from(studentsTable)
+    .where(eq(studentsTable.email, normalizedEmail));
+
+  // Always respond success to avoid leaking whether an email exists
+  if (!student) {
+    res.json({ ok: true });
+    return;
+  }
+
+  const code = generateOtp();
+  const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
+
+  await db.insert(emailOtpsTable).values({
+    studentId: student.id,
+    email: normalizedEmail,
+    code,
+    expiresAt,
+  });
+
+  await sendPasswordResetEmail(normalizedEmail, code);
+
+  logger.info({ studentId: student.id }, "Password reset OTP generated");
+
+  // Return studentId so the client can submit the reset form
+  res.json({ ok: true, studentId: student.id });
+});
+
+// ─── POST /api/auth/reset-password ───────────────────────────────────────────
+const ResetPasswordBody = z.object({
+  studentId: z.coerce.number().int().positive(),
+  code: z.string().length(6, "Code must be exactly 6 digits"),
+  newPassword: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+router.post("/auth/reset-password", async (req, res): Promise<void> => {
+  const parsed = ResetPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+
+  const { studentId, code, newPassword } = parsed.data;
+  const now = new Date().toISOString();
+
+  // Find latest valid (unused, unexpired) OTP for this student
+  const [otp] = await db
+    .select()
+    .from(emailOtpsTable)
+    .where(
+      and(
+        eq(emailOtpsTable.studentId, studentId),
+        eq(emailOtpsTable.code, code),
+        isNull(emailOtpsTable.usedAt),
+        gt(emailOtpsTable.expiresAt, now),
+      )
+    )
+    .limit(1);
+
+  if (!otp) {
+    res.status(400).json({ error: "Invalid or expired code. Please request a new one." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+
+  // Mark OTP as used
+  await db.update(emailOtpsTable).set({ usedAt: now }).where(eq(emailOtpsTable.id, otp.id));
+
+  // Update password
+  await db.update(studentsTable).set({ passwordHash }).where(eq(studentsTable.id, studentId));
+
+  logger.info({ studentId }, "Password reset successfully");
+
+  res.json({ ok: true });
 });
 
 export default router;

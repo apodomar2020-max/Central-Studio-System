@@ -50,6 +50,14 @@ function RootLayoutNav() {
         name="auth/register"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
+      <Stack.Screen
+        name="auth/forgot-password"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="auth/reset-password"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
       <Stack.Screen name="class/[id]" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="instructor/[id]" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="booking/flow" options={{ animation: "slide_from_right" }} />
