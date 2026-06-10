@@ -57,6 +57,10 @@ function ProtectedRouter() {
   return (
     <Layout>
       <Switch>
+        {/* Authenticated user landing on /login → redirect to dashboard */}
+        <Route path="/login">
+          <Redirect to="/" />
+        </Route>
         <Route path="/" component={Dashboard} />
         <Route path="/instructors" component={Instructors} />
         <Route path="/classes" component={Classes} />
