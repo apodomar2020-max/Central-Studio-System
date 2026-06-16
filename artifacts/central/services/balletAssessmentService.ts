@@ -4,34 +4,28 @@
  * ─── What lives here and why ──────────────────────────────────────────────────
  *
  * STATIC CONFIG  (defined in code — these are programme definitions)
- *   BALLET_LEVELS   — the progression of levels offered by the studio.
+ *   BALLET_LEVELS   — the level progression offered by the studio.
  *                     Changes only when the studio restructures its curriculum.
- *                     No user-specific or session-specific state.
- *   BALLET_PRICING  — monthly pricing per level tier.
- *                     Same rationale: studio-wide config, not live availability.
+ *   BALLET_PRICING  — offline fallback pricing for display while settings load.
+ *                     The live source of truth is GET /api/ballet/settings.
  *
- * DYNAMIC DATA  (must come from the backend)
- *   fetchAssessmentSlots() — real-time slot availability.
- *     Slot availability (capacity, booked counts) changes as parents book.
- *     Hardcoding these is dangerous: a parent could "select" a slot that is
- *     already full or no longer scheduled.
+ * DYNAMIC DATA  (always fetched from the backend)
+ *   fetchBalletSettings()   — admin-managed pricing + assessment instructions.
+ *   fetchAssessmentSlots()  — real-time slot availability with live capacity.
  *
  * ─── Production rule ──────────────────────────────────────────────────────────
  *
- * fetchAssessmentSlots() NEVER falls back to static/mock data.
- * If the endpoint is not available, the screen must show an appropriate state
- * (offline, error, or "coming soon") — not phantom slots.
+ * Both fetch functions NEVER fall back to static/mock data.
+ * If the endpoint is not available the screen renders an appropriate state
+ * (offline, error) — never phantom pricing or phantom slots.
  *
- * ─── Backend TODO ─────────────────────────────────────────────────────────────
- *
- * The endpoint GET /api/ballet/assessment-slots does not yet exist.
- * When implementing it:
- *   • Return AssessmentSlot[] with live capacity data.
- *   • Only return future slots (filter by date server-side).
- *   • Require student JWT authentication.
- *   • Once live: remove the `throw` in fetchAssessmentSlots() and uncomment
- *     the fetch block below.
+ * The static BALLET_PRICING constants below are emergency offline fallback
+ * values rendered in the UI only when the settings fetch is in-flight or
+ * has errored. They must never be used as authoritative pricing.
  */
+
+import { customFetch } from "@workspace/api-client-react";
+import { isOfflineError } from "@/services/connectivity";
 
 // ─── Static programme config ──────────────────────────────────────────────────
 
@@ -49,14 +43,42 @@ export const BALLET_LEVELS: string[] = [
   "Ballet Level 9",
 ];
 
-/** Monthly pricing tiers. Update when studio prices change. */
+/**
+ * Emergency offline fallback pricing.
+ *
+ * These values are used ONLY when the settings endpoint has not yet responded
+ * (e.g. during initial load or when the device is offline). The screen should
+ * replace them as soon as fetchBalletSettings() resolves.
+ *
+ * DO NOT treat these as authoritative. The admin can change pricing at any
+ * time via the dashboard, and the server is always the source of truth.
+ */
 export const BALLET_PRICING: { level: string; hours: string; price: number }[] =
   [
     { level: "Pre-Ballet", hours: "8 hours monthly", price: 1_950 },
     { level: "Levels 1–9", hours: "12 hours monthly", price: 2_650 },
   ];
 
-// ─── Dynamic slot type ────────────────────────────────────────────────────────
+// ─── Response types ────────────────────────────────────────────────────────────
+
+/**
+ * Shape returned by GET /api/ballet/settings.
+ * Reflects admin-managed config from the ballet_settings table (id = 1).
+ */
+export interface BalletSettings {
+  preBallet: {
+    monthlyHours: number;
+    priceEgp: number;
+  };
+  levels19: {
+    monthlyHours: number;
+    priceEgp: number;
+  };
+  assessmentInstructions: string | null;
+  requirements: string | null;
+  acceptanceMessageTemplate: string | null;
+  fewSeatsThreshold: number;
+}
 
 /**
  * Shape of a single assessment appointment slot.
@@ -64,52 +86,62 @@ export const BALLET_PRICING: { level: string; hours: string; price: number }[] =
  */
 export interface AssessmentSlot {
   id: string;
-  date: string;        // ISO date, e.g. "2026-07-05"
-  dayOfWeek: string;   // "Saturday"
-  startTime: string;   // "10:00 AM"
-  endTime: string;     // "10:30 AM"
+  date: string;            // ISO date, e.g. "2026-07-05"
+  dayOfWeek: string;       // "Saturday"
+  startTime: string;       // "10:00 AM"
+  endTime: string;         // "10:30 AM"
   capacity: number;
   bookedCount: number;
   availableSeats: number;
   status: "available" | "fewSeats" | "full";
 }
 
-// ─── Fetch function ────────────────────────────────────────────────────────────
+// ─── Fetch functions ───────────────────────────────────────────────────────────
+
+/**
+ * Fetches admin-managed ballet settings from the backend.
+ *
+ * Returns pricing, session hours, assessment instructions, and the
+ * fewSeatsThreshold used to colour-code slot availability.
+ *
+ * Throws on network failure (TypeError) or server error (Error).
+ * The calling screen is responsible for catching and rendering the
+ * appropriate state (isOfflineError check for offline vs server error).
+ */
+export async function fetchBalletSettings(
+  signal?: AbortSignal
+): Promise<BalletSettings> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<BalletSettings>(
+    `${apiUrl}/api/ballet/settings`,
+    { method: "GET", signal }
+  );
+  return res;
+}
 
 /**
  * Fetches live assessment slot availability from the backend.
  *
- * Throws on any failure (network error OR server error) — the calling screen
- * is responsible for catching and rendering the appropriate state.
+ * Returns only future, active slots ordered by date asc then startTime asc.
+ * bookedCount and availableSeats are computed server-side at query time —
+ * they are always accurate and never cached on the server.
  *
- * TODO: When the backend endpoint is ready —
- *   1. Remove the `throw new Error("ENDPOINT_NOT_READY")` line.
- *   2. Uncomment the fetch block below.
- *   3. Verify the response shape matches AssessmentSlot[].
- *   4. Endpoint:  GET /api/ballet/assessment-slots
- *      Auth:      Bearer token (student JWT)
- *      Response:  AssessmentSlot[]  (future slots only, ordered by date asc)
+ * No student JWT required — slot availability is public programme info.
+ * The shared API key (set in EXPO_PUBLIC_API_KEY) is sufficient.
+ *
+ * Throws on any failure — the calling screen catches and renders the
+ * appropriate state (use isOfflineError() to distinguish offline vs error).
  */
 export async function fetchAssessmentSlots(
   signal?: AbortSignal
 ): Promise<AssessmentSlot[]> {
-  // ── TODO: Uncomment when endpoint is live ─────────────────────────────────
-  //
-  // const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-  // const res = await fetch(`${apiUrl}/api/ballet/assessment-slots`, {
-  //   method: "GET",
-  //   headers: { "Content-Type": "application/json" },
-  //   signal,
-  // });
-  // if (!res.ok) {
-  //   throw new Error(`Server error: ${res.status}`);
-  // }
-  // return res.json() as Promise<AssessmentSlot[]>;
-  //
-  // ─────────────────────────────────────────────────────────────────────────
-
-  // Endpoint not yet implemented.  Throw intentionally so the screen renders
-  // an "unavailable" error state rather than showing stale hardcoded slots
-  // that may no longer be valid.
-  throw new Error("ENDPOINT_NOT_READY");
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<AssessmentSlot[]>(
+    `${apiUrl}/api/ballet/assessment-slots`,
+    { method: "GET", signal }
+  );
+  return res;
 }
+
+// Re-export so callers can check offline status without importing connectivity separately.
+export { isOfflineError };
