@@ -23,8 +23,8 @@ import {
   Loader2,
   User2,
   ChevronDown,
-  WifiOff,
   ShieldAlert,
+  VideoOff,
 } from "lucide-react";
 
 const STUDIO_CYAN = "#00B6D7";
@@ -32,7 +32,11 @@ const AMBER = "#F59E0B";
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 
-const SCAN_REGION_ID = "qr-scan-region";
+// This ID is used by html5-qrcode to find the container div via document.getElementById.
+// The div with this ID must be completely empty — no React children — because
+// html5-qrcode owns the DOM inside it via direct mutation.
+const SCAN_REGION_ID = "qr-scan-region-inner";
+
 const MANUAL_SCHEDULE_ID = -1;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -40,16 +44,14 @@ const MANUAL_SCHEDULE_ID = -1;
 type Phase = "scanning" | "resolving" | "selecting" | "submitting" | "done" | "error";
 
 /**
- * The camera itself has its own mini state machine, separate from the check-in
- * workflow phase. This lets us show precise camera-specific errors while still
- * displaying the manual email fallback.
+ * Camera-specific state machine, separate from the check-in workflow phase.
  *
- * idle        → initial state, nothing started yet
- * requesting  → getUserMedia is in flight (permission prompt may be showing)
- * active      → camera stream is running, scanner is decoding frames
- * denied      → user rejected the permission prompt (or OS-level block)
- * unsupported → no mediaDevices API (HTTP page, insecure context, no hardware)
- * error       → some other camera error (no device found, in-use by another app)
+ * idle        – not yet started
+ * requesting  – getUserMedia is in flight (browser permission prompt may be showing)
+ * active      – stream running, scanner decoding frames
+ * denied      – user rejected the permission prompt or OS-level block
+ * unsupported – no mediaDevices API / HTTP page / no camera hardware
+ * error       – started but html5-qrcode threw (driver issue, already in use, etc.)
  */
 type CameraStatus = "idle" | "requesting" | "active" | "denied" | "unsupported" | "error";
 
@@ -100,10 +102,7 @@ function extractScanResult(decoded: string): ScanResult | null {
     if (parsed["app"] === "centralstudio") {
       if (typeof parsed["token"] === "string" && parsed["token"].length > 0)
         return { type: "token", token: parsed["token"] };
-      if (
-        typeof parsed["email"] === "string" &&
-        (parsed["email"] as string).includes("@")
-      )
+      if (typeof parsed["email"] === "string" && (parsed["email"] as string).includes("@"))
         return {
           type: "email",
           email: (parsed["email"] as string).toLowerCase(),
@@ -123,13 +122,6 @@ function extractScanResult(decoded: string): ScanResult | null {
 
 // ─── Camera permission helper ─────────────────────────────────────────────────
 
-/**
- * Explicitly request camera permission, then immediately stop the test stream.
- * This surfaces the browser's native permission prompt before html5-qrcode
- * tries to take over, and gives us a clean error classification.
- *
- * Returns a CameraStatus describing the outcome.
- */
 async function requestCameraPermission(): Promise<CameraStatus> {
   if (
     typeof navigator === "undefined" ||
@@ -138,21 +130,14 @@ async function requestCameraPermission(): Promise<CameraStatus> {
   ) {
     return "unsupported";
   }
-
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    // Permission granted — immediately stop the test stream; html5-qrcode
-    // will open its own stream.
     stream.getTracks().forEach((t) => t.stop());
     return "active";
   } catch (err: unknown) {
     const name = err instanceof Error ? err.name : "";
-    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-      return "denied";
-    }
-    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-      return "unsupported"; // no camera hardware
-    }
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") return "denied";
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") return "unsupported";
     return "error";
   }
 }
@@ -168,38 +153,25 @@ export function ScanCheckInDialog({
 }) {
   const queryClient = useQueryClient();
 
-  // html5-qrcode instance
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  // Prevents processing the same QR scan twice from rapid camera frames
   const processedRef = useRef(false);
-  // Prevents the camera startup effect from running concurrently with itself
   const startingRef = useRef(false);
 
-  // ── Core workflow phase ────────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>("scanning");
-
-  // ── Camera state ───────────────────────────────────────────────────────────
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>("idle");
-  const [cameraError, setCameraError] = useState(""); // extra detail string
+  const [cameraError, setCameraError] = useState("");
 
-  // ── Resolved student (token flow) ─────────────────────────────────────────
   const [resolvedStudent, setResolvedStudent] = useState<ResolvedStudent | null>(null);
-
-  // ── Legacy email flow ──────────────────────────────────────────────────────
   const [legacyEmail, setLegacyEmail] = useState("");
   const [legacyName, setLegacyName] = useState("");
-
-  // ── Manual email input (scanning phase) ───────────────────────────────────
   const [manualEmail, setManualEmail] = useState("");
 
-  // ── Class / package selection ──────────────────────────────────────────────
   const [schedules, setSchedules] = useState<TodaySchedule[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState<number>(MANUAL_SCHEDULE_ID);
   const [manualClassTitle, setManualClassTitle] = useState("");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [deductCredit, setDeductCredit] = useState(true);
 
-  // ── Error / success messages ───────────────────────────────────────────────
   const [resolveError, setResolveError] = useState("");
   const [duplicateError, setDuplicateError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -246,7 +218,6 @@ export function ScanCheckInDialog({
     }
   }
 
-  /** Stop and destroy the scanner instance, if one is running. */
   async function stopScanner() {
     const inst = scannerRef.current;
     scannerRef.current = null;
@@ -286,7 +257,6 @@ export function ScanCheckInDialog({
     if (!result) return;
     processedRef.current = true;
 
-    // Stop camera as soon as we have a valid QR — no need to keep it running
     await stopScanner();
 
     if (result.type === "token") {
@@ -369,9 +339,7 @@ export function ScanCheckInDialog({
           : null;
 
       if (status === 409) {
-        setDuplicateError(
-          errMsg ?? "This student is already checked in for this class today.",
-        );
+        setDuplicateError(errMsg ?? "This student is already checked in for this class today.");
         setPhase("selecting");
       } else {
         setResolveError(errMsg ?? "Check-in failed. Please try again.");
@@ -382,81 +350,94 @@ export function ScanCheckInDialog({
 
   // ── Camera startup ─────────────────────────────────────────────────────────
 
-  /**
-   * Start the camera scanner. Called only when:
-   *   1. The dialog is open
-   *   2. phase === "scanning"
-   *   3. The scanner container div is confirmed to exist in the DOM
-   *
-   * Flow:
-   *   requestCameraPermission() → explicit getUserMedia (shows browser prompt)
-   *     → "denied"      → set cameraStatus="denied", don't start scanner
-   *     → "unsupported" → set cameraStatus="unsupported", don't start scanner
-   *     → "active"      → start Html5Qrcode on the container div
-   */
   const startCamera = useCallback(async () => {
     if (startingRef.current || scannerRef.current) return;
     startingRef.current = true;
     setCameraStatus("requesting");
     setCameraError("");
 
-    // Step 1: explicit permission request (triggers browser prompt)
+    // Step 1: Explicit permission request — triggers the browser's native prompt.
+    // We release the test stream immediately; html5-qrcode opens its own stream.
     const permResult = await requestCameraPermission();
-
     if (permResult !== "active") {
       startingRef.current = false;
       setCameraStatus(permResult);
       if (permResult === "denied") {
         setCameraError(
-          "Camera permission was denied. Click 'Retry' or grant permission in your browser settings, then try again.",
-        );
-      } else if (permResult === "unsupported") {
-        setCameraError(
-          "No camera found, or this page is not served over HTTPS. Camera scanning requires a secure connection (HTTPS or localhost).",
+          "Camera access was denied. Click 'Retry' to request permission again, or use the manual email entry below.",
         );
       } else {
-        setCameraError("An unexpected error occurred while accessing the camera.");
+        setCameraError(
+          "Camera not available. This may be because the page isn't served over HTTPS, or no camera is connected. Use the manual email entry below.",
+        );
       }
       return;
     }
 
-    // Step 2: Verify the container element exists in the DOM (sanity check)
+    // Step 2: The scanner container must exist and have a non-zero size.
     const el = document.getElementById(SCAN_REGION_ID);
-    if (!el) {
+    if (!el || el.clientWidth === 0) {
       startingRef.current = false;
       setCameraStatus("error");
-      setCameraError("Scanner container not found. Please close and reopen the dialog.");
+      setCameraError("Scanner container is not visible. Please close and reopen the dialog.");
       return;
     }
 
-    // Step 3: Start html5-qrcode
+    // Step 3: Start html5-qrcode.
+    //
+    // IMPORTANT — we do NOT pass a qrbox option.
+    // The qrbox option causes html5-qrcode to create absolutely-positioned
+    // shading overlays calculated from the video element's clientWidth/clientHeight.
+    // When those dimensions are misread (portal animation, zero-size, etc.), the
+    // shading elements overflow the container and produce a solid-black screen.
+    // Without qrbox, the entire video area is the scanning zone — simpler and
+    // visually cleaner for a dialog scanner.
+    //
+    // We try `facingMode: "environment"` first (rear camera, ideal for tablets).
+    // On laptops with only a front-facing camera, we fall back to "user".
     try {
       const html5 = new Html5Qrcode(SCAN_REGION_ID, { verbose: false });
       scannerRef.current = html5;
-      await html5.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
-        (decodedText) => {
-          void handleScanResult(decodedText);
-        },
-        () => {
-          /* per-frame decode errors are expected — ignore */
-        },
-      );
-      setCameraStatus("active");
-      startingRef.current = false;
+
+      const startConfig = { fps: 10 };
+      let started = false;
+
+      try {
+        await html5.start(
+          { facingMode: "environment" },
+          startConfig,
+          (decodedText) => { void handleScanResult(decodedText); },
+          () => { /* per-frame decode errors are expected */ },
+        );
+        started = true;
+      } catch {
+        // environment camera not available (most admin laptops) — fall back to user-facing
+        await html5.start(
+          { facingMode: "user" },
+          startConfig,
+          (decodedText) => { void handleScanResult(decodedText); },
+          () => { /* per-frame decode errors are expected */ },
+        );
+        started = true;
+      }
+
+      if (started) {
+        setCameraStatus("active");
+        startingRef.current = false;
+      }
     } catch (err: unknown) {
       startingRef.current = false;
-      scannerRef.current = null;
+      // Don't null scannerRef here — html5-qrcode may have partially started.
+      // stopScanner() handles cleanup safely.
+      await stopScanner();
       setCameraStatus("error");
       const msg = err instanceof Error ? err.message : String(err);
-      setCameraError(`Could not start the camera scanner: ${msg}`);
+      setCameraError(`Camera failed to start: ${msg}. Try clicking 'Restart Camera' below.`);
     }
   }, [handleScanResult]);
 
-  // ── Lifecycle effects ──────────────────────────────────────────────────────
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-  // Reset workflow state whenever the dialog opens or closes
   useEffect(() => {
     if (open) {
       resetToScan();
@@ -466,36 +447,30 @@ export function ScanCheckInDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Start the camera after the scanning phase is active and the DOM is ready.
-  // Using two nested rAF calls ensures the browser has had at least one full
-  // layout pass after the Radix portal is committed, so the container div is
-  // guaranteed to exist and have dimensions before Html5Qrcode is instantiated.
   useEffect(() => {
     if (!open || phase !== "scanning") return;
 
-    let rafId1: number;
-    let rafId2: number;
-    let cancelled = false;
+    // Two nested rAF calls give the Radix portal two full layout passes to
+    // commit the container div to the DOM and assign it correct dimensions
+    // before html5-qrcode reads clientWidth/clientHeight.
+    let raf1: number;
+    let raf2: number;
+    let dead = false;
 
-    rafId1 = requestAnimationFrame(() => {
-      rafId2 = requestAnimationFrame(() => {
-        if (!cancelled) void startCamera();
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (!dead) void startCamera();
       });
     });
 
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(rafId1);
-      cancelAnimationFrame(rafId2);
+      dead = true;
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
       void stopScanner();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, phase]);
-  // NOTE: startCamera is intentionally excluded. We only want this effect to
-  // fire when the dialog opens or phase returns to "scanning". Including
-  // startCamera (a useCallback) would not change correctness, but it would
-  // cause spurious re-runs on every render since useCallback recreates on
-  // every mount of this component.
 
   // ── Render helpers ─────────────────────────────────────────────────────────
 
@@ -510,54 +485,169 @@ export function ScanCheckInDialog({
     }
   }
 
-  /** Camera status banner — shown inside the scanning phase when camera is not active */
-  function renderCameraBanner() {
-    if (cameraStatus === "requesting") {
-      return (
-        <div
-          className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
-          style={{ background: `${STUDIO_CYAN}12`, color: STUDIO_CYAN, border: `1px solid ${STUDIO_CYAN}30` }}
-        >
-          <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
-          Requesting camera permission…
-        </div>
-      );
-    }
+  function handleRestart() {
+    void stopScanner().then(() => {
+      processedRef.current = false;
+      setCameraStatus("idle");
+      setCameraError("");
+      // Reset phase through error to force the useEffect to re-fire with phase="scanning"
+      setPhase("error");
+      requestAnimationFrame(() => setPhase("scanning"));
+    });
+  }
 
-    if (cameraStatus === "idle") return null; // starting up, rAF not fired yet
+  // ── Camera viewport section ────────────────────────────────────────────────
+  //
+  // Layout explanation:
+  //
+  //   ┌─ outerWrapper (position: relative, 320px tall, overflow: hidden) ──┐
+  //   │                                                                      │
+  //   │  ┌─ #qr-scan-region-inner (100% × 100%, NO React children) ──────┐ │
+  //   │  │  html5-qrcode appends <video>, <canvas> here via DOM mutation  │ │
+  //   │  └────────────────────────────────────────────────────────────────┘ │
+  //   │                                                                      │
+  //   │  ┌─ statusOverlay (absolute inset-0, z-10) ───────────────────────┐ │
+  //   │  │  Managed entirely by React. Shown when cameraStatus ≠ active.  │ │
+  //   │  │  Sits ABOVE the scanner div in stacking order.                 │ │
+  //   │  └────────────────────────────────────────────────────────────────┘ │
+  //   │                                                                      │
+  //   └──────────────────────────────────────────────────────────────────────┘
+  //
+  // Why this structure:
+  //   • The scanner div has ZERO React children so React never touches its
+  //     interior. html5-qrcode owns it completely.
+  //   • overflow: hidden and border-radius are on the WRAPPER, not on the
+  //     scanner div. This prevents html5-qrcode's internal elements from
+  //     being clipped unexpectedly.
+  //   • The status overlay is a sibling (not child) of the scanner div,
+  //     positioned on top via z-index. When the camera is active the overlay
+  //     is removed and the video is fully visible.
 
-    if (cameraStatus === "active") return null; // camera is running, no banner needed
-
-    // denied | unsupported | error
-    const Icon = cameraStatus === "unsupported" ? WifiOff : ShieldAlert;
+  function renderCameraViewport() {
     return (
       <div
-        className="space-y-2.5 px-3 py-3 rounded-xl text-xs"
-        style={{ background: `${RED}10`, color: RED, border: `1px solid ${RED}28` }}
+        style={{
+          position: "relative",
+          height: "320px",
+          borderRadius: "12px",
+          overflow: "hidden",
+          border: "1px solid hsl(203 30% 18%)",
+          background: "#0a0a0a",
+        }}
       >
-        <div className="flex items-start gap-2">
-          <Icon className="h-4 w-4 flex-shrink-0 mt-0.5" />
-          <p className="leading-relaxed">{cameraError}</p>
-        </div>
-        {(cameraStatus === "denied" || cameraStatus === "error") && (
-          <button
-            onClick={() => {
-              void stopScanner().then(() => {
-                processedRef.current = false;
-                setCameraStatus("idle");
-                setCameraError("");
-                // Re-trigger the camera startup effect by briefly resetting
-                // to a non-scanning phase, then back.
-                setPhase("error");
-                requestAnimationFrame(() => setPhase("scanning"));
-              });
+        {/* Scanner div — completely empty, owned by html5-qrcode */}
+        <div
+          id={SCAN_REGION_ID}
+          style={{ width: "100%", height: "100%" }}
+        />
+
+        {/* "Point at QR code" hint — shown only when camera is live */}
+        {cameraStatus === "active" && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 10,
+              left: 0,
+              right: 0,
+              display: "flex",
+              justifyContent: "center",
+              zIndex: 5,
+              pointerEvents: "none",
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-            style={{ background: RED, color: "#fff" }}
           >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Retry Camera Permission
-          </button>
+            <span
+              style={{
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 500,
+                background: "rgba(0,0,0,0.55)",
+                padding: "3px 10px",
+                borderRadius: 20,
+                letterSpacing: "0.02em",
+              }}
+            >
+              Point camera at QR code
+            </span>
+          </div>
+        )}
+
+        {/* Status overlay — rendered as a SIBLING of the scanner div,
+            covering it via absolute positioning. Removed when camera is active. */}
+        {cameraStatus !== "active" && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "#111",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              zIndex: 10,
+              padding: "20px",
+            }}
+          >
+            {(cameraStatus === "idle" || cameraStatus === "requesting") && (
+              <>
+                <Loader2
+                  style={{ width: 28, height: 28, color: STUDIO_CYAN }}
+                  className="animate-spin"
+                />
+                <p style={{ color: "#8A9AB0", fontSize: 12, textAlign: "center" }}>
+                  {cameraStatus === "idle"
+                    ? "Initialising camera…"
+                    : "Waiting for camera permission…"}
+                </p>
+              </>
+            )}
+
+            {(cameraStatus === "denied" ||
+              cameraStatus === "unsupported" ||
+              cameraStatus === "error") && (
+              <>
+                {cameraStatus === "denied" ? (
+                  <ShieldAlert style={{ width: 28, height: 28, color: AMBER }} />
+                ) : (
+                  <VideoOff style={{ width: 28, height: 28, color: "#4E6070" }} />
+                )}
+
+                <p
+                  style={{
+                    color: "#9CA3AF",
+                    fontSize: 12,
+                    textAlign: "center",
+                    lineHeight: 1.5,
+                    maxWidth: "280px",
+                  }}
+                >
+                  {cameraError}
+                </p>
+
+                {(cameraStatus === "denied" || cameraStatus === "error") && (
+                  <button
+                    onClick={handleRestart}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 14px",
+                      borderRadius: 8,
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: STUDIO_CYAN,
+                      color: "#000",
+                    }}
+                  >
+                    <RefreshCw style={{ width: 13, height: 13 }} />
+                    Restart Camera
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
     );
@@ -584,35 +674,7 @@ export function ScanCheckInDialog({
         {/* ── SCANNING ─────────────────────────────────────────────────────── */}
         {phase === "scanning" && (
           <div className="space-y-4">
-            {/* Camera viewport — always rendered so the DOM element exists
-                before html5-qrcode initialises. When the camera hasn't started
-                yet (or failed), this div is just a dark placeholder. */}
-            <div
-              id={SCAN_REGION_ID}
-              className="overflow-hidden rounded-xl"
-              style={{
-                background: "#000",
-                minHeight: 240,
-                border: "1px solid hsl(203 30% 18%)",
-                position: "relative",
-              }}
-            >
-              {/* Show a loading indicator while the camera is requesting permission */}
-              {(cameraStatus === "idle" || cameraStatus === "requesting") && (
-                <div
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-                  style={{ color: "#4E6070" }}
-                >
-                  <Loader2 className="h-6 w-6 animate-spin" style={{ color: STUDIO_CYAN }} />
-                  <span className="text-xs">
-                    {cameraStatus === "idle" ? "Initialising…" : "Waiting for camera permission…"}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Camera error / status banner */}
-            {renderCameraBanner()}
+            {renderCameraViewport()}
 
             {/* Manual email entry — always visible regardless of camera status */}
             <div>
@@ -648,7 +710,7 @@ export function ScanCheckInDialog({
           </div>
         )}
 
-        {/* ── RESOLVING / SUBMITTING (shared spinner) ───────────────────────── */}
+        {/* ── RESOLVING / SUBMITTING ────────────────────────────────────────── */}
         {(phase === "resolving" || phase === "submitting") && (
           <div className="flex flex-col items-center justify-center gap-3 py-10">
             <Loader2 className="h-8 w-8 animate-spin" style={{ color: STUDIO_CYAN }} />
@@ -670,9 +732,7 @@ export function ScanCheckInDialog({
                 <User2 className="h-4 w-4 flex-shrink-0" style={{ color: STUDIO_CYAN }} />
                 <span className="font-semibold text-white text-sm">{effectiveStudentName}</span>
               </div>
-              <div className="text-xs" style={{ color: "#4E6070" }}>
-                {effectiveStudentEmail}
-              </div>
+              <div className="text-xs" style={{ color: "#4E6070" }}>{effectiveStudentEmail}</div>
               {resolvedStudent?.phone && (
                 <div className="text-xs mt-0.5" style={{ color: "#4E6070" }}>
                   {resolvedStudent.phone}
@@ -680,7 +740,6 @@ export function ScanCheckInDialog({
               )}
             </div>
 
-            {/* Duplicate attendance error (inline) */}
             {duplicateError && (
               <div
                 className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
@@ -691,7 +750,6 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            {/* Active packages */}
             {activePackages.length === 0 ? (
               <div
                 className="text-sm px-3 py-2.5 rounded-xl"
@@ -701,25 +759,17 @@ export function ScanCheckInDialog({
               </div>
             ) : (
               <div className="space-y-2">
-                <p
-                  className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: "#8A9AB0" }}
-                >
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Active Packages
                 </p>
                 {activePackages.map((pkg) => (
                   <button
                     key={pkg.id}
-                    onClick={() =>
-                      setSelectedPackageId(selectedPackageId === pkg.id ? null : pkg.id)
-                    }
+                    onClick={() => setSelectedPackageId(selectedPackageId === pkg.id ? null : pkg.id)}
                     className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
                     style={{
-                      background:
-                        selectedPackageId === pkg.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
-                      border: `1px solid ${
-                        selectedPackageId === pkg.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"
-                      }`,
+                      background: selectedPackageId === pkg.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
+                      border: `1px solid ${selectedPackageId === pkg.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
                     }}
                   >
                     <div className="flex items-center gap-2">
@@ -734,12 +784,8 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            {/* Schedule dropdown */}
             <div>
-              <label
-                className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
-                style={{ color: "#8A9AB0" }}
-              >
+              <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                 Today's Class
               </label>
               <div className="relative">
@@ -747,11 +793,7 @@ export function ScanCheckInDialog({
                   value={selectedScheduleId}
                   onChange={(e) => setSelectedScheduleId(Number(e.target.value))}
                   className="w-full rounded-xl px-3 py-2.5 text-sm text-white appearance-none pr-8"
-                  style={{
-                    background: "hsl(203 30% 14%)",
-                    border: "1px solid hsl(203 30% 20%)",
-                    outline: "none",
-                  }}
+                  style={{ background: "hsl(203 30% 14%)", border: "1px solid hsl(203 30% 20%)", outline: "none" }}
                 >
                   <option value={MANUAL_SCHEDULE_ID}>Not listed / Enter manually</option>
                   {schedules.map((s) => (
@@ -761,19 +803,13 @@ export function ScanCheckInDialog({
                     </option>
                   ))}
                 </select>
-                <ChevronDown
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none"
-                  style={{ color: "#8A9AB0" }}
-                />
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none" style={{ color: "#8A9AB0" }} />
               </div>
             </div>
 
             {isManualSchedule && (
               <div>
-                <label
-                  className="block text-xs font-semibold mb-1.5 uppercase tracking-wider"
-                  style={{ color: "#8A9AB0" }}
-                >
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Class Title (optional)
                 </label>
                 <input
@@ -782,11 +818,7 @@ export function ScanCheckInDialog({
                   value={manualClassTitle}
                   onChange={(e) => setManualClassTitle(e.target.value)}
                   className="w-full rounded-xl px-3 py-2.5 text-sm text-white"
-                  style={{
-                    background: "hsl(203 30% 14%)",
-                    border: "1px solid hsl(203 30% 20%)",
-                    outline: "none",
-                  }}
+                  style={{ background: "hsl(203 30% 14%)", border: "1px solid hsl(203 30% 20%)", outline: "none" }}
                 />
               </div>
             )}
@@ -807,10 +839,7 @@ export function ScanCheckInDialog({
 
             <div className="flex gap-2 pt-1">
               <button
-                onClick={() => {
-                  void stopScanner();
-                  resetToScan();
-                }}
+                onClick={() => { void stopScanner(); resetToScan(); }}
                 className="px-4 py-3 rounded-xl text-sm font-semibold"
                 style={{ background: "hsl(203 30% 14%)", color: "#8A9AB0" }}
               >
@@ -839,10 +868,7 @@ export function ScanCheckInDialog({
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  void stopScanner();
-                  resetToScan();
-                }}
+                onClick={() => { void stopScanner(); resetToScan(); }}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold"
                 style={{ background: STUDIO_CYAN, color: "#000" }}
               >
@@ -872,10 +898,7 @@ export function ScanCheckInDialog({
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  void stopScanner();
-                  resetToScan();
-                }}
+                onClick={() => { void stopScanner(); resetToScan(); }}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold"
                 style={{ background: STUDIO_CYAN, color: "#000" }}
               >
