@@ -19,6 +19,7 @@ import emailOtpRouter from "./emailOtp";
 import adminAuthRouter from "./adminAuth";
 import childrenRouter from "./children";
 import balletRouter from "./ballet";
+import adminBalletRouter from "./adminBallet";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(heroItemsRouter);
 router.use(adminAuthRouter);
 router.use(childrenRouter);
 router.use(balletRouter);
+router.use(adminBalletRouter);
 
 export default router;

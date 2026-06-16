@@ -23,6 +23,8 @@ import PackageOrders from "@/pages/package-orders";
 import AttendancePage from "@/pages/attendance";
 import HeroItems from "@/pages/hero-items";
 import SystemUsers from "@/pages/system-users";
+import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
+import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 
 // Wire the API client to the backend.
 if (import.meta.env.VITE_API_URL) {
@@ -75,6 +77,8 @@ function ProtectedRouter() {
         <Route path="/attendance" component={AttendancePage} />
         <Route path="/hero-items" component={HeroItems} />
         <Route path="/system-users" component={SystemUsers} />
+        <Route path="/ballet/applications/:id" component={ApplicationDetailPage} />
+        <Route path="/ballet/applications" component={ApplicationsPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

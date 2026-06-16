@@ -15,6 +15,7 @@ import {
   ImagePlay,
   ShieldCheck,
   LogOut,
+  Music2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -29,6 +30,7 @@ const studioNav = [
   { name: "Students", href: "/students", icon: UserSquare2 },
   { name: "Offers", href: "/offers", icon: Tag },
   { name: "Hero Slides", href: "/hero-items", icon: ImagePlay },
+  { name: "Ballet Applications", href: "/ballet/applications", icon: Music2 },
 ];
 
 const generalNav = [
