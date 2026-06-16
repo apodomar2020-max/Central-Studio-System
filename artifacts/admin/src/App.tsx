@@ -25,6 +25,9 @@ import HeroItems from "@/pages/hero-items";
 import SystemUsers from "@/pages/system-users";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
+import AssessmentSlotsPage from "@/pages/ballet/AssessmentSlotsPage";
+import BalletSettingsPage from "@/pages/ballet/BalletSettingsPage";
+import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
 
 // Wire the API client to the backend.
 if (import.meta.env.VITE_API_URL) {
@@ -79,6 +82,9 @@ function ProtectedRouter() {
         <Route path="/system-users" component={SystemUsers} />
         <Route path="/ballet/applications/:id" component={ApplicationDetailPage} />
         <Route path="/ballet/applications" component={ApplicationsPage} />
+        <Route path="/ballet/slots" component={AssessmentSlotsPage} />
+        <Route path="/ballet/settings" component={BalletSettingsPage} />
+        <Route path="/ballet/levels" component={BalletLevelsPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

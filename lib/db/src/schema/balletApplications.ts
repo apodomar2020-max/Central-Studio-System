@@ -30,6 +30,7 @@ export const BALLET_APPLICATION_STATUSES = [
   "needsFollowUp",
   "assignedToLevel",
   "activeBallet",
+  "cancelled",
 ] as const;
 
 export type BalletApplicationStatus = (typeof BALLET_APPLICATION_STATUSES)[number];

@@ -16,6 +16,9 @@ import {
   ShieldCheck,
   LogOut,
   Music2,
+  ClipboardList,
+  Settings2,
+  Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -30,7 +33,13 @@ const studioNav = [
   { name: "Students", href: "/students", icon: UserSquare2 },
   { name: "Offers", href: "/offers", icon: Tag },
   { name: "Hero Slides", href: "/hero-items", icon: ImagePlay },
-  { name: "Ballet Applications", href: "/ballet/applications", icon: Music2 },
+];
+
+const balletNav = [
+  { name: "Applications", href: "/ballet/applications", icon: ClipboardList },
+  { name: "Assessment Slots", href: "/ballet/slots", icon: CalendarDays },
+  { name: "Pricing & Settings", href: "/ballet/settings", icon: Settings2 },
+  { name: "Levels", href: "/ballet/levels", icon: Trophy },
 ];
 
 const generalNav = [
@@ -133,6 +142,29 @@ export function Sidebar() {
                 item={item}
                 isActive={isActive(item.href)}
                 accent="studio"
+              />
+            ))}
+          </nav>
+        </div>
+
+        {/* Divider */}
+        <div className="mx-4 border-t" style={{ borderColor: "hsl(203 25% 12%)" }} />
+
+        {/* Ballet section */}
+        <div>
+          <div className="px-4 mb-1 flex items-center gap-1.5">
+            <Music2 className="h-2.5 w-2.5 text-[#8A5CFF]/60" />
+            <span className="text-[10px] font-semibold tracking-widest uppercase text-[#8A5CFF]/60">
+              Ballet
+            </span>
+          </div>
+          <nav className="space-y-0.5 pr-2">
+            {balletNav.map((item) => (
+              <NavItem
+                key={item.name}
+                item={item}
+                isActive={isActive(item.href)}
+                accent="stage"
               />
             ))}
           </nav>

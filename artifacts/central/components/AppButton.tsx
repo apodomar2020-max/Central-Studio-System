@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import React from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from "react-native";
 
 import colors from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
@@ -14,6 +14,8 @@ interface AppButtonProps {
   disabled?: boolean;
   fullWidth?: boolean;
   icon?: React.ReactNode;
+  /** Override or extend the button's TouchableOpacity styles. */
+  style?: StyleProp<ViewStyle>;
 }
 
 export default function AppButton({
@@ -25,6 +27,7 @@ export default function AppButton({
   disabled = false,
   fullWidth = false,
   icon,
+  style,
 }: AppButtonProps) {
   const c = useColors();
 
@@ -62,6 +65,7 @@ export default function AppButton({
         { backgroundColor: bgColor, height, opacity: disabled ? 0.4 : 1 },
         variant === "ghost" && { borderWidth: 1, borderColor: c.border },
         fullWidth && { width: "100%" },
+        style,
       ]}
       disabled={disabled || loading}
     >

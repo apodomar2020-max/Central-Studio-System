@@ -250,6 +250,17 @@ export default function ProfileScreen() {
             </View>
           </View>
           {user.phone ? <Text style={styles.phone}>{user.phone}</Text> : null}
+          {/* Account type tag — Parent if the user has registered children, Student otherwise. */}
+          <View style={styles.accountTypeTag}>
+            <Ionicons
+              name={children.length > 0 ? "people-outline" : "person-outline"}
+              size={11}
+              color={children.length > 0 ? "#60A5FA" : "#A78BFA"}
+            />
+            <Text style={[styles.accountTypeText, { color: children.length > 0 ? "#60A5FA" : "#A78BFA" }]}>
+              {children.length > 0 ? "Parent" : "Student"}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.statsRow}>
@@ -470,6 +481,8 @@ const styles = StyleSheet.create({
   verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
   verifiedText: { fontSize: 11, fontFamily: "Inter_500Medium" },
   phone: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  accountTypeTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: "#1E1E26", borderWidth: 1, borderColor: "#2A2A35", marginTop: 2 },
+  accountTypeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   statCard: { flex: 1, padding: 14, borderRadius: 14, alignItems: "center", gap: 4 },
   statValue: { fontSize: 22, fontFamily: "Inter_700Bold" },

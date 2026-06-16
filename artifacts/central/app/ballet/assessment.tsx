@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
@@ -15,13 +14,14 @@ import {
   View,
 } from "react-native";
 
-import { useAppContext } from "@/contexts/AppContext";
 import {
   BALLET_LEVELS,
   BALLET_PRICING,
   AssessmentSlot,
   fetchAssessmentSlots,
+  fetchMyApplications,
   submitBalletApplication,
+  ACTIVE_APPLICATION_STATUSES,
   isOfflineError,
 } from "@/services/balletAssessmentService";
 import { probeConnectivity } from "@/services/connectivity";
@@ -106,12 +106,11 @@ function Field({
 }
 
 export default function BalletAssessmentScreen() {
-  const { user, baletApplications } = useAppContext();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
-  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Note: success/duplicate navigation goes to /ballet/application-status — no local "submitted" state.
 
   // ── Connectivity gate ──────────────────────────────────────────────────────
   // We probe connectivity on mount so offline users see OfflineState immediately
@@ -139,13 +138,29 @@ export default function BalletAssessmentScreen() {
 
     // 1. Probe connectivity first.
     probeConnectivity(controller.signal)
-      .then((status) => {
+      .then(async (status) => {
         if (controller.signal.aborted) return;
         setConnectivity(status);
-        // 2. Only fetch slots if we're online.
-        if (status === "online") {
-          loadSlots(controller.signal);
+
+        if (status !== "online") return;
+
+        // 2. Check whether this parent already has an active application.
+        //    If they do, redirect immediately — no form needed.
+        try {
+          const apps = await fetchMyApplications(controller.signal);
+          if (controller.signal.aborted) return;
+          const hasActive = apps.some((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
+          if (hasActive) {
+            router.replace("/ballet/application-status" as any);
+            return;
+          }
+        } catch {
+          // Non-critical: if this check fails, we still show the form.
+          // A duplicate will be caught server-side (409) when they submit.
         }
+
+        // 3. Only fetch slots if we didn't redirect.
+        loadSlots(controller.signal);
       })
       .catch(() => {
         // AbortError from navigation — ignore.
@@ -153,8 +168,6 @@ export default function BalletAssessmentScreen() {
 
     return () => controller.abort();
   }, [loadSlots]);
-
-  const existing = baletApplications[0];
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -222,120 +235,68 @@ export default function BalletAssessmentScreen() {
         notes:                  form.notes.trim() || undefined,
         slotId,
       });
-      setSubmitted(true);
-    } catch (err) {
+
+      // ── 201 Success: navigate to status screen ──────────────────────────
+      router.replace("/ballet/application-status" as any);
+    } catch (err: unknown) {
+      const typed = err as { status?: number; data?: { code?: string; error?: string }; message?: string };
+
+      // ── 409 Duplicate application ───────────────────────────────────────
+      // Server returned 409 with code DUPLICATE_APPLICATION — this parent
+      // already has an active application for this child. Treat it the same
+      // as a successful submit and navigate to the status screen.
+      if (typed.status === 409 && typed.data?.code === "DUPLICATE_APPLICATION") {
+        router.replace("/ballet/application-status" as any);
+        return;
+      }
+
+      // ── 409 Slot full ───────────────────────────────────────────────────
+      if (typed.status === 409) {
+        Alert.alert(
+          "Slot Full",
+          "The assessment slot you selected has just filled up. Please go back and choose a different slot."
+        );
+        // Reload slots so the user sees updated availability
+        loadSlots();
+        return;
+      }
+
+      // ── TypeError — possible dropped response after server commit ────────
+      // React Native throws TypeError: "Network request failed" when the
+      // connection drops AFTER the server has committed the insert but BEFORE
+      // the 201 response arrives on the device. We don't know whether the
+      // server actually saved the record, so we probe the server.
       if (isOfflineError(err)) {
+        try {
+          // Small delay to let connectivity recover, then check.
+          await new Promise((r) => setTimeout(r, 1_500));
+          const apps = await fetchMyApplications();
+          const hasActive = apps.some((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
+          if (hasActive) {
+            // Server did commit — redirect as if success.
+            router.replace("/ballet/application-status" as any);
+            return;
+          }
+        } catch {
+          // /my fetch also failed (still offline). Fall through to the alert.
+        }
+
         Alert.alert(
           "No Connection",
-          "Unable to submit your application — please check your internet connection and try again."
+          "Unable to reach the server. Please check your internet connection and try again. If you submitted before, your application may already be saved."
         );
-      } else {
-        // Surface server-provided error messages when available (409 full, 404 not found, etc.)
-        const serverMsg =
-          (err as any)?.data?.error ??
-          (err as any)?.message ??
-          "Something went wrong. Please try again.";
-        Alert.alert("Submission Failed", serverMsg);
+        return;
       }
+
+      // ── Other server errors ─────────────────────────────────────────────
+      const serverMsg =
+        typed.data?.error ??
+        typed.message ??
+        "Something went wrong. Please try again.";
+      Alert.alert("Submission Failed", serverMsg);
     } finally {
       setSubmitting(false);
     }
-  }
-
-  if (submitted) {
-    return (
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <View style={styles.successHeader}>
-          <TouchableOpacity
-            onPress={() => router.replace("/(tabs)/" as any)}
-            style={styles.successHeaderBtn}
-          >
-            <Ionicons name="home-outline" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text style={styles.successHeaderTitle}>Application Submitted</Text>
-          <TouchableOpacity
-            onPress={() => router.replace("/(tabs)/" as any)}
-            style={styles.successHeaderBtn}
-          >
-            <Ionicons name="close" size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.successWrap}>
-          <LinearGradient
-            colors={[`${BALLET_COLOR}20`, colors.studio.card]}
-            style={styles.successCard}
-          >
-            <View style={[styles.successIcon, { backgroundColor: BALLET_COLOR + "20" }]}>
-              <Ionicons name="checkmark-circle" size={56} color={BALLET_COLOR} />
-            </View>
-            <Text style={styles.successTitle}>Application Submitted</Text>
-            <Text style={styles.successDesc}>
-              Your assessment request has been received.{"\n\n"}
-              Our team will review your submission and contact you regarding the assessment date and next steps.
-            </Text>
-
-            <View style={[styles.successInfo, { borderColor: BALLET_COLOR + "30" }]}>
-              <Text style={styles.successInfoTitle}>What happens next?</Text>
-              {[
-                "Our team contacts you to confirm the appointment",
-                "Attend the assessment session with your child",
-                "Receive the result within 48 hours",
-                "If accepted, your child is assigned to a Ballet level",
-              ].map((step, i) => (
-                <View key={i} style={styles.successStep}>
-                  <View style={[styles.successStepNum, { backgroundColor: BALLET_COLOR + "20" }]}>
-                    <Text style={[styles.successStepNumText, { color: BALLET_COLOR }]}>{i + 1}</Text>
-                  </View>
-                  <Text style={styles.successStepText}>{step}</Text>
-                </View>
-              ))}
-            </View>
-
-            <View style={styles.pricingBox}>
-              <Text style={styles.pricingTitle}>Ballet Pricing</Text>
-              {BALLET_PRICING.map((p) => (
-                <View key={p.level} style={styles.pricingRow}>
-                  <View>
-                    <Text style={styles.pricingLevel}>{p.level}</Text>
-                    <Text style={styles.pricingHours}>{p.hours}</Text>
-                  </View>
-                  <Text style={[styles.pricingAmount, { color: BALLET_COLOR }]}>EGP {p.price.toLocaleString()}</Text>
-                </View>
-              ))}
-            </View>
-
-            <AppButton title="Back to Home" onPress={() => router.replace("/(tabs)/")} fullWidth />
-          </LinearGradient>
-        </View>
-      </View>
-    );
-  }
-
-  if (existing && !submitted) {
-    return (
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <View style={styles.successWrap}>
-          <View style={[styles.existingCard, { borderColor: BALLET_COLOR + "40" }]}>
-            <View style={[styles.successIcon, { backgroundColor: BALLET_COLOR + "20" }]}>
-              <Ionicons name="diamond" size={40} color={BALLET_COLOR} />
-            </View>
-            <Text style={styles.successTitle}>Application Already Submitted</Text>
-            <Text style={styles.successDesc}>
-              You already have a ballet application on file for {existing.childName}.
-            </Text>
-            <View style={[styles.statusRow, { backgroundColor: BALLET_COLOR + "15", borderColor: BALLET_COLOR + "30" }]}>
-              <Text style={[styles.statusLabel, { color: BALLET_COLOR }]}>
-                Status: {existing.status.replace(/([A-Z])/g, " $1").trim()}
-              </Text>
-            </View>
-            <AppButton title="Go Back" variant="ghost" onPress={() => router.back()} fullWidth />
-          </View>
-        </View>
-      </View>
-    );
   }
 
   // Show offline gate while checking, or if offline

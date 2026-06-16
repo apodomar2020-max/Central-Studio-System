@@ -206,5 +206,76 @@ export async function submitBalletApplication(
   );
 }
 
+// ─── My Applications ─────────────────────────────────────────────────────────
+
+/**
+ * Lightweight representation of a ballet application as returned by
+ * GET /api/ballet/applications/my. Only the fields the mobile app needs.
+ */
+export interface BalletApplication {
+  id: number;
+  childName: string;
+  slotId: number | null;
+  slotLabel: string | null;
+  status: string;
+  adminNotes: string | null;
+  assignedLevelId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Fetches all ballet applications belonging to the authenticated parent.
+ * Requires a valid student JWT.
+ *
+ * The server returns applications newest-first. The first item is the most
+ * recent application and is typically what the mobile app needs to show.
+ *
+ * Throws on network failure (TypeError) or server error.
+ */
+export async function fetchMyApplications(
+  signal?: AbortSignal
+): Promise<BalletApplication[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ applications: BalletApplication[] }>(
+    `${apiUrl}/api/ballet/applications/my`,
+    { method: "GET", signal }
+  );
+  return res.applications;
+}
+
+/**
+ * Cancels an open application.
+ * Only valid while status is submitted / pendingAssessment / needsFollowUp.
+ * After cancellation the parent is free to submit a new application.
+ */
+export async function cancelBalletApplication(
+  applicationId: number,
+  signal?: AbortSignal
+): Promise<void> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  await customFetch<{ success: boolean }>(
+    `${apiUrl}/api/ballet/applications/${applicationId}/cancel`,
+    { method: "POST", signal }
+  );
+}
+
+// Statuses that mean the parent has an active open application.
+export const ACTIVE_APPLICATION_STATUSES = new Set([
+  "submitted",
+  "pendingAssessment",
+  "accepted",
+  "needsFollowUp",
+  "assignedToLevel",
+  "activeBallet",
+]);
+
+// Statuses where Cancel is available.
+export const CANCELLABLE_APPLICATION_STATUSES = new Set([
+  "submitted",
+  "pendingAssessment",
+  "needsFollowUp",
+]);
+
 // Re-export so callers can check offline status without importing connectivity separately.
 export { isOfflineError };
