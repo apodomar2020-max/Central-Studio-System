@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QrCode, Search, CheckCircle2, CreditCard, User2, BarChart3 } from "lucide-react";
+import { ScanCheckInDialog } from "@/components/scan-check-in-dialog";
 
 const STUDIO_CYAN = "#00B6D7";
 const AMBER = "#F59E0B";
@@ -36,6 +37,7 @@ type AttendanceRecord = {
 
 export default function AttendancePage() {
   const queryClient = useQueryClient();
+  const [scanOpen, setScanOpen] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
@@ -89,12 +91,24 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">Attendance & Check-In</h1>
-        <p className="mt-1 text-sm" style={{ color: "#8A9AB0" }}>
-          Check in students and track attendance. QR codes from the app contain the student email.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Attendance & Check-In</h1>
+          <p className="mt-1 text-sm" style={{ color: "#8A9AB0" }}>
+            Check in students by QR scan or manual email lookup.
+          </p>
+        </div>
+        <button
+          onClick={() => setScanOpen(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0"
+          style={{ background: STUDIO_CYAN, color: "#000" }}
+        >
+          <QrCode className="h-4 w-4" />
+          Scan QR
+        </button>
       </div>
+
+      <ScanCheckInDialog open={scanOpen} onOpenChange={setScanOpen} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Check-in panel */}
