@@ -10,6 +10,11 @@ export const attendanceTable = pgTable("attendance", {
   classTitle: text("class_title"),
   creditDeducted: boolean("credit_deducted").notNull().default(false),
   notes: text("notes"),
+  // FK references added as part of QR Attendance system (Step 1).
+  // All nullable so legacy attendance records remain valid.
+  studentId: integer("student_id"),   // → students.id (set when scanned via QR token)
+  classId: integer("class_id"),       // → classes.id  (set when admin picks from dropdown)
+  scheduleId: integer("schedule_id"), // → schedules.id (set when admin picks from dropdown)
   checkedInAt: timestamp("checked_in_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),

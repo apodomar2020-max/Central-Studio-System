@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, studentsTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
+import { db, studentsTable, packageOrdersTable } from "@workspace/db";
 import {
   CreateStudentBody,
   GetStudentParams,
@@ -10,9 +10,72 @@ import {
   UpdateStudentResponse,
   DeleteStudentParams,
   ListStudentsResponse,
+  GetStudentByTokenParams,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+// ---------------------------------------------------------------------------
+// GET /students/by-token/:token
+//
+// Resolves an opaque QR token to a student profile + their active packages.
+// This is the first step in the QR check-in flow:
+//   Admin scans QR → frontend calls this → gets student name + packages.
+//
+// Must be registered BEFORE /students/:id so Express doesn't try to coerce
+// the literal string "by-token" as a numeric :id.
+// ---------------------------------------------------------------------------
+router.get("/students/by-token/:token", async (req, res): Promise<void> => {
+  const params = GetStudentByTokenParams.safeParse(req.params);
+  if (!params.success) {
+    // Token was present but not a valid UUID format
+    res.status(400).json({ error: "Invalid QR token format" });
+    return;
+  }
+
+  const [student] = await db
+    .select()
+    .from(studentsTable)
+    .where(eq(studentsTable.qrToken, params.data.token));
+
+  if (!student) {
+    res.status(404).json({ error: "QR code not recognised" });
+    return;
+  }
+
+  // Fetch active packages for this student (by email — the stable link
+  // between students and packageOrders tables)
+  const packageOrders = await db
+    .select()
+    .from(packageOrdersTable)
+    .where(
+      and(
+        eq(packageOrdersTable.studentEmail, student.email),
+        eq(packageOrdersTable.status, "active"),
+      ),
+    );
+
+  const activePackages = packageOrders
+    .filter((p) => p.remainingCredits > 0)
+    .map((p) => ({
+      id: p.id,
+      packageName: p.packageName,
+      totalCredits: p.totalCredits,
+      remainingCredits: p.remainingCredits,
+      expiresAt: p.expiresAt ?? null,
+    }));
+
+  // Return only the fields the admin needs — do NOT expose passwordHash,
+  // emailVerified, notes, qrToken, or other internal fields.
+  res.json({
+    id: student.id,
+    name: student.name,
+    email: student.email,
+    phone: student.phone ?? null,
+    joinedAt: student.joinedAt,
+    activePackages,
+  });
+});
 
 router.get("/students", async (req, res): Promise<void> => {
   const rows = await db.select().from(studentsTable).orderBy(studentsTable.joinedAt);

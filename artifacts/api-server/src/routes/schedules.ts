@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, schedulesTable } from "@workspace/db";
+import { db, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
 import {
   ListSchedulesQueryParams,
   CreateScheduleBody,
@@ -14,6 +14,41 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+// ---------------------------------------------------------------------------
+// GET /schedules/today
+//
+// Returns all schedules that run on today's day-of-week, joined with the
+// class title and instructor name.  Used by the admin check-in dialog to
+// populate the "which class?" dropdown so check-ins are linked to real rows.
+//
+// Day-of-week mapping matches schedulesTable.dayOfWeek:
+//   0 = Sunday, 1 = Monday, ..., 6 = Saturday  (same as JavaScript Date.getDay())
+//
+// Must be registered BEFORE /schedules/:id to prevent Express from treating
+// the literal string "today" as a numeric :id parameter.
+// ---------------------------------------------------------------------------
+router.get("/schedules/today", async (req, res): Promise<void> => {
+  const todayDow = new Date().getDay(); // 0=Sun … 6=Sat
+
+  const rows = await db
+    .select({
+      scheduleId: schedulesTable.id,
+      classId: classesTable.id,
+      classTitle: classesTable.title,
+      startTime: schedulesTable.startTime,
+      endTime: schedulesTable.endTime,
+      location: schedulesTable.location,
+      instructorName: instructorsTable.name,
+    })
+    .from(schedulesTable)
+    .innerJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
+    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+    .where(eq(schedulesTable.dayOfWeek, todayDow))
+    .orderBy(schedulesTable.startTime);
+
+  res.json(rows);
+});
 
 router.get("/schedules", async (req, res): Promise<void> => {
   const query = ListSchedulesQueryParams.safeParse(req.query);
