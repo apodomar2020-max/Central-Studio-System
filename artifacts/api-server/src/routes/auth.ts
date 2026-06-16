@@ -80,6 +80,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       phone: studentsTable.phone,
       emailVerified: studentsTable.emailVerified,
       joinedAt: studentsTable.joinedAt,
+      qrToken: studentsTable.qrToken,
     });
 
   logger.info({ studentId: student.id }, "New student registered");
@@ -131,6 +132,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       phone: student.phone,
       emailVerified: student.emailVerified,
       joinedAt: student.joinedAt,
+      qrToken: student.qrToken,
     },
   });
 });

@@ -81,6 +81,7 @@ export default function RegisterScreen() {
         email: student.email,
         emailVerified: false,
         role,
+        qrToken: student.qrToken ?? undefined,
       };
       await setUser(newUser);
       setLoading(false);

@@ -279,12 +279,16 @@ export default function ProfileScreen() {
             style={styles.qrCardGradient}
           >
             <View style={styles.qrPreview}>
-              <QRCode
-                value={JSON.stringify({ app: "centralstudio", uid: user.id, name: user.fullName, email: user.email })}
-                size={56}
-                color="#FFFFFF"
-                backgroundColor="transparent"
-              />
+              {user.qrToken ? (
+                <QRCode
+                  value={JSON.stringify({ app: "centralstudio", token: user.qrToken })}
+                  size={56}
+                  color="#FFFFFF"
+                  backgroundColor="transparent"
+                />
+              ) : (
+                <Text style={styles.qrPlaceholderSmall}>Pass{"\n"}pending</Text>
+              )}
             </View>
             <View style={styles.qrInfo}>
               <Text style={styles.qrCardTitle}>My Studio Pass</Text>
@@ -304,12 +308,21 @@ export default function ProfileScreen() {
               </TouchableOpacity>
               <Text style={styles.qrModalLabel}>Studio Pass</Text>
               <View style={styles.qrModalCode}>
-                <QRCode
-                  value={JSON.stringify({ app: "centralstudio", uid: user.id, name: user.fullName, email: user.email })}
-                  size={220}
-                  color="#000000"
-                  backgroundColor="#FFFFFF"
-                />
+                {user.qrToken ? (
+                  <QRCode
+                    value={JSON.stringify({ app: "centralstudio", token: user.qrToken })}
+                    size={220}
+                    color="#000000"
+                    backgroundColor="#FFFFFF"
+                  />
+                ) : (
+                  <View style={styles.qrPlaceholderModal}>
+                    <Ionicons name="qr-code-outline" size={48} color="#9CA3AF" />
+                    <Text style={styles.qrPlaceholderText}>
+                      Your studio pass is being prepared.{"\n"}Please refresh or contact reception.
+                    </Text>
+                  </View>
+                )}
               </View>
               <Text style={styles.qrModalName}>{user.fullName}</Text>
               <Text style={styles.qrModalEmail}>{user.email}</Text>
@@ -509,4 +522,7 @@ const styles = StyleSheet.create({
   qrPackageBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
   qrPackageBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   qrModalHint: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "center", lineHeight: 17, marginTop: 4 },
+  qrPlaceholderSmall: { fontSize: 8, fontFamily: "Inter_400Regular", color: "#FFFFFF60", textAlign: "center", lineHeight: 11 },
+  qrPlaceholderModal: { width: 220, height: 220, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "#F3F4F6", borderRadius: 8 },
+  qrPlaceholderText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "center", lineHeight: 19, paddingHorizontal: 20 },
 });

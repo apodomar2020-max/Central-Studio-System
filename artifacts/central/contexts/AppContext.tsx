@@ -10,6 +10,8 @@ export interface User {
   emailVerified: boolean;
   birthday?: string;
   role: "student" | "parent" | "instructor";
+  /** Opaque UUID used to generate the secure QR code. Never logged or displayed as text. */
+  qrToken?: string;
 }
 
 export interface ChildProfile {

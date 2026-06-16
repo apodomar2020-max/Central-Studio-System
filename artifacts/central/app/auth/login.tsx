@@ -64,6 +64,7 @@ export default function LoginScreen() {
         email: student.email,
         emailVerified: true,
         role: "student",
+        qrToken: student.qrToken ?? undefined,
       };
       await setUser(user);
       setLoading(false);
