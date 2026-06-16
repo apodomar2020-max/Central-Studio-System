@@ -13,7 +13,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, not, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -21,6 +21,7 @@ import {
   balletApplicationEventsTable,
   balletAssessmentSlotsTable,
   balletLevelsTable,
+  balletSettingsTable,
   balletLevelAssignmentsTable,
   systemUsersTable,
   BALLET_APPLICATION_STATUSES,
@@ -350,8 +351,8 @@ router.post(
 
 // ─── GET /api/admin/ballet/levels ─────────────────────────────────────────────
 //
-// Returns all active ballet levels ordered by sortOrder asc.
-// Used by the admin UI to populate the level assignment dropdown.
+// Returns ALL ballet levels (active and inactive) ordered by sortOrder asc.
+// Used by the Levels management page and the level assignment dropdown.
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/admin/ballet/levels", requireAdminAuth, async (_req, res): Promise<void> => {
@@ -361,12 +362,270 @@ router.get("/admin/ballet/levels", requireAdminAuth, async (_req, res): Promise<
       name:      balletLevelsTable.name,
       sortOrder: balletLevelsTable.sortOrder,
       isActive:  balletLevelsTable.isActive,
+      createdAt: balletLevelsTable.createdAt,
     })
     .from(balletLevelsTable)
-    .where(eq(balletLevelsTable.isActive, true))
     .orderBy(asc(balletLevelsTable.sortOrder));
 
   res.json({ levels });
+});
+
+// ─── POST /api/admin/ballet/levels ────────────────────────────────────────────
+
+const CreateLevelBody = z.object({
+  name:      z.string().min(1, "Name is required"),
+  sortOrder: z.number().int().min(0).optional(),
+  isActive:  z.boolean().optional(),
+});
+
+router.post("/admin/ballet/levels", requireAdminAuth, async (req, res): Promise<void> => {
+  const parsed = CreateLevelBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+  const { name, sortOrder, isActive } = parsed.data;
+  try {
+    const [level] = await db
+      .insert(balletLevelsTable)
+      .values({ name: name.trim(), sortOrder: sortOrder ?? 0, isActive: isActive ?? true })
+      .returning();
+    res.status(201).json({ level });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      res.status(409).json({ error: `A level named "${name}" already exists` });
+      return;
+    }
+    logger.error({ err }, "POST /admin/ballet/levels failed");
+    res.status(500).json({ error: "Failed to create level" });
+  }
+});
+
+// ─── PATCH /api/admin/ballet/levels/:id ───────────────────────────────────────
+
+const UpdateLevelBody = z.object({
+  name:      z.string().min(1).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  isActive:  z.boolean().optional(),
+});
+
+router.patch("/admin/ballet/levels/:id", requireAdminAuth, async (req, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid level ID" }); return; }
+
+  const parsed = UpdateLevelBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.name      !== undefined) updates["name"]      = parsed.data.name.trim();
+  if (parsed.data.sortOrder !== undefined) updates["sortOrder"] = parsed.data.sortOrder;
+  if (parsed.data.isActive  !== undefined) updates["isActive"]  = parsed.data.isActive;
+
+  if (Object.keys(updates).length === 0) {
+    res.json({ success: true, message: "No changes" });
+    return;
+  }
+
+  try {
+    const [level] = await db
+      .update(balletLevelsTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(balletLevelsTable.id, id))
+      .returning();
+    if (!level) { res.status(404).json({ error: "Level not found" }); return; }
+    res.json({ level });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      res.status(409).json({ error: "A level with that name already exists" });
+      return;
+    }
+    logger.error({ err }, "PATCH /admin/ballet/levels/:id failed");
+    res.status(500).json({ error: "Failed to update level" });
+  }
+});
+
+// ─── GET /api/admin/ballet/slots ──────────────────────────────────────────────
+//
+// Returns all assessment slots (past and future) with live booked count.
+// Ordered by date asc, startTime asc.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/admin/ballet/slots", requireAdminAuth, async (_req, res): Promise<void> => {
+  try {
+    const rows = await db
+      .select({
+        id:          balletAssessmentSlotsTable.id,
+        date:        balletAssessmentSlotsTable.date,
+        startTime:   balletAssessmentSlotsTable.startTime,
+        endTime:     balletAssessmentSlotsTable.endTime,
+        capacity:    balletAssessmentSlotsTable.capacity,
+        notes:       balletAssessmentSlotsTable.notes,
+        isActive:    balletAssessmentSlotsTable.isActive,
+        createdAt:   balletAssessmentSlotsTable.createdAt,
+        bookedCount: count(balletApplicationsTable.id),
+      })
+      .from(balletAssessmentSlotsTable)
+      .leftJoin(
+        balletApplicationsTable,
+        and(
+          eq(balletApplicationsTable.slotId, balletAssessmentSlotsTable.id),
+          not(eq(balletApplicationsTable.status, "cancelled")),
+        ),
+      )
+      .groupBy(balletAssessmentSlotsTable.id)
+      .orderBy(asc(balletAssessmentSlotsTable.date), asc(balletAssessmentSlotsTable.startTime));
+
+    res.json({ slots: rows.map((r) => ({ ...r, bookedCount: Number(r.bookedCount) })) });
+  } catch (err) {
+    logger.error({ err }, "GET /admin/ballet/slots failed");
+    res.status(500).json({ error: "Failed to load slots" });
+  }
+});
+
+// ─── POST /api/admin/ballet/slots ─────────────────────────────────────────────
+
+const CreateSlotBody = z.object({
+  date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  startTime: z.string().min(1, "startTime is required"),
+  endTime:   z.string().min(1, "endTime is required"),
+  capacity:  z.number().int().positive().default(10),
+  notes:     z.string().optional(),
+  isActive:  z.boolean().optional(),
+});
+
+router.post("/admin/ballet/slots", requireAdminAuth, async (req, res): Promise<void> => {
+  const parsed = CreateSlotBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+  try {
+    const [slot] = await db
+      .insert(balletAssessmentSlotsTable)
+      .values({
+        date:      parsed.data.date,
+        startTime: parsed.data.startTime,
+        endTime:   parsed.data.endTime,
+        capacity:  parsed.data.capacity,
+        notes:     parsed.data.notes ?? null,
+        isActive:  parsed.data.isActive ?? true,
+      })
+      .returning();
+    res.status(201).json({ slot });
+  } catch (err) {
+    logger.error({ err }, "POST /admin/ballet/slots failed");
+    res.status(500).json({ error: "Failed to create slot" });
+  }
+});
+
+// ─── PATCH /api/admin/ballet/slots/:id ────────────────────────────────────────
+
+const UpdateSlotBody = z.object({
+  date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  startTime: z.string().min(1).optional(),
+  endTime:   z.string().min(1).optional(),
+  capacity:  z.number().int().positive().optional(),
+  notes:     z.string().nullable().optional(),
+  isActive:  z.boolean().optional(),
+});
+
+router.patch("/admin/ballet/slots/:id", requireAdminAuth, async (req, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid slot ID" }); return; }
+
+  const parsed = UpdateSlotBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  const d = parsed.data;
+  if (d.date      !== undefined) updates["date"]      = d.date;
+  if (d.startTime !== undefined) updates["startTime"] = d.startTime;
+  if (d.endTime   !== undefined) updates["endTime"]   = d.endTime;
+  if (d.capacity  !== undefined) updates["capacity"]  = d.capacity;
+  if (d.notes     !== undefined) updates["notes"]     = d.notes;
+  if (d.isActive  !== undefined) updates["isActive"]  = d.isActive;
+
+  if (Object.keys(updates).length === 0) {
+    res.json({ success: true, message: "No changes" });
+    return;
+  }
+
+  updates["updatedAt"] = new Date().toISOString();
+
+  try {
+    const [slot] = await db
+      .update(balletAssessmentSlotsTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(balletAssessmentSlotsTable.id, id))
+      .returning();
+    if (!slot) { res.status(404).json({ error: "Slot not found" }); return; }
+    res.json({ slot });
+  } catch (err) {
+    logger.error({ err }, "PATCH /admin/ballet/slots/:id failed");
+    res.status(500).json({ error: "Failed to update slot" });
+  }
+});
+
+// ─── GET /api/admin/ballet/settings ───────────────────────────────────────────
+
+router.get("/admin/ballet/settings", requireAdminAuth, async (_req, res): Promise<void> => {
+  try {
+    const [row] = await db.select().from(balletSettingsTable).where(eq(balletSettingsTable.id, 1)).limit(1);
+    if (!row) { res.status(404).json({ error: "Settings not found" }); return; }
+    res.json({ settings: row });
+  } catch (err) {
+    logger.error({ err }, "GET /admin/ballet/settings failed");
+    res.status(500).json({ error: "Failed to load settings" });
+  }
+});
+
+// ─── PATCH /api/admin/ballet/settings ─────────────────────────────────────────
+
+const UpdateSettingsBody = z.object({
+  preBalletPriceEgp:         z.number().int().positive().optional(),
+  preBalletHoursMonthly:     z.number().int().positive().optional(),
+  levelsPriceEgp:            z.number().int().positive().optional(),
+  levelsHoursMonthly:        z.number().int().positive().optional(),
+  fewSeatsThreshold:         z.number().int().min(1).max(20).optional(),
+  assessmentInstructions:    z.string().nullable().optional(),
+  requirements:              z.string().nullable().optional(),
+  acceptanceMessageTemplate: z.string().nullable().optional(),
+});
+
+router.patch("/admin/ballet/settings", requireAdminAuth, async (req, res): Promise<void> => {
+  const parsed = UpdateSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(parsed.data)) {
+    if (v !== undefined) updates[k] = v;
+  }
+  updates["updatedAt"] = new Date().toISOString();
+
+  try {
+    const [row] = await db
+      .update(balletSettingsTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(balletSettingsTable.id, 1))
+      .returning();
+    if (!row) { res.status(404).json({ error: "Settings not found" }); return; }
+    res.json({ settings: row });
+  } catch (err) {
+    logger.error({ err }, "PATCH /admin/ballet/settings failed");
+    res.status(500).json({ error: "Failed to update settings" });
+  }
 });
 
 export default router;

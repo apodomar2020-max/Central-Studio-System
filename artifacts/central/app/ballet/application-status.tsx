@@ -31,6 +31,7 @@ import {
   fetchMyApplications,
   cancelBalletApplication,
   CANCELLABLE_APPLICATION_STATUSES,
+  EDITABLE_APPLICATION_STATUSES,
   ACTIVE_APPLICATION_STATUSES,
   type BalletApplication,
   isOfflineError,
@@ -146,10 +147,12 @@ export default function ApplicationStatusScreen() {
         return;
       }
 
-      // Show the most recent application (API returns newest-first).
-      // If the newest is active, show it. If all are terminal (rejected/cancelled),
-      // still show the most recent so the user can see their history.
-      setApplication(apps[0]!);
+      // Prefer the latest ACTIVE application (API returns newest-first,
+      // so find() picks the most recently created active one).
+      // Fall back to apps[0] (most recent overall) if all are terminal,
+      // so the parent can still see their most recent history.
+      const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
+      setApplication(active ?? apps[0]!);
       setLoadState("success");
     } catch (e) {
       if ((e as any)?.name === "AbortError") return;
@@ -264,7 +267,8 @@ export default function ApplicationStatusScreen() {
       {loadState === "success" && application && (() => {
         const meta = getStatusMeta(application.status);
         const isCancellable = CANCELLABLE_APPLICATION_STATUSES.has(application.status);
-        const isTerminal = !ACTIVE_APPLICATION_STATUSES.has(application.status);
+        const isEditable    = EDITABLE_APPLICATION_STATUSES.has(application.status);
+        const isTerminal    = !ACTIVE_APPLICATION_STATUSES.has(application.status);
 
         return (
           <ScrollView
@@ -335,6 +339,21 @@ export default function ApplicationStatusScreen() {
 
             {/* Actions */}
             <View style={styles.actions}>
+              {isEditable && (
+                <AppButton
+                  title="Edit Application"
+                  variant="ghost"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/ballet/edit-application" as any,
+                      params: { id: String(application.id) },
+                    })
+                  }
+                  fullWidth
+                  style={{ borderColor: BALLET_COLOR + "60", borderWidth: 1 }}
+                />
+              )}
+
               {isCancellable && (
                 <AppButton
                   title={cancelling ? "Cancelling…" : "Cancel Application"}

@@ -209,12 +209,25 @@ export async function submitBalletApplication(
 // ─── My Applications ─────────────────────────────────────────────────────────
 
 /**
- * Lightweight representation of a ballet application as returned by
- * GET /api/ballet/applications/my. Only the fields the mobile app needs.
+ * Full representation of a ballet application as returned by
+ * GET /api/ballet/applications/my.
+ * Includes all editable fields so the edit form can pre-fill them.
  */
 export interface BalletApplication {
   id: number;
+  parentName: string;
+  parentPhone: string;
+  parentEmail: string;
   childName: string;
+  childBirthday: string | null;
+  childAge: number | null;
+  childGender: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  previousExperience: boolean;
+  experienceDetails: string | null;
+  medicalNotes: string | null;
+  notes: string | null;
   slotId: number | null;
   slotLabel: string | null;
   status: string;
@@ -260,6 +273,47 @@ export async function cancelBalletApplication(
   );
 }
 
+// ─── Update application ───────────────────────────────────────────────────────
+
+/**
+ * Editable fields the parent can change while the application is in an editable
+ * status (submitted, pendingAssessment, needsFollowUp).
+ */
+export interface UpdateApplicationPayload {
+  parentPhone?:           string;
+  parentEmail?:           string;
+  emergencyContactName?:  string;
+  emergencyContactPhone?: string;
+  medicalNotes?:          string;
+  notes?:                 string;
+  experienceDetails?:     string;
+  previousExperience?:    boolean;
+  slotId?:                number;
+}
+
+/**
+ * PATCHes editable fields on an existing application.
+ * Only valid while status is submitted / pendingAssessment / needsFollowUp.
+ * The server inserts an event row: note = "Application updated by parent".
+ */
+export async function updateBalletApplication(
+  applicationId: number,
+  payload: UpdateApplicationPayload,
+  signal?: AbortSignal
+): Promise<void> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  await customFetch<{ success: boolean }>(
+    `${apiUrl}/api/ballet/applications/${applicationId}`,
+    {
+      method: "PATCH",
+      body:   JSON.stringify(payload),
+      signal,
+    }
+  );
+}
+
+// ─── Status sets ─────────────────────────────────────────────────────────────
+
 // Statuses that mean the parent has an active open application.
 export const ACTIVE_APPLICATION_STATUSES = new Set([
   "submitted",
@@ -272,6 +326,13 @@ export const ACTIVE_APPLICATION_STATUSES = new Set([
 
 // Statuses where Cancel is available.
 export const CANCELLABLE_APPLICATION_STATUSES = new Set([
+  "submitted",
+  "pendingAssessment",
+  "needsFollowUp",
+]);
+
+// Statuses where Edit is available.
+export const EDITABLE_APPLICATION_STATUSES = new Set([
   "submitted",
   "pendingAssessment",
   "needsFollowUp",

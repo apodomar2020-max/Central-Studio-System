@@ -25,6 +25,11 @@ import {
   isOfflineError,
 } from "@/services/balletAssessmentService";
 import { probeConnectivity } from "@/services/connectivity";
+
+// NOTE: This screen is only navigated to when the ballet gate (app/ballet/index.tsx)
+// has already confirmed there is no active application, OR from within the ballet
+// flow after a terminal status (rejected/cancelled). Do NOT add a duplicate-app
+// check here — index.tsx handles that redirect before this screen ever renders.
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import StepIndicator from "@/components/StepIndicator";
@@ -136,31 +141,15 @@ export default function BalletAssessmentScreen() {
   useEffect(() => {
     const controller = new AbortController();
 
-    // 1. Probe connectivity first.
+    // 1. Probe connectivity.
+    // 2. If online, load slots immediately — no need to re-check for active
+    //    applications here because the ballet gate (app/ballet/index.tsx) already
+    //    verified there are none before navigating to this screen.
     probeConnectivity(controller.signal)
-      .then(async (status) => {
+      .then((status) => {
         if (controller.signal.aborted) return;
         setConnectivity(status);
-
-        if (status !== "online") return;
-
-        // 2. Check whether this parent already has an active application.
-        //    If they do, redirect immediately — no form needed.
-        try {
-          const apps = await fetchMyApplications(controller.signal);
-          if (controller.signal.aborted) return;
-          const hasActive = apps.some((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
-          if (hasActive) {
-            router.replace("/ballet/application-status" as any);
-            return;
-          }
-        } catch {
-          // Non-critical: if this check fails, we still show the form.
-          // A duplicate will be caught server-side (409) when they submit.
-        }
-
-        // 3. Only fetch slots if we didn't redirect.
-        loadSlots(controller.signal);
+        if (status === "online") loadSlots(controller.signal);
       })
       .catch(() => {
         // AbortError from navigation — ignore.

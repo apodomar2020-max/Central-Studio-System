@@ -171,7 +171,7 @@ export default function ClassesScreen() {
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/ballet/assessment");
+            router.push("/ballet" as any);
           }}
           style={[styles.balletBanner, { borderColor: BALLET_CATEGORY.color + "40" }]}
           activeOpacity={0.85}

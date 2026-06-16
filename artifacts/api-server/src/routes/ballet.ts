@@ -502,15 +502,24 @@ router.patch(
         return;
       }
 
-      // updatedAt is auto-managed by Drizzle's $onUpdate but we include it
-      // explicitly to ensure it refreshes even for dynamic update objects.
       updates["updatedAt"] = new Date().toISOString();
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db
-        .update(balletApplicationsTable)
-        .set(updates as any)
-        .where(eq(balletApplicationsTable.id, id));
+      // Wrap update + event insert in a transaction.
+      await db.transaction(async (tx) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await tx
+          .update(balletApplicationsTable)
+          .set(updates as any)
+          .where(eq(balletApplicationsTable.id, id));
+
+        await tx.insert(balletApplicationEventsTable).values({
+          applicationId: id,
+          fromStatus:    app.status,
+          toStatus:      app.status,   // status unchanged — this is a field edit
+          changedById:   null,
+          note:          "Application updated by parent",
+        });
+      });
 
       logger.info({ applicationId: id, studentId: parentStudentId, updates: Object.keys(updates) }, "Ballet application updated by parent");
 

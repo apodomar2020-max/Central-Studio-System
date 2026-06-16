@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   Modal,
@@ -18,6 +18,7 @@ import {
 import QRCode from "react-native-qrcode-svg";
 
 import { useAppContext, ChildProfile } from "@/contexts/AppContext";
+import { fetchMyApplications } from "@/services/balletAssessmentService";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 
@@ -179,6 +180,20 @@ export default function ProfileScreen() {
   const [editingChild, setEditingChild] = useState<ChildProfile | undefined>(undefined);
   const [qrVisible, setQrVisible] = useState(false);
 
+  // Fetch ballet applications to determine account type.
+  // A user is a "Parent" if they have registered children OR submitted ballet applications.
+  const [hasBalletApplications, setHasBalletApplications] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    const ctrl = new AbortController();
+    fetchMyApplications(ctrl.signal)
+      .then((apps) => {
+        if (!ctrl.signal.aborted) setHasBalletApplications(apps.length > 0);
+      })
+      .catch(() => { /* non-critical — tag defaults to children check */ });
+    return () => ctrl.abort();
+  }, [user]);
+
   const upcoming = bookings.filter(
     (b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment"
   ).length;
@@ -250,17 +265,23 @@ export default function ProfileScreen() {
             </View>
           </View>
           {user.phone ? <Text style={styles.phone}>{user.phone}</Text> : null}
-          {/* Account type tag — Parent if the user has registered children, Student otherwise. */}
-          <View style={styles.accountTypeTag}>
-            <Ionicons
-              name={children.length > 0 ? "people-outline" : "person-outline"}
-              size={11}
-              color={children.length > 0 ? "#60A5FA" : "#A78BFA"}
-            />
-            <Text style={[styles.accountTypeText, { color: children.length > 0 ? "#60A5FA" : "#A78BFA" }]}>
-              {children.length > 0 ? "Parent" : "Student"}
-            </Text>
-          </View>
+          {/* Account type tag — Parent if the user has registered children OR ballet applications.
+              Dancer tag is reserved for a future dancer profile system. */}
+          {(() => {
+            const isParent = children.length > 0 || hasBalletApplications;
+            return (
+              <View style={styles.accountTypeTag}>
+                <Ionicons
+                  name={isParent ? "people-outline" : "person-outline"}
+                  size={11}
+                  color={isParent ? "#60A5FA" : "#A78BFA"}
+                />
+                <Text style={[styles.accountTypeText, { color: isParent ? "#60A5FA" : "#A78BFA" }]}>
+                  {isParent ? "Parent" : "Student"}
+                </Text>
+              </View>
+            );
+          })()}
         </View>
 
         <View style={styles.statsRow}>
