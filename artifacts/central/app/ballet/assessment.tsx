@@ -21,8 +21,10 @@ import {
   BALLET_PRICING,
   AssessmentSlot,
   fetchAssessmentSlots,
+  submitBalletApplication,
+  isOfflineError,
 } from "@/services/balletAssessmentService";
-import { probeConnectivity, isOfflineError } from "@/services/connectivity";
+import { probeConnectivity } from "@/services/connectivity";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import StepIndicator from "@/components/StepIndicator";
@@ -104,11 +106,12 @@ function Field({
 }
 
 export default function BalletAssessmentScreen() {
-  const { user, baletApplications, submitBalletApplication } = useAppContext();
+  const { user, baletApplications } = useAppContext();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // ── Connectivity gate ──────────────────────────────────────────────────────
   // We probe connectivity on mount so offline users see OfflineState immediately
@@ -190,27 +193,53 @@ export default function BalletAssessmentScreen() {
     setStep((s) => Math.max(s - 1, 0));
   }
 
-  function handleSubmit() {
-    if (!form.selectedSlot) return;
+  async function handleSubmit() {
+    if (!form.selectedSlot || submitting) return;
+
+    const slotId = parseInt(form.selectedSlot.id, 10);
+    if (isNaN(slotId)) {
+      Alert.alert("Error", "Invalid slot selection. Please go back and select a slot again.");
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    submitBalletApplication({
-      parentName: form.parentName.trim(),
-      parentPhone: form.parentPhone.trim(),
-      parentEmail: form.parentEmail.trim(),
-      childName: form.childName.trim(),
-      childBirthday: form.childBirthday.trim(),
-      childAge: parseInt(form.childAge, 10),
-      childGender: form.childGender,
-      previousExperience: form.previousExperience ?? false,
-      experienceDetails: form.experienceDetails.trim() || undefined,
-      medicalNotes: form.medicalNotes.trim() || undefined,
-      preferredSlotId: form.selectedSlot.id,
-      preferredSlotLabel: `${form.selectedSlot.dayOfWeek} ${form.selectedSlot.date} · ${form.selectedSlot.startTime}–${form.selectedSlot.endTime}`,
-      emergencyContactName: form.emergencyContactName.trim(),
-      emergencyContactPhone: form.emergencyContactPhone.trim(),
-      notes: form.notes.trim() || undefined,
-    });
-    setSubmitted(true);
+    setSubmitting(true);
+
+    try {
+      await submitBalletApplication({
+        parentName:             form.parentName.trim(),
+        parentPhone:            form.parentPhone.trim(),
+        parentEmail:            form.parentEmail.trim(),
+        childName:              form.childName.trim(),
+        childBirthday:          form.childBirthday.trim() || undefined,
+        childAge:               form.childAge.trim() ? parseInt(form.childAge, 10) : undefined,
+        childGender:            form.childGender,
+        previousExperience:     form.previousExperience ?? false,
+        experienceDetails:      form.experienceDetails.trim() || undefined,
+        medicalNotes:           form.medicalNotes.trim() || undefined,
+        emergencyContactName:   form.emergencyContactName.trim() || undefined,
+        emergencyContactPhone:  form.emergencyContactPhone.trim() || undefined,
+        notes:                  form.notes.trim() || undefined,
+        slotId,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      if (isOfflineError(err)) {
+        Alert.alert(
+          "No Connection",
+          "Unable to submit your application — please check your internet connection and try again."
+        );
+      } else {
+        // Surface server-provided error messages when available (409 full, 404 not found, etc.)
+        const serverMsg =
+          (err as any)?.data?.error ??
+          (err as any)?.message ??
+          "Something went wrong. Please try again.";
+        Alert.alert("Submission Failed", serverMsg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (submitted) {
@@ -239,14 +268,10 @@ export default function BalletAssessmentScreen() {
             <View style={[styles.successIcon, { backgroundColor: BALLET_COLOR + "20" }]}>
               <Ionicons name="checkmark-circle" size={56} color={BALLET_COLOR} />
             </View>
-            <Text style={styles.successTitle}>Application Submitted!</Text>
+            <Text style={styles.successTitle}>Application Submitted</Text>
             <Text style={styles.successDesc}>
-              We've received {form.childName}'s ballet assessment application. Our team will contact you on{" "}
-              {form.parentPhone} to confirm your appointment at{" "}
-              <Text style={{ color: BALLET_COLOR }}>
-                {form.selectedSlot?.dayOfWeek} {form.selectedSlot?.date}, {form.selectedSlot?.startTime}
-              </Text>
-              .
+              Your assessment request has been received.{"\n\n"}
+              Our team will review your submission and contact you regarding the assessment date and next steps.
             </Text>
 
             <View style={[styles.successInfo, { borderColor: BALLET_COLOR + "30" }]}>
@@ -653,9 +678,10 @@ export default function BalletAssessmentScreen() {
           <AppButton title="Continue" onPress={handleNext} style={{ flex: 2 }} />
         ) : (
           <AppButton
-            title="Submit Application"
+            title={submitting ? "Submitting…" : "Submit Application"}
             onPress={handleSubmit}
-            style={{ flex: 2, backgroundColor: BALLET_COLOR }}
+            disabled={submitting}
+            style={{ flex: 2, backgroundColor: BALLET_COLOR, opacity: submitting ? 0.7 : 1 }}
           />
         )}
       </View>

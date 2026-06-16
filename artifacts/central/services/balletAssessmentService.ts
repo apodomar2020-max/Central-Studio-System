@@ -143,5 +143,68 @@ export async function fetchAssessmentSlots(
   return res;
 }
 
+// ─── Application submission ───────────────────────────────────────────────────
+
+/**
+ * Payload for POST /api/ballet/applications.
+ * All fields map directly to the request body. parentStudentId is injected
+ * server-side from the student JWT — never sent by the client.
+ */
+export interface SubmitApplicationPayload {
+  parentName:             string;
+  parentPhone:            string;
+  parentEmail:            string;
+  childName:              string;
+  childBirthday?:         string;
+  childAge?:              number;
+  childGender?:           "male" | "female";
+  emergencyContactName?:  string;
+  emergencyContactPhone?: string;
+  previousExperience:     boolean;
+  experienceDetails?:     string;
+  medicalNotes?:          string;
+  notes?:                 string;
+  slotId:                 number;
+}
+
+/** Shape of the 201 response from POST /api/ballet/applications. */
+export interface SubmitApplicationResult {
+  application: {
+    id:     number;
+    status: string;
+  };
+}
+
+/**
+ * Submits a ballet assessment application to the backend.
+ *
+ * Requires a valid student JWT (set by setAuthTokenGetter in _layout.tsx).
+ * The server rejects the request (401) if no JWT is present.
+ *
+ * Throws:
+ *   - TypeError        → device offline / network unreachable
+ *   - ApiError (409)   → slot is full
+ *   - ApiError (404)   → slot not found or inactive
+ *   - ApiError (400)   → validation failed
+ *   - ApiError (401)   → not logged in
+ *   - Error (other)    → server error
+ *
+ * The calling screen is responsible for catching and mapping to UI states.
+ */
+export async function submitBalletApplication(
+  payload: SubmitApplicationPayload,
+  signal?: AbortSignal
+): Promise<SubmitApplicationResult> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  return customFetch<SubmitApplicationResult>(
+    `${apiUrl}/api/ballet/applications`,
+    {
+      method: "POST",
+      body:   JSON.stringify(payload),
+      signal,
+    }
+  );
+}
+
 // Re-export so callers can check offline status without importing connectivity separately.
 export { isOfflineError };

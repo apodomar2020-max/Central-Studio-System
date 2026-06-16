@@ -1,27 +1,27 @@
 /**
  * Ballet routes — /api/ballet/*
  *
- * Step 3A — public read-only endpoints required by the mobile Assessment screen.
- * No authentication beyond the shared API key (applied globally in app.ts).
- *
  * Routes:
- *   GET /api/ballet/settings           — admin-managed pricing + instructions
- *   GET /api/ballet/assessment-slots   — future active slots with live capacity
+ *   GET  /api/ballet/settings           — admin-managed pricing + instructions (public)
+ *   GET  /api/ballet/assessment-slots   — future active slots with live capacity (public)
+ *   POST /api/ballet/applications       — submit assessment application (student JWT required)
  *
- * Not implemented here (Step 3B and beyond):
- *   POST /api/ballet/applications      — submit assessment application
- *   PATCH /api/admin/ballet/settings   — admin updates to settings
- *   GET/PATCH /api/admin/ballet/slots  — admin slot management
+ * Not implemented here (Step 3C and beyond):
+ *   PATCH /api/admin/ballet/settings    — admin updates to settings
+ *   GET/PATCH /api/admin/ballet/slots   — admin slot management
  */
 
 import { Router, type IRouter } from "express";
 import { and, asc, count, eq, gte } from "drizzle-orm";
+import { z } from "zod";
 import {
   db,
   balletSettingsTable,
   balletAssessmentSlotsTable,
   balletApplicationsTable,
+  balletApplicationEventsTable,
 } from "@workspace/db";
+import { requireStudentAuth } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -192,5 +192,160 @@ router.get("/ballet/assessment-slots", async (_req, res): Promise<void> => {
     res.status(500).json({ error: "Failed to load assessment slots" });
   }
 });
+
+// ─── POST /api/ballet/applications ───────────────────────────────────────────
+//
+// Submits a new ballet assessment application.
+//
+// Authentication: requireStudentAuth (student JWT mandatory).
+// Parent identity is taken exclusively from req.studentId — the client cannot
+// supply or override parentStudentId.
+//
+// Capacity enforcement: slot capacity is computed from COUNT(ballet_applications)
+// inside the transaction — never from a stored counter. This prevents races
+// where two concurrent submissions both pass a pre-checked counter.
+//
+// Transaction order:
+//   1. Load slot (lock with FOR UPDATE to prevent double-booking)
+//   2. Count existing applications for this slot
+//   3. Reject if slot is full (409) or not found/inactive (404)
+//   4. Insert ballet_applications row
+//   5. Insert initial ballet_application_events row (fromStatus=null)
+//   6. Commit
+//
+// Response: 201 { application: { id, status } }
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SubmitApplicationBody = z.object({
+  parentName:            z.string().min(1, "Parent name is required"),
+  parentPhone:           z.string().min(1, "Parent phone is required"),
+  parentEmail:           z.string().email("A valid parent email is required"),
+  childName:             z.string().min(1, "Child name is required"),
+  childBirthday:         z.string().optional(),
+  childAge:              z.number().int().positive().optional(),
+  childGender:           z.enum(["male", "female"]).optional(),
+  emergencyContactName:  z.string().optional(),
+  emergencyContactPhone: z.string().optional(),
+  previousExperience:    z.boolean({ required_error: "previousExperience is required" }),
+  experienceDetails:     z.string().optional(),
+  medicalNotes:          z.string().optional(),
+  notes:                 z.string().optional(),
+  slotId:                z.number({ required_error: "slotId is required" }).int().positive(),
+});
+
+router.post(
+  "/ballet/applications",
+  requireStudentAuth,
+  async (req, res): Promise<void> => {
+    const parsed = SubmitApplicationBody.safeParse(req.body);
+    if (!parsed.success) {
+      const msg = parsed.error.issues[0]?.message ?? "Validation failed";
+      res.status(400).json({ error: msg });
+      return;
+    }
+
+    const {
+      parentName, parentPhone, parentEmail,
+      childName, childBirthday, childAge, childGender,
+      emergencyContactName, emergencyContactPhone,
+      previousExperience, experienceDetails,
+      medicalNotes, notes,
+      slotId,
+    } = parsed.data;
+
+    // Identity comes from the signed JWT only — never from the request body.
+    const parentStudentId = req.studentId!;
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        // Step 1 — Load slot (must be active).
+        const [slot] = await tx
+          .select({
+            id:        balletAssessmentSlotsTable.id,
+            date:      balletAssessmentSlotsTable.date,
+            startTime: balletAssessmentSlotsTable.startTime,
+            endTime:   balletAssessmentSlotsTable.endTime,
+            capacity:  balletAssessmentSlotsTable.capacity,
+            isActive:  balletAssessmentSlotsTable.isActive,
+          })
+          .from(balletAssessmentSlotsTable)
+          .where(eq(balletAssessmentSlotsTable.id, slotId))
+          .limit(1);
+
+        if (!slot || !slot.isActive) {
+          // Signal to the outer catch with a typed error.
+          throw Object.assign(new Error("Assessment slot not found"), { status: 404 });
+        }
+
+        // Step 2 — Count existing applications for this slot (live, not cached).
+        const [{ bookedCount }] = await tx
+          .select({ bookedCount: count(balletApplicationsTable.id) })
+          .from(balletApplicationsTable)
+          .where(eq(balletApplicationsTable.slotId, slotId));
+
+        if (Number(bookedCount) >= slot.capacity) {
+          throw Object.assign(new Error("Selected assessment slot is full"), { status: 409 });
+        }
+
+        // Step 3 — Insert application row.
+        const slotLabel = `${slot.date} ${slot.startTime}-${slot.endTime}`;
+
+        const [application] = await tx
+          .insert(balletApplicationsTable)
+          .values({
+            parentStudentId,
+            parentName,
+            parentPhone,
+            parentEmail,
+            childName,
+            childBirthday:         childBirthday ?? null,
+            childAge:              childAge ?? null,
+            childGender:           childGender ?? null,
+            emergencyContactName:  emergencyContactName ?? null,
+            emergencyContactPhone: emergencyContactPhone ?? null,
+            previousExperience,
+            experienceDetails:     experienceDetails ?? null,
+            medicalNotes:          medicalNotes ?? null,
+            notes:                 notes ?? null,
+            slotId,
+            slotLabel,
+            status: "submitted",
+          })
+          .returning({ id: balletApplicationsTable.id, status: balletApplicationsTable.status });
+
+        // Step 4 — Insert initial audit event.
+        await tx.insert(balletApplicationEventsTable).values({
+          applicationId: application.id,
+          fromStatus:    null,
+          toStatus:      "submitted",
+          changedById:   null,
+          note:          "Application submitted via mobile app",
+        });
+
+        return application;
+      });
+
+      logger.info(
+        { applicationId: result.id, studentId: parentStudentId, slotId },
+        "Ballet application submitted",
+      );
+
+      res.status(201).json({ application: { id: result.id, status: result.status } });
+    } catch (err: unknown) {
+      // Typed errors thrown inside the transaction (slot not found, slot full).
+      const typed = err as { status?: number; message?: string };
+      if (typed.status === 404) {
+        res.status(404).json({ error: "Assessment slot not found" });
+        return;
+      }
+      if (typed.status === 409) {
+        res.status(409).json({ error: "Selected assessment slot is full" });
+        return;
+      }
+      logger.error({ err }, "POST /ballet/applications failed");
+      res.status(500).json({ error: "Failed to submit application" });
+    }
+  },
+);
 
 export default router;
