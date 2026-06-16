@@ -73,7 +73,15 @@ export default function RegisterScreen() {
         return;
       }
 
-      const { student } = data;
+      const { student, accessToken } = data;
+
+      // Store the signed student JWT immediately after registration so the
+      // user is authenticated from this point forward without having to log in.
+      if (accessToken) {
+        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+        await AsyncStorage.setItem("studentToken", accessToken);
+      }
+
       const newUser: User = {
         id: String(student.id),
         fullName: student.name,

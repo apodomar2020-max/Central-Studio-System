@@ -7,6 +7,7 @@ import {
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
@@ -26,13 +27,21 @@ SplashScreen.preventAutoHideAsync();
 //   EXPO_PUBLIC_API_KEY=your-secret-key
 setBaseUrl(process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000");
 
-// Attach the API key as a Bearer token on every request.
-// In development, if EXPO_PUBLIC_API_KEY is not set, requests are still sent
-// (the server allows unauthenticated requests when API_SECRET_KEY is unset).
+// Dynamic auth token getter:
+//   1. If a student access token (JWT) is stored from a prior login, use it.
+//      The server verifies the JWT signature — the mobile app never trusted.
+//   2. Otherwise fall back to the shared EXPO_PUBLIC_API_KEY for guest browsing
+//      (unauthenticated class listings, packages, etc. still work).
 const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? null;
-if (apiKey) {
-  setAuthTokenGetter(() => apiKey);
-}
+setAuthTokenGetter(async () => {
+  try {
+    const studentToken = await AsyncStorage.getItem("studentToken");
+    if (studentToken) return studentToken;
+  } catch {
+    // AsyncStorage failure — fall through to API key
+  }
+  return apiKey;
+});
 
 const queryClient = new QueryClient();
 

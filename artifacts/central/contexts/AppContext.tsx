@@ -211,10 +211,21 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       if (lang) setLanguageState(lang as "en" | "ar");
       if (onboarded === "true") setIsOnboardedState(true);
       const parsedUser = usr ? (JSON.parse(usr) as User) : null;
+
       if (parsedUser) {
-        setUserState(parsedUser);
-        userRef.current = parsedUser;
+        // Security check: if a user session is persisted but there is no
+        // student JWT, the session pre-dates the JWT auth upgrade. Clear it
+        // so the user is prompted to log in and receive a proper signed token.
+        const studentToken = await AsyncStorage.getItem("studentToken");
+        if (!studentToken) {
+          await AsyncStorage.removeItem("user");
+          // parsedUser is intentionally not set in state — session is invalidated.
+        } else {
+          setUserState(parsedUser);
+          userRef.current = parsedUser;
+        }
       }
+
       if (bks) setBookings(JSON.parse(bks));
       if (chldrn) setChildren(JSON.parse(chldrn));
       if (usage) setPackageUsageHistory(JSON.parse(usage));
@@ -222,16 +233,19 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       if (notifs) setNotifications(JSON.parse(notifs));
       if (bannerDismissed === "true") setNewStudentBannerDismissed(true);
       if (refCredits) setReferralCredits(parseInt(refCredits, 10));
+
+      // Reload the referral code for the now-confirmed user (may be null if invalidated)
+      const confirmedUser = userRef.current;
       if (refCode) {
         setReferralCode(refCode);
-      } else if (parsedUser) {
-        const generated = generateCode(parsedUser.fullName);
+      } else if (confirmedUser) {
+        const generated = generateCode(confirmedUser.fullName);
         setReferralCode(generated);
         await AsyncStorage.setItem("referralCode", generated);
       }
-      // Load packages from API for the persisted user
-      if (parsedUser) {
-        fetchAndSetPackages(parsedUser.email).catch(() => {});
+      // Load packages from API for the confirmed user
+      if (confirmedUser) {
+        fetchAndSetPackages(confirmedUser.email).catch(() => {});
       }
     } catch {}
     setIsLoading(false);
@@ -290,7 +304,11 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       // Load this user's packages from the API
       fetchAndSetPackages(usr.email).catch(() => {});
     } else {
+      // Logout — clear both the user record and the student JWT.
+      // After this, setAuthTokenGetter falls back to the shared API key
+      // so guest browsing (classes, packages) still works.
       await AsyncStorage.removeItem("user");
+      await AsyncStorage.removeItem("studentToken");
       setUserPackages([]);
     }
   }, []);

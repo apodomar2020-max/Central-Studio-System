@@ -56,7 +56,16 @@ export default function LoginScreen() {
         return;
       }
 
-      const { student } = data;
+      const { student, accessToken } = data;
+
+      // Store the signed student JWT so every subsequent API call is
+      // automatically authenticated as this student (via setAuthTokenGetter
+      // in _layout.tsx). The token is verified server-side on every request.
+      if (accessToken) {
+        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+        await AsyncStorage.setItem("studentToken", accessToken);
+      }
+
       const user: User = {
         id: String(student.id),
         fullName: student.name,

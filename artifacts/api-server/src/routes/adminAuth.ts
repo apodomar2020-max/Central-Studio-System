@@ -53,7 +53,7 @@ function signAdminToken(payload: AdminTokenPayload): string {
 }
 
 export function verifyAdminToken(token: string): AdminTokenPayload {
-  return jwt.verify(token, JWT_SECRET) as AdminTokenPayload;
+  return jwt.verify(token, JWT_SECRET) as unknown as AdminTokenPayload;
 }
 
 // ─── Admin auth middleware ─────────────────────────────────────────────────────

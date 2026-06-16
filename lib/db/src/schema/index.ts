@@ -12,3 +12,11 @@ export * from "./attendance";
 export * from "./heroItems";
 export * from "./emailOtps";
 export * from "./systemUsers";
+// Ballet Assessment System + Children (migration 0009)
+export * from "./children";
+export * from "./balletSettings";
+export * from "./balletLevels";
+export * from "./balletAssessmentSlots";
+export * from "./balletApplications";
+export * from "./balletApplicationEvents";
+export * from "./balletLevelAssignments";

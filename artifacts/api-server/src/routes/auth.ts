@@ -8,10 +8,25 @@
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, emailOtpsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { STUDENT_JWT_SECRET, type StudentTokenPayload } from "../middlewares/auth";
+
+// ─── Student JWT helpers ──────────────────────────────────────────────────────
+
+const STUDENT_JWT_EXPIRES_IN = "30d"; // mobile sessions live for 30 days
+
+function signStudentToken(studentId: number, email: string): string {
+  const payload: Omit<StudentTokenPayload, "iat" | "exp"> = {
+    sub: studentId,
+    email,
+    type: "student",
+  };
+  return jwt.sign(payload, STUDENT_JWT_SECRET, { expiresIn: STUDENT_JWT_EXPIRES_IN });
+}
 
 const OTP_TTL_SECONDS = 600; // 10 minutes
 
@@ -83,9 +98,11 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       qrToken: studentsTable.qrToken,
     });
 
+  const accessToken = signStudentToken(student.id, student.email);
+
   logger.info({ studentId: student.id }, "New student registered");
 
-  res.status(201).json({ student });
+  res.status(201).json({ student, accessToken });
 });
 
 // POST /api/auth/login
@@ -122,6 +139,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
+  const accessToken = signStudentToken(student.id, student.email);
+
   logger.info({ studentId: student.id }, "Student logged in");
 
   res.json({
@@ -134,6 +153,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       joinedAt: student.joinedAt,
       qrToken: student.qrToken,
     },
+    accessToken,
   });
 });
 

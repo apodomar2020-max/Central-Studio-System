@@ -17,6 +17,7 @@ import attendanceRouter from "./attendance";
 import heroItemsRouter from "./heroItems";
 import emailOtpRouter from "./emailOtp";
 import adminAuthRouter from "./adminAuth";
+import childrenRouter from "./children";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(attendanceRouter);
 router.use(packageOrdersRouter);
 router.use(heroItemsRouter);
 router.use(adminAuthRouter);
+router.use(childrenRouter);
 
 export default router;
