@@ -90,8 +90,8 @@ export default function ClassCard({ item, instructor, compact = false }: ClassCa
         <View style={styles.footer}>
           {instructor && (
             <View style={styles.instructorRow}>
-              <View style={[styles.avatar, { backgroundColor: instructor.photoColor + "33" }]}>
-                <Text style={[styles.avatarText, { color: instructor.photoColor }]}>
+              <View style={[styles.avatar, { backgroundColor: colors.studio.primary + "33" }]}>
+                <Text style={[styles.avatarText, { color: colors.studio.primary }]}>
                   {instructor.initials}
                 </Text>
               </View>

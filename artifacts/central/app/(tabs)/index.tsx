@@ -21,9 +21,6 @@ import {
 
 import { useAppContext } from "@/contexts/AppContext";
 import {
-  INSTRUCTORS,
-  getCurrentWeekClasses,
-  getInstructor,
   DanceClass,
   Instructor,
 } from "@/data/mockData";
@@ -32,6 +29,10 @@ import type { HeroItem } from "@workspace/api-client-react";
 import { mapApiInstructorToMobile, mapScheduleAndClassToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import NewStudentBanner from "@/components/NewStudentBanner";
+import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/SkeletonLoader";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
+import { isOfflineError } from "@/services/connectivity";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -71,7 +72,6 @@ function HeroSlide({ item }: { item: HeroItem }) {
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            // buttonRoute is an Expo Router path; push it directly
             router.push(item.buttonRoute as any);
           }}
           style={styles.heroBannerBtn}
@@ -83,39 +83,39 @@ function HeroSlide({ item }: { item: HeroItem }) {
   );
 }
 
-/** Static fallback shown before any hero items exist in the DB */
-function HeroStaticFallback() {
+/** Skeleton placeholder shown while hero data is loading from the backend */
+function HeroSkeleton() {
   return (
-    <View style={styles.heroBanner}>
-      <Image
-        source={{ uri: "https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80" }}
-        style={StyleSheet.absoluteFill}
-        resizeMode="cover"
-      />
-      <LinearGradient
-        colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.52)", "rgba(0,0,0,0.92)"]}
-        locations={[0, 0.45, 1]}
-        style={styles.heroBannerGradient}
-      >
-        <Text style={styles.heroBannerTagline}>EGYPT'S TOP DANCE SCHOOL</Text>
-        <Text style={styles.heroBannerTitle}>Explore The Art{"\n"}Of Movement</Text>
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push("/(tabs)/classes");
-          }}
-          style={styles.heroBannerBtn}
-        >
-          <Text style={styles.heroBannerBtnText}>Get Started</Text>
-        </TouchableOpacity>
-      </LinearGradient>
+    <View style={[styles.heroBanner, styles.heroSkeletonBg]}>
+      <View style={styles.heroSkeletonContent}>
+        <View style={styles.heroSkeletonTagline} />
+        <View style={styles.heroSkeletonTitle} />
+        <View style={styles.heroSkeletonBtn} />
+      </View>
     </View>
   );
 }
 
-function HeroCarousel() {
-  const { data: allItems } = useListHeroItems();
-  const items = (allItems ?? []).filter((i) => i.isActive);
+interface HeroCarouselProps {
+  items: HeroItem[];
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  onRetry: () => void;
+}
+
+/**
+ * Hero section — data comes exclusively from the backend.
+ * No static fallback, no hardcoded content.
+ *
+ * States:
+ *   loading  → HeroSkeleton
+ *   offline  → OfflineState (compact) inside hero frame
+ *   error    → ErrorState (compact) inside hero frame
+ *   empty    → section hidden (null)
+ *   data     → carousel / single slide
+ */
+function HeroCarousel({ items, isLoading, isError, error, onRetry }: HeroCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -123,12 +123,30 @@ function HeroCarousel() {
     setActiveIndex(idx);
   };
 
-  // No live slides yet → show static fallback so home screen always looks good
-  if (!items.length) {
-    return <HeroStaticFallback />;
+  // Loading → skeleton (never static marketing content)
+  if (isLoading) {
+    return <HeroSkeleton />;
   }
 
-  // Single slide → no need for a FlatList / dots
+  // Network or server error → show appropriate state inside the hero frame
+  if (isError) {
+    return (
+      <View style={[styles.heroBanner, styles.heroStateBg]}>
+        {isOfflineError(error) ? (
+          <OfflineState variant="compact" onRetry={onRetry} />
+        ) : (
+          <ErrorState variant="compact" onRetry={onRetry} message="Couldn't load featured content." />
+        )}
+      </View>
+    );
+  }
+
+  // Backend returned no active slides → hide section entirely
+  if (!items.length) {
+    return null;
+  }
+
+  // Single slide → no FlatList needed
   if (items.length === 1) {
     return (
       <View style={styles.heroBanner}>
@@ -190,13 +208,13 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
         />
       ) : (
         <LinearGradient
-          colors={[instructor.photoColor + "DD", instructor.photoColor + "44", "#0B0B12"]}
+          colors={[colors.studio.primary + "DD", colors.studio.primary + "44", "#0B0B12"]}
           start={{ x: 0.2, y: 0 }}
           end={{ x: 0.8, y: 1 }}
           style={StyleSheet.absoluteFill}
         >
-          <View style={[styles.instructorInitialsBg, { backgroundColor: instructor.photoColor + "30" }]}>
-            <Text style={[styles.instructorInitials, { color: instructor.photoColor }]}>
+          <View style={[styles.instructorInitialsBg, { backgroundColor: colors.studio.primary + "30" }]}>
+            <Text style={[styles.instructorInitials, { color: colors.studio.primary }]}>
               {instructor.initials}
             </Text>
           </View>
@@ -209,15 +227,15 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
         <View style={styles.instructorInfoRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.instructorName} numberOfLines={1}>{instructor.name}</Text>
-            <Text style={[styles.instructorRole, { color: instructor.photoColor }]} numberOfLines={1}>
+            <Text style={[styles.instructorRole, { color: colors.studio.primary }]} numberOfLines={1}>
               {instructor.title}
             </Text>
           </View>
           <TouchableOpacity
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } }); }}
-            style={[styles.instructorPlusBtn, { borderColor: instructor.photoColor + "80" }]}
+            style={[styles.instructorPlusBtn, { borderColor: colors.studio.primary + "80" }]}
           >
-            <Ionicons name="add" size={14} color={instructor.photoColor} />
+            <Ionicons name="add" size={14} color={colors.studio.primary} />
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -232,7 +250,7 @@ function ClassListCard({
   item: DanceClass;
   instructorMap?: Map<string, Instructor>;
 }) {
-  const instructor = instructorMap?.get(item.instructorId) ?? getInstructor(item.instructorId);
+  const instructor = instructorMap?.get(item.instructorId);
   const available = item.capacity - item.bookedCount;
 
   const today = new Date().toISOString().slice(0, 10);
@@ -255,14 +273,7 @@ function ClassListCard({
     item.status === "fewSeats" ? `${available} left` :
     item.status === "full" ? "Full" : "Waitlist";
 
-  const categoryColor = (() => {
-    const cats: Record<string, string> = {
-      c1: "#FF6B35", c2: "#FFD400", c3: "#EF4444", c4: "#EC4899",
-      c5: "#F97316", c6: "#22C55E", c7: "#A78BFA", c8: "#F59E0B",
-      c9: "#06B6D4", c10: "#8B5CF6", c11: "#14B8A6", c12: "#3B82F6",
-    };
-    return cats[item.categoryId] ?? colors.studio.primary;
-  })();
+  const categoryColor = colors.studio.primary;
 
   return (
     <TouchableOpacity
@@ -289,8 +300,8 @@ function ClassListCard({
           <Text style={styles.classCardDesc} numberOfLines={2}>{item.description}</Text>
 
           <View style={styles.classCardInstructor}>
-            <View style={[styles.instructorMiniAvatar, { backgroundColor: instructor?.photoColor ? instructor.photoColor + "30" : "#1E1E26" }]}>
-              <Text style={[styles.instructorMiniInitials, { color: instructor?.photoColor ?? "#9CA3AF" }]}>
+            <View style={[styles.instructorMiniAvatar, { backgroundColor: colors.studio.primary + "30" }]}>
+              <Text style={[styles.instructorMiniInitials, { color: colors.studio.primary }]}>
                 {instructor?.initials ?? "?"}
               </Text>
             </View>
@@ -349,13 +360,34 @@ export default function StudioHomeScreen() {
   const showNewStudentBanner = bookings.length === 0 && !newStudentBannerDismissed;
   const insets = useSafeAreaInsets();
 
-  // Live instructors — fall back to mock data while loading so the section is never empty
-  const { data: apiInstructors, refetch: refetchInstructors, isRefetching: isRefetchingInstructors } = useListInstructors();
-  const instructors = apiInstructors?.length
-    ? apiInstructors.filter((i) => i.isActive).map(mapApiInstructorToMobile)
-    : INSTRUCTORS;
+  // ── Hero items (system-managed, from backend only) ─────────────────────────
+  const {
+    data: allHeroItems,
+    refetch: refetchHero,
+    isLoading: isLoadingHero,
+    isError: isErrorHero,
+    error: heroError,
+  } = useListHeroItems();
+  const heroItems: HeroItem[] = React.useMemo(
+    () => (allHeroItems ?? []).filter((i) => i.isActive),
+    [allHeroItems]
+  );
 
-  // Instructor lookup map keyed by string ID (works for both "i1" mock and "1" API ids)
+  // Live instructors
+  const {
+    data: apiInstructors,
+    refetch: refetchInstructors,
+    isRefetching: isRefetchingInstructors,
+    isLoading: isLoadingInstructors,
+    isError: isErrorInstructors,
+    error: instructorsError,
+  } = useListInstructors();
+  const instructors: Instructor[] = React.useMemo(
+    () => (apiInstructors ?? []).filter((i) => i.isActive).map(mapApiInstructorToMobile),
+    [apiInstructors]
+  );
+
+  // Instructor lookup map keyed by string ID
   const instructorMap = React.useMemo(() => {
     const m = new Map<string, Instructor>();
     instructors.forEach((i) => m.set(i.id, i));
@@ -363,26 +395,41 @@ export default function StudioHomeScreen() {
   }, [instructors]);
 
   // Live upcoming classes — join schedules + classes for the current Egyptian week
-  const { data: apiSchedules, refetch: refetchSchedules, isRefetching: isRefetchingSchedules } = useListSchedules();
-  const { data: apiClasses, refetch: refetchClasses, isRefetching: isRefetchingClasses } = useListClasses();
+  const {
+    data: apiSchedules,
+    refetch: refetchSchedules,
+    isRefetching: isRefetchingSchedules,
+    isLoading: isLoadingSchedules,
+    isError: isErrorSchedules,
+    error: schedulesError,
+  } = useListSchedules();
+  const {
+    data: apiClasses,
+    refetch: refetchClasses,
+    isRefetching: isRefetchingClasses,
+    isLoading: isLoadingClasses,
+  } = useListClasses();
+
+  const isLoadingWeekClasses = isLoadingSchedules || isLoadingClasses;
+  const isErrorWeekClasses = isErrorSchedules;
+  const weekClassesError = schedulesError;
 
   const isRefreshing = isRefetchingInstructors || isRefetchingSchedules || isRefetchingClasses;
   const onRefresh = useCallback(() => {
+    refetchHero();
     refetchInstructors();
     refetchSchedules();
     refetchClasses();
-  }, [refetchInstructors, refetchSchedules, refetchClasses]);
+  }, [refetchHero, refetchInstructors, refetchSchedules, refetchClasses]);
 
   const weekClasses = React.useMemo<DanceClass[]>(() => {
     if (!apiSchedules?.length || !apiClasses?.length) {
-      // Fall back to mock data while the API is loading
-      return getCurrentWeekClasses();
+      return [];
     }
 
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
 
-    // Current time as "HH:MM" in 24h format for same-day comparison
     const nowH = String(today.getHours()).padStart(2, "0");
     const nowM = String(today.getMinutes()).padStart(2, "0");
     const currentTime24 = `${nowH}:${nowM}`;
@@ -409,20 +456,27 @@ export default function StudioHomeScreen() {
       if (mapped.isBallet) continue;
       if (mapped.date < todayStr || mapped.date > thuStr) continue;
 
-      // For today's classes: skip any whose start time has already arrived.
-      // sched.startTime is "HH:MM" (24h) — string comparison is safe here.
       if (mapped.date === todayStr && sched.startTime <= currentTime24) continue;
 
-      // Deduplicate: only one entry per class per day
       const key = `${mapped.id}-${mapped.date}`;
       if (!result.some((r) => `${r.id}-${r.date}` === key)) {
         result.push(mapped);
       }
     }
 
+    function parseDisplayTime(t: string): number {
+      const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!m) return 0;
+      let h = parseInt(m[1], 10);
+      const min = parseInt(m[2], 10);
+      if (m[3].toUpperCase() === "PM" && h !== 12) h += 12;
+      if (m[3].toUpperCase() === "AM" && h === 12) h = 0;
+      return h * 60 + min;
+    }
+
     return result.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return a.startTime.localeCompare(b.startTime);
+      return parseDisplayTime(a.startTime) - parseDisplayTime(b.startTime);
     });
   }, [apiSchedules, apiClasses]);
 
@@ -467,20 +521,44 @@ export default function StudioHomeScreen() {
       >
         {showNewStudentBanner && <NewStudentBanner onDismiss={dismissNewStudentBanner} />}
 
-        <HeroCarousel />
+        <HeroCarousel
+          items={heroItems}
+          isLoading={isLoadingHero}
+          isError={isErrorHero}
+          error={heroError}
+          onRetry={refetchHero}
+        />
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Our Instructors</Text>
           </View>
-          <FlatList
-            data={instructors}
-            keyExtractor={(i) => i.id}
-            renderItem={({ item }) => <InstructorCard instructor={item} />}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingLeft: 20, gap: 12, paddingRight: 8 }}
-          />
+          {isLoadingInstructors ? (
+            <FlatList
+              data={[1, 2, 3, 4]}
+              keyExtractor={(i) => String(i)}
+              renderItem={() => <InstructorCardSkeleton />}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingLeft: 20, gap: 12, paddingRight: 8 }}
+              scrollEnabled={false}
+            />
+          ) : isErrorInstructors ? (
+            isOfflineError(instructorsError) ? (
+              <OfflineState variant="compact" onRetry={refetchInstructors} />
+            ) : (
+              <ErrorState variant="compact" onRetry={refetchInstructors} message="Couldn't load instructors." />
+            )
+          ) : (
+            <FlatList
+              data={instructors}
+              keyExtractor={(i) => i.id}
+              renderItem={({ item }) => <InstructorCard instructor={item} />}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingLeft: 20, gap: 12, paddingRight: 8 }}
+            />
+          )}
         </View>
 
         <View style={styles.section}>
@@ -494,7 +572,17 @@ export default function StudioHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {weekClasses.length === 0 ? (
+          {isLoadingWeekClasses ? (
+            <View style={{ paddingHorizontal: 20, gap: 12 }}>
+              {[1, 2, 3].map((i) => <ClassListCardSkeleton key={i} />)}
+            </View>
+          ) : isErrorWeekClasses ? (
+            isOfflineError(weekClassesError) ? (
+              <OfflineState variant="compact" onRetry={() => { refetchSchedules(); refetchClasses(); }} />
+            ) : (
+              <ErrorState variant="compact" onRetry={() => { refetchSchedules(); refetchClasses(); }} message="Couldn't load upcoming classes." />
+            )
+          ) : weekClasses.length === 0 ? (
             <View style={[styles.emptyCard, { borderColor: colors.studio.border }]}>
               <Ionicons name="calendar-outline" size={32} color="#4B5563" />
               <Text style={styles.emptyTitle}>No upcoming classes this week</Text>
@@ -594,6 +682,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   heroBannerBtnText: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#000" },
+
+  // Hero skeleton
+  heroSkeletonBg: { backgroundColor: "#14141C", justifyContent: "flex-end" },
+  heroSkeletonContent: { padding: 20, gap: 10 },
+  heroSkeletonTagline: { width: 130, height: 10, borderRadius: 5, backgroundColor: "#2A2A35" },
+  heroSkeletonTitle: { width: "75%", height: 28, borderRadius: 8, backgroundColor: "#2A2A35" },
+  heroSkeletonBtn: { width: 110, height: 36, borderRadius: 50, backgroundColor: "#2A2A35", marginTop: 4 },
+
+  // Hero error/offline state container
+  heroStateBg: { backgroundColor: "#0E1619", justifyContent: "center", alignItems: "center" },
 
   section: { marginBottom: 28 },
   sectionHeader: {

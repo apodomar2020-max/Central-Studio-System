@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Central Studio & Stage",
+    "name": "Central Studio",
     "slug": "central",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/central_studio_logo.png",
     "scheme": "central",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/icon.png",
+      "image": "./assets/images/central_studio_logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#060C10"
     },
@@ -23,13 +23,13 @@
     "android": {
       "package": "com.centralstudio.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
+        "foregroundImage": "./assets/images/central_studio_logo.png",
         "backgroundColor": "#060C10"
       },
       "backgroundColor": "#060C10"
     },
     "web": {
-      "favicon": "./assets/images/icon.png",
+      "favicon": "./assets/images/central_studio_logo.png",
       "backgroundColor": "#060C10"
     },
     "plugins": [

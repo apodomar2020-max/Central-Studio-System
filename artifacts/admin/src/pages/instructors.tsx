@@ -163,16 +163,15 @@ export default function Instructors() {
               <TableHead>Specialties</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Experience</TableHead>
-              <TableHead>Rating</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : instructors?.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No instructors yet. Add one to get started.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No instructors yet. Add one to get started.</TableCell></TableRow>
             ) : (
               instructors?.map((instructor) => (
                 <TableRow key={instructor.id} data-testid={`row-instructor-${instructor.id}`}>
@@ -193,7 +192,6 @@ export default function Instructors() {
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{(instructor as Instructor).teachingLevel ?? "—"}</TableCell>
                   <TableCell>{instructor.experienceYears} yrs</TableCell>
-                  <TableCell>{instructor.rating ?? "—"}</TableCell>
                   <TableCell>
                     <Badge variant={instructor.isActive ? "default" : "outline"}>
                       {instructor.isActive ? "Active" : "Inactive"}
@@ -260,22 +258,13 @@ export default function Instructors() {
                 </FormItem>
               )} />
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="experienceYears" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Years of Experience</FormLabel>
-                    <FormControl><Input type="number" data-testid="input-instructor-experience" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="rating" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Rating (0–5)</FormLabel>
-                    <FormControl><Input type="number" step="0.1" data-testid="input-instructor-rating" {...field} value={field.value ?? ""} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
+              <FormField control={form.control} name="experienceYears" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Years of Experience</FormLabel>
+                  <FormControl><Input type="number" data-testid="input-instructor-experience" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
 
               <FormField control={form.control} name="bio" render={({ field }) => (
                 <FormItem>

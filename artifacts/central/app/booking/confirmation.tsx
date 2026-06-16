@@ -13,7 +13,6 @@ import {
 } from "react-native";
 
 import { useAppContext } from "@/contexts/AppContext";
-import { getClassById } from "@/data/mockData";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 
@@ -23,7 +22,6 @@ export default function ConfirmationScreen() {
   const insets = useSafeAreaInsets();
 
   const booking = bookings.find((b) => b.bookingNumber === bookingNumber);
-  const cls = getClassById(classId ?? "");
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

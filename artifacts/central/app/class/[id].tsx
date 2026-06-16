@@ -5,7 +5,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
 import {
-  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,6 +17,10 @@ import { useGetClass, useGetInstructor } from "@workspace/api-client-react";
 import { mapApiClassToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import { DetailSkeleton } from "@/components/SkeletonLoader";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
+import { isOfflineError } from "@/services/connectivity";
 
 function StatusBadge({ status }: { status: string }) {
   const cfg = {
@@ -51,24 +54,33 @@ export default function ClassDetailScreen() {
 
   // ── Loading ──
   if (classQuery.isLoading) {
+    return <DetailSkeleton />;
+  }
+
+  // ── Offline ──
+  if (classQuery.isError && isOfflineError(classQuery.error)) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.studio.primary} />
+      <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
+          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+        <OfflineState onRetry={() => classQuery.refetch()} />
       </View>
     );
   }
 
-  // ── Error / not found ──
+  // ── Server error / not found ──
   if (classQuery.isError || !cls) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Ionicons name="alert-circle-outline" size={48} color="#6B7280" />
-        <Text style={{ color: "#9CA3AF", fontFamily: "Inter_400Regular", marginTop: 8 }}>
-          {classQuery.isError ? "Couldn't load class — check your connection" : "Class not found"}
-        </Text>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: colors.studio.primary, fontFamily: "Inter_600SemiBold" }}>Go back</Text>
+      <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
+          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
+        {classQuery.isError ? (
+          <ErrorState onRetry={() => classQuery.refetch()} message="Couldn't load class details." />
+        ) : (
+          <ErrorState title="Class not found" message="This class may no longer be available." onRetry={() => router.back()} />
+        )}
       </View>
     );
   }
@@ -139,13 +151,6 @@ export default function ClassDetailScreen() {
                 <Text style={styles.instructorName}>{instructor.name}</Text>
                 <Text style={styles.instructorBio} numberOfLines={2}>{instructor.bio}</Text>
                 <View style={styles.instructorMeta}>
-                  <View style={styles.metaChip}>
-                    <Ionicons name="star" size={12} color={colors.studio.primary} />
-                    <Text style={[styles.metaChipText, { color: colors.studio.primary }]}>
-                      {instructor.rating.toFixed(1)}
-                    </Text>
-                  </View>
-                  <Text style={styles.metaChipSep}>·</Text>
                   <Text style={styles.metaChipText2}>{instructor.totalClasses} yrs experience</Text>
                 </View>
               </View>
@@ -205,6 +210,11 @@ export default function ClassDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0B0B0F" },
   centered: { justifyContent: "center", alignItems: "center" },
+  backBtnAbsolute: {
+    position: "absolute", top: 60, left: 20, zIndex: 10,
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
+  },
   heroGradient: { paddingHorizontal: 20, paddingBottom: 20, gap: 10 },
   backBtn: {
     width: 40, height: 40, borderRadius: 20,

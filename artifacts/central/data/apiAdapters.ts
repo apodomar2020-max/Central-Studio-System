@@ -15,21 +15,6 @@ import type {
 
 import { DANCE_CATEGORIES, type AgeGroup, type DanceClass, type Instructor } from "./mockData";
 
-// Deterministic avatar palette so an instructor always renders the same colour.
-const AVATAR_COLORS = [
-  "#FF6B35",
-  "#EF4444",
-  "#A78BFA",
-  "#EC4899",
-  "#22C55E",
-  "#06B6D4",
-  "#F59E0B",
-  "#3B82F6",
-];
-
-function colorForId(id: number): string {
-  return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
-}
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -70,7 +55,7 @@ export function mapApiInstructorToMobile(api: ApiInstructor): Instructor {
     // No live "classes taught" count from the API yet; experienceYears is the
     // closest available signal and keeps profile cards from showing 0.
     totalClasses: api.experienceYears,
-    photoColor: colorForId(api.id),
+    photoColor: "#00B6D7",
     initials: initialsFromName(api.name),
     photoUrl: api.photoUrl ?? undefined,
   };

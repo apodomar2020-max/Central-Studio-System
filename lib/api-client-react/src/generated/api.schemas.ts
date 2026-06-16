@@ -535,6 +535,8 @@ export type ListSchedulesParams = {
 
 export type ListBookingsParams = {
   status?: string;
+  /** Filter bookings by student email (mobile client convenience filter). */
+  studentEmail?: string;
 };
 
 export type ListPackageOrdersParams = {

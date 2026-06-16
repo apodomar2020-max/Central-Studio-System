@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Platform,
@@ -16,10 +16,18 @@ import {
 } from "react-native";
 
 import { useAppContext } from "@/contexts/AppContext";
-import { BALLET_ASSESSMENT_SLOTS, BALLET_LEVELS, BALLET_PRICING, BalletAssessmentSlot } from "@/data/mockData";
+import {
+  BALLET_LEVELS,
+  BALLET_PRICING,
+  AssessmentSlot,
+  fetchAssessmentSlots,
+} from "@/services/balletAssessmentService";
+import { probeConnectivity, isOfflineError } from "@/services/connectivity";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import StepIndicator from "@/components/StepIndicator";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
 
 const BALLET_COLOR = "#A78BFA";
 const STEPS = ["About You", "Child Info", "Experience", "Select Slot", "Review"];
@@ -35,7 +43,7 @@ type FormData = {
   previousExperience: boolean | null;
   experienceDetails: string;
   medicalNotes: string;
-  selectedSlot: BalletAssessmentSlot | null;
+  selectedSlot: AssessmentSlot | null;
   emergencyContactName: string;
   emergencyContactPhone: string;
   notes: string;
@@ -101,6 +109,47 @@ export default function BalletAssessmentScreen() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [submitted, setSubmitted] = useState(false);
+
+  // ── Connectivity gate ──────────────────────────────────────────────────────
+  // We probe connectivity on mount so offline users see OfflineState immediately
+  // rather than navigating into the form and hitting an error at step 3.
+  const [connectivity, setConnectivity] = useState<"checking" | "online" | "offline">("checking");
+
+  // ── Slot data state ────────────────────────────────────────────────────────
+  const [slots, setSlots] = useState<AssessmentSlot[]>([]);
+  const [slotsState, setSlotsState] = useState<"idle" | "loading" | "success" | "empty" | "error" | "offline">("idle");
+
+  const loadSlots = useCallback(async (signal?: AbortSignal) => {
+    setSlotsState("loading");
+    try {
+      const data = await fetchAssessmentSlots(signal);
+      setSlots(data);
+      setSlotsState(data.length === 0 ? "empty" : "success");
+    } catch (e) {
+      if ((e as any)?.name === "AbortError") return;
+      setSlotsState(isOfflineError(e) ? "offline" : "error");
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    // 1. Probe connectivity first.
+    probeConnectivity(controller.signal)
+      .then((status) => {
+        if (controller.signal.aborted) return;
+        setConnectivity(status);
+        // 2. Only fetch slots if we're online.
+        if (status === "online") {
+          loadSlots(controller.signal);
+        }
+      })
+      .catch(() => {
+        // AbortError from navigation — ignore.
+      });
+
+    return () => controller.abort();
+  }, [loadSlots]);
 
   const existing = baletApplications[0];
 
@@ -264,6 +313,40 @@ export default function BalletAssessmentScreen() {
     );
   }
 
+  // Show offline gate while checking, or if offline
+  if (connectivity !== "online") {
+    const handleConnectivityRetry = () => {
+      setConnectivity("checking");
+      const controller = new AbortController();
+      probeConnectivity(controller.signal)
+        .then((status) => {
+          setConnectivity(status);
+          if (status === "online") loadSlots();
+        })
+        .catch(() => {});
+    };
+
+    return (
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.topBarCenter}>
+            <Text style={styles.topBarTitle}>Ballet Assessment</Text>
+          </View>
+          <View style={{ width: 40 }} />
+        </View>
+        {connectivity === "offline" ? (
+          <OfflineState onRetry={handleConnectivityRetry} />
+        ) : (
+          // "checking" state — blank while we probe
+          <View style={{ flex: 1 }} />
+        )}
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       <View style={styles.topBar}>
@@ -406,7 +489,44 @@ export default function BalletAssessmentScreen() {
               <Text style={styles.stepDesc}>Select your preferred assessment appointment. Each session is 30 minutes.</Text>
             </View>
 
-            {BALLET_ASSESSMENT_SLOTS.map((slot) => {
+            {/* Loading state */}
+            {slotsState === "loading" && (
+              <View style={styles.slotsPlaceholder}>
+                <Ionicons name="time-outline" size={28} color={BALLET_COLOR} />
+                <Text style={styles.slotsPlaceholderText}>Loading available slots…</Text>
+              </View>
+            )}
+
+            {/* Offline state (detected while loading slots) */}
+            {slotsState === "offline" && (
+              <OfflineState
+                variant="compact"
+                onRetry={() => loadSlots()}
+              />
+            )}
+
+            {/* Server/endpoint error — endpoint not ready yet */}
+            {slotsState === "error" && (
+              <ErrorState
+                variant="compact"
+                title="Slots Unavailable"
+                message="Assessment slot booking is not yet available online. Please contact the studio to schedule your assessment."
+                onRetry={() => loadSlots()}
+              />
+            )}
+
+            {/* Empty — no future slots */}
+            {slotsState === "empty" && (
+              <View style={styles.slotsPlaceholder}>
+                <Ionicons name="calendar-outline" size={28} color="#6B7280" />
+                <Text style={[styles.slotsPlaceholderText, { color: "#9CA3AF" }]}>
+                  No assessment slots are currently available. Please check back soon or contact the studio.
+                </Text>
+              </View>
+            )}
+
+            {/* Success — render live slots from backend */}
+            {slotsState === "success" && slots.map((slot) => {
               const isSelected = form.selectedSlot?.id === slot.id;
               const isFull = slot.status === "full";
               return (
@@ -610,6 +730,19 @@ const styles = StyleSheet.create({
   yesNoBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#6B7280" },
   subSectionLabel: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#FFFFFF", marginBottom: -4 },
   divider: { height: 1, backgroundColor: "#1E2E38", marginVertical: 4 },
+  slotsPlaceholder: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 32,
+    paddingHorizontal: 16,
+  },
+  slotsPlaceholderText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: BALLET_COLOR,
+    textAlign: "center",
+    lineHeight: 18,
+  },
   slotCard: {
     flexDirection: "row",
     justifyContent: "space-between",

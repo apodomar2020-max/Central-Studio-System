@@ -6,7 +6,6 @@ import { router } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
-  ActivityIndicator,
   Modal,
   Platform,
   RefreshControl,
@@ -22,6 +21,10 @@ import type { PricePackage } from "@workspace/api-client-react";
 import { useAppContext, type UserPackage } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import { PackageCardSkeleton } from "@/components/SkeletonLoader";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
+import { isOfflineError } from "@/services/connectivity";
 
 function PackageCard({
   pkg,
@@ -226,7 +229,14 @@ function PendingPackageCard({ pkg, onCancel }: { pkg: UserPackage; onCancel: () 
 
 export default function PackagesScreen() {
   const { user, userPackages, purchasePackage, cancelPackage, refreshUserPackages } = useAppContext();
-  const { data: packages, isLoading: packagesLoading, isRefetching: isRefetchingPackages, refetch: refetchPackages } = useListPricePackages();
+  const {
+    data: packages,
+    isLoading: packagesLoading,
+    isError: isPackagesError,
+    error: packagesQueryError,
+    isRefetching: isRefetchingPackages,
+    refetch: refetchPackages,
+  } = useListPricePackages();
 
   const isRefreshing = isRefetchingPackages;
   const onRefresh = useCallback(() => {
@@ -338,7 +348,15 @@ export default function PackagesScreen() {
               </Text>
             </View>
             {packagesLoading ? (
-              <ActivityIndicator color={colors.studio.primary} style={{ marginTop: 40 }} />
+              <View style={{ paddingTop: 8 }}>
+                {[1, 2, 3].map((i) => <PackageCardSkeleton key={i} />)}
+              </View>
+            ) : isPackagesError ? (
+              isOfflineError(packagesQueryError) ? (
+                <OfflineState onRetry={refetchPackages} />
+              ) : (
+                <ErrorState onRetry={refetchPackages} message="Couldn't load packages. Please try again." />
+              )
             ) : visiblePackages.length === 0 ? (
               <View style={styles.emptyWrap}>
                 <Text style={styles.emptyTitle}>No packages available</Text>

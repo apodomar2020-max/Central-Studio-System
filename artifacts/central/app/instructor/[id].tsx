@@ -5,7 +5,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
 import {
-  ActivityIndicator,
   Image,
   Linking,
   Platform,
@@ -19,6 +18,10 @@ import { useGetInstructor } from "@workspace/api-client-react";
 
 import { mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
+import { DetailSkeleton } from "@/components/SkeletonLoader";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
+import { isOfflineError } from "@/services/connectivity";
 
 export default function InstructorDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -34,23 +37,31 @@ export default function InstructorDetailScreen() {
   const apiData = query.data;
 
   if (query.isLoading) {
+    return <DetailSkeleton />;
+  }
+
+  if (query.isError && isOfflineError(query.error)) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.studio.primary} />
+      <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnFallback}>
+          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+        <OfflineState onRetry={() => query.refetch()} />
       </View>
     );
   }
 
   if (query.isError || !instructor) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Ionicons name="alert-circle-outline" size={48} color="#6B7280" />
-        <Text style={styles.errorText}>
-          {query.isError ? "Couldn't load instructor — check your connection" : "Instructor not found"}
-        </Text>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: colors.studio.primary, fontFamily: "Inter_600SemiBold" }}>Go back</Text>
+      <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnFallback}>
+          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
+        {query.isError ? (
+          <ErrorState onRetry={() => query.refetch()} message="Couldn't load instructor details." />
+        ) : (
+          <ErrorState title="Instructor not found" message="This instructor may no longer be available." onRetry={() => router.back()} />
+        )}
       </View>
     );
   }
@@ -105,12 +116,6 @@ export default function InstructorDetailScreen() {
           <Text style={styles.instructorName}>{instructor.name}</Text>
           <Text style={[styles.instructorTitle, { color: accentColor }]}>{instructor.title}</Text>
           <View style={styles.heroMeta}>
-            {instructor.rating > 0 && (
-              <View style={styles.ratingRow}>
-                <Ionicons name="star" size={14} color="#FBBF24" />
-                <Text style={styles.ratingText}>{instructor.rating.toFixed(1)}</Text>
-              </View>
-            )}
             {teachingLevel ? (
               <View style={styles.levelBadge}>
                 <Text style={styles.levelText}>{teachingLevel}</Text>
@@ -161,13 +166,6 @@ export default function InstructorDetailScreen() {
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          {instructor.rating > 0 && (
-            <View style={[styles.statCard, { borderColor: "#FBBF24" + "30" }]}>
-              <Ionicons name="star" size={22} color="#FBBF24" />
-              <Text style={[styles.statValue, { color: "#FBBF24" }]}>{instructor.rating.toFixed(1)}</Text>
-              <Text style={styles.statLabel}>Rating</Text>
-            </View>
-          )}
           {instructor.totalClasses > 0 && (
             <View style={[styles.statCard, { borderColor: accentColor + "30" }]}>
               <Ionicons name="time-outline" size={22} color={accentColor} />
@@ -239,9 +237,10 @@ export default function InstructorDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0B0B12" },
   centered: { alignItems: "center", justifyContent: "center" },
-  errorText: {
-    color: "#9CA3AF", fontFamily: "Inter_400Regular",
-    marginTop: 8, textAlign: "center", paddingHorizontal: 32,
+  backBtnFallback: {
+    position: "absolute", top: 60, left: 20, zIndex: 10,
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
   },
 
   heroBg: { width: "100%", justifyContent: "flex-end" },

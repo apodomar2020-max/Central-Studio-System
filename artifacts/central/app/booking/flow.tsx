@@ -5,7 +5,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Platform,
   ScrollView,
@@ -22,6 +21,10 @@ import { mapApiClassToMobile, mapApiInstructorToMobile } from "@/data/apiAdapter
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
+import { DetailSkeleton } from "@/components/SkeletonLoader";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
+import { isOfflineError } from "@/services/connectivity";
 
 type PaymentMethod = "online" | "cash";
 
@@ -86,20 +89,27 @@ export default function BookingFlowScreen() {
 
   // ── Loading ──
   if (classQuery.isLoading) {
+    return <DetailSkeleton />;
+  }
+
+  // ── Offline ──
+  if (classQuery.isError && isOfflineError(classQuery.error)) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.studio.primary} />
+      <View style={[styles.container, { justifyContent: "center" }]}>
+        <OfflineState onRetry={() => classQuery.refetch()} />
       </View>
     );
   }
 
-  // ── Error / not found ──
+  // ── Server error / not found ──
   if (classQuery.isError || !cls) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Ionicons name="alert-circle-outline" size={48} color="#6B7280" />
-        <Text style={styles.centeredTitle}>Class not found</Text>
-        <AppButton title="Go back" onPress={() => router.back()} variant="ghost" />
+      <View style={[styles.container, { justifyContent: "center" }]}>
+        {classQuery.isError ? (
+          <ErrorState onRetry={() => classQuery.refetch()} message="Couldn't load class. Please try again." />
+        ) : (
+          <ErrorState title="Class not found" message="This class may no longer be available." onRetry={() => router.back()} />
+        )}
       </View>
     );
   }

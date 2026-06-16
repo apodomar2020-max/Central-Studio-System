@@ -185,6 +185,9 @@ export default function ProfileScreen() {
   const activePackages = userPackages.filter(
     (p) => p.status === "active" && new Date(p.expiryDate) >= new Date()
   ).length;
+  const totalCredits = userPackages
+    .filter((p) => p.status === "active" && new Date(p.expiryDate) >= new Date())
+    .reduce((sum, p) => sum + (p.remainingCredits ?? 0), 0);
 
   async function handleLogout() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -251,18 +254,18 @@ export default function ProfileScreen() {
 
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
-            <Text style={[styles.statValue, { color: colors.studio.primary }]}>{upcoming}</Text>
+            <Text style={[styles.statValue, { color: colors.studio.primary }]}>{totalCredits}</Text>
+            <Text style={styles.statLabel}>Credits</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
+            <Text style={[styles.statValue, { color: "#22C55E" }]}>{upcoming}</Text>
             <Text style={styles.statLabel}>Upcoming</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
-            <Text style={[styles.statValue, { color: "#22C55E" }]}>
+            <Text style={[styles.statValue, { color: "#8B5CF6" }]}>
               {bookings.filter((b) => b.bookingStatus === "attended").length}
             </Text>
             <Text style={styles.statLabel}>Attended</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
-            <Text style={[styles.statValue, { color: "#8B5CF6" }]}>{activePackages}</Text>
-            <Text style={styles.statLabel}>Packages</Text>
           </View>
         </View>
 

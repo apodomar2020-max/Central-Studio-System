@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Platform,
   RefreshControl,
@@ -18,8 +17,6 @@ import { useListClasses, useListInstructors } from "@workspace/api-client-react"
 
 import {
   DANCE_CATEGORIES,
-  DANCE_CLASSES,
-  INSTRUCTORS,
   AgeGroup,
   type DanceClass,
   type Instructor,
@@ -28,6 +25,10 @@ import { mapApiClassToMobile, mapApiInstructorToMobile } from "@/data/apiAdapter
 import colors from "@/constants/colors";
 import ClassCard from "@/components/ClassCard";
 import EmptyState from "@/components/EmptyState";
+import { ListSkeleton } from "@/components/SkeletonLoader";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
+import { isOfflineError } from "@/services/connectivity";
 
 const AGE_GROUPS: { key: AgeGroup | "All"; label: string; icon: string }[] = [
   { key: "All", label: "All Ages", icon: "people-outline" },
@@ -51,28 +52,25 @@ export default function ClassesScreen() {
 
   const isLoading = classesQuery.isLoading || instructorsQuery.isLoading;
   const isError = classesQuery.isError || instructorsQuery.isError;
+  // Prefer the classes error for offline detection (it's the primary data source)
+  const queryError = classesQuery.error ?? instructorsQuery.error;
+  const isOffline = isOfflineError(queryError);
+
   const isRefreshing = classesQuery.isRefetching || instructorsQuery.isRefetching;
   const onRefresh = useCallback(() => {
     classesQuery.refetch();
     instructorsQuery.refetch();
   }, [classesQuery, instructorsQuery]);
 
-  // Map API rows to the mobile data model. Fall back to mockData only when the
-  // API request failed (data is undefined); an empty-but-successful response
-  // shows the normal empty state rather than mock content.
+  // Map API rows to the mobile data model. Return empty arrays when data isn't
+  // loaded yet — loading/error states are handled separately in the render.
   const instructors: Instructor[] = useMemo(
-    () =>
-      instructorsQuery.data
-        ? instructorsQuery.data.map(mapApiInstructorToMobile)
-        : INSTRUCTORS,
+    () => (instructorsQuery.data ?? []).map(mapApiInstructorToMobile),
     [instructorsQuery.data],
   );
 
   const classes: DanceClass[] = useMemo(
-    () =>
-      classesQuery.data
-        ? classesQuery.data.filter((c) => c.isActive).map(mapApiClassToMobile)
-        : DANCE_CLASSES,
+    () => (classesQuery.data ?? []).filter((c) => c.isActive).map(mapApiClassToMobile),
     [classesQuery.data],
   );
 
@@ -159,19 +157,14 @@ export default function ClassesScreen() {
         </View>
       </View>
 
-      {isError && (
-        <View style={styles.errorBanner}>
-          <Ionicons name="cloud-offline-outline" size={14} color={colors.warning} />
-          <Text style={styles.errorBannerText}>
-            Couldn't reach the server — showing saved classes.
-          </Text>
-        </View>
-      )}
-
       {isLoading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.studio.primary} />
-        </View>
+        <ListSkeleton count={4} />
+      ) : isError ? (
+        isOffline ? (
+          <OfflineState onRetry={onRefresh} />
+        ) : (
+          <ErrorState onRetry={onRefresh} />
+        )
       ) : (
         <>
       {BALLET_CATEGORY && (
@@ -210,7 +203,7 @@ export default function ClassesScreen() {
                 style={styles.catGroupHeader}
                 activeOpacity={0.8}
               >
-                <View style={[styles.catDot, { backgroundColor: cat.color }]} />
+                <View style={[styles.catDot, { backgroundColor: colors.studio.primary }]} />
                 <Text style={styles.catGroupTitle}>{cat.name}</Text>
                 <Text style={styles.catGroupCount}>{catClasses.length} class{catClasses.length !== 1 ? "es" : ""}</Text>
                 <Ionicons
@@ -259,26 +252,6 @@ export default function ClassesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.studio.background },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginHorizontal: 20,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: colors.warning + "1A",
-    borderWidth: 1,
-    borderColor: colors.warning + "40",
-  },
-  errorBannerText: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    color: colors.warning,
-  },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 12,

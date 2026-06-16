@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Platform,
   RefreshControl,
   ScrollView,
@@ -18,6 +17,10 @@ import type { Notification as ApiNotification } from "@workspace/api-client-reac
 
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
+import { NotifCardSkeleton } from "@/components/SkeletonLoader";
+import OfflineState from "@/components/OfflineState";
+import ErrorState from "@/components/ErrorState";
+import { isOfflineError } from "@/services/connectivity";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -121,7 +124,14 @@ export default function NotificationsScreen() {
   const { notifications: localNotifs, markNotificationRead } = useAppContext();
 
   // API broadcast notifications
-  const { data: apiNotifs, isLoading, isRefetching, refetch } = useListNotifications();
+  const {
+    data: apiNotifs,
+    isLoading,
+    isError: isApiError,
+    error: apiError,
+    isRefetching,
+    refetch,
+  } = useListNotifications();
 
   const onRefresh = useCallback(() => { refetch(); }, [refetch]);
 
@@ -205,9 +215,16 @@ export default function NotificationsScreen() {
       </View>
 
       {isLoading && all.length === 0 ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={colors.studio.primary} />
+        <View style={{ paddingTop: 8 }}>
+          {[1, 2, 3, 4, 5].map((i) => <NotifCardSkeleton key={i} />)}
         </View>
+      ) : isApiError && all.length === 0 ? (
+        // Offline with no local notifications to show
+        isOfflineError(apiError) ? (
+          <OfflineState onRetry={refetch} />
+        ) : (
+          <ErrorState onRetry={refetch} message="Couldn't load notifications. Please try again." />
+        )
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}

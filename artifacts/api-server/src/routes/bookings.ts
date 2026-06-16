@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, bookingsTable } from "@workspace/db";
 import {
   ListBookingsQueryParams,
@@ -21,12 +21,13 @@ router.get("/bookings", async (req, res): Promise<void> => {
     res.status(400).json({ error: query.error.message });
     return;
   }
-  let rows;
-  if (query.data.status) {
-    rows = await db.select().from(bookingsTable).where(eq(bookingsTable.status, query.data.status)).orderBy(bookingsTable.createdAt);
-  } else {
-    rows = await db.select().from(bookingsTable).orderBy(bookingsTable.createdAt);
-  }
+  // Build WHERE conditions from optional filters
+  const conditions = [];
+  if (query.data.status) conditions.push(eq(bookingsTable.status, query.data.status));
+  if (query.data.studentEmail) conditions.push(eq(bookingsTable.studentEmail, query.data.studentEmail));
+  const rows = conditions.length > 0
+    ? await db.select().from(bookingsTable).where(and(...conditions)).orderBy(bookingsTable.createdAt)
+    : await db.select().from(bookingsTable).orderBy(bookingsTable.createdAt);
   res.json(ListBookingsResponse.parse(rows));
 });
 

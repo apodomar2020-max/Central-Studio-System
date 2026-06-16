@@ -376,6 +376,10 @@ export const DeletePricePackageParams = zod.object({
 
 export const ListBookingsQueryParams = zod.object({
   status: zod.coerce.string().optional(),
+  // Optional student-email filter so mobile clients can fetch their own bookings.
+  // TODO: Replace with a JWT-scoped /api/me/bookings endpoint so the server
+  //       enforces identity server-side instead of trusting a client param.
+  studentEmail: zod.coerce.string().optional(),
 });
 
 export const ListBookingsResponseItem = zod.object({
