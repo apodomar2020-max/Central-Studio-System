@@ -4837,3 +4837,84 @@ export const useDeleteHeroItem = <
   };
   return useMutation({ mutationFn, ...mutationOptions });
 };
+
+// ─── Dance Types ──────────────────────────────────────────────────────────────
+import type {
+  DanceType,
+  CreateDanceTypeBody,
+  UpdateDanceTypeBody,
+} from "./api.schemas";
+
+// ── GET /api/dance-types (public — active only, for mobile & admin reads) ─────
+
+export const getListDanceTypesUrl = () => `/api/dance-types`;
+
+export const listDanceTypes = async (options?: RequestInit): Promise<DanceType[]> =>
+  customFetch<DanceType[]>(getListDanceTypesUrl(), { ...options, method: "GET" });
+
+export const getListDanceTypesQueryKey = () => [`/api/dance-types`] as const;
+
+export const getListDanceTypesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDanceTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listDanceTypes>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getListDanceTypesQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDanceTypes>>> = ({ signal }) =>
+    listDanceTypes({ signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDanceTypes>>, TError, TData
+  > & { queryKey: QueryKey };
+};
+
+export function useListDanceTypes<
+  TData = Awaited<ReturnType<typeof listDanceTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listDanceTypes>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDanceTypesQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ── GET /api/admin/settings/dance-types (all, admin reads) ───────────────────
+
+export const getListAdminDanceTypesUrl = () => `/api/admin/settings/dance-types`;
+
+export const listAdminDanceTypes = async (options?: RequestInit): Promise<DanceType[]> =>
+  customFetch<DanceType[]>(getListAdminDanceTypesUrl(), { ...options, method: "GET" });
+
+export const getListAdminDanceTypesQueryKey = () => [`/api/admin/settings/dance-types`] as const;
+
+export const getListAdminDanceTypesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminDanceTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listAdminDanceTypes>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getListAdminDanceTypesQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminDanceTypes>>> = ({ signal }) =>
+    listAdminDanceTypes({ signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminDanceTypes>>, TError, TData
+  > & { queryKey: QueryKey };
+};
+
+export function useListAdminDanceTypes<
+  TData = Awaited<ReturnType<typeof listAdminDanceTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listAdminDanceTypes>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminDanceTypesQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}

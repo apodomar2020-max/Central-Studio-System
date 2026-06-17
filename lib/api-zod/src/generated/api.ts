@@ -989,3 +989,38 @@ export const UpdateHeroItemResponse = zod.object({
 export const DeleteHeroItemParams = zod.object({
   id: zod.coerce.number(),
 });
+
+// ─── Dance Types ──────────────────────────────────────────────────────────────
+
+export const DanceTypeItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  isActive: zod.boolean(),
+  sortOrder: zod.number(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const ListDanceTypesResponse = zod.array(DanceTypeItem);
+
+export const CreateDanceTypeBody = zod.object({
+  name: zod.string().min(1),
+  slug: zod.string().min(1),
+  isActive: zod.boolean().optional(),
+  sortOrder: zod.number().int().optional(),
+});
+
+export const GetDanceTypeParams  = zod.object({ id: zod.coerce.number() });
+export const GetDanceTypeResponse = DanceTypeItem;
+
+export const UpdateDanceTypeParams = zod.object({ id: zod.coerce.number() });
+export const UpdateDanceTypeBody = zod.object({
+  name:      zod.string().min(1).optional(),
+  slug:      zod.string().min(1).optional(),
+  isActive:  zod.boolean().optional(),
+  sortOrder: zod.number().int().optional(),
+});
+export const UpdateDanceTypeResponse = DanceTypeItem;
+
+export const DeleteDanceTypeParams = zod.object({ id: zod.coerce.number() });

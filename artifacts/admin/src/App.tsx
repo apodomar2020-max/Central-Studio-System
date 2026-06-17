@@ -29,6 +29,7 @@ import AssessmentSlotsPage from "@/pages/ballet/AssessmentSlotsPage";
 import BalletSettingsPage from "@/pages/ballet/BalletSettingsPage";
 import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
 import DesignLabPage from "@/pages/DesignLabPage";
+import SettingsPage from "@/pages/settings";
 
 // Wire the API client to the backend.
 if (import.meta.env.VITE_API_URL) {
@@ -86,6 +87,7 @@ function ProtectedRouter() {
         <Route path="/ballet/slots" component={AssessmentSlotsPage} />
         <Route path="/ballet/settings" component={BalletSettingsPage} />
         <Route path="/ballet/levels" component={BalletLevelsPage} />
+        <Route path="/settings" component={SettingsPage} />
         {/* DEV-ONLY: component preview — not in sidebar */}
         <Route path="/design-lab" component={DesignLabPage} />
         <Route component={NotFound} />

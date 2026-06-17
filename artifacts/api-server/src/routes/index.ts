@@ -20,6 +20,7 @@ import adminAuthRouter from "./adminAuth";
 import childrenRouter from "./children";
 import balletRouter from "./ballet";
 import adminBalletRouter from "./adminBallet";
+import danceTypesRouter from "./danceTypes";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use(adminAuthRouter);
 router.use(childrenRouter);
 router.use(balletRouter);
 router.use(adminBalletRouter);
+router.use(danceTypesRouter);
 
 export default router;

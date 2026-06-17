@@ -588,3 +588,29 @@ export interface UpdateHeroItemBody {
   sortOrder?: number;
   isActive?: boolean;
 }
+
+// ─── Dance Types ──────────────────────────────────────────────────────────────
+
+export interface DanceType {
+  id: number;
+  name: string;
+  slug: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDanceTypeBody {
+  name: string;
+  slug: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export interface UpdateDanceTypeBody {
+  name?: string;
+  slug?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}
