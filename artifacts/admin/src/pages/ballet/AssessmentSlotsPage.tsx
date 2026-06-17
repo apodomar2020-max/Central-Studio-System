@@ -22,9 +22,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { customFetch } from "@workspace/api-client-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
-const API = import.meta.env.VITE_API_URL ?? "";
+const API     = import.meta.env.VITE_API_URL ?? "";
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
+
+/** Same pattern as ApplicationsPage — sends x-admin-token JWT, not Bearer. */
+function makeHeaders(token: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+    ...(token   ? { "x-admin-token": token } : {}),
+  };
+}
+
+async function adminFetch<T>(url: string, init: RequestInit, token: string | null): Promise<T> {
+  const res = await fetch(url, { ...init, headers: makeHeaders(token) });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw { data };
+  }
+  return res.json() as Promise<T>;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,6 +98,7 @@ function availabilityBadge(slot: Slot) {
 export default function AssessmentSlotsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAdminAuth();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
@@ -87,8 +107,8 @@ export default function AssessmentSlotsPage() {
   // ── Data ────────────────────────────────────────────────────────────────────
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-ballet-slots"],
-    queryFn: () => customFetch<{ slots: Slot[] }>(`${API}/api/admin/ballet/slots`),
+    queryKey: ["admin-ballet-slots", token],
+    queryFn: () => adminFetch<{ slots: Slot[] }>(`${API}/api/admin/ballet/slots`, {}, token),
     refetchOnWindowFocus: false,
   });
 
@@ -98,7 +118,7 @@ export default function AssessmentSlotsPage() {
 
   const createMutation = useMutation({
     mutationFn: (body: object) =>
-      customFetch(`${API}/api/admin/ballet/slots`, { method: "POST", body: JSON.stringify(body) }),
+      adminFetch(`${API}/api/admin/ballet/slots`, { method: "POST", body: JSON.stringify(body) }, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ballet-slots"] });
       toast({ title: "Slot created" });
@@ -109,7 +129,7 @@ export default function AssessmentSlotsPage() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: number; body: object }) =>
-      customFetch(`${API}/api/admin/ballet/slots/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+      adminFetch(`${API}/api/admin/ballet/slots/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ballet-slots"] });
       toast({ title: "Slot updated" });
@@ -120,7 +140,7 @@ export default function AssessmentSlotsPage() {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
-      customFetch(`${API}/api/admin/ballet/slots/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
+      adminFetch(`${API}/api/admin/ballet/slots/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-ballet-slots"] }),
     onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update slot", variant: "destructive" }),
   });

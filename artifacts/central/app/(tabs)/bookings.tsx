@@ -26,10 +26,133 @@ import {
   mapApiStatusToLocal,
 } from "@/services/bookingsRepository";
 import { isOfflineError } from "@/services/connectivity";
+import {
+  fetchMyApplications,
+  ACTIVE_APPLICATION_STATUSES,
+  type BalletApplication,
+} from "@/services/balletAssessmentService";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS = ["Upcoming", "Past", "Cancelled"] as const;
+
+// ─── Ballet Assessment card ───────────────────────────────────────────────────
+
+const BALLET_COLOR = "#A78BFA";
+
+interface BalletStatusInfo {
+  label: string;
+  color: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+}
+
+function getBalletStatusInfo(status: string): BalletStatusInfo {
+  switch (status) {
+    case "submitted":       return { label: "Under Review",         color: "#F59E0B", icon: "time-outline" };
+    case "pendingAssessment": return { label: "Assessment Scheduled", color: "#60A5FA", icon: "calendar-outline" };
+    case "needsFollowUp":   return { label: "Follow-up Required",   color: "#F59E0B", icon: "chatbubble-ellipses-outline" };
+    case "accepted":        return { label: "Accepted",             color: "#22C55E", icon: "checkmark-circle" };
+    case "assignedToLevel": return { label: "Level Assigned",       color: BALLET_COLOR, icon: "ribbon-outline" };
+    case "activeBallet":    return { label: "Active Student",       color: BALLET_COLOR, icon: "star-outline" };
+    case "rejected":        return { label: "Not Accepted",         color: "#EF4444", icon: "close-circle-outline" };
+    case "cancelled":       return { label: "Cancelled",            color: "#6B7280", icon: "ban-outline" };
+    default:                return { label: status,                 color: "#9CA3AF", icon: "information-circle-outline" };
+  }
+}
+
+function BalletAssessmentCard({ app }: { app: BalletApplication }) {
+  const info = getBalletStatusInfo(app.status);
+
+  const dateStr = app.slotLabel
+    ? app.slotLabel
+    : new Date(app.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+  return (
+    <TouchableOpacity
+      onPress={() => router.push("/ballet/application-status" as any)}
+      style={balletCardStyles.card}
+      activeOpacity={0.85}
+    >
+      {/* Left accent bar */}
+      <View style={[balletCardStyles.accent, { backgroundColor: BALLET_COLOR }]} />
+
+      <View style={balletCardStyles.body}>
+        {/* Header row */}
+        <View style={balletCardStyles.headerRow}>
+          <View style={[balletCardStyles.iconWrap, { backgroundColor: BALLET_COLOR + "1A" }]}>
+            <Ionicons name="musical-notes-outline" size={14} color={BALLET_COLOR} />
+          </View>
+          <Text style={balletCardStyles.className}>Ballet Assessment</Text>
+          <View style={[balletCardStyles.badge, { backgroundColor: info.color + "1A", borderColor: info.color + "40" }]}>
+            <Ionicons name={info.icon} size={10} color={info.color} />
+            <Text style={[balletCardStyles.badgeText, { color: info.color }]}>{info.label}</Text>
+          </View>
+        </View>
+
+        {/* Child row */}
+        <View style={balletCardStyles.row}>
+          <Ionicons name="person-outline" size={13} color="#6B7280" />
+          <Text style={balletCardStyles.meta}>{app.childName}</Text>
+        </View>
+
+        {/* Date / slot row */}
+        <View style={balletCardStyles.row}>
+          <Ionicons name="calendar-outline" size={13} color="#6B7280" />
+          <Text style={balletCardStyles.meta}>{dateStr}</Text>
+        </View>
+
+        {/* Footer */}
+        <View style={balletCardStyles.footer}>
+          <Text style={balletCardStyles.noCharge}>No class credits deducted</Text>
+          <Ionicons name="chevron-forward" size={14} color={BALLET_COLOR + "80"} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const balletCardStyles = StyleSheet.create({
+  card: {
+    flexDirection: "row",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BALLET_COLOR + "30",
+    backgroundColor: "#1A0D2D",
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  accent: { width: 4 },
+  body: { flex: 1, padding: 12, gap: 7 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  iconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  className: { flex: 1, fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  badgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
+  row: { flexDirection: "row", alignItems: "center", gap: 6 },
+  meta: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 },
+  noCharge: { fontSize: 10, fontFamily: "Inter_400Regular", color: BALLET_COLOR + "80", fontStyle: "italic" },
+});
+
+// ─── Union list item type ─────────────────────────────────────────────────────
+
+type ListItem =
+  | { kind: "booking"; data: Booking; id: string }
+  | { kind: "ballet"; data: BalletApplication; id: string };
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -52,6 +175,9 @@ export default function BookingsScreen() {
   // Map of String(apiBooking.id) → api status string
   const [apiStatuses, setApiStatuses] = useState<Map<string, string>>(new Map());
 
+  // ── Ballet applications ────────────────────────────────────────────────────
+  const [balletApps, setBalletApps] = useState<BalletApplication[]>([]);
+
   const syncWithApi = useCallback(async () => {
     if (!user?.email) return;
     setSyncState("loading");
@@ -72,8 +198,25 @@ export default function BookingsScreen() {
     syncWithApi();
   }, [syncWithApi]);
 
+  // Fetch ballet applications in parallel (silently — doesn't gate the UI)
+  useEffect(() => {
+    if (!user?.email) return;
+    const ctrl = new AbortController();
+    fetchMyApplications(ctrl.signal)
+      .then((apps) => {
+        if (!ctrl.signal.aborted) setBalletApps(apps);
+      })
+      .catch(() => {
+        // Silently ignore — ballet items simply won't appear if fetch fails
+      });
+    return () => ctrl.abort();
+  }, [user?.email]);
+
   const onRefresh = useCallback(async () => {
-    await Promise.all([syncWithApi(), refreshUserPackages()]);
+    const refreshBallet = fetchMyApplications()
+      .then(setBalletApps)
+      .catch(() => {});
+    await Promise.all([syncWithApi(), refreshUserPackages(), refreshBallet]);
   }, [syncWithApi, refreshUserPackages]);
 
   // ── Merge: API status overlays local display data ─────────────────────────
@@ -88,32 +231,50 @@ export default function BookingsScreen() {
     });
   }, [localBookings, apiStatuses]);
 
-  // ── Tab filter ─────────────────────────────────────────────────────────────
-  function filterBookings(tab: (typeof TABS)[number]): Booking[] {
-    switch (tab) {
-      case "Upcoming":
-        return mergedBookings.filter(
-          (b) =>
-            b.bookingStatus === "confirmed" ||
-            b.bookingStatus === "pendingPayment"
-        );
-      case "Past":
-        return mergedBookings.filter(
-          (b) => b.bookingStatus === "attended" || b.bookingStatus === "noShow"
-        );
-      case "Cancelled":
-        return mergedBookings.filter(
-          (b) =>
-            b.bookingStatus === "cancelled" || b.bookingStatus === "refunded"
-        );
-    }
+  // ── Tab filter — returns union list ───────────────────────────────────────
+  function filterItems(tab: (typeof TABS)[number]): ListItem[] {
+    const bookingItems: ListItem[] = (() => {
+      switch (tab) {
+        case "Upcoming":
+          return mergedBookings
+            .filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment")
+            .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
+        case "Past":
+          return mergedBookings
+            .filter((b) => b.bookingStatus === "attended" || b.bookingStatus === "noShow")
+            .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
+        case "Cancelled":
+          return mergedBookings
+            .filter((b) => b.bookingStatus === "cancelled" || b.bookingStatus === "refunded")
+            .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
+      }
+    })();
+
+    const balletItems: ListItem[] = (() => {
+      switch (tab) {
+        case "Upcoming":
+          return balletApps
+            .filter((a) => ACTIVE_APPLICATION_STATUSES.has(a.status))
+            .map((a): ListItem => ({ kind: "ballet", data: a, id: `ballet-${a.id}` }));
+        case "Past":
+          return balletApps
+            .filter((a) => a.status === "rejected")
+            .map((a): ListItem => ({ kind: "ballet", data: a, id: `ballet-${a.id}` }));
+        case "Cancelled":
+          return balletApps
+            .filter((a) => a.status === "cancelled")
+            .map((a): ListItem => ({ kind: "ballet", data: a, id: `ballet-${a.id}` }));
+      }
+    })();
+
+    // Ballet items appear first so they're visually distinct at the top
+    return [...balletItems, ...bookingItems];
   }
 
-  const filtered = filterBookings(activeTab);
-  const upcomingCount = mergedBookings.filter(
-    (b) =>
-      b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment"
-  ).length;
+  const filtered = filterItems(activeTab);
+  const upcomingCount =
+    mergedBookings.filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment").length +
+    balletApps.filter((a) => ACTIVE_APPLICATION_STATUSES.has(a.status)).length;
   const isRefreshing = syncState === "loading";
 
   // ── Header (shared across states) ─────────────────────────────────────────
@@ -310,7 +471,11 @@ export default function BookingsScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(i) => i.id}
-          renderItem={({ item }) => <BookingCard item={item} />}
+          renderItem={({ item }) =>
+            item.kind === "ballet"
+              ? <BalletAssessmentCard app={item.data} />
+              : <BookingCard item={item.data} />
+          }
           contentContainerStyle={[
             styles.list,
             { paddingBottom: Platform.OS === "web" ? 120 : 90 },

@@ -18,9 +18,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { customFetch } from "@workspace/api-client-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
-const API = import.meta.env.VITE_API_URL ?? "";
+const API     = import.meta.env.VITE_API_URL ?? "";
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
+
+function makeHeaders(token: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+    ...(token   ? { "x-admin-token": token } : {}),
+  };
+}
+
+async function adminFetch<T>(url: string, init: RequestInit, token: string | null): Promise<T> {
+  const res = await fetch(url, { ...init, headers: makeHeaders(token) });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw { data };
+  }
+  return res.json() as Promise<T>;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +71,7 @@ interface SettingsForm {
 export default function BalletSettingsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAdminAuth();
 
   const [form, setForm] = useState<SettingsForm>({
     preBalletPriceEgp: "",
@@ -69,8 +88,8 @@ export default function BalletSettingsPage() {
   // ── Data ────────────────────────────────────────────────────────────────────
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-ballet-settings"],
-    queryFn: () => customFetch<{ settings: Settings }>(`${API}/api/admin/ballet/settings`),
+    queryKey: ["admin-ballet-settings", token],
+    queryFn: () => adminFetch<{ settings: Settings }>(`${API}/api/admin/ballet/settings`, {}, token),
     refetchOnWindowFocus: false,
   });
 
@@ -95,7 +114,7 @@ export default function BalletSettingsPage() {
 
   const saveMutation = useMutation({
     mutationFn: (body: object) =>
-      customFetch(`${API}/api/admin/ballet/settings`, { method: "PATCH", body: JSON.stringify(body) }),
+      adminFetch(`${API}/api/admin/ballet/settings`, { method: "PATCH", body: JSON.stringify(body) }, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ballet-settings"] });
       toast({ title: "Settings saved" });

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -109,6 +110,297 @@ function Field({
     </View>
   );
 }
+
+// ─── Date Picker ─────────────────────────────────────────────────────────────
+
+const DP_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DP_MIN_YEAR = 2000;
+const DP_MAX_YEAR = new Date().getFullYear() - 1;
+
+function calcAgeFromDate(y: number, m: number, d: number): number {
+  const today = new Date();
+  let age = today.getFullYear() - y;
+  if (today.getMonth() + 1 < m || (today.getMonth() + 1 === m && today.getDate() < d)) age--;
+  return Math.max(0, age);
+}
+
+function daysInMonth(y: number, m: number): number {
+  return new Date(y, m, 0).getDate();
+}
+
+function SpinnerCol({
+  displayValue,
+  onIncrement,
+  onDecrement,
+}: {
+  displayValue: string;
+  onIncrement: () => void;
+  onDecrement: () => void;
+}) {
+  return (
+    <View style={dpStyles.col}>
+      <TouchableOpacity onPress={onIncrement} style={dpStyles.arrowBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <Ionicons name="chevron-up" size={22} color={BALLET_COLOR} />
+      </TouchableOpacity>
+      <Text style={dpStyles.spinnerValue}>{displayValue}</Text>
+      <TouchableOpacity onPress={onDecrement} style={dpStyles.arrowBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <Ionicons name="chevron-down" size={22} color={BALLET_COLOR} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function DatePickerField({
+  value,
+  onChangeWithAge,
+  label,
+}: {
+  value: string;
+  onChangeWithAge: (dateStr: string, age: number) => void;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Parse initial or default to ~8 years old
+  const defaultYear = new Date().getFullYear() - 8;
+  const parseInitial = () => {
+    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return { y: +value.slice(0, 4), m: +value.slice(5, 7), d: +value.slice(8, 10) };
+    }
+    return { y: defaultYear, m: 1, d: 1 };
+  };
+
+  const init = parseInitial();
+  const [year, setYear] = useState(init.y);
+  const [month, setMonth] = useState(init.m);
+  const [day, setDay] = useState(init.d);
+
+  // Re-sync if external value changes
+  useEffect(() => {
+    const p = parseInitial();
+    setYear(p.y); setMonth(p.m); setDay(p.d);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const maxDay = daysInMonth(year, month);
+  const clampedDay = Math.min(day, maxDay);
+
+  // Clamp day if month/year changes makes it invalid
+  useEffect(() => {
+    if (day > daysInMonth(year, month)) setDay(daysInMonth(year, month));
+  }, [year, month]);
+
+  function handleConfirm() {
+    const d = clampedDay;
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    onChangeWithAge(dateStr, calcAgeFromDate(year, month, d));
+    setOpen(false);
+  }
+
+  const displayDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${String(+value.slice(8, 10)).padStart(2, "0")} ${DP_MONTHS[+value.slice(5, 7) - 1]} ${value.slice(0, 4)}`
+    : "";
+
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TouchableOpacity
+        onPress={() => setOpen(true)}
+        style={[styles.input, dpStyles.trigger]}
+        activeOpacity={0.8}
+      >
+        <Text style={[dpStyles.triggerText, !displayDate && { color: "#4B5563" }]}>
+          {displayDate || "Select date of birth"}
+        </Text>
+        <Ionicons name="calendar-outline" size={16} color={BALLET_COLOR} />
+      </TouchableOpacity>
+
+      <Modal
+        visible={open}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setOpen(false)}
+      >
+        <View style={dpStyles.overlay}>
+          <View style={dpStyles.sheet}>
+            {/* Header */}
+            <View style={dpStyles.sheetHeader}>
+              <Text style={dpStyles.sheetTitle}>Date of Birth</Text>
+              <TouchableOpacity onPress={() => setOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Spinners */}
+            <View style={dpStyles.spinners}>
+              {/* Day */}
+              <View style={dpStyles.spinnerWrap}>
+                <Text style={dpStyles.spinnerLabel}>Day</Text>
+                <SpinnerCol
+                  displayValue={String(clampedDay).padStart(2, "0")}
+                  onIncrement={() => setDay((d) => (d >= maxDay ? 1 : d + 1))}
+                  onDecrement={() => setDay((d) => (d <= 1 ? maxDay : d - 1))}
+                />
+              </View>
+
+              <View style={dpStyles.spinnerSep} />
+
+              {/* Month */}
+              <View style={dpStyles.spinnerWrap}>
+                <Text style={dpStyles.spinnerLabel}>Month</Text>
+                <SpinnerCol
+                  displayValue={DP_MONTHS[month - 1] ?? ""}
+                  onIncrement={() => setMonth((m) => (m >= 12 ? 1 : m + 1))}
+                  onDecrement={() => setMonth((m) => (m <= 1 ? 12 : m - 1))}
+                />
+              </View>
+
+              <View style={dpStyles.spinnerSep} />
+
+              {/* Year */}
+              <View style={dpStyles.spinnerWrap}>
+                <Text style={dpStyles.spinnerLabel}>Year</Text>
+                <SpinnerCol
+                  displayValue={String(year)}
+                  onIncrement={() => setYear((y) => Math.min(y + 1, DP_MAX_YEAR))}
+                  onDecrement={() => setYear((y) => Math.max(y - 1, DP_MIN_YEAR))}
+                />
+              </View>
+            </View>
+
+            {/* Preview */}
+            <View style={dpStyles.preview}>
+              <Text style={dpStyles.previewDate}>
+                {String(clampedDay).padStart(2, "0")} {DP_MONTHS[month - 1]} {year}
+              </Text>
+              <Text style={dpStyles.previewAge}>
+                Age: {calcAgeFromDate(year, month, clampedDay)} years old
+              </Text>
+            </View>
+
+            {/* Confirm */}
+            <TouchableOpacity onPress={handleConfirm} style={dpStyles.confirmBtn} activeOpacity={0.85}>
+              <Text style={dpStyles.confirmText}>Confirm Date</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const dpStyles = StyleSheet.create({
+  trigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  triggerText: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#0F0A1E",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: BALLET_COLOR + "30",
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24,
+    paddingTop: 20,
+    gap: 20,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+  },
+  spinners: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 0,
+    backgroundColor: "#1A0D2D",
+    borderRadius: 16,
+    padding: 16,
+  },
+  spinnerWrap: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+  },
+  spinnerLabel: {
+    fontSize: 10,
+    fontFamily: "Inter_500Medium",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  col: {
+    alignItems: "center",
+    gap: 12,
+  },
+  arrowBtn: {
+    padding: 4,
+  },
+  spinnerValue: {
+    fontSize: 28,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+    minWidth: 60,
+    textAlign: "center",
+  },
+  spinnerSep: {
+    width: 1,
+    height: 80,
+    backgroundColor: "#2A2A35",
+    marginHorizontal: 4,
+  },
+  preview: {
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BALLET_COLOR + "30",
+    backgroundColor: BALLET_COLOR + "0A",
+  },
+  previewDate: {
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+    color: BALLET_COLOR,
+  },
+  previewAge: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: "#9CA3AF",
+  },
+  confirmBtn: {
+    backgroundColor: BALLET_COLOR,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  confirmText: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function BalletAssessmentScreen() {
   const insets = useSafeAreaInsets();
@@ -365,14 +657,15 @@ export default function BalletAssessmentScreen() {
               <Text style={styles.stepDesc}>Tell us about the child applying for the ballet assessment.</Text>
             </View>
             <Field label="Child Full Name" value={form.childName} onChange={(v) => update("childName", v)} placeholder="Child's full name" required />
-            <View style={styles.rowFields}>
-              <View style={{ flex: 1 }}>
-                <Field label="Date of Birth" value={form.childBirthday} onChange={(v) => update("childBirthday", v)} placeholder="YYYY-MM-DD" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Field label="Age" value={form.childAge} onChange={(v) => update("childAge", v)} placeholder="Age" keyboardType="numeric" required />
-              </View>
-            </View>
+            <DatePickerField
+              label="Date of Birth"
+              value={form.childBirthday}
+              onChangeWithAge={(dateStr, age) => {
+                update("childBirthday", dateStr);
+                update("childAge", String(age));
+              }}
+            />
+            <Field label="Age" value={form.childAge} onChange={(v) => update("childAge", v)} placeholder="Age (auto-filled from date)" keyboardType="numeric" required />
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Gender</Text>
               <View style={styles.genderRow}>

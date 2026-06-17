@@ -21,9 +21,27 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { customFetch } from "@workspace/api-client-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
-const API = import.meta.env.VITE_API_URL ?? "";
+const API     = import.meta.env.VITE_API_URL ?? "";
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
+
+function makeHeaders(token: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+    ...(token   ? { "x-admin-token": token } : {}),
+  };
+}
+
+async function adminFetch<T>(url: string, init: RequestInit, token: string | null): Promise<T> {
+  const res = await fetch(url, { ...init, headers: makeHeaders(token) });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw { data };
+  }
+  return res.json() as Promise<T>;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,6 +66,7 @@ const EMPTY_FORM: LevelForm = { name: "", sortOrder: "0", isActive: true };
 export default function BalletLevelsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAdminAuth();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingLevel, setEditingLevel] = useState<Level | null>(null);
@@ -56,8 +75,8 @@ export default function BalletLevelsPage() {
   // ── Data ────────────────────────────────────────────────────────────────────
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-ballet-levels"],
-    queryFn: () => customFetch<{ levels: Level[] }>(`${API}/api/admin/ballet/levels`),
+    queryKey: ["admin-ballet-levels", token],
+    queryFn: () => adminFetch<{ levels: Level[] }>(`${API}/api/admin/ballet/levels`, {}, token),
     refetchOnWindowFocus: false,
   });
 
@@ -67,7 +86,7 @@ export default function BalletLevelsPage() {
 
   const createMutation = useMutation({
     mutationFn: (body: object) =>
-      customFetch(`${API}/api/admin/ballet/levels`, { method: "POST", body: JSON.stringify(body) }),
+      adminFetch(`${API}/api/admin/ballet/levels`, { method: "POST", body: JSON.stringify(body) }, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ballet-levels"] });
       toast({ title: "Level created" });
@@ -79,7 +98,7 @@ export default function BalletLevelsPage() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: number; body: object }) =>
-      customFetch(`${API}/api/admin/ballet/levels/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+      adminFetch(`${API}/api/admin/ballet/levels/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ballet-levels"] });
       toast({ title: "Level updated" });
@@ -91,7 +110,7 @@ export default function BalletLevelsPage() {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
-      customFetch(`${API}/api/admin/ballet/levels/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
+      adminFetch(`${API}/api/admin/ballet/levels/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-ballet-levels"] }),
     onError: (e: any) =>
       toast({ title: "Error", description: e?.data?.error ?? "Failed to update level", variant: "destructive" }),
