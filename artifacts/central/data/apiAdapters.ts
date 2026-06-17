@@ -2,10 +2,9 @@
  * Adapters that map the backend API shapes (from @workspace/api-client-react)
  * onto the richer mobile data model defined in ./mockData.
  *
- * Scope: Classes and Instructors only. The backend does not (yet) expose
- * scheduling, pricing, seat counts, or age groups for a class, so those
- * fields are filled with safe neutral defaults until those endpoints are
- * wired up. Booking-related fields are intentionally left untouched.
+ * Scope: Classes and Instructors only. Scheduling, pricing, and seat counts
+ * are not yet exposed by the API and fall back to neutral defaults. Age group
+ * is now a real DB column (age_group) and is mapped directly from the API.
  */
 import type {
   Class as ApiClass,
@@ -21,6 +20,18 @@ function initialsFromName(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function coerceAgeGroup(raw: string): AgeGroup {
+  switch (raw) {
+    case "Kids":
+    case "Teens":
+    case "Adults":
+      return raw;
+    default:
+      // Unknown value — default to Adults so existing rows are always visible
+      return "Adults";
+  }
 }
 
 function coerceLevel(level: string): DanceClass["level"] {
@@ -111,7 +122,7 @@ export function mapScheduleAndClassToMobile(
     capacity: cls.capacity,
     bookedCount: 0, // booking counts not aggregated on the API yet
     level: coerceLevel(cls.level),
-    ageGroup: "Adults" as AgeGroup,
+    ageGroup: coerceAgeGroup(cls.ageGroup),
     status: "available" as const,
     policy: "",
     featured: false,
@@ -143,7 +154,7 @@ export function mapApiClassToMobile(api: ApiClass): DanceClass {
     capacity: api.capacity,
     bookedCount: 0,
     level: coerceLevel(api.level),
-    ageGroup: "Adults" as AgeGroup,
+    ageGroup: coerceAgeGroup(api.ageGroup),
     status: "available",
     policy: "",
     featured: false,

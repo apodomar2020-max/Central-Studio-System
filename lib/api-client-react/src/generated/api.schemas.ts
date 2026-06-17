@@ -101,6 +101,7 @@ export interface Class {
   instructorId?: number | null;
   category: string;
   level: string;
+  ageGroup: string;
   durationMins: number;
   capacity: number;
   /** @nullable */
@@ -117,6 +118,7 @@ export interface CreateClassBody {
   instructorId?: number | null;
   category: string;
   level: string;
+  ageGroup: string;
   durationMins: number;
   capacity: number;
   /** @nullable */
@@ -132,6 +134,7 @@ export interface UpdateClassBody {
   instructorId?: number | null;
   category?: string;
   level?: string;
+  ageGroup?: string;
   durationMins?: number;
   capacity?: number;
   /** @nullable */

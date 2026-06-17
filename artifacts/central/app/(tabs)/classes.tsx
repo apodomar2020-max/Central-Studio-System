@@ -323,8 +323,11 @@ export default function ClassesScreen() {
         );
       })()}
 
+      {/* Only show category sections that have at least one matching class.
+          Derived from `filtered` so the list reacts to age/search/cat changes
+          without relying on the static DANCE_CATEGORIES.ageGroups config. */}
       <FlatList
-        data={nonBalletCats.filter((c) => activeAge === "All" || c.ageGroups.includes(activeAge))}
+        data={nonBalletCats.filter((c) => filtered.some((cls) => cls.categoryId === c.id))}
         keyExtractor={(i) => i.id}
         renderItem={({ item: cat }) => {
           const catClasses = filtered.filter((c) => c.categoryId === cat.id);

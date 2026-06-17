@@ -28,6 +28,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "All Levels"];
+const AGE_GROUPS = ["Kids", "Teens", "Adults"] as const;
 
 const formSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -35,13 +36,14 @@ const formSchema = z.object({
   instructorId: z.coerce.number().int().nullish(),
   category: z.string().min(1, "Category is required"),
   level: z.string().min(1, "Level is required"),
+  ageGroup: z.string().min(1, "Age Group is required"),
   durationMins: z.coerce.number().int().min(1),
   capacity: z.coerce.number().int().min(1),
   isActive: z.boolean().default(true),
 });
 
 type FormValues = z.input<typeof formSchema>;
-type Class = { id: number; title: string; description?: string | null; instructorId?: number | null; category: string; level: string; durationMins: number; capacity: number; isActive: boolean };
+type Class = { id: number; title: string; description?: string | null; instructorId?: number | null; category: string; level: string; ageGroup: string; durationMins: number; capacity: number; isActive: boolean };
 
 export default function Classes() {
   const { data: classes, isLoading } = useListClasses();
@@ -55,18 +57,18 @@ export default function Classes() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { title: "", category: "", level: "All Levels", durationMins: 60, capacity: 20, isActive: true },
+    defaultValues: { title: "", category: "", level: "All Levels", ageGroup: "Adults", durationMins: 60, capacity: 20, isActive: true },
   });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ title: "", description: "", category: "", level: "All Levels", durationMins: 60, capacity: 20, isActive: true });
+    form.reset({ title: "", description: "", category: "", level: "All Levels", ageGroup: "Adults", durationMins: 60, capacity: 20, isActive: true });
     setOpen(true);
   };
 
   const openEdit = (cls: Class) => {
     setEditing(cls);
-    form.reset({ title: cls.title, description: cls.description ?? "", instructorId: cls.instructorId ?? undefined, category: cls.category, level: cls.level, durationMins: cls.durationMins, capacity: cls.capacity, isActive: cls.isActive });
+    form.reset({ title: cls.title, description: cls.description ?? "", instructorId: cls.instructorId ?? undefined, category: cls.category, level: cls.level, ageGroup: cls.ageGroup || "Adults", durationMins: cls.durationMins, capacity: cls.capacity, isActive: cls.isActive });
     setOpen(true);
   };
 
@@ -100,6 +102,7 @@ export default function Classes() {
               <TableHead>Instructor</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Level</TableHead>
+              <TableHead>Age Group</TableHead>
               <TableHead>Duration</TableHead>
               <TableHead>Capacity</TableHead>
               <TableHead>Status</TableHead>
@@ -108,9 +111,9 @@ export default function Classes() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : classes?.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No classes yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No classes yet.</TableCell></TableRow>
             ) : (
               classes?.map((cls) => (
                 <TableRow key={cls.id} data-testid={`row-class-${cls.id}`}>
@@ -118,6 +121,7 @@ export default function Classes() {
                   <TableCell>{getInstructorName(cls.instructorId)}</TableCell>
                   <TableCell>{cls.category}</TableCell>
                   <TableCell>{cls.level}</TableCell>
+                  <TableCell>{cls.ageGroup || "Adults"}</TableCell>
                   <TableCell>{cls.durationMins} min</TableCell>
                   <TableCell>{cls.capacity}</TableCell>
                   <TableCell>
@@ -173,6 +177,18 @@ export default function Classes() {
                   </FormItem>
                 )} />
               </div>
+              <FormField control={form.control} name="ageGroup" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Age Group</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger data-testid="select-class-age-group"><SelectValue placeholder="Select age group" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {AGE_GROUPS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
               <FormField control={form.control} name="instructorId" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Instructor</FormLabel>
