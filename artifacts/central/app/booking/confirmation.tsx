@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect } from "react";
 import {
+  Image,
   Platform,
   StyleSheet,
   Text,
@@ -22,6 +23,21 @@ export default function ConfirmationScreen() {
   const insets = useSafeAreaInsets();
 
   const booking = bookings.find((b) => b.bookingNumber === bookingNumber);
+  const scheduleLabel = booking?.scheduleLabel ?? (
+    booking?.date || booking?.time ? `${booking.date}${booking.time ? ` • ${booking.time}` : ""}` : "Schedule not set"
+  );
+  const instructorInitials = booking?.instructorName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
+  const paymentLabel = booking?.bookingType === "package"
+    ? "Uses 1 credit"
+    : booking?.paymentStatus === "paid"
+      ? `EGP ${booking.price} · Paid`
+      : `EGP ${booking?.price ?? 0} · Pay at Studio`;
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -70,18 +86,39 @@ export default function ConfirmationScreen() {
               </View>
               <View style={styles.cardRow}>
                 <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-                <Text style={styles.cardLabel}>Day</Text>
-                <Text style={styles.cardValue}>{booking.date}</Text>
+                <Text style={styles.cardLabel}>Schedule</Text>
+                <Text style={styles.cardValue}>{scheduleLabel}</Text>
               </View>
               <View style={styles.cardRow}>
-                <Ionicons name="time-outline" size={16} color="#6B7280" />
-                <Text style={styles.cardLabel}>Time</Text>
-                <Text style={styles.cardValue}>{booking.time}</Text>
+                <View style={[styles.instructorAvatar, { backgroundColor: colors.studio.primary + "25" }]}>
+                  {booking.instructorImage ? (
+                    <Image source={{ uri: booking.instructorImage }} style={styles.instructorAvatarImage} />
+                  ) : (
+                    <Text style={[styles.instructorInitials, { color: colors.studio.primary }]}>{instructorInitials}</Text>
+                  )}
+                </View>
+                <Text style={styles.cardLabel}>Teacher</Text>
+                <Text style={styles.cardValue}>{booking.instructorName}</Text>
+              </View>
+              <View style={styles.cardRow}>
+                <Ionicons name="timer-outline" size={16} color="#6B7280" />
+                <Text style={styles.cardLabel}>Duration</Text>
+                <Text style={styles.cardValue}>{booking.duration}</Text>
+              </View>
+              <View style={styles.cardRow}>
+                <Ionicons name="pricetag-outline" size={16} color="#6B7280" />
+                <Text style={styles.cardLabel}>Type</Text>
+                <Text style={styles.cardValue}>{booking.danceType}</Text>
               </View>
               <View style={styles.cardRow}>
                 <Ionicons name="location-outline" size={16} color="#6B7280" />
                 <Text style={styles.cardLabel}>Where</Text>
                 <Text style={styles.cardValue}>{booking.location}</Text>
+              </View>
+              <View style={styles.cardRow}>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#6B7280" />
+                <Text style={styles.cardLabel}>Status</Text>
+                <Text style={styles.cardValue}>{booking.bookingStatus === "pendingPayment" ? "Pending Payment" : "Confirmed"}</Text>
               </View>
               <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />
               <View style={styles.cardRow}>
@@ -89,11 +126,11 @@ export default function ConfirmationScreen() {
                 <Text style={styles.cardLabel}>Payment</Text>
                 <View style={[styles.payBadge, {
                   backgroundColor: booking.paymentStatus === "paid" ? colors.success + "20" : colors.warning + "20",
-                }]}>
+                  }]}>
                   <Text style={[styles.payBadgeText, {
                     color: booking.paymentStatus === "paid" ? colors.success : colors.warning,
                   }]}>
-                    {booking.paymentStatus === "paid" ? `EGP ${booking.price} · Paid` : `EGP ${booking.price} · Pay at Studio`}
+                    {paymentLabel}
                   </Text>
                 </View>
               </View>
@@ -121,7 +158,7 @@ export default function ConfirmationScreen() {
           <AppButton
             title="Back to Home"
             onPress={() => {
-              router.replace("/(tabs)/");
+              router.replace("/(tabs)/" as any);
             }}
             variant="ghost"
             fullWidth
@@ -195,6 +232,16 @@ const styles = StyleSheet.create({
   },
   cardLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", width: 56 },
   cardValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF", flex: 1 },
+  instructorAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  instructorAvatarImage: { width: "100%", height: "100%" },
+  instructorInitials: { fontSize: 8, fontFamily: "Inter_700Bold" },
   payBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   payBadgeText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   reminderBanner: {

@@ -45,6 +45,9 @@ export default function BookingCard({ item }: BookingCardProps) {
   const priceLabel = item.bookingType === "package"
     ? "Uses 1 credit"
     : `EGP ${item.price}`;
+  const scheduleLabel = item.scheduleLabel ?? (
+    item.date || item.time ? `${item.date}${item.time ? ` • ${item.time}` : ""}` : "Schedule not set"
+  );
 
   return (
     <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
@@ -65,11 +68,9 @@ export default function BookingCard({ item }: BookingCardProps) {
       <View style={styles.metaGrid}>
         <View style={styles.metaItem}>
           <Ionicons name="calendar-outline" size={13} color={c.mutedForeground} />
-          <Text style={[styles.metaText, { color: c.mutedForeground }]}>{item.date}</Text>
-        </View>
-        <View style={styles.metaItem}>
-          <Ionicons name="time-outline" size={13} color={c.mutedForeground} />
-          <Text style={[styles.metaText, { color: c.mutedForeground }]}>{item.time}</Text>
+          <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>
+            {scheduleLabel}
+          </Text>
         </View>
         <View style={styles.metaItem}>
           <View style={[styles.instructorAvatar, { backgroundColor: colors.studio.primary + "25" }]}>

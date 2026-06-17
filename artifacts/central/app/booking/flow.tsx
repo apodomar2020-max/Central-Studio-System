@@ -18,7 +18,7 @@ import {
 import { useGetClass, useGetInstructor, useCreateBooking, useListSchedules } from "@workspace/api-client-react";
 
 import { useAppContext, type Booking } from "@/contexts/AppContext";
-import { mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { compareSchedulesByNextOccurrence, getScheduleLabel, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
@@ -33,7 +33,7 @@ type PaymentMethod = "online" | "cash";
 const NEW_MEMBER_OFFER_TITLE = "New Member Welcome";
 
 export default function BookingFlowScreen() {
-  const { classId, usePackage } = useLocalSearchParams<{ classId: string; usePackage?: string }>();
+  const { classId, scheduleId, usePackage } = useLocalSearchParams<{ classId: string; scheduleId?: string; usePackage?: string }>();
   const { user, addBooking, children, bookings } = useAppContext();
   const insets = useSafeAreaInsets();
 
@@ -54,7 +54,8 @@ export default function BookingFlowScreen() {
   const singleClassPriceEgp =
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
   const primarySchedule = schedulesQuery.data
-    ? [...schedulesQuery.data].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))[0]
+    ? schedulesQuery.data.find((schedule) => String(schedule.id) === scheduleId) ??
+      [...schedulesQuery.data].sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
     ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
@@ -164,12 +165,14 @@ export default function BookingFlowScreen() {
       const localBooking: Booking = {
         id: String(apiBooking.id),
         classId: cls.id,
+        scheduleId: cls.scheduleId,
         className: cls.title,
         danceType: cls.categoryName,
         instructorName: instructor?.name ?? "Instructor",
         instructorImage: instructor?.photoUrl,
         date: cls.date,
         time: cls.endTime ? `${cls.startTime} - ${cls.endTime}` : cls.startTime,
+        scheduleLabel: getScheduleLabel(cls),
         duration: cls.duration,
         location: cls.location,
         price: finalPrice,
@@ -235,6 +238,22 @@ export default function BookingFlowScreen() {
         {step === 1 && (
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Who are you booking for?</Text>
+
+            <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+              {[
+                { label: "Class", value: cls.title },
+                { label: "Schedule", value: getScheduleLabel(cls) },
+                { label: "Instructor", value: instructor?.name ?? "Instructor" },
+              ].map((row, i, arr) => (
+                <React.Fragment key={row.label}>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>{row.label}</Text>
+                    <Text style={styles.summaryValue}>{row.value}</Text>
+                  </View>
+                  {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />}
+                </React.Fragment>
+              ))}
+            </View>
 
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setParticipantType("self"); }}
@@ -335,7 +354,7 @@ export default function BookingFlowScreen() {
             <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
               {[
                 { label: "Class", value: cls.title },
-                { label: "Day & Time", value: cls.dayOfWeek && cls.startTime ? `${cls.dayOfWeek} · ${cls.startTime}${cls.endTime ? ` - ${cls.endTime}` : ""}` : "Schedule not set" },
+                { label: "Day & Time", value: getScheduleLabel(cls) },
                 { label: "Duration", value: cls.duration },
                 { label: "Location", value: cls.location },
                 { label: "Participant", value: participantType === "self" ? user.fullName : "Child" },
@@ -392,6 +411,13 @@ export default function BookingFlowScreen() {
             </Text>
 
             {isPackageMode ? (
+              <>
+              <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Schedule</Text>
+                  <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
+                </View>
+              </View>
               <LinearGradient
                 colors={["#003A47", "#001E28"]}
                 start={{ x: 0, y: 0 }}
@@ -408,7 +434,15 @@ export default function BookingFlowScreen() {
                   This booking will use 1 class credit from an eligible package.
                 </Text>
               </LinearGradient>
+              </>
             ) : isFirstBooking ? (
+              <>
+              <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Schedule</Text>
+                  <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
+                </View>
+              </View>
               <LinearGradient
                 colors={["#003A47", "#001E28"]}
                 start={{ x: 0, y: 0 }}
@@ -425,8 +459,15 @@ export default function BookingFlowScreen() {
                   The <Text style={{ color: "#FFFFFF" }}>New Member Welcome</Text> offer has been automatically applied. No payment needed — just show up and dance!
                 </Text>
               </LinearGradient>
+              </>
             ) : (
               <>
+                <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Schedule</Text>
+                    <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
+                  </View>
+                </View>
                 <TouchableOpacity
                   onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("online"); }}
                   style={[
@@ -497,7 +538,7 @@ export default function BookingFlowScreen() {
           />
         ) : (
           <AppButton
-            title={paymentMethod === "online" ? "Pay & Confirm Booking" : "Confirm Booking"}
+            title={isPackageMode ? "Confirm Package Booking" : paymentMethod === "online" ? "Pay & Confirm Booking" : "Confirm Booking"}
             onPress={handleConfirm}
             loading={loading}
             fullWidth

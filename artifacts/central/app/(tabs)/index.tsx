@@ -28,7 +28,7 @@ import {
 } from "@/data/mockData";
 import { useListHeroItems, useListInstructors, useListSchedules, useListClasses, customFetch } from "@workspace/api-client-react";
 import type { HeroItem, Notification as ApiNotification } from "@workspace/api-client-react";
-import { mapApiInstructorToMobile, mapScheduleAndClassToMobile } from "@/data/apiAdapters";
+import { compareSchedulesByNextOccurrence, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import NewStudentBanner from "@/components/NewStudentBanner";
 import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/SkeletonLoader";
@@ -278,7 +278,7 @@ function ClassListCard({
       activeOpacity={0.88}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.push({ pathname: "/class/[id]", params: { id: item.id } });
+        router.push({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
       }}
     >
       <View style={[styles.classCardTopBar, { backgroundColor: categoryColor + "10" }]}>
@@ -327,7 +327,7 @@ function ClassListCard({
             <TouchableOpacity
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push({ pathname: "/booking/flow", params: { classId: item.id, usePackage: "true" } });
+                router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
               }}
               style={[styles.classPackageBtn, { borderColor: categoryColor + "60", backgroundColor: categoryColor + "12" }]}
             >
@@ -338,7 +338,7 @@ function ClassListCard({
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push({ pathname: "/booking/flow", params: { classId: item.id } });
+              router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
             }}
             disabled={item.status === "full"}
             style={[
@@ -465,40 +465,25 @@ export default function StudioHomeScreen() {
       return [];
     }
 
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
-
-    const nowH = String(today.getHours()).padStart(2, "0");
-    const nowM = String(today.getMinutes()).padStart(2, "0");
-    const currentTime24 = `${nowH}:${nowM}`;
-
-    // Egyptian week: Saturday → Thursday
-    const dayOfWeek = today.getDay();
-    const daysSinceSat = (dayOfWeek + 1) % 7;
-    const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - daysSinceSat);
-    weekStart.setHours(0, 0, 0, 0);
-
-    const thursdayDate = new Date(weekStart);
-    thursdayDate.setDate(weekStart.getDate() + 5);
-    const thuStr = thursdayDate.toISOString().slice(0, 10);
-
     const classMap = new Map(apiClasses.map((c) => [c.id, c]));
 
-    const result: DanceClass[] = [];
-    for (const sched of apiSchedules) {
-      const cls = classMap.get(sched.classId);
-      if (!cls || !cls.isActive) continue;
+    const result = [...apiSchedules]
+      .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
+      .map((sched) => {
+        const cls = classMap.get(sched.classId);
+        if (!cls || !cls.isActive) return null;
 
-      const mapped = mapScheduleAndClassToMobile(sched, cls, weekStart, singleClassPriceEgp);
-      if (mapped.isBallet) continue;
-      if (mapped.date < todayStr || mapped.date > thuStr) continue;
+        const mapped = mapApiClassWithScheduleToMobile(cls, sched, singleClassPriceEgp);
+        if (mapped.isBallet) return null;
+        return mapped;
+      })
+      .filter((item): item is DanceClass => item !== null);
 
-      if (mapped.date === todayStr && sched.startTime <= currentTime24) continue;
-
-      const key = `${mapped.id}-${mapped.date}`;
-      if (!result.some((r) => `${r.id}-${r.date}` === key)) {
-        result.push(mapped);
+    const deduped: DanceClass[] = [];
+    for (const mapped of result) {
+      const key = `${mapped.id}-${mapped.scheduleId ?? mapped.date}`;
+      if (!deduped.some((r) => `${r.id}-${r.scheduleId ?? r.date}` === key)) {
+        deduped.push(mapped);
       }
     }
 
@@ -512,10 +497,10 @@ export default function StudioHomeScreen() {
       return h * 60 + min;
     }
 
-    return result.sort((a, b) => {
+    return deduped.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       return parseDisplayTime(a.startTime) - parseDisplayTime(b.startTime);
-    });
+    }).slice(0, 5);
   }, [apiSchedules, apiClasses, singleClassPriceEgp]);
 
   return (

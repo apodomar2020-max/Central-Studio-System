@@ -27,6 +27,7 @@ export interface Instructor {
 
 export interface DanceClass {
   id: string;
+  scheduleId?: string;
   categoryId: string;
   categoryName: string;
   instructorId: string;
@@ -36,6 +37,7 @@ export interface DanceClass {
   dayOfWeek: string;
   startTime: string;
   endTime: string;
+  scheduleLabel?: string;
   duration: string;
   location: string;
   room: string;

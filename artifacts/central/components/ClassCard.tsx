@@ -34,7 +34,7 @@ export default function ClassCard({ item, instructor, compact = false, purchaseM
 
   function handlePress() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push(`/class/${item.id}`);
+    router.push({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
   }
 
   const statusConfig = getStatusConfig(item.status);

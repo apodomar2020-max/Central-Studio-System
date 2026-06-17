@@ -28,7 +28,7 @@ import {
   type DanceClass,
   type Instructor,
 } from "@/data/mockData";
-import { mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { compareSchedulesByNextOccurrence, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import ClassCard from "@/components/ClassCard";
 import EmptyState from "@/components/EmptyState";
@@ -163,7 +163,7 @@ export default function ClassesScreen() {
     () => {
       const schedulesByClassId = new Map<number, NonNullable<typeof schedulesQuery.data>[number]>();
       [...(schedulesQuery.data ?? [])]
-        .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))
+        .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
         .forEach((schedule) => {
           if (!schedulesByClassId.has(schedule.classId)) {
             schedulesByClassId.set(schedule.classId, schedule);

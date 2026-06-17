@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { useGetClass, useGetInstructor, useListSchedules } from "@workspace/api-client-react";
 
-import { getScheduleLabel, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { compareSchedulesByNextOccurrence, getScheduleLabel, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
@@ -42,7 +42,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function ClassDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
   const insets = useSafeAreaInsets();
 
   const numericId = Number(id);
@@ -62,7 +62,8 @@ export default function ClassDetailScreen() {
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
 
   const primarySchedule = schedulesQuery.data
-    ? [...schedulesQuery.data].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))[0]
+    ? schedulesQuery.data.find((schedule) => String(schedule.id) === scheduleId) ??
+      [...schedulesQuery.data].sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
     ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
@@ -219,7 +220,7 @@ export default function ClassDetailScreen() {
               title="Book This Class"
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                router.push({ pathname: "/booking/flow", params: { classId: cls.id } });
+                router.push({ pathname: "/booking/flow", params: { classId: cls.id, scheduleId: cls.scheduleId } });
               }}
               fullWidth
               size="lg"

@@ -95,27 +95,81 @@ function formatTime(timeStr: string): string {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+function coerceDayOfWeek(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= 6) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    const numeric = Number(trimmed);
+    if (Number.isInteger(numeric) && numeric >= 0 && numeric <= 6) return numeric;
+    const normalized = trimmed.toLowerCase().slice(0, 3);
+    const idx = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(normalized);
+    return idx >= 0 ? idx : null;
+  }
+  return null;
+}
+
 function scheduleDateForWeek(schedule: ApiSchedule, weekStart: Date): string {
   // Map dayOfWeek (0=Sun…6=Sat) to an offset from Saturday.
-  const offset = (schedule.dayOfWeek - 6 + 7) % 7;
+  const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek) ?? 0;
+  const offset = (dayOfWeek - 6 + 7) % 7;
   const dateObj = new Date(weekStart);
   dateObj.setDate(weekStart.getDate() + offset);
   return dateObj.toISOString().slice(0, 10);
 }
 
-function applySchedule(cls: DanceClass, schedule?: ApiSchedule, weekStart?: Date): DanceClass {
+function minutesFromTime(timeStr: string): number {
+  const [hoursStr = "0", minsStr = "00"] = timeStr.split(":");
+  return Number(hoursStr) * 60 + Number(minsStr);
+}
+
+export function getNextScheduleOccurrenceDate(schedule: ApiSchedule, fromDate = new Date()): string {
+  const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek) ?? fromDate.getDay();
+  const base = new Date(fromDate);
+  base.setHours(0, 0, 0, 0);
+
+  const currentMinutes = fromDate.getHours() * 60 + fromDate.getMinutes();
+  let daysUntil = (dayOfWeek - fromDate.getDay() + 7) % 7;
+  if (daysUntil === 0 && minutesFromTime(schedule.startTime) <= currentMinutes) {
+    daysUntil = 7;
+  }
+
+  base.setDate(base.getDate() + daysUntil);
+  return base.toISOString().slice(0, 10);
+}
+
+export function compareSchedulesByNextOccurrence(a: ApiSchedule, b: ApiSchedule, fromDate = new Date()): number {
+  const aDate = getNextScheduleOccurrenceDate(a, fromDate);
+  const bDate = getNextScheduleOccurrenceDate(b, fromDate);
+  if (aDate !== bDate) return aDate.localeCompare(bDate);
+  return a.startTime.localeCompare(b.startTime);
+}
+
+function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?: string): DanceClass {
   if (!schedule) return cls;
+  const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek);
+  const startTime = formatTime(schedule.startTime);
+  const endTime = formatTime(schedule.endTime);
+  const dayName = dayOfWeek == null ? "" : DAY_NAMES[dayOfWeek] ?? "";
+  const scheduleLabel = dayName
+    ? `${dayName} • ${startTime}${endTime ? ` - ${endTime}` : ""}`
+    : "Schedule not set";
+
   return {
     ...cls,
-    date: weekStart ? scheduleDateForWeek(schedule, weekStart) : "",
-    dayOfWeek: DAY_NAMES[schedule.dayOfWeek] ?? "",
-    startTime: formatTime(schedule.startTime),
-    endTime: formatTime(schedule.endTime),
+    scheduleId: String(schedule.id),
+    date: occurrenceDate ?? getNextScheduleOccurrenceDate(schedule),
+    dayOfWeek: dayName,
+    startTime,
+    endTime,
+    scheduleLabel,
     location: schedule.location ?? cls.location,
   };
 }
 
 export function getScheduleLabel(cls: DanceClass): string {
+  if (cls.scheduleLabel) return cls.scheduleLabel;
   if (!cls.dayOfWeek || !cls.startTime) return "Schedule not set";
   return cls.endTime
     ? `${cls.dayOfWeek} • ${cls.startTime} - ${cls.endTime}`
@@ -135,7 +189,11 @@ export function mapScheduleAndClassToMobile(
   weekStart: Date, // the Saturday of the current Egyptian week
   singleClassPriceEgp = 0,
 ): DanceClass {
-  return applySchedule(mapApiClassToMobile(cls, singleClassPriceEgp), schedule, weekStart);
+  return applySchedule(
+    mapApiClassToMobile(cls, singleClassPriceEgp),
+    schedule,
+    scheduleDateForWeek(schedule, weekStart),
+  );
 }
 
 export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): DanceClass {
@@ -143,6 +201,7 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
 
   return {
     id: String(api.id),
+    scheduleId: undefined,
     // Fall back to the raw category string so the value is always defined even
     // when it doesn't match one of the known mobile categories.
     categoryId: category?.id ?? api.category,
@@ -154,6 +213,7 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
     dayOfWeek: "",
     startTime: "",
     endTime: "",
+    scheduleLabel: undefined,
     duration: `${api.durationMins} min`,
     location: "Central Studio, Zamalek",
     room: "",

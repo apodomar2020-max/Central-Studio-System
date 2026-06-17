@@ -28,12 +28,14 @@ export interface ChildProfile {
 export interface Booking {
   id: string;
   classId: string;
+  scheduleId?: string;
   className: string;
   danceType: string;
   instructorName: string;
   instructorImage?: string;
   date: string;
   time: string;
+  scheduleLabel?: string;
   duration: string;
   location: string;
   price: number;
