@@ -21,6 +21,7 @@ import Notifications from "@/pages/notifications";
 import Marketing from "@/pages/marketing";
 import PackageOrders from "@/pages/package-orders";
 import AttendancePage from "@/pages/attendance";
+import ReportsPage from "@/pages/reports";
 import HeroItems from "@/pages/hero-items";
 import SystemUsers from "@/pages/system-users";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
@@ -80,6 +81,7 @@ function ProtectedRouter() {
         <Route path="/marketing" component={Marketing} />
         <Route path="/package-orders" component={PackageOrders} />
         <Route path="/attendance" component={AttendancePage} />
+        <Route path="/reports" component={ReportsPage} />
         <Route path="/hero-items" component={HeroItems} />
         <Route path="/system-users" component={SystemUsers} />
         <Route path="/ballet/applications/:id" component={ApplicationDetailPage} />

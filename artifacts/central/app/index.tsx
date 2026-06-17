@@ -14,7 +14,7 @@ export default function IndexScreen() {
       // Require login before accessing the app
       router.replace("/auth/login");
     } else {
-      router.replace("/(tabs)/");
+      router.replace("/(tabs)/" as never);
     }
   }, [isLoading, isOnboarded, user]);
 

@@ -22,7 +22,7 @@ function NativeTabLayout() {
         <Label>Classes</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="bookings">
-        <Icon sf={{ default: "calendar", selected: "calendar.fill" }} />
+        <Icon sf={{ default: "calendar", selected: "calendar.badge.checkmark" }} />
         <Label>Booking</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="packages">

@@ -3,8 +3,17 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 
-import { Offer } from "@/data/mockData";
 import { useColors } from "@/hooks/useColors";
+
+interface Offer {
+  color: string;
+  badge: string;
+  discountType: "percentage" | "fixed";
+  discountValue: number;
+  title: string;
+  description?: string;
+  endDate: string;
+}
 
 interface OfferCardProps {
   item: Offer;

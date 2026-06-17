@@ -23,11 +23,14 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 
 const SECTION_ITEMS = [
-  { icon: "calendar-outline", label: "My Bookings", route: "/(tabs)/bookings" },
-  { icon: "card-outline", label: "My Packages", route: "/(tabs)/packages" },
-  { icon: "notifications-outline", label: "Notifications", route: "/notifications" },
-  { icon: "help-circle-outline", label: "Help & Support", route: "/help-support" },
-  { icon: "shield-checkmark-outline", label: "Privacy & Security", route: "/privacy-policy" },
+  { icon: "calendar-outline",      label: "My Bookings",         route: "/(tabs)/bookings"   },
+  { icon: "layers-outline",        label: "Package Center",       route: "/package-center"    },
+  { icon: "receipt-outline",       label: "Credit History",       route: "/credit-history"    },
+  { icon: "barbell-outline",       label: "Attendance History",   route: "/attendance-history" },
+  { icon: "qr-code-outline",       label: "My Studio Pass",       route: "/my-qr"             },
+  { icon: "notifications-outline", label: "Notifications",        route: "/notifications"     },
+  { icon: "help-circle-outline",   label: "Help & Support",       route: "/help-support"      },
+  { icon: "shield-checkmark-outline", label: "Privacy & Security", route: "/privacy-policy"   },
 ];
 
 function ChildCard({

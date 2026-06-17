@@ -24,7 +24,7 @@ export default function ChooseScreen() {
   async function handleStart() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await setIsOnboarded(true);
-    router.replace("/(tabs)/");
+    router.replace("/(tabs)/" as never);
   }
 
   return (

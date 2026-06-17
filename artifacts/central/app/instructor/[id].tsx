@@ -29,7 +29,8 @@ export default function InstructorDetailScreen() {
 
   const numericId = Number(id);
   const query = useGetInstructor(numericId, {
-    query: { enabled: !!id && !isNaN(numericId) },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query: { enabled: !!id && !isNaN(numericId) } as any,
   });
 
   const instructor = query.data ? mapApiInstructorToMobile(query.data) : null;

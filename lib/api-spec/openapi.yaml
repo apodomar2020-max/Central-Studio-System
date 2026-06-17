@@ -1226,10 +1226,25 @@ components:
         scheduleId: { type: ["integer", "null"] }
         classId: { type: ["integer", "null"] }
         packageId: { type: ["integer", "null"] }
+        packageOrderId: { type: ["integer", "null"] }
         status: { type: string }
         notes: { type: ["string", "null"] }
         bookedAt: { type: string }
         createdAt: { type: string }
+        # Display-ready fields joined from class / schedule / instructor (list endpoint).
+        # All nullable: a booking may have no class, schedule, or instructor.
+        classTitle: { type: ["string", "null"] }
+        classDescription: { type: ["string", "null"] }
+        classCategory: { type: ["string", "null"] }
+        classDurationMins: { type: ["integer", "null"] }
+        instructorName: { type: ["string", "null"] }
+        instructorPhotoUrl: { type: ["string", "null"] }
+        scheduleDayOfWeek: { type: ["integer", "null"] }
+        scheduleStartTime: { type: ["string", "null"] }
+        scheduleEndTime: { type: ["string", "null"] }
+        scheduleLocation: { type: ["string", "null"] }
+        scheduleLabel: { type: ["string", "null"] }
+        displayTitle: { type: ["string", "null"] }
 
     CreateBookingBody:
       type: object

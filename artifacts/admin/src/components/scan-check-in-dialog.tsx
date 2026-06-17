@@ -825,28 +825,44 @@ export function ScanCheckInDialog({
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Select Booking
                 </p>
-                {studentBookings.map((bk) => (
-                  <button
-                    key={bk.id}
-                    onClick={() => setSelectedBookingId(selectedBookingId === bk.id ? null : bk.id)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
-                    style={{
-                      background: selectedBookingId === bk.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
-                      border: `1px solid ${selectedBookingId === bk.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
-                    }}
-                  >
-                    <span className="font-medium text-white">
-                      Booking #{bk.id}
-                      {bk.notes ? ` · ${bk.notes.split("\n")[0]}` : ""}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{
-                      background: "hsl(203 30% 20%)",
-                      color: "#8A9AB0",
-                    }}>
-                      {bk.status}
-                    </span>
-                  </button>
-                ))}
+                {studentBookings.map((bk) => {
+                  const title = bk.displayTitle ?? bk.classTitle ?? `Booking #${bk.id}`;
+                  const scheduleLine = bk.scheduleLabel ?? "Schedule not set";
+                  return (
+                    <button
+                      key={bk.id}
+                      onClick={() => setSelectedBookingId(selectedBookingId === bk.id ? null : bk.id)}
+                      className="w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                      style={{
+                        background: selectedBookingId === bk.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
+                        border: `1px solid ${selectedBookingId === bk.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-semibold text-white truncate">{title}</div>
+                        <div className="text-xs mt-0.5" style={{ color: "#8A9AB0" }}>
+                          {scheduleLine}
+                        </div>
+                        {bk.instructorName && (
+                          <div className="text-xs mt-0.5" style={{ color: "#4E6070" }}>
+                            Instructor: {bk.instructorName}
+                          </div>
+                        )}
+                        {bk.scheduleLocation && (
+                          <div className="text-xs mt-0.5" style={{ color: "#4E6070" }}>
+                            {bk.scheduleLocation}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0" style={{
+                        background: "hsl(203 30% 20%)",
+                        color: "#8A9AB0",
+                      }}>
+                        {bk.status}
+                      </span>
+                    </button>
+                  );
+                })}
                 {selectedBookingId && (
                   <p className="text-xs" style={{ color: STUDIO_CYAN }}>
                     Will use secure QR check-in with credit ledger

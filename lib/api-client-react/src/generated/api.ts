@@ -68,6 +68,14 @@ import type {
   CheckInQrResponse,
   ListCreditTransactionsParams,
   ListCreditTransactionsResponse,
+  // Student-scoped /my/* endpoints (Phase B — B1)
+  MyCreditsParams,
+  MyCreditsResponse,
+  MyAttendanceParams,
+  MyAttendanceResponse,
+  // Admin credit adjustment (Phase B — B2)
+  AdjustCreditsBody,
+  AdjustCreditsResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -5042,3 +5050,243 @@ export function useListCreditTransactions<
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+// ---------------------------------------------------------------------------
+// GET /api/my/packages  — student-scoped package orders
+// ---------------------------------------------------------------------------
+
+export const getMyPackagesUrl = () => `/api/my/packages`;
+
+export const getMyPackages = async (
+  options?: RequestInit,
+): Promise<PackageOrder[]> =>
+  customFetch<PackageOrder[]>(getMyPackagesUrl(), { ...options, method: "GET" });
+
+export const getGetMyPackagesQueryKey = () => [`/api/my/packages`] as const;
+
+export const getGetMyPackagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyPackages>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getMyPackages>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getGetMyPackagesQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyPackages>>> = ({ signal }) =>
+    getMyPackages({ signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyPackages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export function useGetMyPackages<
+  TData = Awaited<ReturnType<typeof getMyPackages>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getMyPackages>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyPackagesQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/my/credits  — student-scoped credit transaction history
+// ---------------------------------------------------------------------------
+
+export const getMyCreditsUrl = (params?: MyCreditsParams) => {
+  const queryParams = new URLSearchParams();
+  if (params?.page != null) queryParams.set("page", String(params.page));
+  if (params?.limit != null) queryParams.set("limit", String(params.limit));
+  if (params?.packageOrderId != null)
+    queryParams.set("packageOrderId", String(params.packageOrderId));
+  const qs = queryParams.toString();
+  return `/api/my/credits${qs ? `?${qs}` : ""}`;
+};
+
+export const getMyCredits = async (
+  params?: MyCreditsParams,
+  options?: RequestInit,
+): Promise<MyCreditsResponse> =>
+  customFetch<MyCreditsResponse>(getMyCreditsUrl(params), { ...options, method: "GET" });
+
+export const getGetMyCreditsQueryKey = (params?: MyCreditsParams) =>
+  [`/api/my/credits`, ...(params ? [params] : [])] as const;
+
+export const getGetMyCreditsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyCredits>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: MyCreditsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMyCredits>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getGetMyCreditsQueryKey(params);
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyCredits>>> = ({ signal }) =>
+    getMyCredits(params, { signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyCredits>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export function useGetMyCredits<
+  TData = Awaited<ReturnType<typeof getMyCredits>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: MyCreditsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMyCredits>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyCreditsQueryOptions(params, options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/my/attendance  — student-scoped attendance history
+// ---------------------------------------------------------------------------
+
+export const getMyAttendanceUrl = (params?: MyAttendanceParams) => {
+  const queryParams = new URLSearchParams();
+  if (params?.page != null) queryParams.set("page", String(params.page));
+  if (params?.limit != null) queryParams.set("limit", String(params.limit));
+  const qs = queryParams.toString();
+  return `/api/my/attendance${qs ? `?${qs}` : ""}`;
+};
+
+export const getMyAttendance = async (
+  params?: MyAttendanceParams,
+  options?: RequestInit,
+): Promise<MyAttendanceResponse> =>
+  customFetch<MyAttendanceResponse>(getMyAttendanceUrl(params), { ...options, method: "GET" });
+
+export const getGetMyAttendanceQueryKey = (params?: MyAttendanceParams) =>
+  [`/api/my/attendance`, ...(params ? [params] : [])] as const;
+
+export const getGetMyAttendanceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyAttendance>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: MyAttendanceParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMyAttendance>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getGetMyAttendanceQueryKey(params);
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyAttendance>>> = ({ signal }) =>
+    getMyAttendance(params, { signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyAttendance>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export function useGetMyAttendance<
+  TData = Awaited<ReturnType<typeof getMyAttendance>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: MyAttendanceParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMyAttendance>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyAttendanceQueryOptions(params, options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/package-orders/:id/credits  — admin credit adjustment
+// ---------------------------------------------------------------------------
+
+export const getAdjustCreditsUrl = (id: number) =>
+  `/api/admin/package-orders/${id}/credits`;
+
+export const adjustCredits = async (
+  id: number,
+  data: BodyType<AdjustCreditsBody>,
+  options?: RequestInit,
+): Promise<AdjustCreditsResponse> =>
+  customFetch<AdjustCreditsResponse>(getAdjustCreditsUrl(id), {
+    ...options,
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const getAdjustCreditsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adjustCredits>>,
+    TError,
+    { id: number; data: BodyType<AdjustCreditsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adjustCredits>>,
+  TError,
+  { id: number; data: BodyType<AdjustCreditsBody> },
+  TContext
+> => {
+  const mutationKey = ["adjustCredits"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adjustCredits>>,
+    { id: number; data: BodyType<AdjustCreditsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+    return adjustCredits(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdjustCreditsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adjustCredits>>
+>;
+export type AdjustCreditsMutationBody = BodyType<AdjustCreditsBody>;
+export type AdjustCreditsMutationError = ErrorType<ErrorResponse>;
+
+export const useAdjustCredits = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adjustCredits>>,
+    TError,
+    { id: number; data: BodyType<AdjustCreditsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adjustCredits>>,
+  TError,
+  { id: number; data: BodyType<AdjustCreditsBody> },
+  TContext
+> => {
+  return useMutation(getAdjustCreditsMutationOptions(options));
+};

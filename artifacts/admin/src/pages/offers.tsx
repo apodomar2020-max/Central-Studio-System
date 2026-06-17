@@ -35,7 +35,7 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
-type Offer = { id: number; title: string; description?: string | null; discountPercent: number; validUntil?: string | null; isActive: boolean; classIds: number[] };
+type Offer = { id: number; title: string; description?: string | null; discountPercent: number; validUntil?: string | null; isActive: boolean; classIds?: number[] };
 
 export default function Offers() {
   const { data: offers, isLoading } = useListOffers();
@@ -59,7 +59,7 @@ export default function Offers() {
 
   const openEdit = (o: Offer) => {
     setEditing(o);
-    form.reset({ title: o.title, description: o.description ?? "", discountPercent: o.discountPercent, validUntil: o.validUntil ?? "", classIds: o.classIds.join(", "), isActive: o.isActive });
+    form.reset({ title: o.title, description: o.description ?? "", discountPercent: o.discountPercent, validUntil: o.validUntil ?? "", classIds: (o.classIds ?? []).join(", "), isActive: o.isActive });
     setOpen(true);
   };
 
@@ -110,7 +110,7 @@ export default function Offers() {
                   </TableCell>
                   <TableCell><Badge>{offer.discountPercent}% off</Badge></TableCell>
                   <TableCell>{offer.validUntil ? new Date(offer.validUntil).toLocaleDateString() : "No expiry"}</TableCell>
-                  <TableCell>{offer.classIds?.length > 0 ? `${offer.classIds.length} class${offer.classIds.length > 1 ? "es" : ""}` : "All"}</TableCell>
+                  <TableCell>{offer.classIds?.length ? `${offer.classIds.length} class${offer.classIds.length > 1 ? "es" : ""}` : "All"}</TableCell>
                   <TableCell>
                     <Badge variant={offer.isActive ? "default" : "outline"}>{offer.isActive ? "Active" : "Inactive"}</Badge>
                   </TableCell>

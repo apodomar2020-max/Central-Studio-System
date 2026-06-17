@@ -400,6 +400,20 @@ export const ListBookingsResponseItem = zod.object({
   notes: zod.string().nullish(),
   bookedAt: zod.string(),
   createdAt: zod.string(),
+  // Display-ready fields joined from class / schedule / instructor. All nullish
+  // so bookings with missing relations still validate (additive, backward-compatible).
+  classTitle: zod.string().nullish(),
+  classDescription: zod.string().nullish(),
+  classCategory: zod.string().nullish(),
+  classDurationMins: zod.number().nullish(),
+  instructorName: zod.string().nullish(),
+  instructorPhotoUrl: zod.string().nullish(),
+  scheduleDayOfWeek: zod.number().nullish(),
+  scheduleStartTime: zod.string().nullish(),
+  scheduleEndTime: zod.string().nullish(),
+  scheduleLocation: zod.string().nullish(),
+  scheduleLabel: zod.string().nullish(),
+  displayTitle: zod.string().nullish(),
 });
 export const ListBookingsResponse = zod.array(ListBookingsResponseItem);
 

@@ -22,6 +22,10 @@ export interface DashboardSummary {
   totalRevenue: number;
   pendingBookings: number;
   totalOffers: number;
+  /** @nullable — ballet/stage fields */
+  activeOpportunities?: number;
+  /** @nullable */
+  pendingApplications?: number;
 }
 
 export interface Instructor {
@@ -255,6 +259,30 @@ export interface Booking {
   notes?: string | null;
   bookedAt: string;
   createdAt: string;
+  /** @nullable — class title joined from classes.id */
+  classTitle?: string | null;
+  /** @nullable */
+  classDescription?: string | null;
+  /** @nullable */
+  classCategory?: string | null;
+  /** @nullable */
+  classDurationMins?: number | null;
+  /** @nullable — instructor joined via classes.instructorId */
+  instructorName?: string | null;
+  /** @nullable */
+  instructorPhotoUrl?: string | null;
+  /** @nullable — 0 = Sunday … 6 = Saturday */
+  scheduleDayOfWeek?: number | null;
+  /** @nullable */
+  scheduleStartTime?: string | null;
+  /** @nullable */
+  scheduleEndTime?: string | null;
+  /** @nullable */
+  scheduleLocation?: string | null;
+  /** @nullable — e.g. "Sunday • 6:00 PM - 7:00 PM" */
+  scheduleLabel?: string | null;
+  /** @nullable — classTitle, falling back to "Booking #id" */
+  displayTitle?: string | null;
 }
 
 export interface CreateBookingBody {
@@ -445,6 +473,10 @@ export interface StatusCount {
 export interface DashboardAnalytics {
   bookingsByStatus: StatusCount[];
   totalCampaigns: number;
+  /** @nullable — ballet/stage fields */
+  applicationsByStatus?: StatusCount[];
+  /** @nullable */
+  totalDancers?: number;
 }
 
 export interface PackageOrder {
@@ -537,6 +569,8 @@ export interface CheckInBody {
   creditDeducted?: boolean;
   /** @nullable */
   notes?: string | null;
+  /** Attendance status — server defaults to "checked_in" if omitted */
+  status?: 'checked_in' | 'late' | 'absent' | 'cancelled';
 }
 
 export type AttendanceStatsDataItem = {
@@ -685,4 +719,79 @@ export interface ListCreditTransactionsResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+// ---------------------------------------------------------------------------
+// Student-scoped /my/* endpoints (Phase B — B1)
+// ---------------------------------------------------------------------------
+
+/** Query params for GET /api/my/credits */
+export interface MyCreditsParams {
+  page?: number;
+  limit?: number;
+  /** Only return transactions for this specific package order (must belong to the student) */
+  packageOrderId?: number;
+}
+
+/** Paginated credit transaction list returned from GET /api/my/credits */
+export interface MyCreditsResponse {
+  data: CreditTransaction[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/** Query params for GET /api/my/attendance */
+export interface MyAttendanceParams {
+  page?: number;
+  limit?: number;
+}
+
+/** Single attendance record with resolved instructor name */
+export interface MyAttendanceRecord {
+  id: number;
+  studentEmail: string;
+  studentName: string;
+  /** @nullable */
+  classTitle?: string | null;
+  /** checked_in | late | absent | cancelled */
+  status?: string | null;
+  creditDeducted: boolean;
+  checkedInAt: string;
+  /** @nullable */
+  packageOrderId?: number | null;
+  /** @nullable */
+  classId?: number | null;
+  /** @nullable */
+  scheduleId?: number | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable — resolved via JOIN to classes → instructors; null if classId not set at check-in */
+  instructorName?: string | null;
+}
+
+/** Paginated attendance history returned from GET /api/my/attendance */
+export interface MyAttendanceResponse {
+  data: MyAttendanceRecord[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/package-orders/:id/credits  (Phase B — B2)
+// ---------------------------------------------------------------------------
+
+export interface AdjustCreditsBody {
+  /** manual_adjustment = override; package_bonus = promotional top-up */
+  type: 'manual_adjustment' | 'package_bonus';
+  /** Non-zero signed integer. Positive = add credits, negative = remove. */
+  delta: number;
+  /** Optional admin note shown in the ledger */
+  notes?: string;
+}
+
+export interface AdjustCreditsResponse {
+  order: PackageOrder;
+  transaction: CreditTransaction;
 }

@@ -12,6 +12,7 @@ import {
   Megaphone,
   ShoppingBag,
   ScanLine,
+  BarChart3,
   ImagePlay,
   ShieldCheck,
   LogOut,
@@ -47,6 +48,7 @@ const generalNav = [
   { name: "Marketing", href: "/marketing", icon: Megaphone },
   { name: "Package Orders", href: "/package-orders", icon: ShoppingBag },
   { name: "Attendance", href: "/attendance", icon: ScanLine },
+  { name: "Reports", href: "/reports", icon: BarChart3 },
 ];
 
 const systemNav = [

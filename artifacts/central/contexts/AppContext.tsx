@@ -248,14 +248,20 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       }
       // Load packages from API for the confirmed user
       if (confirmedUser) {
-        fetchAndSetPackages(confirmedUser.email).catch(() => {});
+        fetchAndSetPackages().catch(() => {});
       }
     } catch {}
     setIsLoading(false);
   }
 
-  /** Fetch this user's package orders from the API and update local state. */
-  async function fetchAndSetPackages(email: string) {
+  /**
+   * Fetch this student's package orders from the secure /api/my/packages
+   * endpoint (student JWT scoped) and update local state.
+   *
+   * Previously this called /api/package-orders (returns ALL students) and
+   * filtered client-side — that was a privacy leak fixed in Phase B (B1).
+   */
+  async function fetchAndSetPackages() {
     try {
       const orders = await customFetch<Array<{
         id: number; packageId?: number | null; packageName: string;
@@ -263,10 +269,9 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         status: string; activatedAt?: string | null;
         expiresAt?: string | null; createdAt: string;
         studentEmail: string;
-      }>>(`/api/package-orders`);
+      }>>(`/api/my/packages`);
 
-      const mine = orders.filter((o) => o.studentEmail === email);
-      const mapped: UserPackage[] = mine.map((o) => ({
+      const mapped: UserPackage[] = orders.map((o) => ({
         id: String(o.id),
         packageId: String(o.packageId ?? 0),
         packageTitle: o.packageName,
@@ -305,7 +310,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         await AsyncStorage.setItem("referralCode", generated);
       }
       // Load this user's packages from the API
-      fetchAndSetPackages(usr.email).catch(() => {});
+      fetchAndSetPackages().catch(() => {});
     } else {
       // Logout — clear both the user record and the student JWT.
       // After this, setAuthTokenGetter falls back to the shared API key
@@ -349,8 +354,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   }, []);
 
   const refreshUserPackages = useCallback(async () => {
-    const usr = userRef.current;
-    if (usr) await fetchAndSetPackages(usr.email);
+    await fetchAndSetPackages();
   }, []);
 
   const purchasePackage = useCallback(
@@ -370,7 +374,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         }),
       });
       // Refresh the list so the new pending order shows up immediately
-      await fetchAndSetPackages(usr.email);
+      await fetchAndSetPackages();
     },
     []
   );
@@ -425,7 +429,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     } catch {
       // Best-effort — still refresh list even if the PATCH failed
     }
-    if (usr) await fetchAndSetPackages(usr.email);
+    await fetchAndSetPackages();
   }, []);
 
   const submitBalletApplication = useCallback(
