@@ -37,6 +37,7 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { useAppContext } from "@/contexts/AppContext";
 
 const AGE_GROUPS: { key: AgeGroup | "All"; label: string; icon: string }[] = [
   { key: "All", label: "All Ages", icon: "people-outline" },
@@ -101,6 +102,7 @@ function BalletShoeIcon({ size = 22, color = "#FFFFFF" }: { size?: number; color
 
 export default function ClassesScreen() {
   const insets = useSafeAreaInsets();
+  const { userPackages } = useAppContext();
   const [search, setSearch] = useState("");
   const [activeAge, setActiveAge] = useState<AgeGroup | "All">("All");
   const [activeCat, setActiveCat] = useState<string>("all");
@@ -157,6 +159,12 @@ export default function ClassesScreen() {
   const instructors: Instructor[] = useMemo(
     () => (instructorsQuery.data ?? []).map(mapApiInstructorToMobile),
     [instructorsQuery.data],
+  );
+  const packageCreditsRemaining = useMemo(
+    () => userPackages
+      .filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0)
+      .reduce((sum, pkg) => sum + pkg.remainingCredits, 0),
+    [userPackages],
   );
 
   const classes: DanceClass[] = useMemo(
@@ -381,7 +389,12 @@ export default function ClassesScreen() {
               </TouchableOpacity>
               {(activeCat === "all" || activeCat === cat.id) &&
                 catClasses.map((cls) => (
-                  <ClassCard key={cls.id} item={cls} instructor={instructorById.get(cls.instructorId)} />
+                  <ClassCard
+                    key={cls.id}
+                    item={cls}
+                    instructor={instructorById.get(cls.instructorId)}
+                    packageCreditsRemaining={packageCreditsRemaining}
+                  />
                 ))}
             </View>
           );
@@ -412,7 +425,12 @@ export default function ClassesScreen() {
                 <Text style={styles.catGroupCount}>{otherClasses.length} class{otherClasses.length !== 1 ? "es" : ""}</Text>
               </View>
               {otherClasses.map((cls) => (
-                <ClassCard key={cls.id} item={cls} instructor={instructorById.get(cls.instructorId)} />
+                <ClassCard
+                  key={cls.id}
+                  item={cls}
+                  instructor={instructorById.get(cls.instructorId)}
+                  packageCreditsRemaining={packageCreditsRemaining}
+                />
               ))}
             </View>
           );

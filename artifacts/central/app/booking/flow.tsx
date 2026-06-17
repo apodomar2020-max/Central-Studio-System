@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
@@ -28,13 +28,13 @@ import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 
-type PaymentMethod = "online" | "cash";
+type PaymentMethod = "online" | "cash" | "packageCredit";
 
 const NEW_MEMBER_OFFER_TITLE = "New Member Welcome";
 
 export default function BookingFlowScreen() {
   const { classId, scheduleId, usePackage } = useLocalSearchParams<{ classId: string; scheduleId?: string; usePackage?: string }>();
-  const { user, addBooking, children, bookings } = useAppContext();
+  const { user, addBooking, children, bookings, userPackages } = useAppContext();
   const insets = useSafeAreaInsets();
 
   // ── Fetch class and instructor from the live API ──
@@ -60,7 +60,9 @@ export default function BookingFlowScreen() {
   const cls = classQuery.data
     ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
     : null;
-  const isPackageMode = usePackage === "true";
+  const activePackages = userPackages.filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0);
+  const packageCreditsRemaining = activePackages.reduce((sum, pkg) => sum + pkg.remainingCredits, 0);
+  const selectedPackage = activePackages[0];
 
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {
     query: { queryKey: ["instructor", classQuery.data?.instructorId ?? 0], enabled: !!classQuery.data?.instructorId },
@@ -72,16 +74,39 @@ export default function BookingFlowScreen() {
   // ── Create booking mutation ──
   const { mutateAsync: createBookingAsync } = useCreateBooking();
 
-  const isFirstBooking = bookings.length === 0;
-  const finalPrice = isFirstBooking || isPackageMode ? 0 : (cls?.price ?? 0);
-
   const [step, setStep] = useState(1);
   const [participantType, setParticipantType] = useState<"self" | "child">("self");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("online");
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(children[0]?.id ?? null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [packageParamApplied, setPackageParamApplied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refCodeInput, setRefCodeInput] = useState("");
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
   const [refCodeState, setRefCodeState] = useState<"idle" | "valid" | "invalid">("idle");
+  const selectedChild = children.find((child) => child.id === selectedChildId);
+  const isPackageMode = paymentMethod === "packageCredit";
+  const isFirstBooking = bookings.length === 0;
+  const finalPrice = isFirstBooking || isPackageMode ? 0 : (cls?.price ?? 0);
+  const hasSchedule = Boolean(cls?.scheduleId && cls?.dayOfWeek && cls?.startTime);
+  const participantName =
+    participantType === "self"
+      ? user?.fullName ?? ""
+      : selectedChild?.fullName ?? "Child";
+
+  useEffect(() => {
+    if (!selectedChildId && children.length > 0) {
+      setSelectedChildId(children[0].id);
+    }
+  }, [children, selectedChildId]);
+
+  useEffect(() => {
+    if (!packageParamApplied && usePackage === "true" && packageCreditsRemaining > 0) {
+      setPaymentMethod("packageCredit");
+      setPackageParamApplied(true);
+    } else if (paymentMethod === "packageCredit" && packageCreditsRemaining === 0) {
+      setPaymentMethod("cash");
+    }
+  }, [packageCreditsRemaining, packageParamApplied, paymentMethod, usePackage]);
 
   function handleApplyRefCode() {
     const code = refCodeInput.trim().toUpperCase();
@@ -137,26 +162,36 @@ export default function BookingFlowScreen() {
   // ── Confirm booking — POST to API then update local state ──
   async function handleConfirm() {
     if (!cls || !user) return;
+    if (!hasSchedule) {
+      Alert.alert(
+        "Schedule not set",
+        "This class cannot be booked until the studio adds a day and time.",
+      );
+      return;
+    }
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
+      const notes = [
+        appliedCode ? `Referral code: ${appliedCode}` : null,
+        participantType === "child" ? `Participant: ${participantName}` : null,
+        isPackageMode && selectedPackage
+          ? `Package credit intent: ${selectedPackage.packageTitle} (#${selectedPackage.id})`
+          : null,
+      ].filter(Boolean).join("\n") || undefined;
+
       // 1. Create booking in the database
       const apiBooking = await createBookingAsync({
         data: {
-          studentName:
-            participantType === "self"
-              ? user.fullName
-              : children[0]?.fullName ?? user.fullName,
+          studentName: participantName,
           studentEmail: user.email,
           studentPhone: user.phone,
           classId: numericClassId,
           scheduleId: primarySchedule?.id,
-          status:
-            finalPrice === 0 || paymentMethod === "online"
-              ? "confirmed"
-              : "pendingPayment",
-          notes: appliedCode ? `Referral code: ${appliedCode}` : undefined,
+          packageId: isPackageMode && selectedPackage ? Number(selectedPackage.id) : undefined,
+          status: paymentMethod === "cash" && finalPrice > 0 ? "pendingPayment" : "confirmed",
+          notes,
         },
       });
 
@@ -177,18 +212,12 @@ export default function BookingFlowScreen() {
         location: cls.location,
         price: finalPrice,
         participantType,
-        participantName:
-          participantType === "self"
-            ? user.fullName
-            : children[0]?.fullName ?? "Child",
-        paymentMethod: isPackageMode ? "packageCredit" : finalPrice === 0 ? "online" : paymentMethod,
-        paymentStatus:
-          finalPrice === 0 || paymentMethod === "online" ? "paid" : "unpaid",
-        bookingStatus:
-          finalPrice === 0 || paymentMethod === "online"
-            ? "confirmed"
-            : "pendingPayment",
+        participantName,
+        paymentMethod,
+        paymentStatus: paymentMethod === "cash" && finalPrice > 0 ? "unpaid" : "paid",
+        bookingStatus: paymentMethod === "cash" && finalPrice > 0 ? "pendingPayment" : "confirmed",
         bookingType: isPackageMode ? "package" : "single",
+        userPackageId: isPackageMode ? selectedPackage?.id : undefined,
         attendanceStatus: "booked",
         bookingNumber,
         createdAt: apiBooking.createdAt ?? new Date().toISOString(),
@@ -279,10 +308,16 @@ export default function BookingFlowScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setParticipantType("child"); }}
+              onPress={() => {
+                if (!children.length) return;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setParticipantType("child");
+              }}
+              disabled={!children.length}
               style={[
                 styles.participantCard,
                 participantType === "child" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "15" },
+                !children.length && styles.disabledCard,
               ]}
             >
               <View style={[styles.participantIcon, { backgroundColor: "#1E1E26" }]}>
@@ -293,7 +328,7 @@ export default function BookingFlowScreen() {
                   My Child
                 </Text>
                 <Text style={styles.participantSub}>
-                  {children.length > 0 ? children[0].fullName : "Add child profile"}
+                  {children.length > 0 ? selectedChild?.fullName ?? children[0].fullName : "No children added yet"}
                 </Text>
               </View>
               {participantType === "child" && (
@@ -302,6 +337,45 @@ export default function BookingFlowScreen() {
                 </View>
               )}
             </TouchableOpacity>
+
+            {!children.length ? (
+              <AppButton
+                title="Add Child Profile"
+                onPress={() => router.push("/(tabs)/profile" as any)}
+                variant="ghost"
+                fullWidth
+              />
+            ) : participantType === "child" ? (
+              <View style={styles.childPicker}>
+                {children.map((child) => (
+                  <TouchableOpacity
+                    key={child.id}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelectedChildId(child.id);
+                    }}
+                    style={[
+                      styles.childOption,
+                      selectedChildId === child.id && {
+                        borderColor: colors.studio.primary,
+                        backgroundColor: colors.studio.primary + "12",
+                      },
+                    ]}
+                  >
+                    <View style={[styles.childAvatar, { backgroundColor: colors.studio.primary + "20" }]}>
+                      <Ionicons name="person-outline" size={18} color={colors.studio.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.childName}>{child.fullName}</Text>
+                      <Text style={styles.participantSub}>Age {child.age}</Text>
+                    </View>
+                    {selectedChildId === child.id && (
+                      <Ionicons name="checkmark-circle" size={20} color={colors.studio.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
 
             <View style={[styles.refCodeSection, { borderColor: "#1E2E38", backgroundColor: "#0E1619" }]}>
               <Text style={styles.refCodeLabel}>
@@ -357,7 +431,7 @@ export default function BookingFlowScreen() {
                 { label: "Day & Time", value: getScheduleLabel(cls) },
                 { label: "Duration", value: cls.duration },
                 { label: "Location", value: cls.location },
-                { label: "Participant", value: participantType === "self" ? user.fullName : "Child" },
+                { label: "Participant", value: participantName },
               ].map((row, i, arr) => (
                 <React.Fragment key={row.label}>
                   <View style={styles.summaryRow}>
@@ -388,7 +462,7 @@ export default function BookingFlowScreen() {
                 <Text style={[styles.summaryLabel, { color: colors.studio.primary }]}>
                   {isPackageMode ? "Package Credit" : "Total Price"}
                 </Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={styles.priceValueWrap}>
                   {isFirstBooking && !isPackageMode && cls.price > 0 && (
                     <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", textDecorationLine: "line-through" }}>
                       EGP {cls.price}
@@ -410,32 +484,7 @@ export default function BookingFlowScreen() {
               {isPackageMode ? "Confirm Package Booking" : isFirstBooking ? "Confirm Free Class" : "Choose Payment Method"}
             </Text>
 
-            {isPackageMode ? (
-              <>
-              <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Schedule</Text>
-                  <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
-                </View>
-              </View>
-              <LinearGradient
-                colors={["#003A47", "#001E28"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.freeCard, { borderColor: colors.studio.primary + "50" }]}
-              >
-                <View style={[styles.freeIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
-                  <Ionicons name="card-outline" size={32} color={colors.studio.primary} />
-                </View>
-                <Text style={[styles.freeTitle, { color: colors.studio.primary }]}>
-                  Included in Package
-                </Text>
-                <Text style={styles.freeDesc}>
-                  This booking will use 1 class credit from an eligible package.
-                </Text>
-              </LinearGradient>
-              </>
-            ) : isFirstBooking ? (
+              {isFirstBooking && !isPackageMode ? (
               <>
               <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
                 <View style={styles.summaryRow}>
@@ -469,27 +518,27 @@ export default function BookingFlowScreen() {
                   </View>
                 </View>
                 <TouchableOpacity
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("online"); }}
+                  disabled
                   style={[
                     styles.paymentCard,
-                    paymentMethod === "online" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "10" },
+                    styles.paymentCardDisabled,
                   ]}
                   activeOpacity={0.8}
                 >
                   <LinearGradient
-                    colors={paymentMethod === "online" ? [colors.studio.primary + "20", colors.studio.primary + "05"] : ["#1A1A22", "#14141A"]}
+                    colors={["#1A1A22", "#14141A"]}
                     style={styles.paymentGradient}
                   >
                     <View style={styles.paymentTop}>
                       <View style={[styles.paymentIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
                         <Ionicons name="card-outline" size={24} color={colors.studio.primary} />
                       </View>
-                      <View style={[styles.recommendedBadge, { backgroundColor: colors.studio.primary }]}>
-                        <Text style={styles.recommendedText}>RECOMMENDED</Text>
+                      <View style={[styles.recommendedBadge, { backgroundColor: "#2A2A35" }]}>
+                        <Text style={[styles.recommendedText, { color: "#9CA3AF" }]}>COMING SOON</Text>
                       </View>
                     </View>
-                    <Text style={styles.paymentTitle}>Pay Now</Text>
-                    <Text style={styles.paymentDesc}>Secure your seat immediately. Pay online with card.</Text>
+                    <Text style={styles.paymentTitle}>Pay Now - Coming Soon</Text>
+                    <Text style={styles.paymentDesc}>Online card payments are coming soon.</Text>
                     <Text style={[styles.paymentAmount, { color: colors.studio.primary }]}>EGP {cls.price}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -514,6 +563,33 @@ export default function BookingFlowScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
 
+                {packageCreditsRemaining > 0 && (
+                  <TouchableOpacity
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("packageCredit"); }}
+                    style={[
+                      styles.paymentCard,
+                      paymentMethod === "packageCredit" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "10" },
+                    ]}
+                    activeOpacity={0.8}
+                  >
+                    <LinearGradient
+                      colors={paymentMethod === "packageCredit" ? [colors.studio.primary + "20", colors.studio.primary + "05"] : ["#14141A", "#0F0F14"]}
+                      style={styles.paymentGradient}
+                    >
+                      <View style={styles.paymentTop}>
+                        <View style={[styles.paymentIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
+                          <Ionicons name="ticket-outline" size={24} color={colors.studio.primary} />
+                        </View>
+                        <View style={[styles.recommendedBadge, { backgroundColor: colors.studio.primary }]}>
+                          <Text style={styles.recommendedText}>{packageCreditsRemaining} LEFT</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.paymentTitle}>Take From My Credits - {packageCreditsRemaining} left</Text>
+                      <Text style={styles.paymentDesc}>Use 1 active package credit for this class.</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+
                 {paymentMethod === "cash" && (
                   <View style={[styles.warningBanner, { backgroundColor: colors.warning + "15", borderColor: colors.warning + "40" }]}>
                     <Ionicons name="warning-outline" size={16} color={colors.warning} />
@@ -531,14 +607,15 @@ export default function BookingFlowScreen() {
       <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 12 }]}>
         {step < 3 ? (
           <AppButton
-            title="Continue"
+            title={hasSchedule ? "Continue" : "Schedule Not Set"}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep(step + 1); }}
+            disabled={!hasSchedule}
             fullWidth
             size="lg"
           />
         ) : (
           <AppButton
-            title={isPackageMode ? "Confirm Package Booking" : paymentMethod === "online" ? "Pay & Confirm Booking" : "Confirm Booking"}
+            title={isPackageMode ? "Confirm Package Booking" : "Confirm Booking"}
             onPress={handleConfirm}
             loading={loading}
             fullWidth
@@ -572,20 +649,44 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 14,
     padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: "#2A2A35", backgroundColor: "#14141A",
   },
+  disabledCard: { opacity: 0.5 },
   participantIcon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   participantText: { flex: 1 },
   participantLabel: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
   participantSub: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", marginTop: 2 },
   checkCircle: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  childPicker: { gap: 8 },
+  childOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2A2A35",
+    backgroundColor: "#101017",
+  },
+  childAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  childName: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
   summaryCard: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
   summaryRow: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12,
     paddingHorizontal: 16, paddingVertical: 13,
   },
-  summaryLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  summaryValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF", textAlign: "right", flex: 1, paddingLeft: 12 },
+  summaryLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", flexShrink: 0 },
+  summaryValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF", textAlign: "right", flex: 1, minWidth: 0 },
+  priceValueWrap: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 8,
+  },
   divider: { height: 1 },
   paymentCard: { borderRadius: 16, borderWidth: 1.5, borderColor: "#2A2A35", overflow: "hidden" },
+  paymentCardDisabled: { opacity: 0.45 },
   paymentGradient: { padding: 18, gap: 8 },
   paymentTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   paymentIconCircle: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },

@@ -14,6 +14,7 @@ interface ClassCardProps {
   instructor?: Instructor;
   compact?: boolean;
   purchaseMode?: "single" | "package";
+  packageCreditsRemaining?: number;
 }
 
 function getStatusConfig(status: DanceClass["status"]) {
@@ -29,7 +30,13 @@ function getStatusConfig(status: DanceClass["status"]) {
   }
 }
 
-export default function ClassCard({ item, instructor, compact = false, purchaseMode = "single" }: ClassCardProps) {
+export default function ClassCard({
+  item,
+  instructor,
+  compact = false,
+  purchaseMode = "single",
+  packageCreditsRemaining = 0,
+}: ClassCardProps) {
   const c = useColors();
 
   function handlePress() {
@@ -40,11 +47,18 @@ export default function ClassCard({ item, instructor, compact = false, purchaseM
   const statusConfig = getStatusConfig(item.status);
   const availableSeats = item.capacity - item.bookedCount;
   const scheduleLabel = getScheduleLabel(item);
+  const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
+  const isBookable = hasSchedule && item.status !== "full";
   const priceLabel = purchaseMode === "package"
     ? "Uses 1 credit"
     : item.price > 0
       ? `EGP ${item.price}`
       : "Price TBC";
+  const badgeLabel = hasSchedule ? statusConfig.label : "Schedule not set";
+  const badgeColor = hasSchedule ? statusConfig.color : "#6B7280";
+  const packageLabel = packageCreditsRemaining > 0
+    ? `Package • ${packageCreditsRemaining} left`
+    : "No package credits";
 
   return (
     <TouchableOpacity
@@ -56,9 +70,9 @@ export default function ClassCard({ item, instructor, compact = false, purchaseM
         <Text style={[styles.categoryLabel, { color: colors.studio.primary }]}>
           {item.categoryName}
         </Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusConfig.color + "22" }]}>
-          <Text style={[styles.statusText, { color: statusConfig.color }]}>
-            {statusConfig.label}
+        <View style={[styles.statusBadge, { backgroundColor: badgeColor + "22" }]}>
+          <Text style={[styles.statusText, { color: badgeColor }]}>
+            {badgeLabel}
           </Text>
         </View>
       </View>
@@ -117,6 +131,46 @@ export default function ClassCard({ item, instructor, compact = false, purchaseM
               </Text>
             </View>
           </View>
+        </View>
+        <View style={styles.actionRow}>
+          {packageCreditsRemaining > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                if (!isBookable) return;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
+              }}
+              disabled={!isBookable}
+              style={[
+                styles.packageBtn,
+                { borderColor: colors.studio.primary + "60", backgroundColor: colors.studio.primary + "12" },
+                !isBookable && styles.disabledBtn,
+              ]}
+            >
+              <Ionicons name="add" size={16} color={isBookable ? colors.studio.primary : "#6B7280"} />
+              <Text style={[styles.packageBtnText, { color: isBookable ? colors.studio.primary : "#6B7280" }]}>
+                {packageLabel}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => {
+              if (!isBookable) return;
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
+            }}
+            disabled={!isBookable}
+            style={[
+              styles.bookBtn,
+              isBookable
+                ? { borderColor: colors.studio.primary }
+                : { borderColor: "#2A2A35", backgroundColor: "#1E1E26" },
+            ]}
+          >
+            <Text style={[styles.bookBtnText, { color: isBookable ? colors.studio.primary : "#6B7280" }]}>
+              {hasSchedule ? "Book" : "Not available"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </TouchableOpacity>
@@ -226,6 +280,40 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 16,
     fontFamily: "Inter_700Bold",
+  },
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 4,
+    flexWrap: "wrap",
+  },
+  packageBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  packageBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+  },
+  bookBtn: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    justifyContent: "center",
+  },
+  bookBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+  },
+  disabledBtn: {
+    opacity: 0.5,
   },
   seatsRow: {
     flexDirection: "row",

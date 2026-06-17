@@ -215,7 +215,7 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
     endTime: "",
     scheduleLabel: undefined,
     duration: `${api.durationMins} min`,
-    location: "Central Studio, Zamalek",
+    location: "Central Studio",
     room: "",
     price: singleClassPriceEgp,
     capacity: api.capacity,

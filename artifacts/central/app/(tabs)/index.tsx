@@ -243,12 +243,16 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
 function ClassListCard({
   item,
   instructorMap,
+  packageCreditsRemaining = 0,
 }: {
   item: DanceClass;
   instructorMap?: Map<string, Instructor>;
+  packageCreditsRemaining?: number;
 }) {
   const instructor = instructorMap?.get(item.instructorId);
   const available = item.capacity - item.bookedCount;
+  const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
+  const isBookable = hasSchedule && item.status !== "full";
 
   const today = new Date().toISOString().slice(0, 10);
   const tomorrow = new Date();
@@ -261,11 +265,13 @@ function ClassListCard({
     item.dayOfWeek;
 
   const statusColor =
+    !hasSchedule ? "#6B7280" :
     item.status === "available" ? colors.studio.primary :
     item.status === "fewSeats" ? "#F59E0B" :
     item.status === "full" ? "#EF4444" : "#8B5CF6";
 
   const statusLabel =
+    !hasSchedule ? "Schedule not set" :
     item.status === "available" ? "Available" :
     item.status === "fewSeats" ? `${available} left` :
     item.status === "full" ? "Full" : "Waitlist";
@@ -323,33 +329,40 @@ function ClassListCard({
           {item.price > 0 ? `EGP ${item.price}` : "Price TBC"}
         </Text>
         <View style={styles.classCardBtns}>
-          {item.status !== "full" && (
+          {packageCreditsRemaining > 0 && (
             <TouchableOpacity
               onPress={() => {
+                if (!isBookable) return;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
               }}
-              style={[styles.classPackageBtn, { borderColor: categoryColor + "60", backgroundColor: categoryColor + "12" }]}
+              disabled={!isBookable}
+              style={[
+                styles.classPackageBtn,
+                { borderColor: categoryColor + "60", backgroundColor: categoryColor + "12" },
+                !isBookable && styles.classBtnDisabled,
+              ]}
             >
-              <Ionicons name="add" size={16} color={categoryColor} />
-              <Text style={[styles.classPackageBtnText, { color: categoryColor }]}>Package</Text>
+              <Ionicons name="add" size={16} color={isBookable ? categoryColor : "#6B7280"} />
+              <Text style={[styles.classPackageBtnText, { color: isBookable ? categoryColor : "#6B7280" }]}>Package • {packageCreditsRemaining} left</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             onPress={() => {
+              if (!isBookable) return;
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
             }}
-            disabled={item.status === "full"}
+            disabled={!isBookable}
             style={[
               styles.classBookBtn,
-              item.status === "full"
+              !isBookable
                 ? { backgroundColor: "#2A2A35" }
                 : { backgroundColor: "transparent", borderWidth: 1, borderColor: categoryColor },
             ]}
           >
-            <Text style={[styles.classBookBtnText, { color: item.status === "full" ? "#6B7280" : categoryColor }]}>
-              {item.status === "full" ? "Full" : "Book"}
+            <Text style={[styles.classBookBtnText, { color: !isBookable ? "#6B7280" : categoryColor }]}>
+              {isBookable ? "Book" : "Not available"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -362,9 +375,15 @@ function ClassListCard({
 const API_NOTIF_READ_KEY = "api_notif_read_ids";
 
 export default function StudioHomeScreen() {
-  const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner } = useAppContext();
+  const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner, userPackages } = useAppContext();
   const showNewStudentBanner = bookings.length === 0 && !newStudentBannerDismissed;
   const insets = useSafeAreaInsets();
+  const packageCreditsRemaining = React.useMemo(
+    () => userPackages
+      .filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0)
+      .reduce((sum, pkg) => sum + pkg.remainingCredits, 0),
+    [userPackages],
+  );
 
   // ── API unread notification count (for bell badge) ─────────────────────────
   // Refreshes whenever the Home tab comes into focus so the badge reflects any
@@ -614,7 +633,12 @@ export default function StudioHomeScreen() {
           ) : (
             <View style={{ paddingHorizontal: 20, gap: 12 }}>
               {weekClasses.map((cls) => (
-                <ClassListCard key={`${cls.id}-${cls.date}`} item={cls} instructorMap={instructorMap} />
+                <ClassListCard
+                  key={`${cls.id}-${cls.date}`}
+                  item={cls}
+                  instructorMap={instructorMap}
+                  packageCreditsRemaining={packageCreditsRemaining}
+                />
               ))}
             </View>
           )}
@@ -809,6 +833,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   classBookBtnText: { fontSize: 12, fontFamily: "Inter_700Bold" },
+  classBtnDisabled: { opacity: 0.45 },
 
   emptyCard: {
     marginHorizontal: 20, borderRadius: 18, borderWidth: 1, borderStyle: "dashed",

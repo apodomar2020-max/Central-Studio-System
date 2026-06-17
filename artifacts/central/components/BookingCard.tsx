@@ -43,8 +43,10 @@ export default function BookingCard({ item }: BookingCardProps) {
     .slice(0, 2)
     .toUpperCase() || "?";
   const priceLabel = item.bookingType === "package"
-    ? "Uses 1 credit"
-    : `EGP ${item.price}`;
+    ? "Package Credit"
+    : item.paymentMethod === "cash"
+      ? `Pay at Studio • EGP ${item.price}`
+      : `EGP ${item.price}`;
   const scheduleLabel = item.scheduleLabel ?? (
     item.date || item.time ? `${item.date}${item.time ? ` • ${item.time}` : ""}` : "Schedule not set"
   );
@@ -90,6 +92,12 @@ export default function BookingCard({ item }: BookingCardProps) {
           <Ionicons name="location-outline" size={13} color={c.mutedForeground} />
           <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.location}</Text>
         </View>
+        {item.participantType === "child" && (
+          <View style={styles.metaItemWide}>
+            <Ionicons name="person-outline" size={13} color={c.mutedForeground} />
+            <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.participantName}</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.footer}>

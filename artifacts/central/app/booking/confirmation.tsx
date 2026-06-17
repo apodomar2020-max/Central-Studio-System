@@ -34,7 +34,7 @@ export default function ConfirmationScreen() {
     .slice(0, 2)
     .toUpperCase() || "?";
   const paymentLabel = booking?.bookingType === "package"
-    ? "Uses 1 credit"
+    ? "Package Credit"
     : booking?.paymentStatus === "paid"
       ? `EGP ${booking.price} · Paid`
       : `EGP ${booking?.price ?? 0} · Pay at Studio`;
@@ -66,6 +66,8 @@ export default function ConfirmationScreen() {
         <Text style={[styles.successSubtitle, { color: "#9CA3AF" }]}>
           {booking?.paymentMethod === "cash"
             ? "Your seat is reserved. Please pay at the studio before the class."
+            : booking?.paymentMethod === "packageCredit"
+              ? "Your booking is confirmed using an active package credit."
             : "Your payment was successful. You are all set!"}
         </Text>
 
@@ -109,6 +111,11 @@ export default function ConfirmationScreen() {
                 <Ionicons name="pricetag-outline" size={16} color="#6B7280" />
                 <Text style={styles.cardLabel}>Type</Text>
                 <Text style={styles.cardValue}>{booking.danceType}</Text>
+              </View>
+              <View style={styles.cardRow}>
+                <Ionicons name="person-outline" size={16} color="#6B7280" />
+                <Text style={styles.cardLabel}>For</Text>
+                <Text style={styles.cardValue}>{booking.participantName}</Text>
               </View>
               <View style={styles.cardRow}>
                 <Ionicons name="location-outline" size={16} color="#6B7280" />

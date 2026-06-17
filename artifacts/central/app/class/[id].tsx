@@ -108,6 +108,7 @@ export default function ClassDetailScreen() {
   }
 
   const available = cls.capacity - cls.bookedCount;
+  const hasSchedule = Boolean(cls.scheduleId && cls.dayOfWeek && cls.startTime);
 
   return (
     <View style={styles.container}>
@@ -214,6 +215,14 @@ export default function ClassDetailScreen() {
               onPress={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)}
               variant="ghost"
               fullWidth
+            />
+          ) : !hasSchedule ? (
+            <AppButton
+              title="Schedule Not Set"
+              onPress={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)}
+              disabled
+              fullWidth
+              size="lg"
             />
           ) : (
             <AppButton
