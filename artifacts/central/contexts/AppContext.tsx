@@ -31,6 +31,7 @@ export interface Booking {
   className: string;
   danceType: string;
   instructorName: string;
+  instructorImage?: string;
   date: string;
   time: string;
   duration: string;

@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Platform,
@@ -14,10 +15,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useGetClass, useGetInstructor, useCreateBooking } from "@workspace/api-client-react";
+import { useGetClass, useGetInstructor, useCreateBooking, useListSchedules } from "@workspace/api-client-react";
 
 import { useAppContext, type Booking } from "@/contexts/AppContext";
-import { mapApiClassToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
@@ -25,25 +26,43 @@ import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
+import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 
 type PaymentMethod = "online" | "cash";
 
 const NEW_MEMBER_OFFER_TITLE = "New Member Welcome";
 
 export default function BookingFlowScreen() {
-  const { classId } = useLocalSearchParams<{ classId: string }>();
+  const { classId, usePackage } = useLocalSearchParams<{ classId: string; usePackage?: string }>();
   const { user, addBooking, children, bookings } = useAppContext();
   const insets = useSafeAreaInsets();
 
   // ── Fetch class and instructor from the live API ──
   const numericClassId = Number(classId);
   const classQuery = useGetClass(numericClassId, {
-    query: { enabled: !!classId && !isNaN(numericClassId) },
+    query: { queryKey: ["class", numericClassId], enabled: !!classId && !isNaN(numericClassId) },
   });
-  const cls = classQuery.data ? mapApiClassToMobile(classQuery.data) : null;
+  const schedulesQuery = useListSchedules(
+    { classId: numericClassId },
+    { query: { queryKey: ["class-schedules", numericClassId], enabled: !!classId && !isNaN(numericClassId) } },
+  );
+  const classPricingQuery = useQuery({
+    queryKey: ["class-pricing"],
+    queryFn: fetchClassPricing,
+    staleTime: 5 * 60 * 1000,
+  });
+  const singleClassPriceEgp =
+    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
+  const primarySchedule = schedulesQuery.data
+    ? [...schedulesQuery.data].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))[0]
+    : undefined;
+  const cls = classQuery.data
+    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
+    : null;
+  const isPackageMode = usePackage === "true";
 
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {
-    query: { enabled: !!classQuery.data?.instructorId },
+    query: { queryKey: ["instructor", classQuery.data?.instructorId ?? 0], enabled: !!classQuery.data?.instructorId },
   });
   const instructor = instructorQuery.data
     ? mapApiInstructorToMobile(instructorQuery.data)
@@ -53,7 +72,7 @@ export default function BookingFlowScreen() {
   const { mutateAsync: createBookingAsync } = useCreateBooking();
 
   const isFirstBooking = bookings.length === 0;
-  const finalPrice = isFirstBooking ? 0 : (cls?.price ?? 0);
+  const finalPrice = isFirstBooking || isPackageMode ? 0 : (cls?.price ?? 0);
 
   const [step, setStep] = useState(1);
   const [participantType, setParticipantType] = useState<"self" | "child">("self");
@@ -88,25 +107,25 @@ export default function BookingFlowScreen() {
   }
 
   // ── Loading ──
-  if (classQuery.isLoading) {
+  if (classQuery.isLoading || schedulesQuery.isLoading) {
     return <DetailSkeleton />;
   }
 
   // ── Offline ──
-  if (classQuery.isError && isOfflineError(classQuery.error)) {
+  if ((classQuery.isError && isOfflineError(classQuery.error)) || (schedulesQuery.isError && isOfflineError(schedulesQuery.error))) {
     return (
       <View style={[styles.container, { justifyContent: "center" }]}>
-        <OfflineState onRetry={() => classQuery.refetch()} />
+        <OfflineState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} />
       </View>
     );
   }
 
   // ── Server error / not found ──
-  if (classQuery.isError || !cls) {
+  if (classQuery.isError || schedulesQuery.isError || !cls) {
     return (
       <View style={[styles.container, { justifyContent: "center" }]}>
-        {classQuery.isError ? (
-          <ErrorState onRetry={() => classQuery.refetch()} message="Couldn't load class. Please try again." />
+        {classQuery.isError || schedulesQuery.isError ? (
+          <ErrorState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} message="Couldn't load class. Please try again." />
         ) : (
           <ErrorState title="Class not found" message="This class may no longer be available." onRetry={() => router.back()} />
         )}
@@ -123,18 +142,21 @@ export default function BookingFlowScreen() {
     try {
       // 1. Create booking in the database
       const apiBooking = await createBookingAsync({
-        studentName:
-          participantType === "self"
-            ? user.fullName
-            : children[0]?.fullName ?? user.fullName,
-        studentEmail: user.email,
-        studentPhone: user.phone,
-        classId: numericClassId,
-        status:
-          finalPrice === 0 || paymentMethod === "online"
-            ? "confirmed"
-            : "pendingPayment",
-        notes: appliedCode ? `Referral code: ${appliedCode}` : undefined,
+        data: {
+          studentName:
+            participantType === "self"
+              ? user.fullName
+              : children[0]?.fullName ?? user.fullName,
+          studentEmail: user.email,
+          studentPhone: user.phone,
+          classId: numericClassId,
+          scheduleId: primarySchedule?.id,
+          status:
+            finalPrice === 0 || paymentMethod === "online"
+              ? "confirmed"
+              : "pendingPayment",
+          notes: appliedCode ? `Referral code: ${appliedCode}` : undefined,
+        },
       });
 
       // 2. Mirror booking in local AppContext so the Bookings tab reflects it immediately
@@ -145,8 +167,9 @@ export default function BookingFlowScreen() {
         className: cls.title,
         danceType: cls.categoryName,
         instructorName: instructor?.name ?? "Instructor",
+        instructorImage: instructor?.photoUrl,
         date: cls.date,
-        time: cls.startTime,
+        time: cls.endTime ? `${cls.startTime} - ${cls.endTime}` : cls.startTime,
         duration: cls.duration,
         location: cls.location,
         price: finalPrice,
@@ -155,14 +178,14 @@ export default function BookingFlowScreen() {
           participantType === "self"
             ? user.fullName
             : children[0]?.fullName ?? "Child",
-        paymentMethod: finalPrice === 0 ? "online" : paymentMethod,
+        paymentMethod: isPackageMode ? "packageCredit" : finalPrice === 0 ? "online" : paymentMethod,
         paymentStatus:
           finalPrice === 0 || paymentMethod === "online" ? "paid" : "unpaid",
         bookingStatus:
           finalPrice === 0 || paymentMethod === "online"
             ? "confirmed"
             : "pendingPayment",
-        bookingType: "single",
+        bookingType: isPackageMode ? "package" : "single",
         attendanceStatus: "booked",
         bookingNumber,
         createdAt: apiBooking.createdAt ?? new Date().toISOString(),
@@ -312,7 +335,7 @@ export default function BookingFlowScreen() {
             <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
               {[
                 { label: "Class", value: cls.title },
-                { label: "Day & Time", value: cls.dayOfWeek && cls.startTime ? `${cls.dayOfWeek} · ${cls.startTime}` : "Schedule TBC" },
+                { label: "Day & Time", value: cls.dayOfWeek && cls.startTime ? `${cls.dayOfWeek} · ${cls.startTime}${cls.endTime ? ` - ${cls.endTime}` : ""}` : "Schedule not set" },
                 { label: "Duration", value: cls.duration },
                 { label: "Location", value: cls.location },
                 { label: "Participant", value: participantType === "self" ? user.fullName : "Child" },
@@ -343,15 +366,17 @@ export default function BookingFlowScreen() {
 
               <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.studio.primary }]}>Total Price</Text>
+                <Text style={[styles.summaryLabel, { color: colors.studio.primary }]}>
+                  {isPackageMode ? "Package Credit" : "Total Price"}
+                </Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  {isFirstBooking && cls.price > 0 && (
+                  {isFirstBooking && !isPackageMode && cls.price > 0 && (
                     <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", textDecorationLine: "line-through" }}>
                       EGP {cls.price}
                     </Text>
                   )}
                   <Text style={[styles.summaryValue, { color: colors.studio.primary, fontSize: 18, fontFamily: "Inter_700Bold" }]}>
-                    {isFirstBooking ? "FREE" : `EGP ${cls.price}`}
+                    {isPackageMode ? "Uses 1 credit" : isFirstBooking ? "FREE" : `EGP ${cls.price}`}
                   </Text>
                 </View>
               </View>
@@ -363,10 +388,27 @@ export default function BookingFlowScreen() {
         {step === 3 && (
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>
-              {isFirstBooking ? "Confirm Free Class" : "Choose Payment Method"}
+              {isPackageMode ? "Confirm Package Booking" : isFirstBooking ? "Confirm Free Class" : "Choose Payment Method"}
             </Text>
 
-            {isFirstBooking ? (
+            {isPackageMode ? (
+              <LinearGradient
+                colors={["#003A47", "#001E28"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.freeCard, { borderColor: colors.studio.primary + "50" }]}
+              >
+                <View style={[styles.freeIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
+                  <Ionicons name="card-outline" size={32} color={colors.studio.primary} />
+                </View>
+                <Text style={[styles.freeTitle, { color: colors.studio.primary }]}>
+                  Included in Package
+                </Text>
+                <Text style={styles.freeDesc}>
+                  This booking will use 1 class credit from an eligible package.
+                </Text>
+              </LinearGradient>
+            ) : isFirstBooking ? (
               <LinearGradient
                 colors={["#003A47", "#001E28"]}
                 start={{ x: 0, y: 0 }}

@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   FlatList,
   ImageBackground,
@@ -15,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useListClasses, useListInstructors } from "@workspace/api-client-react";
+import { useListClasses, useListInstructors, useListSchedules } from "@workspace/api-client-react";
 import {
   fetchMyApplications,
   ACTIVE_APPLICATION_STATUSES,
@@ -27,7 +28,7 @@ import {
   type DanceClass,
   type Instructor,
 } from "@/data/mockData";
-import { mapApiClassToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import ClassCard from "@/components/ClassCard";
 import EmptyState from "@/components/EmptyState";
@@ -35,6 +36,7 @@ import { ListSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
+import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 
 const AGE_GROUPS: { key: AgeGroup | "All"; label: string; icon: string }[] = [
   { key: "All", label: "All Ages", icon: "people-outline" },
@@ -127,18 +129,28 @@ export default function ClassesScreen() {
   // so the mock category list still drives the section grouping below.
   const classesQuery = useListClasses();
   const instructorsQuery = useListInstructors();
+  const schedulesQuery = useListSchedules();
+  const classPricingQuery = useQuery({
+    queryKey: ["class-pricing"],
+    queryFn: fetchClassPricing,
+    staleTime: 5 * 60 * 1000,
+  });
+  const singleClassPriceEgp =
+    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
 
-  const isLoading = classesQuery.isLoading || instructorsQuery.isLoading;
-  const isError = classesQuery.isError || instructorsQuery.isError;
+  const isLoading = classesQuery.isLoading || instructorsQuery.isLoading || schedulesQuery.isLoading;
+  const isError = classesQuery.isError || instructorsQuery.isError || schedulesQuery.isError;
   // Prefer the classes error for offline detection (it's the primary data source)
-  const queryError = classesQuery.error ?? instructorsQuery.error;
+  const queryError = classesQuery.error ?? instructorsQuery.error ?? schedulesQuery.error;
   const isOffline = isOfflineError(queryError);
 
-  const isRefreshing = classesQuery.isRefetching || instructorsQuery.isRefetching;
+  const isRefreshing = classesQuery.isRefetching || instructorsQuery.isRefetching || schedulesQuery.isRefetching;
   const onRefresh = useCallback(() => {
     classesQuery.refetch();
     instructorsQuery.refetch();
-  }, [classesQuery, instructorsQuery]);
+    schedulesQuery.refetch();
+    classPricingQuery.refetch();
+  }, [classesQuery, instructorsQuery, schedulesQuery, classPricingQuery]);
 
   // Map API rows to the mobile data model. Return empty arrays when data isn't
   // loaded yet — loading/error states are handled separately in the render.
@@ -148,8 +160,25 @@ export default function ClassesScreen() {
   );
 
   const classes: DanceClass[] = useMemo(
-    () => (classesQuery.data ?? []).filter((c) => c.isActive).map(mapApiClassToMobile),
-    [classesQuery.data],
+    () => {
+      const schedulesByClassId = new Map<number, NonNullable<typeof schedulesQuery.data>[number]>();
+      [...(schedulesQuery.data ?? [])]
+        .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))
+        .forEach((schedule) => {
+          if (!schedulesByClassId.has(schedule.classId)) {
+            schedulesByClassId.set(schedule.classId, schedule);
+          }
+        });
+
+      return (classesQuery.data ?? [])
+        .filter((c) => c.isActive)
+        .map((c) => mapApiClassWithScheduleToMobile(
+          c,
+          schedulesByClassId.get(c.id),
+          singleClassPriceEgp,
+        ));
+    },
+    [classesQuery.data, schedulesQuery.data, singleClassPriceEgp],
   );
 
   const instructorById = useMemo(() => {

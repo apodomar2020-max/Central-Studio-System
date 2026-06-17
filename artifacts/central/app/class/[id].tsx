@@ -4,7 +4,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -12,15 +14,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useGetClass, useGetInstructor } from "@workspace/api-client-react";
+import { useGetClass, useGetInstructor, useListSchedules } from "@workspace/api-client-react";
 
-import { mapApiClassToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { getScheduleLabel, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
+import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 
 function StatusBadge({ status }: { status: string }) {
   const cfg = {
@@ -43,41 +46,59 @@ export default function ClassDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const numericId = Number(id);
-  const classQuery = useGetClass(numericId, { query: { enabled: !!id && !isNaN(numericId) } });
+  const classQuery = useGetClass(numericId, {
+    query: { queryKey: ["class", numericId], enabled: !!id && !isNaN(numericId) },
+  });
+  const schedulesQuery = useListSchedules(
+    { classId: numericId },
+    { query: { queryKey: ["class-schedules", numericId], enabled: !!id && !isNaN(numericId) } },
+  );
+  const classPricingQuery = useQuery({
+    queryKey: ["class-pricing"],
+    queryFn: fetchClassPricing,
+    staleTime: 5 * 60 * 1000,
+  });
+  const singleClassPriceEgp =
+    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
 
-  const cls = classQuery.data ? mapApiClassToMobile(classQuery.data) : null;
+  const primarySchedule = schedulesQuery.data
+    ? [...schedulesQuery.data].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))[0]
+    : undefined;
+  const cls = classQuery.data
+    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
+    : null;
 
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {
-    query: { enabled: !!classQuery.data?.instructorId },
+    query: { queryKey: ["instructor", classQuery.data?.instructorId ?? 0], enabled: !!classQuery.data?.instructorId },
   });
   const instructor = instructorQuery.data ? mapApiInstructorToMobile(instructorQuery.data) : null;
 
   // ── Loading ──
-  if (classQuery.isLoading) {
+  if (classQuery.isLoading || schedulesQuery.isLoading) {
     return <DetailSkeleton />;
   }
 
   // ── Offline ──
-  if (classQuery.isError && isOfflineError(classQuery.error)) {
+  if ((classQuery.isError && isOfflineError(classQuery.error)) || (schedulesQuery.isError && isOfflineError(schedulesQuery.error))) {
     return (
       <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
           <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <OfflineState onRetry={() => classQuery.refetch()} />
+        <OfflineState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} />
       </View>
     );
   }
 
   // ── Server error / not found ──
-  if (classQuery.isError || !cls) {
+  if (classQuery.isError || schedulesQuery.isError || !cls) {
     return (
       <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
           <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        {classQuery.isError ? (
-          <ErrorState onRetry={() => classQuery.refetch()} message="Couldn't load class details." />
+        {classQuery.isError || schedulesQuery.isError ? (
+          <ErrorState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} message="Couldn't load class details." />
         ) : (
           <ErrorState title="Class not found" message="This class may no longer be available." onRetry={() => router.back()} />
         )}
@@ -119,8 +140,7 @@ export default function ClassDetailScreen() {
       >
         <View style={styles.quickStats}>
           {[
-            { icon: "calendar-outline", label: cls.dayOfWeek || "Schedule TBC" },
-            { icon: "time-outline", label: cls.startTime || "—" },
+            { icon: "calendar-outline", label: getScheduleLabel(cls) },
             { icon: "timer-outline", label: cls.duration },
             { icon: "location-outline", label: cls.room || cls.location },
           ].map((s, i) => (
@@ -143,9 +163,13 @@ export default function ClassDetailScreen() {
             <Text style={styles.descTitle}>Instructor</Text>
             <View style={styles.instructorRow}>
               <View style={[styles.instructorAvatar, { backgroundColor: instructor.photoColor + "30" }]}>
-                <Text style={[styles.instructorInitials, { color: instructor.photoColor }]}>
-                  {instructor.initials}
-                </Text>
+                {instructor.photoUrl ? (
+                  <Image source={{ uri: instructor.photoUrl }} style={styles.instructorAvatarImage} />
+                ) : (
+                  <Text style={[styles.instructorInitials, { color: instructor.photoColor }]}>
+                    {instructor.initials}
+                  </Text>
+                )}
               </View>
               <View style={styles.instructorInfo}>
                 <Text style={styles.instructorName}>{instructor.name}</Text>
@@ -179,7 +203,7 @@ export default function ClassDetailScreen() {
         <View style={styles.footerPrice}>
           <Text style={[styles.priceLabel, { color: "#9CA3AF" }]}>Class Price</Text>
           <Text style={[styles.priceValue, { color: colors.studio.primary }]}>
-            {cls.price > 0 ? `EGP ${cls.price}` : "See packages"}
+            {cls.price > 0 ? `EGP ${cls.price}` : "Price TBC"}
           </Text>
         </View>
         <View style={{ flex: 1 }}>
@@ -237,7 +261,8 @@ const styles = StyleSheet.create({
   descText: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#FFFFFF", lineHeight: 20 },
   instructorCard: { padding: 16, borderRadius: 14, borderWidth: 1, gap: 12 },
   instructorRow: { flexDirection: "row", gap: 14 },
-  instructorAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  instructorAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  instructorAvatarImage: { width: "100%", height: "100%" },
   instructorInitials: { fontSize: 18, fontFamily: "Inter_700Bold" },
   instructorInfo: { flex: 1, gap: 4 },
   instructorName: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },

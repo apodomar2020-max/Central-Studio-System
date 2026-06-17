@@ -22,3 +22,4 @@ export * from "./balletApplicationEvents";
 export * from "./balletLevelAssignments";
 // Dance Types — Settings-driven category list (migration 0011)
 export * from "./danceTypes";
+export * from "./classPricingSettings";

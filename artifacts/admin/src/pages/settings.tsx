@@ -2,7 +2,8 @@
  * Admin → Settings
  *
  * Sections:
- *   - Dance Types  — manage the canonical list of dance categories.
+ *   - Class Pricing — manage the global regular-class single-session price.
+ *   - Dance Types   — manage the canonical list of dance categories.
  *     Changes here propagate to the Classes page category dropdown and (via
  *     the mobile API) to the student-facing Classes screen.
  */
@@ -12,7 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Pencil, Trash2, GripVertical, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, GripVertical, CheckCircle2, XCircle, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -62,6 +63,13 @@ interface DanceType {
   updatedAt: string;
 }
 
+interface ClassPricingSettings {
+  id: number;
+  singleClassPriceEgp: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Form schema ──────────────────────────────────────────────────────────────
 
 const danceTypeSchema = z.object({
@@ -70,6 +78,11 @@ const danceTypeSchema = z.object({
   isActive: z.boolean().default(true),
 });
 type DanceTypeForm = z.input<typeof danceTypeSchema>;
+
+const classPricingSchema = z.object({
+  singleClassPriceEgp: z.coerce.number().int().min(0, "Price must be 0 or greater"),
+});
+type ClassPricingForm = z.input<typeof classPricingSchema>;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -91,8 +104,20 @@ export default function SettingsPage() {
       ),
   });
 
+  const { data: classPricing, isLoading: isLoadingClassPricing } = useQuery<ClassPricingSettings>({
+    queryKey: ["admin-class-pricing"],
+    queryFn: () =>
+      adminFetch<ClassPricingSettings>(
+        `${API}/api/admin/settings/class-pricing`,
+        { method: "GET" },
+        token,
+      ),
+  });
+
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["admin-dance-types"] });
+  const invalidateClassPricing = () =>
+    queryClient.invalidateQueries({ queryKey: ["admin-class-pricing"] });
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = useMutation({
@@ -131,10 +156,30 @@ export default function SettingsPage() {
       toast({ title: "Error", description: "Failed to deactivate", variant: "destructive" }),
   });
 
+  const updateClassPricingMutation = useMutation({
+    mutationFn: (data: ClassPricingForm) =>
+      adminFetch<ClassPricingSettings>(
+        `${API}/api/admin/settings/class-pricing`,
+        { method: "PATCH", body: JSON.stringify(data) },
+        token,
+      ),
+    onSuccess: () => {
+      invalidateClassPricing();
+      toast({ title: "Class pricing updated" });
+    },
+    onError: (e: { data?: { error?: string } }) =>
+      toast({ title: "Error", description: e?.data?.error ?? "Failed to save class pricing", variant: "destructive" }),
+  });
+
   // ── Form ──────────────────────────────────────────────────────────────────
   const form = useForm<DanceTypeForm>({
     resolver: zodResolver(danceTypeSchema),
     defaultValues: { name: "", sortOrder: 0, isActive: true },
+  });
+
+  const classPricingForm = useForm<ClassPricingForm>({
+    resolver: zodResolver(classPricingSchema),
+    values: { singleClassPriceEgp: classPricing?.singleClassPriceEgp ?? 300 },
   });
 
   const openCreate = () => {
@@ -167,6 +212,10 @@ export default function SettingsPage() {
     }
   };
 
+  const onClassPricingSubmit = (values: ClassPricingForm) => {
+    updateClassPricingMutation.mutate(values);
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-8">
@@ -178,6 +227,55 @@ export default function SettingsPage() {
         addTestId="button-add-dance-type"
         onAdd={openCreate}
       />
+
+      {/* ── Class Pricing section ───────────────────────────────────────── */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Class Pricing</h2>
+          <p className="text-sm text-muted-foreground">
+            Global single-session price for regular studio classes. Package pricing remains managed separately.
+          </p>
+        </div>
+
+        <div className="border rounded-md p-4">
+          <Form {...classPricingForm}>
+            <form onSubmit={classPricingForm.handleSubmit(onClassPricingSubmit)} className="flex flex-col gap-4 sm:flex-row sm:items-end">
+              <FormField
+                control={classPricingForm.control}
+                name="singleClassPriceEgp"
+                render={({ field }) => (
+                  <FormItem className="sm:w-72">
+                    <FormLabel>Single Class Price (EGP)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        data-testid="input-single-class-price"
+                        disabled={isLoadingClassPricing}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button
+                type="submit"
+                data-testid="button-save-class-pricing"
+                disabled={isLoadingClassPricing || updateClassPricingMutation.isPending}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Pricing
+              </Button>
+            </form>
+          </Form>
+          {classPricing?.updatedAt && (
+            <p className="text-xs text-muted-foreground mt-3">
+              Last updated: {new Date(classPricing.updatedAt).toLocaleString()}
+            </p>
+          )}
+        </div>
+      </section>
 
       {/* ── Dance Types section ──────────────────────────────────────────── */}
       <section className="space-y-3">

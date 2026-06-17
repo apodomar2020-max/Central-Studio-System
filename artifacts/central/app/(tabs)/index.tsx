@@ -5,6 +5,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dimensions,
   FlatList,
@@ -34,6 +35,7 @@ import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/Skel
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
+import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -296,9 +298,13 @@ function ClassListCard({
 
           <View style={styles.classCardInstructor}>
             <View style={[styles.instructorMiniAvatar, { backgroundColor: colors.studio.primary + "30" }]}>
-              <Text style={[styles.instructorMiniInitials, { color: colors.studio.primary }]}>
-                {instructor?.initials ?? "?"}
-              </Text>
+              {instructor?.photoUrl ? (
+                <Image source={{ uri: instructor.photoUrl }} style={styles.instructorMiniImage} />
+              ) : (
+                <Text style={[styles.instructorMiniInitials, { color: colors.studio.primary }]}>
+                  {instructor?.initials ?? "?"}
+                </Text>
+              )}
             </View>
             <Text style={styles.classCardInstructorLabel}>Instructor: </Text>
             <Text style={styles.classCardInstructorName}>{instructor?.name ?? "—"}</Text>
@@ -313,7 +319,9 @@ function ClassListCard({
       </View>
 
       <View style={styles.classCardFooter}>
-        <Text style={[styles.classCardPrice, { color: categoryColor }]}>EGP {item.price}</Text>
+        <Text style={[styles.classCardPrice, { color: categoryColor }]}>
+          {item.price > 0 ? `EGP ${item.price}` : "Price TBC"}
+        </Text>
         <View style={styles.classCardBtns}>
           {item.status !== "full" && (
             <TouchableOpacity
@@ -432,6 +440,13 @@ export default function StudioHomeScreen() {
     isRefetching: isRefetchingClasses,
     isLoading: isLoadingClasses,
   } = useListClasses();
+  const classPricingQuery = useQuery({
+    queryKey: ["class-pricing"],
+    queryFn: fetchClassPricing,
+    staleTime: 5 * 60 * 1000,
+  });
+  const singleClassPriceEgp =
+    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
 
   const isLoadingWeekClasses = isLoadingSchedules || isLoadingClasses;
   const isErrorWeekClasses = isErrorSchedules;
@@ -475,7 +490,7 @@ export default function StudioHomeScreen() {
       const cls = classMap.get(sched.classId);
       if (!cls || !cls.isActive) continue;
 
-      const mapped = mapScheduleAndClassToMobile(sched, cls, weekStart);
+      const mapped = mapScheduleAndClassToMobile(sched, cls, weekStart, singleClassPriceEgp);
       if (mapped.isBallet) continue;
       if (mapped.date < todayStr || mapped.date > thuStr) continue;
 
@@ -501,7 +516,7 @@ export default function StudioHomeScreen() {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       return parseDisplayTime(a.startTime) - parseDisplayTime(b.startTime);
     });
-  }, [apiSchedules, apiClasses]);
+  }, [apiSchedules, apiClasses, singleClassPriceEgp]);
 
   return (
     <View style={styles.container}>
@@ -608,8 +623,8 @@ export default function StudioHomeScreen() {
           ) : weekClasses.length === 0 ? (
             <View style={[styles.emptyCard, { borderColor: colors.studio.border }]}>
               <Ionicons name="calendar-outline" size={32} color="#4B5563" />
-              <Text style={styles.emptyTitle}>No upcoming classes this week</Text>
-              <Text style={styles.emptyDesc}>Check back on Saturday for next week's schedule</Text>
+              <Text style={styles.emptyTitle}>No upcoming scheduled classes</Text>
+              <Text style={styles.emptyDesc}>Classes without schedules will appear after a day and time are added in the System Portal.</Text>
             </View>
           ) : (
             <View style={{ paddingHorizontal: 20, gap: 12 }}>
@@ -780,7 +795,9 @@ const styles = StyleSheet.create({
   instructorMiniAvatar: {
     width: 24, height: 24, borderRadius: 12,
     alignItems: "center", justifyContent: "center",
+    overflow: "hidden",
   },
+  instructorMiniImage: { width: "100%", height: "100%" },
   instructorMiniInitials: { fontSize: 10, fontFamily: "Inter_700Bold" },
   classCardInstructorLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280" },
   classCardInstructorName: { fontSize: 12, fontFamily: "Inter_500Medium", color: "#9CA3AF" },

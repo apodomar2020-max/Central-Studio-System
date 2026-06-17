@@ -97,5 +97,13 @@
       "tag": "0011_dance_types",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781697600000,
+      "tag": "0012_class_pricing_settings",
+      "breakpoints": true
+    }
   ]
 }

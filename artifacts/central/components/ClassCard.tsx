@@ -2,9 +2,10 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { DanceClass, Instructor } from "@/data/mockData";
+import { getScheduleLabel } from "@/data/apiAdapters";
 import { useColors } from "@/hooks/useColors";
 import colors from "@/constants/colors";
 
@@ -12,6 +13,7 @@ interface ClassCardProps {
   item: DanceClass;
   instructor?: Instructor;
   compact?: boolean;
+  purchaseMode?: "single" | "package";
 }
 
 function getStatusConfig(status: DanceClass["status"]) {
@@ -27,7 +29,7 @@ function getStatusConfig(status: DanceClass["status"]) {
   }
 }
 
-export default function ClassCard({ item, instructor, compact = false }: ClassCardProps) {
+export default function ClassCard({ item, instructor, compact = false, purchaseMode = "single" }: ClassCardProps) {
   const c = useColors();
 
   function handlePress() {
@@ -37,6 +39,12 @@ export default function ClassCard({ item, instructor, compact = false }: ClassCa
 
   const statusConfig = getStatusConfig(item.status);
   const availableSeats = item.capacity - item.bookedCount;
+  const scheduleLabel = getScheduleLabel(item);
+  const priceLabel = purchaseMode === "package"
+    ? "Uses 1 credit"
+    : item.price > 0
+      ? `EGP ${item.price}`
+      : "Price TBC";
 
   return (
     <TouchableOpacity
@@ -67,16 +75,10 @@ export default function ClassCard({ item, instructor, compact = false }: ClassCa
         )}
 
         <View style={styles.metaRow}>
-          <View style={styles.metaItem}>
+          <View style={styles.metaItemWide}>
             <Ionicons name="calendar-outline" size={13} color={c.mutedForeground} />
-            <Text style={[styles.metaText, { color: c.mutedForeground }]}>
-              {item.dayOfWeek}
-            </Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Ionicons name="time-outline" size={13} color={c.mutedForeground} />
-            <Text style={[styles.metaText, { color: c.mutedForeground }]}>
-              {item.startTime}
+            <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>
+              {scheduleLabel}
             </Text>
           </View>
           <View style={styles.metaItem}>
@@ -91,9 +93,13 @@ export default function ClassCard({ item, instructor, compact = false }: ClassCa
           {instructor && (
             <View style={styles.instructorRow}>
               <View style={[styles.avatar, { backgroundColor: colors.studio.primary + "33" }]}>
-                <Text style={[styles.avatarText, { color: colors.studio.primary }]}>
-                  {instructor.initials}
-                </Text>
+                {instructor.photoUrl ? (
+                  <Image source={{ uri: instructor.photoUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Text style={[styles.avatarText, { color: colors.studio.primary }]}>
+                    {instructor.initials}
+                  </Text>
+                )}
               </View>
               <Text style={[styles.instructorName, { color: c.mutedForeground }]}>
                 {instructor.name}
@@ -102,7 +108,7 @@ export default function ClassCard({ item, instructor, compact = false }: ClassCa
           )}
           <View style={styles.priceRow}>
             <Text style={[styles.price, { color: colors.studio.primary }]}>
-              EGP {item.price}
+              {priceLabel}
             </Text>
             <View style={styles.seatsRow}>
               <Feather name="users" size={11} color={c.mutedForeground} />
@@ -172,6 +178,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
+  metaItemWide: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    maxWidth: "68%",
+  },
   metaText: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
@@ -193,6 +205,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
   },
   avatarText: {
     fontSize: 10,

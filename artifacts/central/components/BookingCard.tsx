@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { Booking } from "@/contexts/AppContext";
 import { useColors } from "@/hooks/useColors";
@@ -35,6 +35,16 @@ export default function BookingCard({ item }: BookingCardProps) {
   const c = useColors();
   const bs = bookingStatusConfig(item.bookingStatus);
   const ps = paymentStatusConfig(item.paymentStatus);
+  const instructorInitials = item.instructorName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
+  const priceLabel = item.bookingType === "package"
+    ? "Uses 1 credit"
+    : `EGP ${item.price}`;
 
   return (
     <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
@@ -62,10 +72,20 @@ export default function BookingCard({ item }: BookingCardProps) {
           <Text style={[styles.metaText, { color: c.mutedForeground }]}>{item.time}</Text>
         </View>
         <View style={styles.metaItem}>
-          <Ionicons name="person-outline" size={13} color={c.mutedForeground} />
+          <View style={[styles.instructorAvatar, { backgroundColor: colors.studio.primary + "25" }]}>
+            {item.instructorImage ? (
+              <Image source={{ uri: item.instructorImage }} style={styles.instructorAvatarImage} />
+            ) : (
+              <Text style={[styles.instructorInitials, { color: colors.studio.primary }]}>{instructorInitials}</Text>
+            )}
+          </View>
           <Text style={[styles.metaText, { color: c.mutedForeground }]}>{item.instructorName}</Text>
         </View>
         <View style={styles.metaItem}>
+          <Ionicons name="timer-outline" size={13} color={c.mutedForeground} />
+          <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.duration}</Text>
+        </View>
+        <View style={styles.metaItemWide}>
           <Ionicons name="location-outline" size={13} color={c.mutedForeground} />
           <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.location}</Text>
         </View>
@@ -80,7 +100,7 @@ export default function BookingCard({ item }: BookingCardProps) {
             <Text style={[styles.badgeText, { color: ps.color }]}>{ps.label}</Text>
           </View>
         </View>
-        <Text style={[styles.price, { color: c.foreground }]}>EGP {item.price}</Text>
+        <Text style={[styles.price, { color: c.foreground }]}>{priceLabel}</Text>
       </View>
 
       {item.paymentStatus === "unpaid" && (
@@ -132,6 +152,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     width: "47%",
+  },
+  metaItemWide: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    width: "100%",
+  },
+  instructorAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  instructorAvatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+  instructorInitials: {
+    fontSize: 7,
+    fontFamily: "Inter_700Bold",
   },
   metaText: {
     fontSize: 12,

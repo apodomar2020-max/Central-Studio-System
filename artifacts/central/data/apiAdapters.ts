@@ -2,9 +2,9 @@
  * Adapters that map the backend API shapes (from @workspace/api-client-react)
  * onto the richer mobile data model defined in ./mockData.
  *
- * Scope: Classes and Instructors only. Scheduling, pricing, and seat counts
- * are not yet exposed by the API and fall back to neutral defaults. Age group
- * is now a real DB column (age_group) and is mapped directly from the API.
+ * Scope: Classes, instructors, and recurring schedule display. Seat counts
+ * are not yet aggregated by the API and fall back to neutral defaults. Age
+ * group is a real DB column (age_group) and is mapped directly from the API.
  */
 import type {
   Class as ApiClass,
@@ -95,6 +95,33 @@ function formatTime(timeStr: string): string {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+function scheduleDateForWeek(schedule: ApiSchedule, weekStart: Date): string {
+  // Map dayOfWeek (0=Sun…6=Sat) to an offset from Saturday.
+  const offset = (schedule.dayOfWeek - 6 + 7) % 7;
+  const dateObj = new Date(weekStart);
+  dateObj.setDate(weekStart.getDate() + offset);
+  return dateObj.toISOString().slice(0, 10);
+}
+
+function applySchedule(cls: DanceClass, schedule?: ApiSchedule, weekStart?: Date): DanceClass {
+  if (!schedule) return cls;
+  return {
+    ...cls,
+    date: weekStart ? scheduleDateForWeek(schedule, weekStart) : "",
+    dayOfWeek: DAY_NAMES[schedule.dayOfWeek] ?? "",
+    startTime: formatTime(schedule.startTime),
+    endTime: formatTime(schedule.endTime),
+    location: schedule.location ?? cls.location,
+  };
+}
+
+export function getScheduleLabel(cls: DanceClass): string {
+  if (!cls.dayOfWeek || !cls.startTime) return "Schedule not set";
+  return cls.endTime
+    ? `${cls.dayOfWeek} • ${cls.startTime} - ${cls.endTime}`
+    : `${cls.dayOfWeek} • ${cls.startTime}`;
+}
+
 /**
  * Given a recurring schedule + its class and the Saturday that starts the
  * Egyptian work week, produce a DanceClass the home-screen can display.
@@ -106,43 +133,12 @@ export function mapScheduleAndClassToMobile(
   schedule: ApiSchedule,
   cls: ApiClass,
   weekStart: Date, // the Saturday of the current Egyptian week
+  singleClassPriceEgp = 0,
 ): DanceClass {
-  // Map dayOfWeek (0=Sun…6=Sat) to an offset from Saturday
-  // Sat=0, Sun=1, Mon=2, Tue=3, Wed=4, Thu=5, Fri=6
-  const offset = (schedule.dayOfWeek - 6 + 7) % 7;
-  const dateObj = new Date(weekStart);
-  dateObj.setDate(weekStart.getDate() + offset);
-  const dateStr = dateObj.toISOString().slice(0, 10);
-
-  const category = findCategoryByName(cls.category);
-
-  return {
-    id: String(cls.id),
-    categoryId: category?.id ?? cls.category,
-    categoryName: cls.category,
-    instructorId: cls.instructorId != null ? String(cls.instructorId) : "",
-    title: cls.title,
-    description: cls.description ?? "",
-    date: dateStr,
-    dayOfWeek: DAY_NAMES[schedule.dayOfWeek] ?? "",
-    startTime: formatTime(schedule.startTime),
-    endTime: formatTime(schedule.endTime),
-    duration: `${cls.durationMins} min`,
-    location: schedule.location ?? "Central Studio, Zamalek",
-    room: "",
-    price: 0, // price not exposed on the schedules API yet
-    capacity: cls.capacity,
-    bookedCount: 0, // booking counts not aggregated on the API yet
-    level: coerceLevel(cls.level),
-    ageGroup: coerceAgeGroup(cls.ageGroup),
-    status: "available" as const,
-    policy: "",
-    featured: false,
-    isBallet: category?.isBallet ?? false,
-  };
+  return applySchedule(mapApiClassToMobile(cls, singleClassPriceEgp), schedule, weekStart);
 }
 
-export function mapApiClassToMobile(api: ApiClass): DanceClass {
+export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): DanceClass {
   const category = findCategoryByName(api.category);
 
   return {
@@ -154,7 +150,6 @@ export function mapApiClassToMobile(api: ApiClass): DanceClass {
     instructorId: api.instructorId != null ? String(api.instructorId) : "",
     title: api.title,
     description: api.description ?? "",
-    // Scheduling/pricing come from endpoints that are not wired up yet.
     date: "",
     dayOfWeek: "",
     startTime: "",
@@ -162,7 +157,7 @@ export function mapApiClassToMobile(api: ApiClass): DanceClass {
     duration: `${api.durationMins} min`,
     location: "Central Studio, Zamalek",
     room: "",
-    price: 0,
+    price: singleClassPriceEgp,
     capacity: api.capacity,
     bookedCount: 0,
     level: coerceLevel(api.level),
@@ -172,4 +167,12 @@ export function mapApiClassToMobile(api: ApiClass): DanceClass {
     featured: false,
     isBallet: category?.isBallet ?? false,
   };
+}
+
+export function mapApiClassWithScheduleToMobile(
+  api: ApiClass,
+  schedule: ApiSchedule | undefined,
+  singleClassPriceEgp = 0,
+): DanceClass {
+  return applySchedule(mapApiClassToMobile(api, singleClassPriceEgp), schedule);
 }
