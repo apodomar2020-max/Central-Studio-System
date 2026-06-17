@@ -103,16 +103,21 @@ export default function Classes() {
   const [editing, setEditing] = useState<Class | null>(null);
 
   // ── Dynamic dance types from Settings → Dance Types ───────────────────────
-  const { data: danceTypes } = useQuery<DanceTypeItem[]>({
+  const { data: danceTypes = [] } = useQuery<DanceTypeItem[]>({
     queryKey: ["admin-dance-types"],
-    queryFn: () =>
-      fetch(`${API}/api/admin/settings/dance-types`, {
+    queryFn: async () => {
+      const r = await fetch(`${API}/api/admin/settings/dance-types`, {
         headers: makeAdminHeaders(token),
-      }).then((r) => r.json() as Promise<DanceTypeItem[]>),
+      });
+      // Return empty array on any error (e.g. 404 before route is deployed)
+      // so the Classes page never crashes while dance types are unavailable.
+      if (!r.ok) return [];
+      return r.json() as Promise<DanceTypeItem[]>;
+    },
   });
 
   /** Active dance types sorted for the dropdown */
-  const activeCategories = (danceTypes ?? [])
+  const activeCategories = danceTypes
     .filter((dt) => dt.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
     .map((dt) => dt.name);
