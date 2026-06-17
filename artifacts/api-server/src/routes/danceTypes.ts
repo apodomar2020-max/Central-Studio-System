@@ -32,7 +32,7 @@ function slugify(name: string): string {
 
 // ─── GET /api/dance-types  (public) ──────────────────────────────────────────
 
-router.get("/api/dance-types", async (_req, res) => {
+router.get("/dance-types", async (_req, res) => {
   try {
     const rows = await db
       .select()
@@ -49,7 +49,7 @@ router.get("/api/dance-types", async (_req, res) => {
 // ─── GET /api/admin/settings/dance-types  (admin) ────────────────────────────
 
 router.get(
-  "/api/admin/settings/dance-types",
+  "/admin/settings/dance-types",
   requireAdminAuth,
   async (_req, res) => {
     try {
@@ -75,7 +75,7 @@ const CreateBody = z.object({
 });
 
 router.post(
-  "/api/admin/settings/dance-types",
+  "/admin/settings/dance-types",
   requireAdminAuth,
   async (req: AdminRequest, res) => {
     const parsed = CreateBody.safeParse(req.body);
@@ -118,7 +118,7 @@ const UpdateBody = z.object({
 });
 
 router.patch(
-  "/api/admin/settings/dance-types/:id",
+  "/admin/settings/dance-types/:id",
   requireAdminAuth,
   async (req: AdminRequest, res) => {
     const id = Number(req.params.id);
@@ -166,7 +166,7 @@ router.patch(
 // ─── DELETE /api/admin/settings/dance-types/:id  (admin, soft) ───────────────
 
 router.delete(
-  "/api/admin/settings/dance-types/:id",
+  "/admin/settings/dance-types/:id",
   requireAdminAuth,
   async (req: AdminRequest, res) => {
     const id = Number(req.params.id);
