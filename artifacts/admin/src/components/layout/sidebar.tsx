@@ -33,7 +33,6 @@ const studioNav = [
   { name: "Students", href: "/students", icon: UserSquare2 },
   { name: "Offers", href: "/offers", icon: Tag },
   { name: "Hero Slides", href: "/hero-items", icon: ImagePlay },
-  { name: "Settings", href: "/settings", icon: Settings2 },
 ];
 
 const balletNav = [
@@ -52,6 +51,7 @@ const generalNav = [
 
 const systemNav = [
   { name: "System Users", href: "/system-users", icon: ShieldCheck },
+  { name: "Settings", href: "/settings", icon: Settings2 },
 ];
 
 function NavItem({
