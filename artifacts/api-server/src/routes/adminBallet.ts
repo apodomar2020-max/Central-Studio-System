@@ -493,7 +493,7 @@ const CreateSlotBody = z.object({
   startTime: z.string().min(1, "startTime is required"),
   endTime:   z.string().min(1, "endTime is required"),
   capacity:  z.number().int().positive().default(10),
-  notes:     z.string().optional(),
+  notes:     z.string().nullable().optional(),   // nullable so frontend can send null for "no notes"
   isActive:  z.boolean().optional(),
 });
 
