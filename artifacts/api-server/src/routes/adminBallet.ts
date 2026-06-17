@@ -24,6 +24,7 @@ import {
   balletSettingsTable,
   balletLevelAssignmentsTable,
   systemUsersTable,
+  notificationsTable,
   BALLET_APPLICATION_STATUSES,
 } from "@workspace/db";
 import type { BalletApplicationStatus } from "@workspace/db";
@@ -38,6 +39,55 @@ const VALID_STATUSES = new Set(BALLET_APPLICATION_STATUSES);
 
 function isValidStatus(s: string): s is BalletApplicationStatus {
   return VALID_STATUSES.has(s as BalletApplicationStatus);
+}
+
+/** Human-readable notification content for each ballet application status change. */
+function getStatusNotification(
+  status: string,
+  childName: string,
+): { title: string; body: string } {
+  switch (status) {
+    case "pendingAssessment":
+      return {
+        title: "Assessment Scheduled 📅",
+        body: `${childName}'s ballet assessment has been scheduled. We'll contact you with the exact date and time.`,
+      };
+    case "needsFollowUp":
+      return {
+        title: "Follow-up Required",
+        body: `Your application for ${childName} requires some follow-up. Please check the app or contact us for details.`,
+      };
+    case "accepted":
+      return {
+        title: "Application Accepted! 🎉",
+        body: `Great news! ${childName} has been accepted into the Central Studio Ballet Program.`,
+      };
+    case "assignedToLevel":
+      return {
+        title: "Ballet Level Assigned 🩰",
+        body: `${childName} has been placed in a ballet level. Check the app for details about classes and schedule.`,
+      };
+    case "activeBallet":
+      return {
+        title: "Enrolled in Ballet! ✨",
+        body: `${childName} is now an active ballet student at Central Studio. Welcome to the program!`,
+      };
+    case "rejected":
+      return {
+        title: "Application Update",
+        body: `We've reviewed ${childName}'s application. Unfortunately we're unable to accept it at this time. Contact us for more information.`,
+      };
+    case "cancelled":
+      return {
+        title: "Application Cancelled",
+        body: `The ballet application for ${childName} has been cancelled. Contact us if you have any questions.`,
+      };
+    default:
+      return {
+        title: "Ballet Application Updated",
+        body: `The status of ${childName}'s ballet application has been updated.`,
+      };
+  }
 }
 
 // ─── GET /api/admin/ballet/applications ───────────────────────────────────────
@@ -223,7 +273,12 @@ router.patch(
 
     // Load application (need current status for the event)
     const [app] = await db
-      .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status })
+      .select({
+        id:              balletApplicationsTable.id,
+        status:          balletApplicationsTable.status,
+        childName:       balletApplicationsTable.childName,
+        parentStudentId: balletApplicationsTable.parentStudentId,
+      })
       .from(balletApplicationsTable)
       .where(eq(balletApplicationsTable.id, id))
       .limit(1);
@@ -247,6 +302,18 @@ router.patch(
         note:        note ?? null,
       });
     });
+
+    // Create a per-student notification so the mobile badge updates
+    if (app.parentStudentId) {
+      const { title, body } = getStatusNotification(status as BalletApplicationStatus, app.childName);
+      await db.insert(notificationsTable).values({
+        title,
+        body,
+        target:   `student:${app.parentStudentId}`,
+        isDraft:  false,
+        sentAt:   new Date().toISOString(),
+      });
+    }
 
     logger.info({ applicationId: id, fromStatus, toStatus: status, adminId }, "Ballet application status updated");
 

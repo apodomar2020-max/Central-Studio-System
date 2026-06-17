@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useListNotifications } from "@workspace/api-client-react";
+import { customFetch } from "@workspace/api-client-react";
 import type { Notification as ApiNotification } from "@workspace/api-client-react";
 
 import { useAppContext } from "@/contexts/AppContext";
@@ -123,17 +123,32 @@ export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const { notifications: localNotifs, markNotificationRead } = useAppContext();
 
-  // API broadcast notifications
-  const {
-    data: apiNotifs,
-    isLoading,
-    isError: isApiError,
-    error: apiError,
-    isRefetching,
-    refetch,
-  } = useListNotifications();
+  // Per-student + broadcast API notifications (fetched from /api/notifications/my)
+  const [apiNotifs, setApiNotifs] = useState<ApiNotification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefetching, setIsRefetching] = useState(false);
+  const [isApiError, setIsApiError] = useState(false);
+  const [apiError, setApiError] = useState<unknown>(null);
 
-  const onRefresh = useCallback(() => { refetch(); }, [refetch]);
+  const loadApiNotifs = useCallback(async (refreshing = false) => {
+    if (refreshing) setIsRefetching(true); else setIsLoading(true);
+    setIsApiError(false);
+    try {
+      const data = await customFetch<ApiNotification[]>("/api/notifications/my");
+      setApiNotifs(data);
+    } catch (e) {
+      setIsApiError(true);
+      setApiError(e);
+    } finally {
+      setIsLoading(false);
+      setIsRefetching(false);
+    }
+  }, []);
+
+  useEffect(() => { loadApiNotifs(); }, [loadApiNotifs]);
+
+  const refetch = useCallback(() => loadApiNotifs(true), [loadApiNotifs]);
+  const onRefresh = refetch;
 
   // Locally-persisted set of read API notification IDs
   const [apiReadIds, setApiReadIds] = useState<Set<string>>(new Set());

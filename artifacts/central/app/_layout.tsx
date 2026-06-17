@@ -84,6 +84,8 @@ function RootLayoutNav() {
       <Stack.Screen name="verify-email" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="privacy-policy" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="help-support" options={{ animation: "slide_from_right" }} />
+      {/* DEV-ONLY: design lab — not linked from any production navigation */}
+      <Stack.Screen name="dev/design-lab" options={{ animation: "slide_from_right" }} />
     </Stack>
   );
 }

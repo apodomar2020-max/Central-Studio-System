@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -18,7 +18,9 @@ import {
 import {
   BALLET_LEVELS,
   BALLET_PRICING,
+  type BalletSettings,
   AssessmentSlot,
+  fetchBalletSettings,
   fetchAssessmentSlots,
   fetchMyApplications,
   submitBalletApplication,
@@ -413,6 +415,25 @@ export default function BalletAssessmentScreen() {
   // We probe connectivity on mount so offline users see OfflineState immediately
   // rather than navigating into the form and hitting an error at step 3.
   const [connectivity, setConnectivity] = useState<"checking" | "online" | "offline">("checking");
+
+  // ── Live settings (pricing from admin) ────────────────────────────────────
+  const [liveSettings, setLiveSettings] = useState<BalletSettings | null>(null);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    fetchBalletSettings()
+      .then((s) => { if (active) setLiveSettings(s); })
+      .catch(() => { /* keep BALLET_PRICING fallback on error */ });
+    return () => { active = false; };
+  }, []));
+
+  // Pricing shown on Review step — live from admin settings, with static fallback
+  const displayPricing = liveSettings
+    ? [
+        { level: "Pre-Ballet", hours: `${liveSettings.preBallet.monthlyHours} hours monthly`, price: liveSettings.preBallet.priceEgp },
+        { level: "Levels 1–9", hours: `${liveSettings.levels19.monthlyHours} hours monthly`, price: liveSettings.levels19.priceEgp },
+      ]
+    : BALLET_PRICING;
 
   // ── Slot data state ────────────────────────────────────────────────────────
   const [slots, setSlots] = useState<AssessmentSlot[]>([]);
@@ -899,7 +920,7 @@ export default function BalletAssessmentScreen() {
 
             <View style={styles.pricingBox}>
               <Text style={styles.pricingTitle}>Ballet Pricing (if accepted)</Text>
-              {BALLET_PRICING.map((p) => (
+              {displayPricing.map((p) => (
                 <View key={p.level} style={styles.pricingRow}>
                   <View>
                     <Text style={styles.pricingLevel}>{p.level}</Text>

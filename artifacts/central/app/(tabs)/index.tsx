@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Dimensions,
@@ -24,8 +25,8 @@ import {
   DanceClass,
   Instructor,
 } from "@/data/mockData";
-import { useListHeroItems, useListInstructors, useListSchedules, useListClasses } from "@workspace/api-client-react";
-import type { HeroItem } from "@workspace/api-client-react";
+import { useListHeroItems, useListInstructors, useListSchedules, useListClasses, customFetch } from "@workspace/api-client-react";
+import type { HeroItem, Notification as ApiNotification } from "@workspace/api-client-react";
 import { mapApiInstructorToMobile, mapScheduleAndClassToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import NewStudentBanner from "@/components/NewStudentBanner";
@@ -231,12 +232,6 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
               {instructor.title}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } }); }}
-            style={[styles.instructorPlusBtn, { borderColor: colors.studio.primary + "80" }]}
-          >
-            <Ionicons name="add" size={14} color={colors.studio.primary} />
-          </TouchableOpacity>
         </View>
       </LinearGradient>
     </TouchableOpacity>
@@ -355,10 +350,38 @@ function ClassListCard({
   );
 }
 
+// AsyncStorage key shared with notifications.tsx for tracking read API notification IDs
+const API_NOTIF_READ_KEY = "api_notif_read_ids";
+
 export default function StudioHomeScreen() {
   const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner } = useAppContext();
   const showNewStudentBanner = bookings.length === 0 && !newStudentBannerDismissed;
   const insets = useSafeAreaInsets();
+
+  // ── API unread notification count (for bell badge) ─────────────────────────
+  // Refreshes whenever the Home tab comes into focus so the badge reflects any
+  // per-student notifications created by admin status changes (Bug 2 fix).
+  const [apiUnreadCount, setApiUnreadCount] = useState(0);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    async function refreshApiUnread() {
+      try {
+        const [notifs, raw] = await Promise.all([
+          customFetch<ApiNotification[]>("/api/notifications/my"),
+          AsyncStorage.getItem(API_NOTIF_READ_KEY),
+        ]);
+        if (!active) return;
+        const readIds = raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+        const count = notifs.filter((n) => !n.isDraft && !readIds.has(`api-${n.id}`)).length;
+        setApiUnreadCount(count);
+      } catch {
+        // Silently ignore — badge just shows local count on error
+      }
+    }
+    refreshApiUnread();
+    return () => { active = false; };
+  }, []));
 
   // ── Hero items (system-managed, from backend only) ─────────────────────────
   const {
@@ -496,10 +519,10 @@ export default function StudioHomeScreen() {
             style={styles.headerBtn}
           >
             <Ionicons name="notifications-outline" size={22} color="#9CA3AF" />
-            {unreadNotifications > 0 && (
+            {(unreadNotifications + apiUnreadCount) > 0 && (
               <View style={styles.notifBadge}>
                 <Text style={styles.notifBadgeText}>
-                  {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                  {(unreadNotifications + apiUnreadCount) > 9 ? "9+" : (unreadNotifications + apiUnreadCount)}
                 </Text>
               </View>
             )}

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
+import { requireStudentAuth } from "../middlewares/studentAuth";
 import {
   CreateNotificationBody,
   GetNotificationParams,
@@ -27,6 +28,27 @@ router.post("/notifications", async (req, res): Promise<void> => {
   }
   const [row] = await db.insert(notificationsTable).values(parsed.data).returning();
   res.status(201).json(GetNotificationResponse.parse(row));
+});
+
+// ─── GET /notifications/my ────────────────────────────────────────────────────
+// Student-scoped: returns broadcast notifications (target="all") plus any
+// per-student notifications (target="student:{studentId}") for the caller.
+// Requires student JWT. Must be declared before /:id to avoid routing conflict.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/notifications/my", requireStudentAuth, async (req: any, res): Promise<void> => {
+  const studentId: number = req.studentId;
+  const rows = await db
+    .select()
+    .from(notificationsTable)
+    .where(
+      or(
+        eq(notificationsTable.target, "all"),
+        eq(notificationsTable.target, `student:${studentId}`),
+      ),
+    )
+    .orderBy(desc(notificationsTable.createdAt));
+
+  res.json(rows.filter((n) => !n.isDraft));
 });
 
 router.get("/notifications/:id", async (req, res): Promise<void> => {
