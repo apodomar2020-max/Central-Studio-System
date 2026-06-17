@@ -159,6 +159,8 @@ export default function ClassesScreen() {
   }, [instructors]);
 
   const nonBalletCats = DANCE_CATEGORIES.filter((c) => !c.isBallet);
+  // Known category ids set — used to detect truly unmatched classes
+  const knownCatIds = useMemo(() => new Set(nonBalletCats.map((c) => c.id)), [nonBalletCats]);
 
   const filtered = classes.filter((cls) => {
     if (cls.isBallet) return false;
@@ -369,6 +371,23 @@ export default function ClassesScreen() {
             <Text style={styles.resultCount}>{filtered.length} class{filtered.length !== 1 ? "es" : ""}</Text>
           ) : null
         }
+        ListFooterComponent={() => {
+          // Classes that didn't match any known category after fuzzy normalization
+          const otherClasses = filtered.filter((cls) => !knownCatIds.has(cls.categoryId));
+          if (otherClasses.length === 0) return null;
+          return (
+            <View style={styles.catGroup}>
+              <View style={styles.catGroupHeader}>
+                <View style={[styles.catDot, { backgroundColor: "#6B7280" }]} />
+                <Text style={styles.catGroupTitle}>Other</Text>
+                <Text style={styles.catGroupCount}>{otherClasses.length} class{otherClasses.length !== 1 ? "es" : ""}</Text>
+              </View>
+              {otherClasses.map((cls) => (
+                <ClassCard key={cls.id} item={cls} instructor={instructorById.get(cls.instructorId)} />
+              ))}
+            </View>
+          );
+        }}
         contentContainerStyle={[styles.list, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={

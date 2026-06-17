@@ -30,6 +30,30 @@ import { Badge } from "@/components/ui/badge";
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "All Levels"];
 const AGE_GROUPS = ["Kids", "Teens", "Adults"] as const;
 
+/** Normalize a category string for fuzzy matching — mirrors the mobile apiAdapters logic. */
+function normalizeCat(s: string): string {
+  return s.trim().toLowerCase().replace(/[\s\-_]+/g, "");
+}
+
+/**
+ * Map a potentially dirty DB value (e.g., "Hiphop", "hip-hop") to the nearest
+ * canonical category name. Falls back to the raw value so existing data is never lost.
+ */
+function canonicalizeCategory(raw: string): string {
+  const needle = normalizeCat(raw);
+  return CATEGORIES.find((c) => normalizeCat(c) === needle) ?? raw;
+}
+
+/**
+ * Canonical category names — must match DANCE_CATEGORIES names in the mobile app exactly.
+ * The mobile uses fuzzy normalization so casing is handled, but using the exact names
+ * here keeps the DB clean and avoids any edge cases.
+ */
+const CATEGORIES = [
+  "Hip Hop", "Afro Dance", "Breaking", "Salsa", "Bachata",
+  "Contemporary", "Ballet", "Zumba", "Popping", "Locking", "Jazz", "House Dance",
+] as const;
+
 const formSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().nullish(),
@@ -68,7 +92,7 @@ export default function Classes() {
 
   const openEdit = (cls: Class) => {
     setEditing(cls);
-    form.reset({ title: cls.title, description: cls.description ?? "", instructorId: cls.instructorId ?? undefined, category: cls.category, level: cls.level, ageGroup: cls.ageGroup || "Adults", durationMins: cls.durationMins, capacity: cls.capacity, isActive: cls.isActive });
+    form.reset({ title: cls.title, description: cls.description ?? "", instructorId: cls.instructorId ?? undefined, category: canonicalizeCategory(cls.category), level: cls.level, ageGroup: cls.ageGroup || "Adults", durationMins: cls.durationMins, capacity: cls.capacity, isActive: cls.isActive });
     setOpen(true);
   };
 
@@ -160,7 +184,12 @@ export default function Classes() {
                 <FormField control={form.control} name="category" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category</FormLabel>
-                    <FormControl><Input data-testid="input-class-category" placeholder="Contemporary" {...field} /></FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger data-testid="select-class-category"><SelectValue placeholder="Select category" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )} />

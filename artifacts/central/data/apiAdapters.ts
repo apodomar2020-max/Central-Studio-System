@@ -47,10 +47,22 @@ function coerceLevel(level: string): DanceClass["level"] {
   }
 }
 
-/** Find the mobile category that matches an API class's free-text category. */
+/**
+ * Normalize a category string for fuzzy matching:
+ * strips spaces, hyphens, underscores and lowercases.
+ * "Hip Hop" → "hiphop", "Afro-Dance" → "afrodance", "house_dance" → "housedance"
+ */
+function normalizeCat(s: string): string {
+  return s.trim().toLowerCase().replace(/[\s\-_]+/g, "");
+}
+
+/**
+ * Find the mobile category that matches an API class's free-text category.
+ * Uses fuzzy normalization so "Hiphop", "hip-hop", "Hip Hop" all resolve to c1.
+ */
 function findCategoryByName(category: string) {
-  const needle = category.trim().toLowerCase();
-  return DANCE_CATEGORIES.find((c) => c.name.toLowerCase() === needle);
+  const needle = normalizeCat(category);
+  return DANCE_CATEGORIES.find((c) => normalizeCat(c.name) === needle);
 }
 
 export function mapApiInstructorToMobile(api: ApiInstructor): Instructor {
