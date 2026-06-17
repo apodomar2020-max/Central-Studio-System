@@ -23,6 +23,8 @@ import childrenRouter from "./children";
 import balletRouter from "./ballet";
 import adminBalletRouter from "./adminBallet";
 import danceTypesRouter from "./danceTypes";
+import checkInRouter from "./checkIn";
+import adminCreditsRouter from "./adminCredits";
 
 const router: IRouter = Router();
 
@@ -50,5 +52,7 @@ router.use(childrenRouter);
 router.use(balletRouter);
 router.use(adminBalletRouter);
 router.use(danceTypesRouter);
+router.use(checkInRouter);
+router.use(adminCreditsRouter);
 
 export default router;

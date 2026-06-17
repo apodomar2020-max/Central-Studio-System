@@ -189,7 +189,9 @@ export default function BookingFlowScreen() {
           studentPhone: user.phone,
           classId: numericClassId,
           scheduleId: primarySchedule?.id,
+          // packageId kept for backward-compat; packageOrderId is the authoritative FK (credit ledger)
           packageId: isPackageMode && selectedPackage ? Number(selectedPackage.id) : undefined,
+          packageOrderId: isPackageMode && selectedPackage ? Number(selectedPackage.id) : undefined,
           status: paymentMethod === "cash" && finalPrice > 0 ? "pendingPayment" : "confirmed",
           notes,
         },

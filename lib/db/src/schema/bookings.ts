@@ -10,6 +10,9 @@ export const bookingsTable = pgTable("bookings", {
   scheduleId: integer("schedule_id"),
   classId: integer("class_id"),
   packageId: integer("package_id"),
+  // Explicit packageOrderId added in migration 0013. Legacy packageId field kept for
+  // backward-compat but packageOrderId is the authoritative FK to package_orders.id.
+  packageOrderId: integer("package_order_id"),
   status: text("status").notNull().default("pending"),
   notes: text("notes"),
   bookedAt: timestamp("booked_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

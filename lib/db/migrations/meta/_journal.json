@@ -105,5 +105,13 @@
       "tag": "0012_class_pricing_settings",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1781784000000,
+      "tag": "0013_credit_ledger",
+      "breakpoints": true
+    }
   ]
 }

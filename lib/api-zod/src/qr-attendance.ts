@@ -1,9 +1,8 @@
 /**
- * Zod schemas for the QR Attendance feature (Step 2).
+ * Hand-written Zod schemas for QR Attendance (Step 2) and Credit Ledger (Step N).
  *
- * These are hand-written (not generated) because the new endpoints are not yet
- * described in the OpenAPI spec. They live alongside the generated schemas and
- * are re-exported from the package index.
+ * Not auto-generated — these live alongside the generated schemas and are
+ * re-exported from the package index.
  */
 import * as zod from "zod";
 
@@ -71,8 +70,87 @@ export const CheckInBodyExtended = zod.object({
   studentId: zod.number().nullish(),
   classId: zod.number().nullish(),
   scheduleId: zod.number().nullish(),
+  // Credit ledger additions (all optional — backward-compat with existing callers)
+  bookingId: zod.number().nullish(),
+  checkedInBy: zod.string().nullish(),
+  status: zod.enum(["checked_in", "late", "absent", "cancelled"]).optional(),
 });
 
+// ---------------------------------------------------------------------------
+// POST /api/check-in/qr  (Credit Ledger — new atomic QR check-in endpoint)
+// ---------------------------------------------------------------------------
+
+export const CheckInQrBody = zod.object({
+  /** The student's UUID qrToken scanned from their Studio Pass QR code. */
+  qrToken: zod.string().uuid("qrToken must be a valid UUID"),
+  /** The booking this check-in satisfies (admin selects from student's bookings). */
+  bookingId: zod.number().int().positive(),
+  /** Admin email performing the check-in, for the audit trail. */
+  checkedInBy: zod.string().optional(),
+});
+
+export const CheckInQrResponse = zod.object({
+  attendanceId: zod.number(),
+  studentName: zod.string(),
+  studentEmail: zod.string(),
+  classTitle: zod.string().nullish(),
+  creditDeducted: zod.boolean(),
+  remainingCredits: zod.number().nullish(),
+  checkedInAt: zod.string(),
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/credits/ledger  (paginated credit transaction history)
+// ---------------------------------------------------------------------------
+
+export const ListCreditTransactionsQueryParams = zod.object({
+  packageOrderId: zod.coerce.number().optional(),
+  studentEmail: zod.string().optional(),
+  page: zod.coerce.number().int().min(1).optional(),
+  limit: zod.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const CreditTransactionRecord = zod.object({
+  id: zod.number(),
+  packageOrderId: zod.number(),
+  studentId: zod.number().nullish(),
+  type: zod.string(),
+  delta: zod.number(),
+  balanceBefore: zod.number(),
+  balanceAfter: zod.number(),
+  referenceId: zod.number().nullish(),
+  referenceType: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  createdBy: zod.string(),
+  createdAt: zod.string(),
+});
+
+export const ListCreditTransactionsResponse = zod.object({
+  data: zod.array(CreditTransactionRecord),
+  total: zod.number(),
+  page: zod.number(),
+  limit: zod.number(),
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/attendance/history  (paginated attendance history)
+// ---------------------------------------------------------------------------
+
+export const ListAttendanceHistoryQueryParams = zod.object({
+  studentEmail: zod.string().optional(),
+  dateFrom: zod.string().optional(),
+  dateTo: zod.string().optional(),
+  page: zod.coerce.number().int().min(1).optional(),
+  limit: zod.coerce.number().int().min(1).max(100).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export type CheckInBodyExtendedType = zod.infer<typeof CheckInBodyExtended>;
+export type CheckInQrBodyType = zod.infer<typeof CheckInQrBody>;
+export type CheckInQrResponseType = zod.infer<typeof CheckInQrResponse>;
+export type CreditTransactionRecordType = zod.infer<typeof CreditTransactionRecord>;
 export type GetStudentByTokenResponseType = zod.infer<typeof GetStudentByTokenResponse>;
 export type GetSchedulesTodayResponseItemType = zod.infer<typeof GetSchedulesTodayResponseItem>;

@@ -7,6 +7,7 @@ import {
   getListAttendanceQueryKey,
   getListPackageOrdersQueryKey,
 } from "@workspace/api-client-react";
+import type { CheckInQrResponse, Booking } from "@workspace/api-client-react";
 import {
   Dialog,
   DialogContent,
@@ -176,6 +177,11 @@ export function ScanCheckInDialog({
   const [duplicateError, setDuplicateError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // Credit ledger — QR check-in path
+  const [scannedQrToken, setScannedQrToken] = useState<string | null>(null);
+  const [studentBookings, setStudentBookings] = useState<Booking[]>([]);
+  const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
+
   const { data: allPackageOrders = [] } = useListPackageOrders();
 
   // ── Derived values ─────────────────────────────────────────────────────────
@@ -249,6 +255,9 @@ export function ScanCheckInDialog({
     setResolveError("");
     setDuplicateError("");
     setSuccessMsg("");
+    setScannedQrToken(null);
+    setStudentBookings([]);
+    setSelectedBookingId(null);
   }
 
   const handleScanResult = useCallback(async (decoded: string) => {
@@ -260,6 +269,7 @@ export function ScanCheckInDialog({
     await stopScanner();
 
     if (result.type === "token") {
+      setScannedQrToken(result.token);
       setPhase("resolving");
       setResolveError("");
       try {
@@ -267,7 +277,19 @@ export function ScanCheckInDialog({
           `/api/students/by-token/${result.token}`,
         );
         setResolvedStudent(student);
-        await fetchSchedules();
+        // Fetch bookings and today's schedules in parallel
+        const [bookings] = await Promise.all([
+          customFetch<Booking[]>(
+            `/api/bookings?studentEmail=${encodeURIComponent(student.email)}`,
+          ).catch(() => [] as Booking[]),
+          fetchSchedules(),
+        ]);
+        // Only show open (non-attended, non-cancelled) bookings
+        const open = bookings.filter(
+          (b) => b.status !== "attended" && b.status !== "cancelled",
+        );
+        setStudentBookings(open);
+        if (open.length === 1) setSelectedBookingId(open[0].id);
         setPhase("selecting");
       } catch (err: unknown) {
         const status =
@@ -301,6 +323,53 @@ export function ScanCheckInDialog({
     setDuplicateError("");
     setPhase("submitting");
 
+    // ── Path A: QR endpoint (token scan + booking selected) ──────────────────
+    // Uses the credit ledger and atomically marks the booking as attended.
+    if (scannedQrToken && selectedBookingId) {
+      try {
+        const row = await customFetch<CheckInQrResponse>("/api/check-in/qr", {
+          method: "POST",
+          body: JSON.stringify({
+            qrToken: scannedQrToken,
+            bookingId: selectedBookingId,
+          }),
+        });
+
+        queryClient.invalidateQueries({ queryKey: getListAttendanceQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListPackageOrdersQueryKey() });
+
+        const credits = row.remainingCredits;
+        setSuccessMsg(
+          `${row.studentName} checked in${
+            row.creditDeducted
+              ? ` — 1 credit deducted${credits != null ? ` (${credits} remaining)` : ""}`
+              : ""
+          }`,
+        );
+        setPhase("done");
+      } catch (err: unknown) {
+        const status =
+          err !== null && typeof err === "object" && "status" in err
+            ? (err as { status: number }).status
+            : 0;
+        const errMsg =
+          err !== null && typeof err === "object" && "data" in err
+            ? ((err as { data?: { message?: string } }).data?.message ?? null)
+            : null;
+
+        if (status === 409) {
+          setDuplicateError(errMsg ?? "This student is already checked in for this class today.");
+          setPhase("selecting");
+        } else {
+          setResolveError(errMsg ?? "Check-in failed. Please try again.");
+          setPhase("error");
+        }
+      }
+      return;
+    }
+
+    // ── Path B: Legacy attendance endpoint (email scan or no booking) ─────────
+    // Backward-compatible for walk-ins and legacy QR formats.
     const creditActuallyDeducted = deductCredit && !!selectedPackageId;
 
     const body = {
@@ -750,7 +819,44 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            {activePackages.length === 0 ? (
+            {/* ── Booking picker (token flow only, credit ledger path) ─────── */}
+            {isTokenFlow && studentBookings.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
+                  Select Booking
+                </p>
+                {studentBookings.map((bk) => (
+                  <button
+                    key={bk.id}
+                    onClick={() => setSelectedBookingId(selectedBookingId === bk.id ? null : bk.id)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                    style={{
+                      background: selectedBookingId === bk.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
+                      border: `1px solid ${selectedBookingId === bk.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
+                    }}
+                  >
+                    <span className="font-medium text-white">
+                      Booking #{bk.id}
+                      {bk.notes ? ` · ${bk.notes.split("\n")[0]}` : ""}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{
+                      background: "hsl(203 30% 20%)",
+                      color: "#8A9AB0",
+                    }}>
+                      {bk.status}
+                    </span>
+                  </button>
+                ))}
+                {selectedBookingId && (
+                  <p className="text-xs" style={{ color: STUDIO_CYAN }}>
+                    Will use secure QR check-in with credit ledger
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Package picker is shown only for legacy (email) flow or when no booking is selected */}
+            {(!isTokenFlow || !selectedBookingId) && activePackages.length === 0 ? (
               <div
                 className="text-sm px-3 py-2.5 rounded-xl"
                 style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
@@ -784,58 +890,61 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
-                Today's Class
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedScheduleId}
-                  onChange={(e) => setSelectedScheduleId(Number(e.target.value))}
-                  className="w-full rounded-xl px-3 py-2.5 text-sm text-white appearance-none pr-8"
-                  style={{ background: "hsl(203 30% 14%)", border: "1px solid hsl(203 30% 20%)", outline: "none" }}
-                >
-                  <option value={MANUAL_SCHEDULE_ID}>Not listed / Enter manually</option>
-                  {schedules.map((s) => (
-                    <option key={s.scheduleId} value={s.scheduleId}>
-                      {s.classTitle} · {formatTime(s.startTime)}
-                      {s.instructorName ? ` · ${s.instructorName}` : ""}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none" style={{ color: "#8A9AB0" }} />
-              </div>
-            </div>
-
-            {isManualSchedule && (
+            {/* Schedule + manual credit controls — hidden when using QR booking path */}
+            {(!isTokenFlow || !selectedBookingId) && (<>
               <div>
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
-                  Class Title (optional)
+                  Today's Class
                 </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Hip Hop Adults"
-                  value={manualClassTitle}
-                  onChange={(e) => setManualClassTitle(e.target.value)}
-                  className="w-full rounded-xl px-3 py-2.5 text-sm text-white"
-                  style={{ background: "hsl(203 30% 14%)", border: "1px solid hsl(203 30% 20%)", outline: "none" }}
-                />
+                <div className="relative">
+                  <select
+                    value={selectedScheduleId}
+                    onChange={(e) => setSelectedScheduleId(Number(e.target.value))}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white appearance-none pr-8"
+                    style={{ background: "hsl(203 30% 14%)", border: "1px solid hsl(203 30% 20%)", outline: "none" }}
+                  >
+                    <option value={MANUAL_SCHEDULE_ID}>Not listed / Enter manually</option>
+                    {schedules.map((s) => (
+                      <option key={s.scheduleId} value={s.scheduleId}>
+                        {s.classTitle} · {formatTime(s.startTime)}
+                        {s.instructorName ? ` · ${s.instructorName}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none" style={{ color: "#8A9AB0" }} />
+                </div>
               </div>
-            )}
 
-            {selectedPackageId && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={deductCredit}
-                  onChange={(e) => setDeductCredit(e.target.checked)}
-                  className="rounded"
-                />
-                <span className="text-sm" style={{ color: "#9CA3AF" }}>
-                  Deduct 1 credit from selected package
-                </span>
-              </label>
-            )}
+              {isManualSchedule && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
+                    Class Title (optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Hip Hop Adults"
+                    value={manualClassTitle}
+                    onChange={(e) => setManualClassTitle(e.target.value)}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white"
+                    style={{ background: "hsl(203 30% 14%)", border: "1px solid hsl(203 30% 20%)", outline: "none" }}
+                  />
+                </div>
+              )}
+
+              {selectedPackageId && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={deductCredit}
+                    onChange={(e) => setDeductCredit(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-sm" style={{ color: "#9CA3AF" }}>
+                    Deduct 1 credit from selected package
+                  </span>
+                </label>
+              )}
+            </>)}
 
             <div className="flex gap-2 pt-1">
               <button

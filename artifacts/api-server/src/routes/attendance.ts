@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { db, attendanceTable, packageOrdersTable } from "@workspace/db";
+import { db, attendanceTable, packageOrdersTable, creditTransactionsTable } from "@workspace/db";
 import {
   ListAttendanceQueryParams,
   ListAttendanceResponse,
@@ -91,6 +91,9 @@ router.post("/attendance", async (req, res): Promise<void> => {
     studentId,
     classId,
     scheduleId,
+    bookingId,
+    checkedInBy,
+    status,
   } = parsed.data;
 
   try {
@@ -166,6 +169,22 @@ router.post("/attendance", async (req, res): Promise<void> => {
             status: newRemaining <= 0 ? "fullyUsed" : order.status,
           })
           .where(eq(packageOrdersTable.id, packageOrderId));
+
+        // ------------------------------------------------------------------
+        // Step 2b — Append immutable ledger row for this credit deduction
+        // ------------------------------------------------------------------
+        await tx.insert(creditTransactionsTable).values({
+          packageOrderId,
+          studentId: studentId ?? null,
+          type: "attendance_deduction",
+          delta: -1,
+          balanceBefore: order.remainingCredits,
+          balanceAfter: newRemaining,
+          referenceId: bookingId ?? null,
+          referenceType: bookingId != null ? "booking" : null,
+          notes: `Check-in for "${classTitle ?? "class"}"`,
+          createdBy: checkedInBy ?? "system",
+        });
       }
 
       // ------------------------------------------------------------------
@@ -183,6 +202,9 @@ router.post("/attendance", async (req, res): Promise<void> => {
           studentId: studentId ?? null,
           classId: classId ?? null,
           scheduleId: scheduleId ?? null,
+          bookingId: bookingId ?? null,
+          checkedInBy: checkedInBy ?? null,
+          status: status ?? "checked_in",
           checkedInAt: new Date().toISOString(),
         })
         .returning();

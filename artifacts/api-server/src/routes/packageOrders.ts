@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { desc, eq } from "drizzle-orm";
-import { db, packageOrdersTable } from "@workspace/db";
+import { db, packageOrdersTable, creditTransactionsTable } from "@workspace/db";
 import {
   ListPackageOrdersQueryParams,
   ListPackageOrdersResponse,
@@ -63,11 +63,63 @@ router.patch("/package-orders/:id", async (req, res): Promise<void> => {
   if (parsed.data.status === "active" && !parsed.data.activatedAt) {
     update.activatedAt = new Date().toISOString();
   }
-  const [row] = await db.update(packageOrdersTable).set(update).where(eq(packageOrdersTable.id, params.data.id)).returning();
-  if (!row) {
-    res.status(404).json({ error: "Package order not found" });
-    return;
+
+  // If activating a package, wrap in a transaction and write a ledger row.
+  // All other updates (notes, expiry, etc.) take the simple non-transactional path.
+  const isActivating = parsed.data.status === "active";
+
+  let row: typeof packageOrdersTable.$inferSelect | undefined;
+
+  if (isActivating) {
+    const result = await db.transaction(async (tx) => {
+      // Fetch current state for ledger balance fields
+      const [current] = await tx
+        .select()
+        .from(packageOrdersTable)
+        .where(eq(packageOrdersTable.id, params.data.id));
+      if (!current) return undefined;
+
+      const [updated] = await tx
+        .update(packageOrdersTable)
+        .set(update)
+        .where(eq(packageOrdersTable.id, params.data.id))
+        .returning();
+
+      // Insert package_activated ledger row
+      await tx.insert(creditTransactionsTable).values({
+        packageOrderId: current.id,
+        studentId: null,
+        type: "package_activated",
+        delta: current.totalCredits,
+        balanceBefore: 0,
+        balanceAfter: current.totalCredits,
+        referenceId: null,
+        referenceType: null,
+        notes: `Package "${current.packageName}" activated`,
+        createdBy: "admin",
+      });
+
+      return updated;
+    });
+
+    if (!result) {
+      res.status(404).json({ error: "Package order not found" });
+      return;
+    }
+    row = result;
+  } else {
+    const [updated] = await db
+      .update(packageOrdersTable)
+      .set(update)
+      .where(eq(packageOrdersTable.id, params.data.id))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Package order not found" });
+      return;
+    }
+    row = updated;
   }
+
   res.json(UpdatePackageOrderResponse.parse(row));
 });
 

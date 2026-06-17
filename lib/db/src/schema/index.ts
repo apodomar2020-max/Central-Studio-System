@@ -23,3 +23,5 @@ export * from "./balletLevelAssignments";
 // Dance Types — Settings-driven category list (migration 0011)
 export * from "./danceTypes";
 export * from "./classPricingSettings";
+// Credit Ledger — immutable audit trail for credit changes (migration 0013)
+export * from "./creditTransactions";

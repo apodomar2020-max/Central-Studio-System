@@ -248,6 +248,8 @@ export interface Booking {
   classId?: number | null;
   /** @nullable */
   packageId?: number | null;
+  /** @nullable — explicit FK to package_orders.id (credit ledger, migration 0013) */
+  packageOrderId?: number | null;
   status: string;
   /** @nullable */
   notes?: string | null;
@@ -266,6 +268,8 @@ export interface CreateBookingBody {
   classId?: number | null;
   /** @nullable */
   packageId?: number | null;
+  /** @nullable — explicit package order reference (credit ledger, migration 0013) */
+  packageOrderId?: number | null;
   status?: string;
   /** @nullable */
   notes?: string | null;
@@ -283,6 +287,8 @@ export interface UpdateBookingBody {
   classId?: number | null;
   /** @nullable */
   packageId?: number | null;
+  /** @nullable */
+  packageOrderId?: number | null;
   status?: string;
   /** @nullable */
   notes?: string | null;
@@ -504,6 +510,18 @@ export interface Attendance {
   creditDeducted: boolean;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  studentId?: number | null;
+  /** @nullable */
+  classId?: number | null;
+  /** @nullable */
+  scheduleId?: number | null;
+  /** @nullable — linked booking (credit ledger, migration 0013) */
+  bookingId?: number | null;
+  /** @nullable — who performed the check-in */
+  checkedInBy?: string | null;
+  /** attendance status: checked_in | late | absent | cancelled */
+  status?: string;
   checkedInAt: string;
   createdAt: string;
   updatedAt: string;
@@ -613,4 +631,58 @@ export interface UpdateDanceTypeBody {
   slug?: string;
   isActive?: boolean;
   sortOrder?: number;
+}
+
+// ─── Credit Ledger (migration 0013) ──────────────────────────────────────────
+
+export interface CreditTransaction {
+  id: number;
+  packageOrderId: number;
+  /** @nullable */
+  studentId?: number | null;
+  /** package_activated | attendance_deduction | manual_adjustment | package_bonus | package_refund */
+  type: string;
+  delta: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  /** @nullable */
+  referenceId?: number | null;
+  /** @nullable — "attendance" | "booking" | null */
+  referenceType?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CheckInQrBody {
+  qrToken: string;
+  bookingId: number;
+  checkedInBy?: string;
+}
+
+export interface CheckInQrResponse {
+  attendanceId: number;
+  studentName: string;
+  studentEmail: string;
+  /** @nullable */
+  classTitle?: string | null;
+  creditDeducted: boolean;
+  /** @nullable */
+  remainingCredits?: number | null;
+  checkedInAt: string;
+}
+
+export interface ListCreditTransactionsParams {
+  packageOrderId?: number;
+  studentEmail?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface ListCreditTransactionsResponse {
+  data: CreditTransaction[];
+  total: number;
+  page: number;
+  limit: number;
 }

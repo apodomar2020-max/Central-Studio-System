@@ -63,6 +63,11 @@ import type {
   HeroItem,
   CreateHeroItemBody,
   UpdateHeroItemBody,
+  // Credit Ledger (migration 0013)
+  CheckInQrBody,
+  CheckInQrResponse,
+  ListCreditTransactionsParams,
+  ListCreditTransactionsResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -4915,6 +4920,125 @@ export function useListAdminDanceTypes<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListAdminDanceTypesQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ─── Credit Ledger (migration 0013) ──────────────────────────────────────────
+
+// ── POST /api/check-in/qr  (atomic QR check-in) ──────────────────────────────
+
+export const getCheckInQrUrl = () => `/api/check-in/qr`;
+
+export const checkInQr = async (
+  checkInQrBody: CheckInQrBody,
+  options?: RequestInit,
+): Promise<CheckInQrResponse> =>
+  customFetch<CheckInQrResponse>(getCheckInQrUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(checkInQrBody),
+  });
+
+export const getCheckInQrMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkInQr>>,
+    TError,
+    { data: CheckInQrBody },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkInQr>>,
+  TError,
+  { data: CheckInQrBody },
+  TContext
+> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkInQr>>,
+    { data: CheckInQrBody }
+  > = ({ data }) => checkInQr(data, requestOptions);
+  return { mutationFn, ...mutationOptions };
+};
+
+export function useCheckInQr<TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkInQr>>,
+    TError,
+    { data: CheckInQrBody },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof checkInQr>>,
+  TError,
+  { data: CheckInQrBody },
+  TContext
+> {
+  return useMutation(getCheckInQrMutationOptions(options));
+}
+
+// ── GET /api/admin/credits/ledger  (paginated credit transaction history) ─────
+
+export const getListCreditTransactionsUrl = (params?: ListCreditTransactionsParams) => {
+  const searchParams = new URLSearchParams();
+  if (params?.packageOrderId !== undefined) searchParams.set("packageOrderId", String(params.packageOrderId));
+  if (params?.studentEmail !== undefined) searchParams.set("studentEmail", params.studentEmail);
+  if (params?.page !== undefined) searchParams.set("page", String(params.page));
+  if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+  const qs = searchParams.toString();
+  return `/api/admin/credits/ledger${qs ? `?${qs}` : ""}`;
+};
+
+export const listCreditTransactions = async (
+  params?: ListCreditTransactionsParams,
+  options?: RequestInit,
+): Promise<ListCreditTransactionsResponse> =>
+  customFetch<ListCreditTransactionsResponse>(getListCreditTransactionsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+
+export const getListCreditTransactionsQueryKey = (params?: ListCreditTransactionsParams) =>
+  [`/api/admin/credits/ledger`, ...(params ? [params] : [])] as const;
+
+export const getListCreditTransactionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCreditTransactions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCreditTransactionsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listCreditTransactions>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getListCreditTransactionsQueryKey(params);
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listCreditTransactions>>> = ({ signal }) =>
+    listCreditTransactions(params, { signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCreditTransactions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export function useListCreditTransactions<
+  TData = Awaited<ReturnType<typeof listCreditTransactions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCreditTransactionsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listCreditTransactions>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCreditTransactionsQueryOptions(params, options);
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
   return { ...query, queryKey: queryOptions.queryKey };
 }

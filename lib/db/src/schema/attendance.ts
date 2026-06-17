@@ -15,6 +15,10 @@ export const attendanceTable = pgTable("attendance", {
   studentId: integer("student_id"),   // → students.id (set when scanned via QR token)
   classId: integer("class_id"),       // → classes.id  (set when admin picks from dropdown)
   scheduleId: integer("schedule_id"), // → schedules.id (set when admin picks from dropdown)
+  // Credit Ledger system (migration 0013)
+  bookingId: integer("booking_id"),   // → bookings.id (linked booking this check-in satisfies)
+  checkedInBy: text("checked_in_by"), // admin email, "system", or null for legacy records
+  status: text("status").notNull().default("checked_in"), // checked_in | late | absent | cancelled
   checkedInAt: timestamp("checked_in_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
