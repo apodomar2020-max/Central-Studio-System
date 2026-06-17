@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import authRouter from "./auth";
 import healthRouter from "./health";
+import versionRouter from "./version";
 import dashboardRouter from "./dashboard";
 import instructorsRouter from "./instructors";
 import classesRouter from "./classes";
@@ -25,6 +26,7 @@ import danceTypesRouter from "./danceTypes";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(versionRouter);
 router.use(authRouter);
 router.use(emailOtpRouter);
 router.use(dashboardRouter);

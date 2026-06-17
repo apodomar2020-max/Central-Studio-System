@@ -1,7 +1,7 @@
 /**
  * API authentication middleware.
  *
- * All routes under /api are protected except /api/healthz.
+ * All routes under /api are protected except public diagnostic endpoints.
  *
  * Accepted credential formats:
  *   - Header:  X-Api-Key: <key>               (admin dashboard / server-to-server)
@@ -39,7 +39,7 @@ declare global {
 
 // Middleware is mounted at /api so Express strips that prefix —
 // req.path inside here is "/healthz", not "/api/healthz".
-const PUBLIC_PATHS = new Set(["/healthz"]);
+const PUBLIC_PATHS = new Set(["/healthz", "/version"]);
 
 const secretKey = process.env["API_SECRET_KEY"];
 
