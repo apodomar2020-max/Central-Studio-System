@@ -37,7 +37,7 @@ const studioNav = [
 
 const balletNav = [
   { name: "Applications", href: "/ballet/applications", icon: ClipboardList },
-  { name: "Assessment Slots", href: "/ballet/slots", icon: CalendarDays },
+  { name: "Assessment Dates", href: "/ballet/slots", icon: CalendarDays },
   { name: "Pricing & Settings", href: "/ballet/settings", icon: Settings2 },
   { name: "Levels", href: "/ballet/levels", icon: Trophy },
 ];
@@ -66,14 +66,14 @@ function NavItem({
     accent === "studio"
       ? "text-[#00B6D7]"
       : accent === "stage"
-      ? "text-[#8A5CFF]"
+      ? "text-[#00B6D6]"
       : "text-[#9CA3AF]";
 
   const activeBg =
     accent === "studio"
       ? "bg-[#00B6D7]/10 border-l-2 border-[#00B6D7]"
       : accent === "stage"
-      ? "bg-[#8A5CFF]/10 border-l-2 border-[#8A5CFF]"
+      ? "bg-[#00B6D6]/10 border-l-2 border-[#00B6D6]"
       : "bg-[#00B6D7]/8 border-l-2 border-[#00B6D7]/60";
 
   return (
@@ -153,8 +153,8 @@ export function Sidebar() {
         {/* Ballet section */}
         <div>
           <div className="px-4 mb-1 flex items-center gap-1.5">
-            <Music2 className="h-2.5 w-2.5 text-[#8A5CFF]/60" />
-            <span className="text-[10px] font-semibold tracking-widest uppercase text-[#8A5CFF]/60">
+            <Music2 className="h-2.5 w-2.5 text-[#00B6D6]/60" />
+            <span className="text-[10px] font-semibold tracking-widest uppercase text-[#00B6D6]/60">
               Ballet
             </span>
           </div>
@@ -193,7 +193,7 @@ export function Sidebar() {
             <div className="mx-4 border-t" style={{ borderColor: "hsl(203 25% 12%)" }} />
             <div>
               <div className="px-4 mb-1">
-                <span className="text-[10px] font-semibold tracking-widest uppercase text-[#8A5CFF]/60">
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-[#00B6D6]/60">
                   System
                 </span>
               </div>

@@ -1,8 +1,8 @@
 /**
- * Ballet → Assessment Slots
+ * Ballet → Assessment Dates
  *
- * Lists all assessment slots with live booked count.
- * Admins can create new slots, edit existing ones (date/time/capacity/notes),
+ * Lists all assessment dates with live booked count.
+ * Admins can create new dates, edit existing ones (date/time/capacity/notes),
  * and toggle active/inactive status.
  */
 
@@ -61,8 +61,13 @@ interface Slot {
 
 interface SlotForm {
   date: string;
-  startTime: string;
-  endTime: string;
+  // Time fields split into segments for structured picking
+  startHour: string;
+  startMinute: string;
+  startAmPm: "AM" | "PM";
+  endHour: string;
+  endMinute: string;
+  endAmPm: "AM" | "PM";
   capacity: string;
   notes: string;
   isActive: boolean;
@@ -70,8 +75,12 @@ interface SlotForm {
 
 const EMPTY_FORM: SlotForm = {
   date: "",
-  startTime: "",
-  endTime: "",
+  startHour: "9",
+  startMinute: "00",
+  startAmPm: "AM",
+  endHour: "10",
+  endMinute: "00",
+  endAmPm: "AM",
   capacity: "10",
   notes: "",
   isActive: true,
@@ -91,6 +100,50 @@ function availabilityBadge(slot: Slot) {
   if (available <= 0)  return <Badge className="bg-red-500/20 text-red-400">Full</Badge>;
   if (available <= 3)  return <Badge className="bg-amber-500/20 text-amber-400">{available} left</Badge>;
   return <Badge className="bg-green-500/20 text-green-400">Available</Badge>;
+}
+
+/** Compose segmented time fields into "HH:MM AM" string */
+function composeTime(hour: string, minute: string, ampm: "AM" | "PM"): string {
+  return `${String(hour).padStart(2, "0")}:${minute} ${ampm}`;
+}
+
+/** Parse "10:00 AM" → { hour: "10", minute: "00", ampm: "AM" } */
+function parseTime(timeStr: string): { hour: string; minute: string; ampm: "AM" | "PM" } {
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match) {
+    return {
+      hour:   String(parseInt(match[1]!, 10)),
+      minute: match[2]!,
+      ampm:   match[3]!.toUpperCase() as "AM" | "PM",
+    };
+  }
+  return { hour: "9", minute: "00", ampm: "AM" };
+}
+
+const HOURS   = ["1","2","3","4","5","6","7","8","9","10","11","12"];
+const MINUTES = ["00","15","30","45"];
+
+/** Styled <select> consistent with the dark admin theme */
+function TimeSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-md border border-border bg-[#1A2535] px-2 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#00B6D6]"
+    >
+      {options.map((o) => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+    </select>
+  );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -121,10 +174,10 @@ export default function AssessmentSlotsPage() {
       adminFetch(`${API}/api/admin/ballet/slots`, { method: "POST", body: JSON.stringify(body) }, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ballet-slots"] });
-      toast({ title: "Slot created" });
+      toast({ title: "Assessment date created" });
       closeDialog();
     },
-    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to create slot", variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to create date", variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -132,17 +185,17 @@ export default function AssessmentSlotsPage() {
       adminFetch(`${API}/api/admin/ballet/slots/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ballet-slots"] });
-      toast({ title: "Slot updated" });
+      toast({ title: "Assessment date updated" });
       closeDialog();
     },
-    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update slot", variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update date", variant: "destructive" }),
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
       adminFetch(`${API}/api/admin/ballet/slots/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-ballet-slots"] }),
-    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update slot", variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update date", variant: "destructive" }),
   });
 
   // ── Dialog helpers ──────────────────────────────────────────────────────────
@@ -154,14 +207,20 @@ export default function AssessmentSlotsPage() {
   }
 
   function openEdit(slot: Slot) {
+    const start = parseTime(slot.startTime);
+    const end   = parseTime(slot.endTime);
     setEditingSlot(slot);
     setForm({
-      date:      slot.date,
-      startTime: slot.startTime,
-      endTime:   slot.endTime,
-      capacity:  String(slot.capacity),
-      notes:     slot.notes ?? "",
-      isActive:  slot.isActive,
+      date:        slot.date,
+      startHour:   start.hour,
+      startMinute: start.minute,
+      startAmPm:   start.ampm,
+      endHour:     end.hour,
+      endMinute:   end.minute,
+      endAmPm:     end.ampm,
+      capacity:    String(slot.capacity),
+      notes:       slot.notes ?? "",
+      isActive:    slot.isActive,
     });
     setDialogOpen(true);
   }
@@ -174,8 +233,8 @@ export default function AssessmentSlotsPage() {
 
   function handleSubmit() {
     const capacity = parseInt(form.capacity, 10);
-    if (!form.date || !form.startTime || !form.endTime) {
-      toast({ title: "Required", description: "Date, start time, and end time are required.", variant: "destructive" });
+    if (!form.date) {
+      toast({ title: "Required", description: "Date is required.", variant: "destructive" });
       return;
     }
     if (isNaN(capacity) || capacity < 1) {
@@ -184,8 +243,8 @@ export default function AssessmentSlotsPage() {
     }
     const body = {
       date:      form.date,
-      startTime: form.startTime,
-      endTime:   form.endTime,
+      startTime: composeTime(form.startHour, form.startMinute, form.startAmPm),
+      endTime:   composeTime(form.endHour,   form.endMinute,   form.endAmPm),
       capacity,
       notes:     form.notes.trim() || null,
       isActive:  form.isActive,
@@ -197,6 +256,10 @@ export default function AssessmentSlotsPage() {
     }
   }
 
+  function setF<K extends keyof SlotForm>(key: K, val: SlotForm[K]) {
+    setForm((f) => ({ ...f, [key]: val }));
+  }
+
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -206,21 +269,21 @@ export default function AssessmentSlotsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Assessment Slots</h1>
+          <h1 className="text-2xl font-bold text-white">Assessment Dates</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage available ballet assessment appointment slots.
+            Manage available ballet assessment dates and appointment slots.
           </p>
         </div>
-        <Button onClick={openCreate} className="bg-[#8A5CFF] hover:bg-[#7A4CEF] text-white gap-2">
+        <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-black gap-2">
           <Plus className="h-4 w-4" />
-          New Slot
+          New Assessment Date
         </Button>
       </div>
 
       {/* Loading */}
       {isLoading && (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-[#8A5CFF]" />
+          <Loader2 className="h-6 w-6 animate-spin text-[#00B6D6]" />
         </div>
       )}
 
@@ -228,21 +291,21 @@ export default function AssessmentSlotsPage() {
       {isError && (
         <div className="flex items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-400">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm">Failed to load slots. Please refresh.</span>
+          <span className="text-sm">Failed to load assessment dates. Please refresh.</span>
         </div>
       )}
 
       {/* Empty */}
       {!isLoading && !isError && slots.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-          <div className="rounded-full bg-[#8A5CFF]/10 p-4">
-            <CalendarDays className="h-8 w-8 text-[#8A5CFF]" />
+          <div className="rounded-full bg-[#00B6D6]/10 p-4">
+            <CalendarDays className="h-8 w-8 text-[#00B6D6]" />
           </div>
-          <p className="text-sm text-muted-foreground">No assessment slots yet. Create your first one.</p>
+          <p className="text-sm text-muted-foreground">No assessment dates yet. Create your first one.</p>
         </div>
       )}
 
-      {/* Slots table */}
+      {/* Dates table */}
       {!isLoading && slots.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden">
           <table className="w-full text-sm">
@@ -281,7 +344,7 @@ export default function AssessmentSlotsPage() {
                         variant="ghost"
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-white"
                         onClick={() => openEdit(slot)}
-                        title="Edit slot"
+                        title="Edit date"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -290,7 +353,7 @@ export default function AssessmentSlotsPage() {
                         variant="ghost"
                         className={`h-8 w-8 p-0 ${slot.isActive ? "text-green-400 hover:text-green-300" : "text-muted-foreground hover:text-white"}`}
                         onClick={() => toggleMutation.mutate({ id: slot.id, isActive: !slot.isActive })}
-                        title={slot.isActive ? "Deactivate slot" : "Activate slot"}
+                        title={slot.isActive ? "Deactivate date" : "Activate date"}
                         disabled={toggleMutation.isPending}
                       >
                         {slot.isActive
@@ -310,67 +373,96 @@ export default function AssessmentSlotsPage() {
       <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
         <DialogContent className="bg-[#0F1923] border-border text-white max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-white">{editingSlot ? "Edit Slot" : "New Assessment Slot"}</DialogTitle>
+            <DialogTitle className="text-white">
+              {editingSlot ? "Edit Assessment Date" : "New Assessment Date"}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* Date */}
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">Date <span className="text-red-400">*</span></Label>
+              <Label className="text-muted-foreground">
+                Date <span className="text-red-400">*</span>
+              </Label>
               <Input
                 type="date"
                 value={form.date}
-                onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                onChange={(e) => setF("date", e.target.value)}
                 className="bg-[#1A2535] border-border text-white"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground">Start Time <span className="text-red-400">*</span></Label>
-                <Input
-                  value={form.startTime}
-                  onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
-                  placeholder="10:00 AM"
-                  className="bg-[#1A2535] border-border text-white"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground">End Time <span className="text-red-400">*</span></Label>
-                <Input
-                  value={form.endTime}
-                  onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
-                  placeholder="10:30 AM"
-                  className="bg-[#1A2535] border-border text-white"
-                />
+            {/* Start Time */}
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">
+                Start Time <span className="text-red-400">*</span>
+              </Label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Hour</p>
+                  <TimeSelect value={form.startHour}   onChange={(v) => setF("startHour", v)}   options={HOURS} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Minute</p>
+                  <TimeSelect value={form.startMinute} onChange={(v) => setF("startMinute", v)} options={MINUTES} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">AM / PM</p>
+                  <TimeSelect value={form.startAmPm}   onChange={(v) => setF("startAmPm", v as "AM"|"PM")} options={["AM","PM"]} />
+                </div>
               </div>
             </div>
 
+            {/* End Time */}
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">
+                End Time <span className="text-red-400">*</span>
+              </Label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Hour</p>
+                  <TimeSelect value={form.endHour}   onChange={(v) => setF("endHour", v)}   options={HOURS} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Minute</p>
+                  <TimeSelect value={form.endMinute} onChange={(v) => setF("endMinute", v)} options={MINUTES} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">AM / PM</p>
+                  <TimeSelect value={form.endAmPm}   onChange={(v) => setF("endAmPm", v as "AM"|"PM")} options={["AM","PM"]} />
+                </div>
+              </div>
+            </div>
+
+            {/* Capacity */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground">Capacity</Label>
               <Input
                 type="number"
                 min={1}
                 value={form.capacity}
-                onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
+                onChange={(e) => setF("capacity", e.target.value)}
                 className="bg-[#1A2535] border-border text-white"
               />
             </div>
 
+            {/* Notes */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground">Notes</Label>
               <Textarea
                 value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Optional notes for this slot"
+                onChange={(e) => setF("notes", e.target.value)}
+                placeholder="Optional notes for this date"
                 rows={2}
                 className="bg-[#1A2535] border-border text-white resize-none"
               />
             </div>
 
+            {/* Active toggle */}
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => setForm((f) => ({ ...f, isActive: !f.isActive }))}
+                onClick={() => setF("isActive", !form.isActive)}
                 className={`flex items-center gap-2 text-sm transition-colors ${form.isActive ? "text-green-400" : "text-muted-foreground"}`}
               >
                 {form.isActive ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
@@ -386,10 +478,10 @@ export default function AssessmentSlotsPage() {
             <Button
               onClick={handleSubmit}
               disabled={isSaving}
-              className="bg-[#8A5CFF] hover:bg-[#7A4CEF] text-white"
+              className="bg-[#00B6D6] hover:bg-[#0097B2] text-black"
             >
               {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {editingSlot ? "Save Changes" : "Create Slot"}
+              {editingSlot ? "Save Changes" : "Create Date"}
             </Button>
           </DialogFooter>
         </DialogContent>

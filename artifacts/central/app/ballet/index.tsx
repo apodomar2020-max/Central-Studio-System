@@ -18,7 +18,8 @@
  */
 
 import React, { useEffect } from "react";
-import { ActivityIndicator, Platform, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,6 +28,8 @@ import {
   ACTIVE_APPLICATION_STATUSES,
 } from "@/services/balletAssessmentService";
 import colors from "@/constants/colors";
+
+const BALLET_COLOR = "#00B6D6";
 
 export default function BalletGate() {
   const insets = useSafeAreaInsets();
@@ -56,15 +59,53 @@ export default function BalletGate() {
 
   return (
     <View
-      style={{
-        flex: 1,
-        backgroundColor: colors.studio.background,
-        alignItems: "center",
-        justifyContent: "center",
-        paddingTop: Platform.OS === "web" ? 67 : insets.top,
-      }}
+      style={[
+        gateStyles.container,
+        { paddingTop: Platform.OS === "web" ? 67 : insets.top },
+      ]}
     >
-      <ActivityIndicator size="large" color="#A78BFA" />
+      <View style={gateStyles.iconWrap}>
+        <Ionicons name="musical-notes" size={36} color={BALLET_COLOR} />
+      </View>
+      <Text style={gateStyles.title}>Ballet Program</Text>
+      <Text style={gateStyles.subtitle}>Loading your details…</Text>
+      <ActivityIndicator
+        size="small"
+        color={BALLET_COLOR}
+        style={gateStyles.spinner}
+      />
     </View>
   );
 }
+
+const gateStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.studio.background,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  iconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: `${BALLET_COLOR}18`,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: `${BALLET_COLOR}30`,
+  },
+  title: {
+    fontSize: 20,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+  },
+  subtitle: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: "#6B7280",
+  },
+  spinner: { marginTop: 12 },
+});

@@ -155,7 +155,7 @@ export default function ApplicationsPage() {
               className={[
                 "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                 activeStatus === tab.value
-                  ? "bg-[#8A5CFF] text-white"
+                  ? "bg-[#00B6D6] text-black"
                   : "text-[#8A9AB0] hover:text-white hover:bg-white/5",
               ].join(" ")}
             >

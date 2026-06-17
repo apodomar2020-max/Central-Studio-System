@@ -79,7 +79,7 @@ const TYPE_COLORS: Record<NotifType, string> = {
   booking: colors.studio.primary,
   class_reminder: "#F59E0B",
   package: "#22C55E",
-  ballet: "#A78BFA",
+  ballet: "#00B6D6",
   offer: "#EC4899",
   system: "#6B7280",
 };

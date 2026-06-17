@@ -49,8 +49,8 @@ const colors = {
     border: "#1E2E38",
   },
   stage: {
-    primary: "#8A5CFF",
-    accent: "#B892FF",
+    primary: "#00B6D6",
+    accent: "#33C8E0",
     background: "#08080D",
     card: "#10101A",
     cardLight: "#18182A",

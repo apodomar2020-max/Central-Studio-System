@@ -37,7 +37,7 @@ import StepIndicator from "@/components/StepIndicator";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 
-const BALLET_COLOR = "#A78BFA";
+const BALLET_COLOR = "#00B6D6";
 const STEPS = ["About You", "Child Info", "Experience", "Select Slot", "Review"];
 
 type FormData = {
@@ -332,7 +332,7 @@ const dpStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 0,
-    backgroundColor: "#1A0D2D",
+    backgroundColor: "#071418",
     borderRadius: 16,
     padding: 16,
   },
@@ -1032,13 +1032,13 @@ const styles = StyleSheet.create({
   levelsInfo: {
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#A78BFA30",
+    borderColor: "#00B6D630",
     padding: 14,
-    backgroundColor: "#1A0D2D",
+    backgroundColor: "#071418",
     gap: 10,
     marginTop: 4,
   },
-  levelsInfoTitle: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#A78BFA" },
+  levelsInfoTitle: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#00B6D6" },
   levelsList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   levelItem: { flexDirection: "row", alignItems: "center", gap: 5, width: "47%" },
   levelDot: { width: 6, height: 6, borderRadius: 3 },
@@ -1061,7 +1061,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     borderWidth: 1,
-    backgroundColor: "#1A0D2D",
+    backgroundColor: "#071418",
   },
   slotReviewLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
   slotReviewValue: { fontSize: 15, fontFamily: "Inter_700Bold" },

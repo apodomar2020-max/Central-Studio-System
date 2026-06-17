@@ -409,7 +409,7 @@ export default function ApplicationDetailPage() {
               size="sm"
               disabled={!newStatus || statusMutation.isPending}
               onClick={() => statusMutation.mutate()}
-              style={{ background: "#8A5CFF", color: "#fff" }}
+              style={{ background: "#00B6D6", color: "#000" }}
               className="w-full"
             >
               {statusMutation.isPending ? (
@@ -444,7 +444,7 @@ export default function ApplicationDetailPage() {
                 size="sm"
                 disabled={!newLevelId || levelMutation.isPending}
                 onClick={() => levelMutation.mutate()}
-                style={{ background: "#8A5CFF", color: "#fff" }}
+                style={{ background: "#00B6D6", color: "#000" }}
                 className="w-full"
               >
                 {levelMutation.isPending ? (
@@ -470,7 +470,7 @@ export default function ApplicationDetailPage() {
                     {/* Dot */}
                     <div
                       className="absolute left-1.5 top-1.5 h-3 w-3 rounded-full border-2 border-background"
-                      style={{ background: "#8A5CFF" }}
+                      style={{ background: "#00B6D6" }}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">

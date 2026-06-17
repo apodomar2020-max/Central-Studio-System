@@ -38,7 +38,7 @@ const TABS = ["Upcoming", "Past", "Cancelled"] as const;
 
 // ─── Ballet Assessment card ───────────────────────────────────────────────────
 
-const BALLET_COLOR = "#A78BFA";
+const BALLET_COLOR = "#00B6D6";
 
 interface BalletStatusInfo {
   label: string;
@@ -117,7 +117,7 @@ const balletCardStyles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: BALLET_COLOR + "30",
-    backgroundColor: "#1A0D2D",
+    backgroundColor: "#071418",
     overflow: "hidden",
     marginBottom: 10,
   },

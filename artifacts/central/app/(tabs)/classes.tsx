@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
+  ImageBackground,
   Platform,
   RefreshControl,
   StyleSheet,
@@ -44,41 +44,31 @@ const AGE_GROUPS: { key: AgeGroup | "All"; label: string; icon: string }[] = [
 
 const BALLET_CATEGORY = DANCE_CATEGORIES.find((c) => c.isBallet);
 
-// ─── Ballet card meta ─────────────────────────────────────────────────────────
+// ─── Ballet card ──────────────────────────────────────────────────────────────
 
-const BALLET_COLOR = "#A78BFA";
+const BALLET_COLOR = "#00B6D6";
 
-interface BalletCardMeta {
-  title: string;
-  desc: string;
-  badge: string;
-  badgeColor: string;
-  cta: string;
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-}
+// Statuses that mean the parent has an active/pending application → Details mode
+const DETAIL_MODE_STATUSES = new Set([
+  "submitted", "pendingAssessment", "needsFollowUp",
+  "accepted", "assignedToLevel", "activeBallet",
+]);
 
-function getBalletMeta(status: string | null): BalletCardMeta {
+function getStatusBadgeLabel(status: string): string {
   switch (status) {
-    case "submitted":
-      return { title: "Application Submitted", desc: "Your application is under review", badge: "UNDER REVIEW", badgeColor: "#F59E0B", cta: "View Status", icon: "time-outline" };
-    case "pendingAssessment":
-      return { title: "Assessment Scheduled", desc: "Your appointment is confirmed", badge: "SCHEDULED", badgeColor: "#60A5FA", cta: "View Status", icon: "calendar-outline" };
-    case "needsFollowUp":
-      return { title: "Follow-up Required", desc: "Our team needs more information", badge: "FOLLOW-UP", badgeColor: "#F59E0B", cta: "View Status", icon: "chatbubble-ellipses-outline" };
-    case "accepted":
-      return { title: "Accepted!", desc: "Your child has been accepted into ballet", badge: "ACCEPTED", badgeColor: "#22C55E", cta: "View Details", icon: "checkmark-circle" };
-    case "assignedToLevel":
-      return { title: "Level Assigned", desc: "Your child has been assigned a ballet level", badge: "LEVEL ASSIGNED", badgeColor: BALLET_COLOR, cta: "View Details", icon: "ribbon-outline" };
-    case "activeBallet":
-      return { title: "Active Ballet Student", desc: "Your child is an active ballet student", badge: "ACTIVE", badgeColor: BALLET_COLOR, cta: "View Details", icon: "star-outline" };
-    case "rejected":
-      return { title: "Not Accepted", desc: "You may submit a new application", badge: "NOT ACCEPTED", badgeColor: "#EF4444", cta: "Apply Again", icon: "close-circle-outline" };
-    case "cancelled":
-      return { title: "Application Cancelled", desc: "Submit a new application at any time", badge: "CANCELLED", badgeColor: "#6B7280", cta: "Apply Again", icon: "ban-outline" };
-    default:
-      return { title: "Ballet Programme", desc: "By assessment only — apply to join our classes", badge: "ASSESSMENT", badgeColor: BALLET_COLOR, cta: "Apply Now", icon: "musical-notes-outline" };
+    case "submitted":         return "UNDER REVIEW";
+    case "pendingAssessment": return "SCHEDULED";
+    case "needsFollowUp":     return "FOLLOW-UP";
+    case "accepted":          return "ACCEPTED";
+    case "assignedToLevel":   return "LEVEL ASSIGNED";
+    case "activeBallet":      return "ACTIVE";
+    case "rejected":          return "NOT ACCEPTED";
+    case "cancelled":         return "CANCELLED";
+    default:                  return status.toUpperCase();
   }
 }
+
+const BALLET_PILLS = ["Professional Instructors", "Level Assessment", "Performance Opportunities"] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -91,19 +81,22 @@ export default function ClassesScreen() {
   // ── Ballet application status ──────────────────────────────────────────────
   const [balletStatus, setBalletStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    fetchMyApplications(ctrl.signal)
-      .then((apps) => {
-        if (ctrl.signal.aborted) return;
-        const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
-        setBalletStatus(active?.status ?? apps[0]?.status ?? null);
-      })
-      .catch(() => {
-        // silently ignore — card defaults to "Apply Now" state
-      });
-    return () => ctrl.abort();
-  }, []);
+  // Re-fetch on every focus so the card stays accurate after returning from assessment/status screens
+  useFocusEffect(
+    useCallback(() => {
+      const ctrl = new AbortController();
+      fetchMyApplications(ctrl.signal)
+        .then((apps) => {
+          if (ctrl.signal.aborted) return;
+          const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
+          setBalletStatus(active?.status ?? apps[0]?.status ?? null);
+        })
+        .catch(() => {
+          // silently ignore — card defaults to Apply mode
+        });
+      return () => ctrl.abort();
+    }, [])
+  );
 
   // Live data from the backend API. Categories are not yet exposed by the API,
   // so the mock category list still drives the section grouping below.
@@ -228,47 +221,64 @@ export default function ClassesScreen() {
       ) : (
         <>
       {BALLET_CATEGORY && (() => {
-        const meta = getBalletMeta(balletStatus);
+        const isDetailMode = balletStatus !== null && DETAIL_MODE_STATUSES.has(balletStatus);
+        const ctaLabel = isDetailMode ? "View Details" : "Apply for\nAssessment";
+        const ctaRoute = isDetailMode ? "/ballet/application-status" : "/ballet/assessment";
+
         return (
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push("/ballet" as any);
+              router.push(ctaRoute as any);
             }}
             activeOpacity={0.88}
             style={styles.balletCardWrap}
           >
-            <LinearGradient
-              colors={["#1F0F3D", "#120820", "#0A0514"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[styles.balletCard, { borderColor: meta.badgeColor + "30" }]}
+            <ImageBackground
+              source={require("@/assets/images/studio_hero.png")}
+              style={styles.balletCard}
+              imageStyle={styles.balletCardImage}
             >
-              {/* Top row */}
-              <View style={styles.balletCardTop}>
-                <View style={[styles.balletIconCircle, { backgroundColor: meta.badgeColor + "1A" }]}>
-                  <Ionicons name={meta.icon} size={22} color={meta.badgeColor} />
-                </View>
-                <View style={styles.balletCardText}>
-                  <Text style={styles.balletCardTitle}>{meta.title}</Text>
-                  <Text style={styles.balletCardDesc}>{meta.desc}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={14} color={meta.badgeColor + "99"} />
-              </View>
+              {/* Dark overlay */}
+              <View style={styles.balletOverlay} />
 
-              {/* Bottom row */}
-              <View style={styles.balletCardBottom}>
-                <View style={[styles.balletStatusBadge, { backgroundColor: meta.badgeColor + "1A", borderColor: meta.badgeColor + "40" }]}>
-                  <Text style={[styles.balletStatusBadgeText, { color: meta.badgeColor }]}>
-                    {meta.badge}
+              {/* Status badge — top-right corner, only if an application exists */}
+              {balletStatus && (
+                <View style={styles.balletStatusBadge}>
+                  <Text style={styles.balletStatusBadgeText}>
+                    {getStatusBadgeLabel(balletStatus)}
                   </Text>
                 </View>
-                <View style={[styles.balletCtaBtn, { backgroundColor: meta.badgeColor + "15" }]}>
-                  <Text style={[styles.balletCtaText, { color: meta.badgeColor }]}>{meta.cta}</Text>
-                  <Ionicons name="arrow-forward" size={11} color={meta.badgeColor} />
+              )}
+
+              {/* Card body */}
+              <View style={styles.balletCardContent}>
+                {/* Left: icon + text + pills */}
+                <View style={styles.balletCardLeft}>
+                  <View style={styles.balletIconCircle}>
+                    <Ionicons name="musical-notes" size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.balletTitle}>Ballet Program</Text>
+                  <Text style={styles.balletSubtitle}>
+                    Classical Ballet Program{"\n"}For ages 4–12 years
+                  </Text>
+                  <View style={styles.balletPills}>
+                    {BALLET_PILLS.map((pill) => (
+                      <View key={pill} style={styles.balletPill}>
+                        <Text style={styles.balletPillText}>{pill}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Right: CTA button */}
+                <View style={styles.balletCtaWrap}>
+                  <View style={styles.balletCtaBtn}>
+                    <Text style={styles.balletCtaBtnText}>{ctaLabel}</Text>
+                  </View>
                 </View>
               </View>
-            </LinearGradient>
+            </ImageBackground>
           </TouchableOpacity>
         );
       })()}
@@ -374,48 +384,84 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
   },
   balletCardWrap: { marginHorizontal: 20, marginBottom: 12 },
-  balletCard: {
+  balletCard: { borderRadius: 18, minHeight: 160, overflow: "hidden" },
+  balletCardImage: { borderRadius: 18 },
+  balletOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(4, 14, 22, 0.78)",
     borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
-    gap: 12,
-  },
-  balletCardTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  balletIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  balletCardText: { flex: 1 },
-  balletCardTitle: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  balletCardDesc: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: 2 },
-  balletCardBottom: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
   balletStatusBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
+    position: "absolute",
+    top: 10,
+    right: 12,
+    backgroundColor: "rgba(0,182,214,0.18)",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderWidth: 1,
+    borderColor: "rgba(0,182,214,0.4)",
   },
-  balletStatusBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", letterSpacing: 0.8 },
-  balletCtaBtn: {
+  balletStatusBadgeText: {
+    fontSize: 8,
+    fontFamily: "Inter_700Bold",
+    color: BALLET_COLOR,
+    letterSpacing: 0.6,
+  },
+  balletCardContent: {
     flexDirection: "row",
+    padding: 14,
+    paddingTop: 16,
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    gap: 10,
   },
-  balletCtaText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  balletCardLeft: { flex: 1, gap: 4 },
+  balletIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  balletTitle: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  balletSubtitle: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.65)",
+    lineHeight: 16,
+  },
+  balletPills: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 8 },
+  balletPill: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  balletPillText: {
+    fontSize: 9,
+    fontFamily: "Inter_500Medium",
+    color: "rgba(255,255,255,0.8)",
+  },
+  balletCtaWrap: { alignItems: "center", justifyContent: "center" },
+  balletCtaBtn: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 80,
+    maxWidth: 96,
+  },
+  balletCtaBtnText: {
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
+    color: BALLET_COLOR,
+    textAlign: "center",
+    lineHeight: 15,
+  },
   resultCount: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",

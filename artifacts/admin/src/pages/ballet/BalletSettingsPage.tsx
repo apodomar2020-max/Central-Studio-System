@@ -173,7 +173,7 @@ export default function BalletSettingsPage() {
           <Button
             onClick={handleSave}
             disabled={saveMutation.isPending}
-            className="bg-[#8A5CFF] hover:bg-[#7A4CEF] text-white gap-2"
+            className="bg-[#00B6D6] hover:bg-[#0097B2] text-white gap-2"
           >
             {saveMutation.isPending
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -186,7 +186,7 @@ export default function BalletSettingsPage() {
       {/* Loading */}
       {isLoading && (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-[#8A5CFF]" />
+          <Loader2 className="h-6 w-6 animate-spin text-[#00B6D6]" />
         </div>
       )}
 
@@ -314,7 +314,7 @@ export default function BalletSettingsPage() {
               <Button
                 onClick={handleSave}
                 disabled={saveMutation.isPending}
-                className="bg-[#8A5CFF] hover:bg-[#7A4CEF] text-white gap-2"
+                className="bg-[#00B6D6] hover:bg-[#0097B2] text-white gap-2"
               >
                 {saveMutation.isPending
                   ? <Loader2 className="h-4 w-4 animate-spin" />

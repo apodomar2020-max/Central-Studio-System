@@ -170,7 +170,7 @@ export default function BalletLevelsPage() {
             Manage ballet level definitions, progression order, and visibility.
           </p>
         </div>
-        <Button onClick={openCreate} className="bg-[#8A5CFF] hover:bg-[#7A4CEF] text-white gap-2">
+        <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-white gap-2">
           <Plus className="h-4 w-4" />
           New Level
         </Button>
@@ -179,7 +179,7 @@ export default function BalletLevelsPage() {
       {/* Loading */}
       {isLoading && (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-[#8A5CFF]" />
+          <Loader2 className="h-6 w-6 animate-spin text-[#00B6D6]" />
         </div>
       )}
 
@@ -194,8 +194,8 @@ export default function BalletLevelsPage() {
       {/* Empty */}
       {!isLoading && !isError && levels.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-          <div className="rounded-full bg-[#8A5CFF]/10 p-4">
-            <GripVertical className="h-8 w-8 text-[#8A5CFF]" />
+          <div className="rounded-full bg-[#00B6D6]/10 p-4">
+            <GripVertical className="h-8 w-8 text-[#00B6D6]" />
           </div>
           <p className="text-sm text-muted-foreground">No ballet levels found. Add your first level.</p>
         </div>
@@ -309,7 +309,7 @@ export default function BalletLevelsPage() {
             <Button
               onClick={handleSubmit}
               disabled={isSaving}
-              className="bg-[#8A5CFF] hover:bg-[#7A4CEF] text-white"
+              className="bg-[#00B6D6] hover:bg-[#0097B2] text-white"
             >
               {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {editingLevel ? "Save Changes" : "Create Level"}

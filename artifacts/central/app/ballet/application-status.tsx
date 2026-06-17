@@ -40,7 +40,7 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import OfflineState from "@/components/OfflineState";
 
-const BALLET_COLOR = "#A78BFA";
+const BALLET_COLOR = "#00B6D6";
 
 // ─── Status meta ──────────────────────────────────────────────────────────────
 

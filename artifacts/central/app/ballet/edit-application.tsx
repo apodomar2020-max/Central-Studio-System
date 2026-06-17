@@ -43,7 +43,7 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import OfflineState from "@/components/OfflineState";
 
-const BALLET_COLOR = "#A78BFA";
+const BALLET_COLOR = "#00B6D6";
 
 // ─── Form types ───────────────────────────────────────────────────────────────
 
@@ -489,7 +489,7 @@ const styles = StyleSheet.create({
   scroll: { padding: 20, gap: 14, paddingBottom: 24 },
   summaryCard: {
     borderRadius: 16, borderWidth: 1, borderColor: BALLET_COLOR + "30",
-    padding: 14, backgroundColor: "#1A0D2D", gap: 4, marginBottom: 4,
+    padding: 14, backgroundColor: "#071418", gap: 4, marginBottom: 4,
   },
   summaryTitle: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   summaryMeta: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
