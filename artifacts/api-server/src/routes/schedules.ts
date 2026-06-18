@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { db, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
 import {
   ListSchedulesQueryParams,
@@ -14,6 +14,69 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+const SCHEDULE_TYPES = ["weekly", "one_time"] as const;
+type ScheduleType = (typeof SCHEDULE_TYPES)[number];
+
+type ScheduleInput = {
+  classId?: number;
+  type?: ScheduleType;
+  dayOfWeek?: number | null;
+  date?: string | null;
+  startTime?: string;
+  endTime?: string;
+  priceEgp?: number | null;
+  packageEligible?: boolean;
+  location?: string | null;
+  isRecurring?: boolean;
+  effectiveFrom?: string | null;
+  effectiveUntil?: string | null;
+};
+
+function dayOfWeekFromDate(date: string): number | null {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getUTCDay();
+}
+
+function normalizeScheduleInput(
+  input: ScheduleInput,
+  existing?: typeof schedulesTable.$inferSelect,
+): ScheduleInput | { error: string } {
+  const merged = { ...(existing ?? {}), ...input } as ScheduleInput;
+  const type = merged.type ?? (merged.isRecurring === false ? "one_time" : "weekly");
+
+  if (!SCHEDULE_TYPES.includes(type)) {
+    return { error: "Schedule type must be weekly or one_time." };
+  }
+
+  if (type === "weekly") {
+    if (merged.dayOfWeek == null || merged.dayOfWeek < 0 || merged.dayOfWeek > 6) {
+      return { error: "Weekly schedules require a valid dayOfWeek." };
+    }
+
+    return {
+      ...input,
+      type,
+      dayOfWeek: merged.dayOfWeek,
+      date: null,
+      isRecurring: true,
+      packageEligible: merged.packageEligible ?? true,
+    };
+  }
+
+  if (!merged.date) {
+    return { error: "One-time schedules require a date." };
+  }
+
+  return {
+    ...input,
+    type,
+    dayOfWeek: merged.dayOfWeek ?? dayOfWeekFromDate(merged.date),
+    date: merged.date,
+    isRecurring: false,
+    packageEligible: merged.packageEligible ?? true,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // GET /schedules/today
@@ -30,12 +93,17 @@ const router: IRouter = Router();
 // ---------------------------------------------------------------------------
 router.get("/schedules/today", async (req, res): Promise<void> => {
   const todayDow = new Date().getDay(); // 0=Sun … 6=Sat
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   const rows = await db
     .select({
       scheduleId: schedulesTable.id,
+      scheduleType: schedulesTable.type,
       classId: classesTable.id,
       classTitle: classesTable.title,
+      scheduleDate: schedulesTable.date,
+      packageEligible: schedulesTable.packageEligible,
+      priceEgp: schedulesTable.priceEgp,
       startTime: schedulesTable.startTime,
       endTime: schedulesTable.endTime,
       location: schedulesTable.location,
@@ -44,7 +112,10 @@ router.get("/schedules/today", async (req, res): Promise<void> => {
     .from(schedulesTable)
     .innerJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
-    .where(eq(schedulesTable.dayOfWeek, todayDow))
+    .where(or(
+      and(eq(schedulesTable.type, "weekly"), eq(schedulesTable.dayOfWeek, todayDow)),
+      and(eq(schedulesTable.type, "one_time"), eq(schedulesTable.date, todayIso)),
+    ))
     .orderBy(schedulesTable.startTime);
 
   res.json(rows);
@@ -58,9 +129,16 @@ router.get("/schedules", async (req, res): Promise<void> => {
   }
   let rows;
   if (query.data.classId != null) {
-    rows = await db.select().from(schedulesTable).where(eq(schedulesTable.classId, query.data.classId));
+    rows = await db
+      .select()
+      .from(schedulesTable)
+      .where(eq(schedulesTable.classId, query.data.classId))
+      .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
   } else {
-    rows = await db.select().from(schedulesTable).orderBy(schedulesTable.dayOfWeek);
+    rows = await db
+      .select()
+      .from(schedulesTable)
+      .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
   }
   res.json(ListSchedulesResponse.parse(rows));
 });
@@ -71,7 +149,12 @@ router.post("/schedules", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.insert(schedulesTable).values(parsed.data).returning();
+  const normalized = normalizeScheduleInput(parsed.data);
+  if ("error" in normalized) {
+    res.status(400).json({ error: normalized.error });
+    return;
+  }
+  const [row] = await db.insert(schedulesTable).values(normalized).returning();
   res.status(201).json(GetScheduleResponse.parse(row));
 });
 
@@ -100,7 +183,17 @@ router.patch("/schedules/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.update(schedulesTable).set(parsed.data).where(eq(schedulesTable.id, params.data.id)).returning();
+  const [existing] = await db.select().from(schedulesTable).where(eq(schedulesTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Schedule not found" });
+    return;
+  }
+  const normalized = normalizeScheduleInput(parsed.data, existing);
+  if ("error" in normalized) {
+    res.status(400).json({ error: normalized.error });
+    return;
+  }
+  const [row] = await db.update(schedulesTable).set(normalized).where(eq(schedulesTable.id, params.data.id)).returning();
   if (!row) {
     res.status(404).json({ error: "Schedule not found" });
     return;

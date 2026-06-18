@@ -149,9 +149,16 @@ export interface UpdateClassBody {
 export interface Schedule {
   id: number;
   classId: number;
-  dayOfWeek: number;
+  type: "weekly" | "one_time";
+  /** @nullable */
+  dayOfWeek?: number | null;
+  /** @nullable */
+  date?: string | null;
   startTime: string;
   endTime: string;
+  /** @nullable */
+  priceEgp?: number | null;
+  packageEligible: boolean;
   /** @nullable */
   location?: string | null;
   isRecurring: boolean;
@@ -164,9 +171,16 @@ export interface Schedule {
 
 export interface CreateScheduleBody {
   classId: number;
-  dayOfWeek: number;
+  type?: "weekly" | "one_time";
+  /** @nullable */
+  dayOfWeek?: number | null;
+  /** @nullable */
+  date?: string | null;
   startTime: string;
   endTime: string;
+  /** @nullable */
+  priceEgp?: number | null;
+  packageEligible?: boolean;
   /** @nullable */
   location?: string | null;
   isRecurring?: boolean;
@@ -178,9 +192,16 @@ export interface CreateScheduleBody {
 
 export interface UpdateScheduleBody {
   classId?: number;
-  dayOfWeek?: number;
+  type?: "weekly" | "one_time";
+  /** @nullable */
+  dayOfWeek?: number | null;
+  /** @nullable */
+  date?: string | null;
   startTime?: string;
   endTime?: string;
+  /** @nullable */
+  priceEgp?: number | null;
+  packageEligible?: boolean;
   /** @nullable */
   location?: string | null;
   isRecurring?: boolean;
@@ -274,11 +295,18 @@ export interface Booking {
   /** @nullable — 0 = Sunday … 6 = Saturday */
   scheduleDayOfWeek?: number | null;
   /** @nullable */
+  scheduleType?: "weekly" | "one_time" | null;
+  /** @nullable */
+  scheduleDate?: string | null;
+  /** @nullable */
   scheduleStartTime?: string | null;
   /** @nullable */
   scheduleEndTime?: string | null;
   /** @nullable */
   scheduleLocation?: string | null;
+  /** @nullable */
+  schedulePriceEgp?: number | null;
+  schedulePackageEligible?: boolean;
   /** @nullable — e.g. "Sunday • 6:00 PM - 7:00 PM" */
   scheduleLabel?: string | null;
   /** @nullable — classTitle, falling back to "Booking #id" */

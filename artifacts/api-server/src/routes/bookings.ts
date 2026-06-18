@@ -71,9 +71,13 @@ router.get("/bookings", async (req, res): Promise<void> => {
       instructorName: instructorsTable.name,
       instructorPhotoUrl: instructorsTable.photoUrl,
       scheduleDayOfWeek: schedulesTable.dayOfWeek,
+      scheduleType: schedulesTable.type,
+      scheduleDate: schedulesTable.date,
       scheduleStartTime: schedulesTable.startTime,
       scheduleEndTime: schedulesTable.endTime,
       scheduleLocation: schedulesTable.location,
+      schedulePriceEgp: schedulesTable.priceEgp,
+      schedulePackageEligible: schedulesTable.packageEligible,
       attendanceId: attendanceTable.id,
     })
     .from(bookingsTable)
@@ -93,9 +97,19 @@ router.get("/bookings", async (req, res): Promise<void> => {
       r.scheduleDayOfWeek != null ? DAY_NAMES[r.scheduleDayOfWeek] ?? null : null;
     const start = formatTime(r.scheduleStartTime);
     const end = formatTime(r.scheduleEndTime);
+    const scheduleDate = r.scheduleDate ?? null;
+    const dateLabel = scheduleDate
+      ? new Date(`${scheduleDate}T00:00:00Z`).toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+        })
+      : null;
     // scheduleLabel: "Sunday • 6:00 PM - 7:00 PM" — null when no schedule joined.
     const scheduleLabel =
-      dayName && start && end ? `${dayName} • ${start} - ${end}` : null;
+      (r.scheduleType === "one_time" ? dateLabel : dayName) && start && end
+        ? `${r.scheduleType === "one_time" ? dateLabel : dayName} • ${start} - ${end}`
+        : null;
     const existing = enrichedById.get(r.booking.id);
     enrichedById.set(r.booking.id, {
       ...(existing ?? {}),
@@ -107,9 +121,13 @@ router.get("/bookings", async (req, res): Promise<void> => {
       instructorName: r.instructorName ?? null,
       instructorPhotoUrl: r.instructorPhotoUrl ?? null,
       scheduleDayOfWeek: r.scheduleDayOfWeek ?? null,
+      scheduleType: r.scheduleType ?? null,
+      scheduleDate,
       scheduleStartTime: r.scheduleStartTime ?? null,
       scheduleEndTime: r.scheduleEndTime ?? null,
       scheduleLocation: r.scheduleLocation ?? null,
+      schedulePriceEgp: r.schedulePriceEgp ?? null,
+      schedulePackageEligible: r.schedulePackageEligible ?? true,
       scheduleLabel,
       displayTitle: r.classTitle ?? `Booking #${r.booking.id}`,
       hasAttendance: Boolean(existing?.hasAttendance || r.attendanceId),
@@ -127,6 +145,23 @@ router.post("/bookings", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  if (parsed.data.packageOrderId != null && parsed.data.scheduleId != null) {
+    const [schedule] = await db
+      .select({ packageEligible: schedulesTable.packageEligible })
+      .from(schedulesTable)
+      .where(eq(schedulesTable.id, parsed.data.scheduleId))
+      .limit(1);
+
+    if (schedule?.packageEligible === false) {
+      res.status(400).json({
+        error: "package_not_eligible",
+        message: "This schedule is not eligible for package credits.",
+      });
+      return;
+    }
+  }
+
   const [row] = await db.insert(bookingsTable).values(parsed.data).returning();
   res.status(201).json(GetBookingResponse.parse(row));
 });

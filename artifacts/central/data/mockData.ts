@@ -28,6 +28,8 @@ export interface Instructor {
 export interface DanceClass {
   id: string;
   scheduleId?: string;
+  scheduleType?: "weekly" | "one_time";
+  packageEligible?: boolean;
   categoryId: string;
   categoryName: string;
   instructorId: string;

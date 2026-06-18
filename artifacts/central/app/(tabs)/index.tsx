@@ -253,6 +253,7 @@ function ClassListCard({
   const available = item.capacity - item.bookedCount;
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
   const isBookable = hasSchedule && item.status !== "full";
+  const canUsePackageCredits = item.packageEligible !== false && packageCreditsRemaining > 0;
 
   const today = new Date().toISOString().slice(0, 10);
   const tomorrow = new Date();
@@ -329,7 +330,7 @@ function ClassListCard({
           {item.price > 0 ? `EGP ${item.price}` : "Price TBC"}
         </Text>
         <View style={styles.classCardBtns}>
-          {packageCreditsRemaining > 0 && (
+          {canUsePackageCredits && (
             <TouchableOpacity
               onPress={() => {
                 if (!isBookable) return;

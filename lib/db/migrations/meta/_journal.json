@@ -129,5 +129,13 @@
       "tag": "0015_help_support_faq_contacts",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1782043200000,
+      "tag": "0016_schedule_package_eligibility",
+      "breakpoints": true
+    }
   ]
 }

@@ -5,6 +5,7 @@ import {
   studentsTable,
   bookingsTable,
   packageOrdersTable,
+  schedulesTable,
   attendanceTable,
   creditTransactionsTable,
 } from "@workspace/db";
@@ -43,6 +44,7 @@ type CheckInErrorCode =
   | "package_required"
   | "package_not_found"
   | "invalid_package"
+  | "package_not_eligible"
   | "no_credits";
 
 interface CheckInError {
@@ -199,6 +201,22 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
         | null = null;
 
       if (paymentMode === "package_credit") {
+        if (booking.scheduleId != null) {
+          const [schedule] = await tx
+            .select({ packageEligible: schedulesTable.packageEligible })
+            .from(schedulesTable)
+            .where(eq(schedulesTable.id, booking.scheduleId))
+            .limit(1);
+
+          if (schedule?.packageEligible === false) {
+            throw makeError(
+              400,
+              "package_not_eligible",
+              "This schedule is not eligible for package credits.",
+            );
+          }
+        }
+
         const [order] = await tx
           .select({
             id: packageOrdersTable.id,

@@ -63,6 +63,8 @@ export default function BookingFlowScreen() {
   const activePackages = userPackages.filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0);
   const packageCreditsRemaining = activePackages.reduce((sum, pkg) => sum + pkg.remainingCredits, 0);
   const selectedPackage = activePackages[0];
+  const schedulePackageEligible = primarySchedule?.packageEligible ?? cls?.packageEligible ?? true;
+  const canUsePackageCredits = schedulePackageEligible && packageCreditsRemaining > 0;
 
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {
     query: { queryKey: ["instructor", classQuery.data?.instructorId ?? 0], enabled: !!classQuery.data?.instructorId },
@@ -84,7 +86,7 @@ export default function BookingFlowScreen() {
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
   const [refCodeState, setRefCodeState] = useState<"idle" | "valid" | "invalid">("idle");
   const selectedChild = children.find((child) => child.id === selectedChildId);
-  const isPackageMode = paymentMethod === "packageCredit";
+  const isPackageMode = paymentMethod === "packageCredit" && canUsePackageCredits;
   const isFirstBooking = bookings.length === 0;
   const finalPrice = isFirstBooking || isPackageMode ? 0 : (cls?.price ?? 0);
   const hasSchedule = Boolean(cls?.scheduleId && cls?.dayOfWeek && cls?.startTime);
@@ -100,13 +102,13 @@ export default function BookingFlowScreen() {
   }, [children, selectedChildId]);
 
   useEffect(() => {
-    if (!packageParamApplied && usePackage === "true" && packageCreditsRemaining > 0) {
+    if (!packageParamApplied && usePackage === "true" && canUsePackageCredits) {
       setPaymentMethod("packageCredit");
       setPackageParamApplied(true);
-    } else if (paymentMethod === "packageCredit" && packageCreditsRemaining === 0) {
+    } else if (paymentMethod === "packageCredit" && !canUsePackageCredits) {
       setPaymentMethod("cash");
     }
-  }, [packageCreditsRemaining, packageParamApplied, paymentMethod, usePackage]);
+  }, [canUsePackageCredits, packageParamApplied, paymentMethod, usePackage]);
 
   function handleApplyRefCode() {
     const code = refCodeInput.trim().toUpperCase();
@@ -167,6 +169,14 @@ export default function BookingFlowScreen() {
         "Schedule not set",
         "This class cannot be booked until the studio adds a day and time.",
       );
+      return;
+    }
+    if (paymentMethod === "packageCredit" && !canUsePackageCredits) {
+      Alert.alert(
+        "Package credits unavailable",
+        "This class is not eligible for package credits. Please choose Pay at Studio.",
+      );
+      setPaymentMethod("cash");
       return;
     }
     setLoading(true);
@@ -565,7 +575,7 @@ export default function BookingFlowScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
 
-                {packageCreditsRemaining > 0 && (
+                {canUsePackageCredits && (
                   <TouchableOpacity
                     onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("packageCredit"); }}
                     style={[
@@ -590,6 +600,15 @@ export default function BookingFlowScreen() {
                       <Text style={styles.paymentDesc}>Use 1 active package credit for this class.</Text>
                     </LinearGradient>
                   </TouchableOpacity>
+                )}
+
+                {!schedulePackageEligible && packageCreditsRemaining > 0 && (
+                  <View style={[styles.warningBanner, { backgroundColor: "#1E1E26", borderColor: "#2A2A35" }]}>
+                    <Ionicons name="information-circle-outline" size={16} color="#9CA3AF" />
+                    <Text style={[styles.warningText, { color: "#9CA3AF" }]}>
+                      Package credits are not available for this class.
+                    </Text>
+                  </View>
                 )}
 
                 {paymentMethod === "cash" && (

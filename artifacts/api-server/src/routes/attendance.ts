@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { db, attendanceTable, packageOrdersTable, creditTransactionsTable } from "@workspace/db";
+import { db, attendanceTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
 import {
   ListAttendanceQueryParams,
   ListAttendanceResponse,
@@ -17,6 +17,7 @@ const router: IRouter = Router();
 // ---------------------------------------------------------------------------
 type CheckInErrorCode =
   | "duplicate_attendance"
+  | "package_not_eligible"
   | "package_not_found"
   | "no_credits";
 
@@ -139,6 +140,22 @@ router.post("/attendance", async (req, res): Promise<void> => {
       // Step 2 — Credit deduction (with row-level lock for concurrency safety)
       // ------------------------------------------------------------------
       if (creditDeducted && packageOrderId != null) {
+        if (scheduleId != null) {
+          const [schedule] = await tx
+            .select({ packageEligible: schedulesTable.packageEligible })
+            .from(schedulesTable)
+            .where(eq(schedulesTable.id, scheduleId))
+            .limit(1);
+
+          if (schedule?.packageEligible === false) {
+            throw makeCheckInError(
+              400,
+              "package_not_eligible",
+              "This schedule is not eligible for package credits.",
+            );
+          }
+        }
+
         const [order] = await tx
           .select()
           .from(packageOrdersTable)

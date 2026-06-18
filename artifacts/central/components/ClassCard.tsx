@@ -49,6 +49,7 @@ export default function ClassCard({
   const scheduleLabel = getScheduleLabel(item);
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
   const isBookable = hasSchedule && item.status !== "full";
+  const canUsePackageCredits = item.packageEligible !== false && packageCreditsRemaining > 0;
   const priceLabel = purchaseMode === "package"
     ? "Uses 1 credit"
     : item.price > 0
@@ -56,7 +57,7 @@ export default function ClassCard({
       : "Price TBC";
   const badgeLabel = hasSchedule ? statusConfig.label : "Schedule not set";
   const badgeColor = hasSchedule ? statusConfig.color : "#6B7280";
-  const packageLabel = packageCreditsRemaining > 0
+  const packageLabel = canUsePackageCredits
     ? `Package • ${packageCreditsRemaining} left`
     : "No package credits";
 
@@ -133,7 +134,7 @@ export default function ClassCard({
           </View>
         </View>
         <View style={styles.actionRow}>
-          {packageCreditsRemaining > 0 && (
+          {canUsePackageCredits && (
             <TouchableOpacity
               onPress={() => {
                 if (!isBookable) return;

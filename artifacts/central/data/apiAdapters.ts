@@ -110,7 +110,21 @@ function coerceDayOfWeek(raw: unknown): number | null {
   return null;
 }
 
+function formatDateLabel(date: string): string {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
 function scheduleDateForWeek(schedule: ApiSchedule, weekStart: Date): string {
+  if (schedule.type === "one_time" && schedule.date) {
+    return schedule.date;
+  }
+
   // Map dayOfWeek (0=Sun…6=Sat) to an offset from Saturday.
   const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek) ?? 0;
   const offset = (dayOfWeek - 6 + 7) % 7;
@@ -125,6 +139,10 @@ function minutesFromTime(timeStr: string): number {
 }
 
 export function getNextScheduleOccurrenceDate(schedule: ApiSchedule, fromDate = new Date()): string {
+  if (schedule.type === "one_time" && schedule.date) {
+    return schedule.date;
+  }
+
   const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek) ?? fromDate.getDay();
   const base = new Date(fromDate);
   base.setHours(0, 0, 0, 0);
@@ -151,7 +169,10 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
   const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek);
   const startTime = formatTime(schedule.startTime);
   const endTime = formatTime(schedule.endTime);
-  const dayName = dayOfWeek == null ? "" : DAY_NAMES[dayOfWeek] ?? "";
+  const isOneTime = schedule.type === "one_time";
+  const dayName = isOneTime && schedule.date
+    ? formatDateLabel(schedule.date)
+    : dayOfWeek == null ? "" : DAY_NAMES[dayOfWeek] ?? "";
   const scheduleLabel = dayName
     ? `${dayName} • ${startTime}${endTime ? ` - ${endTime}` : ""}`
     : "Schedule not set";
@@ -159,12 +180,15 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
   return {
     ...cls,
     scheduleId: String(schedule.id),
+    scheduleType: schedule.type,
+    packageEligible: schedule.packageEligible ?? true,
     date: occurrenceDate ?? getNextScheduleOccurrenceDate(schedule),
     dayOfWeek: dayName,
     startTime,
     endTime,
     scheduleLabel,
     location: schedule.location ?? cls.location,
+    price: schedule.priceEgp ?? cls.price,
   };
 }
 
@@ -226,6 +250,7 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
     policy: "",
     featured: false,
     isBallet: category?.isBallet ?? false,
+    packageEligible: true,
   };
 }
 

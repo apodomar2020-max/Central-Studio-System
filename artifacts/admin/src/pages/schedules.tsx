@@ -31,17 +31,43 @@ const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const formSchema = z.object({
   classId: z.coerce.number().int().min(1, "Class is required"),
-  dayOfWeek: z.coerce.number().int().min(0).max(6),
+  type: z.enum(["weekly", "one_time"]).default("weekly"),
+  dayOfWeek: z.coerce.number().int().min(0).max(6).nullish(),
+  date: z.string().nullish(),
   startTime: z.string().min(1, "Start time required"),
   endTime: z.string().min(1, "End time required"),
+  priceEgp: z.preprocess(
+    (value) => value === "" || value == null ? null : Number(value),
+    z.number().int().min(0).nullish(),
+  ),
+  packageEligible: z.boolean().default(true),
   location: z.string().nullish(),
   isRecurring: z.boolean().default(true),
   effectiveFrom: z.string().nullish(),
   effectiveUntil: z.string().nullish(),
+}).superRefine((value, ctx) => {
+  if (value.type === "weekly" && value.dayOfWeek == null) {
+    ctx.addIssue({ code: "custom", path: ["dayOfWeek"], message: "Day of week is required" });
+  }
+  if (value.type === "one_time" && !value.date) {
+    ctx.addIssue({ code: "custom", path: ["date"], message: "Date is required" });
+  }
 });
 
 type FormValues = z.input<typeof formSchema>;
-type Schedule = { id: number; classId: number; dayOfWeek: number; startTime: string; endTime: string; location?: string | null; isRecurring: boolean };
+type Schedule = {
+  id: number;
+  classId: number;
+  type: "weekly" | "one_time";
+  dayOfWeek?: number | null;
+  date?: string | null;
+  startTime: string;
+  endTime: string;
+  priceEgp?: number | null;
+  packageEligible: boolean;
+  location?: string | null;
+  isRecurring: boolean;
+};
 
 export default function Schedules() {
   const { data: schedules, isLoading } = useListSchedules();
@@ -55,28 +81,66 @@ export default function Schedules() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { dayOfWeek: 1, startTime: "10:00", endTime: "11:00", isRecurring: true },
+    defaultValues: {
+      type: "weekly",
+      dayOfWeek: 1,
+      date: "",
+      startTime: "10:00",
+      endTime: "11:00",
+      priceEgp: null,
+      packageEligible: true,
+      isRecurring: true,
+    },
   });
+  const selectedType = form.watch("type");
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ dayOfWeek: 1, startTime: "10:00", endTime: "11:00", isRecurring: true });
+    form.reset({
+      type: "weekly",
+      dayOfWeek: 1,
+      date: "",
+      startTime: "10:00",
+      endTime: "11:00",
+      priceEgp: null,
+      packageEligible: true,
+      isRecurring: true,
+    });
     setOpen(true);
   };
 
   const openEdit = (s: Schedule) => {
     setEditing(s);
-    form.reset({ classId: s.classId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, location: s.location ?? "", isRecurring: s.isRecurring });
+    form.reset({
+      classId: s.classId,
+      type: s.type ?? (s.isRecurring ? "weekly" : "one_time"),
+      dayOfWeek: s.dayOfWeek ?? 1,
+      date: s.date ?? "",
+      startTime: s.startTime,
+      endTime: s.endTime,
+      priceEgp: s.priceEgp ?? null,
+      packageEligible: s.packageEligible ?? true,
+      location: s.location ?? "",
+      isRecurring: s.isRecurring,
+    });
     setOpen(true);
   };
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
+    const payload = {
+      ...parsed,
+      dayOfWeek: parsed.type === "weekly" ? parsed.dayOfWeek : parsed.dayOfWeek ?? undefined,
+      date: parsed.type === "one_time" ? parsed.date : null,
+      isRecurring: parsed.type === "weekly",
+      priceEgp: parsed.priceEgp ?? null,
+      packageEligible: parsed.packageEligible,
+    };
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() }); setOpen(false); };
     if (editing) {
-      updateSchedule.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
+      updateSchedule.mutate({ id: editing.id, data: payload }, { onSuccess: invalidate });
     } else {
-      createSchedule.mutate({ data: parsed }, { onSuccess: invalidate });
+      createSchedule.mutate({ data: payload }, { onSuccess: invalidate });
     }
   };
 
@@ -90,35 +154,49 @@ export default function Schedules() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Schedules" description="Weekly class timetable" mode="studio" addLabel="Add Schedule" addTestId="button-add-schedule" onAdd={openCreate} />
+      <PageHeader title="Schedules" description="Weekly classes and one-time workshops" mode="studio" addLabel="Add Schedule" addTestId="button-add-schedule" onAdd={openCreate} />
 
       <div className="border rounded-md">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Class</TableHead>
-              <TableHead>Day</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Date / Day</TableHead>
               <TableHead>Time</TableHead>
+              <TableHead>Price</TableHead>
+              <TableHead>Package</TableHead>
               <TableHead>Location</TableHead>
-              <TableHead>Recurring</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : schedules?.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No schedules yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No schedules yet.</TableCell></TableRow>
             ) : (
               schedules?.map((schedule) => (
                 <TableRow key={schedule.id} data-testid={`row-schedule-${schedule.id}`}>
                   <TableCell className="font-medium">{getClassName(schedule.classId)}</TableCell>
-                  <TableCell>{DAY_SHORT[schedule.dayOfWeek]}</TableCell>
-                  <TableCell>{schedule.startTime} – {schedule.endTime}</TableCell>
-                  <TableCell>{schedule.location ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={schedule.isRecurring ? "default" : "outline"}>{schedule.isRecurring ? "Weekly" : "One-off"}</Badge>
+                    <Badge variant={schedule.type === "one_time" ? "secondary" : "default"}>
+                      {schedule.type === "one_time" ? "One-time" : "Weekly"}
+                    </Badge>
                   </TableCell>
+                  <TableCell>
+                    {schedule.type === "one_time"
+                      ? schedule.date ?? "Date not set"
+                      : schedule.dayOfWeek != null ? DAY_SHORT[schedule.dayOfWeek] : "Day not set"}
+                  </TableCell>
+                  <TableCell>{schedule.startTime} – {schedule.endTime}</TableCell>
+                  <TableCell>{schedule.priceEgp != null ? `EGP ${schedule.priceEgp}` : "Default"}</TableCell>
+                  <TableCell>
+                    <Badge variant={schedule.packageEligible ? "default" : "outline"}>
+                      {schedule.packageEligible ? "Eligible" : "Pay only"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{schedule.location ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
                       <Edit className="h-4 w-4" />
@@ -153,10 +231,30 @@ export default function Schedules() {
                   <FormMessage />
                 </FormItem>
               )} />
-              <FormField control={form.control} name="dayOfWeek" render={({ field }) => (
+              <FormField control={form.control} name="type" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Schedule Type</FormLabel>
+                  <Select
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      form.setValue("isRecurring", value === "weekly");
+                    }}
+                    value={field.value ?? "weekly"}
+                  >
+                    <FormControl><SelectTrigger data-testid="select-schedule-type"><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="weekly">Regular weekly class</SelectItem>
+                      <SelectItem value="one_time">One-time workshop / class</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              {selectedType === "weekly" ? (
+                <FormField control={form.control} name="dayOfWeek" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Day of Week</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={String(field.value)}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value == null ? "" : String(field.value)}>
                     <FormControl><SelectTrigger data-testid="select-schedule-day"><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
                       {DAYS.map((d, i) => <SelectItem key={i} value={String(i)}>{d}</SelectItem>)}
@@ -164,7 +262,16 @@ export default function Schedules() {
                   </Select>
                   <FormMessage />
                 </FormItem>
-              )} />
+                )} />
+              ) : (
+                <FormField control={form.control} name="date" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date</FormLabel>
+                    <FormControl><Input type="date" data-testid="input-schedule-date" {...field} value={field.value ?? ""} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <FormField control={form.control} name="startTime" render={({ field }) => (
                   <FormItem>
@@ -181,6 +288,22 @@ export default function Schedules() {
                   </FormItem>
                 )} />
               </div>
+              <FormField control={form.control} name="priceEgp" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Custom Price (EGP)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      data-testid="input-schedule-price"
+                      placeholder="Use default class price"
+                      {...field}
+                      value={field.value == null ? "" : String(field.value)}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
               <FormField control={form.control} name="location" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Location</FormLabel>
@@ -189,9 +312,17 @@ export default function Schedules() {
                 </FormItem>
               )} />
               <FormField control={form.control} name="isRecurring" render={({ field }) => (
-                <FormItem className="flex items-center gap-3">
+                <FormItem className="hidden">
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  <FormLabel className="!mt-0">Recurring weekly</FormLabel>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="packageEligible" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <FormLabel className="!mt-0">Package credit eligible</FormLabel>
+                    <p className="text-sm text-muted-foreground">Allow this schedule to be booked and checked in with package credits.</p>
+                  </div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
               <DialogFooter>

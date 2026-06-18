@@ -1,13 +1,17 @@
-import { boolean, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, date, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const schedulesTable = pgTable("schedules", {
   id: serial("id").primaryKey(),
   classId: integer("class_id").notNull(),
-  dayOfWeek: integer("day_of_week").notNull(),
+  type: text("type").notNull().default("weekly"),
+  dayOfWeek: integer("day_of_week"),
+  date: date("date", { mode: "string" }),
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
+  priceEgp: integer("price_egp"),
+  packageEligible: boolean("package_eligible").notNull().default(true),
   location: text("location"),
   isRecurring: boolean("is_recurring").notNull().default(true),
   effectiveFrom: text("effective_from"),
