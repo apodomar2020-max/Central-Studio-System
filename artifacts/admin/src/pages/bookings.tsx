@@ -21,11 +21,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { Trash2, Edit } from "lucide-react";
+import { Check, Trash2, Edit, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 
-const STATUSES = ["pending", "confirmed", "cancelled", "completed"];
+const STATUSES = ["pending", "pendingPayment", "confirmed", "rejected", "cancelled", "attended", "completed"];
+const FILTERS = ["all", "pending", "confirmed", "rejected", "cancelled", "attended"] as const;
 
 const formSchema = z.object({
   studentName: z.string().min(1, "Name is required"),
@@ -39,10 +40,42 @@ const formSchema = z.object({
 });
 
 type FormValues = z.input<typeof formSchema>;
-type Booking = { id: number; studentName: string; studentEmail: string; studentPhone?: string | null; classId?: number | null; status: string; bookedAt: string; notes?: string | null };
+type Booking = {
+  id: number;
+  studentName: string;
+  studentEmail: string;
+  studentPhone?: string | null;
+  classId?: number | null;
+  scheduleId?: number | null;
+  classTitle?: string | null;
+  scheduleLabel?: string | null;
+  scheduleType?: "weekly" | "one_time" | null;
+  status: string;
+  bookedAt: string;
+  notes?: string | null;
+};
 
 const statusVariant = (s: string) =>
-  s === "confirmed" ? "default" : s === "pending" ? "secondary" : s === "completed" ? "outline" : "destructive";
+  s === "confirmed" || s === "attended" || s === "completed"
+    ? "default"
+    : s === "pending" || s === "pendingPayment"
+      ? "secondary"
+      : s === "cancelled" || s === "rejected"
+        ? "destructive"
+        : "outline";
+
+const statusLabel = (s: string) => {
+  const labels: Record<string, string> = {
+    pending: "Pending",
+    pendingPayment: "Pending Payment",
+    confirmed: "Confirmed",
+    rejected: "Rejected",
+    cancelled: "Cancelled",
+    attended: "Attended",
+    completed: "Completed",
+  };
+  return labels[s] ?? s;
+};
 
 export default function Bookings() {
   const { data: bookings, isLoading } = useListBookings();
@@ -52,6 +85,7 @@ export default function Bookings() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
+  const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("all");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -66,7 +100,7 @@ export default function Bookings() {
 
   const openEdit = (b: Booking) => {
     setEditing(b);
-    form.reset({ studentName: b.studentName, studentEmail: b.studentEmail, studentPhone: b.studentPhone, classId: b.classId ?? undefined, status: b.status, notes: b.notes ?? "" });
+    form.reset({ studentName: b.studentName, studentEmail: b.studentEmail, studentPhone: b.studentPhone, classId: b.classId ?? undefined, scheduleId: b.scheduleId ?? undefined, status: b.status, notes: b.notes ?? "" });
     setOpen(true);
   };
 
@@ -86,39 +120,104 @@ export default function Bookings() {
     }
   };
 
+  const invalidateBookings = () => {
+    queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() });
+  };
+
+  const setBookingStatus = (booking: Booking, status: string) => {
+    updateBooking.mutate(
+      { id: booking.id, data: { status } },
+      { onSuccess: invalidateBookings },
+    );
+  };
+
+  const visibleBookings = (bookings ?? []).filter((booking) => {
+    if (activeFilter === "all") return true;
+    if (activeFilter === "pending") return booking.status === "pending" || booking.status === "pendingPayment";
+    return booking.status === activeFilter;
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader title="Bookings" description="Manage class bookings" mode="studio" addLabel="Add Booking" addTestId="button-add-booking" onAdd={openCreate} />
+
+      <div className="flex flex-wrap gap-2">
+        {FILTERS.map((filter) => (
+          <Button
+            key={filter}
+            type="button"
+            variant={activeFilter === filter ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveFilter(filter)}
+          >
+            {filter === "all" ? "All" : statusLabel(filter)}
+          </Button>
+        ))}
+      </div>
 
       <div className="border rounded-md">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Student</TableHead>
-              <TableHead>Class ID</TableHead>
-              <TableHead>Date</TableHead>
+              <TableHead>Class</TableHead>
+              <TableHead>Schedule</TableHead>
+              <TableHead>Booked</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
-            ) : bookings?.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
+            ) : visibleBookings.length === 0 ? (
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
             ) : (
-              bookings?.map((booking) => (
+              visibleBookings.map((booking) => (
                 <TableRow key={booking.id} data-testid={`row-booking-${booking.id}`}>
                   <TableCell>
                     <div className="font-medium">{booking.studentName}</div>
                     <div className="text-xs text-muted-foreground">{booking.studentEmail}</div>
                   </TableCell>
-                  <TableCell>{booking.classId ?? "—"}</TableCell>
+                  <TableCell>
+                    <div className="font-medium">{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
+                    <div className="text-xs text-muted-foreground">Booking #{booking.id}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div>{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
+                    {booking.scheduleType && (
+                      <div className="text-xs text-muted-foreground">
+                        {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>{new Date(booking.bookedAt).toLocaleDateString()}</TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(booking.status)}>{booking.status}</Badge>
+                    <Badge variant={statusVariant(booking.status)}>{statusLabel(booking.status)}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    {(booking.status === "pending" || booking.status === "pendingPayment") && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          data-testid={`button-approve-booking-${booking.id}`}
+                          onClick={() => setBookingStatus(booking, "confirmed")}
+                          title="Approve booking"
+                        >
+                          <Check className="h-4 w-4 text-emerald-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          data-testid={`button-reject-booking-${booking.id}`}
+                          onClick={() => setBookingStatus(booking, "rejected")}
+                          title="Reject booking"
+                        >
+                          <X className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </>
+                    )}
                     <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)}>
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -172,13 +271,20 @@ export default function Bookings() {
                   </FormItem>
                 )} />
               </div>
+              <FormField control={form.control} name="scheduleId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Schedule ID</FormLabel>
+                  <FormControl><Input type="number" data-testid="input-booking-scheduleid" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
               <FormField control={form.control} name="status" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Status</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger data-testid="select-booking-status"><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      {STATUSES.map((s) => <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />

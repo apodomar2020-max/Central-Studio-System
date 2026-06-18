@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, studentsTable, packageOrdersTable } from "@workspace/db";
+import { db, studentsTable, packageOrdersTable, bookingsTable } from "@workspace/db";
 import {
   CreateStudentBody,
   GetStudentParams,
@@ -14,6 +14,10 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
 
 // ---------------------------------------------------------------------------
 // GET /students/by-token/:token
@@ -79,7 +83,27 @@ router.get("/students/by-token/:token", async (req, res): Promise<void> => {
 
 router.get("/students", async (req, res): Promise<void> => {
   const rows = await db.select().from(studentsTable).orderBy(studentsTable.joinedAt);
-  res.json(ListStudentsResponse.parse(rows));
+  const bookingRows = await db
+    .select({
+      studentEmail: bookingsTable.studentEmail,
+      status: bookingsTable.status,
+    })
+    .from(bookingsTable);
+
+  const bookingCounts = new Map<string, number>();
+  for (const booking of bookingRows) {
+    const status = booking.status.trim().toLowerCase();
+    if (status === "cancelled" || status === "rejected") continue;
+    const email = normalizeEmail(booking.studentEmail);
+    bookingCounts.set(email, (bookingCounts.get(email) ?? 0) + 1);
+  }
+
+  res.json(ListStudentsResponse.parse(
+    rows.map((student) => ({
+      ...student,
+      totalBookings: bookingCounts.get(normalizeEmail(student.email)) ?? 0,
+    })),
+  ));
 });
 
 router.post("/students", async (req, res): Promise<void> => {
@@ -88,7 +112,10 @@ router.post("/students", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.insert(studentsTable).values(parsed.data).returning();
+  const [row] = await db
+    .insert(studentsTable)
+    .values({ ...parsed.data, email: normalizeEmail(parsed.data.email) })
+    .returning();
   res.status(201).json(GetStudentResponse.parse(row));
 });
 
@@ -117,7 +144,10 @@ router.patch("/students/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.update(studentsTable).set(parsed.data).where(eq(studentsTable.id, params.data.id)).returning();
+  const data = parsed.data.email
+    ? { ...parsed.data, email: normalizeEmail(parsed.data.email) }
+    : parsed.data;
+  const [row] = await db.update(studentsTable).set(data).where(eq(studentsTable.id, params.data.id)).returning();
   if (!row) {
     res.status(404).json({ error: "Student not found" });
     return;

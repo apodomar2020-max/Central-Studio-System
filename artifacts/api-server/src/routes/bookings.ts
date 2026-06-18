@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   bookingsTable,
@@ -34,6 +34,10 @@ const DAY_NAMES = [
   "Saturday",
 ] as const;
 
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 // Format a "HH:MM" 24h time string into a friendly "6:00 PM". Falls back to
 // the raw value if it isn't parseable so we never throw on bad data.
 function formatTime(t: string | null): string | null {
@@ -56,7 +60,9 @@ router.get("/bookings", async (req, res): Promise<void> => {
   // Build WHERE conditions from optional filters
   const conditions = [];
   if (query.data.status) conditions.push(eq(bookingsTable.status, query.data.status));
-  if (query.data.studentEmail) conditions.push(eq(bookingsTable.studentEmail, query.data.studentEmail));
+  if (query.data.studentEmail) {
+    conditions.push(sql`lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(query.data.studentEmail)}`);
+  }
 
   // Left-join class/schedule/instructor so the response carries display-ready
   // fields. Left joins keep every booking even when its class, schedule, or
@@ -87,8 +93,8 @@ router.get("/bookings", async (req, res): Promise<void> => {
     .leftJoin(attendanceTable, eq(attendanceTable.bookingId, bookingsTable.id));
 
   const rows = conditions.length > 0
-    ? await base.where(and(...conditions)).orderBy(bookingsTable.createdAt)
-    : await base.orderBy(bookingsTable.createdAt);
+    ? await base.where(and(...conditions)).orderBy(desc(bookingsTable.createdAt))
+    : await base.orderBy(desc(bookingsTable.createdAt));
 
   const enrichedById = new Map<number, Record<string, unknown>>();
 
@@ -162,7 +168,13 @@ router.post("/bookings", async (req, res): Promise<void> => {
     }
   }
 
-  const [row] = await db.insert(bookingsTable).values(parsed.data).returning();
+  const [row] = await db
+    .insert(bookingsTable)
+    .values({
+      ...parsed.data,
+      studentEmail: normalizeEmail(parsed.data.studentEmail),
+    })
+    .returning();
   res.status(201).json(GetBookingResponse.parse(row));
 });
 
@@ -191,7 +203,10 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.update(bookingsTable).set(parsed.data).where(eq(bookingsTable.id, params.data.id)).returning();
+  const data = parsed.data.studentEmail
+    ? { ...parsed.data, studentEmail: normalizeEmail(parsed.data.studentEmail) }
+    : parsed.data;
+  const [row] = await db.update(bookingsTable).set(data).where(eq(bookingsTable.id, params.data.id)).returning();
   if (!row) {
     res.status(404).json({ error: "Booking not found" });
     return;

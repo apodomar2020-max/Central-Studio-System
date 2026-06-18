@@ -160,6 +160,7 @@ export function mapApiStatusToLocal(
     pending: "pendingPayment",
     pendingPayment: "pendingPayment",
     cancelled: "cancelled",
+    rejected: "cancelled",
     attended: "attended",
     noShow: "noShow",
     no_show: "noShow",
