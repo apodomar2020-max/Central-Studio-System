@@ -121,5 +121,13 @@
       "tag": "0014_app_content_pages",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1781956800000,
+      "tag": "0015_help_support_faq_contacts",
+      "breakpoints": true
+    }
   ]
 }

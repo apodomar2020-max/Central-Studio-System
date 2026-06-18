@@ -24,5 +24,7 @@ export * from "./balletLevelAssignments";
 export * from "./danceTypes";
 export * from "./classPricingSettings";
 export * from "./appContentPages";
+export * from "./appFaqItems";
+export * from "./appContactLinks";
 // Credit Ledger — immutable audit trail for credit changes (migration 0013)
 export * from "./creditTransactions";

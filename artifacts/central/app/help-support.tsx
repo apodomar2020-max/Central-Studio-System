@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -19,36 +20,18 @@ import colors from "@/constants/colors";
 const FALLBACK_PAGE = {
   title: "Help & Support",
   subtitle: "Our team is available Saturday-Thursday, 10 AM - 9 PM",
-  content: `Need help?
-
-WhatsApp: +20 123 456 7890
-Email: support@centralstudio.eg
-Location: Cairo, Egypt
-Website: centralstudio.eg
-
-Frequently Asked Questions
-
-How do I book a class?
-Go to the Classes tab, find your class, and tap Book. You need to be signed in and have an active package or pay per session.
-
-How do packages work?
-Packages give you a set number of class credits valid across all dance styles. Each class attendance uses 1 credit. Go to the Packages tab to buy one.
-
-What happens after I purchase a package?
-Your package request is submitted to our team. Once we confirm your payment, we activate your credits, usually within 24 hours.
-
-Can I cancel a pending package request?
-Yes. In the My Packages tab, find your pending request and tap Cancel Request. This removes the request before any payment is processed.
-
-How do I cancel a booking?
-You can cancel a booking up to 24 hours before the class starts. Contact us via WhatsApp for cancellations.
-
-Can I join with my child?
-Yes. We have Kids and Teens classes for Ballet and more. Add your child's profile in your account settings.
-
-How do I reset my password?
-Tap Forgot Password on the login screen, enter your email, and we will send you a reset link.`,
+  content: "Help & Support is temporarily unavailable. Please contact the studio directly for assistance.",
 };
+
+type ContactType =
+  | "whatsapp"
+  | "phone"
+  | "facebook"
+  | "instagram"
+  | "tiktok"
+  | "youtube"
+  | "website"
+  | "email";
 
 type ContentPage = {
   title: string;
@@ -57,18 +40,128 @@ type ContentPage = {
   isActive?: boolean;
 };
 
+type FaqItem = {
+  id: number;
+  question: string;
+  answer: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+type ContactLink = {
+  id: number;
+  type: ContactType;
+  label: string;
+  value: string;
+  icon?: string | null;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+type HelpSupportResponse = {
+  page: ContentPage;
+  faqs: FaqItem[];
+  contacts: ContactLink[];
+};
+
+const CONTACT_ICON: Record<ContactType, keyof typeof Ionicons.glyphMap> = {
+  whatsapp: "logo-whatsapp",
+  phone: "call-outline",
+  facebook: "logo-facebook",
+  instagram: "logo-instagram",
+  tiktok: "logo-tiktok",
+  youtube: "logo-youtube",
+  website: "globe-outline",
+  email: "mail-outline",
+};
+
+const CONTACT_COLOR: Record<ContactType, string> = {
+  whatsapp: "#25D366",
+  phone: colors.studio.primary,
+  facebook: "#1877F2",
+  instagram: "#E4405F",
+  tiktok: "#FFFFFF",
+  youtube: "#FF0000",
+  website: colors.studio.primary,
+  email: colors.studio.primary,
+};
+
+function normalizePhone(value: string): string {
+  const trimmed = value.trim();
+  const hasPlus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/[^\d]/g, "");
+  return hasPlus ? `+${digits}` : digits;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function buildContactUrl(link: ContactLink): string | null {
+  const value = link.value.trim();
+  if (!value) return null;
+
+  switch (link.type) {
+    case "whatsapp": {
+      if (isHttpUrl(value)) return value;
+      const digits = normalizePhone(value).replace(/[^\d]/g, "");
+      return digits ? `https://wa.me/${digits}` : null;
+    }
+    case "phone": {
+      const phone = normalizePhone(value);
+      return phone ? `tel:${phone}` : null;
+    }
+    case "email":
+      return value.includes("@") ? `mailto:${value}` : null;
+    case "facebook":
+    case "instagram":
+    case "tiktok":
+    case "youtube":
+    case "website":
+      return isHttpUrl(value) ? value : null;
+    default:
+      return null;
+  }
+}
+
+function FaqRow({ item }: { item: FaqItem }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <TouchableOpacity
+      onPress={() => setOpen((value) => !value)}
+      style={styles.faqItem}
+      activeOpacity={0.8}
+    >
+      <View style={styles.faqHeader}>
+        <Text style={styles.faqQ}>{item.question}</Text>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" />
+      </View>
+      {open && <Text style={styles.faqA}>{item.answer}</Text>}
+    </TouchableOpacity>
+  );
+}
+
 export default function HelpSupportScreen() {
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState<ContentPage>(FALLBACK_PAGE);
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [contacts, setContacts] = useState<ContactLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     let active = true;
-    customFetch<ContentPage>("/api/content/pages/help-support")
+    customFetch<HelpSupportResponse>("/api/content/help-support")
       .then((data) => {
         if (!active) return;
-        setPage(data);
+        setPage(data.page);
+        setFaqs(data.faqs);
+        setContacts(data.contacts);
         setUnavailable(false);
       })
       .catch((err: unknown) => {
@@ -87,6 +180,8 @@ export default function HelpSupportScreen() {
         } else {
           setPage(FALLBACK_PAGE);
         }
+        setFaqs([]);
+        setContacts([]);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -96,6 +191,16 @@ export default function HelpSupportScreen() {
       active = false;
     };
   }, []);
+
+  async function openContact(link: ContactLink) {
+    const url = buildContactUrl(link);
+    if (!url) return;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      // Ignore link failures; invalid values can be corrected from admin.
+    }
+  }
 
   return (
     <View style={styles.container}>
@@ -138,7 +243,46 @@ export default function HelpSupportScreen() {
             <Text style={styles.loadingText}>Loading support content...</Text>
           </View>
         ) : (
-          <Text style={styles.content}>{page.content}</Text>
+          <>
+            {page.content.trim() ? <Text style={styles.content}>{page.content}</Text> : null}
+
+            {contacts.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Contact Us</Text>
+                <View style={styles.contactGrid}>
+                  {contacts.map((link) => {
+                    const color = CONTACT_COLOR[link.type] ?? colors.studio.primary;
+                    return (
+                      <TouchableOpacity
+                        key={link.id}
+                        onPress={() => void openContact(link)}
+                        style={styles.contactBtn}
+                        activeOpacity={0.78}
+                      >
+                        <View style={[styles.contactIcon, { backgroundColor: `${color}20` }]}>
+                          <Ionicons
+                            name={CONTACT_ICON[link.type] ?? "link-outline"}
+                            size={20}
+                            color={color}
+                          />
+                        </View>
+                        <Text style={styles.contactLabel} numberOfLines={1}>{link.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {faqs.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+                <View style={styles.faqList}>
+                  {faqs.map((item) => <FaqRow key={item.id} item={item} />)}
+                </View>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </View>
@@ -169,4 +313,28 @@ const styles = StyleSheet.create({
   loadingBox: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 24 },
   loadingText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
   content: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 22 },
+  section: { gap: 12 },
+  sectionTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  contactGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  contactBtn: {
+    width: "30.8%",
+    minWidth: 96,
+    alignItems: "center",
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#1E2E38",
+    backgroundColor: colors.studio.card,
+  },
+  contactIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  contactLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#FFFFFF", textAlign: "center" },
+  faqList: { gap: 8 },
+  faqItem: {
+    borderRadius: 14, borderWidth: 1, borderColor: "#1E2E38",
+    backgroundColor: colors.studio.card, padding: 16, gap: 10,
+  },
+  faqHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  faqQ: { flex: 1, fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF", lineHeight: 18 },
+  faqA: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 19 },
 });
