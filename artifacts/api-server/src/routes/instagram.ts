@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { db } from "../lib/db";
-import { instagramToken } from "@workspace/db/schema";
+import { db, instagramToken } from "@workspace/db";
 
 const router = Router();
 
