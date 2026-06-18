@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Dimensions,
@@ -206,6 +207,46 @@ interface InstagramReel {
   timestamp: string;
 }
 
+// Auto-plays the first reel muted for the 5-second preview window.
+// Extracted as its own component so useVideoPlayer is always called
+// (hooks can't be called conditionally).
+function AutoPlayReelCard({
+  reel,
+  onPress,
+}: {
+  reel: InstagramReel;
+  onPress: () => void;
+}) {
+  const player = useVideoPlayer(reel.media_url ?? "", (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+
+  useEffect(() => {
+    return () => {
+      // Release the player when the autoplay window ends and this card unmounts.
+      player.release();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <TouchableOpacity style={styles.reelCard} activeOpacity={0.82} onPress={onPress}>
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        nativeControls={false}
+      />
+      {/* Subtle play indicator while previewing */}
+      <View style={[styles.reelPlayBtn, { backgroundColor: "rgba(0,0,0,0.30)" }]}>
+        <Ionicons name="logo-instagram" size={18} color="#FFFFFF" />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function ReelsSection() {
   const { data, isLoading, isError } = useQuery<{ reels: InstagramReel[] }>({
     queryKey: ["instagram-reels"],
@@ -218,6 +259,26 @@ function ReelsSection() {
   });
 
   const reels = data?.reels ?? [];
+
+  // ── 5-second autoplay window ────────────────────────────────────────────────
+  // As soon as the reels load, the first card plays its video muted.
+  // After 5 seconds it reverts to the thumbnail + play-button look.
+  const [autoPlayActive, setAutoPlayActive] = useState(false);
+  const autoPlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (reels.length > 0 && !autoPlayActive) {
+      setAutoPlayActive(true);
+      autoPlayTimer.current = setTimeout(() => {
+        setAutoPlayActive(false);
+      }, 5000);
+    }
+    return () => {
+      if (autoPlayTimer.current) clearTimeout(autoPlayTimer.current);
+    };
+  // Run only when the reels first arrive — intentionally omit autoPlayActive
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reels.length]);
 
   // Silently hide section on error or empty — it's an optional content block
   if (isError || (!isLoading && reels.length === 0)) return null;
@@ -251,33 +312,41 @@ function ReelsSection() {
         <FlatList
           data={reels}
           keyExtractor={(r) => r.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.reelCard}
-              activeOpacity={0.82}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                Linking.openURL(item.permalink);
-              }}
-            >
-              {item.thumbnail_url ? (
-                <Image
-                  source={{ uri: item.thumbnail_url }}
-                  style={StyleSheet.absoluteFill}
-                  resizeMode="cover"
-                />
-              ) : (
-                <LinearGradient
-                  colors={["#1E1E26", "#0D0D14"]}
-                  style={StyleSheet.absoluteFill}
-                />
-              )}
-              {/* Play button overlay */}
-              <View style={styles.reelPlayBtn}>
-                <Ionicons name="play" size={20} color="#FFFFFF" />
-              </View>
-            </TouchableOpacity>
-          )}
+          renderItem={({ item, index }) => {
+            const handlePress = () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Linking.openURL(item.permalink);
+            };
+
+            // First reel auto-plays muted for the 5-second preview window
+            if (index === 0 && autoPlayActive && item.media_url) {
+              return <AutoPlayReelCard reel={item} onPress={handlePress} />;
+            }
+
+            return (
+              <TouchableOpacity
+                style={styles.reelCard}
+                activeOpacity={0.82}
+                onPress={handlePress}
+              >
+                {item.thumbnail_url ? (
+                  <Image
+                    source={{ uri: item.thumbnail_url }}
+                    style={StyleSheet.absoluteFill}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={["#1E1E26", "#0D0D14"]}
+                    style={StyleSheet.absoluteFill}
+                  />
+                )}
+                <View style={styles.reelPlayBtn}>
+                  <Ionicons name="play" size={20} color="#FFFFFF" />
+                </View>
+              </TouchableOpacity>
+            );
+          }}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingLeft: 20, gap: 10, paddingRight: 20 }}
