@@ -25,14 +25,14 @@ import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, childrenTable } from "@workspace/db";
 import { insertChildSchema, updateChildSchema } from "@workspace/db";
-import { requireStudentAuth } from "../middlewares/studentAuth";
+import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-// All routes in this file require a verified student JWT.
+// All routes in this file require a verified student JWT (and a verified email).
 // X-Student-Id is NOT consulted — identity comes from the signed token only.
-router.use("/children", requireStudentAuth);
+router.use("/children", requireStudentAuth, requireVerifiedStudent);
 
 // ─── GET /api/children ────────────────────────────────────────────────────────
 // Returns all children belonging to the authenticated student, ordered by name.

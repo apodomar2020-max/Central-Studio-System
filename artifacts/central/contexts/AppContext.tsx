@@ -12,6 +12,8 @@ export interface User {
   role: "student" | "parent" | "instructor";
   /** Opaque UUID used to generate the secure QR code. Never logged or displayed as text. */
   qrToken?: string;
+  /** Effective avatar image URL (Google-synced or manual upload); undefined → show initials. */
+  avatarUrl?: string;
 }
 
 export interface ChildProfile {

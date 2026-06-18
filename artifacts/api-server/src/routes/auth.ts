@@ -1,47 +1,25 @@
 /**
  * Authentication routes — /api/auth/*
  *
- * POST /api/auth/register          — create a new student account
- * POST /api/auth/login             — verify credentials, return student data
+ * POST /api/auth/register          — create a new (unverified) student account
+ * POST /api/auth/login             — verify credentials, return student + token
+ * GET  /api/auth/me                — current student from the bearer token
  * POST /api/auth/forgot-password   — send OTP code to email for password reset
  * POST /api/auth/reset-password    — verify OTP and set a new password
+ *
+ * Mandatory email verification: register always creates an unverified account
+ * and login of an unverified account both return a *limited* token plus
+ * { requiresOtp: true, email }. The client must complete OTP (see emailOtp.ts)
+ * before any requireVerifiedStudent route will accept the token.
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, emailOtpsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { STUDENT_JWT_SECRET, type StudentTokenPayload } from "../middlewares/auth";
-
-// ─── Student JWT helpers ──────────────────────────────────────────────────────
-
-const STUDENT_JWT_EXPIRES_IN = "30d"; // mobile sessions live for 30 days
-
-function signStudentToken(studentId: number, email: string): string {
-  const payload: Omit<StudentTokenPayload, "iat" | "exp"> = {
-    sub: studentId,
-    email,
-    type: "student",
-  };
-  return jwt.sign(payload, STUDENT_JWT_SECRET, { expiresIn: STUDENT_JWT_EXPIRES_IN });
-}
-
-const OTP_TTL_SECONDS = 600; // 10 minutes
-
-function generateOtp(): string {
-  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
-}
-
-async function sendPasswordResetEmail(to: string, code: string): Promise<void> {
-  if (process.env["NODE_ENV"] !== "production") {
-    logger.info({ to, code }, "DEV MODE — Password reset OTP (not sent via email)");
-    return;
-  }
-  // TODO: replace with real email provider (Resend, SendGrid, Nodemailer, etc.)
-  logger.warn({ to }, "Email provider not configured — password reset OTP not sent");
-}
+import { requireStudentAuth } from "../middlewares/studentAuth";
+import { signStudentToken, generateOtp, sendOtpEmail, OTP_TTL_SECONDS } from "../lib/authHelpers";
 
 const router: IRouter = Router();
 
@@ -87,6 +65,9 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       email: email.toLowerCase().trim(),
       phone: phone?.trim() ?? null,
       passwordHash,
+      authProvider: "local",
+      // emailVerified defaults to false — the account must pass OTP before
+      // it can reach any verified-only route.
     })
     .returning({
       id: studentsTable.id,
@@ -94,15 +75,17 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       email: studentsTable.email,
       phone: studentsTable.phone,
       emailVerified: studentsTable.emailVerified,
+      avatarUrl: studentsTable.avatarUrl,
       joinedAt: studentsTable.joinedAt,
       qrToken: studentsTable.qrToken,
     });
 
-  const accessToken = signStudentToken(student.id, student.email);
+  // Limited token (emailVerified=false): unlocks OTP + /auth/me only.
+  const accessToken = signStudentToken(student.id, student.email, false);
 
-  logger.info({ studentId: student.id }, "New student registered");
+  logger.info({ studentId: student.id }, "New student registered (pending verification)");
 
-  res.status(201).json({ student, accessToken });
+  res.status(201).json({ student, accessToken, requiresOtp: true });
 });
 
 // POST /api/auth/login
@@ -139,9 +122,16 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const accessToken = signStudentToken(student.id, student.email);
+  await db
+    .update(studentsTable)
+    .set({ lastLoginAt: new Date().toISOString() })
+    .where(eq(studentsTable.id, student.id));
 
-  logger.info({ studentId: student.id }, "Student logged in");
+  // Token verification scope mirrors the account: an unverified account gets a
+  // limited token and must complete OTP before reaching verified-only routes.
+  const accessToken = signStudentToken(student.id, student.email, student.emailVerified);
+
+  logger.info({ studentId: student.id, emailVerified: student.emailVerified }, "Student logged in");
 
   res.json({
     student: {
@@ -150,11 +140,42 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       email: student.email,
       phone: student.phone,
       emailVerified: student.emailVerified,
+      avatarUrl: student.avatarUrl ?? null,
       joinedAt: student.joinedAt,
       qrToken: student.qrToken,
     },
     accessToken,
+    requiresOtp: !student.emailVerified,
   });
+});
+
+// ─── GET /api/auth/me ────────────────────────────────────────────────────────
+// Returns the current student for the bearer token. Uses requireStudentAuth
+// (NOT requireVerifiedStudent) so an unverified account can still load its own
+// profile while sitting on the OTP screen.
+router.get("/auth/me", requireStudentAuth, async (req, res): Promise<void> => {
+  const [student] = await db
+    .select({
+      id: studentsTable.id,
+      name: studentsTable.name,
+      email: studentsTable.email,
+      phone: studentsTable.phone,
+      emailVerified: studentsTable.emailVerified,
+      emailVerifiedAt: studentsTable.emailVerifiedAt,
+      authProvider: studentsTable.authProvider,
+      avatarUrl: studentsTable.avatarUrl,
+      joinedAt: studentsTable.joinedAt,
+      qrToken: studentsTable.qrToken,
+    })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, req.studentId!));
+
+  if (!student) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  res.json({ student, requiresOtp: !student.emailVerified });
 });
 
 // ─── POST /api/auth/forgot-password ──────────────────────────────────────────
@@ -190,10 +211,12 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
     studentId: student.id,
     email: normalizedEmail,
     code,
+    purpose: "reset",
     expiresAt,
   });
 
-  await sendPasswordResetEmail(normalizedEmail, code);
+  // Reuse the shared OTP mailer (dev: logs the code).
+  await sendOtpEmail(normalizedEmail, code, "reset");
 
   logger.info({ studentId: student.id }, "Password reset OTP generated");
 
@@ -226,6 +249,7 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
       and(
         eq(emailOtpsTable.studentId, studentId),
         eq(emailOtpsTable.code, code),
+        eq(emailOtpsTable.purpose, "reset"),
         isNull(emailOtpsTable.usedAt),
         gt(emailOtpsTable.expiresAt, now),
       )

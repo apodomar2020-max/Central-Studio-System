@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
@@ -31,7 +32,7 @@ const formSchema = z.object({
 });
 
 type FormValues = z.input<typeof formSchema>;
-type Student = { id: number; name: string; email: string; phone?: string | null; notes?: string | null; totalBookings: number; joinedAt: string };
+type Student = { id: number; name: string; email: string; phone?: string | null; notes?: string | null; avatarUrl?: string | null; totalBookings: number; joinedAt: string };
 
 export default function Students() {
   const { data: students, isLoading } = useListStudents();
@@ -98,7 +99,15 @@ export default function Students() {
             ) : (
               students?.map((student) => (
                 <TableRow key={student.id} data-testid={`row-student-${student.id}`}>
-                  <TableCell className="font-medium">{student.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-7 w-7">
+                        {student.avatarUrl ? <AvatarImage src={student.avatarUrl} alt={student.name} /> : null}
+                        <AvatarFallback>{student.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <span>{student.name}</span>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div>{student.email}</div>
                     <div className="text-xs text-muted-foreground">{student.phone}</div>

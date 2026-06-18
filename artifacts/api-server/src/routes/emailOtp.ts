@@ -1,67 +1,150 @@
 /**
  * Email OTP verification routes — /api/auth/*
  *
- * POST /api/auth/send-email-otp
- *   Body: { studentId: number }
- *   Generates a 6-digit OTP, stores it (hashed) in email_otps, and:
- *   - In development: logs the code to the console (no real email sent)
- *   - In production: sends via the configured email provider (stub for now —
- *     swap in Resend / SendGrid / Nodemailer by filling in sendEmail() below)
- *   Returns: { ok: true, expiresIn: 600 }
+ * Email-keyed (preferred — used by the new auth flow):
+ *   POST /api/auth/send-otp     { email }          → issue + send a code
+ *   POST /api/auth/resend-otp   { email }          → alias of send-otp (cooldown applies)
+ *   POST /api/auth/verify-otp   { email, code }    → verify, mark verified, return full token
  *
- * POST /api/auth/verify-email-otp
- *   Body: { studentId: number, code: string }
- *   Validates the code, marks email_verified = true on the student, and
- *   marks the OTP row as used.
- *   Returns: { ok: true }
+ * Legacy studentId-keyed (kept for backward compatibility with the shipped
+ * mobile build's verify-email screen):
+ *   POST /api/auth/send-email-otp    { studentId }
+ *   POST /api/auth/verify-email-otp  { studentId, code }
+ *
+ * On successful verification the student's email_verified / email_verified_at
+ * are set, and the email-keyed verify endpoint returns a fresh FULL access
+ * token so the client can swap its limited token for a verified one.
  */
 import { Router, type IRouter } from "express";
-import { and, eq, isNull, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, emailOtpsTable, studentsTable } from "@workspace/db";
+import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import {
+  issueOtp,
+  verifyOtpCode,
+  signStudentToken,
+  OtpRateLimitError,
+} from "../lib/authHelpers";
 
 const router: IRouter = Router();
 
-const OTP_TTL_SECONDS = 600; // 10 minutes
+// Marks a student verified and returns the refreshed row (or null if missing).
+async function markVerified(email: string) {
+  const now = new Date().toISOString();
+  const [student] = await db
+    .update(studentsTable)
+    .set({ emailVerified: true, emailVerifiedAt: now })
+    .where(eq(studentsTable.email, email.toLowerCase().trim()))
+    .returning({
+      id: studentsTable.id,
+      name: studentsTable.name,
+      email: studentsTable.email,
+      phone: studentsTable.phone,
+      emailVerified: studentsTable.emailVerified,
+      avatarUrl: studentsTable.avatarUrl,
+      joinedAt: studentsTable.joinedAt,
+      qrToken: studentsTable.qrToken,
+    });
+  return student ?? null;
+}
 
-// ─── Email sending stub ───────────────────────────────────────────────────────
-// In development, the OTP is only logged. To wire up real email delivery,
-// replace the body of this function with your provider's SDK call.
-async function sendOtpEmail(to: string, code: string): Promise<void> {
-  if (process.env["NODE_ENV"] !== "production") {
-    logger.info({ to, code }, "DEV MODE — OTP code (not sent via email)");
-    return;
+// Maps a non-"ok" verifyOtpCode result to an HTTP response.
+function respondVerifyFailure(res: import("express").Response, result: Exclude<Awaited<ReturnType<typeof verifyOtpCode>>, { status: "ok" }>): void {
+  switch (result.status) {
+    case "invalid":
+      res.status(400).json({ error: "Incorrect code. Please try again.", attemptsLeft: result.attemptsLeft });
+      return;
+    case "expired":
+      res.status(400).json({ error: "Code expired. Please request a new one.", requiresResend: true });
+      return;
+    case "locked":
+      res.status(429).json({ error: "Too many incorrect attempts. Please request a new code.", requiresResend: true });
+      return;
   }
-  // TODO: replace with real email provider (Resend, SendGrid, Nodemailer, etc.)
-  // Example with Resend:
-  //   await resend.emails.send({
-  //     from: "Central Studio <noreply@centralstudio.com>",
-  //     to,
-  //     subject: "Your verification code",
-  //     text: `Your Central Studio verification code is: ${code}\n\nThis code expires in 10 minutes.`,
-  //   });
-  logger.warn({ to }, "Email provider not configured — OTP not sent in production");
 }
 
-// Generate a cryptographically random 6-digit code
-function generateOtp(): string {
-  const num = Math.floor(Math.random() * 1_000_000);
-  return String(num).padStart(6, "0");
-}
+// ─── POST /api/auth/send-otp  &  /api/auth/resend-otp ────────────────────────
+const SendOtpBody = z.object({ email: z.string().email("Invalid email address") });
 
-// ─── POST /api/auth/send-email-otp ───────────────────────────────────────────
-const SendOtpBody = z.object({
-  studentId: z.coerce.number().int().positive(),
-});
-
-router.post("/auth/send-email-otp", async (req, res): Promise<void> => {
+async function handleSendOtp(req: import("express").Request, res: import("express").Response): Promise<void> {
   const parsed = SendOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
+  const email = parsed.data.email.toLowerCase().trim();
 
+  const [student] = await db
+    .select({ id: studentsTable.id, emailVerified: studentsTable.emailVerified })
+    .from(studentsTable)
+    .where(eq(studentsTable.email, email));
+
+  if (!student) {
+    res.status(404).json({ error: "No account found for this email." });
+    return;
+  }
+  if (student.emailVerified) {
+    res.status(400).json({ error: "Email is already verified." });
+    return;
+  }
+
+  try {
+    const { expiresIn } = await issueOtp(email, { studentId: student.id, purpose: "verify" });
+    res.json({ ok: true, expiresIn });
+  } catch (err) {
+    if (err instanceof OtpRateLimitError) {
+      res.status(429).json({ error: "Please wait before requesting another code.", retryAfter: err.retryAfterSeconds });
+      return;
+    }
+    throw err;
+  }
+}
+
+router.post("/auth/send-otp", handleSendOtp);
+router.post("/auth/resend-otp", handleSendOtp);
+
+// ─── POST /api/auth/verify-otp ───────────────────────────────────────────────
+const VerifyOtpBody = z.object({
+  email: z.string().email("Invalid email address"),
+  code: z.string().length(6, "Code must be exactly 6 digits"),
+});
+
+router.post("/auth/verify-otp", async (req, res): Promise<void> => {
+  const parsed = VerifyOtpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  const { email, code } = parsed.data;
+
+  const result = await verifyOtpCode(email, code, "verify");
+  if (result.status !== "ok") {
+    respondVerifyFailure(res, result);
+    return;
+  }
+
+  const student = await markVerified(email);
+  if (!student) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  // Issue a fresh FULL token now that the account is verified.
+  const accessToken = signStudentToken(student.id, student.email, true);
+  logger.info({ studentId: student.id }, "Email verified via OTP");
+  res.json({ ok: true, accessToken, student });
+});
+
+// ─── Legacy studentId-keyed endpoints (backward compatibility) ───────────────
+const SendEmailOtpBody = z.object({ studentId: z.coerce.number().int().positive() });
+
+router.post("/auth/send-email-otp", async (req, res): Promise<void> => {
+  const parsed = SendEmailOtpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
   const { studentId } = parsed.data;
 
   const [student] = await db
@@ -73,79 +156,55 @@ router.post("/auth/send-email-otp", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Student not found" });
     return;
   }
-
   if (student.emailVerified) {
     res.status(400).json({ error: "Email is already verified" });
     return;
   }
 
-  const code = generateOtp();
-  const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
-
-  await db.insert(emailOtpsTable).values({
-    studentId,
-    email: student.email,
-    code,
-    expiresAt,
-  });
-
-  await sendOtpEmail(student.email, code);
-
-  logger.info({ studentId, email: student.email }, "OTP sent for email verification");
-
-  res.json({ ok: true, expiresIn: OTP_TTL_SECONDS });
+  try {
+    const { expiresIn } = await issueOtp(student.email, { studentId: student.id, purpose: "verify" });
+    res.json({ ok: true, expiresIn });
+  } catch (err) {
+    if (err instanceof OtpRateLimitError) {
+      res.status(429).json({ error: "Please wait before requesting another code.", retryAfter: err.retryAfterSeconds });
+      return;
+    }
+    throw err;
+  }
 });
 
-// ─── POST /api/auth/verify-email-otp ─────────────────────────────────────────
-const VerifyOtpBody = z.object({
+const VerifyEmailOtpBody = z.object({
   studentId: z.coerce.number().int().positive(),
   code: z.string().length(6, "Code must be exactly 6 digits"),
 });
 
 router.post("/auth/verify-email-otp", async (req, res): Promise<void> => {
-  const parsed = VerifyOtpBody.safeParse(req.body);
+  const parsed = VerifyEmailOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
-
   const { studentId, code } = parsed.data;
 
-  const now = new Date().toISOString();
+  const [student] = await db
+    .select({ email: studentsTable.email })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, studentId));
 
-  // Find the latest valid (unused, unexpired) OTP for this student
-  const [otp] = await db
-    .select()
-    .from(emailOtpsTable)
-    .where(
-      and(
-        eq(emailOtpsTable.studentId, studentId),
-        eq(emailOtpsTable.code, code),
-        isNull(emailOtpsTable.usedAt),
-        gt(emailOtpsTable.expiresAt, now),
-      )
-    )
-    .limit(1);
+  if (!student) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
 
-  if (!otp) {
+  const result = await verifyOtpCode(student.email, code, "verify");
+  if (result.status !== "ok") {
+    // Legacy clients expect a generic 400 message.
     res.status(400).json({ error: "Invalid or expired verification code" });
     return;
   }
 
-  // Mark OTP as used
-  await db
-    .update(emailOtpsTable)
-    .set({ usedAt: now })
-    .where(eq(emailOtpsTable.id, otp.id));
-
-  // Mark student's email as verified
-  await db
-    .update(studentsTable)
-    .set({ emailVerified: true })
-    .where(eq(studentsTable.id, studentId));
-
-  logger.info({ studentId }, "Email verified successfully");
-
+  await markVerified(student.email);
+  logger.info({ studentId }, "Email verified successfully (legacy endpoint)");
   res.json({ ok: true });
 });
 

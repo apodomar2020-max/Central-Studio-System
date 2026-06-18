@@ -6,6 +6,7 @@ import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
 import {
+  Image,
   Platform,
   StyleSheet,
   Text,
@@ -17,16 +18,18 @@ import {
 import { useAppContext, User } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 
 const ROLES: { value: User["role"]; label: string; icon: string }[] = [
   { value: "student", label: "Student", icon: "school-outline" },
   { value: "parent", label: "Parent / Guardian", icon: "people-outline" },
-  { value: "instructor", label: "Instructor", icon: "star-outline" },
 ];
 
 export default function RegisterScreen() {
   const { setUser } = useAppContext();
   const insets = useSafeAreaInsets();
+  const google = useGoogleSignIn();
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -114,22 +117,19 @@ export default function RegisterScreen() {
         bottomOffset={20}
         contentContainerStyle={[styles.scroll, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 60 }]}
       >
-        <LinearGradient
-          colors={[colors.studio.primary, "#007A91"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <Image
+          source={require("@/assets/images/central_studio_logo.png")}
           style={styles.logoBadge}
-        >
-          <Ionicons name="musical-notes" size={28} color="#000" />
-        </LinearGradient>
+          resizeMode="contain"
+        />
 
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Join Central Studio</Text>
 
-        {error !== "" && (
+        {(error || google.error) !== "" && (
           <View style={[styles.errorBanner, { backgroundColor: colors.error + "20", borderColor: colors.error + "50" }]}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-            <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error}</Text>
           </View>
         )}
 
@@ -228,6 +228,14 @@ export default function RegisterScreen() {
           </View>
 
           <AppButton title="Create Account" onPress={handleRegister} loading={loading} fullWidth size="lg" />
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <GoogleSignInButton onPress={google.signIn} loading={google.loading} disabled={!google.ready} />
         </View>
 
         <View style={styles.loginRow}>
@@ -255,7 +263,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   scroll: { paddingHorizontal: 28, paddingBottom: 60, alignItems: "center", gap: 16 },
-  logoBadge: { width: 64, height: 64, borderRadius: 20, alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  logoBadge: { width: "100%", height: 160, marginBottom: 8, marginHorizontal: -28 },
   title: { fontSize: 26, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   subtitle: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: -8 },
   errorBanner: { width: "100%", flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, borderWidth: 1 },
@@ -265,6 +273,9 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#9CA3AF", paddingLeft: 2 },
   inputRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, height: 50, borderRadius: 12, borderWidth: 1, backgroundColor: "#1E1E26", borderColor: "#2A2A35" },
   input: { flex: 1, color: "#FFFFFF", fontFamily: "Inter_400Regular", fontSize: 15 },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 2 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#2A2A35" },
+  dividerText: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280" },
   roleRow: { gap: 8 },
   roleCard: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 12, borderWidth: 1 },
   roleLabel: { fontSize: 14, fontFamily: "Inter_500Medium" },

@@ -19,12 +19,12 @@ import {
   classesTable,
   instructorsTable,
 } from "@workspace/db";
-import { requireStudentAuth } from "../middlewares/studentAuth";
+import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 
 const router: IRouter = Router();
 
-// Apply student authentication to every /my/* route
-router.use("/my", requireStudentAuth);
+// Apply student authentication + mandatory email verification to every /my/* route
+router.use("/my", requireStudentAuth, requireVerifiedStudent);
 
 // ---------------------------------------------------------------------------
 // GET /my/packages

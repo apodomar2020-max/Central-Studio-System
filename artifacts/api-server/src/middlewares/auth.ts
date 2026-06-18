@@ -33,6 +33,10 @@ declare global {
       studentId?: number;
       studentEmail?: string;
       studentJwtVerified?: boolean;
+      // Email-verification state carried in the JWT. May be undefined for
+      // legacy tokens issued before mandatory verification — see
+      // requireVerifiedStudent, which only blocks an explicit `false`.
+      studentEmailVerified?: boolean;
     }
   }
 }
@@ -78,6 +82,9 @@ export interface StudentTokenPayload {
   sub: number;    // student.id
   email: string;
   type: "student";
+  // Whether this student's email was verified at the time the token was issued.
+  // Absent on legacy tokens. A "limited" token (unverified account) carries false.
+  emailVerified?: boolean;
 }
 
 /** Returns true when a string looks like a JWT (header.payload.signature). */
@@ -138,6 +145,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
       req.studentId = payload.sub;
       req.studentEmail = payload.email;
       req.studentJwtVerified = true;
+      req.studentEmailVerified = payload.emailVerified;
       next();
       return;
     } catch (err) {

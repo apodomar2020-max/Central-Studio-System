@@ -29,7 +29,7 @@ import {
   balletApplicationsTable,
   balletApplicationEventsTable,
 } from "@workspace/db";
-import { requireStudentAuth } from "../middlewares/studentAuth";
+import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -203,6 +203,7 @@ router.get("/ballet/assessment-slots", async (_req, res): Promise<void> => {
 router.get(
   "/ballet/applications/my",
   requireStudentAuth,
+  requireVerifiedStudent,
   async (req, res): Promise<void> => {
     const parentStudentId = req.studentId!;
 
@@ -253,6 +254,7 @@ const SubmitApplicationBody = z.object({
 router.post(
   "/ballet/applications",
   requireStudentAuth,
+  requireVerifiedStudent,
   async (req, res): Promise<void> => {
     const parsed = SubmitApplicationBody.safeParse(req.body);
     if (!parsed.success) {
@@ -426,6 +428,7 @@ const UpdateApplicationBody = z.object({
 router.patch(
   "/ballet/applications/:id",
   requireStudentAuth,
+  requireVerifiedStudent,
   async (req, res): Promise<void> => {
     const id = parseInt(String(req.params["id"] ?? ""), 10);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
@@ -543,6 +546,7 @@ router.patch(
 router.post(
   "/ballet/applications/:id/cancel",
   requireStudentAuth,
+  requireVerifiedStudent,
   async (req, res): Promise<void> => {
     const id = parseInt(String(req.params["id"] ?? ""), 10);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }

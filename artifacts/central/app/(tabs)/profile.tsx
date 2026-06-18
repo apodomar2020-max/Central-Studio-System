@@ -16,6 +16,7 @@ import {
   View,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
+import { Image } from "expo-image";
 import { customFetch } from "@workspace/api-client-react";
 import type { MyAttendanceResponse } from "@workspace/api-client-react";
 
@@ -283,9 +284,18 @@ export default function ProfileScreen() {
         ]}
       >
         <View style={styles.profileCard}>
-          <View style={[styles.avatarCircle, { backgroundColor: colors.studio.primary + "30" }]}>
-            <Text style={[styles.avatarInitials, { color: colors.studio.primary }]}>{initials}</Text>
-          </View>
+          {user.avatarUrl ? (
+            <Image
+              source={{ uri: user.avatarUrl }}
+              style={styles.avatarImage}
+              contentFit="cover"
+              transition={150}
+            />
+          ) : (
+            <View style={[styles.avatarCircle, { backgroundColor: colors.studio.primary + "30" }]}>
+              <Text style={[styles.avatarInitials, { color: colors.studio.primary }]}>{initials}</Text>
+            </View>
+          )}
           <Text style={styles.fullName}>{user.fullName}</Text>
           <View style={styles.emailRow}>
             <Text style={styles.email}>{user.email}</Text>
@@ -527,6 +537,7 @@ const styles = StyleSheet.create({
   guestSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
   profileCard: { alignItems: "center", paddingVertical: 24, gap: 6 },
   avatarCircle: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  avatarImage: { width: 80, height: 80, borderRadius: 40, marginBottom: 4, backgroundColor: "#1E1E26" },
   avatarInitials: { fontSize: 28, fontFamily: "Inter_700Bold" },
   fullName: { fontSize: 22, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   emailRow: { flexDirection: "row", alignItems: "center", gap: 8 },

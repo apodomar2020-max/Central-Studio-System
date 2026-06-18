@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { desc, eq, or } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
-import { requireStudentAuth } from "../middlewares/studentAuth";
+import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import {
   CreateNotificationBody,
   GetNotificationParams,
@@ -35,7 +35,7 @@ router.post("/notifications", async (req, res): Promise<void> => {
 // per-student notifications (target="student:{studentId}") for the caller.
 // Requires student JWT. Must be declared before /:id to avoid routing conflict.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get("/notifications/my", requireStudentAuth, async (req: any, res): Promise<void> => {
+router.get("/notifications/my", requireStudentAuth, requireVerifiedStudent, async (req: any, res): Promise<void> => {
   const studentId: number = req.studentId;
   const rows = await db
     .select()

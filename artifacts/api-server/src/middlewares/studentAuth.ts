@@ -52,3 +52,39 @@ export function requireStudentAuth(
   }
   next();
 }
+
+/**
+ * requireVerifiedStudent — like requireStudentAuth, but additionally rejects
+ * accounts whose email is not yet verified.
+ *
+ * Mandatory email verification: a "limited" token issued to an unverified
+ * account carries emailVerified=false in its claims (surfaced as
+ * req.studentEmailVerified). Such a token is accepted only by OTP and /auth/me
+ * routes; every other student-scoped route uses this guard and returns 403
+ * with { requiresOtp: true } so the client can route the user to the OTP screen.
+ *
+ * Legacy tokens issued before this feature have no emailVerified claim
+ * (req.studentEmailVerified === undefined). Those are grandfathered through —
+ * we only block an explicit `false`.
+ */
+export function requireVerifiedStudent(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!req.studentJwtVerified || typeof req.studentId !== "number") {
+    res.status(401).json({
+      error: "Student authentication required. Please log in to continue.",
+    });
+    return;
+  }
+  if (req.studentEmailVerified === false) {
+    res.status(403).json({
+      error: "Email verification required.",
+      requiresOtp: true,
+      email: req.studentEmail,
+    });
+    return;
+  }
+  next();
+}

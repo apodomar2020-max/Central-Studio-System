@@ -12,9 +12,15 @@ import { boolean, integer, pgTable, serial, text, timestamp } from "drizzle-orm/
  */
 export const emailOtpsTable = pgTable("email_otps", {
   id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull(),
+  // Nullable: social / email-first verification flows may issue an OTP keyed by
+  // email before (or independently of) a known student row.
+  studentId: integer("student_id"),
   email: text("email").notNull(),
   code: text("code").notNull(),                         // 6-digit string
+  // What the code is for: "verify" (email verification) | "reset" (password reset).
+  purpose: text("purpose").notNull().default("verify"),
+  // Wrong-code attempts against this row; used to lock out brute-force guessing.
+  attempts: integer("attempts").notNull().default(0),
   expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

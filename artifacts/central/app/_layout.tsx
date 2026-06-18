@@ -10,6 +10,7 @@ import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as WebBrowser from "expo-web-browser";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -20,6 +21,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppContextProvider } from "@/contexts/AppContext";
 
 SplashScreen.preventAutoHideAsync();
+
+// Completes the OAuth redirect (Google Sign-In) when the app regains focus.
+WebBrowser.maybeCompleteAuthSession();
 
 // Point the generated API client at the backend.
 // Override via env vars in your .env.local file (never commit secrets):

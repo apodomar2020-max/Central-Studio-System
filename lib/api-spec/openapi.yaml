@@ -1281,6 +1281,7 @@ components:
         email: { type: string }
         phone: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        avatarUrl: { type: ["string", "null"] }
         totalBookings: { type: integer }
         joinedAt: { type: string }
         createdAt: { type: string }

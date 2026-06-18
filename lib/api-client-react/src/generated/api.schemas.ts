@@ -359,6 +359,8 @@ export interface Student {
   phone?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable — effective avatar (Google sync or manual upload) */
+  avatarUrl?: string | null;
   totalBookings: number;
   joinedAt: string;
   createdAt: string;

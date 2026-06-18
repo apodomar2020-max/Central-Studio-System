@@ -137,5 +137,21 @@
       "tag": "0016_schedule_package_eligibility",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782129600000,
+      "tag": "0017_auth_providers",
+      "breakpoints": true
+    }
+  ,
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782216000000,
+      "tag": "0018_student_avatars",
+      "breakpoints": true
+    }
   ]
 }
