@@ -113,5 +113,13 @@
       "tag": "0013_credit_ledger",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781870400000,
+      "tag": "0014_app_content_pages",
+      "breakpoints": true
+    }
   ]
 }

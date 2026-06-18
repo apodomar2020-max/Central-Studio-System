@@ -20,6 +20,7 @@ import {
   ClipboardList,
   Settings2,
   Trophy,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -52,6 +53,7 @@ const generalNav = [
 ];
 
 const systemNav = [
+  { name: "App Content", href: "/app-content", icon: FileText },
   { name: "System Users", href: "/system-users", icon: ShieldCheck },
   { name: "Settings", href: "/settings", icon: Settings2 },
 ];

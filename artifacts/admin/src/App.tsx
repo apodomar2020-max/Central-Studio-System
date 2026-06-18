@@ -24,6 +24,7 @@ import AttendancePage from "@/pages/attendance";
 import ReportsPage from "@/pages/reports";
 import HeroItems from "@/pages/hero-items";
 import SystemUsers from "@/pages/system-users";
+import AppContentPage from "@/pages/app-content";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import AssessmentSlotsPage from "@/pages/ballet/AssessmentSlotsPage";
@@ -83,6 +84,7 @@ function ProtectedRouter() {
         <Route path="/attendance" component={AttendancePage} />
         <Route path="/reports" component={ReportsPage} />
         <Route path="/hero-items" component={HeroItems} />
+        <Route path="/app-content" component={AppContentPage} />
         <Route path="/system-users" component={SystemUsers} />
         <Route path="/ballet/applications/:id" component={ApplicationDetailPage} />
         <Route path="/ballet/applications" component={ApplicationsPage} />
