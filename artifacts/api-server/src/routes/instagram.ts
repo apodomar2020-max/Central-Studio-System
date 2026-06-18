@@ -95,7 +95,7 @@ async function refreshTokenIfNeeded(): Promise<void> {
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
-router.get("/api/instagram/reels", async (req, res) => {
+router.get("/instagram/reels", async (req, res) => {
   const userId = process.env.INSTAGRAM_USER_ID;
   const token  = await getToken();
 
