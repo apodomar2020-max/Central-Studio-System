@@ -10,6 +10,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -187,6 +188,101 @@ function HeroCarousel({ items, isLoading, isError, error, onRetry }: HeroCarouse
           />
         ))}
       </View>
+    </View>
+  );
+}
+
+// ─── Instagram Reels Section ──────────────────────────────────────────────────
+
+const REEL_CARD_WIDTH  = 120;
+const REEL_CARD_HEIGHT = 210;
+
+interface InstagramReel {
+  id: string;
+  media_type: string;
+  media_url?: string;
+  thumbnail_url?: string;
+  permalink: string;
+  timestamp: string;
+}
+
+function ReelsSection() {
+  const { data, isLoading, isError } = useQuery<{ reels: InstagramReel[] }>({
+    queryKey: ["instagram-reels"],
+    queryFn: async () => {
+      const result = await customFetch("/api/instagram/reels");
+      return result as { reels: InstagramReel[] };
+    },
+    staleTime: 60 * 60 * 1000, // 1 hour
+    retry: 1,
+  });
+
+  const reels = data?.reels ?? [];
+
+  // Silently hide section on error or empty — it's an optional content block
+  if (isError || (!isLoading && reels.length === 0)) return null;
+
+  return (
+    <View style={[styles.section, { marginBottom: 8 }]}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={[styles.sectionSubLabel, { color: colors.studio.primary }]}>@CENTRAL.STUDIO.EG</Text>
+          <Text style={styles.sectionTitle}>Latest Reels</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => Linking.openURL("https://www.instagram.com/central.studio.eg/")}
+        >
+          <Text style={[styles.seeAll, { color: colors.studio.primary }]}>Follow</Text>
+        </TouchableOpacity>
+      </View>
+
+      {isLoading ? (
+        // Skeleton placeholders
+        <FlatList
+          data={[1, 2, 3, 4]}
+          keyExtractor={(i) => String(i)}
+          renderItem={() => <View style={styles.reelCardSkeleton} />}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingLeft: 20, gap: 10, paddingRight: 8 }}
+          scrollEnabled={false}
+        />
+      ) : (
+        <FlatList
+          data={reels}
+          keyExtractor={(r) => r.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.reelCard}
+              activeOpacity={0.82}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Linking.openURL(item.permalink);
+              }}
+            >
+              {item.thumbnail_url ? (
+                <Image
+                  source={{ uri: item.thumbnail_url }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                />
+              ) : (
+                <LinearGradient
+                  colors={["#1E1E26", "#0D0D14"]}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              {/* Play button overlay */}
+              <View style={styles.reelPlayBtn}>
+                <Ionicons name="play" size={20} color="#FFFFFF" />
+              </View>
+            </TouchableOpacity>
+          )}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingLeft: 20, gap: 10, paddingRight: 20 }}
+        />
+      )}
     </View>
   );
 }
@@ -669,6 +765,8 @@ export default function StudioHomeScreen() {
             </TouchableOpacity>
           </LinearGradient>
         </View>
+
+        <ReelsSection />
       </ScrollView>
     </View>
   );
@@ -706,6 +804,31 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#FFF" },
   scroll: { paddingTop: 10 },
+
+  reelCard: {
+    width: REEL_CARD_WIDTH,
+    height: REEL_CARD_HEIGHT,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "#1A1A24",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reelCardSkeleton: {
+    width: REEL_CARD_WIDTH,
+    height: REEL_CARD_HEIGHT,
+    borderRadius: 14,
+    backgroundColor: "#1E1E26",
+  },
+  reelPlayBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(0,0,0,0.52)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingLeft: 3, // optical centering for play icon
+  },
 
   heroBanner: { marginHorizontal: HERO_MARGIN, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: HERO_HEIGHT },
   heroSlide: { width: HERO_WIDTH, height: HERO_HEIGHT },

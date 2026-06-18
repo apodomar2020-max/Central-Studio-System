@@ -28,6 +28,7 @@ import checkInRouter from "./checkIn";
 import adminCreditsRouter from "./adminCredits";
 import myRouter from "./myRoutes";
 import appContentRouter from "./appContent";
+import instagramRouter from "./instagram";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(checkInRouter);
 router.use(adminCreditsRouter);
 router.use(myRouter);
 router.use(appContentRouter);
+router.use(instagramRouter);
 
 export default router;
