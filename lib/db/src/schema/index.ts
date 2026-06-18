@@ -28,3 +28,5 @@ export * from "./appFaqItems";
 export * from "./appContactLinks";
 // Credit Ledger — immutable audit trail for credit changes (migration 0013)
 export * from "./creditTransactions";
+// Instagram token — persisted long-lived token with auto-refresh (migration 0020)
+export * from "./instagramToken";

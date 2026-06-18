@@ -153,5 +153,21 @@
       "tag": "0018_student_avatars",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782302400000,
+      "tag": "0019_booking_payment_status_split",
+      "breakpoints": true
+    }
+  ,
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782388800000,
+      "tag": "0020_instagram_token",
+      "breakpoints": true
+    }
   ]
 }
