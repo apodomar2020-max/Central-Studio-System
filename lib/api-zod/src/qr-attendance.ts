@@ -85,6 +85,10 @@ export const CheckInQrBody = zod.object({
   qrToken: zod.string().uuid("qrToken must be a valid UUID"),
   /** The booking this check-in satisfies (admin selects from student's bookings). */
   bookingId: zod.number().int().positive(),
+  /** Whether this check-in should consume a package credit or be paid outside packages. */
+  paymentMode: zod.enum(["package_credit", "pay_at_studio"]),
+  /** Required when paymentMode is package_credit; ignored for pay_at_studio. */
+  packageOrderId: zod.number().int().positive().optional(),
   /** Admin email performing the check-in, for the audit trail. */
   checkedInBy: zod.string().optional(),
 });

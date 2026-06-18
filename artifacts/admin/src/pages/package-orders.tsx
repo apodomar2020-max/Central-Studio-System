@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   useListPackageOrders,
   useUpdatePackageOrder,
   useDeletePackageOrder,
-  useAdjustCredits,
   useListCreditTransactions,
   getListPackageOrdersQueryKey,
   getListCreditTransactionsQueryKey,
 } from "@workspace/api-client-react";
 import type { AdjustCreditsBody } from "@workspace/api-client-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   CheckCircle2, Clock, XCircle, Trash2, Edit2, CreditCard,
@@ -38,6 +38,8 @@ const BG_ROW = "hsl(203 30% 12%)";
 const BORDER = "hsl(203 30% 16%)";
 const MUTED = "#8A9AB0";
 const MUTED_DARK = "#4E6070";
+const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
 
 type PackageOrder = {
   id: number;
@@ -54,6 +56,14 @@ type PackageOrder = {
   createdAt: string;
   updatedAt: string;
 };
+
+function makeHeaders(token?: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+    ...(token ? { "x-admin-token": token } : {}),
+  };
+}
 
 function StatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] ?? { label: status, color: MUTED, icon: CreditCard };
@@ -77,6 +87,7 @@ function AdjustCreditsDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { token } = useAdminAuth();
   const [type, setType] = useState<AdjustCreditsBody["type"]>("manual_adjustment");
   const [rawDelta, setRawDelta] = useState("");
   const [notes, setNotes] = useState("");
@@ -86,19 +97,31 @@ function AdjustCreditsDialog({
   const newBalance = isValidDelta ? order.remainingCredits + delta : order.remainingCredits;
   const balanceSafe = newBalance >= 0;
 
-  const { mutate, isPending } = useAdjustCredits({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListPackageOrdersQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getListCreditTransactionsQueryKey({ packageOrderId: order.id }) });
-        onClose();
-      },
+  const { mutate, isPending } = useMutation({
+    mutationFn: async (data: AdjustCreditsBody) => {
+      const res = await fetch(`${API_BASE}/api/admin/package-orders/${order.id}/credits`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(body.message ?? body.error ?? "Credit adjustment failed");
+      }
+
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListPackageOrdersQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListCreditTransactionsQueryKey({ packageOrderId: order.id }) });
+      onClose();
     },
   });
 
   function handleSubmit() {
     if (!isValidDelta || !balanceSafe) return;
-    mutate({ id: order.id, data: { type, delta, notes: notes.trim() || undefined } });
+    mutate({ type, delta, notes: notes.trim() || undefined });
   }
 
   return (

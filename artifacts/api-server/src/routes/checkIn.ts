@@ -18,7 +18,7 @@ const router: IRouter = Router();
 // Atomic QR-code check-in for the credit ledger system (migration 0013).
 //
 // Accepts:
-//   { qrToken: UUID, bookingId: number, checkedInBy?: string }
+//   { qrToken: UUID, bookingId: number, paymentMode, packageOrderId?, checkedInBy? }
 //
 // Flow (all inside one DB transaction):
 //   1. Resolve student by qrToken (never reveals email in error messages)
@@ -26,11 +26,11 @@ const router: IRouter = Router();
 //   3. Verify booking has not already been attended
 //   4. Prevent duplicate attendance for the same class/schedule today
 //   5. Create attendance record (status: checked_in)
-//   6. If booking has a packageOrderId with credits: deduct 1 credit (SELECT FOR UPDATE)
+//   6. If admin selected package credit: deduct 1 credit (SELECT FOR UPDATE)
 //   7. Insert credit_transactions ledger row for the deduction
 //
 // Credits are deducted at check-in time (NOT at booking time). A booking
-// without a packageOrderId checks in successfully without credit deduction.
+// Pay-at-studio checks in successfully without credit deduction.
 // ---------------------------------------------------------------------------
 
 type CheckInErrorCode =
@@ -39,7 +39,10 @@ type CheckInErrorCode =
   | "booking_mismatch"
   | "already_attended"
   | "duplicate_attendance"
+  | "booking_not_actionable"
+  | "package_required"
   | "package_not_found"
+  | "invalid_package"
   | "no_credits";
 
 interface CheckInError {
@@ -72,8 +75,16 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
     return;
   }
 
-  const { qrToken, bookingId, checkedInBy } = parsed.data;
+  const { qrToken, bookingId, paymentMode, packageOrderId, checkedInBy } = parsed.data;
   const performedBy = checkedInBy ?? "system";
+
+  if (paymentMode === "package_credit" && packageOrderId == null) {
+    res.status(400).json({
+      error: "package_required",
+      message: "Package credit check-in requires a packageOrderId.",
+    });
+    return;
+  }
 
   try {
     const result = await db.transaction(async (tx) => {
@@ -115,11 +126,33 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
       // ------------------------------------------------------------------
       // Step 3 — Prevent double check-in on the same booking
       // ------------------------------------------------------------------
-      if (booking.status === "attended") {
+      if (booking.status === "attended" || booking.status === "completed") {
         throw makeError(
           409,
           "already_attended",
           "This booking has already been marked as attended.",
+        );
+      }
+
+      if (booking.status === "cancelled") {
+        throw makeError(
+          400,
+          "booking_not_actionable",
+          "Cancelled bookings cannot be checked in.",
+        );
+      }
+
+      const [existingForBooking] = await tx
+        .select({ id: attendanceTable.id })
+        .from(attendanceTable)
+        .where(eq(attendanceTable.bookingId, booking.id))
+        .limit(1);
+
+      if (existingForBooking) {
+        throw makeError(
+          409,
+          "already_attended",
+          "This booking already has an attendance record.",
         );
       }
 
@@ -154,7 +187,46 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
       }
 
       // ------------------------------------------------------------------
-      // Step 5 — Create attendance record
+      // Step 5 — Validate selected package credit, if requested
+      // ------------------------------------------------------------------
+      let selectedOrder:
+        | {
+            id: number;
+            studentEmail: string;
+            remainingCredits: number;
+            status: string;
+          }
+        | null = null;
+
+      if (paymentMode === "package_credit") {
+        const [order] = await tx
+          .select({
+            id: packageOrdersTable.id,
+            studentEmail: packageOrdersTable.studentEmail,
+            remainingCredits: packageOrdersTable.remainingCredits,
+            status: packageOrdersTable.status,
+          })
+          .from(packageOrdersTable)
+          .where(eq(packageOrdersTable.id, packageOrderId!))
+          .for("update");
+
+        if (!order) {
+          throw makeError(404, "package_not_found", "The selected package order could not be found.");
+        }
+
+        if (order.studentEmail !== student.email || order.status !== "active") {
+          throw makeError(403, "invalid_package", "The selected package is not active for this student.");
+        }
+
+        if (order.remainingCredits <= 0) {
+          throw makeError(400, "no_credits", "This package has no remaining credits.");
+        }
+
+        selectedOrder = order;
+      }
+
+      // ------------------------------------------------------------------
+      // Step 6 — Create attendance record
       // ------------------------------------------------------------------
       const [attendance] = await tx
         .insert(attendanceTable)
@@ -165,60 +237,38 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
           classId: booking.classId ?? null,
           scheduleId: booking.scheduleId ?? null,
           bookingId: booking.id,
-          packageOrderId: booking.packageOrderId ?? null,
-          creditDeducted: booking.packageOrderId != null,
+          packageOrderId: selectedOrder?.id ?? null,
+          creditDeducted: paymentMode === "package_credit",
           checkedInBy: performedBy,
           status: "checked_in",
-          classTitle: null, // populated below if we find the package name
-          notes: null,
+          classTitle: null,
+          notes: paymentMode === "pay_at_studio" ? "Payment mode: pay at studio" : null,
           checkedInAt: new Date().toISOString(),
         })
         .returning();
 
       // ------------------------------------------------------------------
-      // Step 6 & 7 — Credit deduction + ledger row (if package linked)
+      // Step 7 — Credit deduction + ledger row (if package credit selected)
       // ------------------------------------------------------------------
       let remainingCredits: number | null = null;
 
-      if (booking.packageOrderId != null) {
-        const [order] = await tx
-          .select()
-          .from(packageOrdersTable)
-          .where(eq(packageOrdersTable.id, booking.packageOrderId))
-          .for("update"); // row-level lock prevents concurrent double-deduction
-
-        if (!order) {
-          throw makeError(
-            404,
-            "package_not_found",
-            "The linked package order could not be found.",
-          );
-        }
-
-        if (order.remainingCredits <= 0) {
-          throw makeError(
-            400,
-            "no_credits",
-            "This package has no remaining credits.",
-          );
-        }
-
-        const newRemaining = order.remainingCredits - 1;
+      if (selectedOrder) {
+        const newRemaining = selectedOrder.remainingCredits - 1;
 
         await tx
           .update(packageOrdersTable)
           .set({
             remainingCredits: newRemaining,
-            status: newRemaining <= 0 ? "fullyUsed" : order.status,
+            status: newRemaining <= 0 ? "fullyUsed" : selectedOrder.status,
           })
-          .where(eq(packageOrdersTable.id, booking.packageOrderId));
+          .where(eq(packageOrdersTable.id, selectedOrder.id));
 
         await tx.insert(creditTransactionsTable).values({
-          packageOrderId: order.id,
+          packageOrderId: selectedOrder.id,
           studentId: student.id,
           type: "attendance_deduction",
           delta: -1,
-          balanceBefore: order.remainingCredits,
+          balanceBefore: selectedOrder.remainingCredits,
           balanceAfter: newRemaining,
           referenceId: attendance.id,
           referenceType: "attendance",
@@ -242,7 +292,7 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
         studentName: student.name,
         studentEmail: student.email,
         classTitle: null as string | null,
-        creditDeducted: booking.packageOrderId != null,
+        creditDeducted: paymentMode === "package_credit",
         remainingCredits,
         checkedInAt: attendance.checkedInAt,
       };

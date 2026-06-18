@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Modal,
@@ -16,6 +16,8 @@ import {
   View,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
+import { customFetch } from "@workspace/api-client-react";
+import type { MyAttendanceResponse } from "@workspace/api-client-react";
 
 import { useAppContext, ChildProfile } from "@/contexts/AppContext";
 import { fetchMyApplications } from "@/services/balletAssessmentService";
@@ -182,6 +184,7 @@ export default function ProfileScreen() {
   const [addChildVisible, setAddChildVisible] = useState(false);
   const [editingChild, setEditingChild] = useState<ChildProfile | undefined>(undefined);
   const [qrVisible, setQrVisible] = useState(false);
+  const [serverAttendedCount, setServerAttendedCount] = useState<number | null>(null);
 
   // Fetch ballet applications to determine account type.
   // A user is a "Parent" if they have registered children OR submitted ballet applications.
@@ -197,6 +200,29 @@ export default function ProfileScreen() {
     return () => ctrl.abort();
   }, [user]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return undefined;
+      let active = true;
+
+      customFetch<MyAttendanceResponse>("/api/my/attendance?limit=100")
+        .then((res) => {
+          if (!active) return;
+          const count = res.data.filter((record) =>
+            record.status === "checked_in" || record.status === "late",
+          ).length;
+          setServerAttendedCount(count);
+        })
+        .catch(() => {
+          if (active) setServerAttendedCount(null);
+        });
+
+      return () => {
+        active = false;
+      };
+    }, [user]),
+  );
+
   const upcoming = bookings.filter(
     (b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment"
   ).length;
@@ -206,6 +232,9 @@ export default function ProfileScreen() {
   const totalCredits = userPackages
     .filter((p) => p.status === "active" && new Date(p.expiryDate) >= new Date())
     .reduce((sum, p) => sum + (p.remainingCredits ?? 0), 0);
+  const attendedCount =
+    serverAttendedCount ??
+    bookings.filter((b) => b.bookingStatus === "attended").length;
 
   async function handleLogout() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -298,7 +327,7 @@ export default function ProfileScreen() {
           </View>
           <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
             <Text style={[styles.statValue, { color: "#8B5CF6" }]}>
-              {bookings.filter((b) => b.bookingStatus === "attended").length}
+              {attendedCount}
             </Text>
             <Text style={styles.statLabel}>Attended</Text>
           </View>

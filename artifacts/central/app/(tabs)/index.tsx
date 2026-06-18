@@ -524,7 +524,7 @@ export default function StudioHomeScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 40 : insets.top + 40 }]}>
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 20 : insets.top + 20 }]}>
         <View>
           <Text style={styles.headerLabel}>CENTRAL</Text>
           <Text style={styles.headerTitle}>Studio</Text>
@@ -679,10 +679,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
     paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 10,
-    marginTop: 10,
-    marginBottom: 10,
+    paddingTop: 20,
+    paddingBottom: 20,
+    marginTop: 0,
+    marginBottom: 0,
     marginLeft: 20,
     marginRight: 20,
     backgroundColor: colors.studio.background,

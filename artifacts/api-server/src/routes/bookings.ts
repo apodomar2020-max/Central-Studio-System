@@ -6,6 +6,7 @@ import {
   classesTable,
   schedulesTable,
   instructorsTable,
+  attendanceTable,
 } from "@workspace/db";
 import {
   ListBookingsQueryParams,
@@ -73,17 +74,21 @@ router.get("/bookings", async (req, res): Promise<void> => {
       scheduleStartTime: schedulesTable.startTime,
       scheduleEndTime: schedulesTable.endTime,
       scheduleLocation: schedulesTable.location,
+      attendanceId: attendanceTable.id,
     })
     .from(bookingsTable)
     .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
     .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
-    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id));
+    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+    .leftJoin(attendanceTable, eq(attendanceTable.bookingId, bookingsTable.id));
 
   const rows = conditions.length > 0
     ? await base.where(and(...conditions)).orderBy(bookingsTable.createdAt)
     : await base.orderBy(bookingsTable.createdAt);
 
-  const enriched = rows.map((r) => {
+  const enrichedById = new Map<number, Record<string, unknown>>();
+
+  for (const r of rows) {
     const dayName =
       r.scheduleDayOfWeek != null ? DAY_NAMES[r.scheduleDayOfWeek] ?? null : null;
     const start = formatTime(r.scheduleStartTime);
@@ -91,7 +96,9 @@ router.get("/bookings", async (req, res): Promise<void> => {
     // scheduleLabel: "Sunday • 6:00 PM - 7:00 PM" — null when no schedule joined.
     const scheduleLabel =
       dayName && start && end ? `${dayName} • ${start} - ${end}` : null;
-    return {
+    const existing = enrichedById.get(r.booking.id);
+    enrichedById.set(r.booking.id, {
+      ...(existing ?? {}),
       ...r.booking,
       classTitle: r.classTitle ?? null,
       classDescription: r.classDescription ?? null,
@@ -105,8 +112,11 @@ router.get("/bookings", async (req, res): Promise<void> => {
       scheduleLocation: r.scheduleLocation ?? null,
       scheduleLabel,
       displayTitle: r.classTitle ?? `Booking #${r.booking.id}`,
-    };
-  });
+      hasAttendance: Boolean(existing?.hasAttendance || r.attendanceId),
+    });
+  }
+
+  const enriched = Array.from(enrichedById.values());
 
   res.json(ListBookingsResponse.parse(enriched));
 });

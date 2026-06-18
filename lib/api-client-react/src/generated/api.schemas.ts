@@ -283,6 +283,7 @@ export interface Booking {
   scheduleLabel?: string | null;
   /** @nullable — classTitle, falling back to "Booking #id" */
   displayTitle?: string | null;
+  hasAttendance?: boolean;
 }
 
 export interface CreateBookingBody {
@@ -692,6 +693,8 @@ export interface CreditTransaction {
 export interface CheckInQrBody {
   qrToken: string;
   bookingId: number;
+  paymentMode: "package_credit" | "pay_at_studio";
+  packageOrderId?: number;
   checkedInBy?: string;
 }
 

@@ -55,6 +55,7 @@ type Phase = "scanning" | "resolving" | "selecting" | "submitting" | "done" | "e
  * error       – started but html5-qrcode threw (driver issue, already in use, etc.)
  */
 type CameraStatus = "idle" | "requesting" | "active" | "denied" | "unsupported" | "error";
+type PaymentMode = "package_credit" | "pay_at_studio";
 
 type ScanResult =
   | { type: "token"; token: string }
@@ -93,6 +94,29 @@ type LegacyPackageOrder = {
   remainingCredits: number;
   status: string;
 };
+
+const CLOSED_BOOKING_STATUSES = new Set(["attended", "completed", "cancelled"]);
+
+function bookingStatusStyle(status: string): { background: string; color: string } {
+  switch (status) {
+    case "confirmed":
+      return { background: `${GREEN}18`, color: GREEN };
+    case "pending":
+      return { background: `${AMBER}18`, color: AMBER };
+    case "pendingPayment":
+      return { background: "#F9731618", color: "#F97316" };
+    case "completed":
+    case "attended":
+      return { background: `${GREEN}18`, color: GREEN };
+    case "cancelled":
+      return { background: "#6B728018", color: "#9CA3AF" };
+    case "rejected":
+    case "failed":
+      return { background: `${RED}18`, color: RED };
+    default:
+      return { background: "hsl(203 30% 20%)", color: "#8A9AB0" };
+  }
+}
 
 // ─── QR parsing ───────────────────────────────────────────────────────────────
 
@@ -181,6 +205,7 @@ export function ScanCheckInDialog({
   const [scannedQrToken, setScannedQrToken] = useState<string | null>(null);
   const [studentBookings, setStudentBookings] = useState<Booking[]>([]);
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
 
   const { data: allPackageOrders = [] } = useListPackageOrders();
 
@@ -258,6 +283,7 @@ export function ScanCheckInDialog({
     setScannedQrToken(null);
     setStudentBookings([]);
     setSelectedBookingId(null);
+    setPaymentMode(null);
   }
 
   const handleScanResult = useCallback(async (decoded: string) => {
@@ -284,9 +310,10 @@ export function ScanCheckInDialog({
           ).catch(() => [] as Booking[]),
           fetchSchedules(),
         ]);
-        // Only show open (non-attended, non-cancelled) bookings
+        // Only show actionable bookings. hasAttendance covers legacy rows where
+        // attendance exists but the booking status was never updated.
         const open = bookings.filter(
-          (b) => b.status !== "attended" && b.status !== "cancelled",
+          (b) => !CLOSED_BOOKING_STATUSES.has(b.status) && !b.hasAttendance,
         );
         setStudentBookings(open);
         if (open.length === 1) setSelectedBookingId(open[0].id);
@@ -326,12 +353,25 @@ export function ScanCheckInDialog({
     // ── Path A: QR endpoint (token scan + booking selected) ──────────────────
     // Uses the credit ledger and atomically marks the booking as attended.
     if (scannedQrToken && selectedBookingId) {
+      if (!paymentMode) {
+        setDuplicateError("Choose Package Credit or Pay at Studio before checking in.");
+        setPhase("selecting");
+        return;
+      }
+      if (paymentMode === "package_credit" && !selectedPackageId) {
+        setDuplicateError("Choose the package to deduct from before checking in.");
+        setPhase("selecting");
+        return;
+      }
+
       try {
         const row = await customFetch<CheckInQrResponse>("/api/check-in/qr", {
           method: "POST",
           body: JSON.stringify({
             qrToken: scannedQrToken,
             bookingId: selectedBookingId,
+            paymentMode,
+            packageOrderId: paymentMode === "package_credit" ? selectedPackageId : undefined,
           }),
         });
 
@@ -828,10 +868,16 @@ export function ScanCheckInDialog({
                 {studentBookings.map((bk) => {
                   const title = bk.displayTitle ?? bk.classTitle ?? `Booking #${bk.id}`;
                   const scheduleLine = bk.scheduleLabel ?? "Schedule not set";
+                  const statusStyle = bookingStatusStyle(bk.status);
                   return (
                     <button
                       key={bk.id}
-                      onClick={() => setSelectedBookingId(selectedBookingId === bk.id ? null : bk.id)}
+                      onClick={() => {
+                        const nextId = selectedBookingId === bk.id ? null : bk.id;
+                        setSelectedBookingId(nextId);
+                        setSelectedPackageId(null);
+                        setPaymentMode(null);
+                      }}
                       className="w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl text-sm text-left transition-all"
                       style={{
                         background: selectedBookingId === bk.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
@@ -854,10 +900,7 @@ export function ScanCheckInDialog({
                           </div>
                         )}
                       </div>
-                      <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0" style={{
-                        background: "hsl(203 30% 20%)",
-                        color: "#8A9AB0",
-                      }}>
+                      <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0" style={statusStyle}>
                         {bk.status}
                       </span>
                     </button>
@@ -865,45 +908,109 @@ export function ScanCheckInDialog({
                 })}
                 {selectedBookingId && (
                   <p className="text-xs" style={{ color: STUDIO_CYAN }}>
-                    Will use secure QR check-in with credit ledger
+                    Choose how this check-in is being paid before confirming.
                   </p>
                 )}
               </div>
             )}
 
-            {/* Package picker is shown only for legacy (email) flow or when no booking is selected */}
-            {(!isTokenFlow || !selectedBookingId) && activePackages.length === 0 ? (
-              <div
-                className="text-sm px-3 py-2.5 rounded-xl"
-                style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
-              >
-                No active packages found. You can still check in without deducting a credit.
-              </div>
-            ) : (
+            {isTokenFlow && selectedBookingId && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
-                  Active Packages
+                  Check-in Mode
                 </p>
-                {activePackages.map((pkg) => (
-                  <button
-                    key={pkg.id}
-                    onClick={() => setSelectedPackageId(selectedPackageId === pkg.id ? null : pkg.id)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
-                    style={{
-                      background: selectedPackageId === pkg.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
-                      border: `1px solid ${selectedPackageId === pkg.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
-                    }}
+                <button
+                  onClick={() => {
+                    setPaymentMode("pay_at_studio");
+                    setSelectedPackageId(null);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                  style={{
+                    background: paymentMode === "pay_at_studio" ? `${AMBER}15` : "hsl(203 30% 14%)",
+                    border: `1px solid ${paymentMode === "pay_at_studio" ? AMBER + "55" : "hsl(203 30% 18%)"}`,
+                  }}
+                >
+                  <span className="font-medium text-white">Pay at Studio / Cash</span>
+                  <span className="text-xs" style={{ color: AMBER }}>No credit deduction</span>
+                </button>
+
+                {activePackages.length === 0 ? (
+                  <div
+                    className="text-sm px-3 py-2.5 rounded-xl"
+                    style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
                   >
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
-                      <span className="font-medium text-white">{pkg.packageName}</span>
-                    </div>
-                    <span className="text-xs font-semibold" style={{ color: STUDIO_CYAN }}>
-                      {pkg.remainingCredits} credit{pkg.remainingCredits !== 1 ? "s" : ""} left
-                    </span>
-                  </button>
-                ))}
+                    No active packages with credits found.
+                  </div>
+                ) : (
+                  activePackages.map((pkg) => (
+                    <button
+                      key={pkg.id}
+                      onClick={() => {
+                        setPaymentMode("package_credit");
+                        setSelectedPackageId(pkg.id);
+                      }}
+                      disabled={pkg.remainingCredits <= 0}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all disabled:opacity-40"
+                      style={{
+                        background:
+                          paymentMode === "package_credit" && selectedPackageId === pkg.id
+                            ? `${STUDIO_CYAN}15`
+                            : "hsl(203 30% 14%)",
+                        border: `1px solid ${
+                          paymentMode === "package_credit" && selectedPackageId === pkg.id
+                            ? STUDIO_CYAN + "50"
+                            : "hsl(203 30% 18%)"
+                        }`,
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
+                        <span className="font-medium text-white">{pkg.packageName}</span>
+                      </div>
+                      <span className="text-xs font-semibold" style={{ color: STUDIO_CYAN }}>
+                        {pkg.remainingCredits} credit{pkg.remainingCredits !== 1 ? "s" : ""} left
+                      </span>
+                    </button>
+                  ))
+                )}
               </div>
+            )}
+
+            {/* Package picker is shown only for legacy (email) flow or when no booking is selected */}
+            {(!isTokenFlow || !selectedBookingId) && (
+              activePackages.length === 0 ? (
+                <div
+                  className="text-sm px-3 py-2.5 rounded-xl"
+                  style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
+                >
+                  No active packages found. You can still check in without deducting a credit.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
+                    Active Packages
+                  </p>
+                  {activePackages.map((pkg) => (
+                    <button
+                      key={pkg.id}
+                      onClick={() => setSelectedPackageId(selectedPackageId === pkg.id ? null : pkg.id)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                      style={{
+                        background: selectedPackageId === pkg.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
+                        border: `1px solid ${selectedPackageId === pkg.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
+                        <span className="font-medium text-white">{pkg.packageName}</span>
+                      </div>
+                      <span className="text-xs font-semibold" style={{ color: STUDIO_CYAN }}>
+                        {pkg.remainingCredits} credit{pkg.remainingCredits !== 1 ? "s" : ""} left
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )
             )}
 
             {/* Schedule + manual credit controls — hidden when using QR booking path */}
@@ -972,7 +1079,14 @@ export function ScanCheckInDialog({
               </button>
               <button
                 onClick={() => void handleCheckIn()}
-                className="flex-1 py-3 rounded-xl text-sm font-bold"
+                disabled={
+                  Boolean(
+                    scannedQrToken &&
+                      selectedBookingId &&
+                      (!paymentMode || (paymentMode === "package_credit" && !selectedPackageId)),
+                  )
+                }
+                className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-40"
                 style={{ background: STUDIO_CYAN, color: "#000" }}
               >
                 Check In
