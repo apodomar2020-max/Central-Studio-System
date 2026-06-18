@@ -526,10 +526,11 @@ export default function StudioHomeScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 20 : insets.top + 20 }]}>
-        <View>
-          <Text style={styles.headerLabel}>CENTRAL</Text>
-          <Text style={styles.headerTitle}>Studio</Text>
-        </View>
+        <Image
+          source={require("@/assets/images/central_studio_logo.png")}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => router.push("/auth/login")} style={styles.headerBtn}>
             <Ionicons name="person-outline" size={22} color="#9CA3AF" />
@@ -679,17 +680,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingHorizontal: 20,
+    paddingLeft: 0,
+    paddingRight: 20,
     paddingTop: 20,
     paddingBottom: 20,
     marginTop: 0,
     marginBottom: 0,
-    marginLeft: 20,
+    marginLeft: 0,
     marginRight: 20,
     backgroundColor: colors.studio.background,
   },
-  headerLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.studio.primary, letterSpacing: 3 },
-  headerTitle: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF", lineHeight: 32 },
+  headerLogo: { width: 140, height: 44 },
   headerActions: { flexDirection: "row", gap: 8, alignItems: "center", marginTop: 8 },
   headerBtn: {
     width: 40, height: 40, borderRadius: 20,
@@ -704,7 +705,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   notifBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#FFF" },
-  scroll: { paddingTop: 40 },
+  scroll: { paddingTop: 10 },
 
   heroBanner: { marginHorizontal: HERO_MARGIN, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: HERO_HEIGHT },
   heroSlide: { width: HERO_WIDTH, height: HERO_HEIGHT },
