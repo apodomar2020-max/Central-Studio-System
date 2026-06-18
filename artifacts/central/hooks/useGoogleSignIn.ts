@@ -20,6 +20,7 @@ import { GOOGLE_CLIENT_IDS } from "@/constants/google";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
+const GOOGLE_NATIVE_REDIRECT_URI = "com.centralstudio.app:/oauthredirect";
 
 export function useGoogleSignIn() {
   const { setUser } = useAppContext();
@@ -31,6 +32,8 @@ export function useGoogleSignIn() {
     androidClientId: GOOGLE_CLIENT_IDS.android,
     iosClientId: GOOGLE_CLIENT_IDS.ios,
     webClientId: GOOGLE_CLIENT_IDS.web,
+  }, {
+    native: GOOGLE_NATIVE_REDIRECT_URI,
   });
 
   useEffect(() => {
