@@ -363,6 +363,17 @@ export interface UpdateBookingBody {
   notes?: string | null;
 }
 
+export interface GetStudentChildItem {
+  id: number;
+  fullName: string;
+  birthday?: string | null;
+  age?: number | null;
+  gender: string;
+  medicalNotes?: string | null;
+  emergencyName?: string | null;
+  emergencyPhone?: string | null;
+}
+
 export interface Student {
   id: number;
   name: string;
@@ -376,6 +387,11 @@ export interface Student {
   totalBookings: number;
   joinedAt: string;
   createdAt: string;
+  /** @nullable */
+  accountType?: string | null;
+  /** @nullable */
+  childCount?: number;
+  children?: GetStudentChildItem[];
 }
 
 export interface CreateStudentBody {

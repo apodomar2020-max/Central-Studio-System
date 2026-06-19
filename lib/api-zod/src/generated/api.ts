@@ -537,6 +537,8 @@ export const ListStudentsResponseItem = zod.object({
   totalBookings: zod.number(),
   joinedAt: zod.string(),
   createdAt: zod.string(),
+  accountType: zod.string().nullish(),
+  childCount: zod.number().optional(),
 });
 export const ListStudentsResponse = zod.array(ListStudentsResponseItem);
 
@@ -551,6 +553,17 @@ export const GetStudentParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const GetStudentChildItem = zod.object({
+  id: zod.number(),
+  fullName: zod.string(),
+  birthday: zod.string().nullish(),
+  age: zod.number().nullish(),
+  gender: zod.string(),
+  medicalNotes: zod.string().nullish(),
+  emergencyName: zod.string().nullish(),
+  emergencyPhone: zod.string().nullish(),
+});
+
 export const GetStudentResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
@@ -561,6 +574,8 @@ export const GetStudentResponse = zod.object({
   totalBookings: zod.number(),
   joinedAt: zod.string(),
   createdAt: zod.string(),
+  accountType: zod.string().nullish(),
+  children: zod.array(GetStudentChildItem).optional(),
 });
 
 export const UpdateStudentParams = zod.object({
@@ -585,6 +600,8 @@ export const UpdateStudentResponse = zod.object({
   totalBookings: zod.number(),
   joinedAt: zod.string(),
   createdAt: zod.string(),
+  accountType: zod.string().nullish(),
+  children: zod.array(GetStudentChildItem).optional(),
 });
 
 export const DeleteStudentParams = zod.object({

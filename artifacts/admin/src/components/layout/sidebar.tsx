@@ -21,18 +21,22 @@ import {
   Settings2,
   Trophy,
   FileText,
+  ChevronDown,
 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
-const studioNav = [
+const studioNavTop = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Instructors", href: "/instructors", icon: Users },
   { name: "Classes", href: "/classes", icon: CalendarDays },
   { name: "Schedules", href: "/schedules", icon: CalendarRange },
   { name: "Packages", href: "/packages", icon: CreditCard },
   { name: "Bookings", href: "/bookings", icon: Ticket },
-  { name: "Students", href: "/students", icon: UserSquare2 },
+];
+
+const studioNavBottom = [
   { name: "Offers", href: "/offers", icon: Tag },
   { name: "Hero Slides", href: "/hero-items", icon: ImagePlay },
 ];
@@ -109,6 +113,15 @@ function NavItem({
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAdminAuth();
+  const [usersOpen, setUsersOpen] = useState(
+    location === "/students" || location.startsWith("/parents")
+  );
+
+  useEffect(() => {
+    if (location === "/students" || location.startsWith("/parents")) {
+      setUsersOpen(true);
+    }
+  }, [location]);
 
   const isActive = (href: string) =>
     href === "/"
@@ -141,7 +154,76 @@ export function Sidebar() {
             </span>
           </div>
           <nav className="space-y-0.5 pr-2">
-            {studioNav.map((item) => (
+            {studioNavTop.map((item) => (
+              <NavItem
+                key={item.name}
+                item={item}
+                isActive={isActive(item.href)}
+                accent="studio"
+              />
+            ))}
+
+            {/* Collapsible Users Group */}
+            <div className="space-y-0.5">
+              <button
+                onClick={() => setUsersOpen(!usersOpen)}
+                className={cn(
+                  "w-full group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-r-lg cursor-pointer transition-all duration-150 ml-0 pl-3 focus:outline-none",
+                  (location === "/students" || location.startsWith("/parents"))
+                    ? "bg-[#00B6D7]/10 text-[#00B6D7] border-l-2 border-[#00B6D7]"
+                    : "text-[#8A9AB0] hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+                )}
+              >
+                <div className="flex items-center">
+                  <UserSquare2
+                    className={cn(
+                      "mr-3 h-[18px] w-[18px] flex-shrink-0 transition-colors",
+                      (location === "/students" || location.startsWith("/parents"))
+                        ? "text-[#00B6D7]"
+                        : "text-[#4E6070] group-hover:text-[#8A9AB0]"
+                    )}
+                  />
+                  <span>Users</span>
+                </div>
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-150 text-[#4E6070] group-hover:text-[#8A9AB0]",
+                    usersOpen && "transform rotate-180"
+                  )}
+                />
+              </button>
+
+              {usersOpen && (
+                <div className="pl-6 space-y-0.5 mt-0.5">
+                  <Link href="/students">
+                    <div
+                      className={cn(
+                        "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
+                        location === "/students"
+                          ? "text-[#00B6D7] bg-[#00B6D7]/5"
+                          : "text-[#8A9AB0] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      Students
+                    </div>
+                  </Link>
+                  <Link href="/parents">
+                    <div
+                      className={cn(
+                        "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
+                        location.startsWith("/parents")
+                          ? "text-[#00B6D7] bg-[#00B6D7]/5"
+                          : "text-[#8A9AB0] hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      Parents
+                    </div>
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            {studioNavBottom.map((item) => (
               <NavItem
                 key={item.name}
                 item={item}

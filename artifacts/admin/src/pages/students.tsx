@@ -35,7 +35,8 @@ type FormValues = z.input<typeof formSchema>;
 type Student = { id: number; name: string; email: string; phone?: string | null; notes?: string | null; avatarUrl?: string | null; totalBookings: number; joinedAt: string };
 
 export default function Students() {
-  const { data: students, isLoading } = useListStudents();
+  const { data: allStudents, isLoading } = useListStudents();
+  const students = allStudents?.filter((s) => s.accountType === "student" || !s.accountType);
   const createStudent = useCreateStudent();
   const updateStudent = useUpdateStudent();
   const deleteStudent = useDeleteStudent();

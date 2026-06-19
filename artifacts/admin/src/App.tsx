@@ -16,6 +16,9 @@ import Schedules from "@/pages/schedules";
 import Packages from "@/pages/packages";
 import Bookings from "@/pages/bookings";
 import Students from "@/pages/students";
+import ParentsPage from "@/pages/parents";
+import ParentDetailPage from "@/pages/parent-detail";
+import ChildDetailPage from "@/pages/child-detail";
 import Offers from "@/pages/offers";
 import Notifications from "@/pages/notifications";
 import Marketing from "@/pages/marketing";
@@ -77,6 +80,9 @@ function ProtectedRouter() {
         <Route path="/packages" component={Packages} />
         <Route path="/bookings" component={Bookings} />
         <Route path="/students" component={Students} />
+        <Route path="/parents" component={ParentsPage} />
+        <Route path="/parents/:id" component={ParentDetailPage} />
+        <Route path="/parents/:parentId/children/:childId" component={ChildDetailPage} />
         <Route path="/offers" component={Offers} />
         <Route path="/notifications" component={Notifications} />
         <Route path="/marketing" component={Marketing} />

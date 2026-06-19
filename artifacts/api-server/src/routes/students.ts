@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, studentsTable, packageOrdersTable, bookingsTable } from "@workspace/db";
+import { db, studentsTable, packageOrdersTable, bookingsTable, childrenTable } from "@workspace/db";
 import {
   CreateStudentBody,
   GetStudentParams,
@@ -98,10 +98,19 @@ router.get("/students", async (req, res): Promise<void> => {
     bookingCounts.set(email, (bookingCounts.get(email) ?? 0) + 1);
   }
 
+  const childrenRows = await db
+    .select({ parentId: childrenTable.parentId })
+    .from(childrenTable);
+  const childCounts = new Map<number, number>();
+  for (const child of childrenRows) {
+    childCounts.set(child.parentId, (childCounts.get(child.parentId) ?? 0) + 1);
+  }
+
   res.json(ListStudentsResponse.parse(
     rows.map((student) => ({
       ...student,
       totalBookings: bookingCounts.get(normalizeEmail(student.email)) ?? 0,
+      childCount: childCounts.get(student.id) ?? 0,
     })),
   ));
 });
@@ -130,7 +139,25 @@ router.get("/students/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Student not found" });
     return;
   }
-  res.json(GetStudentResponse.parse(row));
+
+  const children = await db
+    .select()
+    .from(childrenTable)
+    .where(eq(childrenTable.parentId, row.id));
+
+  res.json(GetStudentResponse.parse({
+    ...row,
+    children: children.map(c => ({
+      id: c.id,
+      fullName: c.fullName,
+      birthday: c.birthday ?? null,
+      age: c.age ?? null,
+      gender: c.gender,
+      medicalNotes: c.medicalNotes ?? null,
+      emergencyName: c.emergencyName ?? null,
+      emergencyPhone: c.emergencyPhone ?? null,
+    })),
+  }));
 });
 
 router.patch("/students/:id", async (req, res): Promise<void> => {
