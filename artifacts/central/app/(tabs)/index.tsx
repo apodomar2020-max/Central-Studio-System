@@ -544,6 +544,16 @@ export default function StudioHomeScreen() {
   const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner, userPackages } = useAppContext();
   const showNewStudentBanner = bookings.length === 0 && !newStudentBannerDismissed;
   const insets = useSafeAreaInsets();
+  const userInitials = React.useMemo(() => {
+    if (!user?.fullName) return "";
+    return user.fullName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  }, [user?.fullName]);
   const packageCreditsRemaining = React.useMemo(
     () => userPackages
       .filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0)
@@ -695,10 +705,20 @@ export default function StudioHomeScreen() {
           source={require("@/assets/images/central_studio_logo.png")}
           style={styles.headerLogo}
           resizeMode="contain"
-        />
+      />
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push("/auth/login")} style={styles.headerBtn}>
-            <Ionicons name="person-outline" size={22} color="#9CA3AF" />
+          <TouchableOpacity
+            onPress={() => router.push(user ? "/(tabs)/profile" : "/auth/login")}
+            style={styles.headerBtn}
+            activeOpacity={0.82}
+          >
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={styles.headerAvatarImage} resizeMode="cover" />
+            ) : userInitials ? (
+              <Text style={styles.headerAvatarInitials}>{userInitials}</Text>
+            ) : (
+              <Ionicons name="person-outline" size={22} color="#9CA3AF" />
+            )}
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push("/notifications")}
@@ -863,7 +883,10 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: "#1E1E26",
     alignItems: "center", justifyContent: "center",
+    overflow: "hidden",
   },
+  headerAvatarImage: { width: "100%", height: "100%" },
+  headerAvatarInitials: { fontSize: 13, fontFamily: "Inter_700Bold", color: colors.studio.primary },
   notifBadge: {
     position: "absolute", top: -2, right: -2,
     minWidth: 16, height: 16, borderRadius: 8,

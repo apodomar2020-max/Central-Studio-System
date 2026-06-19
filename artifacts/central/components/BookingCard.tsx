@@ -45,7 +45,7 @@ export default function BookingCard({ item }: BookingCardProps) {
   const priceLabel = item.bookingType === "package"
     ? "Package Credit"
     : item.paymentMethod === "cash"
-      ? `Pay at Studio • EGP ${item.price}`
+      ? `Studio Pay • EGP ${item.price}`
       : `EGP ${item.price}`;
   const scheduleLabel = item.scheduleLabel ?? (
     item.date || item.time ? `${item.date}${item.time ? ` • ${item.time}` : ""}` : "Schedule not set"
@@ -192,23 +192,34 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    gap: 8,
   },
-  badges: { flexDirection: "row", gap: 6 },
+  badges: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
   badge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+    maxWidth: "100%",
   },
   badgeText: {
     fontSize: 10,
     fontFamily: "Inter_600SemiBold",
     textTransform: "uppercase",
     letterSpacing: 0.4,
+    flexShrink: 1,
   },
   price: {
     fontSize: 15,
     fontFamily: "Inter_700Bold",
+    flexShrink: 0,
   },
   warning: {
     flexDirection: "row",
