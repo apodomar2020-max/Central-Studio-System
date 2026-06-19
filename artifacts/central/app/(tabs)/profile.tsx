@@ -25,7 +25,7 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 
 const SECTION_ITEMS = [
-  { icon: "create-outline",        label: "Edit Profile",        route: "/auth/complete-profile" },
+  { icon: "create-outline",        label: "Edit Profile",        route: "/edit-profile" },
   { icon: "calendar-outline",      label: "My Bookings",         route: "/(tabs)/bookings"   },
   { icon: "layers-outline",        label: "Package Center",       route: "/package-center"    },
   { icon: "receipt-outline",       label: "Credit History",       route: "/credit-history"    },

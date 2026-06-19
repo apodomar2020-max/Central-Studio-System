@@ -88,6 +88,7 @@ function RootLayoutNav() {
       />
       <Stack.Screen name="referral" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="notifications" options={{ animation: "slide_from_right" }} />
+      <Stack.Screen name="edit-profile" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="change-password" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="verify-email" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="privacy-policy" options={{ animation: "slide_from_right" }} />
