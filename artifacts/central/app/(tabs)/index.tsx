@@ -656,6 +656,8 @@ export default function StudioHomeScreen() {
     refreshApiUnread();
     return () => { active = false; };
   }, []));
+  const totalUnreadNotifications = unreadNotifications + apiUnreadCount;
+  const notificationBadgeLabel = totalUnreadNotifications > 99 ? "99+" : String(totalUnreadNotifications);
 
   // ── Hero items (system-managed, from backend only) ─────────────────────────
   const {
@@ -780,7 +782,7 @@ export default function StudioHomeScreen() {
         <View style={styles.headerActions}>
           <TouchableOpacity
             onPress={() => router.push(user ? "/(tabs)/profile" : "/auth/login")}
-            style={styles.headerBtn}
+            style={[styles.headerBtn, styles.profileHeaderBtn]}
             activeOpacity={0.82}
           >
             {user?.avatarUrl ? (
@@ -793,14 +795,12 @@ export default function StudioHomeScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push("/notifications")}
-            style={styles.headerBtn}
+            style={[styles.headerBtn, styles.notificationHeaderBtn]}
           >
             <Ionicons name="notifications-outline" size={22} color="#9CA3AF" />
-            {(unreadNotifications + apiUnreadCount) > 0 && (
+            {totalUnreadNotifications > 0 && (
               <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>
-                  {(unreadNotifications + apiUnreadCount) > 9 ? "9+" : (unreadNotifications + apiUnreadCount)}
-                </Text>
+                <Text style={styles.notifBadgeText}>{notificationBadgeLabel}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -954,16 +954,26 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: "#1E1E26",
     alignItems: "center", justifyContent: "center",
+    overflow: "visible",
+  },
+  profileHeaderBtn: {
     overflow: "hidden",
+  },
+  notificationHeaderBtn: {
+    overflow: "visible",
+    zIndex: 5,
+    elevation: 5,
   },
   headerAvatarImage: { width: "100%", height: "100%" },
   headerAvatarInitials: { fontSize: 13, fontFamily: "Inter_700Bold", color: colors.studio.primary },
   notifBadge: {
-    position: "absolute", top: -2, right: -2,
-    minWidth: 16, height: 16, borderRadius: 8,
+    position: "absolute", top: -5, right: -5,
+    minWidth: 18, height: 18, borderRadius: 9,
     backgroundColor: colors.error,
     alignItems: "center", justifyContent: "center",
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
+    zIndex: 10,
+    elevation: 10,
   },
   notifBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#FFF" },
   scroll: { paddingTop: 10 },

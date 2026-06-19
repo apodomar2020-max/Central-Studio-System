@@ -51,6 +51,7 @@ type NotificationPayload = {
   relatedEntityId: number;
   metadata: Record<string, unknown>;
 };
+type BookingNotificationClient = Pick<typeof db, "select">;
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -129,79 +130,135 @@ function normalizeBookingWrite(data: BookingWrite, existing?: typeof bookingsTab
   };
 }
 
-function bookingMetadata(row: typeof bookingsTable.$inferSelect): Record<string, unknown> {
+async function bookingMetadata(
+  client: BookingNotificationClient,
+  row: typeof bookingsTable.$inferSelect,
+): Promise<Record<string, unknown>> {
+  const [details] = await client
+    .select({
+      className: classesTable.title,
+      instructorName: instructorsTable.name,
+      branch: schedulesTable.location,
+      scheduleType: schedulesTable.type,
+      scheduleDayOfWeek: schedulesTable.dayOfWeek,
+      scheduleDate: schedulesTable.date,
+      scheduleStartTime: schedulesTable.startTime,
+      scheduleEndTime: schedulesTable.endTime,
+    })
+    .from(bookingsTable)
+    .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
+    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+    .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
+    .where(eq(bookingsTable.id, row.id))
+    .limit(1);
+
+  const start = formatTime(details?.scheduleStartTime ?? null);
+  const dayName = details?.scheduleDayOfWeek != null ? DAY_NAMES[details.scheduleDayOfWeek] ?? null : null;
+  const dateLabel = details?.scheduleDate
+    ? new Date(`${details.scheduleDate}T00:00:00Z`).toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      })
+    : null;
+  const schedulePrefix = details?.scheduleType === "one_time" ? dateLabel : dayName;
+  const scheduleLabel = schedulePrefix && start ? `${schedulePrefix} • ${start}` : null;
+
   return {
     bookingId: row.id,
     classId: row.classId,
     scheduleId: row.scheduleId,
     paymentMode: row.paymentMode,
+    className: details?.className ?? null,
+    instructorName: details?.instructorName ?? null,
+    branch: details?.branch ?? null,
+    scheduleLabel,
   };
 }
 
-function bookingCreatedNotification(row: typeof bookingsTable.$inferSelect): NotificationPayload {
+function displayClassName(metadata: Record<string, unknown>): string | null {
+  return typeof metadata.className === "string" && metadata.className.trim()
+    ? metadata.className.trim()
+    : null;
+}
+
+async function bookingCreatedNotification(
+  client: BookingNotificationClient,
+  row: typeof bookingsTable.$inferSelect,
+): Promise<NotificationPayload> {
+  const metadata = await bookingMetadata(client, row);
+  const className = displayClassName(metadata);
   if (row.bookingStatus === "pending") {
     return {
-      title: "Booking request submitted",
-      body: `Your booking request #${row.id} has been submitted.`,
+      title: className ? `${className} Booking Request Submitted` : "Booking request submitted",
+      body: "Your booking request has been submitted.",
       type: "booking_created",
       relatedEntityType: "booking",
       relatedEntityId: row.id,
-      metadata: bookingMetadata(row),
+      metadata,
     };
   }
 
   return {
-    title: "Booking confirmed",
+    title: className ? `${className} Booking Confirmed` : "Booking confirmed",
     body: row.paymentMode === "package_credit"
-      ? `Your booking #${row.id} has been confirmed. Credit will be deducted at check-in.`
-      : `Your booking #${row.id} has been confirmed.`,
+      ? "Your booking has been confirmed. Credit will be deducted at check-in."
+      : "Your booking has been confirmed.",
     type: "booking_confirmed",
     relatedEntityType: "booking",
     relatedEntityId: row.id,
-    metadata: bookingMetadata(row),
+    metadata,
   };
 }
 
-function bookingStatusNotification(
+async function bookingStatusNotification(
+  client: BookingNotificationClient,
   row: typeof bookingsTable.$inferSelect,
   status: string,
-): NotificationPayload | null {
+): Promise<NotificationPayload | null> {
+  const metadata = await bookingMetadata(client, row);
+  const className = displayClassName(metadata);
+  const bookingLabel = className ? `${className} Booking` : "Booking";
   const base = {
     relatedEntityType: "booking",
     relatedEntityId: row.id,
-    metadata: bookingMetadata(row),
+    metadata,
   };
   switch (status) {
     case "confirmed":
-      return { ...base, type: "booking_confirmed", title: "Booking confirmed", body: `Your booking #${row.id} has been confirmed.` };
+      return { ...base, type: "booking_confirmed", title: `${bookingLabel} Confirmed`, body: "Your booking has been confirmed." };
     case "rejected":
-      return { ...base, type: "booking_rejected", title: "Booking rejected", body: `Your booking request #${row.id} was rejected.` };
+      return { ...base, type: "booking_rejected", title: `${bookingLabel} Rejected`, body: "Your booking request was rejected." };
     case "cancelled":
-      return { ...base, type: "booking_cancelled", title: "Booking cancelled", body: `Your booking #${row.id} was cancelled.` };
+      return { ...base, type: "booking_cancelled", title: `${bookingLabel} Cancelled`, body: "Your booking was cancelled." };
     case "attended":
     case "completed":
-      return { ...base, type: "attendance_checked_in", title: "Attendance confirmed", body: `Attendance has been confirmed for booking #${row.id}.` };
+      return { ...base, type: "attendance_checked_in", title: className ? `${className} Attendance Confirmed` : "Attendance confirmed", body: "Your attendance has been confirmed." };
     default:
       return null;
   }
 }
 
-function paymentStatusNotification(
+async function paymentStatusNotification(
+  client: BookingNotificationClient,
   row: typeof bookingsTable.$inferSelect,
   status: string,
-): NotificationPayload | null {
+): Promise<NotificationPayload | null> {
+  const metadata = await bookingMetadata(client, row);
+  const className = displayClassName(metadata);
+  const paymentLabel = className ? `${className} Payment` : "Payment";
   const base = {
     relatedEntityType: "booking",
     relatedEntityId: row.id,
-    metadata: bookingMetadata(row),
+    metadata,
   };
   switch (status) {
     case "paid":
-      return { ...base, type: "payment_paid", title: "Payment confirmed", body: `Your payment for booking #${row.id} has been confirmed.` };
+      return { ...base, type: "payment_paid", title: `${paymentLabel} Confirmed`, body: "Your payment has been confirmed." };
     case "refunded":
-      return { ...base, type: "payment_refunded", title: "Payment refunded", body: `Your payment for booking #${row.id} has been refunded.` };
+      return { ...base, type: "payment_refunded", title: `${paymentLabel} Refunded`, body: "Your payment has been refunded." };
     case "failed":
-      return { ...base, type: "payment_failed", title: "Payment failed", body: `Your payment for booking #${row.id} failed.` };
+      return { ...base, type: "payment_failed", title: `${paymentLabel} Failed`, body: "Your payment failed." };
     default:
       return null;
   }
@@ -360,7 +417,7 @@ router.post("/bookings", async (req, res): Promise<void> => {
       } as typeof bookingsTable.$inferInsert)
       .returning();
 
-    const notification = bookingCreatedNotification(inserted);
+    const notification = await bookingCreatedNotification(tx, inserted);
     await createStudentNotification(tx, {
       studentEmail: inserted.studentEmail,
       ...notification,
@@ -408,7 +465,7 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
     const [updated] = await tx.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
 
     if (updated.bookingStatus !== existing.bookingStatus) {
-      const notification = bookingStatusNotification(updated, updated.bookingStatus);
+      const notification = await bookingStatusNotification(tx, updated, updated.bookingStatus);
       if (notification) {
         await createStudentNotification(tx, {
           studentEmail: updated.studentEmail,
@@ -418,7 +475,7 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
     }
 
     if (updated.paymentStatus !== existing.paymentStatus) {
-      const notification = paymentStatusNotification(updated, updated.paymentStatus);
+      const notification = await paymentStatusNotification(tx, updated, updated.paymentStatus);
       if (notification) {
         await createStudentNotification(tx, {
           studentEmail: updated.studentEmail,
@@ -448,7 +505,7 @@ router.delete("/bookings/:id", async (req, res): Promise<void> => {
     const [existing] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
     if (!existing) return null;
 
-    const notification = bookingStatusNotification(existing, "cancelled");
+    const notification = await bookingStatusNotification(tx, existing, "cancelled");
     if (notification) {
       await createStudentNotification(tx, {
         studentEmail: existing.studentEmail,

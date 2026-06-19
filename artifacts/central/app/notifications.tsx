@@ -161,6 +161,8 @@ function metadataRows(metadata?: Record<string, unknown> | null): Array<{ label:
   if (!metadata) return [];
   const rows: Array<{ label: string; value: string }> = [];
   const className = metadataText(metadata.className);
+  const instructorName = metadataText(metadata.instructorName);
+  const branch = metadataText(metadata.branch);
   const scheduleLabel = metadataText(metadata.scheduleLabel);
   const packageName = metadataText(metadata.packageName);
   const remainingCredits = metadataText(metadata.remainingCredits);
@@ -168,6 +170,8 @@ function metadataRows(metadata?: Record<string, unknown> | null): Array<{ label:
   const currency = metadataText(metadata.currency);
 
   if (className) rows.push({ label: "Class", value: className });
+  if (instructorName) rows.push({ label: "Instructor", value: instructorName });
+  if (branch) rows.push({ label: "Branch", value: branch });
   if (scheduleLabel) rows.push({ label: "Time", value: scheduleLabel });
   if (packageName) rows.push({ label: "Package", value: packageName });
   if (remainingCredits) rows.push({ label: "Credits", value: `${remainingCredits} remaining` });
