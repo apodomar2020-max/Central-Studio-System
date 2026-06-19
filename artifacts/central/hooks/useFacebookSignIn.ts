@@ -21,11 +21,10 @@
  */
 import { useRef, useState } from "react";
 import { LoginManager, AccessToken } from "react-native-fbsdk-next";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
 
-import { useAppContext, User } from "@/contexts/AppContext";
+import { useAppContext } from "@/contexts/AppContext";
 import { FACEBOOK_APP_ID } from "@/constants/facebook";
+import { continueAfterAuth } from "@/services/authProfile";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
@@ -37,7 +36,7 @@ export function useFacebookSignIn() {
   const exchangingRef = useRef(false);
 
   // Send the Facebook access token to the backend, which validates it and
-  // returns a Central Studio JWT. (Unchanged from the previous implementation.)
+  // returns a Central Studio JWT, then hand off to the shared post-auth flow.
   async function exchange(accessToken: string) {
     if (exchangingRef.current) return;
     exchangingRef.current = true;
@@ -65,29 +64,10 @@ export function useFacebookSignIn() {
         return;
       }
 
-      if (data.accessToken) {
-        await AsyncStorage.setItem("studentToken", data.accessToken);
-      }
-
-      const s = data.student ?? {};
-      const user: User = {
-        id: String(s.id),
-        fullName: s.name ?? "",
-        phone: s.phone ?? "",
-        email: s.email ?? "",
-        emailVerified: s.emailVerified ?? false,
-        role: "student",
-        qrToken: s.qrToken ?? undefined,
-        avatarUrl: s.avatarUrl ?? undefined,
-      };
-      await setUser(user);
-
-      // requiresOtp is true when the email still needs verification.
-      if (data.requiresOtp) {
-        router.replace("/verify-email" as never);
-      } else {
-        router.replace("/(tabs)/" as never);
-      }
+      // Persist the JWT, load the canonical profile from /auth/me, set auth
+      // state, and route (verify-email → complete-profile → home). Shared with
+      // Google and email/password login so all providers behave identically.
+      await continueAfterAuth(data.accessToken, setUser);
     } catch {
       setError("Network error. Please check your connection and try again.");
     } finally {

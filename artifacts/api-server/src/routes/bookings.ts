@@ -409,7 +409,21 @@ router.delete("/bookings/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [row] = await db.delete(bookingsTable).where(eq(bookingsTable.id, params.data.id)).returning();
+  const row = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
+    if (!existing) return null;
+
+    const notification = bookingStatusNotification(existing, "cancelled");
+    if (notification) {
+      await createStudentNotification(tx, {
+        studentEmail: existing.studentEmail,
+        ...notification,
+      });
+    }
+
+    const [deleted] = await tx.delete(bookingsTable).where(eq(bookingsTable.id, params.data.id)).returning();
+    return deleted ?? null;
+  });
   if (!row) {
     res.status(404).json({ error: "Booking not found" });
     return;
