@@ -2,18 +2,25 @@
  * useFacebookSignIn — backend-controlled Facebook authentication.
  *
  * Flow:
- *   promptAsync() → Facebook returns an access token → POST /api/auth/facebook →
- *   backend validates the token with Facebook, fetches the profile, creates/links
- *   the student, and returns a Central Studio JWT. We store the JWT (existing
- *   `studentToken` storage), update auth state, and navigate into the app. The
- *   app never trusts Facebook directly — the backend is the single source of truth.
+ *   LoginManager.logInWithPermissions() → AccessToken.getCurrentAccessToken() →
+ *   POST /api/auth/facebook → backend validates the token with Facebook, fetches
+ *   the profile, creates/links the student, and returns a Central Studio JWT. We
+ *   store the JWT (existing `studentToken` storage), update auth state, and
+ *   navigate into the app. The app never trusts Facebook directly — the backend
+ *   is the single source of truth.
+ *
+ * Uses the native Facebook SDK (react-native-fbsdk-next) instead of the
+ * expo-auth-session web flow: Meta no longer allows custom-scheme redirect URIs
+ * in "Valid OAuth Redirect URIs", so the web OAuth dialog cannot complete on a
+ * native build. The native SDK validates via the app's platform config + client
+ * token and needs no redirect allow-list entry.
  *
  * Exposes loading / error and treats user cancellation as a no-op (no error).
  * If Facebook does not release an email, the backend responds { requiresEmail }
  * — surfaced here as a clear message (full email-collection UI is a follow-up).
  */
-import { useEffect, useRef, useState } from "react";
-import * as Facebook from "expo-auth-session/providers/facebook";
+import { useRef, useState } from "react";
+import { LoginManager, AccessToken } from "react-native-fbsdk-next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 
@@ -29,33 +36,8 @@ export function useFacebookSignIn() {
   const [error, setError] = useState("");
   const exchangingRef = useRef(false);
 
-  const [request, response, promptAsync] = Facebook.useAuthRequest({
-    clientId: FACEBOOK_APP_ID,
-    scopes: ["public_profile", "email"],
-  });
-
-  useEffect(() => {
-    if (!response) return;
-
-    if (response.type === "success") {
-      const accessToken =
-        response.authentication?.accessToken ?? response.params?.access_token ?? null;
-      if (accessToken) {
-        void exchange(accessToken);
-      } else {
-        setError("Facebook did not return an access token. Please try again.");
-        setLoading(false);
-      }
-    } else if (response.type === "error") {
-      setError(response.error?.message ?? "Facebook sign-in failed. Please try again.");
-      setLoading(false);
-    } else if (response.type === "cancel" || response.type === "dismiss") {
-      // User backed out — not an error.
-      setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [response]);
-
+  // Send the Facebook access token to the backend, which validates it and
+  // returns a Central Studio JWT. (Unchanged from the previous implementation.)
   async function exchange(accessToken: string) {
     if (exchangingRef.current) return;
     exchangingRef.current = true;
@@ -124,12 +106,30 @@ export function useFacebookSignIn() {
     setError("");
     setLoading(true);
     try {
-      await promptAsync();
+      // Native Facebook login (FB app if installed, else in-app browser).
+      const result = await LoginManager.logInWithPermissions(["public_profile", "email"]);
+
+      if (result.isCancelled) {
+        // User backed out — not an error.
+        setLoading(false);
+        return;
+      }
+
+      const tokenData = await AccessToken.getCurrentAccessToken();
+      if (!tokenData?.accessToken) {
+        setError("Facebook did not return an access token. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      await exchange(tokenData.accessToken);
     } catch {
       setError("Could not start Facebook sign-in. Please try again.");
       setLoading(false);
     }
   }
 
-  return { signIn, loading, error, ready: !!request && !!FACEBOOK_APP_ID };
+  // No async request to prepare anymore — the button is ready as long as the
+  // App ID is configured for this build.
+  return { signIn, loading, error, ready: !!FACEBOOK_APP_ID };
 }
