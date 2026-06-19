@@ -20,6 +20,8 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
+import FacebookSignInButton from "@/components/FacebookSignInButton";
+import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 
 const ROLES: { value: User["role"]; label: string; icon: string }[] = [
   { value: "student", label: "Student", icon: "school-outline" },
@@ -30,6 +32,7 @@ export default function RegisterScreen() {
   const { setUser } = useAppContext();
   const insets = useSafeAreaInsets();
   const google = useGoogleSignIn();
+  const facebook = useFacebookSignIn();
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -126,10 +129,10 @@ export default function RegisterScreen() {
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Join Central Studio</Text>
 
-        {(error || google.error) !== "" && (
+        {(error || google.error || facebook.error) !== "" && (
           <View style={[styles.errorBanner, { backgroundColor: colors.error + "20", borderColor: colors.error + "50" }]}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error}</Text>
+            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error || facebook.error}</Text>
           </View>
         )}
 
@@ -236,6 +239,8 @@ export default function RegisterScreen() {
           </View>
 
           <GoogleSignInButton onPress={google.signIn} loading={google.loading} disabled={!google.ready} />
+
+          <FacebookSignInButton onPress={facebook.signIn} loading={facebook.loading} disabled={facebook.loading} />
         </View>
 
         <View style={styles.loginRow}>

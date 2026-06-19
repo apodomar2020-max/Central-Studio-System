@@ -109,13 +109,78 @@ async function verifyApple(_identityToken: string): Promise<ProviderIdentity> {
   throw new ProviderNotConfiguredError("apple", ["APPLE_CLIENT_ID"]);
 }
 
-// ─── Facebook (placeholder) ───────────────────────────────────────────────────
+// ─── Facebook ─────────────────────────────────────────────────────────────────
 
-async function verifyFacebook(_accessToken: string): Promise<ProviderIdentity> {
-  // TODO: GET https://graph.facebook.com/debug_token?input_token=_accessToken
-  // &access_token=<APP_ID>|<APP_SECRET> to validate, then
-  // GET https://graph.facebook.com/me?fields=id,email,name to read the identity.
-  throw new ProviderNotConfiguredError("facebook", ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET"]);
+interface FbDebugToken {
+  data?: { app_id?: string; is_valid?: boolean; user_id?: string };
+}
+interface FbProfile {
+  id?: string;
+  name?: string;
+  email?: string;
+  picture?: { data?: { url?: string; is_silhouette?: boolean } };
+}
+
+async function verifyFacebook(accessToken: string): Promise<ProviderIdentity> {
+  const appId = process.env["FACEBOOK_APP_ID"];
+  const appSecret = process.env["FACEBOOK_APP_SECRET"];
+  if (!appId || !appSecret) {
+    throw new ProviderNotConfiguredError("facebook", ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET"]);
+  }
+
+  // 1. Validate the token server-side and confirm it was issued for THIS app.
+  //    The app access token is `APP_ID|APP_SECRET` (never sent to the client).
+  const appToken = `${appId}|${appSecret}`;
+  let debug: FbDebugToken;
+  try {
+    const r = await fetch(
+      `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(accessToken)}` +
+        `&access_token=${encodeURIComponent(appToken)}`,
+    );
+    if (!r.ok) throw new ProviderTokenInvalidError();
+    debug = (await r.json()) as FbDebugToken;
+  } catch (err) {
+    if (err instanceof ProviderTokenInvalidError) throw err;
+    throw new ProviderTokenInvalidError("Could not validate Facebook token.");
+  }
+
+  // Rejects invalid/expired tokens and tokens minted for a different Facebook app.
+  if (!debug.data?.is_valid || debug.data.app_id !== appId || !debug.data.user_id) {
+    throw new ProviderTokenInvalidError("Facebook token is invalid or not for this app.");
+  }
+
+  // 2. Fetch the minimal profile. picture.type(large) yields a usable avatar URL.
+  let profile: FbProfile;
+  try {
+    const r = await fetch(
+      `https://graph.facebook.com/me?fields=id,name,email,picture.type(large)` +
+        `&access_token=${encodeURIComponent(accessToken)}`,
+    );
+    if (!r.ok) throw new ProviderTokenInvalidError();
+    profile = (await r.json()) as FbProfile;
+  } catch (err) {
+    if (err instanceof ProviderTokenInvalidError) throw err;
+    throw new ProviderTokenInvalidError("Could not fetch Facebook profile.");
+  }
+
+  if (!profile.id) throw new ProviderTokenInvalidError("Facebook profile is missing an id.");
+
+  // Skip the default silhouette placeholder so we never store a non-avatar.
+  const avatarUrl = profile.picture?.data?.is_silhouette
+    ? null
+    : profile.picture?.data?.url ?? null;
+
+  return {
+    provider: "facebook",
+    providerId: profile.id,
+    email: profile.email ? profile.email.toLowerCase() : null,
+    // Facebook exposes no email_verified flag via Graph; a returned email is
+    // treated as confirmed (same trusted-provider-email policy as Google). When
+    // no email is returned, the resolver routes the user through email + OTP.
+    emailVerified: !!profile.email,
+    name: profile.name ?? null,
+    avatarUrl,
+  };
 }
 
 /** Validate a provider token and return the normalized identity. */

@@ -175,16 +175,21 @@ async function resolveSocialLogin(
   return { kind: "ok", student, verified };
 }
 
-// Accept either `idToken` (Google convention) or `token`. Apple/Facebook may
-// pass their identity/access token under `token`.
+// Accept the provider token under any of the conventional keys:
+//   idToken     — Google ID token
+//   accessToken — Facebook access token
+//   token       — generic fallback (e.g. Apple identity token)
 const SocialBody = z
   .object({
     token: z.string().min(1).optional(),
     idToken: z.string().min(1).optional(),
-    // Optional client-collected email (Apple hidden-email fallback).
+    accessToken: z.string().min(1).optional(),
+    // Optional client-collected email (Facebook / Apple hidden-email fallback).
     email: z.string().email().optional(),
   })
-  .refine((b) => !!(b.token || b.idToken), { message: "A provider token is required" });
+  .refine((b) => !!(b.token || b.idToken || b.accessToken), {
+    message: "A provider token is required",
+  });
 
 function makeHandler(provider: ProviderName) {
   return async (req: import("express").Request, res: import("express").Response): Promise<void> => {
@@ -193,7 +198,7 @@ function makeHandler(provider: ProviderName) {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
       return;
     }
-    const providerToken = parsed.data.idToken ?? parsed.data.token!;
+    const providerToken = parsed.data.idToken ?? parsed.data.accessToken ?? parsed.data.token!;
 
     // 1. Validate the provider token server-side.
     let identity: ProviderIdentity;

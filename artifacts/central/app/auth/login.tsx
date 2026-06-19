@@ -21,11 +21,14 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
+import FacebookSignInButton from "@/components/FacebookSignInButton";
+import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 
 export default function LoginScreen() {
   const { setUser } = useAppContext();
   const insets = useSafeAreaInsets();
   const google = useGoogleSignIn();
+  const facebook = useFacebookSignIn();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -136,10 +139,10 @@ export default function LoginScreen() {
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>Sign in to Central Studio</Text>
 
-        {(error || google.error) !== "" && (
+        {(error || google.error || facebook.error) !== "" && (
           <View style={[styles.errorBanner, { backgroundColor: colors.error + "20", borderColor: colors.error + "50" }]}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error}</Text>
+            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error || facebook.error}</Text>
           </View>
         )}
 
@@ -192,6 +195,8 @@ export default function LoginScreen() {
           </View>
 
           <GoogleSignInButton onPress={google.signIn} loading={google.loading} disabled={!google.ready} />
+
+          <FacebookSignInButton onPress={facebook.signIn} loading={facebook.loading} disabled={facebook.loading} />
         </View>
 
         <View style={styles.registerRow}>
