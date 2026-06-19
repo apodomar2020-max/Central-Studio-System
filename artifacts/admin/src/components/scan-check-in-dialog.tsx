@@ -1036,7 +1036,7 @@ export function ScanCheckInDialog({
                 </p>
                 {selectedBooking && bookingScopeOf(selectedBooking) === "child" && activePackages.length > 0 && (
                   <p className="text-[11px] px-1" style={{ color: AMBER }}>
-                    Using the account owner's package (parent package) — credits deduct from the parent.
+                    Credits will be deducted from the account owner&apos;s package.
                   </p>
                 )}
                 <button
