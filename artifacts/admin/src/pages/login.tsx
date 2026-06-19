@@ -181,14 +181,16 @@ export default function LoginPage() {
         <img
           src="/logo-central-white.png"
           alt="Central Studio"
-          className="mb-5 h-14 w-auto select-none"
+          className="mb-5 select-none"
           style={{
+            height: 300,
+            width: 300,
+            objectFit: "contain",
             filter: "drop-shadow(0 0 22px rgba(0,182,215,0.45))",
             imageRendering: "crisp-edges",
           }}
           draggable={false}
         />
-
         {/* Badge */}
         <span
           className="mb-4 inline-block rounded-full px-3.5 py-1 text-[10px] font-semibold uppercase tracking-widest"
