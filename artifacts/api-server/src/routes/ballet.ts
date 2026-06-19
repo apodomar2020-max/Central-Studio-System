@@ -28,6 +28,7 @@ import {
   balletAssessmentSlotsTable,
   balletApplicationsTable,
   balletApplicationEventsTable,
+  childrenTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
@@ -249,6 +250,9 @@ const SubmitApplicationBody = z.object({
   medicalNotes:          z.string().optional(),
   notes:                 z.string().optional(),
   slotId:                z.number({ required_error: "slotId is required" }).int().positive(),
+  // Optional link to a saved child profile (children.id). When present it must
+  // belong to the authenticated parent; legacy/manual submissions omit it.
+  childId:               z.number().int().positive().optional(),
 });
 
 router.post(
@@ -268,7 +272,7 @@ router.post(
       emergencyContactName, emergencyContactPhone,
       previousExperience, experienceDetails,
       medicalNotes, notes,
-      slotId,
+      slotId, childId,
     } = parsed.data;
 
     const parentStudentId = req.studentId!;
@@ -330,6 +334,23 @@ router.post(
           throw Object.assign(new Error("Selected assessment slot is full"), { status: 409 });
         }
 
+        // ── Validate child ownership (only when a saved child was selected) ───
+        // A provided childId must belong to the authenticated parent — never
+        // let one account link a child profile owned by another account.
+        if (childId != null) {
+          const [ownedChild] = await tx
+            .select({ id: childrenTable.id })
+            .from(childrenTable)
+            .where(and(eq(childrenTable.id, childId), eq(childrenTable.parentId, parentStudentId)))
+            .limit(1);
+          if (!ownedChild) {
+            throw Object.assign(
+              new Error("Selected child does not belong to this account."),
+              { status: 403 },
+            );
+          }
+        }
+
         // ── Insert application ────────────────────────────────────────────────
         const slotLabel = `${slot.date} ${slot.startTime}-${slot.endTime}`;
 
@@ -337,6 +358,7 @@ router.post(
           .insert(balletApplicationsTable)
           .values({
             parentStudentId,
+            childId:               childId ?? null,
             parentName,
             parentPhone,
             parentEmail,
@@ -393,6 +415,10 @@ router.post(
       }
       if (typed.status === 404) {
         res.status(404).json({ error: "Assessment slot not found" });
+        return;
+      }
+      if (typed.status === 403) {
+        res.status(403).json({ error: typed.message ?? "Selected child does not belong to this account." });
         return;
       }
 

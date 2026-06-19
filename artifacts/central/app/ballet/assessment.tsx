@@ -33,6 +33,7 @@ import { probeConnectivity } from "@/services/connectivity";
 // has already confirmed there is no active application, OR from within the ballet
 // flow after a terminal status (rejected/cancelled). Do NOT add a duplicate-app
 // check here — index.tsx handles that redirect before this screen ever renders.
+import { useAppContext, type ChildProfile } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import StepIndicator from "@/components/StepIndicator";
@@ -406,9 +407,62 @@ const dpStyles = StyleSheet.create({
 
 export default function BalletAssessmentScreen() {
   const insets = useSafeAreaInsets();
+  const { user, children } = useAppContext();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Parent/child prefill (logged-in accounts only) ─────────────────────────
+  const isLoggedIn = !!user;
+  // Saved child profiles available to pick from (parents with synced children).
+  const hasChildProfiles = isLoggedIn && children.length > 0;
+  // Backend children.id of the picked saved child (null = manual entry).
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
+  // Whether the prefilled About You / Child sections are in (submission-only) edit mode.
+  const [editAboutYou, setEditAboutYou] = useState(false);
+  const [editChild, setEditChild] = useState(false);
+
+  // Prefill the parent fields from the logged-in account once — only filling
+  // blanks so we never clobber something the user already typed.
+  useEffect(() => {
+    if (!user) return;
+    setForm((prev) => ({
+      ...prev,
+      parentName: prev.parentName || user.fullName || "",
+      parentEmail: prev.parentEmail || user.email || "",
+      parentPhone: prev.parentPhone || user.phone || "",
+    }));
+  }, [user]);
+
+  // Apply a saved child's details to the form (submission-only — never writes
+  // back to the saved profile). Stores the backend childId for linking.
+  function selectChild(c: ChildProfile) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const numericId = Number(c.id);
+    setSelectedChildId(Number.isNaN(numericId) ? null : numericId);
+    setEditChild(false);
+    setForm((prev) => ({
+      ...prev,
+      childName: c.fullName ?? "",
+      childBirthday: c.birthday || "",
+      childAge: c.age ? String(c.age) : "",
+      childGender: c.gender,
+      medicalNotes: c.medicalNotes || prev.medicalNotes,
+    }));
+  }
+
+  // Switch to manual child entry (no linked profile).
+  function clearChildSelection() {
+    setSelectedChildId(null);
+    setEditChild(true);
+    setForm((prev) => ({
+      ...prev,
+      childName: "",
+      childBirthday: "",
+      childAge: "",
+      childGender: "female",
+    }));
+  }
   // Note: success/duplicate navigation goes to /ballet/application-status — no local "submitted" state.
 
   // ── Connectivity gate ──────────────────────────────────────────────────────
@@ -536,6 +590,9 @@ export default function BalletAssessmentScreen() {
         emergencyContactPhone:  form.emergencyContactPhone.trim() || undefined,
         notes:                  form.notes.trim() || undefined,
         slotId,
+        // Link the saved child profile when one was picked (backend verifies
+        // ownership). Manual entry / logged-out users omit it.
+        childId:                selectedChildId ?? undefined,
       });
 
       // ── 201 Success: navigate to status screen ──────────────────────────
@@ -661,9 +718,24 @@ export default function BalletAssessmentScreen() {
               <Text style={styles.stepTitle}>Parent / Guardian Information</Text>
               <Text style={styles.stepDesc}>As most applications are submitted by parents, please fill in your details.</Text>
             </View>
-            <Field label="Parent Full Name" value={form.parentName} onChange={(v) => update("parentName", v)} placeholder="Your full name" required />
-            <Field label="Phone Number" value={form.parentPhone} onChange={(v) => update("parentPhone", v)} placeholder="+20 1XX XXX XXXX" keyboardType="phone-pad" required />
-            <Field label="Email Address" value={form.parentEmail} onChange={(v) => update("parentEmail", v)} placeholder="your@email.com" keyboardType="email-address" required />
+            {isLoggedIn && !editAboutYou ? (
+              <View style={styles.summaryCard}>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Name</Text><Text style={styles.summaryValue}>{form.parentName || "—"}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Phone</Text><Text style={styles.summaryValue}>{form.parentPhone || "—"}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Email</Text><Text style={styles.summaryValue}>{form.parentEmail || "—"}</Text></View>
+                <TouchableOpacity onPress={() => setEditAboutYou(true)} style={styles.editLink}>
+                  <Ionicons name="create-outline" size={14} color={BALLET_COLOR} />
+                  <Text style={styles.editLinkText}>Edit for this application</Text>
+                </TouchableOpacity>
+                <Text style={styles.summaryHint}>From your account. Editing here only changes this application.</Text>
+              </View>
+            ) : (
+              <>
+                <Field label="Parent Full Name" value={form.parentName} onChange={(v) => update("parentName", v)} placeholder="Your full name" required />
+                <Field label="Phone Number" value={form.parentPhone} onChange={(v) => update("parentPhone", v)} placeholder="+20 1XX XXX XXXX" keyboardType="phone-pad" required />
+                <Field label="Email Address" value={form.parentEmail} onChange={(v) => update("parentEmail", v)} placeholder="your@email.com" keyboardType="email-address" required />
+              </>
+            )}
             <View style={styles.divider} />
             <Text style={styles.subSectionLabel}>Emergency Contact</Text>
             <Field label="Emergency Contact Name" value={form.emergencyContactName} onChange={(v) => update("emergencyContactName", v)} placeholder="Full name" required />
@@ -677,32 +749,82 @@ export default function BalletAssessmentScreen() {
               <Text style={styles.stepTitle}>Child Information</Text>
               <Text style={styles.stepDesc}>Tell us about the child applying for the ballet assessment.</Text>
             </View>
-            <Field label="Child Full Name" value={form.childName} onChange={(v) => update("childName", v)} placeholder="Child's full name" required />
-            <DatePickerField
-              label="Date of Birth"
-              value={form.childBirthday}
-              onChangeWithAge={(dateStr, age) => {
-                update("childBirthday", dateStr);
-                update("childAge", String(age));
-              }}
-            />
-            <Field label="Age" value={form.childAge} onChange={(v) => update("childAge", v)} placeholder="Age (auto-filled from date)" keyboardType="numeric" required />
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Gender</Text>
-              <View style={styles.genderRow}>
-                {(["female", "male"] as const).map((g) => (
-                  <TouchableOpacity
-                    key={g}
-                    onPress={() => update("childGender", g)}
-                    style={[styles.genderBtn, form.childGender === g && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "15" }]}
-                  >
-                    <Text style={[styles.genderBtnText, form.childGender === g && { color: BALLET_COLOR }]}>
-                      {g === "female" ? "Girl" : "Boy"}
-                    </Text>
+            {hasChildProfiles && (
+              <View style={{ gap: 8, marginBottom: 4 }}>
+                <Text style={styles.subSectionLabel}>Select a child profile</Text>
+                {children.map((c) => {
+                  const selected = selectedChildId === Number(c.id);
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      onPress={() => selectChild(c)}
+                      style={[styles.childCard, selected && styles.childCardSelected]}
+                    >
+                      <View style={styles.childAvatar}>
+                        <Ionicons name="happy-outline" size={18} color={BALLET_COLOR} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.childCardName}>{c.fullName}</Text>
+                        <Text style={styles.childCardMeta}>
+                          {c.age ? `${c.age} yrs` : "Age —"} · {c.gender === "female" ? "Girl" : "Boy"}
+                          {c.birthday ? ` · ${c.birthday}` : ""}
+                        </Text>
+                      </View>
+                      {selected && <Ionicons name="checkmark-circle" size={20} color={BALLET_COLOR} />}
+                    </TouchableOpacity>
+                  );
+                })}
+                {selectedChildId != null && !editChild && (
+                  <TouchableOpacity onPress={() => setEditChild(true)} style={styles.editLink}>
+                    <Ionicons name="create-outline" size={14} color={BALLET_COLOR} />
+                    <Text style={styles.editLinkText}>Edit details for this application</Text>
                   </TouchableOpacity>
-                ))}
+                )}
+                <TouchableOpacity onPress={clearChildSelection} style={styles.editLink}>
+                  <Ionicons name="add-circle-outline" size={14} color={BALLET_COLOR} />
+                  <Text style={styles.editLinkText}>Enter a different child manually</Text>
+                </TouchableOpacity>
               </View>
-            </View>
+            )}
+
+            {isLoggedIn && children.length === 0 && (
+              <View style={styles.emptyChildBox}>
+                <Text style={styles.emptyChildText}>
+                  No saved child profiles yet. Add a child from your Profile to reuse it next time, or enter the details below for this application.
+                </Text>
+              </View>
+            )}
+
+            {(!hasChildProfiles || editChild || selectedChildId == null) && (
+              <>
+                <Field label="Child Full Name" value={form.childName} onChange={(v) => update("childName", v)} placeholder="Child's full name" required />
+                <DatePickerField
+                  label="Date of Birth"
+                  value={form.childBirthday}
+                  onChangeWithAge={(dateStr, age) => {
+                    update("childBirthday", dateStr);
+                    update("childAge", String(age));
+                  }}
+                />
+                <Field label="Age" value={form.childAge} onChange={(v) => update("childAge", v)} placeholder="Age (auto-filled from date)" keyboardType="numeric" required />
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Gender</Text>
+                  <View style={styles.genderRow}>
+                    {(["female", "male"] as const).map((g) => (
+                      <TouchableOpacity
+                        key={g}
+                        onPress={() => update("childGender", g)}
+                        style={[styles.genderBtn, form.childGender === g && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "15" }]}
+                      >
+                        <Text style={[styles.genderBtnText, form.childGender === g && { color: BALLET_COLOR }]}>
+                          {g === "female" ? "Girl" : "Boy"}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </>
+            )}
             <Field label="Medical Notes or Injuries" value={form.medicalNotes} onChange={(v) => update("medicalNotes", v)} placeholder="Any conditions, injuries, or medical info the instructor should know..." multiline />
           </View>
         )}
@@ -902,6 +1024,13 @@ export default function BalletAssessmentScreen() {
                 <Text style={styles.reviewValue}>{item.value}</Text>
               </View>
             ))}
+
+            {selectedChildId != null && (
+              <View style={styles.linkedNote}>
+                <Ionicons name="link" size={13} color={BALLET_COLOR} />
+                <Text style={styles.linkedNoteText}>Linked to a saved child profile in your account.</Text>
+              </View>
+            )}
 
             <View style={styles.divider} />
 
@@ -1146,4 +1275,26 @@ const styles = StyleSheet.create({
   },
   statusRow: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, width: "100%", alignItems: "center" },
   statusLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+
+  // ── Prefill: parent summary card ──
+  summaryCard: { borderRadius: 14, borderWidth: 1, borderColor: BALLET_COLOR + "30", backgroundColor: BALLET_COLOR + "0D", padding: 14, gap: 8 },
+  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  summaryLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#9CA3AF" },
+  summaryValue: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF", flexShrink: 1, textAlign: "right" },
+  summaryHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  editLink: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
+  editLinkText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: BALLET_COLOR },
+
+  // ── Prefill: child selector cards ──
+  childCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: "#2A2A35", backgroundColor: "#1E1E26" },
+  childCardSelected: { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "15" },
+  childAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: BALLET_COLOR + "1F" },
+  childCardName: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+  childCardMeta: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: 1 },
+  emptyChildBox: { borderRadius: 12, borderWidth: 1, borderColor: "#2A2A35", backgroundColor: "#15151B", padding: 12, marginBottom: 4 },
+  emptyChildText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 19 },
+
+  // ── Review: linked-profile note ──
+  linkedNote: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  linkedNoteText: { fontSize: 12, fontFamily: "Inter_500Medium", color: BALLET_COLOR },
 });

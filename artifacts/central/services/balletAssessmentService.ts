@@ -165,6 +165,9 @@ export interface SubmitApplicationPayload {
   medicalNotes?:          string;
   notes?:                 string;
   slotId:                 number;
+  /** Optional link to a saved child profile (children.id). Omitted for manual
+   *  entry / logged-out users. The backend verifies it belongs to the parent. */
+  childId?:               number;
 }
 
 /** Shape of the 201 response from POST /api/ballet/applications. */

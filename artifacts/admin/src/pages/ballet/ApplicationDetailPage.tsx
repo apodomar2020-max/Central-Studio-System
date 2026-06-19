@@ -30,6 +30,7 @@ interface Application {
   parentPhone: string;
   parentEmail: string;
   parentStudentId: number | null;
+  childId: number | null;
   childName: string;
   childBirthday: string | null;
   childAge: number | null;
@@ -318,6 +319,9 @@ export default function ApplicationDetailPage() {
             <Field label="Birthday" value={app.childBirthday} />
             <Field label="Age"      value={app.childAge !== null ? `${app.childAge} years` : null} />
             <Field label="Gender"   value={app.childGender} />
+            {app.childId !== null && (
+              <Field label="Linked Child Profile" value={`#${app.childId}`} />
+            )}
           </Section>
 
           {/* Experience */}
