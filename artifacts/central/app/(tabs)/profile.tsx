@@ -452,37 +452,46 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Children Profiles</Text>
-            <TouchableOpacity
-              onPress={() => { setEditingChild(undefined); setAddChildVisible(true); }}
-              style={[styles.addChildBtn, { backgroundColor: colors.studio.primary + "15" }]}
-            >
-              <Ionicons name="add" size={16} color={colors.studio.primary} />
-              <Text style={[styles.addChildBtnText, { color: colors.studio.primary }]}>Add Child</Text>
-            </TouchableOpacity>
-          </View>
+        {user.accountType === "parent" && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={{ gap: 2 }}>
+                <Text style={styles.sectionTitle}>Children Profiles</Text>
+                {children.length > 0 && (
+                  <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" }}>
+                    Child profiles are connected to this parent account.
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={() => { setEditingChild(undefined); setAddChildVisible(true); }}
+                style={[styles.addChildBtn, { backgroundColor: colors.studio.primary + "15" }]}
+              >
+                <Ionicons name="add" size={16} color={colors.studio.primary} />
+                <Text style={[styles.addChildBtnText, { color: colors.studio.primary }]}>Add Child</Text>
+              </TouchableOpacity>
+            </View>
 
-          {children.length === 0 ? (
-            <View style={[styles.emptyChildren, { borderColor: "#2A2A35" }]}>
-              <Ionicons name="people-outline" size={28} color="#4B5563" />
-              <Text style={styles.emptyChildrenText}>No children added yet</Text>
-              <Text style={styles.emptyChildrenDesc}>Add your child's profile to book kids classes and ballet assessments</Text>
-            </View>
-          ) : (
-            <View style={{ gap: 8 }}>
-              {children.map((child) => (
-                <ChildCard
-                  key={child.id}
-                  child={child}
-                  onEdit={() => { setEditingChild(child); setAddChildVisible(true); }}
-                  onDelete={() => handleDeleteChild(child.id)}
-                />
-              ))}
-            </View>
-          )}
-        </View>
+            {children.length === 0 ? (
+              <View style={[styles.emptyChildren, { borderColor: "#2A2A35" }]}>
+                <Ionicons name="people-outline" size={28} color="#4B5563" />
+                <Text style={styles.emptyChildrenText}>No children added yet</Text>
+                <Text style={styles.emptyChildrenDesc}>Add your child profile to book classes for them.</Text>
+              </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                {children.map((child) => (
+                  <ChildCard
+                    key={child.id}
+                    child={child}
+                    onEdit={() => { setEditingChild(child); setAddChildVisible(true); }}
+                    onDelete={() => handleDeleteChild(child.id)}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
           <Ionicons name="log-out-outline" size={18} color={colors.error} />

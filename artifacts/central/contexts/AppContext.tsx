@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Alert } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 
@@ -265,6 +266,12 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       // Load packages from API for the confirmed user
       if (confirmedUser) {
         fetchAndSetPackages().catch(() => {});
+        if (confirmedUser.accountType === "parent") {
+          fetchAndSetChildren().catch(() => {});
+        } else {
+          setChildren([]);
+          AsyncStorage.removeItem("children").catch(() => {});
+        }
       }
     } catch {}
     setIsLoading(false);
@@ -304,6 +311,35 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     }
   }
 
+  async function fetchAndSetChildren() {
+    try {
+      const data = await customFetch<{ children: any[] }>("/api/children");
+      const mapped = data.children.map((c) => ({
+        id: String(c.id),
+        fullName: c.fullName,
+        birthday: c.birthday || "",
+        age: c.age || 0,
+        gender: c.gender as "male" | "female",
+        medicalNotes: c.medicalNotes || undefined,
+        emergencyContactName: c.emergencyName || undefined,
+        emergencyContactPhone: c.emergencyPhone || undefined,
+      }));
+
+      if (isMountedRef.current) {
+        setChildren(mapped);
+        await AsyncStorage.setItem("children", JSON.stringify(mapped));
+      }
+    } catch {
+      // Best-effort cache restore if offline
+      try {
+        const cached = await AsyncStorage.getItem("children");
+        if (cached && isMountedRef.current) {
+          setChildren(JSON.parse(cached));
+        }
+      } catch {}
+    }
+  }
+
   const setLanguage = useCallback(async (lang: "en" | "ar") => {
     setLanguageState(lang);
     await AsyncStorage.setItem("language", lang);
@@ -327,6 +363,12 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       }
       // Load this user's packages from the API
       fetchAndSetPackages().catch(() => {});
+      if (usr.accountType === "parent") {
+        fetchAndSetChildren().catch(() => {});
+      } else {
+        setChildren([]);
+        await AsyncStorage.removeItem("children");
+      }
     } else {
       // Logout — clear both the user record and the student JWT.
       // After this, setAuthTokenGetter falls back to the shared API key
@@ -334,31 +376,107 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       await AsyncStorage.removeItem("user");
       await AsyncStorage.removeItem("studentToken");
       setUserPackages([]);
+      setChildren([]);
+      await AsyncStorage.removeItem("children");
     }
   }, []);
 
   const addChild = useCallback(async (child: ChildProfile) => {
-    setChildren((prev) => {
-      const updated = [...prev, child];
-      AsyncStorage.setItem("children", JSON.stringify(updated));
-      return updated;
-    });
+    try {
+      const payload = {
+        fullName: child.fullName,
+        birthday: child.birthday || null,
+        age: child.age,
+        gender: child.gender,
+        medicalNotes: child.medicalNotes || null,
+        emergencyName: child.emergencyContactName || null,
+        emergencyPhone: child.emergencyContactPhone || null,
+      };
+      const response = await customFetch<{ child: any }>("/api/children", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const c = response.child;
+      const mappedChild: ChildProfile = {
+        id: String(c.id),
+        fullName: c.fullName,
+        birthday: c.birthday || "",
+        age: c.age || 0,
+        gender: c.gender as "male" | "female",
+        medicalNotes: c.medicalNotes || undefined,
+        emergencyContactName: c.emergencyName || undefined,
+        emergencyContactPhone: c.emergencyPhone || undefined,
+      };
+      setChildren((prev) => {
+        const next = [...prev, mappedChild];
+        AsyncStorage.setItem("children", JSON.stringify(next));
+        return next;
+      });
+    } catch (err) {
+      console.error("addChild error:", err);
+      Alert.alert("Error", err instanceof Error ? err.message : "Failed to add child profile. Please check your connection.");
+    }
   }, []);
 
   const updateChild = useCallback(async (child: ChildProfile) => {
-    setChildren((prev) => {
-      const updated = prev.map((c) => (c.id === child.id ? child : c));
-      AsyncStorage.setItem("children", JSON.stringify(updated));
-      return updated;
-    });
+    try {
+      const childId = parseInt(child.id, 10);
+      if (isNaN(childId)) {
+        throw new Error("Invalid child ID format");
+      }
+      const payload = {
+        fullName: child.fullName,
+        birthday: child.birthday || null,
+        age: child.age,
+        gender: child.gender,
+        medicalNotes: child.medicalNotes || null,
+        emergencyName: child.emergencyContactName || null,
+        emergencyPhone: child.emergencyContactPhone || null,
+      };
+      const response = await customFetch<{ child: any }>(`/api/children/${childId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      const c = response.child;
+      const mappedChild: ChildProfile = {
+        id: String(c.id),
+        fullName: c.fullName,
+        birthday: c.birthday || "",
+        age: c.age || 0,
+        gender: c.gender as "male" | "female",
+        medicalNotes: c.medicalNotes || undefined,
+        emergencyContactName: c.emergencyName || undefined,
+        emergencyContactPhone: c.emergencyPhone || undefined,
+      };
+      setChildren((prev) => {
+        const next = prev.map((item) => (item.id === mappedChild.id ? mappedChild : item));
+        AsyncStorage.setItem("children", JSON.stringify(next));
+        return next;
+      });
+    } catch (err) {
+      console.error("updateChild error:", err);
+      Alert.alert("Error", err instanceof Error ? err.message : "Failed to update child profile. Please check your connection.");
+    }
   }, []);
 
   const removeChild = useCallback(async (childId: string) => {
-    setChildren((prev) => {
-      const updated = prev.filter((c) => c.id !== childId);
-      AsyncStorage.setItem("children", JSON.stringify(updated));
-      return updated;
-    });
+    try {
+      const numericId = parseInt(childId, 10);
+      if (isNaN(numericId)) {
+        throw new Error("Invalid child ID format");
+      }
+      await customFetch(`/api/children/${numericId}`, {
+        method: "DELETE",
+      });
+      setChildren((prev) => {
+        const next = prev.filter((c) => c.id !== childId);
+        AsyncStorage.setItem("children", JSON.stringify(next));
+        return next;
+      });
+    } catch (err) {
+      console.error("removeChild error:", err);
+      Alert.alert("Error", err instanceof Error ? err.message : "Failed to delete child profile. Please check your connection.");
+    }
   }, []);
 
   const addBooking = useCallback(async (booking: Booking) => {
