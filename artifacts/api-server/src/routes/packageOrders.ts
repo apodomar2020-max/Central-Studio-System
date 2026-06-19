@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { desc, eq } from "drizzle-orm";
 import { db, packageOrdersTable, creditTransactionsTable } from "@workspace/db";
+import { createStudentNotification } from "../lib/notifications";
 import {
   ListPackageOrdersQueryParams,
   ListPackageOrdersResponse,
@@ -30,7 +31,15 @@ router.post("/package-orders", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.insert(packageOrdersTable).values(parsed.data).returning();
+  const row = await db.transaction(async (tx) => {
+    const [inserted] = await tx.insert(packageOrdersTable).values(parsed.data).returning();
+    await createStudentNotification(tx, {
+      studentEmail: inserted.studentEmail,
+      title: "Package request submitted",
+      body: `Your package request for ${inserted.packageName} has been submitted.`,
+    });
+    return inserted;
+  });
   res.status(201).json(GetPackageOrderResponse.parse(row));
 });
 
@@ -99,6 +108,14 @@ router.patch("/package-orders/:id", async (req, res): Promise<void> => {
         createdBy: "admin",
       });
 
+      if (current.status !== "active") {
+        await createStudentNotification(tx, {
+          studentEmail: updated.studentEmail,
+          title: "Package active",
+          body: `Your ${updated.packageName} package is now active.`,
+        });
+      }
+
       return updated;
     });
 
@@ -108,11 +125,32 @@ router.patch("/package-orders/:id", async (req, res): Promise<void> => {
     }
     row = result;
   } else {
-    const [updated] = await db
-      .update(packageOrdersTable)
-      .set(update)
-      .where(eq(packageOrdersTable.id, params.data.id))
-      .returning();
+    const result = await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(packageOrdersTable)
+        .where(eq(packageOrdersTable.id, params.data.id));
+
+      if (!current) return undefined;
+
+      const [updated] = await tx
+        .update(packageOrdersTable)
+        .set(update)
+        .where(eq(packageOrdersTable.id, params.data.id))
+        .returning();
+
+      if (updated.status === "cancelled" && current.status !== "cancelled") {
+        await createStudentNotification(tx, {
+          studentEmail: updated.studentEmail,
+          title: "Package cancelled",
+          body: `Your ${updated.packageName} package was cancelled.`,
+        });
+      }
+
+      return updated;
+    });
+
+    const updated = result;
     if (!updated) {
       res.status(404).json({ error: "Package order not found" });
       return;

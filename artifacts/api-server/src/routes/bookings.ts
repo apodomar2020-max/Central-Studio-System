@@ -8,6 +8,7 @@ import {
   instructorsTable,
   attendanceTable,
 } from "@workspace/db";
+import { createStudentNotification } from "../lib/notifications";
 import {
   ListBookingsQueryParams,
   CreateBookingBody,
@@ -118,6 +119,57 @@ function normalizeBookingWrite(data: BookingWrite, existing?: typeof bookingsTab
     paymentMode,
     status: legacyStatusFromSplit(bookingStatus, paymentStatus),
   };
+}
+
+function bookingCreatedNotification(row: typeof bookingsTable.$inferSelect): { title: string; body: string } {
+  if (row.bookingStatus === "pending") {
+    return {
+      title: "Booking request submitted",
+      body: `Your booking request #${row.id} has been submitted.`,
+    };
+  }
+
+  return {
+    title: "Booking confirmed",
+    body: row.paymentMode === "package_credit"
+      ? `Your booking #${row.id} has been confirmed. Credit will be deducted at check-in.`
+      : `Your booking #${row.id} has been confirmed.`,
+  };
+}
+
+function bookingStatusNotification(
+  row: typeof bookingsTable.$inferSelect,
+  status: string,
+): { title: string; body: string } | null {
+  switch (status) {
+    case "confirmed":
+      return { title: "Booking confirmed", body: `Your booking #${row.id} has been confirmed.` };
+    case "rejected":
+      return { title: "Booking rejected", body: `Your booking request #${row.id} was rejected.` };
+    case "cancelled":
+      return { title: "Booking cancelled", body: `Your booking #${row.id} was cancelled.` };
+    case "attended":
+    case "completed":
+      return { title: "Attendance confirmed", body: `Attendance has been confirmed for booking #${row.id}.` };
+    default:
+      return null;
+  }
+}
+
+function paymentStatusNotification(
+  row: typeof bookingsTable.$inferSelect,
+  status: string,
+): { title: string; body: string } | null {
+  switch (status) {
+    case "paid":
+      return { title: "Payment confirmed", body: `Your payment for booking #${row.id} has been confirmed.` };
+    case "refunded":
+      return { title: "Payment refunded", body: `Your payment for booking #${row.id} has been refunded.` };
+    case "failed":
+      return { title: "Payment failed", body: `Your payment for booking #${row.id} failed.` };
+    default:
+      return null;
+  }
 }
 
 // Format a "HH:MM" 24h time string into a friendly "6:00 PM". Falls back to
@@ -262,15 +314,26 @@ router.post("/bookings", async (req, res): Promise<void> => {
     }
   }
 
-  const [row] = await db
-    .insert(bookingsTable)
-    .values({
-      ...normalized,
-      // CreateBookingBody (zod) guarantees studentName/studentEmail at runtime;
-      // normalizeBookingWrite widens them to optional, so assert the insert shape.
-      studentEmail: normalizeEmail(parsed.data.studentEmail),
-    } as typeof bookingsTable.$inferInsert)
-    .returning();
+  const row = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(bookingsTable)
+      .values({
+        ...normalized,
+        // CreateBookingBody (zod) guarantees studentName/studentEmail at runtime;
+        // normalizeBookingWrite widens them to optional, so assert the insert shape.
+        studentEmail: normalizeEmail(parsed.data.studentEmail),
+      } as typeof bookingsTable.$inferInsert)
+      .returning();
+
+    const notification = bookingCreatedNotification(inserted);
+    await createStudentNotification(tx, {
+      studentEmail: inserted.studentEmail,
+      ...notification,
+    });
+
+    return inserted;
+  });
+
   res.status(201).json(GetBookingResponse.parse(row));
 });
 
@@ -299,16 +362,44 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [existing] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
-  if (!existing) {
+  const row = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
+    if (!existing) return null;
+
+    const data = parsed.data.studentEmail
+      ? { ...parsed.data, studentEmail: normalizeEmail(parsed.data.studentEmail) }
+      : parsed.data;
+    const normalized = normalizeBookingWrite(data, existing);
+    const [updated] = await tx.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
+
+    if (updated.bookingStatus !== existing.bookingStatus) {
+      const notification = bookingStatusNotification(updated, updated.bookingStatus);
+      if (notification) {
+        await createStudentNotification(tx, {
+          studentEmail: updated.studentEmail,
+          ...notification,
+        });
+      }
+    }
+
+    if (updated.paymentStatus !== existing.paymentStatus) {
+      const notification = paymentStatusNotification(updated, updated.paymentStatus);
+      if (notification) {
+        await createStudentNotification(tx, {
+          studentEmail: updated.studentEmail,
+          ...notification,
+        });
+      }
+    }
+
+    return updated;
+  });
+
+  if (!row) {
     res.status(404).json({ error: "Booking not found" });
     return;
   }
-  const data = parsed.data.studentEmail
-    ? { ...parsed.data, studentEmail: normalizeEmail(parsed.data.studentEmail) }
-    : parsed.data;
-  const normalized = normalizeBookingWrite(data, existing);
-  const [row] = await db.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
+
   res.json(UpdateBookingResponse.parse(row));
 });
 

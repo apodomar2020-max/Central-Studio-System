@@ -13,6 +13,7 @@ import * as zod from "zod";
 import { db, creditTransactionsTable, packageOrdersTable } from "@workspace/db";
 import { requireAdminAuth, type AdminRequest } from "./adminAuth";
 import { ListCreditTransactionsQueryParams } from "@workspace/api-zod";
+import { createStudentNotification } from "../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -178,6 +179,20 @@ router.post(
             createdBy: adminEmail,
           })
           .returning();
+
+        await createStudentNotification(tx, {
+          studentEmail: updated.studentEmail,
+          title: "Package credits updated",
+          body: `Your ${updated.packageName} package credits were updated. New balance: ${updated.remainingCredits}.`,
+        });
+
+        if (newRemaining <= 0 && order.remainingCredits > 0) {
+          await createStudentNotification(tx, {
+            studentEmail: updated.studentEmail,
+            title: "Package credits used",
+            body: `Your ${updated.packageName} package credits have been used.`,
+          });
+        }
 
         return { order: updated, transaction };
       });

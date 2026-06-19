@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, offersTable } from "@workspace/db";
+import { createBroadcastNotification } from "../lib/notifications";
 import {
   CreateOfferBody,
   GetOfferParams,
@@ -25,7 +26,16 @@ router.post("/offers", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.insert(offersTable).values(parsed.data).returning();
+  const row = await db.transaction(async (tx) => {
+    const [inserted] = await tx.insert(offersTable).values(parsed.data).returning();
+    if (inserted.isActive) {
+      await createBroadcastNotification(tx, {
+        title: "New offer",
+        body: `${inserted.title}${inserted.discountPercent > 0 ? `: ${inserted.discountPercent}% off` : ""}`,
+      });
+    }
+    return inserted;
+  });
   res.status(201).json(GetOfferResponse.parse(row));
 });
 
@@ -54,7 +64,19 @@ router.patch("/offers/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.update(offersTable).set(parsed.data).where(eq(offersTable.id, params.data.id)).returning();
+  const row = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(offersTable).where(eq(offersTable.id, params.data.id));
+    if (!existing) return null;
+
+    const [updated] = await tx.update(offersTable).set(parsed.data).where(eq(offersTable.id, params.data.id)).returning();
+    if (updated.isActive && !existing.isActive) {
+      await createBroadcastNotification(tx, {
+        title: "New offer",
+        body: `${updated.title}${updated.discountPercent > 0 ? `: ${updated.discountPercent}% off` : ""}`,
+      });
+    }
+    return updated;
+  });
   if (!row) {
     res.status(404).json({ error: "Offer not found" });
     return;

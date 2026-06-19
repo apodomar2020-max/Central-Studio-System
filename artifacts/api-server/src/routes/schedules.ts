@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { and, eq, or } from "drizzle-orm";
-import { db, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
+import { and, eq, inArray, or } from "drizzle-orm";
+import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
+import { createStudentNotification } from "../lib/notifications";
 import {
   ListSchedulesQueryParams,
   CreateScheduleBody,
@@ -76,6 +77,49 @@ function normalizeScheduleInput(
     isRecurring: false,
     packageEligible: merged.packageEligible ?? true,
   };
+}
+
+function scheduleDisplay(schedule: typeof schedulesTable.$inferSelect): string {
+  const dateOrDay = schedule.date ?? (schedule.dayOfWeek != null ? `day ${schedule.dayOfWeek}` : "your scheduled class");
+  return `${dateOrDay} ${schedule.startTime}-${schedule.endTime}`;
+}
+
+function didScheduleChange(
+  before: typeof schedulesTable.$inferSelect,
+  after: typeof schedulesTable.$inferSelect,
+): boolean {
+  return before.type !== after.type
+    || before.dayOfWeek !== after.dayOfWeek
+    || before.date !== after.date
+    || before.startTime !== after.startTime
+    || before.endTime !== after.endTime
+    || before.location !== after.location;
+}
+
+async function notifyScheduleBookings(
+  client: typeof db,
+  scheduleId: number,
+  title: string,
+  body: string,
+) {
+  const rows = await client
+    .select({
+      bookingId: bookingsTable.id,
+      studentEmail: bookingsTable.studentEmail,
+    })
+    .from(bookingsTable)
+    .where(and(
+      eq(bookingsTable.scheduleId, scheduleId),
+      inArray(bookingsTable.bookingStatus, ["pending", "confirmed"]),
+    ));
+
+  for (const booking of rows) {
+    await createStudentNotification(client, {
+      studentEmail: booking.studentEmail,
+      title,
+      body: `${body} Booking #${booking.bookingId}.`,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -193,7 +237,21 @@ router.patch("/schedules/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: normalized.error });
     return;
   }
-  const [row] = await db.update(schedulesTable).set(normalized).where(eq(schedulesTable.id, params.data.id)).returning();
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(schedulesTable).set(normalized).where(eq(schedulesTable.id, params.data.id)).returning();
+    if (!updated) return null;
+
+    if (didScheduleChange(existing, updated)) {
+      await notifyScheduleBookings(
+        tx,
+        updated.id,
+        "Schedule changed",
+        `The schedule for your booked class changed to ${scheduleDisplay(updated)}.`,
+      );
+    }
+
+    return updated;
+  });
   if (!row) {
     res.status(404).json({ error: "Schedule not found" });
     return;
@@ -207,7 +265,20 @@ router.delete("/schedules/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [row] = await db.delete(schedulesTable).where(eq(schedulesTable.id, params.data.id)).returning();
+  const row = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(schedulesTable).where(eq(schedulesTable.id, params.data.id));
+    if (!existing) return null;
+
+    await notifyScheduleBookings(
+      tx,
+      existing.id,
+      "Class cancelled",
+      "A booked class schedule was cancelled.",
+    );
+
+    const [deleted] = await tx.delete(schedulesTable).where(eq(schedulesTable.id, params.data.id)).returning();
+    return deleted ?? null;
+  });
   if (!row) {
     res.status(404).json({ error: "Schedule not found" });
     return;

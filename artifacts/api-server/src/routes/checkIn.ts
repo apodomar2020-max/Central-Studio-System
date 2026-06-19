@@ -10,6 +10,7 @@ import {
   creditTransactionsTable,
 } from "@workspace/db";
 import { CheckInQrBody, CheckInQrResponse } from "@workspace/api-zod";
+import { createStudentNotification } from "../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -306,6 +307,28 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
         .update(bookingsTable)
         .set({ status: "attended", bookingStatus: "attended" })
         .where(eq(bookingsTable.id, booking.id));
+
+      await createStudentNotification(tx, {
+        studentId: student.id,
+        title: "Checked in",
+        body: `You have been checked in for booking #${booking.id}.`,
+      });
+
+      if (selectedOrder) {
+        await createStudentNotification(tx, {
+          studentId: student.id,
+          title: "Credit used",
+          body: `1 credit was used for booking #${booking.id}.`,
+        });
+
+        if (remainingCredits === 0) {
+          await createStudentNotification(tx, {
+            studentId: student.id,
+            title: "Package credits used",
+            body: "Your package credits have been used.",
+          });
+        }
+      }
 
       return {
         attendanceId: attendance.id,

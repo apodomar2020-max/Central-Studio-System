@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, attendanceTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
+import { createStudentNotification } from "../lib/notifications";
 import {
   ListAttendanceQueryParams,
   ListAttendanceResponse,
@@ -139,6 +140,8 @@ router.post("/attendance", async (req, res): Promise<void> => {
       // ------------------------------------------------------------------
       // Step 2 — Credit deduction (with row-level lock for concurrency safety)
       // ------------------------------------------------------------------
+      let remainingCreditsAfterDeduction: number | null = null;
+
       if (creditDeducted && packageOrderId != null) {
         if (scheduleId != null) {
           const [schedule] = await tx
@@ -179,6 +182,7 @@ router.post("/attendance", async (req, res): Promise<void> => {
         }
 
         const newRemaining = order.remainingCredits - 1;
+        remainingCreditsAfterDeduction = newRemaining;
         await tx
           .update(packageOrdersTable)
           .set({
@@ -225,6 +229,31 @@ router.post("/attendance", async (req, res): Promise<void> => {
           checkedInAt: new Date().toISOString(),
         })
         .returning();
+
+      await createStudentNotification(tx, {
+        studentId: studentId ?? null,
+        studentEmail,
+        title: "Checked in",
+        body: `You have been checked in${classTitle ? ` for ${classTitle}` : ""}.`,
+      });
+
+      if (creditDeducted && packageOrderId != null) {
+        await createStudentNotification(tx, {
+          studentId: studentId ?? null,
+          studentEmail,
+          title: "Credit used",
+          body: `1 credit was used${classTitle ? ` for ${classTitle}` : ""}.`,
+        });
+
+        if (remainingCreditsAfterDeduction === 0) {
+          await createStudentNotification(tx, {
+            studentId: studentId ?? null,
+            studentEmail,
+            title: "Package credits used",
+            body: "Your package credits have been used.",
+          });
+        }
+      }
 
       return inserted;
     });
