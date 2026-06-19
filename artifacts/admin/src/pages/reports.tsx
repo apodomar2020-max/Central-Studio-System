@@ -9,7 +9,6 @@ import {
 } from "@workspace/api-client-react";
 import type { PackageOrder, Attendance, Booking, Student } from "@workspace/api-client-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +24,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Users,
   UserPlus,
-  CreditCard,
   ScanLine,
   CheckCircle2,
   Clock,
@@ -36,6 +34,7 @@ import {
   FileSpreadsheet,
   FileText,
   CalendarRange,
+  AlertCircle,
 } from "lucide-react";
 import {
   BarChart,
@@ -68,7 +67,7 @@ const TOOLTIP_STYLE = {
   fontSize: "12px",
 };
 
-// ─── API base / headers (admin endpoints, e.g. ballet applications) ────────────
+// ─── API base / headers (admin reports endpoints) ──────────────────────────────
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 const API_KEY  = (import.meta.env.VITE_API_KEY  as string | undefined) ?? "";
 function adminHeaders(token: string | null): HeadersInit {
@@ -79,14 +78,13 @@ function adminHeaders(token: string | null): HeadersInit {
   };
 }
 
-interface BalletAppRow {
-  id: number;
-  childName: string;
-  parentName: string;
-  parentPhone: string;
-  slotLabel: string | null;
-  status: string;
-  createdAt: string;
+interface ReportColumn { key: string; label: string }
+interface ReportResponse {
+  entity: string;
+  columns: ReportColumn[];
+  rows: Record<string, unknown>[];
+  summary: Record<string, number | string>;
+  filters: { from?: string; to?: string; status?: string; entity: string };
 }
 
 // ─── Date range ─────────────────────────────────────────────────────────────
@@ -113,15 +111,11 @@ function startOfMonth(): Date {
   d.setDate(1);
   return d;
 }
-
 function computeRange(preset: Preset, from: string, to: string): { from: Date; to: Date } {
   switch (preset) {
-    case "today":
-      return { from: startOfToday(), to: endOfToday() };
-    case "week":
-      return { from: startOfWeek(), to: endOfToday() };
-    case "month":
-      return { from: startOfMonth(), to: endOfToday() };
+    case "today": return { from: startOfToday(), to: endOfToday() };
+    case "week":  return { from: startOfWeek(),  to: endOfToday() };
+    case "month": return { from: startOfMonth(), to: endOfToday() };
     case "custom": {
       const f = from ? new Date(`${from}T00:00:00`) : new Date(0);
       const t = to ? new Date(`${to}T23:59:59.999`) : endOfToday();
@@ -129,32 +123,22 @@ function computeRange(preset: Preset, from: string, to: string): { from: Date; t
     }
   }
 }
-
-function fmtDate(s?: string | null): string {
-  if (!s) return "—";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function humanize(key: string): string {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 }
 
 // ─── Shared components ────────────────────────────────────────────────────────
 function StatCard({
-  title,
-  value,
-  sub,
-  icon: Icon,
-  accent,
-}: {
-  title: string;
-  value: string | number;
-  sub?: string;
-  icon: React.ElementType;
-  accent: string;
-}) {
+  title, value, sub, icon: Icon, accent,
+}: { title: string; value: string | number; sub?: string; icon: React.ElementType; accent: string }) {
   return (
-    <div
-      className="relative overflow-hidden rounded-xl border p-5 flex flex-col gap-3"
-      style={{ background: CARD_BG, borderColor: CARD_BORDER }}
-    >
+    <div className="relative overflow-hidden rounded-xl border p-5 flex flex-col gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium" style={{ color: "#8A9AB0" }}>{title}</p>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${accent}18` }}>
@@ -170,7 +154,6 @@ function StatCard({
     </div>
   );
 }
-
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border p-5" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
@@ -191,7 +174,6 @@ const ENTITY_OPTIONS: { value: Entity; label: string }[] = [
   { value: "attendance", label: "Attendance" },
 ];
 
-// Status filter options per entity ("all" always first).
 const STATUS_OPTIONS: Record<Entity, { value: string; label: string }[]> = {
   bookings: [
     { value: "all", label: "All statuses" },
@@ -228,11 +210,6 @@ const STATUS_OPTIONS: Record<Entity, { value: string; label: string }[]> = {
   ],
 };
 
-interface PreviewData {
-  columns: string[];
-  rows: string[][];
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const { token } = useAdminAuth();
@@ -246,10 +223,10 @@ export default function ReportsPage() {
   const [entity, setEntity] = useState<Entity>("bookings");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // ── Data (existing list APIs only — preview/analytics use these) ────────────
-  const { data: rawBookings = [], isLoading: bookingsLoading } = useListBookings();
-  const { data: rawStudents = [], isLoading: studentsLoading } = useListStudents();
-  const { data: rawAttendance = [], isLoading: attLoading } = useListAttendance();
+  // ── Data for Overview analytics (existing list APIs, client-side) ───────────
+  const { data: rawBookings = [] } = useListBookings();
+  const { data: rawStudents = [] } = useListStudents();
+  const { data: rawAttendance = [] } = useListAttendance();
   const { data: rawOrders = [] } = useListPackageOrders();
   const { data: attendanceStats } = useGetAttendanceStats({ period: attendancePeriod });
 
@@ -257,19 +234,6 @@ export default function ReportsPage() {
   const students = rawStudents as Student[];
   const attendance = rawAttendance as Attendance[];
   const orders = rawOrders as PackageOrder[];
-
-  // Ballet applications (no generated hook — admin endpoint, same pattern as ballet page)
-  const { data: balletResp, isLoading: balletLoading } = useQuery<{ data: BalletAppRow[] }>({
-    queryKey: ["reports-ballet-applications"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/applications?page=1&limit=500`, {
-        headers: adminHeaders(token),
-      });
-      if (!res.ok) throw new Error("Failed to load ballet applications");
-      return res.json();
-    },
-  });
-  const balletApps = balletResp?.data ?? [];
 
   // ── Date range (shared by Overview + Export Center) ─────────────────────────
   const range = useMemo(() => computeRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
@@ -281,13 +245,18 @@ export default function ReportsPage() {
     };
   }, [range]);
 
+  // YYYY-MM-DD params for the backend (presets → derived; custom → as typed).
+  const { fromParam, toParam } = useMemo(() => {
+    if (preset === "custom") return { fromParam: customFrom || undefined, toParam: customTo || undefined };
+    return { fromParam: ymd(range.from), toParam: ymd(range.to) };
+  }, [preset, customFrom, customTo, range]);
+
   // ── Overview: date-ranged metrics (NOT the Dashboard KPI cards) ─────────────
   const overview = useMemo(() => {
     const newUsers = students.filter((s) => inRange(s.joinedAt)).length;
     const newParents = students.filter((s) => s.accountType === "parent" && inRange(s.joinedAt)).length;
     const bookingsInRange = bookings.filter((b) => inRange(b.bookedAt ?? b.createdAt));
     const attInRange = attendance.filter((a) => inRange(a.checkedInAt ?? a.createdAt));
-    const ordersInRange = orders.filter((o) => inRange(o.createdAt));
 
     const att = {
       total: attInRange.length,
@@ -297,18 +266,15 @@ export default function ReportsPage() {
       cancelled: attInRange.filter((a) => a.status === "cancelled").length,
     };
 
-    // Most active classes by booking count (range-filtered)
     const byClass = new Map<string, number>();
     for (const b of bookingsInRange) {
       const name = b.classTitle ?? b.displayTitle ?? "Unlabelled";
       byClass.set(name, (byClass.get(name) ?? 0) + 1);
     }
-    const topClasses = Array.from(byClass.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
+    const topClasses = Array.from(byClass.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    return { newUsers, newParents, bookingsInRange: bookingsInRange.length, ordersInRange: ordersInRange.length, att, topClasses };
-  }, [students, bookings, attendance, orders, inRange]);
+    return { newUsers, newParents, bookingsInRange: bookingsInRange.length, att, topClasses };
+  }, [students, bookings, attendance, inRange]);
 
   const attStatusBarData = [
     { name: "Checked In", count: overview.att.checkedIn, fill: GREEN },
@@ -316,10 +282,8 @@ export default function ReportsPage() {
     { name: "Absent",      count: overview.att.absent,    fill: RED   },
     { name: "Cancelled",   count: overview.att.cancelled, fill: GRAY  },
   ];
-
   const attendanceTrendData = (attendanceStats?.data ?? []).map((d) => ({ name: d.label, count: d.count }));
 
-  // ── Package status distribution (date-ranged) ───────────────────────────────
   const pkgPieData = useMemo(() => {
     const inR = orders.filter((o) => inRange(o.createdAt));
     const by = (st: string) => inR.filter((o) => o.status === st).length;
@@ -332,78 +296,34 @@ export default function ReportsPage() {
     ].filter((d) => d.value > 0);
   }, [orders, inRange]);
 
-  // ── Export Center preview (same filters as Overview) ────────────────────────
-  const preview: PreviewData = useMemo(() => {
-    const sf = statusFilter;
-    switch (entity) {
-      case "bookings": {
-        const rows = bookings
-          .filter((b) => inRange(b.bookedAt ?? b.createdAt))
-          .filter((b) => sf === "all" || b.bookingStatus === sf)
-          .map((b) => [
-            b.studentName,
-            b.classTitle ?? b.displayTitle ?? "—",
-            b.bookingStatus,
-            b.paymentStatus,
-            fmtDate(b.bookedAt ?? b.createdAt),
-          ]);
-        return { columns: ["Participant", "Class", "Booking Status", "Payment", "Booked"], rows };
+  // ── Export Center: backend report endpoint (admin-only) ─────────────────────
+  const reportQuery = useQuery<ReportResponse>({
+    queryKey: ["report", entity, fromParam, toParam, statusFilter],
+    enabled: tab === "export",
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (fromParam) params.set("from", fromParam);
+      if (toParam) params.set("to", toParam);
+      if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
+      params.set("limit", "1000");
+      const res = await fetch(`${API_BASE}/api/reports/${entity}?${params.toString()}`, {
+        headers: adminHeaders(token),
+      });
+      if (!res.ok) {
+        const e = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(e?.error ?? `Failed to load ${entity} report`);
       }
-      case "users": {
-        const rows = students
-          .filter((s) => inRange(s.joinedAt))
-          .filter((s) => sf === "all" || (s.accountType ?? "student") === sf)
-          .map((s) => [
-            s.name,
-            s.email,
-            s.phone ?? "—",
-            s.accountType ?? "student",
-            fmtDate(s.joinedAt),
-          ]);
-        return { columns: ["Name", "Email", "Phone", "Account Type", "Joined"], rows };
-      }
-      case "parents": {
-        const rows = students
-          .filter((s) => s.accountType === "parent")
-          .filter((s) => inRange(s.joinedAt))
-          .map((s) => [s.name, s.email, s.phone ?? "—", fmtDate(s.joinedAt)]);
-        return { columns: ["Name", "Email", "Phone", "Joined"], rows };
-      }
-      case "ballet": {
-        const rows = balletApps
-          .filter((a) => inRange(a.createdAt))
-          .filter((a) => sf === "all" || a.status === sf)
-          .map((a) => [a.childName, a.parentName, a.parentPhone, a.slotLabel ?? "—", a.status, fmtDate(a.createdAt)]);
-        return { columns: ["Child", "Parent", "Phone", "Preferred Slot", "Status", "Applied"], rows };
-      }
-      case "attendance": {
-        const rows = attendance
-          .filter((a) => inRange(a.checkedInAt ?? a.createdAt))
-          .filter((a) => sf === "all" || (a.status ?? "checked_in") === sf)
-          .map((a) => [
-            a.studentName,
-            a.classTitle ?? "—",
-            a.status ?? "checked_in",
-            a.creditDeducted ? "Yes" : "No",
-            fmtDate(a.checkedInAt ?? a.createdAt),
-          ]);
-        return { columns: ["Participant", "Class", "Status", "Credit Used", "Checked In"], rows };
-      }
-    }
-  }, [entity, statusFilter, bookings, students, attendance, balletApps, inRange]);
-
-  const previewLoading =
-    (entity === "bookings" && bookingsLoading) ||
-    ((entity === "users" || entity === "parents") && studentsLoading) ||
-    (entity === "attendance" && attLoading) ||
-    (entity === "ballet" && balletLoading);
+      return res.json();
+    },
+  });
+  const report = reportQuery.data;
+  const summaryEntries = report ? Object.entries(report.summary) : [];
 
   function handleEntityChange(value: string) {
     setEntity(value as Entity);
     setStatusFilter("all");
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   const PRESETS: { label: string; value: Preset }[] = [
     { label: "Today", value: "today" },
     { label: "This Week", value: "week" },
@@ -450,21 +370,9 @@ export default function ReportsPage() {
         </div>
         {preset === "custom" && (
           <div className="flex items-center gap-2">
-            <Input
-              type="date"
-              value={customFrom}
-              max={customTo || undefined}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="h-8 w-[150px]"
-            />
+            <Input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} className="h-8 w-[150px]" />
             <span className="text-xs" style={{ color: "#4E6070" }}>to</span>
-            <Input
-              type="date"
-              value={customTo}
-              min={customFrom || undefined}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="h-8 w-[150px]"
-            />
+            <Input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} className="h-8 w-[150px]" />
           </div>
         )}
       </div>
@@ -479,17 +387,17 @@ export default function ReportsPage() {
         {/* ───────────── OVERVIEW ───────────── */}
         <TabsContent value="overview" className="space-y-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="New Users"     value={overview.newUsers}        icon={UserPlus}    accent={CYAN}  sub="in range" />
-            <StatCard title="New Parents"   value={overview.newParents}      icon={Users}       accent={GREEN} sub="in range" />
-            <StatCard title="Bookings"      value={overview.bookingsInRange} icon={ShoppingBag} accent={AMBER} sub="in range" />
-            <StatCard title="Check-Ins"     value={overview.att.total}       icon={ScanLine}    accent={CYAN}  sub="in range" />
+            <StatCard title="New Users"   value={overview.newUsers}        icon={UserPlus}    accent={CYAN}  sub="in range" />
+            <StatCard title="New Parents" value={overview.newParents}      icon={Users}       accent={GREEN} sub="in range" />
+            <StatCard title="Bookings"    value={overview.bookingsInRange} icon={ShoppingBag} accent={AMBER} sub="in range" />
+            <StatCard title="Check-Ins"   value={overview.att.total}       icon={ScanLine}    accent={CYAN}  sub="in range" />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="Checked In"  value={overview.att.checkedIn} icon={CheckCircle2} accent={GREEN} />
-            <StatCard title="Late"        value={overview.att.late}      icon={Clock}        accent={AMBER} />
-            <StatCard title="Absent"      value={overview.att.absent}    icon={XCircle}      accent={RED}   />
-            <StatCard title="Cancelled"   value={overview.att.cancelled} icon={Ban}          accent={GRAY}  />
+            <StatCard title="Checked In" value={overview.att.checkedIn} icon={CheckCircle2} accent={GREEN} />
+            <StatCard title="Late"       value={overview.att.late}      icon={Clock}        accent={AMBER} />
+            <StatCard title="Absent"     value={overview.att.absent}    icon={XCircle}      accent={RED}   />
+            <StatCard title="Cancelled"  value={overview.att.cancelled} icon={Ban}          accent={GRAY}  />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -521,7 +429,6 @@ export default function ReportsPage() {
             )}
           </div>
 
-          {/* Most active classes (range) */}
           <ChartCard title="Most Active Classes (by bookings, range)">
             {overview.topClasses.length === 0 ? (
               <p className="text-center text-sm py-6" style={{ color: "#4E6070" }}>No bookings in this range.</p>
@@ -537,7 +444,6 @@ export default function ReportsPage() {
             )}
           </ChartCard>
 
-          {/* Attendance trend (independent period lens) */}
           <ChartCard title="Attendance Trend">
             <div className="flex items-center gap-2 mb-4">
               {(["daily", "monthly", "yearly"] as const).map((opt) => (
@@ -596,7 +502,7 @@ export default function ReportsPage() {
 
             <div className="flex-1" />
 
-            {/* Export buttons — disabled placeholders (Phase 2+) */}
+            {/* Export buttons — disabled placeholders (Phase 3/4) */}
             <div className="flex items-end gap-2">
               <Button variant="outline" size="sm" disabled title="Coming soon" className="gap-1.5">
                 <FileText className="h-4 w-4" /> Export PDF
@@ -608,44 +514,62 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* "Export coming soon" note */}
           <p className="text-xs" style={{ color: "#8A9AB0" }}>
-            Preview uses live data with the date range above. PDF &amp; Excel export will generate exactly what you see here — that work lands in the next phase.
+            Preview is served by the secure admin reports API with the date range &amp; status above. PDF &amp; Excel export will generate exactly what you see here — that work lands in the next phase.
           </p>
 
-          {/* Preview table */}
+          {/* Summary cards from backend summary */}
+          {summaryEntries.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {summaryEntries.map(([key, val]) => (
+                <div key={key} className="rounded-lg border px-3 py-2.5" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+                  <p className="text-[11px] uppercase tracking-wider" style={{ color: "#8A9AB0" }}>{humanize(key)}</p>
+                  <p className="text-xl font-bold text-white">{typeof val === "number" ? val.toLocaleString() : String(val)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Preview table (backend columns + rows) */}
           <div className="rounded-xl border overflow-hidden" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
             <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: CARD_BORDER }}>
               <span className="text-sm font-semibold text-white">Preview</span>
-              <span className="text-xs" style={{ color: "#8A9AB0" }}>{preview.rows.length} row{preview.rows.length !== 1 ? "s" : ""}</span>
+              <span className="text-xs" style={{ color: "#8A9AB0" }}>
+                {report ? `${report.rows.length} row${report.rows.length !== 1 ? "s" : ""}` : ""}
+              </span>
             </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {preview.columns.map((c) => <TableHead key={c}>{c}</TableHead>)}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {previewLoading ? (
-                  <TableRow><TableCell colSpan={preview.columns.length} className="text-center py-8">
-                    <Skeleton className="h-4 w-32 mx-auto" style={{ background: CARD_BORDER }} />
-                  </TableCell></TableRow>
-                ) : preview.rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={preview.columns.length} className="text-center py-8 text-muted-foreground">
-                    No records match the selected range and filters.
-                  </TableCell></TableRow>
-                ) : (
-                  preview.rows.slice(0, 100).map((row, i) => (
-                    <TableRow key={i}>
-                      {row.map((cell, j) => <TableCell key={j}>{cell}</TableCell>)}
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-            {preview.rows.length > 100 && (
+
+            {reportQuery.isError ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm" style={{ color: RED }}>
+                <AlertCircle className="h-4 w-4" />
+                {(reportQuery.error as Error)?.message ?? "Failed to load report."}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {(report?.columns ?? []).map((c) => <TableHead key={c.key}>{c.label}</TableHead>)}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reportQuery.isLoading || !report ? (
+                    <TableRow><TableCell colSpan={Math.max(report?.columns.length ?? 1, 1)} className="text-center py-8 text-muted-foreground">Loading…</TableCell></TableRow>
+                  ) : report.rows.length === 0 ? (
+                    <TableRow><TableCell colSpan={report.columns.length} className="text-center py-8 text-muted-foreground">No records match the selected range and filters.</TableCell></TableRow>
+                  ) : (
+                    report.rows.map((row, i) => (
+                      <TableRow key={i}>
+                        {report.columns.map((c) => <TableCell key={c.key}>{String(row[c.key] ?? "—")}</TableCell>)}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
+
+            {report && typeof report.summary.total === "number" && report.summary.total > report.rows.length && (
               <div className="px-4 py-2 text-xs border-t" style={{ color: "#8A9AB0", borderColor: CARD_BORDER }}>
-                Showing first 100 of {preview.rows.length}. Export (next phase) will include all rows.
+                Showing first {report.rows.length} of {report.summary.total}. Export (next phase) will include all rows.
               </div>
             )}
           </div>
