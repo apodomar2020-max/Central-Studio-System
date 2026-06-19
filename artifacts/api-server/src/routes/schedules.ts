@@ -106,8 +106,17 @@ async function notifyScheduleBookings(
     .select({
       bookingId: bookingsTable.id,
       studentEmail: bookingsTable.studentEmail,
+      participantName: bookingsTable.studentName,
+      participantChildId: bookingsTable.participantChildId,
+      bookingScope: bookingsTable.bookingScope,
+      className: classesTable.title,
+      instructorName: instructorsTable.name,
+      branch: schedulesTable.location,
     })
     .from(bookingsTable)
+    .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
+    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+    .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
     .where(and(
       eq(bookingsTable.scheduleId, scheduleId),
       inArray(bookingsTable.bookingStatus, ["pending", "confirmed"]),
@@ -117,14 +126,20 @@ async function notifyScheduleBookings(
     await createStudentNotification(client, {
       studentEmail: booking.studentEmail,
       title,
-      body: `${body} Booking #${booking.bookingId}.`,
+      body,
       type: title.toLowerCase().includes("cancel") ? "schedule_cancelled" : "schedule_changed",
       relatedEntityType: "booking",
       relatedEntityId: booking.bookingId,
       metadata: {
         bookingId: booking.bookingId,
+        className: booking.className,
+        instructorName: booking.instructorName,
+        branch: booking.branch,
         scheduleId,
         scheduleLabel: body,
+        participantName: booking.participantName,
+        participantChildId: booking.participantChildId,
+        bookingScope: booking.bookingScope ?? (booking.participantChildId != null ? "child" : "self"),
       },
     });
   }

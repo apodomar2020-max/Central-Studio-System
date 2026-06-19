@@ -6,6 +6,8 @@ import {
   bookingsTable,
   packageOrdersTable,
   schedulesTable,
+  classesTable,
+  instructorsTable,
   attendanceTable,
   creditTransactionsTable,
 } from "@workspace/db";
@@ -13,6 +15,76 @@ import { CheckInQrBody, CheckInQrResponse } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
 
 const router: IRouter = Router();
+
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+function formatTime(t: string | null): string | null {
+  if (!t) return null;
+  const match = /^(\d{1,2}):(\d{2})/.exec(t);
+  if (!match) return t;
+  const h = Number(match[1]);
+  const m = match[2];
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m} ${period}`;
+}
+
+async function getBookingNotificationContext(
+  client: Pick<typeof db, "select">,
+  booking: typeof bookingsTable.$inferSelect,
+) {
+  const [details] = await client
+    .select({
+      className: classesTable.title,
+      instructorName: instructorsTable.name,
+      branch: schedulesTable.location,
+      scheduleType: schedulesTable.type,
+      scheduleDayOfWeek: schedulesTable.dayOfWeek,
+      scheduleDate: schedulesTable.date,
+      scheduleStartTime: schedulesTable.startTime,
+      scheduleEndTime: schedulesTable.endTime,
+    })
+    .from(bookingsTable)
+    .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
+    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+    .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
+    .where(eq(bookingsTable.id, booking.id))
+    .limit(1);
+
+  const start = formatTime(details?.scheduleStartTime ?? null);
+  const end = formatTime(details?.scheduleEndTime ?? null);
+  const dayName = details?.scheduleDayOfWeek != null ? DAY_NAMES[details.scheduleDayOfWeek] ?? null : null;
+  const dateLabel = details?.scheduleDate
+    ? new Date(`${details.scheduleDate}T00:00:00Z`).toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      })
+    : null;
+  const schedulePrefix = details?.scheduleType === "one_time" ? dateLabel : dayName;
+  const scheduleLabel = schedulePrefix && start
+    ? `${schedulePrefix} • ${end ? `${start} - ${end}` : start}`
+    : null;
+  const className = details?.className ?? null;
+
+  return {
+    className,
+    instructorName: details?.instructorName ?? null,
+    branch: details?.branch ?? null,
+    scheduleLabel,
+    participantName: booking.studentName,
+    bookingScope: booking.bookingScope ?? (booking.participantChildId != null ? "child" : "self"),
+    label: className ?? "your class",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // POST /check-in/qr
@@ -116,6 +188,7 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
       if (!booking) {
         throw makeError(404, "booking_not_found", "Booking not found.");
       }
+      const notificationContext = await getBookingNotificationContext(tx, booking);
 
       // Verify the booking belongs to the student who presented this QR code.
       if (booking.studentEmail !== student.email) {
@@ -311,7 +384,7 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
       await createStudentNotification(tx, {
         studentId: student.id,
         title: "Checked in",
-        body: `You have been checked in for booking #${booking.id}.`,
+        body: `You have been checked in for ${notificationContext.label}.`,
         type: "attendance_checked_in",
         relatedEntityType: "booking",
         relatedEntityId: booking.id,
@@ -319,6 +392,12 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
           bookingId: booking.id,
           classId: booking.classId,
           scheduleId: booking.scheduleId,
+          className: notificationContext.className,
+          instructorName: notificationContext.instructorName,
+          branch: notificationContext.branch,
+          scheduleLabel: notificationContext.scheduleLabel,
+          participantName: notificationContext.participantName,
+          bookingScope: notificationContext.bookingScope,
         },
       });
 
@@ -326,12 +405,18 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
         await createStudentNotification(tx, {
           studentId: student.id,
           title: "Credit used",
-          body: `1 credit was used for booking #${booking.id}.`,
+          body: `1 credit was used for ${notificationContext.label}.`,
           type: "credits_exhausted",
           relatedEntityType: "booking",
           relatedEntityId: booking.id,
           metadata: {
             bookingId: booking.id,
+            className: notificationContext.className,
+            instructorName: notificationContext.instructorName,
+            branch: notificationContext.branch,
+            scheduleLabel: notificationContext.scheduleLabel,
+            participantName: notificationContext.participantName,
+            bookingScope: notificationContext.bookingScope,
             remainingCredits,
           },
         });
@@ -347,6 +432,12 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
             metadata: {
               bookingId: booking.id,
               packageName: selectedOrder?.packageName,
+              className: notificationContext.className,
+              instructorName: notificationContext.instructorName,
+              branch: notificationContext.branch,
+              scheduleLabel: notificationContext.scheduleLabel,
+              participantName: notificationContext.participantName,
+              bookingScope: notificationContext.bookingScope,
               remainingCredits,
             },
           });

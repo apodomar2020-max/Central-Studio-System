@@ -24,6 +24,9 @@ async function notifyClassBookings(
     .select({
       bookingId: bookingsTable.id,
       studentEmail: bookingsTable.studentEmail,
+      participantName: bookingsTable.studentName,
+      participantChildId: bookingsTable.participantChildId,
+      bookingScope: bookingsTable.bookingScope,
     })
     .from(bookingsTable)
     .where(and(
@@ -35,13 +38,16 @@ async function notifyClassBookings(
     await createStudentNotification(client, {
       studentEmail: booking.studentEmail,
       title: "Class cancelled",
-      body: `${classTitle} was cancelled. Booking #${booking.bookingId}.`,
+      body: `${classTitle} was cancelled.`,
       type: "schedule_cancelled",
       relatedEntityType: "booking",
       relatedEntityId: booking.bookingId,
       metadata: {
         bookingId: booking.bookingId,
         className: classTitle,
+        participantName: booking.participantName,
+        participantChildId: booking.participantChildId,
+        bookingScope: booking.bookingScope ?? (booking.participantChildId != null ? "child" : "self"),
       },
     });
   }
