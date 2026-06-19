@@ -6,9 +6,11 @@
  *     summary: Record<string,unknown>, filters }
  *
  * Security: admin-only. Reports concentrate sensitive customer/business data,
- * so these endpoints are guarded by blockStudentJwt + requireAdminAuth — they do
- * NOT inherit the looser auth of the public list endpoints. A mobile student JWT
- * can never reach them.
+ * so these endpoints are guarded by requireAdminAuth (validates the x-admin-token
+ * admin JWT) — they do NOT inherit the looser auth of the public list endpoints,
+ * and a mobile student JWT (which carries no admin token) is rejected with 401.
+ * TODO: also chain blockStudentJwt once that middleware is committed/exported
+ * globally for defence-in-depth.
  *
  * NOTE (follow-up): there is no "reports" entry in ADMIN_MODULES and no
  * requirePermission middleware in this codebase yet, so access is gated at the
@@ -34,7 +36,6 @@ import {
   balletApplicationsTable,
 } from "@workspace/db";
 import { requireAdminAuth } from "./adminAuth";
-import { blockStudentJwt } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
@@ -396,7 +397,8 @@ async function attendanceReport(fromIso: string | undefined, toIso: string | und
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
-router.get("/reports/:entity", blockStudentJwt, requireAdminAuth, async (req, res): Promise<void> => {
+// TODO: add blockStudentJwt once middleware is committed/exported globally.
+router.get("/reports/:entity", requireAdminAuth, async (req, res): Promise<void> => {
   const entity = req.params.entity as Entity;
   if (!ENTITIES.includes(entity)) {
     res.status(400).json({ error: `Unknown report entity '${req.params.entity}'. Allowed: ${ENTITIES.join(", ")}` });
