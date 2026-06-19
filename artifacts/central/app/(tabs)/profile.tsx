@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   Modal,
@@ -21,11 +21,11 @@ import { customFetch } from "@workspace/api-client-react";
 import type { MyAttendanceResponse } from "@workspace/api-client-react";
 
 import { useAppContext, ChildProfile } from "@/contexts/AppContext";
-import { fetchMyApplications } from "@/services/balletAssessmentService";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 
 const SECTION_ITEMS = [
+  { icon: "create-outline",        label: "Edit Profile",        route: "/auth/complete-profile" },
   { icon: "calendar-outline",      label: "My Bookings",         route: "/(tabs)/bookings"   },
   { icon: "layers-outline",        label: "Package Center",       route: "/package-center"    },
   { icon: "receipt-outline",       label: "Credit History",       route: "/credit-history"    },
@@ -187,20 +187,6 @@ export default function ProfileScreen() {
   const [qrVisible, setQrVisible] = useState(false);
   const [serverAttendedCount, setServerAttendedCount] = useState<number | null>(null);
 
-  // Fetch ballet applications to determine account type.
-  // A user is a "Parent" if they have registered children OR submitted ballet applications.
-  const [hasBalletApplications, setHasBalletApplications] = useState(false);
-  useEffect(() => {
-    if (!user) return;
-    const ctrl = new AbortController();
-    fetchMyApplications(ctrl.signal)
-      .then((apps) => {
-        if (!ctrl.signal.aborted) setHasBalletApplications(apps.length > 0);
-      })
-      .catch(() => { /* non-critical — tag defaults to children check */ });
-    return () => ctrl.abort();
-  }, [user]);
-
   useFocusEffect(
     useCallback(() => {
       if (!user) return undefined;
@@ -307,23 +293,24 @@ export default function ProfileScreen() {
             </View>
           </View>
           {user.phone ? <Text style={styles.phone}>{user.phone}</Text> : null}
-          {/* Account type tag — Parent if the user has registered children OR ballet applications.
-              Dancer tag is reserved for a future dancer profile system. */}
-          {(() => {
-            const isParent = children.length > 0 || hasBalletApplications;
-            return (
-              <View style={styles.accountTypeTag}>
-                <Ionicons
-                  name={isParent ? "people-outline" : "person-outline"}
-                  size={11}
-                  color={isParent ? "#60A5FA" : "#A78BFA"}
-                />
-                <Text style={[styles.accountTypeText, { color: isParent ? "#60A5FA" : "#A78BFA" }]}>
-                  {isParent ? "Parent" : "Student"}
-                </Text>
+          <View style={styles.tagRow}>
+            <View style={styles.accountTypeTag}>
+              <Ionicons
+                name={user.accountType === "parent" ? "people-outline" : "person-outline"}
+                size={11}
+                color={user.accountType === "parent" ? "#60A5FA" : "#A78BFA"}
+              />
+              <Text style={[styles.accountTypeText, { color: user.accountType === "parent" ? "#60A5FA" : "#A78BFA" }]}>
+                {user.accountType === "parent" ? "Parent" : "Student"}
+              </Text>
+            </View>
+            {user.authProvider ? (
+              <View style={styles.providerTag}>
+                <Ionicons name={user.authProvider === "google" ? "logo-google" : "person-circle-outline"} size={11} color="#9CA3AF" />
+                <Text style={styles.providerText}>{user.authProvider}</Text>
               </View>
-            );
-          })()}
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.statsRow}>
@@ -545,8 +532,11 @@ const styles = StyleSheet.create({
   verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
   verifiedText: { fontSize: 11, fontFamily: "Inter_500Medium" },
   phone: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  tagRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
   accountTypeTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: "#1E1E26", borderWidth: 1, borderColor: "#2A2A35", marginTop: 2 },
   accountTypeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  providerTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: "#1E1E26", borderWidth: 1, borderColor: "#2A2A35", marginTop: 2 },
+  providerText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#9CA3AF", textTransform: "capitalize" },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   statCard: { flex: 1, padding: 14, borderRadius: 14, alignItems: "center", gap: 4 },
   statValue: { fontSize: 22, fontFamily: "Inter_700Bold" },

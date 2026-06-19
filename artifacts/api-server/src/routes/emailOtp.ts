@@ -41,8 +41,13 @@ async function markVerified(email: string) {
       name: studentsTable.name,
       email: studentsTable.email,
       phone: studentsTable.phone,
+      accountType: studentsTable.accountType,
+      profileCompleted: studentsTable.profileCompleted,
+      profileCompletedAt: studentsTable.profileCompletedAt,
       emailVerified: studentsTable.emailVerified,
+      authProvider: studentsTable.authProvider,
       avatarUrl: studentsTable.avatarUrl,
+      providerDisplayName: studentsTable.providerDisplayName,
       joinedAt: studentsTable.joinedAt,
       qrToken: studentsTable.qrToken,
     });
@@ -203,9 +208,14 @@ router.post("/auth/verify-email-otp", async (req, res): Promise<void> => {
     return;
   }
 
-  await markVerified(student.email);
+  const verifiedStudent = await markVerified(student.email);
+  if (!verifiedStudent) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+  const accessToken = signStudentToken(verifiedStudent.id, verifiedStudent.email, true);
   logger.info({ studentId }, "Email verified successfully (legacy endpoint)");
-  res.json({ ok: true });
+  res.json({ ok: true, student: verifiedStudent, accessToken });
 });
 
 export default router;

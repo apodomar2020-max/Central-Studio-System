@@ -64,6 +64,10 @@ function RootLayoutNav() {
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen
+        name="auth/complete-profile"
+        options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
+      />
+      <Stack.Screen
         name="auth/forgot-password"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />

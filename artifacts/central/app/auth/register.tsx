@@ -22,6 +22,7 @@ import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import FacebookSignInButton from "@/components/FacebookSignInButton";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
+import { continueAfterAuth } from "@/services/authProfile";
 
 const ROLES: { value: User["role"]; label: string; icon: string }[] = [
   { value: "student", label: "Student", icon: "school-outline" },
@@ -67,6 +68,7 @@ export default function RegisterScreen() {
           name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim() || undefined,
+          accountType: role,
           password,
         }),
       });
@@ -79,27 +81,8 @@ export default function RegisterScreen() {
         return;
       }
 
-      const { student, accessToken } = data;
-
-      // Store the signed student JWT immediately after registration so the
-      // user is authenticated from this point forward without having to log in.
-      if (accessToken) {
-        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-        await AsyncStorage.setItem("studentToken", accessToken);
-      }
-
-      const newUser: User = {
-        id: String(student.id),
-        fullName: student.name,
-        phone: student.phone ?? "",
-        email: student.email,
-        emailVerified: false,
-        role,
-        qrToken: student.qrToken ?? undefined,
-      };
-      await setUser(newUser);
+      await continueAfterAuth(data.accessToken, setUser);
       setLoading(false);
-      router.replace("/(tabs)/" as never);
     } catch {
       setError("Network error. Please check your connection.");
       setLoading(false);
@@ -109,7 +92,7 @@ export default function RegisterScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
       <TouchableOpacity
-        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)/" as never); }}
+        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/" as never); }}
         style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
       >
         <Ionicons name="close" size={22} color="#9CA3AF" />

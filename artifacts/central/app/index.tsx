@@ -13,8 +13,12 @@ export default function IndexScreen() {
     } else if (!user) {
       // Require login before accessing the app
       router.replace("/auth/login");
+    } else if (!user.emailVerified) {
+      router.replace("/verify-email" as never);
+    } else if (!user.profileCompleted) {
+      router.replace("/auth/complete-profile" as never);
     } else {
-      router.replace("/(tabs)/" as never);
+      router.replace("/(tabs)" as never);
     }
   }, [isLoading, isOnboarded, user]);
 

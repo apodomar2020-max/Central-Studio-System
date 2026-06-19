@@ -16,13 +16,14 @@ import {
   View,
 } from "react-native";
 
-import { useAppContext, User } from "@/contexts/AppContext";
+import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import FacebookSignInButton from "@/components/FacebookSignInButton";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
+import { continueAfterAuth } from "@/services/authProfile";
 
 export default function LoginScreen() {
   const { setUser } = useAppContext();
@@ -73,28 +74,8 @@ export default function LoginScreen() {
         return;
       }
 
-      const { student, accessToken } = data;
-
-      // Store the signed student JWT so every subsequent API call is
-      // automatically authenticated as this student (via setAuthTokenGetter
-      // in _layout.tsx). The token is verified server-side on every request.
-      if (accessToken) {
-        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-        await AsyncStorage.setItem("studentToken", accessToken);
-      }
-
-      const user: User = {
-        id: String(student.id),
-        fullName: student.name,
-        phone: student.phone ?? "",
-        email: student.email,
-        emailVerified: true,
-        role: "student",
-        qrToken: student.qrToken ?? undefined,
-      };
-      await setUser(user);
+      await continueAfterAuth(data.accessToken, setUser);
       setLoading(false);
-      router.replace("/(tabs)/" as never);
     } catch {
       setError("Network error. Please check your connection.");
       setLoading(false);
@@ -119,7 +100,7 @@ export default function LoginScreen() {
       />
 
       <TouchableOpacity
-        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)/" as never); }}
+        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/" as never); }}
         style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
       >
         <Ionicons name="close" size={22} color="#9CA3AF" />
@@ -206,7 +187,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)/" as never); }} style={styles.guestBtn}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/" as never); }} style={styles.guestBtn}>
           <Text style={styles.guestText}>Continue browsing as guest</Text>
         </TouchableOpacity>
       </KeyboardAwareScrollView>

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +18,7 @@ import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import { fetchCurrentUser } from "@/services/authProfile";
 
 const CODE_LENGTH = 6;
 
@@ -97,14 +99,26 @@ export default function VerifyEmailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try {
-      await customFetch("/api/auth/verify-email-otp", {
+      const verification = await customFetch<{ accessToken?: string }>("/api/auth/verify-email-otp", {
         method: "POST",
         body: JSON.stringify({ studentId: user.id, code: full }),
       });
-      // Mark verified in local state
-      await setUser({ ...user, emailVerified: true });
+      if (verification.accessToken) {
+        await AsyncStorage.setItem("studentToken", verification.accessToken);
+      }
+      const refreshed = await fetchCurrentUser();
+      await setUser(refreshed.user);
       Alert.alert("Email Verified!", "Your email has been verified successfully.", [
-        { text: "Continue", onPress: () => router.back() },
+        {
+          text: "Continue",
+          onPress: () => {
+            if (!refreshed.user.profileCompleted) {
+              router.replace("/auth/complete-profile" as never);
+            } else {
+              router.replace("/" as never);
+            }
+          },
+        },
       ]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Invalid or expired code.";

@@ -169,5 +169,13 @@
       "tag": "0020_instagram_token",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782475200000,
+      "tag": "0021_profile_completion",
+      "breakpoints": true
+    }
   ]
 }

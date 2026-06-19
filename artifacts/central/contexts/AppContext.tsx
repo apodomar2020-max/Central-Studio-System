@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { customFetch } from "@workspace/api-client-react";
+import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 
 export interface User {
   id: string;
@@ -10,6 +11,11 @@ export interface User {
   emailVerified: boolean;
   birthday?: string;
   role: "student" | "parent" | "instructor";
+  accountType?: "student" | "parent";
+  authProvider?: string | null;
+  providerDisplayName?: string | null;
+  profileCompleted?: boolean;
+  profileMissingFields?: string[];
   /** Opaque UUID used to generate the secure QR code. Never logged or displayed as text. */
   qrToken?: string;
   /** Effective avatar image URL (Google-synced or manual upload); undefined → show initials. */
@@ -129,7 +135,7 @@ interface AppContextType {
   isOnboarded: boolean;
   setIsOnboarded: (v: boolean) => void;
   user: User | null;
-  setUser: (user: User | null) => void;
+  setUser: (user: User | null) => Promise<void>;
   children: ChildProfile[];
   addChild: (child: ChildProfile) => void;
   updateChild: (child: ChildProfile) => void;
@@ -226,8 +232,16 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           await AsyncStorage.removeItem("user");
           // parsedUser is intentionally not set in state — session is invalidated.
         } else {
-          setUserState(parsedUser);
-          userRef.current = parsedUser;
+          let effectiveUser = parsedUser;
+          try {
+            const refreshed = await customFetch<{ student: AuthStudent }>("/api/auth/me");
+            effectiveUser = mapStudentToUser(refreshed.student);
+            await AsyncStorage.setItem("user", JSON.stringify(effectiveUser));
+          } catch {
+            // Offline or backend unavailable — keep the persisted user for now.
+          }
+          setUserState(effectiveUser);
+          userRef.current = effectiveUser;
         }
       }
 

@@ -59,13 +59,25 @@ async function findByEmail(email: string): Promise<StudentRow | null> {
 }
 
 function publicStudent(s: StudentRow) {
+  const profileMissingFields = [
+    !s.name?.trim() ? "name" : null,
+    !s.phone?.trim() ? "phone" : null,
+    s.accountType !== "student" && s.accountType !== "parent" ? "accountType" : null,
+  ].filter(Boolean) as string[];
+
   return {
     id: s.id,
     name: s.name,
     email: s.email,
     phone: s.phone,
+    accountType: s.accountType,
     emailVerified: s.emailVerified,
+    authProvider: s.authProvider,
     avatarUrl: s.avatarUrl ?? null,
+    providerAvatarUrl: s.providerAvatarUrl ?? null,
+    providerDisplayName: s.providerDisplayName ?? null,
+    profileCompleted: profileMissingFields.length === 0,
+    profileMissingFields,
     joinedAt: s.joinedAt,
     qrToken: s.qrToken,
   };
@@ -129,6 +141,7 @@ async function resolveSocialLogin(
           ...providerPatch(provider, providerId),
           ...avatarPatch(identity, student),
           authProvider: provider,
+          providerDisplayName: identity.name ?? student.providerDisplayName,
           lastLoginAt: now,
         })
         .where(eq(studentsTable.id, student.id))
@@ -142,6 +155,7 @@ async function resolveSocialLogin(
           name: identity.name ?? email.split("@")[0] ?? "Member",
           email,
           authProvider: provider,
+          providerDisplayName: identity.name,
           ...providerPatch(provider, providerId),
           ...avatarPatch(identity),
           emailVerified: verifiedByProvider,
@@ -154,7 +168,12 @@ async function resolveSocialLogin(
   } else {
     const [updated] = await db
       .update(studentsTable)
-      .set({ ...avatarPatch(identity, student), authProvider: provider, lastLoginAt: now })
+      .set({
+        ...avatarPatch(identity, student),
+        authProvider: provider,
+        providerDisplayName: identity.name ?? student.providerDisplayName,
+        lastLoginAt: now,
+      })
       .where(eq(studentsTable.id, student.id))
       .returning();
     student = updated!;

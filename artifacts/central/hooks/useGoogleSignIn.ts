@@ -12,11 +12,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import * as Google from "expo-auth-session/providers/google";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
 
-import { useAppContext, User } from "@/contexts/AppContext";
+import { useAppContext } from "@/contexts/AppContext";
 import { GOOGLE_CLIENT_IDS } from "@/constants/google";
+import { continueAfterAuth } from "@/services/authProfile";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
@@ -77,30 +76,7 @@ export function useGoogleSignIn() {
         return;
       }
 
-      if (data.accessToken) {
-        await AsyncStorage.setItem("studentToken", data.accessToken);
-      }
-
-      const s = data.student ?? {};
-      const user: User = {
-        id: String(s.id),
-        fullName: s.name ?? "",
-        phone: s.phone ?? "",
-        email: s.email ?? "",
-        emailVerified: s.emailVerified ?? true,
-        role: "student",
-        qrToken: s.qrToken ?? undefined,
-        avatarUrl: s.avatarUrl ?? undefined,
-      };
-      await setUser(user);
-
-      // Google emails are verified, so requiresOtp is normally false — but honor
-      // it if the backend ever returns true (e.g. unverified Google email).
-      if (data.requiresOtp) {
-        router.replace("/verify-email" as never);
-      } else {
-        router.replace("/(tabs)/" as never);
-      }
+      await continueAfterAuth(data.accessToken, setUser);
     } catch {
       setError("Network error. Please check your connection and try again.");
     } finally {

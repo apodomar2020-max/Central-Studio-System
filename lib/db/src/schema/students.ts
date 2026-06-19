@@ -7,6 +7,9 @@ export const studentsTable = pgTable("students", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   phone: text("phone"),
+  accountType: text("account_type"),
+  profileCompleted: boolean("profile_completed").notNull().default(false),
+  profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true, mode: "string" }),
   notes: text("notes"),
   passwordHash: text("password_hash"),
   emailVerified: boolean("email_verified").notNull().default(false),
@@ -27,6 +30,7 @@ export const studentsTable = pgTable("students", {
   avatarUrl: text("avatar_url"),
   avatarSource: text("avatar_source"),
   providerAvatarUrl: text("provider_avatar_url"),
+  providerDisplayName: text("provider_display_name"),
   totalBookings: integer("total_bookings").notNull().default(0),
   // Opaque token embedded in the student's QR code.
   // Never put PII in the QR — this UUID is the only identifier.
