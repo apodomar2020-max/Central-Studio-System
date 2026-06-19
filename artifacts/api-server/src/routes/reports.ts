@@ -25,6 +25,7 @@ import { Router, type IRouter } from "express";
 import { and, gte, lte, eq, or, isNull, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
+import { Workbook } from "exceljs";
 import {
   db,
   bookingsTable,
@@ -63,7 +64,24 @@ const QuerySchema = z.object({
   to: z.string().regex(DATE_RE, "to must be YYYY-MM-DD").optional(),
   status: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
+  // `xlsx` streams an Excel download; anything else (incl. omitted) returns JSON.
+  format: z.enum(["json", "xlsx"]).default("json"),
 });
+
+// Human-readable titles for each report (used in JSON title-less previews and
+// the Excel worksheet/heading).
+const ENTITY_TITLES: Record<Entity, string> = {
+  bookings: "Bookings Report",
+  users: "Users Report",
+  parents: "Parents Report",
+  ballet: "Ballet Applications Report",
+  attendance: "Attendance Report",
+};
+
+/** "childrenCount" → "Children Count" — mirrors the admin UI's humanize(). */
+function humanizeKey(key: string): string {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
@@ -396,6 +414,77 @@ async function attendanceReport(fromIso: string | undefined, toIso: string | und
   return { columns, rows, summary };
 }
 
+// ─── Excel export ─────────────────────────────────────────────────────────────
+// Builds a single-worksheet .xlsx from the SAME ReportResult used for the JSON
+// preview, so the download always matches what the admin sees on screen.
+// Layout: title → generated timestamp → date range → active filters → summary
+// rows → (blank) → bold table header (frozen) → table rows.
+async function buildXlsxBuffer(
+  entity: Entity,
+  result: ReportResult,
+  filters: { from?: string; to?: string; status?: string },
+): Promise<Buffer> {
+  const wb = new Workbook();
+  wb.creator = "Central Studio Admin";
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet(ENTITY_TITLES[entity], {
+    views: [], // header freeze set after we know its row number
+  });
+
+  // ── Meta block ──
+  const titleRow = ws.addRow([ENTITY_TITLES[entity]]);
+  titleRow.font = { bold: true, size: 14 };
+
+  ws.addRow([`Generated: ${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC`]);
+
+  const rangeLabel =
+    filters.from || filters.to
+      ? `${filters.from ?? "—"} to ${filters.to ?? "—"}`
+      : "All dates";
+  ws.addRow([`Date range: ${rangeLabel}`]);
+  ws.addRow([`Filters: status = ${filters.status && filters.status !== "all" ? filters.status : "all"}`]);
+
+  ws.addRow([]);
+
+  // ── Summary block ──
+  const summaryHeader = ws.addRow(["Summary"]);
+  summaryHeader.font = { bold: true };
+  for (const [key, val] of Object.entries(result.summary)) {
+    ws.addRow([humanizeKey(key), val as string | number]);
+  }
+
+  ws.addRow([]);
+
+  // ── Table header (bold + frozen) ──
+  const headerRow = ws.addRow(result.columns.map((c) => c.label));
+  headerRow.font = { bold: true };
+  ws.views = [{ state: "frozen", ySplit: headerRow.number }];
+
+  // ── Table rows: keep numbers numeric, blanks for null/undefined ──
+  for (const row of result.rows) {
+    ws.addRow(
+      result.columns.map((c) => {
+        const v = row[c.key];
+        if (v == null) return "";
+        return typeof v === "number" || typeof v === "boolean" ? v : String(v);
+      }),
+    );
+  }
+
+  // ── Simple auto-width (capped) ──
+  ws.columns.forEach((col) => {
+    let max = 10;
+    col.eachCell?.({ includeEmpty: false }, (cell) => {
+      const len = cell.value == null ? 0 : String(cell.value).length;
+      if (len > max) max = len;
+    });
+    col.width = Math.min(max + 2, 60);
+  });
+
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
 // ─── Route ────────────────────────────────────────────────────────────────────
 // TODO: add blockStudentJwt once middleware is committed/exported globally.
 router.get("/reports/:entity", requireAdminAuth, async (req, res): Promise<void> => {
@@ -410,7 +499,7 @@ router.get("/reports/:entity", requireAdminAuth, async (req, res): Promise<void>
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid query parameters" });
     return;
   }
-  const { from, to, status, limit } = parsed.data;
+  const { from, to, status, limit, format } = parsed.data;
   const { fromIso, toIso } = dayBounds(from, to);
 
   let result: ReportResult;
@@ -420,6 +509,18 @@ router.get("/reports/:entity", requireAdminAuth, async (req, res): Promise<void>
     case "parents":    result = await parentsReport(fromIso, toIso, limit); break;
     case "ballet":     result = await balletReport(fromIso, toIso, status, limit); break;
     case "attendance": result = await attendanceReport(fromIso, toIso, status, limit); break;
+  }
+
+  // Excel export: same data builder as the JSON preview, streamed as a download.
+  // Auth is unchanged (requireAdminAuth above) — no token in the query string,
+  // the admin JWT travels in the x-admin-token header of this same request.
+  if (format === "xlsx") {
+    const buf = await buildXlsxBuffer(entity, result, { from, to, status });
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${entity}-report-${stamp}.xlsx"`);
+    res.send(buf);
+    return;
   }
 
   res.json({

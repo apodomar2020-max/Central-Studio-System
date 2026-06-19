@@ -11,7 +11,6 @@ import type { PackageOrder, Attendance, Booking, Student } from "@workspace/api-
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -35,6 +34,7 @@ import {
   FileText,
   CalendarRange,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import {
   BarChart,
@@ -319,9 +319,47 @@ export default function ReportsPage() {
   const report = reportQuery.data;
   const summaryEntries = report ? Object.entries(report.summary) : [];
 
+  // ── Excel export: same endpoint/filters as the preview, with format=xlsx ─────
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  async function handleExportExcel() {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const params = new URLSearchParams();
+      if (fromParam) params.set("from", fromParam);
+      if (toParam) params.set("to", toParam);
+      if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
+      params.set("limit", "1000");
+      params.set("format", "xlsx");
+      const res = await fetch(`${API_BASE}/api/reports/${entity}?${params.toString()}`, {
+        headers: adminHeaders(token),
+      });
+      if (!res.ok) {
+        const e = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(e?.error ?? `Failed to export ${entity} report`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${entity}-report-${ymd(new Date())}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError((err as Error)?.message ?? "Export failed.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   function handleEntityChange(value: string) {
     setEntity(value as Entity);
     setStatusFilter("all");
+    setExportError(null);
   }
 
   const PRESETS: { label: string; value: Preset }[] = [
@@ -502,20 +540,34 @@ export default function ReportsPage() {
 
             <div className="flex-1" />
 
-            {/* Export buttons — disabled placeholders (Phase 3/4) */}
+            {/* Export buttons — Excel live (Phase 3); PDF still pending (Phase 4) */}
             <div className="flex items-end gap-2">
               <Button variant="outline" size="sm" disabled title="Coming soon" className="gap-1.5">
                 <FileText className="h-4 w-4" /> Export PDF
               </Button>
-              <Button variant="outline" size="sm" disabled title="Coming soon" className="gap-1.5">
-                <FileSpreadsheet className="h-4 w-4" /> Export Excel
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleExportExcel}
+                disabled={isExporting || reportQuery.isLoading || !report}
+                title={!report ? "Load a preview first" : "Download .xlsx"}
+              >
+                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                {isExporting ? "Exporting…" : "Export Excel"}
               </Button>
-              <Badge variant="secondary" className="self-center">Coming next</Badge>
             </div>
           </div>
 
+          {exportError && (
+            <div className="flex items-center gap-2 text-xs" style={{ color: RED }}>
+              <AlertCircle className="h-3.5 w-3.5" />
+              {exportError}
+            </div>
+          )}
+
           <p className="text-xs" style={{ color: "#8A9AB0" }}>
-            Preview is served by the secure admin reports API with the date range &amp; status above. PDF &amp; Excel export will generate exactly what you see here — that work lands in the next phase.
+            Preview &amp; Excel export are served by the secure admin reports API with the date range &amp; status above — the .xlsx matches exactly what you see here. PDF export lands in the next phase.
           </p>
 
           {/* Summary cards from backend summary */}
