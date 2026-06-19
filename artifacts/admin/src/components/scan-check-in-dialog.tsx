@@ -150,6 +150,24 @@ function statusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
+// ─── Booking ownership / scope helpers ─────────────────────────────────────────
+// A booking is a "child" booking when its scope says so, or when a participant
+// child is linked; otherwise it is the account owner's own ("self") booking.
+function bookingScopeOf(bk: Booking): "self" | "child" {
+  return bk.bookingScope === "child" || bk.participantChildId != null ? "child" : "self";
+}
+
+// Sort priority: confirmed+paid → confirmed+(package/no-payment) → confirmed+pending
+// → everything else. Lower rank sorts first.
+function bookingSortRank(bk: Booking): number {
+  const bs = bk.bookingStatus ?? bk.status;
+  const ps = bk.paymentStatus ?? "not_required";
+  if (bs === "confirmed" && ps === "paid") return 0;
+  if (bs === "confirmed" && (ps === "not_required" || bk.paymentMode === "package_credit")) return 1;
+  if (bs === "confirmed" && ps === "pending_payment") return 2;
+  return 3;
+}
+
 // ─── QR parsing ───────────────────────────────────────────────────────────────
 
 function extractScanResult(decoded: string): ScanResult | null {
@@ -236,6 +254,8 @@ export function ScanCheckInDialog({
   // Credit ledger — QR check-in path
   const [scannedQrToken, setScannedQrToken] = useState<string | null>(null);
   const [studentBookings, setStudentBookings] = useState<Booking[]>([]);
+  // Quick filter for the booking list: all participants, self only, or children only.
+  const [scopeFilter, setScopeFilter] = useState<"all" | "self" | "child">("all");
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
 
@@ -315,6 +335,7 @@ export function ScanCheckInDialog({
     setScannedQrToken(null);
     setStudentBookings([]);
     setSelectedBookingId(null);
+    setScopeFilter("all");
     setPaymentMode(null);
   }
 
@@ -796,10 +817,17 @@ export function ScanCheckInDialog({
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // Booking list filtered by the scope chip and sorted by check-in priority.
+  const visibleBookings = studentBookings
+    .filter((bk) => scopeFilter === "all" || bookingScopeOf(bk) === scopeFilter)
+    .slice()
+    .sort((a, b) => bookingSortRank(a) - bookingSortRank(b));
+  const selectedBooking = studentBookings.find((bk) => bk.id === selectedBookingId) ?? null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md border-0"
+        className="sm:max-w-md border-0 max-h-[85vh] overflow-y-auto"
         style={{ background: "hsl(203 28% 9%)", border: "1px solid hsl(203 30% 16%)" }}
       >
         <DialogHeader>
@@ -894,16 +922,43 @@ export function ScanCheckInDialog({
             {/* ── Booking picker (token flow only, credit ledger path) ─────── */}
             {isTokenFlow && studentBookings.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
-                  Select Booking
-                </p>
-                {studentBookings.map((bk) => {
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
+                    Select Booking
+                  </p>
+                  <div className="flex items-center gap-1">
+                    {(["all", "self", "child"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setScopeFilter(v)}
+                        className="px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-all"
+                        style={
+                          scopeFilter === v
+                            ? { background: `${STUDIO_CYAN}20`, color: STUDIO_CYAN, border: `1px solid ${STUDIO_CYAN}40` }
+                            : { background: "transparent", color: "#8A9AB0", border: "1px solid hsl(203 30% 18%)" }
+                        }
+                      >
+                        {v === "all" ? "All" : v === "self" ? "Self" : "Children"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {visibleBookings.length === 0 && (
+                  <p className="text-xs px-1 py-2" style={{ color: "#4E6070" }}>
+                    No {scopeFilter === "child" ? "children" : scopeFilter} bookings.
+                  </p>
+                )}
+                {visibleBookings.map((bk) => {
                   const title = bk.displayTitle ?? bk.classTitle ?? `Booking #${bk.id}`;
                   const scheduleLine = bk.scheduleLabel ?? "Schedule not set";
                   const bookingStatus = bk.bookingStatus ?? bk.status;
                   const paymentStatus = bk.paymentStatus ?? "not_required";
                   const statusStyle = bookingStatusStyle(bookingStatus);
                   const payStyle = paymentStatusStyle(paymentStatus);
+                  const scope = bookingScopeOf(bk);
+                  const participant = bk.participantName ?? bk.studentName;
+                  const ownerName = bk.accountOwnerName ?? bk.studentName;
+                  const ownerEmail = bk.accountOwnerEmail ?? bk.studentEmail;
                   return (
                     <button
                       key={bk.id}
@@ -921,6 +976,12 @@ export function ScanCheckInDialog({
                     >
                       <div className="min-w-0">
                         <div className="font-semibold text-white truncate">{title}</div>
+                        <div className="text-[11px] mt-0.5" style={{ color: "#C8D4E0" }}>
+                          Participant: <span className="text-white font-medium">{participant}</span>
+                        </div>
+                        <div className="text-[11px] truncate" style={{ color: "#4E6070" }}>
+                          Owner: {ownerName}{ownerEmail ? ` · ${ownerEmail}` : ""}
+                        </div>
                         <div className="text-xs mt-0.5" style={{ color: "#8A9AB0" }}>
                           {scheduleLine}
                         </div>
@@ -936,6 +997,12 @@ export function ScanCheckInDialog({
                         )}
                       </div>
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span
+                          className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                          style={scope === "child" ? { background: `${AMBER}20`, color: AMBER } : { background: `${STUDIO_CYAN}18`, color: STUDIO_CYAN }}
+                        >
+                          {scope === "child" ? "Child" : "Self"}
+                        </span>
                         <span className="text-xs px-2 py-0.5 rounded-full" style={statusStyle}>
                           {statusLabel(bookingStatus)}
                         </span>
@@ -967,6 +1034,11 @@ export function ScanCheckInDialog({
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Check-in Mode
                 </p>
+                {selectedBooking && bookingScopeOf(selectedBooking) === "child" && activePackages.length > 0 && (
+                  <p className="text-[11px] px-1" style={{ color: AMBER }}>
+                    Using the account owner's package (parent package) — credits deduct from the parent.
+                  </p>
+                )}
                 <button
                   onClick={() => {
                     setPaymentMode("pay_at_studio");
