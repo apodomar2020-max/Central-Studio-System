@@ -71,6 +71,163 @@ function ChildCard({
   );
 }
 
+function calculateAgeFromBirthday(birthdayStr: string): number | null {
+  if (!birthdayStr || !/^\d{4}-\d{2}-\d{2}$/.test(birthdayStr)) {
+    return null;
+  }
+  const parts = birthdayStr.split("-");
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) {
+    return null;
+  }
+  const today = new Date();
+  let calculatedAge = today.getFullYear() - y;
+  const birthMonthIndex = m - 1;
+  if (
+    today.getMonth() < birthMonthIndex ||
+    (today.getMonth() === birthMonthIndex && today.getDate() < d)
+  ) {
+    calculatedAge--;
+  }
+  return Math.max(0, calculatedAge);
+}
+
+const DP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function SpinnerCol({
+  displayValue,
+  onIncrement,
+  onDecrement,
+}: {
+  displayValue: string;
+  onIncrement: () => void;
+  onDecrement: () => void;
+}) {
+  return (
+    <View style={dpStyles.col}>
+      <TouchableOpacity onPress={onIncrement} style={dpStyles.arrowBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <Ionicons name="chevron-up" size={22} color={colors.studio.primary} />
+      </TouchableOpacity>
+      <Text style={dpStyles.spinnerValue}>{displayValue}</Text>
+      <TouchableOpacity onPress={onDecrement} style={dpStyles.arrowBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <Ionicons name="chevron-down" size={22} color={colors.studio.primary} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function ChildDatePickerModal({
+  visible,
+  value,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  value: string;
+  onClose: () => void;
+  onConfirm: (dateStr: string) => void;
+}) {
+  const defaultYear = new Date().getFullYear() - 8;
+  const parseInitial = () => {
+    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return { y: +value.slice(0, 4), m: +value.slice(5, 7), d: +value.slice(8, 10) };
+    }
+    return { y: defaultYear, m: 1, d: 1 };
+  };
+
+  const init = parseInitial();
+  const [year, setYear] = useState(init.y);
+  const [month, setMonth] = useState(init.m);
+  const [day, setDay] = useState(init.d);
+
+  React.useEffect(() => {
+    if (visible) {
+      const p = parseInitial();
+      setYear(p.y);
+      setMonth(p.m);
+      setDay(p.d);
+    }
+  }, [value, visible]);
+
+  const daysInMonth = (y: number, m: number): number => {
+    return new Date(y, m, 0).getDate();
+  };
+
+  const maxDay = daysInMonth(year, month);
+  const clampedDay = Math.min(day, maxDay);
+
+  React.useEffect(() => {
+    if (day > daysInMonth(year, month)) {
+      setDay(daysInMonth(year, month));
+    }
+  }, [year, month, day]);
+
+  function handleConfirm() {
+    const d = clampedDay;
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    onConfirm(dateStr);
+    onClose();
+  }
+
+  const today = new Date();
+  const DP_MIN_YEAR = today.getFullYear() - 25;
+  const DP_MAX_YEAR = today.getFullYear();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={dpStyles.overlay}>
+        <View style={dpStyles.sheet}>
+          <View style={dpStyles.sheetHeader}>
+            <Text style={dpStyles.sheetTitle}>Select Date of Birth</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={dpStyles.spinners}>
+            <View style={dpStyles.spinnerWrap}>
+              <Text style={dpStyles.spinnerLabel}>Day</Text>
+              <SpinnerCol
+                displayValue={String(clampedDay).padStart(2, "0")}
+                onIncrement={() => setDay((d) => (d >= maxDay ? 1 : d + 1))}
+                onDecrement={() => setDay((d) => (d <= 1 ? maxDay : d - 1))}
+              />
+            </View>
+
+            <View style={dpStyles.spinnerSep} />
+
+            <View style={dpStyles.spinnerWrap}>
+              <Text style={dpStyles.spinnerLabel}>Month</Text>
+              <SpinnerCol
+                displayValue={DP_MONTHS[month - 1] ?? ""}
+                onIncrement={() => setMonth((m) => (m >= 12 ? 1 : m + 1))}
+                onDecrement={() => setMonth((m) => (m <= 1 ? 12 : m - 1))}
+              />
+            </View>
+
+            <View style={dpStyles.spinnerSep} />
+
+            <View style={dpStyles.spinnerWrap}>
+              <Text style={dpStyles.spinnerLabel}>Year</Text>
+              <SpinnerCol
+                displayValue={String(year)}
+                onIncrement={() => setYear((y) => Math.min(y + 1, DP_MAX_YEAR))}
+                onDecrement={() => setYear((y) => Math.max(y - 1, DP_MIN_YEAR))}
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity onPress={handleConfirm} style={dpStyles.confirmBtn} activeOpacity={0.85}>
+            <Text style={dpStyles.confirmText}>Confirm Date</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function AddChildModal({
   visible,
   onClose,
@@ -84,29 +241,49 @@ function AddChildModal({
 }) {
   const [fullName, setFullName] = useState(initial?.fullName ?? "");
   const [birthday, setBirthday] = useState(initial?.birthday ?? "");
-  const [age, setAge] = useState(initial ? String(initial.age) : "");
   const [gender, setGender] = useState<"male" | "female">(initial?.gender ?? "female");
   const [medicalNotes, setMedicalNotes] = useState(initial?.medicalNotes ?? "");
   const [emergencyName, setEmergencyName] = useState(initial?.emergencyContactName ?? "");
   const [emergencyPhone, setEmergencyPhone] = useState(initial?.emergencyContactPhone ?? "");
 
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   function reset() {
     setFullName(initial?.fullName ?? "");
     setBirthday(initial?.birthday ?? "");
-    setAge(initial ? String(initial.age) : "");
     setGender(initial?.gender ?? "female");
     setMedicalNotes(initial?.medicalNotes ?? "");
     setEmergencyName(initial?.emergencyContactName ?? "");
     setEmergencyPhone(initial?.emergencyContactPhone ?? "");
   }
 
+  React.useEffect(() => {
+    if (visible) {
+      reset();
+    }
+  }, [initial, visible]);
+
+  const calculatedAge = calculateAgeFromBirthday(birthday);
+
   function handleSave() {
-    if (!fullName.trim()) { Alert.alert("Required", "Please enter the child's full name."); return; }
-    if (!age.trim() || isNaN(Number(age))) { Alert.alert("Required", "Please enter a valid age."); return; }
+    if (!fullName.trim()) {
+      Alert.alert("Required", "Please enter the child's full name.");
+      return;
+    }
+    if (!birthday.trim()) {
+      Alert.alert("Required", "Please select a date of birth.");
+      return;
+    }
+    const ageVal = calculateAgeFromBirthday(birthday);
+    if (ageVal === null) {
+      Alert.alert("Required", "Please select a valid date of birth.");
+      return;
+    }
+
     onSave({
       fullName: fullName.trim(),
       birthday: birthday.trim(),
-      age: parseInt(age, 10),
+      age: ageVal,
       gender,
       medicalNotes: medicalNotes.trim() || undefined,
       emergencyContactName: emergencyName.trim() || undefined,
@@ -130,12 +307,25 @@ function AddChildModal({
             </View>
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Birthday</Text>
-                <TextInput value={birthday} onChangeText={setBirthday} style={styles.input} placeholderTextColor="#4B5563" placeholder="YYYY-MM-DD" />
+                <Text style={styles.fieldLabel}>Date of Birth *</Text>
+                <TouchableOpacity
+                  onPress={() => setShowDatePicker(true)}
+                  style={[styles.input, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: birthday ? "#FFFFFF" : "#4B5563", fontFamily: "Inter_400Regular", fontSize: 14 }}>
+                    {birthday ? birthday : "Select DOB"}
+                  </Text>
+                  <Ionicons name="calendar-outline" size={16} color={colors.studio.primary} />
+                </TouchableOpacity>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Age *</Text>
-                <TextInput value={age} onChangeText={setAge} style={styles.input} placeholderTextColor="#4B5563" placeholder="Age" keyboardType="numeric" />
+                <Text style={styles.fieldLabel}>Calculated Age</Text>
+                <View style={[styles.input, { backgroundColor: "#15151D", justifyContent: "center" }]}>
+                  <Text style={{ color: birthday ? "#FFFFFF" : "#4B5563", fontFamily: "Inter_400Regular", fontSize: 14 }}>
+                    {calculatedAge !== null ? `${calculatedAge} yrs` : "—"}
+                  </Text>
+                </View>
               </View>
             </View>
             <View>
@@ -175,9 +365,97 @@ function AddChildModal({
           </View>
         </View>
       </View>
+
+      <ChildDatePickerModal
+        visible={showDatePicker}
+        value={birthday}
+        onClose={() => setShowDatePicker(false)}
+        onConfirm={(dateStr) => setBirthday(dateStr)}
+      />
     </Modal>
   );
 }
+
+const dpStyles = StyleSheet.create({
+  col: {
+    alignItems: "center",
+    gap: 12,
+  },
+  arrowBtn: {
+    padding: 4,
+  },
+  spinnerValue: {
+    fontSize: 28,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+    minWidth: 60,
+    textAlign: "center",
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#15151D",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: "#2A2A35",
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24,
+    paddingTop: 20,
+    gap: 20,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+  },
+  spinners: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 0,
+    backgroundColor: "#1E1E26",
+    borderRadius: 16,
+    padding: 16,
+  },
+  spinnerWrap: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+  },
+  spinnerLabel: {
+    fontSize: 10,
+    fontFamily: "Inter_500Medium",
+    color: "#9CA3AF",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  spinnerSep: {
+    width: 1,
+    height: 80,
+    backgroundColor: "#2A2A35",
+    marginHorizontal: 4,
+  },
+  confirmBtn: {
+    backgroundColor: colors.studio.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  confirmText: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+  },
+});
 
 export default function ProfileScreen() {
   const { user, setUser, bookings, children, addChild, updateChild, removeChild, userPackages } = useAppContext();
