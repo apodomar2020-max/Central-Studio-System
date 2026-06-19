@@ -7,6 +7,8 @@ import {
   schedulesTable,
   instructorsTable,
   attendanceTable,
+  studentsTable,
+  childrenTable,
 } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import {
@@ -52,9 +54,28 @@ type NotificationPayload = {
   metadata: Record<string, unknown>;
 };
 type BookingNotificationClient = Pick<typeof db, "select">;
+type BookingOwnerClient = Pick<typeof db, "select">;
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+async function resolveAccountOwnerStudentId(
+  client: BookingOwnerClient,
+  req: { studentId?: number },
+  studentEmail: string,
+  requestedOwnerId?: number | null,
+): Promise<number | null> {
+  if (typeof req.studentId === "number") return req.studentId;
+  if (requestedOwnerId != null) return requestedOwnerId;
+
+  const [student] = await client
+    .select({ id: studentsTable.id })
+    .from(studentsTable)
+    .where(sql`lower(trim(${studentsTable.email})) = ${normalizeEmail(studentEmail)}`)
+    .limit(1);
+
+  return student?.id ?? null;
 }
 
 function isOneOf<T extends readonly string[]>(values: T, value: unknown): value is T[number] {
@@ -312,12 +333,17 @@ router.get("/bookings", async (req, res): Promise<void> => {
       scheduleLocation: schedulesTable.location,
       schedulePriceEgp: schedulesTable.priceEgp,
       schedulePackageEligible: schedulesTable.packageEligible,
+      accountOwnerName: studentsTable.name,
+      accountOwnerEmail: studentsTable.email,
+      participantChildName: childrenTable.fullName,
       attendanceId: attendanceTable.id,
     })
     .from(bookingsTable)
     .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
     .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+    .leftJoin(studentsTable, eq(bookingsTable.accountOwnerStudentId, studentsTable.id))
+    .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
     .leftJoin(attendanceTable, eq(attendanceTable.bookingId, bookingsTable.id));
 
   const rows = conditions.length > 0
@@ -345,9 +371,17 @@ router.get("/bookings", async (req, res): Promise<void> => {
         ? `${r.scheduleType === "one_time" ? dateLabel : dayName} • ${start} - ${end}`
         : null;
     const existing = enrichedById.get(r.booking.id);
+    const bookingScope = r.booking.bookingScope ?? (r.booking.participantChildId != null ? "child" : "self");
     enrichedById.set(r.booking.id, {
       ...(existing ?? {}),
       ...r.booking,
+      accountOwnerStudentId: r.booking.accountOwnerStudentId ?? null,
+      accountOwnerName: r.accountOwnerName ?? null,
+      accountOwnerEmail: r.accountOwnerEmail ?? null,
+      bookingScope,
+      participantType: bookingScope,
+      participantChildId: r.booking.participantChildId ?? null,
+      participantName: r.participantChildName ?? r.booking.studentName,
       classTitle: r.classTitle ?? null,
       classDescription: r.classDescription ?? null,
       classCategory: r.classCategory ?? null,
@@ -407,6 +441,14 @@ router.post("/bookings", async (req, res): Promise<void> => {
   }
 
   const row = await db.transaction(async (tx) => {
+    const accountOwnerStudentId = await resolveAccountOwnerStudentId(
+      tx,
+      req,
+      parsed.data.studentEmail,
+      parsed.data.accountOwnerStudentId ?? normalized.accountOwnerStudentId ?? null,
+    );
+    const bookingScope = normalized.bookingScope ?? (normalized.participantChildId != null ? "child" : "self");
+
     const [inserted] = await tx
       .insert(bookingsTable)
       .values({
@@ -414,6 +456,8 @@ router.post("/bookings", async (req, res): Promise<void> => {
         // CreateBookingBody (zod) guarantees studentName/studentEmail at runtime;
         // normalizeBookingWrite widens them to optional, so assert the insert shape.
         studentEmail: normalizeEmail(parsed.data.studentEmail),
+        accountOwnerStudentId,
+        bookingScope,
       } as typeof bookingsTable.$inferInsert)
       .returning();
 

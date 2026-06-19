@@ -268,6 +268,20 @@ export interface Booking {
   /** @nullable */
   studentPhone?: string | null;
   /** @nullable */
+  accountOwnerStudentId?: number | null;
+  /** @nullable */
+  accountOwnerName?: string | null;
+  /** @nullable */
+  accountOwnerEmail?: string | null;
+  /** @nullable */
+  bookingScope?: "self" | "child" | null;
+  /** @nullable */
+  participantType?: "self" | "child" | null;
+  /** @nullable */
+  participantChildId?: number | null;
+  /** @nullable */
+  participantName?: string | null;
+  /** @nullable */
   scheduleId?: number | null;
   /** @nullable */
   classId?: number | null;
@@ -324,6 +338,12 @@ export interface CreateBookingBody {
   /** @nullable */
   studentPhone?: string | null;
   /** @nullable */
+  accountOwnerStudentId?: number | null;
+  /** @nullable */
+  participantChildId?: number | null;
+  /** @nullable */
+  bookingScope?: "self" | "child" | null;
+  /** @nullable */
   scheduleId?: number | null;
   /** @nullable */
   classId?: number | null;
@@ -346,6 +366,12 @@ export interface UpdateBookingBody {
   studentEmail?: string;
   /** @nullable */
   studentPhone?: string | null;
+  /** @nullable */
+  accountOwnerStudentId?: number | null;
+  /** @nullable */
+  participantChildId?: number | null;
+  /** @nullable */
+  bookingScope?: "self" | "child" | null;
   /** @nullable */
   scheduleId?: number | null;
   /** @nullable */
