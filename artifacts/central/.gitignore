@@ -39,3 +39,6 @@ yarn-error.*
 .vercel
 
 .env
+
+# EAS / Expo local credentials — contains signing/keystore secrets, never commit
+credentials.json
