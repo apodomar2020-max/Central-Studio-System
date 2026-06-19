@@ -19,7 +19,7 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     db.select({ totalBookings: count() }).from(bookingsTable),
     db.select({ activeClasses: count() }).from(classesTable).where(eq(classesTable.isActive, true)),
     db.select({ activeInstructors: count() }).from(instructorsTable).where(eq(instructorsTable.isActive, true)),
-    db.select({ pendingBookings: count() }).from(bookingsTable).where(eq(bookingsTable.status, "pending")),
+    db.select({ pendingBookings: count() }).from(bookingsTable).where(eq(bookingsTable.bookingStatus, "pending")),
     db.select({ todayBookings: count() }).from(bookingsTable).where(
       sql`DATE(${bookingsTable.bookedAt}) = CURRENT_DATE`
     ),

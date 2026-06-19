@@ -211,7 +211,7 @@ export default function ProfileScreen() {
   );
 
   const upcoming = bookings.filter(
-    (b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment"
+    (b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pending"
   ).length;
   const activePackages = userPackages.filter(
     (p) => p.status === "active" && new Date(p.expiryDate) >= new Date()

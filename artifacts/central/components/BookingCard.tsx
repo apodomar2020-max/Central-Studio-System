@@ -14,20 +14,23 @@ interface BookingCardProps {
 
 function bookingStatusConfig(status: Booking["bookingStatus"]) {
   switch (status) {
+    case "pending": return { label: "Pending", color: colors.warning };
     case "confirmed": return { label: "Confirmed", color: colors.success };
-    case "pendingPayment": return { label: "Pending Payment", color: colors.warning };
+    case "rejected": return { label: "Rejected", color: colors.error };
     case "cancelled": return { label: "Cancelled", color: colors.error };
     case "attended": return { label: "Attended", color: colors.info };
+    case "completed": return { label: "Completed", color: colors.info };
     case "noShow": return { label: "No-show", color: "#6B7280" };
-    case "refunded": return { label: "Refunded", color: "#A78BFA" };
   }
 }
 
 function paymentStatusConfig(status: Booking["paymentStatus"]) {
   switch (status) {
+    case "not_required": return { label: "Package", color: colors.info };
+    case "pending_payment": return { label: "Payment Pending", color: colors.warning };
     case "paid": return { label: "Paid", color: colors.success };
-    case "unpaid": return { label: "Unpaid", color: colors.warning };
     case "refunded": return { label: "Refunded", color: colors.info };
+    case "failed": return { label: "Failed", color: colors.error };
   }
 }
 
@@ -112,7 +115,7 @@ export default function BookingCard({ item }: BookingCardProps) {
         <Text style={[styles.price, { color: c.foreground }]}>{priceLabel}</Text>
       </View>
 
-      {item.paymentStatus === "unpaid" && (
+      {item.paymentStatus === "pending_payment" && (
         <View style={[styles.warning, { backgroundColor: colors.warning + "15", borderColor: colors.warning + "40" }]}>
           <Ionicons name="warning-outline" size={13} color={colors.warning} />
           <Text style={[styles.warningText, { color: colors.warning }]}>

@@ -35,9 +35,13 @@ export default function ConfirmationScreen() {
     .toUpperCase() || "?";
   const paymentLabel = booking?.bookingType === "package"
     ? "Package Credit"
+    : booking?.paymentStatus === "not_required"
+      ? "No payment required"
     : booking?.paymentStatus === "paid"
       ? `EGP ${booking.price} · Paid`
       : `EGP ${booking?.price ?? 0} · Pay at Studio`;
+  const isCashPendingPayment = booking?.paymentMethod === "cash" && booking.paymentStatus === "pending_payment";
+  const successTitle = isCashPendingPayment ? "Booking Request Submitted" : "Booking Confirmed!";
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -62,12 +66,12 @@ export default function ConfirmationScreen() {
           </LinearGradient>
         </View>
 
-        <Text style={styles.successTitle}>Booking Confirmed!</Text>
+        <Text style={styles.successTitle}>{successTitle}</Text>
         <Text style={[styles.successSubtitle, { color: "#9CA3AF" }]}>
-          {booking?.paymentMethod === "cash"
-            ? "Your seat is reserved. Please pay at the studio before the class."
+          {isCashPendingPayment
+            ? "Booking request submitted. Please pay at the studio."
             : booking?.paymentMethod === "packageCredit"
-              ? "Your booking is confirmed using an active package credit."
+              ? "Booking confirmed. Credit will be deducted at check-in."
             : "Your payment was successful. You are all set!"}
         </Text>
 
@@ -125,17 +129,19 @@ export default function ConfirmationScreen() {
               <View style={styles.cardRow}>
                 <Ionicons name="checkmark-circle-outline" size={16} color="#6B7280" />
                 <Text style={styles.cardLabel}>Status</Text>
-                <Text style={styles.cardValue}>{booking.bookingStatus === "pendingPayment" ? "Pending Payment" : "Confirmed"}</Text>
+                <Text style={styles.cardValue}>
+                  {booking.bookingStatus === "pending" ? "Waiting for confirmation" : "Booking confirmed"}
+                </Text>
               </View>
               <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />
               <View style={styles.cardRow}>
                 <Ionicons name="card-outline" size={16} color="#6B7280" />
                 <Text style={styles.cardLabel}>Payment</Text>
                 <View style={[styles.payBadge, {
-                  backgroundColor: booking.paymentStatus === "paid" ? colors.success + "20" : colors.warning + "20",
+                  backgroundColor: booking.paymentStatus === "paid" || booking.paymentStatus === "not_required" ? colors.success + "20" : colors.warning + "20",
                   }]}>
                   <Text style={[styles.payBadgeText, {
-                    color: booking.paymentStatus === "paid" ? colors.success : colors.warning,
+                    color: booking.paymentStatus === "paid" || booking.paymentStatus === "not_required" ? colors.success : colors.warning,
                   }]}>
                     {paymentLabel}
                   </Text>

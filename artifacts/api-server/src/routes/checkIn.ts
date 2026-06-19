@@ -128,7 +128,9 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
       // ------------------------------------------------------------------
       // Step 3 — Prevent double check-in on the same booking
       // ------------------------------------------------------------------
-      if (booking.status === "attended" || booking.status === "completed") {
+      const currentBookingStatus = booking.bookingStatus ?? booking.status;
+
+      if (currentBookingStatus === "attended" || currentBookingStatus === "completed") {
         throw makeError(
           409,
           "already_attended",
@@ -136,11 +138,11 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
         );
       }
 
-      if (booking.status === "cancelled") {
+      if (currentBookingStatus === "cancelled" || currentBookingStatus === "rejected") {
         throw makeError(
           400,
           "booking_not_actionable",
-          "Cancelled bookings cannot be checked in.",
+          "Cancelled or rejected bookings cannot be checked in.",
         );
       }
 
@@ -302,7 +304,7 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
       // ------------------------------------------------------------------
       await tx
         .update(bookingsTable)
-        .set({ status: "attended" })
+        .set({ status: "attended", bookingStatus: "attended" })
         .where(eq(bookingsTable.id, booking.id));
 
       return {

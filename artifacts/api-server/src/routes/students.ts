@@ -86,13 +86,13 @@ router.get("/students", async (req, res): Promise<void> => {
   const bookingRows = await db
     .select({
       studentEmail: bookingsTable.studentEmail,
-      status: bookingsTable.status,
+      bookingStatus: bookingsTable.bookingStatus,
     })
     .from(bookingsTable);
 
   const bookingCounts = new Map<string, number>();
   for (const booking of bookingRows) {
-    const status = booking.status.trim().toLowerCase();
+    const status = booking.bookingStatus.trim().toLowerCase();
     if (status === "cancelled" || status === "rejected") continue;
     const email = normalizeEmail(booking.studentEmail);
     bookingCounts.set(email, (bookingCounts.get(email) ?? 0) + 1);

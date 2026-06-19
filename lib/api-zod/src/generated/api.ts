@@ -401,6 +401,8 @@ export const DeletePricePackageParams = zod.object({
 
 export const ListBookingsQueryParams = zod.object({
   status: zod.coerce.string().optional(),
+  bookingStatus: zod.coerce.string().optional(),
+  paymentStatus: zod.coerce.string().optional(),
   // Optional student-email filter so mobile clients can fetch their own bookings.
   // TODO: Replace with a JWT-scoped /api/me/bookings endpoint so the server
   //       enforces identity server-side instead of trusting a client param.
@@ -417,6 +419,9 @@ export const ListBookingsResponseItem = zod.object({
   packageId: zod.number().nullish(),
   packageOrderId: zod.number().nullish(),
   status: zod.string(),
+  bookingStatus: zod.string(),
+  paymentStatus: zod.string(),
+  paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string(),
   createdAt: zod.string(),
@@ -452,6 +457,9 @@ export const CreateBookingBody = zod.object({
   // Explicit package order reference (credit ledger foundation, migration 0013)
   packageOrderId: zod.number().nullish(),
   status: zod.string().optional(),
+  bookingStatus: zod.string().optional(),
+  paymentStatus: zod.string().optional(),
+  paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string().optional(),
 });
@@ -470,6 +478,9 @@ export const GetBookingResponse = zod.object({
   packageId: zod.number().nullish(),
   packageOrderId: zod.number().nullish(),
   status: zod.string(),
+  bookingStatus: zod.string(),
+  paymentStatus: zod.string(),
+  paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string(),
   createdAt: zod.string(),
@@ -488,6 +499,9 @@ export const UpdateBookingBody = zod.object({
   packageId: zod.number().nullish(),
   packageOrderId: zod.number().nullish(),
   status: zod.string().optional(),
+  bookingStatus: zod.string().optional(),
+  paymentStatus: zod.string().optional(),
+  paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -501,6 +515,9 @@ export const UpdateBookingResponse = zod.object({
   packageId: zod.number().nullish(),
   packageOrderId: zod.number().nullish(),
   status: zod.string(),
+  bookingStatus: zod.string(),
+  paymentStatus: zod.string(),
+  paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string(),
   createdAt: zod.string(),

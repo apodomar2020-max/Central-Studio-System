@@ -14,6 +14,9 @@ export const bookingsTable = pgTable("bookings", {
   // backward-compat but packageOrderId is the authoritative FK to package_orders.id.
   packageOrderId: integer("package_order_id"),
   status: text("status").notNull().default("pending"),
+  bookingStatus: text("booking_status").notNull().default("confirmed"),
+  paymentStatus: text("payment_status").notNull().default("not_required"),
+  paymentMode: text("payment_mode"),
   notes: text("notes"),
   bookedAt: timestamp("booked_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

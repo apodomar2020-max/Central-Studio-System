@@ -7,7 +7,7 @@ const router: IRouter = Router();
 
 router.get("/dashboard/analytics", async (_req, res): Promise<void> => {
   const [bookingRows, [{ totalCampaigns }]] = await Promise.all([
-    db.select({ status: bookingsTable.status, count: count() }).from(bookingsTable).groupBy(bookingsTable.status),
+    db.select({ status: bookingsTable.bookingStatus, count: count() }).from(bookingsTable).groupBy(bookingsTable.bookingStatus),
     db.select({ totalCampaigns: count() }).from(marketingCampaignsTable),
   ]);
 

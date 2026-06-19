@@ -34,8 +34,90 @@ const DAY_NAMES = [
   "Saturday",
 ] as const;
 
+const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed"] as const;
+const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"] as const;
+const PAYMENT_MODES = ["package_credit", "pay_at_studio", "online_payment", "free"] as const;
+
+type BookingStatus = (typeof BOOKING_STATUSES)[number];
+type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+type PaymentMode = (typeof PAYMENT_MODES)[number];
+type BookingWrite = Partial<typeof bookingsTable.$inferInsert>;
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function isOneOf<T extends readonly string[]>(values: T, value: unknown): value is T[number] {
+  return typeof value === "string" && values.includes(value);
+}
+
+function legacyToBookingStatus(status?: string | null): BookingStatus | null {
+  switch (status) {
+    case "pendingPayment":
+      return "pending";
+    case "pending":
+    case "confirmed":
+    case "rejected":
+    case "cancelled":
+    case "attended":
+    case "completed":
+      return status;
+    default:
+      return null;
+  }
+}
+
+function legacyToPaymentStatus(status?: string | null, packageOrderId?: number | null): PaymentStatus | null {
+  switch (status) {
+    case "pendingPayment":
+      return "pending_payment";
+    case "refunded":
+      return "refunded";
+    case "attended":
+    case "completed":
+      return packageOrderId != null ? "not_required" : "paid";
+    default:
+      return null;
+  }
+}
+
+function legacyStatusFromSplit(bookingStatus: BookingStatus, paymentStatus: PaymentStatus): string {
+  if (bookingStatus === "pending" && paymentStatus === "pending_payment") return "pendingPayment";
+  return bookingStatus;
+}
+
+function normalizeBookingWrite(data: BookingWrite, existing?: typeof bookingsTable.$inferSelect): BookingWrite {
+  const paymentMode = isOneOf(PAYMENT_MODES, data.paymentMode)
+    ? data.paymentMode
+    : isOneOf(PAYMENT_MODES, existing?.paymentMode)
+      ? existing.paymentMode
+      : data.packageOrderId != null || existing?.packageOrderId != null
+        ? "package_credit"
+        : data.paymentStatus === "pending_payment" || existing?.paymentStatus === "pending_payment"
+          ? "pay_at_studio"
+        : data.status === "pendingPayment" || existing?.status === "pendingPayment"
+          ? "pay_at_studio"
+          : null;
+
+  const bookingStatus = isOneOf(BOOKING_STATUSES, data.bookingStatus)
+    ? data.bookingStatus
+    : legacyToBookingStatus(data.status)
+      ?? (isOneOf(BOOKING_STATUSES, existing?.bookingStatus) ? existing.bookingStatus : null)
+      ?? (paymentMode === "pay_at_studio" ? "pending" : "confirmed");
+
+  const paymentStatus = isOneOf(PAYMENT_STATUSES, data.paymentStatus)
+    ? data.paymentStatus
+    : legacyToPaymentStatus(data.status, data.packageOrderId ?? existing?.packageOrderId ?? null)
+      ?? (isOneOf(PAYMENT_STATUSES, existing?.paymentStatus) ? existing.paymentStatus : null)
+      ?? (paymentMode === "pay_at_studio" || paymentMode === "online_payment" ? "pending_payment" : "not_required");
+
+  return {
+    ...data,
+    bookingStatus,
+    paymentStatus,
+    paymentMode,
+    status: legacyStatusFromSplit(bookingStatus, paymentStatus),
+  };
 }
 
 // Format a "HH:MM" 24h time string into a friendly "6:00 PM". Falls back to
@@ -60,6 +142,8 @@ router.get("/bookings", async (req, res): Promise<void> => {
   // Build WHERE conditions from optional filters
   const conditions = [];
   if (query.data.status) conditions.push(eq(bookingsTable.status, query.data.status));
+  if (query.data.bookingStatus) conditions.push(eq(bookingsTable.bookingStatus, query.data.bookingStatus));
+  if (query.data.paymentStatus) conditions.push(eq(bookingsTable.paymentStatus, query.data.paymentStatus));
   if (query.data.studentEmail) {
     conditions.push(sql`lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(query.data.studentEmail)}`);
   }
@@ -152,11 +236,21 @@ router.post("/bookings", async (req, res): Promise<void> => {
     return;
   }
 
-  if (parsed.data.packageOrderId != null && parsed.data.scheduleId != null) {
+  const normalized = normalizeBookingWrite(parsed.data);
+
+  if (normalized.paymentMode === "package_credit" && normalized.packageOrderId == null) {
+    res.status(400).json({
+      error: "package_required",
+      message: "Package credit booking requires a packageOrderId.",
+    });
+    return;
+  }
+
+  if (normalized.packageOrderId != null && normalized.scheduleId != null) {
     const [schedule] = await db
       .select({ packageEligible: schedulesTable.packageEligible })
       .from(schedulesTable)
-      .where(eq(schedulesTable.id, parsed.data.scheduleId))
+      .where(eq(schedulesTable.id, normalized.scheduleId))
       .limit(1);
 
     if (schedule?.packageEligible === false) {
@@ -171,9 +265,11 @@ router.post("/bookings", async (req, res): Promise<void> => {
   const [row] = await db
     .insert(bookingsTable)
     .values({
-      ...parsed.data,
+      ...normalized,
+      // CreateBookingBody (zod) guarantees studentName/studentEmail at runtime;
+      // normalizeBookingWrite widens them to optional, so assert the insert shape.
       studentEmail: normalizeEmail(parsed.data.studentEmail),
-    })
+    } as typeof bookingsTable.$inferInsert)
     .returning();
   res.status(201).json(GetBookingResponse.parse(row));
 });
@@ -203,14 +299,16 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const data = parsed.data.studentEmail
-    ? { ...parsed.data, studentEmail: normalizeEmail(parsed.data.studentEmail) }
-    : parsed.data;
-  const [row] = await db.update(bookingsTable).set(data).where(eq(bookingsTable.id, params.data.id)).returning();
-  if (!row) {
+  const [existing] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
+  if (!existing) {
     res.status(404).json({ error: "Booking not found" });
     return;
   }
+  const data = parsed.data.studentEmail
+    ? { ...parsed.data, studentEmail: normalizeEmail(parsed.data.studentEmail) }
+    : parsed.data;
+  const normalized = normalizeBookingWrite(data, existing);
+  const [row] = await db.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
   res.json(UpdateBookingResponse.parse(row));
 });
 

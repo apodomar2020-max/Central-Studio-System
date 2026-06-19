@@ -95,7 +95,7 @@ type LegacyPackageOrder = {
   status: string;
 };
 
-const CLOSED_BOOKING_STATUSES = new Set(["attended", "completed", "cancelled"]);
+const CLOSED_BOOKING_STATUSES = new Set(["attended", "completed", "cancelled", "rejected"]);
 
 function bookingStatusStyle(status: string): { background: string; color: string } {
   switch (status) {
@@ -116,6 +116,38 @@ function bookingStatusStyle(status: string): { background: string; color: string
     default:
       return { background: "hsl(203 30% 20%)", color: "#8A9AB0" };
   }
+}
+
+function paymentStatusStyle(status: string): { background: string; color: string } {
+  switch (status) {
+    case "paid":
+    case "not_required":
+      return { background: `${GREEN}18`, color: GREEN };
+    case "pending_payment":
+      return { background: `${AMBER}18`, color: AMBER };
+    case "refunded":
+      return { background: "hsl(203 30% 20%)", color: "#8A9AB0" };
+    default:
+      return { background: `${RED}18`, color: RED };
+  }
+}
+
+function statusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: "Pending",
+    confirmed: "Confirmed",
+    rejected: "Rejected",
+    cancelled: "Cancelled",
+    attended: "Attended",
+    completed: "Completed",
+    pendingPayment: "Pending Payment",
+    pending_payment: "Pending Payment",
+    not_required: "No Payment",
+    paid: "Paid",
+    refunded: "Refunded",
+    failed: "Failed",
+  };
+  return labels[status] ?? status;
 }
 
 // ─── QR parsing ───────────────────────────────────────────────────────────────
@@ -313,7 +345,7 @@ export function ScanCheckInDialog({
         // Only show actionable bookings. hasAttendance covers legacy rows where
         // attendance exists but the booking status was never updated.
         const open = bookings.filter(
-          (b) => !CLOSED_BOOKING_STATUSES.has(b.status) && !b.hasAttendance,
+          (b) => !CLOSED_BOOKING_STATUSES.has(b.bookingStatus ?? b.status) && !b.hasAttendance,
         );
         setStudentBookings(open);
         if (open.length === 1) setSelectedBookingId(open[0].id);
@@ -868,7 +900,10 @@ export function ScanCheckInDialog({
                 {studentBookings.map((bk) => {
                   const title = bk.displayTitle ?? bk.classTitle ?? `Booking #${bk.id}`;
                   const scheduleLine = bk.scheduleLabel ?? "Schedule not set";
-                  const statusStyle = bookingStatusStyle(bk.status);
+                  const bookingStatus = bk.bookingStatus ?? bk.status;
+                  const paymentStatus = bk.paymentStatus ?? "not_required";
+                  const statusStyle = bookingStatusStyle(bookingStatus);
+                  const payStyle = paymentStatusStyle(paymentStatus);
                   return (
                     <button
                       key={bk.id}
@@ -900,16 +935,29 @@ export function ScanCheckInDialog({
                           </div>
                         )}
                       </div>
-                      <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0" style={statusStyle}>
-                        {bk.status}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={statusStyle}>
+                          {statusLabel(bookingStatus)}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={payStyle}>
+                          {statusLabel(paymentStatus)}
+                        </span>
+                      </div>
                     </button>
                   );
                 })}
                 {selectedBookingId && (
-                  <p className="text-xs" style={{ color: STUDIO_CYAN }}>
-                    Choose how this check-in is being paid before confirming.
-                  </p>
+                  <>
+                    <p className="text-xs" style={{ color: STUDIO_CYAN }}>
+                      Choose how this check-in is being paid before confirming.
+                    </p>
+                    {studentBookings.find((bk) => bk.id === selectedBookingId)?.paymentMode === "pay_at_studio" &&
+                      studentBookings.find((bk) => bk.id === selectedBookingId)?.paymentStatus !== "paid" && (
+                        <p className="text-xs" style={{ color: AMBER }}>
+                          Payment not marked as paid yet.
+                        </p>
+                      )}
+                  </>
                 )}
               </div>
             )}

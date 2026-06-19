@@ -276,6 +276,10 @@ export interface Booking {
   /** @nullable — explicit FK to package_orders.id (credit ledger, migration 0013) */
   packageOrderId?: number | null;
   status: string;
+  bookingStatus: string;
+  paymentStatus: string;
+  /** @nullable */
+  paymentMode?: string | null;
   /** @nullable */
   notes?: string | null;
   bookedAt: string;
@@ -328,6 +332,10 @@ export interface CreateBookingBody {
   /** @nullable — explicit package order reference (credit ledger, migration 0013) */
   packageOrderId?: number | null;
   status?: string;
+  bookingStatus?: string;
+  paymentStatus?: string;
+  /** @nullable */
+  paymentMode?: string | null;
   /** @nullable */
   notes?: string | null;
   bookedAt?: string;
@@ -347,6 +355,10 @@ export interface UpdateBookingBody {
   /** @nullable */
   packageOrderId?: number | null;
   status?: string;
+  bookingStatus?: string;
+  paymentStatus?: string;
+  /** @nullable */
+  paymentMode?: string | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -621,6 +633,8 @@ export type ListSchedulesParams = {
 
 export type ListBookingsParams = {
   status?: string;
+  bookingStatus?: string;
+  paymentStatus?: string;
   /** Filter bookings by student email (mobile client convenience filter). */
   studentEmail?: string;
 };

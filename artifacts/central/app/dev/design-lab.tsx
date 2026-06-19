@@ -437,7 +437,7 @@ export default function DesignLabScreen() {
           file="components/BookingCard.tsx"
         />
         <BookingCard item={makeBooking("confirmed", "paid")} />
-        <BookingCard item={makeBooking("pendingPayment", "unpaid")} />
+        <BookingCard item={makeBooking("pending", "pending_payment")} />
         <BookingCard item={makeBooking("attended", "paid")} />
         <BookingCard item={makeBooking("cancelled", "refunded")} />
         <BookingCard item={makeBooking("noShow", "paid")} />

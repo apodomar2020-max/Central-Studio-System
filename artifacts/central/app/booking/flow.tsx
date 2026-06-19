@@ -192,6 +192,9 @@ export default function BookingFlowScreen() {
       ].filter(Boolean).join("\n") || undefined;
 
       // 1. Create booking in the database
+      const apiBookingStatus = isPackageMode || finalPrice === 0 ? "confirmed" : "pending";
+      const apiPaymentStatus = isPackageMode || finalPrice === 0 ? "not_required" : "pending_payment";
+      const apiPaymentMode = isPackageMode ? "package_credit" : finalPrice === 0 ? "free" : "pay_at_studio";
       const apiBooking = await createBookingAsync({
         data: {
           studentName: participantName,
@@ -202,7 +205,10 @@ export default function BookingFlowScreen() {
           // packageId kept for backward-compat; packageOrderId is the authoritative FK (credit ledger)
           packageId: isPackageMode && selectedPackage ? Number(selectedPackage.id) : undefined,
           packageOrderId: isPackageMode && selectedPackage ? Number(selectedPackage.id) : undefined,
-          status: paymentMethod === "cash" && finalPrice > 0 ? "pendingPayment" : "confirmed",
+          status: apiBookingStatus,
+          bookingStatus: apiBookingStatus,
+          paymentStatus: apiPaymentStatus,
+          paymentMode: apiPaymentMode,
           notes,
         },
       });
@@ -226,8 +232,8 @@ export default function BookingFlowScreen() {
         participantType,
         participantName,
         paymentMethod,
-        paymentStatus: paymentMethod === "cash" && finalPrice > 0 ? "unpaid" : "paid",
-        bookingStatus: paymentMethod === "cash" && finalPrice > 0 ? "pendingPayment" : "confirmed",
+        paymentStatus: apiPaymentStatus,
+        bookingStatus: apiBookingStatus,
         bookingType: isPackageMode ? "package" : "single",
         userPackageId: isPackageMode ? selectedPackage?.id : undefined,
         attendanceStatus: "booked",

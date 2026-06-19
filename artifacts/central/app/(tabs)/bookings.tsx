@@ -23,6 +23,7 @@ import ErrorState from "@/components/ErrorState";
 import { ListSkeleton } from "@/components/SkeletonLoader";
 import {
   fetchStudentBookings,
+  mapApiPaymentStatusToLocal,
   mapApiStatusToLocal,
 } from "@/services/bookingsRepository";
 import { isOfflineError } from "@/services/connectivity";
@@ -172,8 +173,8 @@ export default function BookingsScreen() {
     "idle" | "loading" | "success" | "offline" | "error"
   >("idle");
   const [fromCache, setFromCache] = useState(false);
-  // Map of String(apiBooking.id) → api status string
-  const [apiStatuses, setApiStatuses] = useState<Map<string, string>>(new Map());
+  // Map of String(apiBooking.id) → canonical booking/payment status from API
+  const [apiStatuses, setApiStatuses] = useState<Map<string, { bookingStatus: string; paymentStatus?: string }>>(new Map());
 
   // ── Ballet applications ────────────────────────────────────────────────────
   const [balletApps, setBalletApps] = useState<BalletApplication[]>([]);
@@ -184,7 +185,13 @@ export default function BookingsScreen() {
     try {
       const result = await fetchStudentBookings(user.email);
       const statusMap = new Map(
-        result.bookings.map((b) => [String(b.id), b.status])
+        result.bookings.map((b) => [
+          String(b.id),
+          {
+            bookingStatus: b.bookingStatus ?? b.status,
+            paymentStatus: b.paymentStatus,
+          },
+        ])
       );
       setApiStatuses(statusMap);
       setFromCache(result.fromCache);
@@ -227,7 +234,11 @@ export default function BookingsScreen() {
     return localBookings.map((b) => {
       const apiStatus = apiStatuses.get(b.id);
       if (!apiStatus) return b;
-      return { ...b, bookingStatus: mapApiStatusToLocal(apiStatus) };
+      return {
+        ...b,
+        bookingStatus: mapApiStatusToLocal(apiStatus.bookingStatus),
+        paymentStatus: mapApiPaymentStatusToLocal(apiStatus.paymentStatus),
+      };
     });
   }, [localBookings, apiStatuses]);
 
@@ -237,7 +248,7 @@ export default function BookingsScreen() {
       switch (tab) {
         case "Upcoming":
           return mergedBookings
-            .filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment")
+            .filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pending")
             .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
         case "Past":
           return mergedBookings
@@ -245,7 +256,7 @@ export default function BookingsScreen() {
             .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
         case "Cancelled":
           return mergedBookings
-            .filter((b) => b.bookingStatus === "cancelled" || b.bookingStatus === "refunded")
+            .filter((b) => b.bookingStatus === "cancelled" || b.bookingStatus === "rejected")
             .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
       }
     })();
@@ -273,7 +284,7 @@ export default function BookingsScreen() {
 
   const filtered = filterItems(activeTab);
   const upcomingCount =
-    mergedBookings.filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pendingPayment").length +
+    mergedBookings.filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pending").length +
     balletApps.filter((a) => ACTIVE_APPLICATION_STATUSES.has(a.status)).length;
   const isRefreshing = syncState === "loading";
 

@@ -69,6 +69,9 @@ export interface ApiBookingStatus {
   packageId?: number | null;
   /** The canonical booking status from the backend (e.g. "confirmed", "cancelled"). */
   status: string;
+  bookingStatus?: string;
+  paymentStatus?: string;
+  paymentMode?: string | null;
   bookedAt: string;
   createdAt: string;
 }
@@ -154,17 +157,34 @@ export async function fetchStudentBookings(
  */
 export function mapApiStatusToLocal(
   apiStatus: string
-): "confirmed" | "pendingPayment" | "cancelled" | "attended" | "noShow" | "refunded" {
+): "pending" | "confirmed" | "rejected" | "cancelled" | "attended" | "completed" | "noShow" {
   const map: Record<string, ReturnType<typeof mapApiStatusToLocal>> = {
+    pending: "pending",
     confirmed: "confirmed",
-    pending: "pendingPayment",
-    pendingPayment: "pendingPayment",
+    pendingPayment: "pending",
+    rejected: "rejected",
     cancelled: "cancelled",
-    rejected: "cancelled",
     attended: "attended",
+    completed: "completed",
     noShow: "noShow",
     no_show: "noShow",
-    refunded: "refunded",
   };
   return map[apiStatus] ?? "confirmed";
+}
+
+export function mapApiPaymentStatusToLocal(
+  apiStatus: string | undefined,
+): "not_required" | "pending_payment" | "paid" | "refunded" | "failed" {
+  switch (apiStatus) {
+    case "pending_payment":
+    case "paid":
+    case "refunded":
+    case "failed":
+    case "not_required":
+      return apiStatus;
+    case "unpaid":
+      return "pending_payment";
+    default:
+      return "not_required";
+  }
 }

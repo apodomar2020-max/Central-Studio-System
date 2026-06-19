@@ -25,7 +25,8 @@ import { Check, Trash2, Edit, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 
-const STATUSES = ["pending", "pendingPayment", "confirmed", "rejected", "cancelled", "attended", "completed"];
+const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed"];
+const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"];
 const FILTERS = ["all", "pending", "confirmed", "rejected", "cancelled", "attended"] as const;
 
 const formSchema = z.object({
@@ -36,6 +37,9 @@ const formSchema = z.object({
   scheduleId: z.coerce.number().int().nullish(),
   packageId: z.coerce.number().int().nullish(),
   status: z.string().default("pending"),
+  bookingStatus: z.string().default("pending"),
+  paymentStatus: z.string().default("pending_payment"),
+  paymentMode: z.string().nullish(),
   notes: z.string().nullish(),
 });
 
@@ -51,28 +55,50 @@ type Booking = {
   scheduleLabel?: string | null;
   scheduleType?: "weekly" | "one_time" | null;
   status: string;
+  bookingStatus: string;
+  paymentStatus: string;
+  paymentMode?: string | null;
   bookedAt: string;
   notes?: string | null;
 };
 
-const statusVariant = (s: string) =>
+const bookingStatusVariant = (s: string) =>
   s === "confirmed" || s === "attended" || s === "completed"
     ? "default"
-    : s === "pending" || s === "pendingPayment"
+    : s === "pending"
       ? "secondary"
       : s === "cancelled" || s === "rejected"
         ? "destructive"
         : "outline";
 
-const statusLabel = (s: string) => {
+const paymentStatusVariant = (s: string) =>
+  s === "paid" || s === "not_required"
+    ? "default"
+    : s === "pending_payment"
+      ? "secondary"
+      : s === "refunded"
+        ? "outline"
+        : "destructive";
+
+const bookingStatusLabel = (s: string) => {
   const labels: Record<string, string> = {
     pending: "Pending",
-    pendingPayment: "Pending Payment",
     confirmed: "Confirmed",
     rejected: "Rejected",
     cancelled: "Cancelled",
     attended: "Attended",
     completed: "Completed",
+  };
+  return labels[s] ?? s;
+};
+
+const paymentStatusLabel = (s: string) => {
+  const labels: Record<string, string> = {
+    not_required: "Not Required",
+    pending_payment: "Pending Payment",
+    paid: "Paid",
+    refunded: "Refunded",
+    failed: "Failed",
   };
   return labels[s] ?? s;
 };
@@ -89,18 +115,28 @@ export default function Bookings() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { studentName: "", studentEmail: "", status: "pending" },
+    defaultValues: { studentName: "", studentEmail: "", bookingStatus: "pending", paymentStatus: "pending_payment" },
   });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ studentName: "", studentEmail: "", status: "pending" });
+    form.reset({ studentName: "", studentEmail: "", bookingStatus: "pending", paymentStatus: "pending_payment" });
     setOpen(true);
   };
 
   const openEdit = (b: Booking) => {
     setEditing(b);
-    form.reset({ studentName: b.studentName, studentEmail: b.studentEmail, studentPhone: b.studentPhone, classId: b.classId ?? undefined, scheduleId: b.scheduleId ?? undefined, status: b.status, notes: b.notes ?? "" });
+    form.reset({
+      studentName: b.studentName,
+      studentEmail: b.studentEmail,
+      studentPhone: b.studentPhone,
+      classId: b.classId ?? undefined,
+      scheduleId: b.scheduleId ?? undefined,
+      bookingStatus: b.bookingStatus ?? b.status,
+      paymentStatus: b.paymentStatus ?? "not_required",
+      paymentMode: b.paymentMode ?? undefined,
+      notes: b.notes ?? "",
+    });
     setOpen(true);
   };
 
@@ -124,17 +160,23 @@ export default function Bookings() {
     queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() });
   };
 
-  const setBookingStatus = (booking: Booking, status: string) => {
+  const setBookingStatus = (booking: Booking, bookingStatus: string) => {
     updateBooking.mutate(
-      { id: booking.id, data: { status } },
+      { id: booking.id, data: { bookingStatus } },
+      { onSuccess: invalidateBookings },
+    );
+  };
+
+  const setPaymentStatus = (booking: Booking, paymentStatus: string) => {
+    updateBooking.mutate(
+      { id: booking.id, data: { paymentStatus } },
       { onSuccess: invalidateBookings },
     );
   };
 
   const visibleBookings = (bookings ?? []).filter((booking) => {
     if (activeFilter === "all") return true;
-    if (activeFilter === "pending") return booking.status === "pending" || booking.status === "pendingPayment";
-    return booking.status === activeFilter;
+    return (booking.bookingStatus ?? booking.status) === activeFilter;
   });
 
   return (
@@ -150,7 +192,7 @@ export default function Bookings() {
             size="sm"
             onClick={() => setActiveFilter(filter)}
           >
-            {filter === "all" ? "All" : statusLabel(filter)}
+            {filter === "all" ? "All" : bookingStatusLabel(filter)}
           </Button>
         ))}
       </div>
@@ -163,15 +205,16 @@ export default function Bookings() {
               <TableHead>Class</TableHead>
               <TableHead>Schedule</TableHead>
               <TableHead>Booked</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Booking Status</TableHead>
+              <TableHead>Payment Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : visibleBookings.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
             ) : (
               visibleBookings.map((booking) => (
                 <TableRow key={booking.id} data-testid={`row-booking-${booking.id}`}>
@@ -193,10 +236,17 @@ export default function Bookings() {
                   </TableCell>
                   <TableCell>{new Date(booking.bookedAt).toLocaleDateString()}</TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(booking.status)}>{statusLabel(booking.status)}</Badge>
+                    <Badge variant={bookingStatusVariant(booking.bookingStatus ?? booking.status)}>
+                      {bookingStatusLabel(booking.bookingStatus ?? booking.status)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={paymentStatusVariant(booking.paymentStatus ?? "not_required")}>
+                      {paymentStatusLabel(booking.paymentStatus ?? "not_required")}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {(booking.status === "pending" || booking.status === "pendingPayment") && (
+                    {(booking.bookingStatus ?? booking.status) === "pending" && (
                       <>
                         <Button
                           variant="ghost"
@@ -217,6 +267,28 @@ export default function Bookings() {
                           <X className="h-4 w-4 text-destructive" />
                         </Button>
                       </>
+                    )}
+                    {booking.paymentStatus === "pending_payment" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-mark-paid-booking-${booking.id}`}
+                        onClick={() => setPaymentStatus(booking, "paid")}
+                        title="Mark paid"
+                      >
+                        <Check className="h-4 w-4 text-sky-600" />
+                      </Button>
+                    )}
+                    {!["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-cancel-booking-${booking.id}`}
+                        onClick={() => setBookingStatus(booking, "cancelled")}
+                        title="Cancel booking"
+                      >
+                        <X className="h-4 w-4 text-orange-600" />
+                      </Button>
                     )}
                     <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)}>
                       <Edit className="h-4 w-4" />
@@ -278,13 +350,25 @@ export default function Bookings() {
                   <FormMessage />
                 </FormItem>
               )} />
-              <FormField control={form.control} name="status" render={({ field }) => (
+              <FormField control={form.control} name="bookingStatus" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Status</FormLabel>
+                  <FormLabel>Booking Status</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger data-testid="select-booking-status"><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {STATUSES.map((s) => <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>)}
+                      {BOOKING_STATUSES.map((s) => <SelectItem key={s} value={s}>{bookingStatusLabel(s)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="paymentStatus" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Payment Status</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger data-testid="select-payment-status"><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {PAYMENT_STATUSES.map((s) => <SelectItem key={s} value={s}>{paymentStatusLabel(s)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />

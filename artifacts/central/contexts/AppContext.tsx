@@ -50,8 +50,8 @@ export interface Booking {
   participantType: "self" | "child";
   participantName: string;
   paymentMethod: "online" | "cash" | "packageCredit";
-  paymentStatus: "paid" | "unpaid" | "refunded";
-  bookingStatus: "confirmed" | "pendingPayment" | "cancelled" | "attended" | "noShow" | "refunded";
+  paymentStatus: "not_required" | "pending_payment" | "paid" | "refunded" | "failed";
+  bookingStatus: "pending" | "confirmed" | "rejected" | "cancelled" | "attended" | "completed" | "noShow";
   bookingType: "single" | "package" | "ballet";
   userPackageId?: string;
   bookingNumber: string;
