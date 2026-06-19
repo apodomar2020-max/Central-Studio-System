@@ -21,12 +21,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Edit, X } from "lucide-react";
+import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 
 const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed"];
 const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"];
 const FILTERS = ["all", "pending", "confirmed", "rejected", "cancelled", "attended"] as const;
+const SCOPE_FILTERS = ["all", "self", "child"] as const;
 
 const formSchema = z.object({
   studentName: z.string().min(1, "Name is required"),
@@ -48,6 +50,13 @@ type Booking = {
   studentName: string;
   studentEmail: string;
   studentPhone?: string | null;
+  accountOwnerStudentId?: number | null;
+  accountOwnerName?: string | null;
+  accountOwnerEmail?: string | null;
+  participantChildId?: number | null;
+  participantName?: string | null;
+  participantType?: "self" | "child" | null;
+  bookingScope?: "self" | "child" | null;
   classId?: number | null;
   scheduleId?: number | null;
   classTitle?: string | null;
@@ -102,6 +111,13 @@ const paymentStatusLabel = (s: string) => {
   return labels[s] ?? s;
 };
 
+const participantName = (booking: Booking) => booking.participantName || booking.studentName;
+const accountOwnerName = (booking: Booking) => booking.accountOwnerName || booking.studentName;
+const accountOwnerEmail = (booking: Booking) => booking.accountOwnerEmail || booking.studentEmail;
+const isChildBooking = (booking: Booking) =>
+  booking.bookingScope === "child" || booking.participantType === "child" || booking.participantChildId != null;
+const scopeLabel = (booking: Booking) => (isChildBooking(booking) ? "Child" : "Self");
+
 export default function Bookings() {
   const { data: bookings, isLoading } = useListBookings();
   const createBooking = useCreateBooking();
@@ -110,6 +126,8 @@ export default function Bookings() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
   const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [scopeFilter, setScopeFilter] = useState<(typeof SCOPE_FILTERS)[number]>("all");
+  const [search, setSearch] = useState("");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -167,33 +185,71 @@ export default function Bookings() {
   };
 
   const visibleBookings = (bookings ?? []).filter((booking) => {
-    if (activeFilter === "all") return true;
-    return (booking.bookingStatus ?? booking.status) === activeFilter;
+    if (activeFilter !== "all" && (booking.bookingStatus ?? booking.status) !== activeFilter) {
+      return false;
+    }
+    if (scopeFilter !== "all" && (isChildBooking(booking) ? "child" : "self") !== scopeFilter) {
+      return false;
+    }
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      participantName(booking),
+      accountOwnerName(booking),
+      accountOwnerEmail(booking),
+      booking.studentName,
+      booking.studentEmail,
+      booking.classTitle ?? "",
+    ].some((value) => value.toLowerCase().includes(query));
   });
 
   return (
     <div className="space-y-6">
       <PageHeader title="Bookings" description="Manage class bookings" mode="studio" addLabel="Add Booking" addTestId="button-add-booking" onAdd={openCreate} />
 
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((filter) => (
-          <Button
-            key={filter}
-            type="button"
-            variant={activeFilter === filter ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveFilter(filter)}
-          >
-            {filter === "all" ? "All" : bookingStatusLabel(filter)}
-          </Button>
-        ))}
+      <div className="space-y-3">
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search participant, account owner, email, or class"
+          className="max-w-md"
+          data-testid="input-booking-search"
+        />
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((filter) => (
+            <Button
+              key={filter}
+              type="button"
+              variant={activeFilter === filter ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveFilter(filter)}
+            >
+              {filter === "all" ? "All Statuses" : bookingStatusLabel(filter)}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {SCOPE_FILTERS.map((filter) => (
+            <Button
+              key={filter}
+              type="button"
+              variant={scopeFilter === filter ? "default" : "outline"}
+              size="sm"
+              onClick={() => setScopeFilter(filter)}
+            >
+              {filter === "all" ? "All Scopes" : filter === "child" ? "Child Bookings" : "Self Bookings"}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <div className="border rounded-md">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Student</TableHead>
+              <TableHead>Participant</TableHead>
+              <TableHead>Account Owner</TableHead>
+              <TableHead>Scope</TableHead>
               <TableHead>Class</TableHead>
               <TableHead>Schedule</TableHead>
               <TableHead>Booked</TableHead>
@@ -204,15 +260,32 @@ export default function Bookings() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : visibleBookings.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
             ) : (
               visibleBookings.map((booking) => (
                 <TableRow key={booking.id} data-testid={`row-booking-${booking.id}`}>
                   <TableCell>
-                    <div className="font-medium">{booking.studentName}</div>
-                    <div className="text-xs text-muted-foreground">{booking.studentEmail}</div>
+                    <div className="font-medium">{participantName(booking)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {isChildBooking(booking) ? "Child attendee" : "Account holder"}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {isChildBooking(booking) && booking.accountOwnerStudentId ? (
+                      <Link href={`/parents/${booking.accountOwnerStudentId}`} className="font-medium text-[#00B6D7] hover:underline">
+                        {accountOwnerName(booking)}
+                      </Link>
+                    ) : (
+                      <div className="font-medium">{accountOwnerName(booking)}</div>
+                    )}
+                    <div className="text-xs text-muted-foreground">{accountOwnerEmail(booking)}</div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={isChildBooking(booking) ? "secondary" : "outline"} className={isChildBooking(booking) ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-700" : ""}>
+                      {scopeLabel(booking)}
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
@@ -303,14 +376,14 @@ export default function Bookings() {
               <div className="grid grid-cols-2 gap-4">
                 <FormField control={form.control} name="studentName" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Student Name</FormLabel>
+                    <FormLabel>Participant Name</FormLabel>
                     <FormControl><Input data-testid="input-booking-name" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="studentEmail" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Account Owner Email</FormLabel>
                     <FormControl><Input type="email" data-testid="input-booking-email" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
