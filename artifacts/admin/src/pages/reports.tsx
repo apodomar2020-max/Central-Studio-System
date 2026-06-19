@@ -1,23 +1,41 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  useGetDashboard,
   useGetAttendanceStats,
   useListPackageOrders,
   useListAttendance,
+  useListBookings,
+  useListStudents,
 } from "@workspace/api-client-react";
-import type { PackageOrder, Attendance } from "@workspace/api-client-react";
+import type { PackageOrder, Attendance, Booking, Student } from "@workspace/api-client-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Users,
+  UserPlus,
   CreditCard,
   ScanLine,
   CheckCircle2,
   Clock,
   XCircle,
   Ban,
-  TrendingUp,
   ShoppingBag,
   BarChart3,
+  FileSpreadsheet,
+  FileText,
+  CalendarRange,
 } from "lucide-react";
 import {
   BarChart,
@@ -38,7 +56,6 @@ const GREEN = "#22C55E";
 const AMBER = "#F59E0B";
 const RED   = "#EF4444";
 const GRAY  = "#6B7280";
-const PURPLE = "#8A5CFF";
 
 const CARD_BG     = "hsl(196 28% 8%)";
 const CARD_BORDER = "hsl(203 30% 14%)";
@@ -50,6 +67,74 @@ const TOOLTIP_STYLE = {
   color: "#fff",
   fontSize: "12px",
 };
+
+// ─── API base / headers (admin endpoints, e.g. ballet applications) ────────────
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+const API_KEY  = (import.meta.env.VITE_API_KEY  as string | undefined) ?? "";
+function adminHeaders(token: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+    ...(token ? { "x-admin-token": token } : {}),
+  };
+}
+
+interface BalletAppRow {
+  id: number;
+  childName: string;
+  parentName: string;
+  parentPhone: string;
+  slotLabel: string | null;
+  status: string;
+  createdAt: string;
+}
+
+// ─── Date range ─────────────────────────────────────────────────────────────
+type Preset = "today" | "week" | "month" | "custom";
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function endOfToday(): Date {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+function startOfWeek(): Date {
+  const d = startOfToday();
+  const day = (d.getDay() + 6) % 7; // Monday = 0
+  d.setDate(d.getDate() - day);
+  return d;
+}
+function startOfMonth(): Date {
+  const d = startOfToday();
+  d.setDate(1);
+  return d;
+}
+
+function computeRange(preset: Preset, from: string, to: string): { from: Date; to: Date } {
+  switch (preset) {
+    case "today":
+      return { from: startOfToday(), to: endOfToday() };
+    case "week":
+      return { from: startOfWeek(), to: endOfToday() };
+    case "month":
+      return { from: startOfMonth(), to: endOfToday() };
+    case "custom": {
+      const f = from ? new Date(`${from}T00:00:00`) : new Date(0);
+      const t = to ? new Date(`${to}T23:59:59.999`) : endOfToday();
+      return { from: f, to: t };
+    }
+  }
+}
+
+function fmtDate(s?: string | null): string {
+  if (!s) return "—";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+}
 
 // ─── Shared components ────────────────────────────────────────────────────────
 function StatCard({
@@ -67,13 +152,9 @@ function StatCard({
 }) {
   return (
     <div
-      className="relative overflow-hidden rounded-xl border p-5 flex flex-col gap-3 group transition-all duration-200 hover:border-opacity-60"
+      className="relative overflow-hidden rounded-xl border p-5 flex flex-col gap-3"
       style={{ background: CARD_BG, borderColor: CARD_BORDER }}
     >
-      <div
-        className="absolute -top-6 -right-6 h-20 w-20 rounded-full opacity-10 blur-xl group-hover:opacity-20 transition-opacity"
-        style={{ background: accent }}
-      />
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium" style={{ color: "#8A9AB0" }}>{title}</p>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${accent}18` }}>
@@ -90,18 +171,6 @@ function StatCard({
   );
 }
 
-function SkeletonCard() {
-  return (
-    <div className="rounded-xl border p-5 flex flex-col gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
-      <div className="flex items-center justify-between">
-        <Skeleton className="h-4 w-28" style={{ background: CARD_BORDER }} />
-        <Skeleton className="h-8 w-8 rounded-lg" style={{ background: CARD_BORDER }} />
-      </div>
-      <Skeleton className="h-8 w-16" style={{ background: CARD_BORDER }} />
-    </div>
-  );
-}
-
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border p-5" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
@@ -111,230 +180,477 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
+// ─── Export Center entity config ───────────────────────────────────────────────
+type Entity = "bookings" | "users" | "parents" | "ballet" | "attendance";
+
+const ENTITY_OPTIONS: { value: Entity; label: string }[] = [
+  { value: "bookings",   label: "Bookings" },
+  { value: "users",      label: "Users" },
+  { value: "parents",    label: "Parents" },
+  { value: "ballet",     label: "Ballet Applications" },
+  { value: "attendance", label: "Attendance" },
+];
+
+// Status filter options per entity ("all" always first).
+const STATUS_OPTIONS: Record<Entity, { value: string; label: string }[]> = {
+  bookings: [
+    { value: "all", label: "All statuses" },
+    { value: "pending", label: "Pending" },
+    { value: "confirmed", label: "Confirmed" },
+    { value: "attended", label: "Attended" },
+    { value: "completed", label: "Completed" },
+    { value: "cancelled", label: "Cancelled" },
+    { value: "rejected", label: "Rejected" },
+    { value: "noShow", label: "No-show" },
+  ],
+  users: [
+    { value: "all", label: "All accounts" },
+    { value: "student", label: "Students" },
+    { value: "parent", label: "Parents" },
+  ],
+  parents: [{ value: "all", label: "All parents" }],
+  ballet: [
+    { value: "all", label: "All statuses" },
+    { value: "submitted", label: "Submitted" },
+    { value: "pendingAssessment", label: "Pending assessment" },
+    { value: "accepted", label: "Accepted" },
+    { value: "rejected", label: "Rejected" },
+    { value: "needsFollowUp", label: "Needs follow-up" },
+    { value: "assignedToLevel", label: "Assigned to level" },
+    { value: "activeBallet", label: "Active ballet" },
+  ],
+  attendance: [
+    { value: "all", label: "All statuses" },
+    { value: "checked_in", label: "Checked in" },
+    { value: "late", label: "Late" },
+    { value: "absent", label: "Absent" },
+    { value: "cancelled", label: "Cancelled" },
+  ],
+};
+
+interface PreviewData {
+  columns: string[];
+  rows: string[][];
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
+  const { token } = useAdminAuth();
+
+  const [tab, setTab] = useState<"overview" | "export">("overview");
+  const [preset, setPreset] = useState<Preset>("month");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [attendancePeriod, setAttendancePeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
 
-  const { data: dashboard, isLoading: dashLoading } = useGetDashboard();
-  const { data: attendanceStats } = useGetAttendanceStats({ period: attendancePeriod });
+  const [entity, setEntity] = useState<Entity>("bookings");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  // ── Data (existing list APIs only — preview/analytics use these) ────────────
+  const { data: rawBookings = [], isLoading: bookingsLoading } = useListBookings();
+  const { data: rawStudents = [], isLoading: studentsLoading } = useListStudents();
+  const { data: rawAttendance = [], isLoading: attLoading } = useListAttendance();
   const { data: rawOrders = [] } = useListPackageOrders();
-  const { data: rawAttendance = [] } = useListAttendance();
+  const { data: attendanceStats } = useGetAttendanceStats({ period: attendancePeriod });
 
-  const orders = rawOrders as PackageOrder[];
+  const bookings = rawBookings as Booking[];
+  const students = rawStudents as Student[];
   const attendance = rawAttendance as Attendance[];
+  const orders = rawOrders as PackageOrder[];
 
-  // ── Package computed stats ─────────────────────────────────────────────────
-  const pkgStats = useMemo(() => {
-    const active      = orders.filter((o) => o.status === "active").length;
-    const pending     = orders.filter((o) => o.status === "pendingPayment").length;
-    const fullyUsed   = orders.filter((o) => o.status === "fullyUsed").length;
-    const expired     = orders.filter((o) => o.status === "expired").length;
-    const cancelled   = orders.filter((o) => o.status === "cancelled").length;
-    const total       = orders.length;
-    const creditsIssued = orders.reduce((s, o) => s + o.totalCredits, 0);
-    const creditsUsed   = orders.reduce((s, o) => s + (o.totalCredits - o.remainingCredits), 0);
-    const creditsRemaining = orders.reduce((s, o) => s + o.remainingCredits, 0);
-    return { active, pending, fullyUsed, expired, cancelled, total, creditsIssued, creditsUsed, creditsRemaining };
-  }, [orders]);
+  // Ballet applications (no generated hook — admin endpoint, same pattern as ballet page)
+  const { data: balletResp, isLoading: balletLoading } = useQuery<{ data: BalletAppRow[] }>({
+    queryKey: ["reports-ballet-applications"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications?page=1&limit=500`, {
+        headers: adminHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load ballet applications");
+      return res.json();
+    },
+  });
+  const balletApps = balletResp?.data ?? [];
 
-  // ── Attendance computed stats ──────────────────────────────────────────────
-  const attStats = useMemo(() => {
-    const checkedIn = attendance.filter((a) => !a.status || a.status === "checked_in").length;
-    const late      = attendance.filter((a) => a.status === "late").length;
-    const absent    = attendance.filter((a) => a.status === "absent").length;
-    const cancelled = attendance.filter((a) => a.status === "cancelled").length;
-    const total     = attendance.length;
-    const creditDeductions = attendance.filter((a) => a.creditDeducted).length;
-    return { checkedIn, late, absent, cancelled, total, creditDeductions };
-  }, [attendance]);
+  // ── Date range (shared by Overview + Export Center) ─────────────────────────
+  const range = useMemo(() => computeRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
+  const inRange = useMemo(() => {
+    return (s?: string | null): boolean => {
+      if (!s) return false;
+      const d = new Date(s);
+      return !Number.isNaN(d.getTime()) && d >= range.from && d <= range.to;
+    };
+  }, [range]);
 
-  // ── Chart data ─────────────────────────────────────────────────────────────
-  const attendanceTrendData = (attendanceStats?.data ?? []).map((d) => ({
-    name: d.label,
-    count: d.count,
-  }));
+  // ── Overview: date-ranged metrics (NOT the Dashboard KPI cards) ─────────────
+  const overview = useMemo(() => {
+    const newUsers = students.filter((s) => inRange(s.joinedAt)).length;
+    const newParents = students.filter((s) => s.accountType === "parent" && inRange(s.joinedAt)).length;
+    const bookingsInRange = bookings.filter((b) => inRange(b.bookedAt ?? b.createdAt));
+    const attInRange = attendance.filter((a) => inRange(a.checkedInAt ?? a.createdAt));
+    const ordersInRange = orders.filter((o) => inRange(o.createdAt));
 
-  const pkgStatusPieData = [
-    { name: "Active",       value: pkgStats.active,    fill: GREEN },
-    { name: "Pending",      value: pkgStats.pending,   fill: AMBER },
-    { name: "Fully Used",   value: pkgStats.fullyUsed, fill: CYAN  },
-    { name: "Expired",      value: pkgStats.expired,   fill: RED   },
-    { name: "Cancelled",    value: pkgStats.cancelled, fill: GRAY  },
-  ].filter((d) => d.value > 0);
+    const att = {
+      total: attInRange.length,
+      checkedIn: attInRange.filter((a) => !a.status || a.status === "checked_in").length,
+      late: attInRange.filter((a) => a.status === "late").length,
+      absent: attInRange.filter((a) => a.status === "absent").length,
+      cancelled: attInRange.filter((a) => a.status === "cancelled").length,
+    };
+
+    // Most active classes by booking count (range-filtered)
+    const byClass = new Map<string, number>();
+    for (const b of bookingsInRange) {
+      const name = b.classTitle ?? b.displayTitle ?? "Unlabelled";
+      byClass.set(name, (byClass.get(name) ?? 0) + 1);
+    }
+    const topClasses = Array.from(byClass.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return { newUsers, newParents, bookingsInRange: bookingsInRange.length, ordersInRange: ordersInRange.length, att, topClasses };
+  }, [students, bookings, attendance, orders, inRange]);
 
   const attStatusBarData = [
-    { name: "Checked In", count: attStats.checkedIn, fill: GREEN },
-    { name: "Late",        count: attStats.late,      fill: AMBER },
-    { name: "Absent",      count: attStats.absent,    fill: RED   },
-    { name: "Cancelled",   count: attStats.cancelled, fill: GRAY  },
+    { name: "Checked In", count: overview.att.checkedIn, fill: GREEN },
+    { name: "Late",        count: overview.att.late,      fill: AMBER },
+    { name: "Absent",      count: overview.att.absent,    fill: RED   },
+    { name: "Cancelled",   count: overview.att.cancelled, fill: GRAY  },
   ];
 
-  const PERIOD_OPTIONS: { label: string; value: "daily" | "monthly" | "yearly" }[] = [
-    { label: "Daily",   value: "daily"   },
-    { label: "Monthly", value: "monthly" },
-    { label: "Yearly",  value: "yearly"  },
+  const attendanceTrendData = (attendanceStats?.data ?? []).map((d) => ({ name: d.label, count: d.count }));
+
+  // ── Package status distribution (date-ranged) ───────────────────────────────
+  const pkgPieData = useMemo(() => {
+    const inR = orders.filter((o) => inRange(o.createdAt));
+    const by = (st: string) => inR.filter((o) => o.status === st).length;
+    return [
+      { name: "Active",     value: by("active"),         fill: GREEN },
+      { name: "Pending",    value: by("pendingPayment"), fill: AMBER },
+      { name: "Fully Used", value: by("fullyUsed"),      fill: CYAN  },
+      { name: "Expired",    value: by("expired"),        fill: RED   },
+      { name: "Cancelled",  value: by("cancelled"),      fill: GRAY  },
+    ].filter((d) => d.value > 0);
+  }, [orders, inRange]);
+
+  // ── Export Center preview (same filters as Overview) ────────────────────────
+  const preview: PreviewData = useMemo(() => {
+    const sf = statusFilter;
+    switch (entity) {
+      case "bookings": {
+        const rows = bookings
+          .filter((b) => inRange(b.bookedAt ?? b.createdAt))
+          .filter((b) => sf === "all" || b.bookingStatus === sf)
+          .map((b) => [
+            b.studentName,
+            b.classTitle ?? b.displayTitle ?? "—",
+            b.bookingStatus,
+            b.paymentStatus,
+            fmtDate(b.bookedAt ?? b.createdAt),
+          ]);
+        return { columns: ["Participant", "Class", "Booking Status", "Payment", "Booked"], rows };
+      }
+      case "users": {
+        const rows = students
+          .filter((s) => inRange(s.joinedAt))
+          .filter((s) => sf === "all" || (s.accountType ?? "student") === sf)
+          .map((s) => [
+            s.name,
+            s.email,
+            s.phone ?? "—",
+            s.accountType ?? "student",
+            fmtDate(s.joinedAt),
+          ]);
+        return { columns: ["Name", "Email", "Phone", "Account Type", "Joined"], rows };
+      }
+      case "parents": {
+        const rows = students
+          .filter((s) => s.accountType === "parent")
+          .filter((s) => inRange(s.joinedAt))
+          .map((s) => [s.name, s.email, s.phone ?? "—", fmtDate(s.joinedAt)]);
+        return { columns: ["Name", "Email", "Phone", "Joined"], rows };
+      }
+      case "ballet": {
+        const rows = balletApps
+          .filter((a) => inRange(a.createdAt))
+          .filter((a) => sf === "all" || a.status === sf)
+          .map((a) => [a.childName, a.parentName, a.parentPhone, a.slotLabel ?? "—", a.status, fmtDate(a.createdAt)]);
+        return { columns: ["Child", "Parent", "Phone", "Preferred Slot", "Status", "Applied"], rows };
+      }
+      case "attendance": {
+        const rows = attendance
+          .filter((a) => inRange(a.checkedInAt ?? a.createdAt))
+          .filter((a) => sf === "all" || (a.status ?? "checked_in") === sf)
+          .map((a) => [
+            a.studentName,
+            a.classTitle ?? "—",
+            a.status ?? "checked_in",
+            a.creditDeducted ? "Yes" : "No",
+            fmtDate(a.checkedInAt ?? a.createdAt),
+          ]);
+        return { columns: ["Participant", "Class", "Status", "Credit Used", "Checked In"], rows };
+      }
+    }
+  }, [entity, statusFilter, bookings, students, attendance, balletApps, inRange]);
+
+  const previewLoading =
+    (entity === "bookings" && bookingsLoading) ||
+    ((entity === "users" || entity === "parents") && studentsLoading) ||
+    (entity === "attendance" && attLoading) ||
+    (entity === "ballet" && balletLoading);
+
+  function handleEntityChange(value: string) {
+    setEntity(value as Entity);
+    setStatusFilter("all");
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  const PRESETS: { label: string; value: Preset }[] = [
+    { label: "Today", value: "today" },
+    { label: "This Week", value: "week" },
+    { label: "This Month", value: "month" },
+    { label: "Custom", value: "custom" },
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Reports</h1>
           <p className="text-sm mt-1" style={{ color: "#8A9AB0" }}>
-            Studio-wide statistics across packages, credits, and attendance.
+            Date-ranged analytics and data exports across the studio.
           </p>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg border p-1" style={{ borderColor: CARD_BORDER, background: CARD_BG }}>
-          <BarChart3 className="h-4 w-4 ml-1" style={{ color: CYAN }} />
+        <div className="flex items-center gap-1.5 rounded-lg border p-1.5" style={{ borderColor: CARD_BORDER, background: CARD_BG }}>
+          <BarChart3 className="h-4 w-4" style={{ color: CYAN }} />
         </div>
       </div>
 
-      {/* ── Section: Studio overview ── */}
-      <div>
-        <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ color: `${CYAN}80` }}>
-          Studio Overview
-        </p>
-        {dashLoading ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="Total Students"     value={dashboard?.totalStudents ?? 0}     icon={Users}      accent={CYAN}  />
-            <StatCard title="Active Classes"      value={dashboard?.activeClasses ?? 0}      icon={ScanLine}   accent={CYAN}  />
-            <StatCard title="Active Instructors"  value={dashboard?.activeInstructors ?? 0}  icon={TrendingUp} accent={PURPLE} />
-            <StatCard title="Total Bookings"      value={dashboard?.totalBookings ?? 0}      icon={ShoppingBag} accent={GREEN} />
-          </div>
-        )}
-      </div>
-
-      {/* ── Section: Package stats ── */}
-      <div>
-        <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ color: `${CYAN}80` }}>
-          Package Orders
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <StatCard title="Total Orders"       value={pkgStats.total}           icon={ShoppingBag}  accent={CYAN}   />
-          <StatCard title="Active Packages"    value={pkgStats.active}          icon={CheckCircle2} accent={GREEN}  />
-          <StatCard title="Pending Payment"    value={pkgStats.pending}         icon={Clock}        accent={AMBER}  />
-          <StatCard title="Credits Issued"     value={pkgStats.creditsIssued}   icon={CreditCard}   accent={CYAN}   sub="total" />
-          <StatCard title="Credits Used"       value={pkgStats.creditsUsed}     icon={CreditCard}   accent={RED}    sub="consumed" />
-          <StatCard title="Credits Remaining"  value={pkgStats.creditsRemaining} icon={CreditCard}  accent={GREEN}  sub="available" />
+      {/* ── Shared date-range filter ── */}
+      <div className="rounded-xl border p-4 flex flex-wrap items-center gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+        <div className="flex items-center gap-2">
+          <CalendarRange className="h-4 w-4" style={{ color: CYAN }} />
+          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>Date Range</span>
         </div>
-      </div>
-
-      {/* ── Section: Package status distribution ── */}
-      {pkgStatusPieData.length > 0 && (
-        <ChartCard title="Package Status Distribution">
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie
-                data={pkgStatusPieData}
-                cx="50%"
-                cy="50%"
-                innerRadius={55}
-                outerRadius={85}
-                paddingAngle={3}
-                dataKey="value"
-              >
-                {pkgStatusPieData.map((entry, idx) => (
-                  <Cell key={idx} fill={entry.fill} opacity={0.9} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-              <Legend
-                formatter={(value) => (
-                  <span style={{ color: "#8A9AB0", fontSize: "11px" }}>{value}</span>
-                )}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      )}
-
-      {/* ── Section: Attendance stats ── */}
-      <div>
-        <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ color: `${CYAN}80` }}>
-          Attendance
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <StatCard title="Total Check-Ins"    value={attStats.total}           icon={ScanLine}     accent={CYAN}   />
-          <StatCard title="Checked In"         value={attStats.checkedIn}       icon={CheckCircle2} accent={GREEN}  />
-          <StatCard title="Late Arrivals"      value={attStats.late}            icon={Clock}        accent={AMBER}  />
-          <StatCard title="Absent"             value={attStats.absent}          icon={XCircle}      accent={RED}    />
-          <StatCard title="Cancelled"          value={attStats.cancelled}       icon={Ban}          accent={GRAY}   />
-          <StatCard title="Credit Deductions"  value={attStats.creditDeductions} icon={CreditCard}  accent={CYAN}   sub="sessions" />
-        </div>
-      </div>
-
-      {/* ── Attendance by status bar chart ── */}
-      <ChartCard title="Attendance by Status">
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={attStatusBarData} barCategoryGap="40%">
-            <XAxis
-              dataKey="name"
-              tick={{ fill: "#8A9AB0", fontSize: 11 }}
-              axisLine={{ stroke: CARD_BORDER }}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fill: "#8A9AB0", fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              allowDecimals={false}
-            />
-            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-              {attStatusBarData.map((entry, idx) => (
-                <Cell key={idx} fill={entry.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* ── Attendance trend ── */}
-      <ChartCard title="Attendance Trend">
-        <div className="flex items-center gap-2 mb-4">
-          {PERIOD_OPTIONS.map((opt) => (
+        <div className="flex items-center gap-1.5">
+          {PRESETS.map((p) => (
             <button
-              key={opt.value}
-              onClick={() => setAttendancePeriod(opt.value)}
+              key={p.value}
+              onClick={() => setPreset(p.value)}
               className="px-3 py-1 rounded-md text-xs font-medium transition-all"
               style={
-                attendancePeriod === opt.value
+                preset === p.value
                   ? { background: `${CYAN}20`, color: CYAN, border: `1px solid ${CYAN}40` }
                   : { background: "transparent", color: "#8A9AB0", border: "1px solid hsl(203 25% 16%)" }
               }
             >
-              {opt.label}
+              {p.label}
             </button>
           ))}
         </div>
-        {attendanceTrendData.length === 0 ? (
-          <p className="text-center text-sm py-8" style={{ color: "#4E6070" }}>No data for this period.</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={attendanceTrendData} barCategoryGap="30%">
-              <XAxis
-                dataKey="name"
-                tick={{ fill: "#8A9AB0", fontSize: 11 }}
-                axisLine={{ stroke: CARD_BORDER }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: "#8A9AB0", fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                allowDecimals={false}
-              />
-              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-              <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
-            </BarChart>
-          </ResponsiveContainer>
+        {preset === "custom" && (
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={customFrom}
+              max={customTo || undefined}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="h-8 w-[150px]"
+            />
+            <span className="text-xs" style={{ color: "#4E6070" }}>to</span>
+            <Input
+              type="date"
+              value={customTo}
+              min={customFrom || undefined}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="h-8 w-[150px]"
+            />
+          </div>
         )}
-      </ChartCard>
+      </div>
+
+      {/* ── Segmented control ── */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "overview" | "export")} className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview">Overview / Analytics</TabsTrigger>
+          <TabsTrigger value="export">Export Center</TabsTrigger>
+        </TabsList>
+
+        {/* ───────────── OVERVIEW ───────────── */}
+        <TabsContent value="overview" className="space-y-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard title="New Users"     value={overview.newUsers}        icon={UserPlus}    accent={CYAN}  sub="in range" />
+            <StatCard title="New Parents"   value={overview.newParents}      icon={Users}       accent={GREEN} sub="in range" />
+            <StatCard title="Bookings"      value={overview.bookingsInRange} icon={ShoppingBag} accent={AMBER} sub="in range" />
+            <StatCard title="Check-Ins"     value={overview.att.total}       icon={ScanLine}    accent={CYAN}  sub="in range" />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard title="Checked In"  value={overview.att.checkedIn} icon={CheckCircle2} accent={GREEN} />
+            <StatCard title="Late"        value={overview.att.late}      icon={Clock}        accent={AMBER} />
+            <StatCard title="Absent"      value={overview.att.absent}    icon={XCircle}      accent={RED}   />
+            <StatCard title="Cancelled"   value={overview.att.cancelled} icon={Ban}          accent={GRAY}  />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ChartCard title="Attendance by Status (range)">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={attStatusBarData} barCategoryGap="40%">
+                  <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                  <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {attStatusBarData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            {pkgPieData.length > 0 && (
+              <ChartCard title="Package Status (range)">
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={pkgPieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
+                      {pkgPieData.map((entry, idx) => <Cell key={idx} fill={entry.fill} opacity={0.9} />)}
+                    </Pie>
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Legend formatter={(value) => <span style={{ color: "#8A9AB0", fontSize: "11px" }}>{value}</span>} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
+          </div>
+
+          {/* Most active classes (range) */}
+          <ChartCard title="Most Active Classes (by bookings, range)">
+            {overview.topClasses.length === 0 ? (
+              <p className="text-center text-sm py-6" style={{ color: "#4E6070" }}>No bookings in this range.</p>
+            ) : (
+              <div className="space-y-2">
+                {overview.topClasses.map(([name, count]) => (
+                  <div key={name} className="flex items-center justify-between text-sm">
+                    <span className="text-white">{name}</span>
+                    <span style={{ color: CYAN }}>{count} booking{count !== 1 ? "s" : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartCard>
+
+          {/* Attendance trend (independent period lens) */}
+          <ChartCard title="Attendance Trend">
+            <div className="flex items-center gap-2 mb-4">
+              {(["daily", "monthly", "yearly"] as const).map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => setAttendancePeriod(opt)}
+                  className="px-3 py-1 rounded-md text-xs font-medium capitalize transition-all"
+                  style={
+                    attendancePeriod === opt
+                      ? { background: `${CYAN}20`, color: CYAN, border: `1px solid ${CYAN}40` }
+                      : { background: "transparent", color: "#8A9AB0", border: "1px solid hsl(203 25% 16%)" }
+                  }
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            {attendanceTrendData.length === 0 ? (
+              <p className="text-center text-sm py-8" style={{ color: "#4E6070" }}>No data for this period.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={attendanceTrendData} barCategoryGap="30%">
+                  <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                  <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </TabsContent>
+
+        {/* ───────────── EXPORT CENTER ───────────── */}
+        <TabsContent value="export" className="space-y-4">
+          {/* Controls */}
+          <div className="rounded-xl border p-4 flex flex-wrap items-end gap-4" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>Report</label>
+              <Select value={entity} onValueChange={handleEntityChange}>
+                <SelectTrigger className="w-[200px] h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ENTITY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>Status</label>
+              <Select value={statusFilter} onValueChange={setStatusFilter} disabled={STATUS_OPTIONS[entity].length <= 1}>
+                <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS[entity].map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex-1" />
+
+            {/* Export buttons — disabled placeholders (Phase 2+) */}
+            <div className="flex items-end gap-2">
+              <Button variant="outline" size="sm" disabled title="Coming soon" className="gap-1.5">
+                <FileText className="h-4 w-4" /> Export PDF
+              </Button>
+              <Button variant="outline" size="sm" disabled title="Coming soon" className="gap-1.5">
+                <FileSpreadsheet className="h-4 w-4" /> Export Excel
+              </Button>
+              <Badge variant="secondary" className="self-center">Coming next</Badge>
+            </div>
+          </div>
+
+          {/* "Export coming soon" note */}
+          <p className="text-xs" style={{ color: "#8A9AB0" }}>
+            Preview uses live data with the date range above. PDF &amp; Excel export will generate exactly what you see here — that work lands in the next phase.
+          </p>
+
+          {/* Preview table */}
+          <div className="rounded-xl border overflow-hidden" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+            <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: CARD_BORDER }}>
+              <span className="text-sm font-semibold text-white">Preview</span>
+              <span className="text-xs" style={{ color: "#8A9AB0" }}>{preview.rows.length} row{preview.rows.length !== 1 ? "s" : ""}</span>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {preview.columns.map((c) => <TableHead key={c}>{c}</TableHead>)}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {previewLoading ? (
+                  <TableRow><TableCell colSpan={preview.columns.length} className="text-center py-8">
+                    <Skeleton className="h-4 w-32 mx-auto" style={{ background: CARD_BORDER }} />
+                  </TableCell></TableRow>
+                ) : preview.rows.length === 0 ? (
+                  <TableRow><TableCell colSpan={preview.columns.length} className="text-center py-8 text-muted-foreground">
+                    No records match the selected range and filters.
+                  </TableCell></TableRow>
+                ) : (
+                  preview.rows.slice(0, 100).map((row, i) => (
+                    <TableRow key={i}>
+                      {row.map((cell, j) => <TableCell key={j}>{cell}</TableCell>)}
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+            {preview.rows.length > 100 && (
+              <div className="px-4 py-2 text-xs border-t" style={{ color: "#8A9AB0", borderColor: CARD_BORDER }}>
+                Showing first 100 of {preview.rows.length}. Export (next phase) will include all rows.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
