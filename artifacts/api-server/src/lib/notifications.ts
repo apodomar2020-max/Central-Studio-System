@@ -8,12 +8,20 @@ type StudentNotificationInput = {
   studentEmail?: string | null;
   title: string;
   body: string;
+  type?: string | null;
+  relatedEntityType?: string | null;
+  relatedEntityId?: number | null;
+  metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
 };
 
 type BroadcastNotificationInput = {
   title: string;
   body: string;
+  type?: string | null;
+  relatedEntityType?: string | null;
+  relatedEntityId?: number | null;
+  metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
 };
 
@@ -43,6 +51,7 @@ async function insertNotification(
   target: string,
   title: string,
   body: string,
+  input: Pick<StudentNotificationInput, "type" | "relatedEntityType" | "relatedEntityId" | "metadata"> = {},
   dedupe = true,
 ) {
   if (dedupe) {
@@ -66,6 +75,10 @@ async function insertNotification(
       title,
       body,
       target,
+      type: input.type ?? null,
+      relatedEntityType: input.relatedEntityType ?? null,
+      relatedEntityId: input.relatedEntityId ?? null,
+      metadata: input.metadata ?? null,
       isDraft: false,
       sentAt: new Date().toISOString(),
     })
@@ -80,12 +93,12 @@ export async function createStudentNotification(
 ) {
   const target = await resolveStudentTarget(client, input.studentId, input.studentEmail);
   if (!target) return null;
-  return insertNotification(client, target, input.title, input.body, input.dedupe ?? true);
+  return insertNotification(client, target, input.title, input.body, input, input.dedupe ?? true);
 }
 
 export async function createBroadcastNotification(
   client: NotificationClient,
   input: BroadcastNotificationInput,
 ) {
-  return insertNotification(client, "all", input.title, input.body, input.dedupe ?? true);
+  return insertNotification(client, "all", input.title, input.body, input, input.dedupe ?? true);
 }

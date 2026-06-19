@@ -36,6 +36,13 @@ async function notifyClassBookings(
       studentEmail: booking.studentEmail,
       title: "Class cancelled",
       body: `${classTitle} was cancelled. Booking #${booking.bookingId}.`,
+      type: "schedule_cancelled",
+      relatedEntityType: "booking",
+      relatedEntityId: booking.bookingId,
+      metadata: {
+        bookingId: booking.bookingId,
+        className: classTitle,
+      },
     });
   }
 }

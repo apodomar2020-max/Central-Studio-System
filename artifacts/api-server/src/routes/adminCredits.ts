@@ -184,6 +184,13 @@ router.post(
           studentEmail: updated.studentEmail,
           title: "Package credits updated",
           body: `Your ${updated.packageName} package credits were updated. New balance: ${updated.remainingCredits}.`,
+          type: newRemaining <= 0 ? "credits_exhausted" : "package_credits_updated",
+          relatedEntityType: "package_order",
+          relatedEntityId: updated.id,
+          metadata: {
+            packageName: updated.packageName,
+            remainingCredits: updated.remainingCredits,
+          },
         });
 
         if (newRemaining <= 0 && order.remainingCredits > 0) {
@@ -191,6 +198,13 @@ router.post(
             studentEmail: updated.studentEmail,
             title: "Package credits used",
             body: `Your ${updated.packageName} package credits have been used.`,
+            type: "credits_exhausted",
+            relatedEntityType: "package_order",
+            relatedEntityId: updated.id,
+            metadata: {
+              packageName: updated.packageName,
+              remainingCredits: updated.remainingCredits,
+            },
           });
         }
 

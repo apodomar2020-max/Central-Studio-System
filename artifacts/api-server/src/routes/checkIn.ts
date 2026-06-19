@@ -312,6 +312,14 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
         studentId: student.id,
         title: "Checked in",
         body: `You have been checked in for booking #${booking.id}.`,
+        type: "attendance_checked_in",
+        relatedEntityType: "booking",
+        relatedEntityId: booking.id,
+        metadata: {
+          bookingId: booking.id,
+          classId: booking.classId,
+          scheduleId: booking.scheduleId,
+        },
       });
 
       if (selectedOrder) {
@@ -319,6 +327,13 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
           studentId: student.id,
           title: "Credit used",
           body: `1 credit was used for booking #${booking.id}.`,
+          type: "credits_exhausted",
+          relatedEntityType: "booking",
+          relatedEntityId: booking.id,
+          metadata: {
+            bookingId: booking.id,
+            remainingCredits,
+          },
         });
 
         if (remainingCredits === 0) {
@@ -326,6 +341,14 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
             studentId: student.id,
             title: "Package credits used",
             body: "Your package credits have been used.",
+            type: "credits_exhausted",
+            relatedEntityType: selectedOrder ? "package_order" : "booking",
+            relatedEntityId: selectedOrder?.id ?? booking.id,
+            metadata: {
+              bookingId: booking.id,
+              packageName: selectedOrder?.packageName,
+              remainingCredits,
+            },
           });
         }
       }

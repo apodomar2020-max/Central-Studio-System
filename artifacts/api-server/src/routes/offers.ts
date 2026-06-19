@@ -32,6 +32,13 @@ router.post("/offers", async (req, res): Promise<void> => {
       await createBroadcastNotification(tx, {
         title: "New offer",
         body: `${inserted.title}${inserted.discountPercent > 0 ? `: ${inserted.discountPercent}% off` : ""}`,
+        type: "offer_published",
+        relatedEntityType: "offer",
+        relatedEntityId: inserted.id,
+        metadata: {
+          amount: inserted.discountPercent,
+          currency: "percent",
+        },
       });
     }
     return inserted;
@@ -73,6 +80,13 @@ router.patch("/offers/:id", async (req, res): Promise<void> => {
       await createBroadcastNotification(tx, {
         title: "New offer",
         body: `${updated.title}${updated.discountPercent > 0 ? `: ${updated.discountPercent}% off` : ""}`,
+        type: "offer_published",
+        relatedEntityType: "offer",
+        relatedEntityId: updated.id,
+        metadata: {
+          amount: updated.discountPercent,
+          currency: "percent",
+        },
       });
     }
     return updated;

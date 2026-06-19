@@ -37,6 +37,13 @@ router.post("/package-orders", async (req, res): Promise<void> => {
       studentEmail: inserted.studentEmail,
       title: "Package request submitted",
       body: `Your package request for ${inserted.packageName} has been submitted.`,
+      type: "package_created",
+      relatedEntityType: "package_order",
+      relatedEntityId: inserted.id,
+      metadata: {
+        packageName: inserted.packageName,
+        remainingCredits: inserted.remainingCredits,
+      },
     });
     return inserted;
   });
@@ -113,6 +120,13 @@ router.patch("/package-orders/:id", async (req, res): Promise<void> => {
           studentEmail: updated.studentEmail,
           title: "Package active",
           body: `Your ${updated.packageName} package is now active.`,
+          type: "package_activated",
+          relatedEntityType: "package_order",
+          relatedEntityId: updated.id,
+          metadata: {
+            packageName: updated.packageName,
+            remainingCredits: updated.remainingCredits,
+          },
         });
       }
 
@@ -144,6 +158,13 @@ router.patch("/package-orders/:id", async (req, res): Promise<void> => {
           studentEmail: updated.studentEmail,
           title: "Package cancelled",
           body: `Your ${updated.packageName} package was cancelled.`,
+          type: "package_cancelled",
+          relatedEntityType: "package_order",
+          relatedEntityId: updated.id,
+          metadata: {
+            packageName: updated.packageName,
+            remainingCredits: updated.remainingCredits,
+          },
         });
       }
 

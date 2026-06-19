@@ -24,7 +24,29 @@ import { isOfflineError } from "@/services/connectivity";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type NotifType = "booking" | "class_reminder" | "package" | "ballet" | "offer" | "system";
+type NotifType =
+  | "booking_created"
+  | "booking_confirmed"
+  | "booking_cancelled"
+  | "booking_rejected"
+  | "payment_paid"
+  | "payment_failed"
+  | "payment_refunded"
+  | "package_created"
+  | "package_activated"
+  | "package_cancelled"
+  | "package_credits_updated"
+  | "credits_exhausted"
+  | "attendance_checked_in"
+  | "offer_published"
+  | "schedule_changed"
+  | "schedule_cancelled"
+  | "booking"
+  | "class_reminder"
+  | "package"
+  | "ballet"
+  | "offer"
+  | "system";
 
 interface DisplayNotif {
   id: string;
@@ -32,15 +54,42 @@ interface DisplayNotif {
   body: string;
   type: NotifType;
   isRead: boolean;
-  createdAt: string;
+  createdAt: string | null;
+  timestamp: number;
+  metadata?: Record<string, unknown> | null;
   /** "local" = generated in-app (AppContext); "api" = admin broadcast */
   source: "local" | "api";
 }
 
+type TypeConfig = {
+  icon: string;
+  color: string;
+  badge: string;
+};
+
+type TypedApiNotification = ApiNotification & {
+  type?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function timeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
+function parseDateValue(value?: string | null): number | null {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function resolveTimestamp(...values: Array<string | null | undefined>): number {
+  for (const value of values) {
+    const parsed = parseDateValue(value);
+    if (parsed != null) return parsed;
+  }
+  return Date.now();
+}
+
+function timeAgo(timestamp: number): string {
+  const diff = Math.max(0, Date.now() - timestamp);
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
@@ -48,12 +97,42 @@ function timeAgo(isoDate: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(isoDate).toLocaleDateString("en-EG", { month: "short", day: "numeric" });
+  return new Date(timestamp).toLocaleDateString("en-EG", { month: "short", day: "numeric" });
+}
+
+function startOfDay(time: number): number {
+  const date = new Date(time);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function timelineGroup(timestamp: number): "today" | "yesterday" | "earlier" {
+  const today = startOfDay(Date.now());
+  const itemDay = startOfDay(timestamp);
+  if (itemDay === today) return "today";
+  if (itemDay === today - 86_400_000) return "yesterday";
+  return "earlier";
 }
 
 /** Best-effort type inference from notification title/body for API broadcasts */
-function inferType(n: ApiNotification): NotifType {
+function inferType(n: Pick<TypedApiNotification, "title" | "body" | "type">): NotifType {
+  if (isKnownType(n.type)) return n.type;
   const text = (n.title + " " + n.body).toLowerCase();
+  if (text.includes("payment") && text.includes("confirm")) return "payment_paid";
+  if (text.includes("payment") && text.includes("refund")) return "payment_refunded";
+  if (text.includes("payment") && text.includes("fail")) return "payment_failed";
+  if (text.includes("cancel")) {
+    if (text.includes("package")) return "package_cancelled";
+    if (text.includes("schedule") || text.includes("class")) return "schedule_cancelled";
+    return "booking_cancelled";
+  }
+  if (text.includes("reject")) return "booking_rejected";
+  if (text.includes("confirm") || text.includes("approved")) return "booking_confirmed";
+  if (text.includes("checked in") || text.includes("attendance")) return "attendance_checked_in";
+  if (text.includes("active") && text.includes("package")) return "package_activated";
+  if (text.includes("used") && text.includes("credit")) return "credits_exhausted";
+  if (text.includes("offer") || text.includes("discount") || text.includes("%")) return "offer_published";
+  if (text.includes("schedule") && text.includes("changed")) return "schedule_changed";
   if (text.includes("book") || text.includes("reserv")) return "booking";
   if (text.includes("class") || text.includes("reminder")) return "class_reminder";
   if (text.includes("package") || text.includes("credit")) return "package";
@@ -62,26 +141,68 @@ function inferType(n: ApiNotification): NotifType {
   return "system";
 }
 
+function isKnownType(value: unknown): value is NotifType {
+  return typeof value === "string" && value in TYPE_CONFIG;
+}
+
+function asMetadata(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function metadataText(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function metadataRows(metadata?: Record<string, unknown> | null): Array<{ label: string; value: string }> {
+  if (!metadata) return [];
+  const rows: Array<{ label: string; value: string }> = [];
+  const className = metadataText(metadata.className);
+  const scheduleLabel = metadataText(metadata.scheduleLabel);
+  const packageName = metadataText(metadata.packageName);
+  const remainingCredits = metadataText(metadata.remainingCredits);
+  const amount = metadataText(metadata.amount);
+  const currency = metadataText(metadata.currency);
+
+  if (className) rows.push({ label: "Class", value: className });
+  if (scheduleLabel) rows.push({ label: "Time", value: scheduleLabel });
+  if (packageName) rows.push({ label: "Package", value: packageName });
+  if (remainingCredits) rows.push({ label: "Credits", value: `${remainingCredits} remaining` });
+  if (amount) rows.push({ label: "Amount", value: currency ? `${amount} ${currency}` : amount });
+
+  return rows;
+}
+
 const READ_KEY = "api_notif_read_ids";
 
 // ─── Icon/colour maps ─────────────────────────────────────────────────────────
 
-const TYPE_ICONS: Record<NotifType, string> = {
-  booking: "calendar",
-  class_reminder: "time",
-  package: "card",
-  ballet: "diamond",
-  offer: "pricetag",
-  system: "information-circle",
-};
-
-const TYPE_COLORS: Record<NotifType, string> = {
-  booking: colors.studio.primary,
-  class_reminder: "#F59E0B",
-  package: "#22C55E",
-  ballet: "#00B6D6",
-  offer: "#EC4899",
-  system: "#6B7280",
+const TYPE_CONFIG: Record<NotifType, TypeConfig> = {
+  booking_created: { icon: "calendar-outline", color: colors.studio.primary, badge: "Booking" },
+  booking_confirmed: { icon: "checkmark-circle", color: "#22C55E", badge: "Confirmed" },
+  booking_cancelled: { icon: "close-circle", color: "#EF4444", badge: "Cancelled" },
+  booking_rejected: { icon: "ban", color: "#EF4444", badge: "Rejected" },
+  payment_paid: { icon: "card", color: "#22C55E", badge: "Paid" },
+  payment_failed: { icon: "alert-circle", color: "#EF4444", badge: "Payment Failed" },
+  payment_refunded: { icon: "return-down-back", color: "#38BDF8", badge: "Refunded" },
+  package_created: { icon: "albums", color: "#38BDF8", badge: "Package" },
+  package_activated: { icon: "ribbon", color: "#10B981", badge: "Package Active" },
+  package_cancelled: { icon: "close-circle", color: "#EF4444", badge: "Package Cancelled" },
+  package_credits_updated: { icon: "swap-horizontal", color: "#F59E0B", badge: "Credits Updated" },
+  credits_exhausted: { icon: "alert-circle", color: "#F59E0B", badge: "Credits Used" },
+  attendance_checked_in: { icon: "log-in", color: colors.studio.primary, badge: "Checked In" },
+  offer_published: { icon: "gift", color: "#A855F7", badge: "Offer" },
+  schedule_changed: { icon: "calendar", color: "#F59E0B", badge: "Schedule Changed" },
+  schedule_cancelled: { icon: "calendar-clear", color: "#EF4444", badge: "Schedule Cancelled" },
+  booking: { icon: "calendar-outline", color: colors.studio.primary, badge: "Booking" },
+  class_reminder: { icon: "time", color: "#F59E0B", badge: "Class" },
+  package: { icon: "card", color: "#22C55E", badge: "Package" },
+  ballet: { icon: "diamond", color: "#00B6D6", badge: "Ballet" },
+  offer: { icon: "pricetag", color: "#EC4899", badge: "Offer" },
+  system: { icon: "information-circle", color: "#6B7280", badge: "Info" },
 };
 
 // ─── NotifItem ────────────────────────────────────────────────────────────────
@@ -93,8 +214,8 @@ function NotifItem({
   notif: DisplayNotif;
   onPress: (n: DisplayNotif) => void;
 }) {
-  const iconName = TYPE_ICONS[notif.type] ?? "notifications";
-  const iconColor = TYPE_COLORS[notif.type] ?? "#9CA3AF";
+  const config = TYPE_CONFIG[notif.type] ?? TYPE_CONFIG.system;
+  const rows = metadataRows(notif.metadata);
 
   return (
     <TouchableOpacity
@@ -103,15 +224,28 @@ function NotifItem({
       onPress={() => onPress(notif)}
     >
       {!notif.isRead && <View style={[styles.unreadDot, { backgroundColor: colors.studio.primary }]} />}
-      <View style={[styles.notifIconWrap, { backgroundColor: iconColor + "20" }]}>
-        <Ionicons name={iconName as any} size={20} color={iconColor} />
+      <View style={[styles.notifIconWrap, { backgroundColor: config.color + "20" }]}>
+        <Ionicons name={config.icon as any} size={21} color={config.color} />
       </View>
       <View style={styles.notifContent}>
         <View style={styles.notifTopRow}>
           <Text style={styles.notifTitle} numberOfLines={1}>{notif.title}</Text>
-          <Text style={styles.notifTime}>{timeAgo(notif.createdAt)}</Text>
+          <Text style={styles.notifTime}>{timeAgo(notif.timestamp)}</Text>
+        </View>
+        <View style={[styles.eventBadge, { backgroundColor: config.color + "18", borderColor: config.color + "45" }]}>
+          <Text style={[styles.eventBadgeText, { color: config.color }]}>{config.badge}</Text>
         </View>
         <Text style={styles.notifBody} numberOfLines={3}>{notif.body}</Text>
+        {rows.length > 0 && (
+          <View style={styles.metadataWrap}>
+            {rows.map((row) => (
+              <View key={`${row.label}-${row.value}`} style={styles.metadataRow}>
+                <Text style={styles.metadataLabel}>{row.label}</Text>
+                <Text style={styles.metadataValue} numberOfLines={1}>{row.value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -124,7 +258,7 @@ export default function NotificationsScreen() {
   const { notifications: localNotifs, markNotificationRead } = useAppContext();
 
   // Per-student + broadcast API notifications (fetched from /api/notifications/my)
-  const [apiNotifs, setApiNotifs] = useState<ApiNotification[]>([]);
+  const [apiNotifs, setApiNotifs] = useState<TypedApiNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefetching, setIsRefetching] = useState(false);
   const [isApiError, setIsApiError] = useState(false);
@@ -134,7 +268,7 @@ export default function NotificationsScreen() {
     if (refreshing) setIsRefetching(true); else setIsLoading(true);
     setIsApiError(false);
     try {
-      const data = await customFetch<ApiNotification[]>("/api/notifications/my");
+      const data = await customFetch<TypedApiNotification[]>("/api/notifications/my");
       setApiNotifs(data);
     } catch (e) {
       setIsApiError(true);
@@ -171,38 +305,59 @@ export default function NotificationsScreen() {
   }, []);
 
   // Build merged, sorted notification list
-  const all: DisplayNotif[] = React.useMemo(() => {
-    const apiItems: DisplayNotif[] = (apiNotifs ?? [])
-      .filter((n) => !n.isDraft)
-      .map((n) => ({
-        id: `api-${n.id}`,
-        title: n.title,
-        body: n.body,
-        type: inferType(n),
-        isRead: apiReadIds.has(`api-${n.id}`),
-        createdAt: n.sentAt ?? n.createdAt,
-        source: "api" as const,
-      }));
+	  const all: DisplayNotif[] = React.useMemo(() => {
+	    const apiItems: DisplayNotif[] = (apiNotifs ?? [])
+	      .filter((n) => !n.isDraft)
+	      .map((n) => {
+	        const timestamp = resolveTimestamp(n.sentAt, n.createdAt);
+	        return {
+	          id: `api-${n.id}`,
+	          title: n.title,
+	          body: n.body,
+	          type: inferType(n),
+	          isRead: apiReadIds.has(`api-${n.id}`),
+	          createdAt: n.sentAt ?? n.createdAt ?? null,
+	          timestamp,
+	          metadata: asMetadata(n.metadata),
+	          source: "api" as const,
+	        };
+	      });
 
-    const localItems: DisplayNotif[] = localNotifs.map((n) => ({
-      id: n.id,
-      title: n.title,
-      body: n.body,
-      type: n.type,
-      isRead: n.isRead,
-      createdAt: n.createdAt,
-      source: "local" as const,
-    }));
+	    const localItems: DisplayNotif[] = localNotifs.map((n) => {
+	      const timestamp = resolveTimestamp(n.createdAt);
+	      return {
+	        id: n.id,
+	        title: n.title,
+	        body: n.body,
+	        type: isKnownType(n.type) ? n.type : "system",
+	        isRead: n.isRead,
+	        createdAt: n.createdAt ?? null,
+	        timestamp,
+	        source: "local" as const,
+	      };
+	    });
 
-    // Merge and sort newest first
-    return [...apiItems, ...localItems].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  }, [apiNotifs, apiReadIds, localNotifs]);
+	    // Merge and sort newest first as a baseline; each group later puts unread
+	    // items before read items while preserving recency.
+	    return [...apiItems, ...localItems].sort(
+	      (a, b) => b.timestamp - a.timestamp
+	    );
+	  }, [apiNotifs, apiReadIds, localNotifs]);
 
-  const unread = all.filter((n) => !n.isRead);
-  const read = all.filter((n) => n.isRead);
-  const unreadCount = unread.length;
+	  const grouped = React.useMemo(() => {
+	    const sortGroup = (items: DisplayNotif[]) => [...items].sort((a, b) => {
+	      if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
+	      return b.timestamp - a.timestamp;
+	    });
+
+	    return {
+	      today: sortGroup(all.filter((n) => timelineGroup(n.timestamp) === "today")),
+	      yesterday: sortGroup(all.filter((n) => timelineGroup(n.timestamp) === "yesterday")),
+	      earlier: sortGroup(all.filter((n) => timelineGroup(n.timestamp) === "earlier")),
+	    };
+	  }, [all]);
+
+	  const unreadCount = all.filter((n) => !n.isRead).length;
 
   const handlePress = useCallback((notif: DisplayNotif) => {
     if (notif.isRead) return;
@@ -263,21 +418,29 @@ export default function NotificationsScreen() {
             </View>
           ) : (
             <>
-              {unread.length > 0 && (
-                <View style={styles.group}>
-                  <Text style={styles.groupLabel}>New</Text>
-                  {unread.map((n) => (
-                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
-                  ))}
-                </View>
-              )}
-              {read.length > 0 && (
-                <View style={styles.group}>
-                  <Text style={styles.groupLabel}>Earlier</Text>
-                  {read.map((n) => (
-                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
-                  ))}
-                </View>
+	              {grouped.today.length > 0 && (
+	                <View style={styles.group}>
+	                  <Text style={styles.groupLabel}>Today</Text>
+	                  {grouped.today.map((n) => (
+	                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
+	                  ))}
+	                </View>
+	              )}
+	              {grouped.yesterday.length > 0 && (
+	                <View style={styles.group}>
+	                  <Text style={styles.groupLabel}>Yesterday</Text>
+	                  {grouped.yesterday.map((n) => (
+	                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
+	                  ))}
+	                </View>
+	              )}
+	              {grouped.earlier.length > 0 && (
+	                <View style={styles.group}>
+	                  <Text style={styles.groupLabel}>Earlier</Text>
+	                  {grouped.earlier.map((n) => (
+	                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
+	                  ))}
+	                </View>
               )}
             </>
           )}
@@ -319,12 +482,50 @@ const styles = StyleSheet.create({
     backgroundColor: "#0E1619", borderRadius: 14, borderWidth: 1,
     borderColor: "#1E2E38", padding: 14,
   },
-  notifCardUnread: { borderColor: colors.studio.primary + "40", backgroundColor: "#001820" },
+  notifCardUnread: { borderColor: colors.studio.primary + "55", backgroundColor: "#001820" },
   unreadDot: { width: 7, height: 7, borderRadius: 3.5, position: "absolute", top: 14, left: 8 },
-  notifIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  notifContent: { flex: 1, gap: 4 },
+  notifIconWrap: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  notifContent: { flex: 1, gap: 6, minWidth: 0 },
   notifTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
   notifTitle: { flex: 1, fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
   notifTime: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280", flexShrink: 0 },
   notifBody: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 18 },
+  eventBadge: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  eventBadgeText: {
+    fontSize: 10,
+    fontFamily: "Inter_700Bold",
+    textTransform: "uppercase",
+  },
+  metadataWrap: {
+    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: "#1E2E38",
+    paddingTop: 8,
+    gap: 5,
+  },
+  metadataRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  metadataLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    color: "#6B7280",
+    textTransform: "uppercase",
+  },
+  metadataValue: {
+    flex: 1,
+    textAlign: "right",
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: "#D1D5DB",
+  },
 });

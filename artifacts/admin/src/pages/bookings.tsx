@@ -6,7 +6,6 @@ import {
   useListBookings,
   useCreateBooking,
   useUpdateBooking,
-  useDeleteBooking,
   getListBookingsQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Trash2, Edit, X } from "lucide-react";
+import { Check, Edit, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 
@@ -107,7 +106,6 @@ export default function Bookings() {
   const { data: bookings, isLoading } = useListBookings();
   const createBooking = useCreateBooking();
   const updateBooking = useUpdateBooking();
-  const deleteBooking = useDeleteBooking();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
@@ -147,12 +145,6 @@ export default function Bookings() {
       updateBooking.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
     } else {
       createBooking.mutate({ data: parsed }, { onSuccess: invalidate });
-    }
-  };
-
-  const handleDelete = (id: number) => {
-    if (confirm("Delete this booking?")) {
-      deleteBooking.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() }) });
     }
   };
 
@@ -292,9 +284,6 @@ export default function Bookings() {
                     )}
                     <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)}>
                       <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" data-testid={`button-delete-booking-${booking.id}`} onClick={() => handleDelete(booking.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </TableCell>
                 </TableRow>

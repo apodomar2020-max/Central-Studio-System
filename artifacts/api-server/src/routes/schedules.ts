@@ -118,6 +118,14 @@ async function notifyScheduleBookings(
       studentEmail: booking.studentEmail,
       title,
       body: `${body} Booking #${booking.bookingId}.`,
+      type: title.toLowerCase().includes("cancel") ? "schedule_cancelled" : "schedule_changed",
+      relatedEntityType: "booking",
+      relatedEntityId: booking.bookingId,
+      metadata: {
+        bookingId: booking.bookingId,
+        scheduleId,
+        scheduleLabel: body,
+      },
     });
   }
 }

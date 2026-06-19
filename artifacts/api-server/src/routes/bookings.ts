@@ -43,6 +43,14 @@ type BookingStatus = (typeof BOOKING_STATUSES)[number];
 type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 type PaymentMode = (typeof PAYMENT_MODES)[number];
 type BookingWrite = Partial<typeof bookingsTable.$inferInsert>;
+type NotificationPayload = {
+  title: string;
+  body: string;
+  type: string;
+  relatedEntityType: string;
+  relatedEntityId: number;
+  metadata: Record<string, unknown>;
+};
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -121,11 +129,24 @@ function normalizeBookingWrite(data: BookingWrite, existing?: typeof bookingsTab
   };
 }
 
-function bookingCreatedNotification(row: typeof bookingsTable.$inferSelect): { title: string; body: string } {
+function bookingMetadata(row: typeof bookingsTable.$inferSelect): Record<string, unknown> {
+  return {
+    bookingId: row.id,
+    classId: row.classId,
+    scheduleId: row.scheduleId,
+    paymentMode: row.paymentMode,
+  };
+}
+
+function bookingCreatedNotification(row: typeof bookingsTable.$inferSelect): NotificationPayload {
   if (row.bookingStatus === "pending") {
     return {
       title: "Booking request submitted",
       body: `Your booking request #${row.id} has been submitted.`,
+      type: "booking_created",
+      relatedEntityType: "booking",
+      relatedEntityId: row.id,
+      metadata: bookingMetadata(row),
     };
   }
 
@@ -134,23 +155,32 @@ function bookingCreatedNotification(row: typeof bookingsTable.$inferSelect): { t
     body: row.paymentMode === "package_credit"
       ? `Your booking #${row.id} has been confirmed. Credit will be deducted at check-in.`
       : `Your booking #${row.id} has been confirmed.`,
+    type: "booking_confirmed",
+    relatedEntityType: "booking",
+    relatedEntityId: row.id,
+    metadata: bookingMetadata(row),
   };
 }
 
 function bookingStatusNotification(
   row: typeof bookingsTable.$inferSelect,
   status: string,
-): { title: string; body: string } | null {
+): NotificationPayload | null {
+  const base = {
+    relatedEntityType: "booking",
+    relatedEntityId: row.id,
+    metadata: bookingMetadata(row),
+  };
   switch (status) {
     case "confirmed":
-      return { title: "Booking confirmed", body: `Your booking #${row.id} has been confirmed.` };
+      return { ...base, type: "booking_confirmed", title: "Booking confirmed", body: `Your booking #${row.id} has been confirmed.` };
     case "rejected":
-      return { title: "Booking rejected", body: `Your booking request #${row.id} was rejected.` };
+      return { ...base, type: "booking_rejected", title: "Booking rejected", body: `Your booking request #${row.id} was rejected.` };
     case "cancelled":
-      return { title: "Booking cancelled", body: `Your booking #${row.id} was cancelled.` };
+      return { ...base, type: "booking_cancelled", title: "Booking cancelled", body: `Your booking #${row.id} was cancelled.` };
     case "attended":
     case "completed":
-      return { title: "Attendance confirmed", body: `Attendance has been confirmed for booking #${row.id}.` };
+      return { ...base, type: "attendance_checked_in", title: "Attendance confirmed", body: `Attendance has been confirmed for booking #${row.id}.` };
     default:
       return null;
   }
@@ -159,14 +189,19 @@ function bookingStatusNotification(
 function paymentStatusNotification(
   row: typeof bookingsTable.$inferSelect,
   status: string,
-): { title: string; body: string } | null {
+): NotificationPayload | null {
+  const base = {
+    relatedEntityType: "booking",
+    relatedEntityId: row.id,
+    metadata: bookingMetadata(row),
+  };
   switch (status) {
     case "paid":
-      return { title: "Payment confirmed", body: `Your payment for booking #${row.id} has been confirmed.` };
+      return { ...base, type: "payment_paid", title: "Payment confirmed", body: `Your payment for booking #${row.id} has been confirmed.` };
     case "refunded":
-      return { title: "Payment refunded", body: `Your payment for booking #${row.id} has been refunded.` };
+      return { ...base, type: "payment_refunded", title: "Payment refunded", body: `Your payment for booking #${row.id} has been refunded.` };
     case "failed":
-      return { title: "Payment failed", body: `Your payment for booking #${row.id} failed.` };
+      return { ...base, type: "payment_failed", title: "Payment failed", body: `Your payment for booking #${row.id} failed.` };
     default:
       return null;
   }

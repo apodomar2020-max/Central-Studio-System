@@ -438,6 +438,14 @@ export interface Notification {
   body: string;
   target: string;
   /** @nullable */
+  type?: string | null;
+  /** @nullable */
+  relatedEntityType?: string | null;
+  /** @nullable */
+  relatedEntityId?: number | null;
+  /** @nullable */
+  metadata?: Record<string, unknown> | null;
+  /** @nullable */
   sentAt?: string | null;
   isDraft: boolean;
   createdAt: string;
@@ -447,6 +455,14 @@ export interface CreateNotificationBody {
   title: string;
   body: string;
   target: string;
+  /** @nullable */
+  type?: string | null;
+  /** @nullable */
+  relatedEntityType?: string | null;
+  /** @nullable */
+  relatedEntityId?: number | null;
+  /** @nullable */
+  metadata?: Record<string, unknown> | null;
   isDraft?: boolean;
 }
 
@@ -454,6 +470,14 @@ export interface UpdateNotificationBody {
   title?: string;
   body?: string;
   target?: string;
+  /** @nullable */
+  type?: string | null;
+  /** @nullable */
+  relatedEntityType?: string | null;
+  /** @nullable */
+  relatedEntityId?: number | null;
+  /** @nullable */
+  metadata?: Record<string, unknown> | null;
   /** @nullable */
   sentAt?: string | null;
   isDraft?: boolean;

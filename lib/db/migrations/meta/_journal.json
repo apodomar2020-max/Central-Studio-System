@@ -177,5 +177,13 @@
       "tag": "0021_profile_completion",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1782561600000,
+      "tag": "0022_typed_notifications",
+      "breakpoints": true
+    }
   ]
 }

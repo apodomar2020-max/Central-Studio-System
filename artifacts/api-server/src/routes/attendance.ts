@@ -235,6 +235,15 @@ router.post("/attendance", async (req, res): Promise<void> => {
         studentEmail,
         title: "Checked in",
         body: `You have been checked in${classTitle ? ` for ${classTitle}` : ""}.`,
+        type: "attendance_checked_in",
+        relatedEntityType: "attendance",
+        relatedEntityId: inserted.id,
+        metadata: {
+          bookingId,
+          className: classTitle,
+          classId,
+          scheduleId,
+        },
       });
 
       if (creditDeducted && packageOrderId != null) {
@@ -243,6 +252,15 @@ router.post("/attendance", async (req, res): Promise<void> => {
           studentEmail,
           title: "Credit used",
           body: `1 credit was used${classTitle ? ` for ${classTitle}` : ""}.`,
+          type: "credits_exhausted",
+          relatedEntityType: "attendance",
+          relatedEntityId: inserted.id,
+          metadata: {
+            bookingId,
+            className: classTitle,
+            packageOrderId,
+            remainingCredits: remainingCreditsAfterDeduction,
+          },
         });
 
         if (remainingCreditsAfterDeduction === 0) {
@@ -251,6 +269,15 @@ router.post("/attendance", async (req, res): Promise<void> => {
             studentEmail,
             title: "Package credits used",
             body: "Your package credits have been used.",
+            type: "credits_exhausted",
+            relatedEntityType: "package_order",
+            relatedEntityId: packageOrderId,
+            metadata: {
+              bookingId,
+              className: classTitle,
+              packageOrderId,
+              remainingCredits: remainingCreditsAfterDeduction,
+            },
           });
         }
       }
