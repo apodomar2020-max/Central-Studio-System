@@ -1,13 +1,5 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  useGetAttendanceStats,
-  useListPackageOrders,
-  useListAttendance,
-  useListBookings,
-  useListStudents,
-} from "@workspace/api-client-react";
-import type { PackageOrder, Attendance, Booking, Student } from "@workspace/api-client-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,14 +19,15 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
-  Ban,
   ShoppingBag,
+  Package,
   BarChart3,
   FileSpreadsheet,
   FileText,
   CalendarRange,
   AlertCircle,
   Loader2,
+  TrendingUp,
 } from "lucide-react";
 import {
   BarChart,
@@ -85,6 +78,67 @@ interface ReportResponse {
   rows: Record<string, unknown>[];
   summary: Record<string, number | string>;
   filters: { from?: string; to?: string; status?: string; entity: string };
+}
+
+interface ChartPoint {
+  name: string;
+  count: number;
+}
+interface ClassPerformanceRow {
+  classId: number;
+  className: string;
+  instructor: string;
+  totalBookings: number;
+  totalAttendance: number;
+  attendanceRate: number;
+  noShowCount: number;
+  cancellationCount: number;
+}
+interface AnalyticsResponse {
+  filters: { from: string; to: string; bucket: "day" | "week" | "month" };
+  executive: {
+    totalBookings: number;
+    confirmedBookings: number;
+    attendedClasses: number;
+    newStudents: number;
+    newParents: number;
+    balletApplications: number;
+    packageOrders: number;
+  };
+  classPerformance: {
+    rows: ClassPerformanceRow[];
+    top: ClassPerformanceRow[];
+    lowest: ClassPerformanceRow[];
+    minimumLowestSampleSize: number;
+  };
+  attendance: {
+    trend: ChartPoint[];
+    breakdown: ChartPoint[];
+  };
+  bookings: {
+    trend: ChartPoint[];
+    statusDistribution: ChartPoint[];
+  };
+  growth: {
+    newStudents: { current: number; previous: number; changePct: number | null };
+    newParents: { current: number; previous: number; changePct: number | null };
+    trend: ChartPoint[];
+  };
+  packages: {
+    orders: number;
+    creditsIssued: number;
+    creditsUsed: number;
+    creditsRemaining: number;
+    usageRate: number;
+    trend: ChartPoint[];
+  };
+  ballet: {
+    submitted: number;
+    approved: number;
+    pending: number;
+    rejected: number;
+    activeBalletStudents: number;
+  };
 }
 
 // ─── Date range ─────────────────────────────────────────────────────────────
@@ -162,6 +216,28 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
     </div>
   );
 }
+function EmptyState({ message }: { message: string }) {
+  return <p className="text-center text-sm py-8" style={{ color: "#4E6070" }}>{message}</p>;
+}
+function SectionHeader({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-white">{title}</h2>
+      {sub && <p className="text-sm mt-1" style={{ color: "#8A9AB0" }}>{sub}</p>}
+    </div>
+  );
+}
+function formatPercent(value: number): string {
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
+}
+function formatChange(value: number | null): string {
+  if (value == null) return "new";
+  if (value === 0) return "0%";
+  return `${value > 0 ? "+" : ""}${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
+}
+function chartHasData(data: ChartPoint[]): boolean {
+  return data.some((d) => d.count > 0);
+}
 
 // ─── Export Center entity config ───────────────────────────────────────────────
 type Entity = "bookings" | "users" | "parents" | "ballet" | "attendance";
@@ -218,32 +294,12 @@ export default function ReportsPage() {
   const [preset, setPreset] = useState<Preset>("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [attendancePeriod, setAttendancePeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
 
   const [entity, setEntity] = useState<Entity>("bookings");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // ── Data for Overview analytics (existing list APIs, client-side) ───────────
-  const { data: rawBookings = [] } = useListBookings();
-  const { data: rawStudents = [] } = useListStudents();
-  const { data: rawAttendance = [] } = useListAttendance();
-  const { data: rawOrders = [] } = useListPackageOrders();
-  const { data: attendanceStats } = useGetAttendanceStats({ period: attendancePeriod });
-
-  const bookings = rawBookings as Booking[];
-  const students = rawStudents as Student[];
-  const attendance = rawAttendance as Attendance[];
-  const orders = rawOrders as PackageOrder[];
-
   // ── Date range (shared by Overview + Export Center) ─────────────────────────
   const range = useMemo(() => computeRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
-  const inRange = useMemo(() => {
-    return (s?: string | null): boolean => {
-      if (!s) return false;
-      const d = new Date(s);
-      return !Number.isNaN(d.getTime()) && d >= range.from && d <= range.to;
-    };
-  }, [range]);
 
   // YYYY-MM-DD params for the backend (presets → derived; custom → as typed).
   const { fromParam, toParam } = useMemo(() => {
@@ -251,50 +307,33 @@ export default function ReportsPage() {
     return { fromParam: ymd(range.from), toParam: ymd(range.to) };
   }, [preset, customFrom, customTo, range]);
 
-  // ── Overview: date-ranged metrics (NOT the Dashboard KPI cards) ─────────────
-  const overview = useMemo(() => {
-    const newUsers = students.filter((s) => inRange(s.joinedAt)).length;
-    const newParents = students.filter((s) => s.accountType === "parent" && inRange(s.joinedAt)).length;
-    const bookingsInRange = bookings.filter((b) => inRange(b.bookedAt ?? b.createdAt));
-    const attInRange = attendance.filter((a) => inRange(a.checkedInAt ?? a.createdAt));
-
-    const att = {
-      total: attInRange.length,
-      checkedIn: attInRange.filter((a) => !a.status || a.status === "checked_in").length,
-      late: attInRange.filter((a) => a.status === "late").length,
-      absent: attInRange.filter((a) => a.status === "absent").length,
-      cancelled: attInRange.filter((a) => a.status === "cancelled").length,
-    };
-
-    const byClass = new Map<string, number>();
-    for (const b of bookingsInRange) {
-      const name = b.classTitle ?? b.displayTitle ?? "Unlabelled";
-      byClass.set(name, (byClass.get(name) ?? 0) + 1);
-    }
-    const topClasses = Array.from(byClass.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-    return { newUsers, newParents, bookingsInRange: bookingsInRange.length, att, topClasses };
-  }, [students, bookings, attendance, inRange]);
-
-  const attStatusBarData = [
-    { name: "Checked In", count: overview.att.checkedIn, fill: GREEN },
-    { name: "Late",        count: overview.att.late,      fill: AMBER },
-    { name: "Absent",      count: overview.att.absent,    fill: RED   },
-    { name: "Cancelled",   count: overview.att.cancelled, fill: GRAY  },
-  ];
-  const attendanceTrendData = (attendanceStats?.data ?? []).map((d) => ({ name: d.label, count: d.count }));
-
-  const pkgPieData = useMemo(() => {
-    const inR = orders.filter((o) => inRange(o.createdAt));
-    const by = (st: string) => inR.filter((o) => o.status === st).length;
-    return [
-      { name: "Active",     value: by("active"),         fill: GREEN },
-      { name: "Pending",    value: by("pendingPayment"), fill: AMBER },
-      { name: "Fully Used", value: by("fullyUsed"),      fill: CYAN  },
-      { name: "Expired",    value: by("expired"),        fill: RED   },
-      { name: "Cancelled",  value: by("cancelled"),      fill: GRAY  },
-    ].filter((d) => d.value > 0);
-  }, [orders, inRange]);
+  // ── Overview analytics: centralized backend report data ─────────────────────
+  const analyticsQuery = useQuery<AnalyticsResponse>({
+    queryKey: ["report-analytics", fromParam, toParam],
+    enabled: tab === "overview",
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (fromParam) params.set("from", fromParam);
+      if (toParam) params.set("to", toParam);
+      const res = await fetch(`${API_BASE}/api/reports/analytics?${params.toString()}`, {
+        headers: adminHeaders(token),
+      });
+      if (!res.ok) {
+        const e = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(e?.error ?? "Failed to load analytics");
+      }
+      return res.json();
+    },
+  });
+  const analytics = analyticsQuery.data;
+  const attendanceBreakdownData = analytics?.attendance.breakdown.map((d) => ({
+    ...d,
+    fill: d.name === "Checked In" ? GREEN : d.name === "Late" ? AMBER : d.name === "Absent" ? RED : GRAY,
+  })) ?? [];
+  const bookingStatusData = analytics?.bookings.statusDistribution.map((d) => ({
+    ...d,
+    fill: d.name === "Confirmed" || d.name === "Completed" ? GREEN : d.name === "Pending" ? AMBER : d.name === "Refunded" ? CYAN : RED,
+  })) ?? [];
 
   // ── Export Center: backend report endpoint (admin-only) ─────────────────────
   const reportQuery = useQuery<ReportResponse>({
@@ -319,12 +358,12 @@ export default function ReportsPage() {
   const report = reportQuery.data;
   const summaryEntries = report ? Object.entries(report.summary) : [];
 
-  // ── Excel export: same endpoint/filters as the preview, with format=xlsx ─────
-  const [isExporting, setIsExporting] = useState(false);
+  // ── Exports: same endpoint/filters as the preview, with format=xlsx|pdf ──────
+  const [exportingFormat, setExportingFormat] = useState<"xlsx" | "pdf" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  async function handleExportExcel() {
-    setIsExporting(true);
+  async function handleExport(format: "xlsx" | "pdf") {
+    setExportingFormat(format);
     setExportError(null);
     try {
       const params = new URLSearchParams();
@@ -332,7 +371,7 @@ export default function ReportsPage() {
       if (toParam) params.set("to", toParam);
       if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
       params.set("limit", "1000");
-      params.set("format", "xlsx");
+      params.set("format", format);
       const res = await fetch(`${API_BASE}/api/reports/${entity}?${params.toString()}`, {
         headers: adminHeaders(token),
       });
@@ -344,7 +383,7 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${entity}-report-${ymd(new Date())}.xlsx`;
+      a.download = `${entity}-report-${ymd(new Date())}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -352,7 +391,7 @@ export default function ReportsPage() {
     } catch (err) {
       setExportError((err as Error)?.message ?? "Export failed.");
     } finally {
-      setIsExporting(false);
+      setExportingFormat(null);
     }
   }
 
@@ -424,94 +463,249 @@ export default function ReportsPage() {
 
         {/* ───────────── OVERVIEW ───────────── */}
         <TabsContent value="overview" className="space-y-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="New Users"   value={overview.newUsers}        icon={UserPlus}    accent={CYAN}  sub="in range" />
-            <StatCard title="New Parents" value={overview.newParents}      icon={Users}       accent={GREEN} sub="in range" />
-            <StatCard title="Bookings"    value={overview.bookingsInRange} icon={ShoppingBag} accent={AMBER} sub="in range" />
-            <StatCard title="Check-Ins"   value={overview.att.total}       icon={ScanLine}    accent={CYAN}  sub="in range" />
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="Checked In" value={overview.att.checkedIn} icon={CheckCircle2} accent={GREEN} />
-            <StatCard title="Late"       value={overview.att.late}      icon={Clock}        accent={AMBER} />
-            <StatCard title="Absent"     value={overview.att.absent}    icon={XCircle}      accent={RED}   />
-            <StatCard title="Cancelled"  value={overview.att.cancelled} icon={Ban}          accent={GRAY}  />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ChartCard title="Attendance by Status (range)">
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={attStatusBarData} barCategoryGap="40%">
-                  <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
-                  <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {attStatusBarData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {pkgPieData.length > 0 && (
-              <ChartCard title="Package Status (range)">
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie data={pkgPieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
-                      {pkgPieData.map((entry, idx) => <Cell key={idx} fill={entry.fill} opacity={0.9} />)}
-                    </Pie>
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
-                    <Legend formatter={(value) => <span style={{ color: "#8A9AB0", fontSize: "11px" }}>{value}</span>} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </ChartCard>
-            )}
-          </div>
-
-          <ChartCard title="Most Active Classes (by bookings, range)">
-            {overview.topClasses.length === 0 ? (
-              <p className="text-center text-sm py-6" style={{ color: "#4E6070" }}>No bookings in this range.</p>
-            ) : (
-              <div className="space-y-2">
-                {overview.topClasses.map(([name, count]) => (
-                  <div key={name} className="flex items-center justify-between text-sm">
-                    <span className="text-white">{name}</span>
-                    <span style={{ color: CYAN }}>{count} booking{count !== 1 ? "s" : ""}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartCard>
-
-          <ChartCard title="Attendance Trend">
-            <div className="flex items-center gap-2 mb-4">
-              {(["daily", "monthly", "yearly"] as const).map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => setAttendancePeriod(opt)}
-                  className="px-3 py-1 rounded-md text-xs font-medium capitalize transition-all"
-                  style={
-                    attendancePeriod === opt
-                      ? { background: `${CYAN}20`, color: CYAN, border: `1px solid ${CYAN}40` }
-                      : { background: "transparent", color: "#8A9AB0", border: "1px solid hsl(203 25% 16%)" }
-                  }
-                >
-                  {opt}
-                </button>
-              ))}
+          {analyticsQuery.isLoading ? (
+            <div className="rounded-xl border p-8 text-center text-sm" style={{ background: CARD_BG, borderColor: CARD_BORDER, color: "#8A9AB0" }}>
+              Loading analytics...
             </div>
-            {attendanceTrendData.length === 0 ? (
-              <p className="text-center text-sm py-8" style={{ color: "#4E6070" }}>No data for this period.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={attendanceTrendData} barCategoryGap="30%">
-                  <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
-                  <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-                  <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </ChartCard>
+          ) : analyticsQuery.isError ? (
+            <div className="flex items-center justify-center gap-2 rounded-xl border p-8 text-sm" style={{ background: CARD_BG, borderColor: CARD_BORDER, color: RED }}>
+              <AlertCircle className="h-4 w-4" />
+              {(analyticsQuery.error as Error)?.message ?? "Failed to load analytics."}
+            </div>
+          ) : analytics ? (
+            <>
+              <section className="space-y-4">
+                <SectionHeader title="Executive Summary" sub="Date-ranged business signals, separate from live Dashboard operations." />
+                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
+                  <StatCard title="Total Bookings" value={analytics.executive.totalBookings} icon={ShoppingBag} accent={CYAN} />
+                  <StatCard title="Confirmed" value={analytics.executive.confirmedBookings} icon={CheckCircle2} accent={GREEN} />
+                  <StatCard title="Attended" value={analytics.executive.attendedClasses} icon={ScanLine} accent={CYAN} />
+                  <StatCard title="New Students" value={analytics.executive.newStudents} icon={UserPlus} accent={AMBER} />
+                  <StatCard title="New Parents" value={analytics.executive.newParents} icon={Users} accent={GREEN} />
+                  <StatCard title="Ballet Apps" value={analytics.executive.balletApplications} icon={BarChart3} accent={RED} />
+                  <StatCard title="Package Orders" value={analytics.executive.packageOrders} icon={Package} accent={CYAN} />
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <SectionHeader title="Class Performance" sub="Attendance rate is attended bookings divided by total bookings." />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <ChartCard title="Top Performing Classes">
+                    {analytics.classPerformance.top.length === 0 ? (
+                      <EmptyState message="No class bookings in this range." />
+                    ) : (
+                      <div className="space-y-3">
+                        {analytics.classPerformance.top.map((row) => (
+                          <div key={`top-${row.classId}-${row.className}`} className="rounded-lg border px-3 py-2" style={{ borderColor: CARD_BORDER }}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-white">{row.className}</p>
+                                <p className="text-xs" style={{ color: "#8A9AB0" }}>{row.instructor}</p>
+                              </div>
+                              <span className="text-sm font-semibold" style={{ color: GREEN }}>{formatPercent(row.attendanceRate)}</span>
+                            </div>
+                            <p className="text-xs mt-1" style={{ color: "#8A9AB0" }}>
+                              {row.totalAttendance} attended / {row.totalBookings} bookings
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ChartCard>
+
+                  <ChartCard title="Lowest Performing Classes">
+                    {analytics.classPerformance.lowest.length === 0 ? (
+                      <EmptyState message={`No classes with ${analytics.classPerformance.minimumLowestSampleSize}+ bookings in this range.`} />
+                    ) : (
+                      <div className="space-y-3">
+                        {analytics.classPerformance.lowest.map((row) => (
+                          <div key={`low-${row.classId}-${row.className}`} className="rounded-lg border px-3 py-2" style={{ borderColor: CARD_BORDER }}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-white">{row.className}</p>
+                                <p className="text-xs" style={{ color: "#8A9AB0" }}>{row.instructor}</p>
+                              </div>
+                              <span className="text-sm font-semibold" style={{ color: AMBER }}>{formatPercent(row.attendanceRate)}</span>
+                            </div>
+                            <p className="text-xs mt-1" style={{ color: "#8A9AB0" }}>
+                              {row.noShowCount} no-show / {row.cancellationCount} cancelled
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ChartCard>
+                </div>
+
+                <div className="rounded-xl border overflow-hidden" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Class</TableHead>
+                        <TableHead>Instructor</TableHead>
+                        <TableHead>Total Bookings</TableHead>
+                        <TableHead>Total Attendance</TableHead>
+                        <TableHead>Attendance Rate</TableHead>
+                        <TableHead>No Shows</TableHead>
+                        <TableHead>Cancelled</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {analytics.classPerformance.rows.length === 0 ? (
+                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No class performance data for this range.</TableCell></TableRow>
+                      ) : (
+                        analytics.classPerformance.rows.slice(0, 12).map((row) => (
+                          <TableRow key={`class-${row.classId}-${row.className}`}>
+                            <TableCell className="font-medium text-white">{row.className}</TableCell>
+                            <TableCell>{row.instructor}</TableCell>
+                            <TableCell>{row.totalBookings}</TableCell>
+                            <TableCell>{row.totalAttendance}</TableCell>
+                            <TableCell>{formatPercent(row.attendanceRate)}</TableCell>
+                            <TableCell>{row.noShowCount}</TableCell>
+                            <TableCell>{row.cancellationCount}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <SectionHeader title="Attendance Analytics" />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <ChartCard title={`Attendance Trend (${analytics.filters.bucket})`}>
+                    {!chartHasData(analytics.attendance.trend) ? (
+                      <EmptyState message="No attendance data for this range." />
+                    ) : (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={analytics.attendance.trend} barCategoryGap="30%">
+                          <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                          <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                          <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </ChartCard>
+
+                  <ChartCard title="Attendance Breakdown">
+                    {!chartHasData(attendanceBreakdownData) ? (
+                      <EmptyState message="No attendance statuses in this range." />
+                    ) : (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={attendanceBreakdownData} barCategoryGap="40%">
+                          <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                          <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                            {attendanceBreakdownData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </ChartCard>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <SectionHeader title="Booking Analytics" />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <ChartCard title={`Bookings Over Time (${analytics.filters.bucket})`}>
+                    {!chartHasData(analytics.bookings.trend) ? (
+                      <EmptyState message="No bookings in this range." />
+                    ) : (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={analytics.bookings.trend} barCategoryGap="30%">
+                          <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                          <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                          <Bar dataKey="count" fill={AMBER} radius={[4, 4, 0, 0]} opacity={0.85} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </ChartCard>
+
+                  <ChartCard title="Booking Status Distribution">
+                    {!chartHasData(bookingStatusData) ? (
+                      <EmptyState message="No booking statuses in this range." />
+                    ) : (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie data={bookingStatusData.filter((d) => d.count > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={82} paddingAngle={3} dataKey="count">
+                            {bookingStatusData.filter((d) => d.count > 0).map((entry, idx) => <Cell key={idx} fill={entry.fill} opacity={0.9} />)}
+                          </Pie>
+                          <Tooltip contentStyle={TOOLTIP_STYLE} />
+                          <Legend formatter={(value) => <span style={{ color: "#8A9AB0", fontSize: "11px" }}>{value}</span>} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
+                  </ChartCard>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <SectionHeader title="User Growth" sub="Current period compared with the immediately preceding period." />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <StatCard title="New Students" value={analytics.growth.newStudents.current} icon={UserPlus} accent={CYAN} sub={formatChange(analytics.growth.newStudents.changePct)} />
+                  <StatCard title="New Parents" value={analytics.growth.newParents.current} icon={Users} accent={GREEN} sub={formatChange(analytics.growth.newParents.changePct)} />
+                  <StatCard title="Previous Period Users" value={analytics.growth.newStudents.previous + analytics.growth.newParents.previous} icon={TrendingUp} accent={AMBER} />
+                </div>
+                <ChartCard title={`User Growth Trend (${analytics.filters.bucket})`}>
+                  {!chartHasData(analytics.growth.trend) ? (
+                    <EmptyState message="No new users in this range." />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={analytics.growth.trend} barCategoryGap="30%">
+                        <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                        <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                        <Bar dataKey="count" fill={GREEN} radius={[4, 4, 0, 0]} opacity={0.85} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </ChartCard>
+              </section>
+
+              <section className="space-y-4">
+                <SectionHeader title="Package Analytics" />
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <StatCard title="Package Orders" value={analytics.packages.orders} icon={Package} accent={CYAN} />
+                  <StatCard title="Credits Issued" value={analytics.packages.creditsIssued} icon={CheckCircle2} accent={GREEN} />
+                  <StatCard title="Credits Used" value={analytics.packages.creditsUsed} icon={ScanLine} accent={AMBER} />
+                  <StatCard title="Remaining" value={analytics.packages.creditsRemaining} icon={Clock} accent={CYAN} />
+                  <StatCard title="Usage Rate" value={formatPercent(analytics.packages.usageRate)} icon={TrendingUp} accent={GREEN} />
+                </div>
+                <ChartCard title={`Package Orders Trend (${analytics.filters.bucket})`}>
+                  {!chartHasData(analytics.packages.trend) ? (
+                    <EmptyState message="No package orders in this range." />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={analytics.packages.trend} barCategoryGap="30%">
+                        <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                        <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                        <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </ChartCard>
+              </section>
+
+              <section className="space-y-4">
+                <SectionHeader title="Ballet Analytics" sub="Focused application status snapshot only." />
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <StatCard title="Submitted" value={analytics.ballet.submitted} icon={FileText} accent={CYAN} />
+                  <StatCard title="Approved" value={analytics.ballet.approved} icon={CheckCircle2} accent={GREEN} />
+                  <StatCard title="Pending" value={analytics.ballet.pending} icon={Clock} accent={AMBER} />
+                  <StatCard title="Rejected" value={analytics.ballet.rejected} icon={XCircle} accent={RED} />
+                  <StatCard title="Active Ballet" value={analytics.ballet.activeBalletStudents} icon={Users} accent={GREEN} />
+                </div>
+              </section>
+            </>
+          ) : (
+            <EmptyState message="No analytics available." />
+          )}
         </TabsContent>
 
         {/* ───────────── EXPORT CENTER ───────────── */}
@@ -540,21 +734,29 @@ export default function ReportsPage() {
 
             <div className="flex-1" />
 
-            {/* Export buttons — Excel live (Phase 3); PDF still pending (Phase 4) */}
+            {/* Export buttons — Excel (Phase 3) + professional PDF (Phase 4) */}
             <div className="flex items-end gap-2">
-              <Button variant="outline" size="sm" disabled title="Coming soon" className="gap-1.5">
-                <FileText className="h-4 w-4" /> Export PDF
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => handleExport("pdf")}
+                disabled={exportingFormat !== null || reportQuery.isLoading || !report}
+                title={!report ? "Load a preview first" : "Download .pdf"}
+              >
+                {exportingFormat === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 className="gap-1.5"
-                onClick={handleExportExcel}
-                disabled={isExporting || reportQuery.isLoading || !report}
+                onClick={() => handleExport("xlsx")}
+                disabled={exportingFormat !== null || reportQuery.isLoading || !report}
                 title={!report ? "Load a preview first" : "Download .xlsx"}
               >
-                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                {isExporting ? "Exporting…" : "Export Excel"}
+                {exportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                {exportingFormat === "xlsx" ? "Exporting…" : "Export Excel"}
               </Button>
             </div>
           </div>
@@ -567,7 +769,7 @@ export default function ReportsPage() {
           )}
 
           <p className="text-xs" style={{ color: "#8A9AB0" }}>
-            Preview &amp; Excel export are served by the secure admin reports API with the date range &amp; status above — the .xlsx matches exactly what you see here. PDF export lands in the next phase.
+            Preview, Excel &amp; PDF exports are all served by the secure admin reports API with the date range &amp; status above — every format matches exactly what you see here.
           </p>
 
           {/* Summary cards from backend summary */}
@@ -621,7 +823,7 @@ export default function ReportsPage() {
 
             {report && typeof report.summary.total === "number" && report.summary.total > report.rows.length && (
               <div className="px-4 py-2 text-xs border-t" style={{ color: "#8A9AB0", borderColor: CARD_BORDER }}>
-                Showing first {report.rows.length} of {report.summary.total}. Export (next phase) will include all rows.
+                Showing first {report.rows.length} of {report.summary.total}. Excel export uses the same rows and filters shown in this preview.
               </div>
             )}
           </div>
