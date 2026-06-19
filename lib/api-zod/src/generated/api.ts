@@ -451,6 +451,9 @@ export const ListBookingsResponseItem = zod.object({
   scheduleLabel: zod.string().nullish(),
   displayTitle: zod.string().nullish(),
   hasAttendance: zod.boolean().optional(),
+  alreadyCheckedIn: zod.boolean().optional(),
+  checkInEligible: zod.boolean().optional(),
+  checkInBlockedReason: zod.string().nullish(),
 });
 export const ListBookingsResponse = zod.array(ListBookingsResponseItem);
 

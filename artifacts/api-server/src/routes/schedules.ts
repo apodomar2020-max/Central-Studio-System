@@ -39,6 +39,19 @@ function dayOfWeekFromDate(date: string): number | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getUTCDay();
 }
 
+function cairoToday(): { date: string; dayOfWeek: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date()).map((part) => [part.type, part.value]),
+  );
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  return { date, dayOfWeek: dayOfWeekFromDate(date) ?? new Date().getDay() };
+}
+
 function normalizeScheduleInput(
   input: ScheduleInput,
   existing?: typeof schedulesTable.$inferSelect,
@@ -159,8 +172,7 @@ async function notifyScheduleBookings(
 // the literal string "today" as a numeric :id parameter.
 // ---------------------------------------------------------------------------
 router.get("/schedules/today", async (req, res): Promise<void> => {
-  const todayDow = new Date().getDay(); // 0=Sun … 6=Sat
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const { dayOfWeek: todayDow, date: todayIso } = cairoToday();
 
   const rows = await db
     .select({

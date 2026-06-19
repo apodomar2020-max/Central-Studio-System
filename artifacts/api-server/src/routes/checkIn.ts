@@ -37,6 +37,16 @@ function formatTime(t: string | null): string | null {
   return `${h12}:${m} ${period}`;
 }
 
+function bookingParticipantKey(booking: typeof bookingsTable.$inferSelect): string {
+  if (booking.participantChildId != null) return `child:${booking.participantChildId}`;
+  if (booking.bookingScope === "child") return `child:unknown:${booking.id}`;
+  return `self:${booking.accountOwnerStudentId ?? normalizeLegacyEmail(booking.studentEmail)}`;
+}
+
+function normalizeLegacyEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 async function getBookingNotificationContext(
   client: Pick<typeof db, "select">,
   booking: typeof bookingsTable.$inferSelect,
@@ -235,12 +245,12 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
       }
 
       // ------------------------------------------------------------------
-      // Step 4 — Prevent duplicate attendance for same class/schedule today
+      // Step 4 — Prevent duplicate attendance for same participant + class/schedule today
       // ------------------------------------------------------------------
       if (booking.classId != null || booking.scheduleId != null) {
         const dupConditions = [
           eq(attendanceTable.studentEmail, student.email),
-          sql`${attendanceTable.checkedInAt}::date = CURRENT_DATE`,
+          sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
         ];
 
         if (booking.scheduleId != null) {
@@ -249,11 +259,23 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
           dupConditions.push(eq(attendanceTable.classId, booking.classId!));
         }
 
-        const [existing] = await tx
-          .select({ id: attendanceTable.id })
+        const existingRows = await tx
+          .select({
+            attendanceId: attendanceTable.id,
+            existingBooking: bookingsTable,
+          })
           .from(attendanceTable)
+          .leftJoin(bookingsTable, eq(attendanceTable.bookingId, bookingsTable.id))
           .where(and(...dupConditions))
-          .limit(1);
+          .limit(50);
+
+        const participantKey = bookingParticipantKey(booking);
+        const existing = existingRows.find((row) => {
+          if (row.existingBooking) {
+            return bookingParticipantKey(row.existingBooking) === participantKey;
+          }
+          return booking.participantChildId == null && booking.bookingScope !== "child";
+        });
 
         if (existing) {
           throw makeError(

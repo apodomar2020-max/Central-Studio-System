@@ -168,6 +168,15 @@ function bookingSortRank(bk: Booking): number {
   return 3;
 }
 
+function isBookingCheckInEligible(bk: Booking): boolean {
+  if (bk.checkInEligible === false || bk.alreadyCheckedIn) return false;
+  return !CLOSED_BOOKING_STATUSES.has(bk.bookingStatus ?? bk.status);
+}
+
+function bookingBlockedReason(bk: Booking): string {
+  return bk.checkInBlockedReason ?? (bk.alreadyCheckedIn ? "Already checked in" : "Not eligible for check-in");
+}
+
 // ─── QR parsing ───────────────────────────────────────────────────────────────
 
 function extractScanResult(decoded: string): ScanResult | null {
@@ -363,13 +372,14 @@ export function ScanCheckInDialog({
           ).catch(() => [] as Booking[]),
           fetchSchedules(),
         ]);
-        // Only show actionable bookings. hasAttendance covers legacy rows where
-        // attendance exists but the booking status was never updated.
+        // Keep non-terminal bookings visible, but let the backend eligibility
+        // flags disable rows that would fail duplicate check-in validation.
         const open = bookings.filter(
-          (b) => !CLOSED_BOOKING_STATUSES.has(b.bookingStatus ?? b.status) && !b.hasAttendance,
+          (b) => !["cancelled", "rejected"].includes(b.bookingStatus ?? b.status),
         );
         setStudentBookings(open);
-        if (open.length === 1) setSelectedBookingId(open[0].id);
+        const eligible = open.filter(isBookingCheckInEligible);
+        if (eligible.length === 1) setSelectedBookingId(eligible[0].id);
         setPhase("selecting");
       } catch (err: unknown) {
         const status =
@@ -823,6 +833,7 @@ export function ScanCheckInDialog({
     .slice()
     .sort((a, b) => bookingSortRank(a) - bookingSortRank(b));
   const selectedBooking = studentBookings.find((bk) => bk.id === selectedBookingId) ?? null;
+  const selectedBookingEligible = selectedBooking ? isBookingCheckInEligible(selectedBooking) : true;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -959,19 +970,23 @@ export function ScanCheckInDialog({
                   const participant = bk.participantName ?? bk.studentName;
                   const ownerName = bk.accountOwnerName ?? bk.studentName;
                   const ownerEmail = bk.accountOwnerEmail ?? bk.studentEmail;
+                  const eligible = isBookingCheckInEligible(bk);
                   return (
                     <button
                       key={bk.id}
                       onClick={() => {
+                        if (!eligible) return;
                         const nextId = selectedBookingId === bk.id ? null : bk.id;
                         setSelectedBookingId(nextId);
                         setSelectedPackageId(null);
                         setPaymentMode(null);
                       }}
-                      className="w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                      disabled={!eligible}
+                      className="w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl text-sm text-left transition-all disabled:cursor-not-allowed"
                       style={{
                         background: selectedBookingId === bk.id ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
                         border: `1px solid ${selectedBookingId === bk.id ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
+                        opacity: eligible ? 1 : 0.58,
                       }}
                     >
                       <div className="min-w-0">
@@ -995,6 +1010,11 @@ export function ScanCheckInDialog({
                             {bk.scheduleLocation}
                           </div>
                         )}
+                        {!eligible && (
+                          <div className="text-xs mt-1 font-medium" style={{ color: AMBER }}>
+                            {bookingBlockedReason(bk)}
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
                         <span
@@ -1013,7 +1033,7 @@ export function ScanCheckInDialog({
                     </button>
                   );
                 })}
-                {selectedBookingId && (
+                {selectedBookingId && selectedBookingEligible && (
                   <>
                     <p className="text-xs" style={{ color: STUDIO_CYAN }}>
                       Choose how this check-in is being paid before confirming.
@@ -1029,7 +1049,7 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            {isTokenFlow && selectedBookingId && (
+            {isTokenFlow && selectedBookingId && selectedBookingEligible && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Check-in Mode
@@ -1203,7 +1223,7 @@ export function ScanCheckInDialog({
                   Boolean(
                     scannedQrToken &&
                       selectedBookingId &&
-                      (!paymentMode || (paymentMode === "package_credit" && !selectedPackageId)),
+                      (!selectedBookingEligible || !paymentMode || (paymentMode === "package_credit" && !selectedPackageId)),
                   )
                 }
                 className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-40"

@@ -31,6 +31,7 @@ import {
 import { useListHeroItems, useListInstructors, useListSchedules, useListClasses, customFetch } from "@workspace/api-client-react";
 import type { HeroItem, Notification as ApiNotification } from "@workspace/api-client-react";
 import { compareSchedulesByNextOccurrence, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { formatCairoDateKey, getCairoTomorrowDateKey } from "@/utils/cairoDate";
 import colors from "@/constants/colors";
 import NewStudentBanner from "@/components/NewStudentBanner";
 import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/SkeletonLoader";
@@ -491,10 +492,8 @@ function ClassListCard({
   const isBookable = hasSchedule && item.status !== "full";
   const canUsePackageCredits = item.packageEligible !== false && packageCreditsRemaining > 0;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const today = formatCairoDateKey();
+  const tomorrowStr = getCairoTomorrowDateKey();
 
   const dayLabel =
     item.date === today ? "Today" :

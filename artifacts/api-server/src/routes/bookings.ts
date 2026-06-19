@@ -151,6 +151,47 @@ function normalizeBookingWrite(data: BookingWrite, existing?: typeof bookingsTab
   };
 }
 
+function bookingParticipantKey(booking: typeof bookingsTable.$inferSelect): string {
+  if (booking.participantChildId != null) return `child:${booking.participantChildId}`;
+  if (booking.bookingScope === "child") return `child:unknown:${booking.id}`;
+  return `self:${booking.accountOwnerStudentId ?? normalizeEmail(booking.studentEmail)}`;
+}
+
+async function findParticipantDuplicateAttendance(
+  client: Pick<typeof db, "select">,
+  booking: typeof bookingsTable.$inferSelect,
+): Promise<boolean> {
+  if (booking.classId == null && booking.scheduleId == null) return false;
+
+  const dupConditions = [
+    sql`lower(trim(${attendanceTable.studentEmail})) = ${normalizeEmail(booking.studentEmail)}`,
+    sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
+  ];
+
+  if (booking.scheduleId != null) {
+    dupConditions.push(eq(attendanceTable.scheduleId, booking.scheduleId));
+  } else {
+    dupConditions.push(eq(attendanceTable.classId, booking.classId!));
+  }
+
+  const existingRows = await client
+    .select({
+      attendanceId: attendanceTable.id,
+      existingBooking: bookingsTable,
+    })
+    .from(attendanceTable)
+    .leftJoin(bookingsTable, eq(attendanceTable.bookingId, bookingsTable.id))
+    .where(and(...dupConditions))
+    .limit(50);
+
+  const participantKey = bookingParticipantKey(booking);
+  return existingRows.some((row) => {
+    if (row.existingBooking?.id === booking.id) return true;
+    if (row.existingBooking) return bookingParticipantKey(row.existingBooking) === participantKey;
+    return booking.participantChildId == null && booking.bookingScope !== "child";
+  });
+}
+
 async function bookingMetadata(
   client: BookingNotificationClient,
   row: typeof bookingsTable.$inferSelect,
@@ -372,6 +413,20 @@ router.get("/bookings", async (req, res): Promise<void> => {
         : null;
     const existing = enrichedById.get(r.booking.id);
     const bookingScope = r.booking.bookingScope ?? (r.booking.participantChildId != null ? "child" : "self");
+    const bookingStatus = r.booking.bookingStatus ?? legacyToBookingStatus(r.booking.status) ?? r.booking.status;
+    const hasAttendance = Boolean(existing?.hasAttendance || r.attendanceId);
+    const participantDuplicateAttendance = !hasAttendance && query.data.studentEmail
+      ? await findParticipantDuplicateAttendance(db, r.booking)
+      : false;
+    const alreadyCheckedIn = hasAttendance || participantDuplicateAttendance;
+    const checkInBlockedReason =
+      alreadyCheckedIn
+        ? "Already checked in"
+        : bookingStatus === "attended" || bookingStatus === "completed"
+          ? "Already checked in"
+          : bookingStatus === "cancelled" || bookingStatus === "rejected"
+            ? "Booking is not eligible for check-in"
+            : null;
     enrichedById.set(r.booking.id, {
       ...(existing ?? {}),
       ...r.booking,
@@ -398,7 +453,10 @@ router.get("/bookings", async (req, res): Promise<void> => {
       schedulePackageEligible: r.schedulePackageEligible ?? true,
       scheduleLabel,
       displayTitle: r.classTitle ?? `Booking #${r.booking.id}`,
-      hasAttendance: Boolean(existing?.hasAttendance || r.attendanceId),
+      hasAttendance,
+      alreadyCheckedIn,
+      checkInEligible: checkInBlockedReason == null,
+      checkInBlockedReason,
     });
   }
 

@@ -330,6 +330,10 @@ export interface Booking {
   /** @nullable — classTitle, falling back to "Booking #id" */
   displayTitle?: string | null;
   hasAttendance?: boolean;
+  alreadyCheckedIn?: boolean;
+  checkInEligible?: boolean;
+  /** @nullable */
+  checkInBlockedReason?: string | null;
 }
 
 export interface CreateBookingBody {

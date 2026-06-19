@@ -13,6 +13,12 @@ import type {
 } from "@workspace/api-client-react";
 
 import { DANCE_CATEGORIES, type AgeGroup, type DanceClass, type Instructor } from "./mockData";
+import {
+  addDaysToDateKey,
+  formatCairoDateKey,
+  formatDateKeyLabel,
+  getNextCairoScheduleDate,
+} from "@/utils/cairoDate";
 
 
 function initialsFromName(name: string): string {
@@ -111,13 +117,7 @@ function coerceDayOfWeek(raw: unknown): number | null {
 }
 
 function formatDateLabel(date: string): string {
-  const parsed = new Date(`${date}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return parsed.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+  return formatDateKeyLabel(date);
 }
 
 function scheduleDateForWeek(schedule: ApiSchedule, weekStart: Date): string {
@@ -128,14 +128,7 @@ function scheduleDateForWeek(schedule: ApiSchedule, weekStart: Date): string {
   // Map dayOfWeek (0=Sun…6=Sat) to an offset from Saturday.
   const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek) ?? 0;
   const offset = (dayOfWeek - 6 + 7) % 7;
-  const dateObj = new Date(weekStart);
-  dateObj.setDate(weekStart.getDate() + offset);
-  return dateObj.toISOString().slice(0, 10);
-}
-
-function minutesFromTime(timeStr: string): number {
-  const [hoursStr = "0", minsStr = "00"] = timeStr.split(":");
-  return Number(hoursStr) * 60 + Number(minsStr);
+  return addDaysToDateKey(formatCairoDateKey(weekStart), offset);
 }
 
 export function getNextScheduleOccurrenceDate(schedule: ApiSchedule, fromDate = new Date()): string {
@@ -143,18 +136,8 @@ export function getNextScheduleOccurrenceDate(schedule: ApiSchedule, fromDate = 
     return schedule.date;
   }
 
-  const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek) ?? fromDate.getDay();
-  const base = new Date(fromDate);
-  base.setHours(0, 0, 0, 0);
-
-  const currentMinutes = fromDate.getHours() * 60 + fromDate.getMinutes();
-  let daysUntil = (dayOfWeek - fromDate.getDay() + 7) % 7;
-  if (daysUntil === 0 && minutesFromTime(schedule.startTime) <= currentMinutes) {
-    daysUntil = 7;
-  }
-
-  base.setDate(base.getDate() + daysUntil);
-  return base.toISOString().slice(0, 10);
+  const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek) ?? 0;
+  return getNextCairoScheduleDate(dayOfWeek, schedule.startTime, fromDate);
 }
 
 export function compareSchedulesByNextOccurrence(a: ApiSchedule, b: ApiSchedule, fromDate = new Date()): number {
