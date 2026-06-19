@@ -48,7 +48,7 @@ router.get("/notifications/my", requireStudentAuth, requireVerifiedStudent, asyn
     )
     .orderBy(desc(notificationsTable.createdAt));
 
-  res.json(rows.filter((n) => !n.isDraft));
+  res.json(ListNotificationsResponse.parse(rows.filter((n) => !n.isDraft)));
 });
 
 router.get("/notifications/:id", async (req, res): Promise<void> => {

@@ -55,7 +55,7 @@ interface DisplayNotif {
   type: NotifType;
   isRead: boolean;
   createdAt: string | null;
-  timestamp: number;
+  timestamp: number | null;
   metadata?: Record<string, unknown> | null;
   /** "local" = generated in-app (AppContext); "api" = admin broadcast */
   source: "local" | "api";
@@ -70,6 +70,8 @@ type TypeConfig = {
 type TypedApiNotification = ApiNotification & {
   type?: string | null;
   metadata?: Record<string, unknown> | null;
+  sent_at?: string | null;
+  created_at?: string | null;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -80,15 +82,16 @@ function parseDateValue(value?: string | null): number | null {
   return Number.isFinite(time) ? time : null;
 }
 
-function resolveTimestamp(...values: Array<string | null | undefined>): number {
+function resolveTimestamp(...values: Array<string | null | undefined>): number | null {
   for (const value of values) {
     const parsed = parseDateValue(value);
     if (parsed != null) return parsed;
   }
-  return Date.now();
+  return null;
 }
 
-function timeAgo(timestamp: number): string {
+function timeAgo(timestamp: number | null): string {
+  if (timestamp == null) return "Recently";
   const diff = Math.max(0, Date.now() - timestamp);
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return "Just now";
@@ -106,7 +109,8 @@ function startOfDay(time: number): number {
   return date.getTime();
 }
 
-function timelineGroup(timestamp: number): "today" | "yesterday" | "earlier" {
+function timelineGroup(timestamp: number | null): "today" | "yesterday" | "earlier" {
+  if (timestamp == null) return "earlier";
   const today = startOfDay(Date.now());
   const itemDay = startOfDay(timestamp);
   if (itemDay === today) return "today";
@@ -313,22 +317,23 @@ export default function NotificationsScreen() {
 	    const apiItems: DisplayNotif[] = (apiNotifs ?? [])
 	      .filter((n) => !n.isDraft)
 	      .map((n) => {
-	        const timestamp = resolveTimestamp(n.sentAt, n.createdAt);
-	        return {
-	          id: `api-${n.id}`,
-	          title: n.title,
+		        const timestamp = resolveTimestamp(n.sentAt, n.createdAt, n.sent_at, n.created_at);
+		        const createdAt = n.sentAt ?? n.createdAt ?? n.sent_at ?? n.created_at ?? null;
+		        return {
+		          id: `api-${n.id}`,
+		          title: n.title,
 	          body: n.body,
 	          type: inferType(n),
 	          isRead: apiReadIds.has(`api-${n.id}`),
-	          createdAt: n.sentAt ?? n.createdAt ?? null,
-	          timestamp,
-	          metadata: asMetadata(n.metadata),
-	          source: "api" as const,
+		          createdAt,
+		          timestamp,
+		          metadata: asMetadata(n.metadata),
+		          source: "api" as const,
 	        };
 	      });
 
 	    const localItems: DisplayNotif[] = localNotifs.map((n) => {
-	      const timestamp = resolveTimestamp(n.createdAt);
+		      const timestamp = resolveTimestamp(n.createdAt) ?? Date.now();
 	      return {
 	        id: n.id,
 	        title: n.title,
@@ -344,14 +349,14 @@ export default function NotificationsScreen() {
 	    // Merge and sort newest first as a baseline; each group later puts unread
 	    // items before read items while preserving recency.
 	    return [...apiItems, ...localItems].sort(
-	      (a, b) => b.timestamp - a.timestamp
+		      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
 	    );
 	  }, [apiNotifs, apiReadIds, localNotifs]);
 
 	  const grouped = React.useMemo(() => {
 	    const sortGroup = (items: DisplayNotif[]) => [...items].sort((a, b) => {
 	      if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
-	      return b.timestamp - a.timestamp;
+		      return (b.timestamp ?? 0) - (a.timestamp ?? 0);
 	    });
 
 	    return {
