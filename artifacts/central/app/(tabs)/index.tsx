@@ -57,7 +57,7 @@ const HERO_MARGIN = 16;
 const HERO_WIDTH = SCREEN_WIDTH - HERO_MARGIN * 2;
 
 /** Single slide inside the carousel */
-function HeroSlide({ item }: { item: HeroItem }) {
+function HeroSlide({ item, onInteract }: { item: HeroItem; onInteract?: () => void }) {
   return (
     <View style={styles.heroSlide}>
       <Image
@@ -76,6 +76,7 @@ function HeroSlide({ item }: { item: HeroItem }) {
         <Text style={styles.heroBannerTitle}>{item.title}</Text>
         <TouchableOpacity
           onPress={() => {
+            onInteract?.();
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.push(item.buttonRoute as any);
           }}
@@ -122,9 +123,67 @@ interface HeroCarouselProps {
  */
 function HeroCarousel({ items, isLoading, isError, error, onRetry }: HeroCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const listRef = useRef<FlatList<HeroItem>>(null);
+  const activeIndexRef = useRef(0);
+  const autoRotateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearAutoRotateTimer = useCallback(() => {
+    if (autoRotateTimerRef.current) {
+      clearInterval(autoRotateTimerRef.current);
+      autoRotateTimerRef.current = null;
+    }
+  }, []);
+
+  const clearResumeTimer = useCallback(() => {
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+  }, []);
+
+  const scrollToHeroIndex = useCallback((index: number, animated = true) => {
+    if (!items.length) return;
+    const nextIndex = ((index % items.length) + items.length) % items.length;
+    activeIndexRef.current = nextIndex;
+    setActiveIndex(nextIndex);
+    listRef.current?.scrollToIndex({ index: nextIndex, animated });
+  }, [items.length]);
+
+  const startAutoRotate = useCallback(() => {
+    clearAutoRotateTimer();
+    if (items.length <= 1) return;
+
+    autoRotateTimerRef.current = setInterval(() => {
+      scrollToHeroIndex(activeIndexRef.current + 1);
+    }, 5000);
+  }, [clearAutoRotateTimer, items.length, scrollToHeroIndex]);
+
+  const pauseAutoRotate = useCallback(() => {
+    clearAutoRotateTimer();
+    clearResumeTimer();
+    if (items.length <= 1) return;
+
+    resumeTimerRef.current = setTimeout(() => {
+      startAutoRotate();
+    }, 20000);
+  }, [clearAutoRotateTimer, clearResumeTimer, items.length, startAutoRotate]);
+
+  useEffect(() => {
+    activeIndexRef.current = 0;
+    setActiveIndex(0);
+    clearResumeTimer();
+    startAutoRotate();
+
+    return () => {
+      clearAutoRotateTimer();
+      clearResumeTimer();
+    };
+  }, [clearAutoRotateTimer, clearResumeTimer, items.length, startAutoRotate]);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / HERO_WIDTH);
+    activeIndexRef.current = idx;
     setActiveIndex(idx);
   };
 
@@ -163,30 +222,42 @@ function HeroCarousel({ items, isLoading, isError, error, onRetry }: HeroCarouse
   return (
     <View style={styles.heroBanner}>
       <FlatList
+        ref={listRef}
         data={items}
         keyExtractor={(i) => String(i.id)}
-        renderItem={({ item }) => <HeroSlide item={item} />}
+        renderItem={({ item }) => <HeroSlide item={item} onInteract={pauseAutoRotate} />}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        onScrollBeginDrag={pauseAutoRotate}
         onMomentumScrollEnd={onScroll}
+        getItemLayout={(_, index) => ({ length: HERO_WIDTH, offset: HERO_WIDTH * index, index })}
         snapToInterval={HERO_WIDTH}
         decelerationRate="fast"
         bounces={false}
-        style={{ borderRadius: 20 }}
+        style={styles.heroCarouselList}
       />
       {/* Pagination dots */}
       <View style={styles.heroDots}>
         {items.map((_, i) => (
-          <View
+          <TouchableOpacity
             key={i}
-            style={[
-              styles.heroDot,
-              i === activeIndex
-                ? { backgroundColor: "#FFFFFF", width: 16 }
-                : { backgroundColor: "rgba(255,255,255,0.4)", width: 6 },
-            ]}
-          />
+            style={styles.heroDotButton}
+            activeOpacity={0.8}
+            onPress={() => {
+              pauseAutoRotate();
+              scrollToHeroIndex(i);
+            }}
+          >
+            <View
+              style={[
+                styles.heroDot,
+                i === activeIndex
+                  ? { backgroundColor: "#FFFFFF", width: 16 }
+                  : { backgroundColor: "rgba(255,255,255,0.4)", width: 6 },
+              ]}
+            />
+          </TouchableOpacity>
         ))}
       </View>
     </View>
@@ -922,19 +993,20 @@ const styles = StyleSheet.create({
     paddingLeft: 3, // optical centering for play icon
   },
 
-  heroBanner: { marginHorizontal: HERO_MARGIN, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: HERO_HEIGHT },
-  heroSlide: { width: HERO_WIDTH, height: HERO_HEIGHT },
+  heroBanner: { marginHorizontal: HERO_MARGIN, borderRadius: 20, overflow: "hidden", marginBottom: 28, height: HERO_HEIGHT, backgroundColor: "#060C10" },
+  heroSlide: { width: HERO_WIDTH, height: HERO_HEIGHT, overflow: "hidden", backgroundColor: "#060C10" },
+  heroCarouselList: { borderRadius: 20, height: HERO_HEIGHT },
   heroDots: {
     position: "absolute", bottom: 10, left: 0, right: 0,
     flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 5,
   },
+  heroDotButton: { minWidth: 14, minHeight: 14, alignItems: "center", justifyContent: "center" },
   heroDot: { height: 6, borderRadius: 3 },
   heroBannerGradient: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "flex-end",
     paddingHorizontal: 20,
     paddingTop: 15, paddingBottom: 15,
-    marginTop: 1, marginBottom: 1,
     gap: 6,
   },
   heroBannerTagline: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.studio.primary, letterSpacing: 2, textTransform: "uppercase" },

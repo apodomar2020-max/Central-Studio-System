@@ -340,16 +340,7 @@ export default function ProfileScreen() {
             style={styles.qrCardGradient}
           >
             <View style={styles.qrPreview}>
-              {user.qrToken ? (
-                <QRCode
-                  value={JSON.stringify({ app: "centralstudio", token: user.qrToken })}
-                  size={56}
-                  color="#FFFFFF"
-                  backgroundColor="transparent"
-                />
-              ) : (
-                <Text style={styles.qrPlaceholderSmall}>Pass{"\n"}pending</Text>
-              )}
+              <Ionicons name="qr-code-outline" size={34} color={colors.studio.primary} />
             </View>
             <View style={styles.qrInfo}>
               <Text style={styles.qrCardTitle}>My Studio Pass</Text>
@@ -574,7 +565,7 @@ const styles = StyleSheet.create({
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 4 },
   qrCard: { borderRadius: 16, overflow: "hidden", marginBottom: 24, borderWidth: 1, borderColor: colors.studio.primary + "30" },
   qrCardGradient: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16 },
-  qrPreview: { width: 60, height: 60, borderRadius: 8, overflow: "hidden", backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", padding: 2 },
+  qrPreview: { width: 60, height: 60, borderRadius: 12, overflow: "hidden", backgroundColor: colors.studio.primary + "12", borderWidth: 1, borderColor: colors.studio.primary + "38", alignItems: "center", justifyContent: "center" },
   qrInfo: { flex: 1 },
   qrCardTitle: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   qrCardDesc: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: 3, lineHeight: 16 },
@@ -589,7 +580,6 @@ const styles = StyleSheet.create({
   qrPackageBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
   qrPackageBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   qrModalHint: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "center", lineHeight: 17, marginTop: 4 },
-  qrPlaceholderSmall: { fontSize: 8, fontFamily: "Inter_400Regular", color: "#FFFFFF60", textAlign: "center", lineHeight: 11 },
   qrPlaceholderModal: { width: 220, height: 220, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "#F3F4F6", borderRadius: 8 },
   qrPlaceholderText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "center", lineHeight: 19, paddingHorizontal: 20 },
 });
