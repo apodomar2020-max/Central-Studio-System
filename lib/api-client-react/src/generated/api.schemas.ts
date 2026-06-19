@@ -342,6 +342,8 @@ export interface CreateBookingBody {
   /** @nullable */
   participantChildId?: number | null;
   /** @nullable */
+  childId?: number | null;
+  /** @nullable */
   bookingScope?: "self" | "child" | null;
   /** @nullable */
   scheduleId?: number | null;

@@ -440,23 +440,61 @@ router.post("/bookings", async (req, res): Promise<void> => {
     }
   }
 
-  const row = await db.transaction(async (tx) => {
-    const accountOwnerStudentId = await resolveAccountOwnerStudentId(
-      tx,
-      req,
-      parsed.data.studentEmail,
-      parsed.data.accountOwnerStudentId ?? normalized.accountOwnerStudentId ?? null,
-    );
-    const bookingScope = normalized.bookingScope ?? (normalized.participantChildId != null ? "child" : "self");
+  const requestedParticipantChildId =
+    parsed.data.participantChildId ?? parsed.data.childId ?? normalized.participantChildId ?? null;
+  const accountOwnerStudentId = await resolveAccountOwnerStudentId(
+    db,
+    req,
+    parsed.data.studentEmail,
+    parsed.data.accountOwnerStudentId ?? normalized.accountOwnerStudentId ?? null,
+  );
+  let participantChildId = requestedParticipantChildId;
+  let bookingScope = normalized.bookingScope ?? (participantChildId != null ? "child" : "self");
+  let participantName = parsed.data.studentName;
 
+  if (participantChildId != null) {
+    if (accountOwnerStudentId == null) {
+      res.status(401).json({
+        error: "Student authentication required to book for a child.",
+      });
+      return;
+    }
+
+    const [child] = await db
+      .select({ id: childrenTable.id, fullName: childrenTable.fullName })
+      .from(childrenTable)
+      .where(and(
+        eq(childrenTable.id, participantChildId),
+        eq(childrenTable.parentId, accountOwnerStudentId),
+      ))
+      .limit(1);
+
+    if (!child) {
+      res.status(403).json({
+        error: "Child profile not found for this account.",
+      });
+      return;
+    }
+
+    participantChildId = child.id;
+    participantName = child.fullName;
+    bookingScope = "child";
+  } else {
+    participantChildId = null;
+    bookingScope = "self";
+  }
+
+  const row = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(bookingsTable)
       .values({
         ...normalized,
         // CreateBookingBody (zod) guarantees studentName/studentEmail at runtime;
         // normalizeBookingWrite widens them to optional, so assert the insert shape.
+        studentName: participantName,
         studentEmail: normalizeEmail(parsed.data.studentEmail),
         accountOwnerStudentId,
+        participantChildId,
         bookingScope,
       } as typeof bookingsTable.$inferInsert)
       .returning();

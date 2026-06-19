@@ -94,6 +94,10 @@ export default function BookingFlowScreen() {
     participantType === "self"
       ? user?.fullName ?? ""
       : selectedChild?.fullName ?? "Child";
+  const participantChildId =
+    participantType === "child" && selectedChild?.id
+      ? Number(selectedChild.id)
+      : null;
 
   useEffect(() => {
     if (!selectedChildId && children.length > 0) {
@@ -179,6 +183,13 @@ export default function BookingFlowScreen() {
       setPaymentMethod("cash");
       return;
     }
+    if (participantType === "child" && (!participantChildId || !Number.isInteger(participantChildId))) {
+      Alert.alert(
+        "Child profile unavailable",
+        "Please choose a saved child profile before booking.",
+      );
+      return;
+    }
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
@@ -200,6 +211,8 @@ export default function BookingFlowScreen() {
           studentName: participantName,
           studentEmail: user.email,
           studentPhone: user.phone,
+          participantChildId: participantType === "child" ? participantChildId : null,
+          bookingScope: participantType,
           classId: numericClassId,
           scheduleId: primarySchedule?.id,
           // packageId kept for backward-compat; packageOrderId is the authoritative FK (credit ledger)

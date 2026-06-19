@@ -460,6 +460,7 @@ export const CreateBookingBody = zod.object({
   studentPhone: zod.string().nullish(),
   accountOwnerStudentId: zod.number().nullish(),
   participantChildId: zod.number().nullish(),
+  childId: zod.number().nullish(),
   bookingScope: zod.enum(["self", "child"]).nullish(),
   scheduleId: zod.number().nullish(),
   classId: zod.number().nullish(),
