@@ -46,7 +46,12 @@ const SUBTLE = rgb(0.42, 0.45, 0.5);
 const LINE = rgb(0.86, 0.88, 0.9);
 const ZEBRA = rgb(0.969, 0.973, 0.98);
 const HEADER_FILL = rgb(0.93, 0.94, 0.95);
-const ACCENT = rgb(0.0, 0.71, 0.84); // #00B6D7
+const ACCENT = rgb(0.0, 0.71, 0.84); // #00B6D7 — Central Studio brand cyan
+
+// Dark header band (body stays white — NOT a full dark-mode document).
+const HEADER_BG = rgb(6 / 255, 12 / 255, 16 / 255); // #060C10
+const HEADER_TEXT = rgb(1, 1, 1); // white
+const HEADER_MUTED = rgb(0.63, 0.69, 0.75); // muted light grey for labels on dark
 
 // ─── Geometry ───────────────────────────────────────────────────────────────
 const PAGE_W = 841.89; // A4 landscape
@@ -114,7 +119,11 @@ function isRtlBase(s: string): boolean {
  */
 function shapeArabic(logical: string): string {
   const reshaped = ArabicReshaper.convertArabic(logical);
-  const embedding = bidi.getEmbeddingLevels(reshaped);
+  // Pin the base direction from the source text so an Arabic-primary value always
+  // resolves RTL (rather than relying on auto-detection, which would flip to LTR
+  // for a value that merely starts with a Latin character).
+  const baseDir = isRtlBase(logical) ? "rtl" : "ltr";
+  const embedding = bidi.getEmbeddingLevels(reshaped, baseDir);
   const chars = reshaped.split(""); // all relevant glyphs are BMP → unit == codepoint
   const mirrored = bidi.getMirroredCharactersMap(reshaped, embedding);
   mirrored.forEach((rep, idx) => {
@@ -198,11 +207,22 @@ function fmtDateLong(ymd?: string): string {
   if (!m) return ymd;
   return `${m[3]} ${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
 }
+// Cairo-local timestamp, independent of the server's own timezone: the explicit
+// `timeZone: "Africa/Cairo"` makes Intl convert from the instant, and the offset
+// label (UTC+2 EET in winter / UTC+3 EEST in summer) is derived from the same
+// instant so DST is always reflected correctly.
 function fmtGeneratedAt(d: Date): string {
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const hh = String(d.getUTCHours()).padStart(2, "0");
-  const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${day} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Cairo",
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  }).formatToParts(d);
+  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? "";
+  const offset = new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Cairo", timeZoneName: "shortOffset" })
+    .formatToParts(d)
+    .find((p) => p.type === "timeZoneName")?.value ?? "GMT+2";
+  const utc = offset.replace("GMT", "UTC");
+  return `${get("day")} ${get("month")} ${get("year")}, ${get("hour")}:${get("minute")} ${get("dayPeriod").toUpperCase()} (${utc})`;
 }
 function humanizeKey(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
@@ -430,24 +450,27 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
     const w = pg.getWidth();
     const h = pg.getHeight();
 
-    // Header — left: logo + wordmark (logo repeats on every page)
+    // Dark header band — full width, on every page (body below stays white).
+    pg.drawRectangle({ x: 0, y: h - HEADER_H, width: w, height: HEADER_H, color: HEADER_BG });
+    // thin cyan brand rule along the band's bottom edge
+    pg.drawRectangle({ x: 0, y: h - HEADER_H, width: w, height: 1.5, color: ACCENT });
+
+    // Header — left: logo + wordmark (logo repeats on every page; shows well on dark)
     const logoSize = 30;
     if (logo) {
       pg.drawImage(logo, { x: MARGIN, y: h - 12 - logoSize, width: logoSize, height: logoSize });
     }
-    pg.drawText("Central Studio", { x: MARGIN + (logo ? logoSize + 8 : 0), y: h - 30, size: 12, font: bold, color: INK });
+    pg.drawText("Central Studio", { x: MARGIN + (logo ? logoSize + 8 : 0), y: h - 30, size: 12, font: bold, color: HEADER_TEXT });
 
     // Header — center: report title
     const tW = bold.widthOfTextAtSize(title, 14);
-    pg.drawText(title, { x: (w - tW) / 2, y: h - 30, size: 14, font: bold, color: INK });
+    pg.drawText(title, { x: (w - tW) / 2, y: h - 30, size: 14, font: bold, color: HEADER_TEXT });
     pg.drawLine({ start: { x: (w - 64) / 2, y: h - 40 }, end: { x: (w + 64) / 2, y: h - 40 }, thickness: 2, color: ACCENT });
 
-    // Header — right: generated stamp
+    // Header — right: generated stamp (Cairo time)
     const gl = "GENERATED";
-    pg.drawText(gl, { x: w - MARGIN - font.widthOfTextAtSize(gl, 7), y: h - 21, size: 7, font, color: SUBTLE });
-    pg.drawText(generatedAt, { x: w - MARGIN - bold.widthOfTextAtSize(generatedAt, 9), y: h - 33, size: 9, font: bold, color: INK });
-
-    pg.drawLine({ start: { x: MARGIN, y: h - HEADER_H }, end: { x: w - MARGIN, y: h - HEADER_H }, thickness: 0.8, color: LINE });
+    pg.drawText(gl, { x: w - MARGIN - font.widthOfTextAtSize(gl, 7), y: h - 21, size: 7, font, color: HEADER_MUTED });
+    pg.drawText(generatedAt, { x: w - MARGIN - bold.widthOfTextAtSize(generatedAt, 9), y: h - 33, size: 9, font: bold, color: HEADER_TEXT });
 
     // Footer
     pg.drawLine({ start: { x: MARGIN, y: FOOTER_RULE_Y }, end: { x: w - MARGIN, y: FOOTER_RULE_Y }, thickness: 0.6, color: LINE });
