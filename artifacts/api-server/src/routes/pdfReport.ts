@@ -11,9 +11,8 @@
  * Internationalisation: Latin text uses the built-in Helvetica. Any cell that
  * contains Arabic is rendered with an embedded Tajawal (Unicode) font and is
  * right-aligned. Shaping (cursive joining + ligatures) and right-to-left visual
- * ordering are handled by the full fontkit layout engine via the bidi-aware
- * wrapper in ./arabicFontkit — so the raw logical string is passed straight to
- * pdf-lib and comes out correctly shaped, never reversed or as "?".
+ * ordering are handled by the full fontkit layout engine via the adapter in
+ * ./arabicFontkit — so its visual glyph order must pass through unchanged.
  *
  * Layout (A4 landscape): repeating header (logo + wordmark / title / generated
  * stamp) and footer (Central Studio / Page X of Y / Confidential) on every page;
@@ -187,7 +186,7 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
   const { title, entityLabel, columns, rows, summary, filters, generatedBy } = input;
 
   const doc = await PDFDocument.create();
-  // bidiFontkit is a structural Fontkit (create/openSync); cast for pdf-lib's type.
+  // bidiFontkit is a structural Fontkit adapter (create/openSync); cast for pdf-lib's type.
   doc.registerFontkit(bidiFontkit as Parameters<typeof doc.registerFontkit>[0]);
   doc.setTitle(title);
   doc.setAuthor("Central Studio");
@@ -234,8 +233,8 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
   const CELL_PAD_X = dense ? 4 : 6;
 
   // ── Per-cell preparation: pick font (Latin vs Arabic), wrap, align. ──
-  // Arabic cells keep the raw logical string — the bidi-aware fontkit wrapper
-  // shapes and reorders it to visual order at draw/measure time.
+  // Arabic cells keep the raw logical string. Full fontkit shapes it and returns
+  // the visual RTL glyph order used consistently for measuring and drawing.
   interface Cell {
     lines: string[];
     font: PDFFont;
