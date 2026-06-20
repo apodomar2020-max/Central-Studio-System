@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ADMIN_TOKEN_STORAGE_KEY, AdminAuthProvider, useAdminAuth } from "@/contexts/AdminAuthContext";
 import { AdminThemeProvider } from "@/contexts/AdminThemeContext";
+import { RouteGuard, type PermRequirement, type PermRequirementMode } from "@/lib/permissions";
 
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -67,6 +68,38 @@ function Layout({ children }: { children: React.ReactNode }) {
  * ProtectedRouter — only rendered when the user is authenticated.
  * The auth check (loading spinner / redirect to login) happens in AppShell.
  */
+/** Route → permission requirement (any one of the pairs grants access). */
+const ROUTE_PERMS = {
+  dashboard: [["dashboard", "view"]],
+  instructors: [["instructors", "view"]],
+  classes: [["classes", "view"]],
+  schedules: [["schedules", "view"]],
+  packages: [["packages", "view"]],
+  bookings: [["bookings", "view"]],
+  students: [["students", "view"]],
+  parents: [["parents", "view"]],
+  childDetails: [["children", "view"], ["parents", "view"]],
+  offers: [["offers", "view"]],
+  notifications: [["notifications", "view"]],
+  marketing: [["marketing", "view"]],
+  packageOrders: [["packageOrders", "view"]],
+  attendance: [["attendance", "view"]],
+  reports: [["reports", "view"]],
+  heroSlides: [["heroSlides", "view"]],
+  appContent: [["appContent", "view"]],
+  systemUsers: [["adminUsers", "view"], ["roles", "view"]],
+  balletApplications: [["ballet.applications", "view"]],
+  balletSlots: [["ballet.assessmentDates", "view"]],
+  balletSettings: [["ballet.pricing", "view"]],
+  balletLevels: [["ballet.levels", "view"]],
+  settings: [["settings", "view"]],
+} satisfies Record<string, PermRequirement>;
+
+/** Wrap a page element in a permission guard for use as Route children. */
+function guarded(req: PermRequirement, element: React.ReactNode, mode: PermRequirementMode = "any") {
+  return <RouteGuard req={req} mode={mode}>{element}</RouteGuard>;
+}
+
 function ProtectedRouter() {
   return (
     <Layout>
@@ -75,31 +108,31 @@ function ProtectedRouter() {
         <Route path="/login">
           <Redirect to="/" />
         </Route>
-        <Route path="/" component={Dashboard} />
-        <Route path="/instructors" component={Instructors} />
-        <Route path="/classes" component={Classes} />
-        <Route path="/schedules" component={Schedules} />
-        <Route path="/packages" component={Packages} />
-        <Route path="/bookings" component={Bookings} />
-        <Route path="/students" component={Students} />
-        <Route path="/parents" component={ParentsPage} />
-        <Route path="/parents/:id" component={ParentDetailPage} />
-        <Route path="/parents/:parentId/children/:childId" component={ChildDetailPage} />
-        <Route path="/offers" component={Offers} />
-        <Route path="/notifications" component={Notifications} />
-        <Route path="/marketing" component={Marketing} />
-        <Route path="/package-orders" component={PackageOrders} />
-        <Route path="/attendance" component={AttendancePage} />
-        <Route path="/reports" component={ReportsPage} />
-        <Route path="/hero-items" component={HeroItems} />
-        <Route path="/app-content" component={AppContentPage} />
-        <Route path="/system-users" component={SystemUsers} />
-        <Route path="/ballet/applications/:id" component={ApplicationDetailPage} />
-        <Route path="/ballet/applications" component={ApplicationsPage} />
-        <Route path="/ballet/slots" component={AssessmentSlotsPage} />
-        <Route path="/ballet/settings" component={BalletSettingsPage} />
-        <Route path="/ballet/levels" component={BalletLevelsPage} />
-        <Route path="/settings" component={SettingsPage} />
+        <Route path="/">{guarded(ROUTE_PERMS.dashboard, <Dashboard />)}</Route>
+        <Route path="/instructors">{guarded(ROUTE_PERMS.instructors, <Instructors />)}</Route>
+        <Route path="/classes">{guarded(ROUTE_PERMS.classes, <Classes />)}</Route>
+        <Route path="/schedules">{guarded(ROUTE_PERMS.schedules, <Schedules />)}</Route>
+        <Route path="/packages">{guarded(ROUTE_PERMS.packages, <Packages />)}</Route>
+        <Route path="/bookings">{guarded(ROUTE_PERMS.bookings, <Bookings />)}</Route>
+        <Route path="/students">{guarded(ROUTE_PERMS.students, <Students />)}</Route>
+        <Route path="/parents">{guarded(ROUTE_PERMS.parents, <ParentsPage />)}</Route>
+        <Route path="/parents/:id">{guarded(ROUTE_PERMS.parents, <ParentDetailPage />)}</Route>
+        <Route path="/parents/:parentId/children/:childId">{guarded(ROUTE_PERMS.childDetails, <ChildDetailPage />, "all")}</Route>
+        <Route path="/offers">{guarded(ROUTE_PERMS.offers, <Offers />)}</Route>
+        <Route path="/notifications">{guarded(ROUTE_PERMS.notifications, <Notifications />)}</Route>
+        <Route path="/marketing">{guarded(ROUTE_PERMS.marketing, <Marketing />)}</Route>
+        <Route path="/package-orders">{guarded(ROUTE_PERMS.packageOrders, <PackageOrders />)}</Route>
+        <Route path="/attendance">{guarded(ROUTE_PERMS.attendance, <AttendancePage />)}</Route>
+        <Route path="/reports">{guarded(ROUTE_PERMS.reports, <ReportsPage />)}</Route>
+        <Route path="/hero-items">{guarded(ROUTE_PERMS.heroSlides, <HeroItems />)}</Route>
+        <Route path="/app-content">{guarded(ROUTE_PERMS.appContent, <AppContentPage />)}</Route>
+        <Route path="/system-users">{guarded(ROUTE_PERMS.systemUsers, <SystemUsers />)}</Route>
+        <Route path="/ballet/applications/:id">{guarded(ROUTE_PERMS.balletApplications, <ApplicationDetailPage />)}</Route>
+        <Route path="/ballet/applications">{guarded(ROUTE_PERMS.balletApplications, <ApplicationsPage />)}</Route>
+        <Route path="/ballet/slots">{guarded(ROUTE_PERMS.balletSlots, <AssessmentSlotsPage />)}</Route>
+        <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsPage />)}</Route>
+        <Route path="/ballet/levels">{guarded(ROUTE_PERMS.balletLevels, <BalletLevelsPage />)}</Route>
+        <Route path="/settings">{guarded(ROUTE_PERMS.settings, <SettingsPage />)}</Route>
         {/* DEV-ONLY: component preview — not in sidebar */}
         <Route path="/design-lab" component={DesignLabPage} />
         <Route component={NotFound} />

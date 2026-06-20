@@ -11,6 +11,7 @@ import {
   normalizeMediaUrl,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Dialog,
   DialogContent,
@@ -93,6 +94,11 @@ function InstructorPhoto({ url, name, preview = false }: { url?: string | null; 
 }
 
 export default function Instructors() {
+  const { can } = useAdminAuth();
+  const canCreate = can("instructors", "create");
+  const canEdit = can("instructors", "edit");
+  const canDelete = can("instructors", "delete");
+  const canMediaManage = can("instructors", "mediaManage");
   const { data: instructors, isLoading } = useListInstructors();
   const createInstructor = useCreateInstructor();
   const updateInstructor = useUpdateInstructor();
@@ -177,7 +183,7 @@ export default function Instructors() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Instructors" description="Manage your teaching staff" mode="studio" addLabel="Add Instructor" addTestId="button-add-instructor" onAdd={openCreate} />
+      <PageHeader title="Instructors" description="Manage your teaching staff" mode="studio" addLabel="Add Instructor" addTestId="button-add-instructor" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
         <Table>
@@ -217,12 +223,16 @@ export default function Instructors() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    {canEdit && (
                     <Button variant="ghost" size="icon" data-testid={`button-edit-instructor-${instructor.id}`} onClick={() => openEdit(instructor as Instructor)}>
                       <Edit className="h-4 w-4" />
                     </Button>
+                    )}
+                    {canDelete && (
                     <Button variant="ghost" size="icon" data-testid={`button-delete-instructor-${instructor.id}`} onClick={() => handleDelete(instructor.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -302,18 +312,20 @@ export default function Instructors() {
               )} />
 
               {/* Photo */}
-              <FormField control={form.control} name="photoUrl" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Photo URL</FormLabel>
-                  <FormControl><Input placeholder="https://example.com/photo.jpg" {...field} value={field.value ?? ""} /></FormControl>
-                  <FormMessage />
-                  {photoValue && (
-                    <div className="mt-2">
-                      <InstructorPhoto url={photoValue} name="Preview" preview />
-                    </div>
-                  )}
-                </FormItem>
-              )} />
+              {canMediaManage && (
+                <FormField control={form.control} name="photoUrl" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Photo URL</FormLabel>
+                    <FormControl><Input placeholder="https://example.com/photo.jpg" {...field} value={field.value ?? ""} /></FormControl>
+                    <FormMessage />
+                    {photoValue && (
+                      <div className="mt-2">
+                        <InstructorPhoto url={photoValue} name="Preview" preview />
+                      </div>
+                    )}
+                  </FormItem>
+                )} />
+              )}
 
               {/* Social Media */}
               <p className="text-sm font-medium text-muted-foreground pt-1">Social Media</p>

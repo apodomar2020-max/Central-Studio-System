@@ -11,6 +11,7 @@ import type { Attendance } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QrCode, Search, CheckCircle2, CreditCard, User2, BarChart3, Clock, XCircle, Ban } from "lucide-react";
 import { ScanCheckInDialog } from "@/components/scan-check-in-dialog";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const STUDIO_CYAN = "#00B6D7";
 const AMBER = "#F59E0B";
@@ -62,6 +63,11 @@ type CheckInStatus = typeof CHECK_IN_STATUSES[number];
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AttendancePage() {
+  const { can } = useAdminAuth();
+  const canScan = can("qr", "scan");
+  const canQrCheckIn = can("qr", "checkIn");
+  const canManualCheckIn = can("attendance", "checkIn");
+  const canPackageDeduct = can("qr", "packageDeduct");
   const queryClient = useQueryClient();
   const [scanOpen, setScanOpen] = useState(false);
   const [emailInput, setEmailInput] = useState("");
@@ -110,7 +116,7 @@ export default function AttendancePage() {
   }
 
   function handleCheckIn() {
-    if (!searchEmail) return;
+    if (!canManualCheckIn || !searchEmail) return;
     const order = studentOrders.find((o) => o.id === selectedPackageId);
     const shouldDeduct = deductCredit && !!selectedPackageId && checkInStatus !== "absent";
     checkIn({
@@ -135,21 +141,31 @@ export default function AttendancePage() {
             Check in students by QR scan or manual email lookup.
           </p>
         </div>
-        <button
-          onClick={() => setScanOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0"
-          style={{ background: STUDIO_CYAN, color: "#000" }}
-        >
-          <QrCode className="h-4 w-4" />
-          Scan QR
-        </button>
+        {canScan && (
+          <button
+            onClick={() => setScanOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0"
+            style={{ background: STUDIO_CYAN, color: "#000" }}
+          >
+            <QrCode className="h-4 w-4" />
+            Scan QR
+          </button>
+        )}
       </div>
 
-      <ScanCheckInDialog open={scanOpen} onOpenChange={setScanOpen} />
+      {canScan && (
+        <ScanCheckInDialog
+          open={scanOpen}
+          onOpenChange={setScanOpen}
+          canCheckIn={canQrCheckIn}
+          canPackageDeduct={canPackageDeduct}
+        />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ── Check-in panel ── */}
         <div className="space-y-4">
+          {canManualCheckIn && (
           <div className="rounded-xl p-5 space-y-4" style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${STUDIO_CYAN}20` }}>
@@ -283,6 +299,7 @@ export default function AttendancePage() {
               </div>
             )}
           </div>
+          )}
 
           {/* Stats panel */}
           <div className="rounded-xl p-5 space-y-4" style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}>

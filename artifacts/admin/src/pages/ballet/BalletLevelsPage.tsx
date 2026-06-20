@@ -66,7 +66,8 @@ const EMPTY_FORM: LevelForm = { name: "", sortOrder: "0", isActive: true };
 export default function BalletLevelsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canEdit = can("ballet.levels", "edit");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingLevel, setEditingLevel] = useState<Level | null>(null);
@@ -170,10 +171,12 @@ export default function BalletLevelsPage() {
             Manage ballet level definitions, progression order, and visibility.
           </p>
         </div>
-        <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-white gap-2">
-          <Plus className="h-4 w-4" />
-          New Level
-        </Button>
+        {canEdit && (
+          <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-white gap-2">
+            <Plus className="h-4 w-4" />
+            New Level
+          </Button>
+        )}
       </div>
 
       {/* Loading */}
@@ -229,7 +232,7 @@ export default function BalletLevelsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <Button
+                      {canEdit && <Button
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-white"
@@ -237,8 +240,8 @@ export default function BalletLevelsPage() {
                         title="Edit level"
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
+                      </Button>}
+                      {canEdit && <Button
                         size="sm"
                         variant="ghost"
                         className={`h-8 w-8 p-0 ${level.isActive ? "text-green-400 hover:text-green-300" : "text-muted-foreground hover:text-white"}`}
@@ -249,7 +252,7 @@ export default function BalletLevelsPage() {
                         {level.isActive
                           ? <ToggleRight className="h-4 w-4" />
                           : <ToggleLeft className="h-4 w-4" />}
-                      </Button>
+                      </Button>}
                     </div>
                   </td>
                 </tr>
@@ -260,7 +263,7 @@ export default function BalletLevelsPage() {
       )}
 
       {/* Create / Edit dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
+      <Dialog open={canEdit && dialogOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
         <DialogContent className="bg-[#0F1923] border-border text-white max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-white">{editingLevel ? "Edit Level" : "New Ballet Level"}</DialogTitle>

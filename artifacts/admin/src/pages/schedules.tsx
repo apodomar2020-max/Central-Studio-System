@@ -11,6 +11,7 @@ import {
   getListSchedulesQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -70,6 +71,10 @@ type Schedule = {
 };
 
 export default function Schedules() {
+  const { can } = useAdminAuth();
+  const canCreate = can("schedules", "create");
+  const canEdit = can("schedules", "edit");
+  const canDelete = can("schedules", "delete");
   const { data: schedules, isLoading } = useListSchedules();
   const { data: classes } = useListClasses();
   const createSchedule = useCreateSchedule();
@@ -154,7 +159,7 @@ export default function Schedules() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Schedules" description="Weekly classes and one-time workshops" mode="studio" addLabel="Add Schedule" addTestId="button-add-schedule" onAdd={openCreate} />
+      <PageHeader title="Schedules" description="Weekly classes and one-time workshops" mode="studio" addLabel="Add Schedule" addTestId="button-add-schedule" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
         <Table>
@@ -198,12 +203,16 @@ export default function Schedules() {
                   </TableCell>
                   <TableCell>{schedule.location ?? "—"}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" data-testid={`button-delete-schedule-${schedule.id}`} onClick={() => handleDelete(schedule.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {canEdit && (
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" data-testid={`button-delete-schedule-${schedule.id}`} onClick={() => handleDelete(schedule.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

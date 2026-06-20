@@ -10,6 +10,7 @@ import {
   getListOffersQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -38,6 +39,10 @@ type FormValues = z.infer<typeof formSchema>;
 type Offer = { id: number; title: string; description?: string | null; discountPercent: number; validUntil?: string | null; isActive: boolean; classIds?: number[] };
 
 export default function Offers() {
+  const { can } = useAdminAuth();
+  const canCreate = can("offers", "create");
+  const canEdit = can("offers", "edit");
+  const canDelete = can("offers", "delete");
   const { data: offers, isLoading } = useListOffers();
   const createOffer = useCreateOffer();
   const updateOffer = useUpdateOffer();
@@ -82,7 +87,7 @@ export default function Offers() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Offers" description="Promotions and discounts" mode="studio" addLabel="Add Offer" addTestId="button-add-offer" onAdd={openCreate} />
+      <PageHeader title="Offers" description="Promotions and discounts" mode="studio" addLabel="Add Offer" addTestId="button-add-offer" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
         <Table>
@@ -115,12 +120,16 @@ export default function Offers() {
                     <Badge variant={offer.isActive ? "default" : "outline"}>{offer.isActive ? "Active" : "Inactive"}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    {canEdit && (
                     <Button variant="ghost" size="icon" data-testid={`button-edit-offer-${offer.id}`} onClick={() => openEdit(offer)}>
                       <Edit className="h-4 w-4" />
                     </Button>
+                    )}
+                    {canDelete && (
                     <Button variant="ghost" size="icon" data-testid={`button-delete-offer-${offer.id}`} onClick={() => handleDelete(offer.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

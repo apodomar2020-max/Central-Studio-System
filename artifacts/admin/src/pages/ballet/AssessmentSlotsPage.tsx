@@ -151,7 +151,9 @@ function TimeSelect({
 export default function AssessmentSlotsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canCreate = can("ballet.assessmentDates", "create");
+  const canEdit = can("ballet.assessmentDates", "edit");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
@@ -274,10 +276,12 @@ export default function AssessmentSlotsPage() {
             Manage available ballet assessment dates and appointment slots.
           </p>
         </div>
-        <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-black gap-2">
-          <Plus className="h-4 w-4" />
-          New Assessment Date
-        </Button>
+        {canCreate && (
+          <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-black gap-2">
+            <Plus className="h-4 w-4" />
+            New Assessment Date
+          </Button>
+        )}
       </div>
 
       {/* Loading */}
@@ -339,7 +343,7 @@ export default function AssessmentSlotsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <Button
+                      {canEdit && <Button
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-white"
@@ -347,8 +351,8 @@ export default function AssessmentSlotsPage() {
                         title="Edit date"
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
+                      </Button>}
+                      {canEdit && <Button
                         size="sm"
                         variant="ghost"
                         className={`h-8 w-8 p-0 ${slot.isActive ? "text-green-400 hover:text-green-300" : "text-muted-foreground hover:text-white"}`}
@@ -359,7 +363,7 @@ export default function AssessmentSlotsPage() {
                         {slot.isActive
                           ? <ToggleRight className="h-4 w-4" />
                           : <ToggleLeft className="h-4 w-4" />}
-                      </Button>
+                      </Button>}
                     </div>
                   </td>
                 </tr>
@@ -370,7 +374,7 @@ export default function AssessmentSlotsPage() {
       )}
 
       {/* Create / Edit dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
+      <Dialog open={(editingSlot ? canEdit : canCreate) && dialogOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
         <DialogContent className="bg-[#0F1923] border-border text-white max-w-md">
           <DialogHeader>
             <DialogTitle className="text-white">

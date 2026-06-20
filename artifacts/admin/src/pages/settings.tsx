@@ -87,7 +87,8 @@ type ClassPricingForm = z.input<typeof classPricingSchema>;
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canEdit = can("settings", "edit");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -225,7 +226,7 @@ export default function SettingsPage() {
         mode="studio"
         addLabel="Add Dance Type"
         addTestId="button-add-dance-type"
-        onAdd={openCreate}
+        onAdd={canEdit ? openCreate : undefined}
       />
 
       {/* ── Class Pricing section ───────────────────────────────────────── */}
@@ -251,7 +252,7 @@ export default function SettingsPage() {
                         type="number"
                         min={0}
                         data-testid="input-single-class-price"
-                        disabled={isLoadingClassPricing}
+                        disabled={isLoadingClassPricing || !canEdit}
                         {...field}
                       />
                     </FormControl>
@@ -259,14 +260,14 @@ export default function SettingsPage() {
                   </FormItem>
                 )}
               />
-              <Button
+              {canEdit && <Button
                 type="submit"
                 data-testid="button-save-class-pricing"
                 disabled={isLoadingClassPricing || updateClassPricingMutation.isPending}
               >
                 <Save className="h-4 w-4 mr-2" />
                 Save Pricing
-              </Button>
+              </Button>}
             </form>
           </Form>
           {classPricing?.updatedAt && (
@@ -334,30 +335,30 @@ export default function SettingsPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button
+                        {canEdit && <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleToggleActive(dt)}
                           data-testid={`button-toggle-dance-type-${dt.id}`}
                         >
                           {dt.isActive ? "Deactivate" : "Activate"}
-                        </Button>
-                        <Button
+                        </Button>}
+                        {canEdit && <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => openEdit(dt)}
                           data-testid={`button-edit-dance-type-${dt.id}`}
                         >
                           <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
+                        </Button>}
+                        {canEdit && <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDelete(dt.id)}
                           data-testid={`button-delete-dance-type-${dt.id}`}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        </Button>}
                       </TableCell>
                     </TableRow>
                   ))
@@ -368,7 +369,7 @@ export default function SettingsPage() {
       </section>
 
       {/* ── Create / Edit dialog ─────────────────────────────────────────── */}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={canEdit && open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Dance Type" : "Add Dance Type"}</DialogTitle>

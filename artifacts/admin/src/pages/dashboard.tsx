@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Users,
   Ticket,
@@ -154,6 +155,9 @@ function formatRefreshTime(date: Date): string {
 
 export default function Dashboard() {
   const { theme, toggleTheme } = useAdminTheme();
+  const { can } = useAdminAuth();
+  const canRefresh = can("dashboard", "refresh");
+  const canThemeToggle = can("dashboard", "themeToggle");
   const [attendancePeriod, setAttendancePeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
@@ -244,14 +248,18 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={toggleTheme} className="premium-action gap-2" title={`Switch to ${theme === "dark" ? "Night" : "Dark"} mode`}>
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            {theme === "dark" ? "Night" : "Dark"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={refreshDashboard} disabled={isRefreshing} className="premium-action gap-2">
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : "transition-transform duration-300 group-hover:rotate-45"}`} />
-            {isRefreshing ? "Refreshing..." : "Refresh"}
-          </Button>
+          {canThemeToggle && (
+            <Button variant="outline" size="sm" onClick={toggleTheme} className="premium-action gap-2" title={`Switch to ${theme === "dark" ? "Night" : "Dark"} mode`}>
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === "dark" ? "Night" : "Dark"}
+            </Button>
+          )}
+          {canRefresh && (
+            <Button variant="outline" size="sm" onClick={refreshDashboard} disabled={isRefreshing} className="premium-action gap-2">
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : "transition-transform duration-300 group-hover:rotate-45"}`} />
+              {isRefreshing ? "Refreshing..." : "Refresh"}
+            </Button>
+          )}
         </div>
       </header>
 

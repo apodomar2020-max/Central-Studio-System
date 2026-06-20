@@ -24,6 +24,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit, Send, MessageSquare, Mail, Users, Megaphone, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const CAMPAIGN_TYPES = ["email", "whatsapp"] as const;
 const TARGET_AUDIENCES = ["students", "parents", "all"] as const;
@@ -55,6 +56,10 @@ const audienceLabel: Record<string, string> = {
 const STUDIO_CYAN = "#00B6D7";
 
 export default function Marketing() {
+  const { can } = useAdminAuth();
+  const canCreate = can("marketing", "create");
+  const canEdit = can("marketing", "edit");
+  const canDelete = can("marketing", "delete");
   const { data: campaigns, isLoading } = useListCampaigns();
   const createCampaign = useCreateCampaign();
   const updateCampaign = useUpdateCampaign();
@@ -133,7 +138,7 @@ export default function Marketing() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Marketing" description="WhatsApp & email campaigns for students" mode="general" addLabel="New Campaign" addTestId="button-new-campaign" onAdd={openCreate} />
+      <PageHeader title="Marketing" description="WhatsApp & email campaigns for students" mode="general" addLabel="New Campaign" addTestId="button-new-campaign" onAdd={canCreate ? openCreate : undefined} />
 
       {/* Stats strip */}
       <div className="grid grid-cols-3 gap-4">
@@ -214,7 +219,7 @@ export default function Marketing() {
 
                 {/* Actions */}
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {campaign.status === "draft" && (
+                  {canEdit && campaign.status === "draft" && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -226,14 +231,16 @@ export default function Marketing() {
                       Send
                     </Button>
                   )}
-                  {campaign.status === "draft" && (
+                  {canEdit && campaign.status === "draft" && (
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(campaign)}>
                       <Edit className="h-3.5 w-3.5" />
                     </Button>
                   )}
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(campaign.id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
+                  {canDelete && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(campaign.id)}>
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  )}
                 </div>
               </div>
             );
@@ -242,7 +249,7 @@ export default function Marketing() {
       )}
 
       {/* Create/Edit dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={(canCreate || canEdit) && open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Campaign" : "New Campaign"}</DialogTitle>
@@ -326,7 +333,7 @@ export default function Marketing() {
       </Dialog>
 
       {/* Preview & Send confirmation dialog */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <Dialog open={canEdit && previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Preview & Send</DialogTitle>

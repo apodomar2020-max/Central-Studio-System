@@ -10,6 +10,7 @@ import {
   getListPricePackagesQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -45,6 +46,10 @@ type FormValues = z.input<typeof formSchema>;
 type Package = { id: number; name: string; type: string; priceEgp: number; sessions?: number | null; description?: string | null; isActive: boolean; isFeatured: boolean; validityMonths: number; singleClassPriceEgp?: number | null; allowedDanceTypes: string[] };
 
 export default function Packages() {
+  const { can } = useAdminAuth();
+  const canCreate = can("packages", "create");
+  const canEdit = can("packages", "edit");
+  const canDelete = can("packages", "delete");
   const { data: packages, isLoading } = useListPricePackages();
   const createPackage = useCreatePricePackage();
   const updatePackage = useUpdatePricePackage();
@@ -98,7 +103,7 @@ export default function Packages() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Packages" description="Pricing plans and subscriptions" mode="studio" addLabel="Add Package" addTestId="button-add-package" onAdd={openCreate} />
+      <PageHeader title="Packages" description="Pricing plans and subscriptions" mode="studio" addLabel="Add Package" addTestId="button-add-package" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
         <Table>
@@ -130,12 +135,16 @@ export default function Packages() {
                     <Badge variant={pkg.isActive ? "default" : "outline"}>{pkg.isActive ? "Active" : "Inactive"}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" data-testid={`button-edit-package-${pkg.id}`} onClick={() => openEdit(pkg)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" data-testid={`button-delete-package-${pkg.id}`} onClick={() => handleDelete(pkg.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {canEdit && (
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-package-${pkg.id}`} onClick={() => openEdit(pkg)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" data-testid={`button-delete-package-${pkg.id}`} onClick={() => handleDelete(pkg.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

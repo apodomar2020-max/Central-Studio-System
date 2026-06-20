@@ -322,6 +322,12 @@ function LedgerPanel({ orderId }: { orderId: number }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PackageOrders() {
+  const { can } = useAdminAuth();
+  const canApprove = can("packageOrders", "approve");
+  const canCancel = can("packageOrders", "cancel");
+  const canDelete = can("packageOrders", "delete");
+  const canAdjustCredits = can("credits", "adjust");
+  const canViewCreditHistory = can("credits", "history") || can("credits", "view");
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [editingOrder, setEditingOrder] = useState<PackageOrder | null>(null);
@@ -477,19 +483,21 @@ export default function PackageOrders() {
                       </td>
                       {/* Ledger toggle */}
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => setExpandedLedger((prev) => (prev === order.id ? null : order.id))}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors"
-                          style={{ background: `${STUDIO_CYAN}15`, color: STUDIO_CYAN }}
-                        >
-                          <BookOpen className="h-3 w-3" />
-                          {expandedLedger === order.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                        </button>
+                        {canViewCreditHistory && (
+                          <button
+                            onClick={() => setExpandedLedger((prev) => (prev === order.id ? null : order.id))}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors"
+                            style={{ background: `${STUDIO_CYAN}15`, color: STUDIO_CYAN }}
+                          >
+                            <BookOpen className="h-3 w-3" />
+                            {expandedLedger === order.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </button>
+                        )}
                       </td>
                       {/* Actions */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 flex-wrap">
-                          {order.status === "pendingPayment" && (
+                          {canApprove && order.status === "pendingPayment" && (
                             <button
                               onClick={() => handleActivate(order)}
                               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold"
@@ -499,7 +507,7 @@ export default function PackageOrders() {
                               Activate
                             </button>
                           )}
-                          {(order.status === "active" || order.status === "fullyUsed") && (
+                          {canAdjustCredits && (order.status === "active" || order.status === "fullyUsed") && (
                             <button
                               onClick={() => setAdjustingOrder(order)}
                               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold"
@@ -510,15 +518,17 @@ export default function PackageOrders() {
                               Credits
                             </button>
                           )}
-                          <button
-                            onClick={() => handleEditOpen(order)}
-                            className="p-1.5 rounded-lg"
-                            style={{ color: MUTED }}
-                            title="Edit notes/expiry"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                          {order.status !== "cancelled" && (
+                          {canApprove && (
+                            <button
+                              onClick={() => handleEditOpen(order)}
+                              className="p-1.5 rounded-lg"
+                              style={{ color: MUTED }}
+                              title="Edit notes/expiry"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {canCancel && order.status !== "cancelled" && (
                             <button
                               onClick={() => handleCancel(order)}
                               className="p-1.5 rounded-lg"
@@ -528,20 +538,22 @@ export default function PackageOrders() {
                               <XCircle className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          <button
-                            onClick={() => handleDelete(order.id)}
-                            className="p-1.5 rounded-lg"
-                            style={{ color: "#EF444480" }}
-                            title="Delete"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDelete(order.id)}
+                              className="p-1.5 rounded-lg"
+                              style={{ color: "#EF444480" }}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>,
                   ];
 
-                  if (expandedLedger === order.id) {
+                  if (canViewCreditHistory && expandedLedger === order.id) {
                     rows.push(<LedgerPanel key={`ledger-${order.id}`} orderId={order.id} />);
                   }
 
@@ -553,7 +565,7 @@ export default function PackageOrders() {
       </div>
 
       {/* Edit modal */}
-      {editingOrder && (
+      {canApprove && editingOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setEditingOrder(null)}>
           <div
             className="w-full max-w-md rounded-2xl p-6 space-y-5"
@@ -614,7 +626,7 @@ export default function PackageOrders() {
       )}
 
       {/* Adjust Credits dialog */}
-      {adjustingOrder && (
+      {canAdjustCredits && adjustingOrder && (
         <AdjustCreditsDialog order={adjustingOrder} onClose={() => setAdjustingOrder(null)} />
       )}
     </div>

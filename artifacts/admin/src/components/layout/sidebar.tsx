@@ -26,40 +26,49 @@ import {
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { allows, type PermRequirement } from "@/lib/permissions";
 
-const studioNavTop = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Instructors", href: "/instructors", icon: Users },
-  { name: "Classes", href: "/classes", icon: CalendarDays },
-  { name: "Schedules", href: "/schedules", icon: CalendarRange },
-  { name: "Packages", href: "/packages", icon: CreditCard },
-  { name: "Bookings", href: "/bookings", icon: Ticket },
+interface NavEntry {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  /** Permission requirement to display this entry (any one pair grants it). */
+  perm: PermRequirement;
+}
+
+const studioNavTop: NavEntry[] = [
+  { name: "Dashboard", href: "/", icon: LayoutDashboard, perm: [["dashboard", "view"]] },
+  { name: "Instructors", href: "/instructors", icon: Users, perm: [["instructors", "view"]] },
+  { name: "Classes", href: "/classes", icon: CalendarDays, perm: [["classes", "view"]] },
+  { name: "Schedules", href: "/schedules", icon: CalendarRange, perm: [["schedules", "view"]] },
+  { name: "Packages", href: "/packages", icon: CreditCard, perm: [["packages", "view"]] },
+  { name: "Bookings", href: "/bookings", icon: Ticket, perm: [["bookings", "view"]] },
 ];
 
-const studioNavBottom = [
-  { name: "Offers", href: "/offers", icon: Tag },
-  { name: "Hero Slides", href: "/hero-items", icon: ImagePlay },
+const studioNavBottom: NavEntry[] = [
+  { name: "Offers", href: "/offers", icon: Tag, perm: [["offers", "view"]] },
+  { name: "Hero Slides", href: "/hero-items", icon: ImagePlay, perm: [["heroSlides", "view"]] },
 ];
 
-const balletNav = [
-  { name: "Applications", href: "/ballet/applications", icon: ClipboardList },
-  { name: "Assessment Dates", href: "/ballet/slots", icon: CalendarDays },
-  { name: "Pricing & Settings", href: "/ballet/settings", icon: Settings2 },
-  { name: "Levels", href: "/ballet/levels", icon: Trophy },
+const balletNav: NavEntry[] = [
+  { name: "Applications", href: "/ballet/applications", icon: ClipboardList, perm: [["ballet.applications", "view"]] },
+  { name: "Assessment Dates", href: "/ballet/slots", icon: CalendarDays, perm: [["ballet.assessmentDates", "view"]] },
+  { name: "Pricing & Settings", href: "/ballet/settings", icon: Settings2, perm: [["ballet.pricing", "view"]] },
+  { name: "Levels", href: "/ballet/levels", icon: Trophy, perm: [["ballet.levels", "view"]] },
 ];
 
-const generalNav = [
-  { name: "Notifications", href: "/notifications", icon: Bell },
-  { name: "Marketing", href: "/marketing", icon: Megaphone },
-  { name: "Package Orders", href: "/package-orders", icon: ShoppingBag },
-  { name: "Attendance", href: "/attendance", icon: ScanLine },
-  { name: "Reports", href: "/reports", icon: BarChart3 },
+const generalNav: NavEntry[] = [
+  { name: "Notifications", href: "/notifications", icon: Bell, perm: [["notifications", "view"]] },
+  { name: "Marketing", href: "/marketing", icon: Megaphone, perm: [["marketing", "view"]] },
+  { name: "Package Orders", href: "/package-orders", icon: ShoppingBag, perm: [["packageOrders", "view"]] },
+  { name: "Attendance", href: "/attendance", icon: ScanLine, perm: [["attendance", "view"]] },
+  { name: "Reports", href: "/reports", icon: BarChart3, perm: [["reports", "view"]] },
 ];
 
-const systemNav = [
-  { name: "App Content", href: "/app-content", icon: FileText },
-  { name: "System Users", href: "/system-users", icon: ShieldCheck },
-  { name: "Settings", href: "/settings", icon: Settings2 },
+const systemNav: NavEntry[] = [
+  { name: "App Content", href: "/app-content", icon: FileText, perm: [["appContent", "view"]] },
+  { name: "System Users", href: "/system-users", icon: ShieldCheck, perm: [["adminUsers", "view"], ["roles", "view"]] },
+  { name: "Settings", href: "/settings", icon: Settings2, perm: [["settings", "view"]] },
 ];
 
 function NavItem({
@@ -112,7 +121,7 @@ function NavItem({
 
 export function Sidebar() {
   const [location] = useLocation();
-  const { user, logout } = useAdminAuth();
+  const { user, logout, can } = useAdminAuth();
   const [usersOpen, setUsersOpen] = useState(
     location === "/students" || location.startsWith("/parents")
   );
@@ -128,6 +137,23 @@ export function Sidebar() {
       ? location === "/"
       : location === href || location.startsWith(href + "/");
 
+  // ── Permission-filtered nav (Super Admin passes everything via can()) ──
+  const visible = (entries: NavEntry[]) => entries.filter((e) => allows(can, e.perm));
+  const studioTop = visible(studioNavTop);
+  const studioBottom = visible(studioNavBottom);
+  const ballet = visible(balletNav);
+  const general = visible(generalNav);
+  const system = visible(systemNav);
+
+  // Users group: only its real sub-links (Students/Parents) gate visibility, so
+  // we never render an empty group.
+  const canStudents = allows(can, [["students", "view"]]);
+  const canParents = allows(can, [["parents", "view"]]);
+  const usersGroupVisible = canStudents || canParents;
+
+  const studioSectionVisible =
+    studioTop.length > 0 || studioBottom.length > 0 || usersGroupVisible;
+
   return (
     <div className="flex h-full w-60 flex-col border-r bg-sidebar border-sidebar-border shadow-[8px_0_28px_rgba(0,0,0,.06)] transition-colors duration-200">
       {/* Logo */}
@@ -141,135 +167,147 @@ export function Sidebar() {
 
       <div className="flex-1 overflow-y-auto py-4 space-y-5">
         {/* Studio section */}
-        <div>
-          <div className="px-4 mb-1">
-            <span className="text-[10px] font-semibold tracking-widest uppercase text-[#00B6D7]/60">
-              Studio
-            </span>
-          </div>
-          <nav className="space-y-0.5 pr-2">
-            {studioNavTop.map((item) => (
-              <NavItem
-                key={item.name}
-                item={item}
-                isActive={isActive(item.href)}
-                accent="studio"
-              />
-            ))}
-
-            {/* Collapsible Users Group */}
-            <div className="space-y-0.5">
-              <button
-                onClick={() => setUsersOpen(!usersOpen)}
-                className={cn(
-                  "w-full group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-r-lg cursor-pointer transition-all duration-150 ml-0 pl-3 focus:outline-none",
-                  (location === "/students" || location.startsWith("/parents"))
-                    ? "bg-[#00B6D7]/10 text-[#00B6D7] border-l-2 border-[#00B6D7]"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent border-l-2 border-transparent"
-                )}
-              >
-                <div className="flex items-center">
-                  <UserSquare2
-                    className={cn(
-                      "mr-3 h-[18px] w-[18px] flex-shrink-0 transition-colors",
-                      (location === "/students" || location.startsWith("/parents"))
-                        ? "text-[#00B6D7]"
-                        : "text-muted-foreground/60 group-hover:text-muted-foreground"
-                    )}
-                  />
-                  <span>Users</span>
-                </div>
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 transition-transform duration-150 text-muted-foreground/60 group-hover:text-muted-foreground",
-                    usersOpen && "transform rotate-180"
-                  )}
+        {studioSectionVisible && (
+          <div>
+            <div className="px-4 mb-1">
+              <span className="text-[10px] font-semibold tracking-widest uppercase text-[#00B6D7]/60">
+                Studio
+              </span>
+            </div>
+            <nav className="space-y-0.5 pr-2">
+              {studioTop.map((item) => (
+                <NavItem
+                  key={item.name}
+                  item={item}
+                  isActive={isActive(item.href)}
+                  accent="studio"
                 />
-              </button>
+              ))}
 
-              {usersOpen && (
-                <div className="pl-6 space-y-0.5 mt-0.5">
-                  <Link href="/students">
-                    <div
-                      className={cn(
-                        "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
-                        location === "/students"
-                          ? "text-[#00B6D7] bg-[#00B6D7]/5"
-                          : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                      )}
-                    >
-                      Students
+              {/* Collapsible Users Group (only its real sub-links gate visibility) */}
+              {usersGroupVisible && (
+                <div className="space-y-0.5">
+                  <button
+                    onClick={() => setUsersOpen(!usersOpen)}
+                    className={cn(
+                      "w-full group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-r-lg cursor-pointer transition-all duration-150 ml-0 pl-3 focus:outline-none",
+                      (location === "/students" || location.startsWith("/parents"))
+                        ? "bg-[#00B6D7]/10 text-[#00B6D7] border-l-2 border-[#00B6D7]"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent border-l-2 border-transparent"
+                    )}
+                  >
+                    <div className="flex items-center">
+                      <UserSquare2
+                        className={cn(
+                          "mr-3 h-[18px] w-[18px] flex-shrink-0 transition-colors",
+                          (location === "/students" || location.startsWith("/parents"))
+                            ? "text-[#00B6D7]"
+                            : "text-muted-foreground/60 group-hover:text-muted-foreground"
+                        )}
+                      />
+                      <span>Users</span>
                     </div>
-                  </Link>
-                  <Link href="/parents">
-                    <div
+                    <ChevronDown
                       className={cn(
-                        "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
-                        location.startsWith("/parents")
-                          ? "text-[#00B6D7] bg-[#00B6D7]/5"
-                          : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                        "h-4 w-4 transition-transform duration-150 text-muted-foreground/60 group-hover:text-muted-foreground",
+                        usersOpen && "transform rotate-180"
                       )}
-                    >
-                      Parents
+                    />
+                  </button>
+
+                  {usersOpen && (
+                    <div className="pl-6 space-y-0.5 mt-0.5">
+                      {canStudents && (
+                        <Link href="/students">
+                          <div
+                            className={cn(
+                              "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
+                              location === "/students"
+                                ? "text-[#00B6D7] bg-[#00B6D7]/5"
+                                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                            )}
+                          >
+                            Students
+                          </div>
+                        </Link>
+                      )}
+                      {canParents && (
+                        <Link href="/parents">
+                          <div
+                            className={cn(
+                              "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
+                              location.startsWith("/parents")
+                                ? "text-[#00B6D7] bg-[#00B6D7]/5"
+                                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                            )}
+                          >
+                            Parents
+                          </div>
+                        </Link>
+                      )}
                     </div>
-                  </Link>
+                  )}
                 </div>
               )}
-            </div>
 
-            {studioNavBottom.map((item) => (
-              <NavItem
-                key={item.name}
-                item={item}
-                isActive={isActive(item.href)}
-                accent="studio"
-              />
-            ))}
-          </nav>
-        </div>
-
-        {/* Divider */}
-        <div className="mx-4 border-t border-sidebar-border" />
+              {studioBottom.map((item) => (
+                <NavItem
+                  key={item.name}
+                  item={item}
+                  isActive={isActive(item.href)}
+                  accent="studio"
+                />
+              ))}
+            </nav>
+          </div>
+        )}
 
         {/* Ballet section */}
-        <div>
-          <div className="px-4 mb-1 flex items-center gap-1.5">
-            <Music2 className="h-2.5 w-2.5 text-[#00B6D6]/60" />
-            <span className="text-[10px] font-semibold tracking-widest uppercase text-[#00B6D6]/60">
-              Ballet
-            </span>
-          </div>
-          <nav className="space-y-0.5 pr-2">
-            {balletNav.map((item) => (
-              <NavItem
-                key={item.name}
-                item={item}
-                isActive={isActive(item.href)}
-                accent="stage"
-              />
-            ))}
-          </nav>
-        </div>
-
-        {/* Divider */}
-        <div className="mx-4 border-t border-sidebar-border" />
+        {ballet.length > 0 && (
+          <>
+            {studioSectionVisible && <div className="mx-4 border-t border-sidebar-border" />}
+            <div>
+              <div className="px-4 mb-1 flex items-center gap-1.5">
+                <Music2 className="h-2.5 w-2.5 text-[#00B6D6]/60" />
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-[#00B6D6]/60">
+                  Ballet
+                </span>
+              </div>
+              <nav className="space-y-0.5 pr-2">
+                {ballet.map((item) => (
+                  <NavItem
+                    key={item.name}
+                    item={item}
+                    isActive={isActive(item.href)}
+                    accent="stage"
+                  />
+                ))}
+              </nav>
+            </div>
+          </>
+        )}
 
         {/* General */}
-        <div>
-          <nav className="space-y-0.5 pr-2">
-            {generalNav.map((item) => (
-              <NavItem
-                key={item.name}
-                item={item}
-                isActive={isActive(item.href)}
-                accent="general"
-              />
-            ))}
-          </nav>
-        </div>
+        {general.length > 0 && (
+          <>
+            <div className="mx-4 border-t border-sidebar-border" />
+            <div>
+              <nav className="space-y-0.5 pr-2">
+                {general.map((item) => (
+                  <NavItem
+                    key={item.name}
+                    item={item}
+                    isActive={isActive(item.href)}
+                    accent="general"
+                  />
+                ))}
+              </nav>
+            </div>
+          </>
+        )}
 
-        {/* System section — Super Admin only */}
-        {user?.isSuperAdmin && (
+        {/* System section — visible per-permission (Super Admin sees all) */}
+        {system.length > 0 && (
           <>
             <div className="mx-4 border-t border-sidebar-border" />
             <div>
@@ -279,7 +317,7 @@ export function Sidebar() {
                 </span>
               </div>
               <nav className="space-y-0.5 pr-2">
-                {systemNav.map((item) => (
+                {system.map((item) => (
                   <NavItem
                     key={item.name}
                     item={item}

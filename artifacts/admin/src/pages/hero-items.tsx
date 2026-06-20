@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import type { HeroItem } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -38,6 +39,10 @@ const formSchema = z.object({
 type FormValues = z.input<typeof formSchema>;
 
 export default function HeroItems() {
+  const { can } = useAdminAuth();
+  const canCreate = can("heroSlides", "create");
+  const canEdit = can("heroSlides", "edit");
+  const canDelete = can("heroSlides", "delete");
   const { data: items, isLoading } = useListHeroItems();
   const createItem = useCreateHeroItem();
   const updateItem = useUpdateHeroItem();
@@ -114,7 +119,7 @@ export default function HeroItems() {
         mode="studio"
         addLabel="Add Slide"
         addTestId="button-add-hero-item"
-        onAdd={openCreate}
+        onAdd={canCreate ? openCreate : undefined}
       />
 
       <div className="border rounded-md">
@@ -177,20 +182,24 @@ export default function HeroItems() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost" size="icon"
-                      data-testid={`button-edit-hero-item-${item.id}`}
-                      onClick={() => openEdit(item)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost" size="icon"
-                      data-testid={`button-delete-hero-item-${item.id}`}
-                      onClick={() => handleDelete(item.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="ghost" size="icon"
+                        data-testid={`button-edit-hero-item-${item.id}`}
+                        onClick={() => openEdit(item)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost" size="icon"
+                        data-testid={`button-delete-hero-item-${item.id}`}
+                        onClick={() => handleDelete(item.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

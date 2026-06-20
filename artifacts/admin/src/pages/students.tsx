@@ -23,6 +23,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -35,6 +36,10 @@ type FormValues = z.input<typeof formSchema>;
 type Student = { id: number; name: string; email: string; phone?: string | null; notes?: string | null; avatarUrl?: string | null; totalBookings: number; joinedAt: string };
 
 export default function Students() {
+  const { can } = useAdminAuth();
+  const canCreate = can("users", "create");
+  const canEdit = can("students", "edit");
+  const canDelete = can("students", "delete");
   const { data: allStudents, isLoading } = useListStudents();
   const students = allStudents?.filter((s) => s.accountType === "student" || !s.accountType);
   const createStudent = useCreateStudent();
@@ -79,7 +84,7 @@ export default function Students() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Students" description="Manage your community" mode="studio" addLabel="Add Student" addTestId="button-add-student" onAdd={openCreate} />
+      <PageHeader title="Students" description="Manage your community" mode="studio" addLabel="Add Student" addTestId="button-add-student" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
         <Table>
@@ -116,12 +121,16 @@ export default function Students() {
                   <TableCell>{student.totalBookings}</TableCell>
                   <TableCell>{new Date(student.joinedAt).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" data-testid={`button-edit-student-${student.id}`} onClick={() => openEdit(student)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" data-testid={`button-delete-student-${student.id}`} onClick={() => handleDelete(student.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {canEdit && (
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-student-${student.id}`} onClick={() => openEdit(student)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" data-testid={`button-delete-student-${student.id}`} onClick={() => handleDelete(student.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

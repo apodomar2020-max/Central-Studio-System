@@ -8,6 +8,7 @@ import {
   useUpdateBooking,
   getListBookingsQueryKey,
 } from "@workspace/api-client-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -119,6 +120,10 @@ const isChildBooking = (booking: Booking) =>
 const scopeLabel = (booking: Booking) => (isChildBooking(booking) ? "Child" : "Self");
 
 export default function Bookings() {
+  const { can } = useAdminAuth();
+  const canCreate = can("bookings", "create");
+  const canEdit = can("bookings", "edit");
+  const canCancel = can("bookings", "cancel");
   const { data: bookings, isLoading } = useListBookings();
   const createBooking = useCreateBooking();
   const updateBooking = useUpdateBooking();
@@ -205,7 +210,7 @@ export default function Bookings() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Bookings" description="Manage class bookings" mode="studio" addLabel="Add Booking" addTestId="button-add-booking" onAdd={openCreate} />
+      <PageHeader title="Bookings" description="Manage class bookings" mode="studio" addLabel="Add Booking" addTestId="button-add-booking" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="space-y-3">
         <Input
@@ -311,7 +316,7 @@ export default function Bookings() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {(booking.bookingStatus ?? booking.status) === "pending" && (
+                    {canEdit && (booking.bookingStatus ?? booking.status) === "pending" && (
                       <>
                         <Button
                           variant="ghost"
@@ -333,7 +338,7 @@ export default function Bookings() {
                         </Button>
                       </>
                     )}
-                    {booking.paymentStatus === "pending_payment" && (
+                    {canEdit && booking.paymentStatus === "pending_payment" && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -344,7 +349,7 @@ export default function Bookings() {
                         <Check className="h-4 w-4 text-sky-600" />
                       </Button>
                     )}
-                    {!["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status) && (
+                    {canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status) && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -355,9 +360,11 @@ export default function Bookings() {
                         <X className="h-4 w-4 text-orange-600" />
                       </Button>
                     )}
-                    <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
+                    {canEdit && (
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

@@ -231,9 +231,13 @@ async function requestCameraPermission(): Promise<CameraStatus> {
 export function ScanCheckInDialog({
   open,
   onOpenChange,
+  canCheckIn,
+  canPackageDeduct,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canCheckIn: boolean;
+  canPackageDeduct: boolean;
 }) {
   const queryClient = useQueryClient();
 
@@ -337,7 +341,7 @@ export function ScanCheckInDialog({
     setSelectedScheduleId(MANUAL_SCHEDULE_ID);
     setManualClassTitle("");
     setSelectedPackageId(null);
-    setDeductCredit(true);
+    setDeductCredit(canPackageDeduct);
     setResolveError("");
     setDuplicateError("");
     setSuccessMsg("");
@@ -409,6 +413,10 @@ export function ScanCheckInDialog({
   }
 
   async function handleCheckIn() {
+    if (!canCheckIn) {
+      setDuplicateError("You do not have permission to check in this student.");
+      return;
+    }
     if (!effectiveStudentEmail) return;
     setDuplicateError("");
     setPhase("submitting");
@@ -423,6 +431,11 @@ export function ScanCheckInDialog({
       }
       if (paymentMode === "package_credit" && !selectedPackageId) {
         setDuplicateError("Choose the package to deduct from before checking in.");
+        setPhase("selecting");
+        return;
+      }
+      if (paymentMode === "package_credit" && !canPackageDeduct) {
+        setDuplicateError("You do not have permission to deduct package credits.");
         setPhase("selecting");
         return;
       }
@@ -473,12 +486,12 @@ export function ScanCheckInDialog({
 
     // ── Path B: Legacy attendance endpoint (email scan or no booking) ─────────
     // Backward-compatible for walk-ins and legacy QR formats.
-    const creditActuallyDeducted = deductCredit && !!selectedPackageId;
+    const creditActuallyDeducted = canPackageDeduct && deductCredit && !!selectedPackageId;
 
     const body = {
       studentEmail: effectiveStudentEmail,
       studentName: effectiveStudentName,
-      packageOrderId: selectedPackageId ?? null,
+      packageOrderId: canPackageDeduct ? selectedPackageId : null,
       classTitle: effectiveClassTitle || null,
       creditDeducted: creditActuallyDeducted,
       notes: null,
@@ -1049,12 +1062,12 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            {isTokenFlow && selectedBookingId && selectedBookingEligible && (
+            {canCheckIn && isTokenFlow && selectedBookingId && selectedBookingEligible && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Check-in Mode
                 </p>
-                {selectedBooking && bookingScopeOf(selectedBooking) === "child" && activePackages.length > 0 && (
+                {canPackageDeduct && selectedBooking && bookingScopeOf(selectedBooking) === "child" && activePackages.length > 0 && (
                   <p className="text-[11px] px-1" style={{ color: AMBER }}>
                     Credits will be deducted from the account owner&apos;s package.
                   </p>
@@ -1074,7 +1087,7 @@ export function ScanCheckInDialog({
                   <span className="text-xs" style={{ color: AMBER }}>No credit deduction</span>
                 </button>
 
-                {activePackages.length === 0 ? (
+                {canPackageDeduct && (activePackages.length === 0 ? (
                   <div
                     className="text-sm px-3 py-2.5 rounded-xl"
                     style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
@@ -1112,12 +1125,12 @@ export function ScanCheckInDialog({
                       </span>
                     </button>
                   ))
-                )}
+                ))}
               </div>
             )}
 
             {/* Package picker is shown only for legacy (email) flow or when no booking is selected */}
-            {(!isTokenFlow || !selectedBookingId) && (
+            {canCheckIn && canPackageDeduct && (!isTokenFlow || !selectedBookingId) && (
               activePackages.length === 0 ? (
                 <div
                   className="text-sm px-3 py-2.5 rounded-xl"
@@ -1194,7 +1207,7 @@ export function ScanCheckInDialog({
                 </div>
               )}
 
-              {selectedPackageId && (
+              {canPackageDeduct && selectedPackageId && (
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1217,20 +1230,26 @@ export function ScanCheckInDialog({
               >
                 Back
               </button>
-              <button
-                onClick={() => void handleCheckIn()}
-                disabled={
-                  Boolean(
-                    scannedQrToken &&
-                      selectedBookingId &&
-                      (!selectedBookingEligible || !paymentMode || (paymentMode === "package_credit" && !selectedPackageId)),
-                  )
-                }
-                className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-40"
-                style={{ background: STUDIO_CYAN, color: "#000" }}
-              >
-                Check In
-              </button>
+              {canCheckIn ? (
+                <button
+                  onClick={() => void handleCheckIn()}
+                  disabled={
+                    Boolean(
+                      scannedQrToken &&
+                        selectedBookingId &&
+                        (!selectedBookingEligible || !paymentMode || (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId))),
+                    )
+                  }
+                  className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-40"
+                  style={{ background: STUDIO_CYAN, color: "#000" }}
+                >
+                  Check In
+                </button>
+              ) : (
+                <div className="flex-1 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-center text-xs font-medium text-amber-400">
+                  Check-in permission required
+                </div>
+              )}
             </div>
           </div>
         )}

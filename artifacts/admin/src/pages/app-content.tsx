@@ -159,7 +159,10 @@ function StatusBadge({ active }: { active: boolean }) {
 }
 
 export default function AppContentPage() {
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canCreate = can("appContent", "create");
+  const canEdit = can("appContent", "edit");
+  const canDelete = can("appContent", "delete");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -435,6 +438,7 @@ export default function AppContentPage() {
                         id="content-active"
                         checked={pageForm.isActive}
                         onCheckedChange={(isActive) => setPageForm((prev) => ({ ...prev, isActive }))}
+                        disabled={!canEdit}
                       />
                     </div>
                   </div>
@@ -446,6 +450,7 @@ export default function AppContentPage() {
                         id="content-title"
                         value={pageForm.title}
                         onChange={(e) => setPageForm((prev) => ({ ...prev, title: e.target.value }))}
+                        disabled={!canEdit}
                       />
                     </div>
 
@@ -456,6 +461,7 @@ export default function AppContentPage() {
                         value={pageForm.subtitle}
                         onChange={(e) => setPageForm((prev) => ({ ...prev, subtitle: e.target.value }))}
                         placeholder="Optional"
+                        disabled={!canEdit}
                       />
                     </div>
 
@@ -466,6 +472,7 @@ export default function AppContentPage() {
                         value={pageForm.content}
                         onChange={(e) => setPageForm((prev) => ({ ...prev, content: e.target.value }))}
                         className="min-h-[420px] font-mono text-sm leading-6"
+                        disabled={!canEdit}
                       />
                       <p className="text-xs text-muted-foreground">
                         Plain text only. FAQ and contact buttons are managed in their own tabs.
@@ -473,7 +480,7 @@ export default function AppContentPage() {
                     </div>
                   </div>
 
-                  <div className="flex justify-end">
+                  {canEdit && <div className="flex justify-end">
                     <Button
                       onClick={() => updatePageMutation.mutate(pageForm)}
                       disabled={!canSavePage || updatePageMutation.isPending}
@@ -482,7 +489,7 @@ export default function AppContentPage() {
                       <Save className="h-4 w-4" />
                       {updatePageMutation.isPending ? "Saving..." : "Save"}
                     </Button>
-                  </div>
+                  </div>}
                 </div>
 
                 <aside className="rounded-md border p-4">
@@ -519,10 +526,12 @@ export default function AppContentPage() {
                 <h2 className="text-lg font-semibold text-white">FAQ</h2>
                 <p className="text-sm text-muted-foreground">Questions shown on mobile Help & Support.</p>
               </div>
-              <Button onClick={openNewFaq} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add FAQ
-              </Button>
+              {canCreate && (
+                <Button onClick={openNewFaq} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add FAQ
+                </Button>
+              )}
             </div>
             <Table>
               <TableHeader>
@@ -545,12 +554,16 @@ export default function AppContentPage() {
                       <TableCell>{item.sortOrder}</TableCell>
                       <TableCell><StatusBadge active={item.isActive} /></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEditFaq(item)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteFaqMutation.mutate(item.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" onClick={() => openEditFaq(item)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" onClick={() => deleteFaqMutation.mutate(item.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -567,10 +580,12 @@ export default function AppContentPage() {
                 <h2 className="text-lg font-semibold text-white">Contact Links</h2>
                 <p className="text-sm text-muted-foreground">Buttons shown on mobile Help & Support.</p>
               </div>
-              <Button onClick={openNewContact} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Contact
-              </Button>
+              {canCreate && (
+                <Button onClick={openNewContact} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Contact
+                </Button>
+              )}
             </div>
             <Table>
               <TableHeader>
@@ -597,12 +612,16 @@ export default function AppContentPage() {
                       <TableCell>{item.sortOrder}</TableCell>
                       <TableCell><StatusBadge active={item.isActive} /></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEditContact(item)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteContactMutation.mutate(item.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" onClick={() => openEditContact(item)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" onClick={() => deleteContactMutation.mutate(item.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -613,7 +632,7 @@ export default function AppContentPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={faqDialogOpen} onOpenChange={setFaqDialogOpen}>
+      <Dialog open={(canCreate || canEdit) && faqDialogOpen} onOpenChange={setFaqDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingFaq ? "Edit FAQ" : "Add FAQ"}</DialogTitle>
@@ -668,7 +687,7 @@ export default function AppContentPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
+      <Dialog open={(canCreate || canEdit) && contactDialogOpen} onOpenChange={setContactDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingContact ? "Edit Contact Link" : "Add Contact Link"}</DialogTitle>

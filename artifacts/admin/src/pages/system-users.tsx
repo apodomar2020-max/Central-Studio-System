@@ -124,10 +124,11 @@ function useSystemUsers() {
   });
 }
 
-function useRoles() {
+function useRoles(enabled = true) {
   const { token } = useAdminAuth();
   return useQuery<Role[]>({
     queryKey: ["admin-roles"],
+    enabled,
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/api/admin/roles`, { headers: makeHeaders(token) });
       if (!res.ok) throw new Error("Failed to load roles");
@@ -643,7 +644,7 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
 
 export default function SystemUsersPage() {
   const { user: currentUser } = useAdminAuth();
-  const rolesQuery = useRoles();
+  const rolesQuery = useRoles(currentUser?.isSuperAdmin === true);
   const roles = rolesQuery.data ?? [];
 
   if (!currentUser?.isSuperAdmin) {
@@ -651,7 +652,10 @@ export default function SystemUsersPage() {
       <div className="flex h-[60vh] items-center justify-center">
         <div className="text-center space-y-2">
           <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="text-muted-foreground text-sm">Super Admin access required.</p>
+          <p className="font-medium">Management remains Super Admin-only</p>
+          <p className="mx-auto max-w-md text-sm text-muted-foreground">
+            Your role can view this area, but admin user and role management will be enabled for delegated permissions in Phase 3.
+          </p>
         </div>
       </div>
     );

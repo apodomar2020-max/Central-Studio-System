@@ -156,7 +156,10 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canReview = can("ballet.applications", "review");
+  const canApprove = can("ballet.applications", "approve");
+  const canReject = can("ballet.applications", "reject");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -267,6 +270,11 @@ export default function ApplicationDetailPage() {
 
   const { application: app, slot, level, events } = data;
   const levels = levelsData?.levels ?? [];
+  const permittedStatuses = ALL_STATUSES.filter((status) => {
+    if (status.value === "rejected") return canReject;
+    if (["accepted", "assignedToLevel", "activeBallet"].includes(status.value)) return canApprove;
+    return canReview;
+  });
 
   return (
     <div className="space-y-6">
@@ -384,7 +392,7 @@ export default function ApplicationDetailPage() {
         <div className="space-y-4">
 
           {/* Status change */}
-          <div className="rounded-lg border bg-card p-5 space-y-4">
+          {permittedStatuses.length > 0 && <div className="rounded-lg border bg-card p-5 space-y-4">
             <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Change Status
             </h3>
@@ -398,7 +406,7 @@ export default function ApplicationDetailPage() {
                 <SelectValue placeholder="Select new status…" />
               </SelectTrigger>
               <SelectContent>
-                {ALL_STATUSES.filter((s) => s.value !== app.status).map((s) => (
+                {permittedStatuses.filter((s) => s.value !== app.status).map((s) => (
                   <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -420,10 +428,10 @@ export default function ApplicationDetailPage() {
                 <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</>
               ) : "Update Status"}
             </Button>
-          </div>
+          </div>}
 
           {/* Level assignment */}
-          {levels.length > 0 && (
+          {canApprove && levels.length > 0 && (
             <div className="rounded-lg border bg-card p-5 space-y-4">
               <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Assign to Level

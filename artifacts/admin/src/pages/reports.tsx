@@ -288,9 +288,12 @@ const STATUS_OPTIONS: Record<Entity, { value: string; label: string }[]> = {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canAnalytics = can("reports", "analytics");
+  const canExportExcel = can("reports", "exportExcel");
+  const canExportPdf = can("reports", "exportPdf");
 
-  const [tab, setTab] = useState<"overview" | "export">("overview");
+  const [tab, setTab] = useState<"overview" | "export">(canAnalytics ? "overview" : "export");
   const [preset, setPreset] = useState<Preset>("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -457,7 +460,7 @@ export default function ReportsPage() {
       {/* ── Segmented control ── */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as "overview" | "export")} className="space-y-6">
         <TabsList>
-          <TabsTrigger value="overview">Overview / Analytics</TabsTrigger>
+          {canAnalytics && <TabsTrigger value="overview">Overview / Analytics</TabsTrigger>}
           <TabsTrigger value="export">Export Center</TabsTrigger>
         </TabsList>
 
@@ -734,30 +737,34 @@ export default function ReportsPage() {
 
             <div className="flex-1" />
 
-            {/* Export buttons — Excel (Phase 3) + professional PDF (Phase 4) */}
+            {/* Export buttons — gated by reports.exportPdf / reports.exportExcel */}
             <div className="flex items-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => handleExport("pdf")}
-                disabled={exportingFormat !== null || reportQuery.isLoading || !report}
-                title={!report ? "Load a preview first" : "Download .pdf"}
-              >
-                {exportingFormat === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => handleExport("xlsx")}
-                disabled={exportingFormat !== null || reportQuery.isLoading || !report}
-                title={!report ? "Load a preview first" : "Download .xlsx"}
-              >
-                {exportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                {exportingFormat === "xlsx" ? "Exporting…" : "Export Excel"}
-              </Button>
+              {canExportPdf && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => handleExport("pdf")}
+                  disabled={exportingFormat !== null || reportQuery.isLoading || !report}
+                  title={!report ? "Load a preview first" : "Download .pdf"}
+                >
+                  {exportingFormat === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                  {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
+                </Button>
+              )}
+              {canExportExcel && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => handleExport("xlsx")}
+                  disabled={exportingFormat !== null || reportQuery.isLoading || !report}
+                  title={!report ? "Load a preview first" : "Download .xlsx"}
+                >
+                  {exportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                  {exportingFormat === "xlsx" ? "Exporting…" : "Export Excel"}
+                </Button>
+              )}
             </div>
           </div>
 

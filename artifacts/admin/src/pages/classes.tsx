@@ -96,7 +96,11 @@ type Class = {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Classes() {
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canCreate = can("classes", "create");
+  const canEdit = can("classes", "edit");
+  const canDelete = can("classes", "delete");
+  const canMediaManage = can("classes", "mediaManage");
   const { data: classes, isLoading } = useListClasses();
   const { data: instructors } = useListInstructors();
   const createClass = useCreateClass();
@@ -210,7 +214,7 @@ export default function Classes() {
         mode="studio"
         addLabel="Add Class"
         addTestId="button-add-class"
-        onAdd={openCreate}
+        onAdd={canCreate ? openCreate : undefined}
       />
 
       <div className="border rounded-md">
@@ -255,22 +259,26 @@ export default function Classes() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      data-testid={`button-edit-class-${cls.id}`}
-                      onClick={() => openEdit(cls)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      data-testid={`button-delete-class-${cls.id}`}
-                      onClick={() => handleDelete(cls.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-edit-class-${cls.id}`}
+                        onClick={() => openEdit(cls)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-delete-class-${cls.id}`}
+                        onClick={() => handleDelete(cls.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -449,32 +457,36 @@ export default function Classes() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="photoUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Class Image URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Direct image or Google Drive sharing URL" {...field} value={field.value ?? ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="classVideoUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Class Video URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Direct MP4, Google Drive, or YouTube URL" {...field} value={field.value ?? ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {canMediaManage && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name="photoUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Class Image URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Direct image or Google Drive sharing URL" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="classVideoUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Class Video URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Direct MP4, Google Drive, or YouTube URL" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
               <FormField
                 control={form.control}
                 name="isActive"

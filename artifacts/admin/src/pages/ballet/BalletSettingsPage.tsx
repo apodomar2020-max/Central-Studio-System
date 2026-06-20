@@ -71,7 +71,8 @@ interface SettingsForm {
 export default function BalletSettingsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const canEdit = can("ballet.pricing", "edit");
 
   const [form, setForm] = useState<SettingsForm>({
     preBalletPriceEgp: "",
@@ -169,7 +170,7 @@ export default function BalletSettingsPage() {
             Configure pricing, monthly hours, and assessment instructions.
           </p>
         </div>
-        {dirty && (
+        {canEdit && dirty && (
           <Button
             onClick={handleSave}
             disabled={saveMutation.isPending}
@@ -200,7 +201,7 @@ export default function BalletSettingsPage() {
 
       {/* Form */}
       {!isLoading && !isError && (
-        <div className="space-y-8">
+        <fieldset disabled={!canEdit} className="space-y-8">
           {/* Pricing */}
           <div className="rounded-lg border border-border bg-card p-6 space-y-5">
             <h2 className="text-base font-semibold text-white">Pricing</h2>
@@ -309,7 +310,7 @@ export default function BalletSettingsPage() {
           </div>
 
           {/* Sticky save bar */}
-          {dirty && (
+          {canEdit && dirty && (
             <div className="flex justify-end pt-2">
               <Button
                 onClick={handleSave}
@@ -330,7 +331,7 @@ export default function BalletSettingsPage() {
               Last updated: {new Date(data.settings.updatedAt).toLocaleString()}
             </p>
           )}
-        </div>
+        </fieldset>
       )}
     </div>
   );

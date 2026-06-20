@@ -4,8 +4,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, ArrowLeft } from "lucide-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 export default function ParentDetailPage() {
+  const { can } = useAdminAuth();
+  const canViewChildren = can("children", "view");
   const { id } = useParams<{ id: string }>();
   const parentId = parseInt(id ?? "", 10);
   const { data: parent, isLoading, error } = useGetStudent(parentId);
@@ -71,7 +74,7 @@ export default function ParentDetailPage() {
         </Card>
 
         {/* Children Card */}
-        <Card className="md:col-span-2">
+        {canViewChildren && <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle>Children Profiles</CardTitle>
           </CardHeader>
@@ -111,7 +114,7 @@ export default function ParentDetailPage() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card>}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import {
   getListNotificationsQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -39,6 +40,10 @@ type FormValues = z.input<typeof formSchema>;
 type Notification = { id: number; title: string; body: string; target: string; sentAt?: string | null; isDraft: boolean; createdAt: string };
 
 export default function Notifications() {
+  const { can } = useAdminAuth();
+  const canCreate = can("notifications", "create");
+  const canSend = can("notifications", "send");
+  const canDelete = can("notifications", "delete");
   const { data: notifications, isLoading } = useListNotifications();
   const createNotification = useCreateNotification();
   const updateNotification = useUpdateNotification();
@@ -66,11 +71,12 @@ export default function Notifications() {
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
+    const payload = canSend ? parsed : { ...parsed, isDraft: true };
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListNotificationsQueryKey() }); setOpen(false); };
     if (editing) {
-      updateNotification.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
+      updateNotification.mutate({ id: editing.id, data: payload }, { onSuccess: invalidate });
     } else {
-      createNotification.mutate({ data: parsed }, { onSuccess: invalidate });
+      createNotification.mutate({ data: payload }, { onSuccess: invalidate });
     }
   };
 
@@ -82,7 +88,7 @@ export default function Notifications() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Notifications" description="Broadcast messages to your community" mode="general" addLabel="Create Notification" addTestId="button-add-notification" onAdd={openCreate} />
+      <PageHeader title="Notifications" description="Broadcast messages to your community" mode="general" addLabel="Create Notification" addTestId="button-add-notification" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
         <Table>
@@ -113,12 +119,16 @@ export default function Notifications() {
                   </TableCell>
                   <TableCell>{n.sentAt ? new Date(n.sentAt).toLocaleDateString() : "—"}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" data-testid={`button-edit-notification-${n.id}`} onClick={() => openEdit(n)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" data-testid={`button-delete-notification-${n.id}`} onClick={() => handleDelete(n.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {canCreate && (n.isDraft || canSend) && (
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-notification-${n.id}`} onClick={() => openEdit(n)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" data-testid={`button-delete-notification-${n.id}`} onClick={() => handleDelete(n.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -127,7 +137,7 @@ export default function Notifications() {
         </Table>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={canCreate && open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Notification" : "Create Notification"}</DialogTitle>
@@ -160,16 +170,19 @@ export default function Notifications() {
                   <FormMessage />
                 </FormItem>
               )} />
-              <FormField control={form.control} name="isDraft" render={({ field }) => (
-                <FormItem className="flex items-center gap-3">
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  <FormLabel className="!mt-0">Save as Draft</FormLabel>
-                </FormItem>
-              )} />
+              {/* Publishing (un-drafting / sending) requires notifications.send */}
+              {canSend && (
+                <FormField control={form.control} name="isDraft" render={({ field }) => (
+                  <FormItem className="flex items-center gap-3">
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    <FormLabel className="!mt-0">Save as Draft</FormLabel>
+                  </FormItem>
+                )} />
+              )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button type="submit" data-testid="button-submit-notification" disabled={createNotification.isPending || updateNotification.isPending}>
-                  {editing ? "Save Changes" : "Create"}
+                  {!canSend ? "Save Draft" : editing ? "Save Changes" : "Create"}
                 </Button>
               </DialogFooter>
             </form>
