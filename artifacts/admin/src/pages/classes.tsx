@@ -72,6 +72,8 @@ const formSchema = z.object({
   ageGroup: z.string().min(1, "Age Group is required"),
   durationMins: z.coerce.number().int().min(1),
   capacity: z.coerce.number().int().min(1),
+  photoUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
+  classVideoUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
   isActive: z.boolean().default(true),
 });
 
@@ -86,6 +88,8 @@ type Class = {
   ageGroup: string;
   durationMins: number;
   capacity: number;
+  photoUrl?: string | null;
+  classVideoUrl?: string | null;
   isActive: boolean;
 };
 
@@ -136,7 +140,7 @@ export default function Classes() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "", category: "", level: "All Levels", ageGroup: "Adults",
-      durationMins: 60, capacity: 20, isActive: true,
+      durationMins: 60, capacity: 20, photoUrl: "", classVideoUrl: "", isActive: true,
     },
   });
 
@@ -144,7 +148,8 @@ export default function Classes() {
     setEditing(null);
     form.reset({
       title: "", description: "", category: "", level: "All Levels",
-      ageGroup: "Adults", durationMins: 60, capacity: 20, isActive: true,
+      ageGroup: "Adults", durationMins: 60, capacity: 20,
+      photoUrl: "", classVideoUrl: "", isActive: true,
     });
     setOpen(true);
   };
@@ -160,6 +165,8 @@ export default function Classes() {
       ageGroup: cls.ageGroup || "Adults",
       durationMins: cls.durationMins,
       capacity: cls.capacity,
+      photoUrl: cls.photoUrl ?? "",
+      classVideoUrl: cls.classVideoUrl ?? "",
       isActive: cls.isActive,
     });
     setOpen(true);
@@ -167,14 +174,19 @@ export default function Classes() {
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
+    const payload = {
+      ...parsed,
+      photoUrl: parsed.photoUrl || null,
+      classVideoUrl: parsed.classVideoUrl || null,
+    };
     const invalidate = () => {
       queryClient.invalidateQueries({ queryKey: getListClassesQueryKey() });
       setOpen(false);
     };
     if (editing) {
-      updateClass.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
+      updateClass.mutate({ id: editing.id, data: payload }, { onSuccess: invalidate });
     } else {
-      createClass.mutate({ data: parsed }, { onSuccess: invalidate });
+      createClass.mutate({ data: payload }, { onSuccess: invalidate });
     }
   };
 
@@ -432,6 +444,32 @@ export default function Classes() {
                         {...field}
                         value={field.value ?? ""}
                       />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="photoUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Class Image URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Direct image or Google Drive sharing URL" {...field} value={field.value ?? ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="classVideoUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Class Video URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Direct MP4, Google Drive, or YouTube URL" {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

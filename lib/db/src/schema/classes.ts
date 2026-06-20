@@ -13,6 +13,7 @@ export const classesTable = pgTable("classes", {
   durationMins: integer("duration_mins").notNull().default(60),
   capacity: integer("capacity").notNull().default(20),
   photoUrl: text("photo_url"),
+  classVideoUrl: text("class_video_url"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),

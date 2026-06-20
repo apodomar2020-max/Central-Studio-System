@@ -11,6 +11,7 @@ import type {
   Instructor as ApiInstructor,
   Schedule as ApiSchedule,
 } from "@workspace/api-client-react";
+import { normalizeMediaUrl } from "@workspace/api-client-react";
 
 import { DANCE_CATEGORIES, type AgeGroup, type DanceClass, type Instructor } from "./mockData";
 import {
@@ -86,7 +87,7 @@ export function mapApiInstructorToMobile(api: ApiInstructor): Instructor {
     totalClasses: api.experienceYears,
     photoColor: "#00B6D7",
     initials: initialsFromName(api.name),
-    photoUrl: api.photoUrl ?? undefined,
+    photoUrl: normalizeMediaUrl(api.photoUrl, "image"),
   };
 }
 
@@ -216,6 +217,8 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
     instructorId: api.instructorId != null ? String(api.instructorId) : "",
     title: api.title,
     description: api.description ?? "",
+    photoUrl: normalizeMediaUrl(api.photoUrl, "image"),
+    classVideoUrl: normalizeMediaUrl(api.classVideoUrl, "video"),
     date: "",
     dayOfWeek: "",
     startTime: "",

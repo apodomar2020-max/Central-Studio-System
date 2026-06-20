@@ -35,6 +35,8 @@ export interface DanceClass {
   instructorId: string;
   title: string;
   description: string;
+  photoUrl?: string;
+  classVideoUrl?: string;
   date: string;
   dayOfWeek: string;
   startTime: string;

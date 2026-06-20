@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,6 +8,7 @@ import {
   useUpdateInstructor,
   useDeleteInstructor,
   getListInstructorsQueryKey,
+  normalizeMediaUrl,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,6 +67,30 @@ type Instructor = {
   teachingLevel?: string | null;
   achievements: string[];
 };
+
+function InstructorPhoto({ url, name, preview = false }: { url?: string | null; name: string; preview?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const normalizedUrl = normalizeMediaUrl(url, "image");
+
+  useEffect(() => setFailed(false), [normalizedUrl]);
+
+  const sizeClass = preview ? "w-16 h-16" : "w-10 h-10";
+  if (!normalizedUrl || failed) {
+    return (
+      <div className={`${sizeClass} rounded-full bg-muted flex items-center justify-center text-xs font-bold`}>
+        {name.trim().slice(0, 2).toUpperCase() || "?"}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={normalizedUrl}
+      alt={name}
+      className={`${sizeClass} rounded-full object-cover border`}
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export default function Instructors() {
   const { data: instructors, isLoading } = useListInstructors();
@@ -176,13 +201,7 @@ export default function Instructors() {
               instructors?.map((instructor) => (
                 <TableRow key={instructor.id} data-testid={`row-instructor-${instructor.id}`}>
                   <TableCell>
-                    {instructor.photoUrl ? (
-                      <img src={instructor.photoUrl} alt={instructor.name} className="w-10 h-10 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
-                        {instructor.name.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
+                    <InstructorPhoto url={instructor.photoUrl} name={instructor.name} />
                   </TableCell>
                   <TableCell className="font-medium">{instructor.name}</TableCell>
                   <TableCell>
@@ -289,7 +308,9 @@ export default function Instructors() {
                   <FormControl><Input placeholder="https://example.com/photo.jpg" {...field} value={field.value ?? ""} /></FormControl>
                   <FormMessage />
                   {photoValue && (
-                    <img src={photoValue} alt="Preview" className="mt-2 w-16 h-16 rounded-full object-cover border" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    <div className="mt-2">
+                      <InstructorPhoto url={photoValue} name="Preview" preview />
+                    </div>
                   )}
                 </FormItem>
               )} />

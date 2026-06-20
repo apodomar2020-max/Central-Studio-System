@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React from "react";
+import React, { useState } from "react";
 import {
   Image,
   Linking,
@@ -26,6 +26,7 @@ import { isOfflineError } from "@/services/connectivity";
 export default function InstructorDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+  const [imageFailed, setImageFailed] = useState(false);
 
   const numericId = Number(id);
   const query = useGetInstructor(numericId, {
@@ -79,11 +80,12 @@ export default function InstructorDetailScreen() {
     <View style={styles.container}>
       {/* Hero banner */}
       <View style={[styles.heroBg, { height: Platform.OS === "web" ? 260 : 260 + insets.top }]}>
-        {instructor.photoUrl ? (
+        {instructor.photoUrl && !imageFailed ? (
           <Image
             source={{ uri: instructor.photoUrl }}
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
+            onError={() => setImageFailed(true)}
           />
         ) : (
           <LinearGradient
@@ -109,7 +111,7 @@ export default function InstructorDetailScreen() {
 
         {/* Name / title overlay */}
         <View style={[styles.heroInfo, { paddingBottom: 24 }]}>
-          {!instructor.photoUrl && (
+          {(!instructor.photoUrl || imageFailed) && (
             <View style={[styles.initialsCircle, { backgroundColor: accentColor + "30", borderColor: accentColor + "60" }]}>
               <Text style={[styles.initialsText, { color: accentColor }]}>{instructor.initials}</Text>
             </View>

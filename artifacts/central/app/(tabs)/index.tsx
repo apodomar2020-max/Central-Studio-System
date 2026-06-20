@@ -431,6 +431,10 @@ function ReelsSection() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function InstructorCard({ instructor }: { instructor: Instructor }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => setImageFailed(false), [instructor.photoUrl]);
+
   return (
     <TouchableOpacity
       style={styles.instructorCard}
@@ -440,11 +444,12 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
         router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } });
       }}
     >
-      {instructor.photoUrl ? (
+      {instructor.photoUrl && !imageFailed ? (
         <Image
           source={{ uri: instructor.photoUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
+          onError={() => setImageFailed(true)}
         />
       ) : (
         <LinearGradient

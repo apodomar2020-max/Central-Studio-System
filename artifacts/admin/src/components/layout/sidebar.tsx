@@ -92,7 +92,7 @@ function NavItem({
           "group flex items-center px-3 py-2 text-sm font-medium rounded-r-lg cursor-pointer transition-all duration-150 ml-0 pl-3",
           isActive
             ? cn(activeBg, accentColor)
-            : "text-[#8A9AB0] hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+            : "text-muted-foreground hover:text-foreground hover:bg-accent border-l-2 border-transparent"
         )}
       >
         <item.icon
@@ -100,7 +100,7 @@ function NavItem({
             "mr-3 h-[18px] w-[18px] flex-shrink-0 transition-colors",
             isActive
               ? accentColor
-              : "text-[#4E6070] group-hover:text-[#8A9AB0]"
+              : "text-muted-foreground/60 group-hover:text-muted-foreground"
           )}
           aria-hidden="true"
         />
@@ -129,13 +129,13 @@ export function Sidebar() {
       : location === href || location.startsWith(href + "/");
 
   return (
-    <div className="flex h-full w-60 flex-col border-r bg-sidebar border-sidebar-border">
+    <div className="flex h-full w-60 flex-col border-r bg-sidebar border-sidebar-border shadow-[8px_0_28px_rgba(0,0,0,.06)] transition-colors duration-200">
       {/* Logo */}
       <div className="flex h-20 items-center px-4 border-b border-sidebar-border">
         <img
           src={`${import.meta.env.BASE_URL}logo-central-white.png`}
           alt="Central Studio"
-          className="h-14 w-auto"
+          className="h-14 w-auto rounded-md bg-[#071014] px-2"
         />
       </div>
 
@@ -165,7 +165,7 @@ export function Sidebar() {
                   "w-full group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-r-lg cursor-pointer transition-all duration-150 ml-0 pl-3 focus:outline-none",
                   (location === "/students" || location.startsWith("/parents"))
                     ? "bg-[#00B6D7]/10 text-[#00B6D7] border-l-2 border-[#00B6D7]"
-                    : "text-[#8A9AB0] hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent border-l-2 border-transparent"
                 )}
               >
                 <div className="flex items-center">
@@ -174,14 +174,14 @@ export function Sidebar() {
                       "mr-3 h-[18px] w-[18px] flex-shrink-0 transition-colors",
                       (location === "/students" || location.startsWith("/parents"))
                         ? "text-[#00B6D7]"
-                        : "text-[#4E6070] group-hover:text-[#8A9AB0]"
+                        : "text-muted-foreground/60 group-hover:text-muted-foreground"
                     )}
                   />
                   <span>Users</span>
                 </div>
                 <ChevronDown
                   className={cn(
-                    "h-4 w-4 transition-transform duration-150 text-[#4E6070] group-hover:text-[#8A9AB0]",
+                    "h-4 w-4 transition-transform duration-150 text-muted-foreground/60 group-hover:text-muted-foreground",
                     usersOpen && "transform rotate-180"
                   )}
                 />
@@ -195,7 +195,7 @@ export function Sidebar() {
                         "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
                         location === "/students"
                           ? "text-[#00B6D7] bg-[#00B6D7]/5"
-                          : "text-[#8A9AB0] hover:text-white hover:bg-white/5"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent"
                       )}
                     >
                       Students
@@ -207,7 +207,7 @@ export function Sidebar() {
                         "flex items-center px-3 py-1.5 text-xs font-medium rounded-r-lg cursor-pointer transition-all duration-150 border-l-2 border-transparent",
                         location.startsWith("/parents")
                           ? "text-[#00B6D7] bg-[#00B6D7]/5"
-                          : "text-[#8A9AB0] hover:text-white hover:bg-white/5"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent"
                       )}
                     >
                       Parents
@@ -229,7 +229,7 @@ export function Sidebar() {
         </div>
 
         {/* Divider */}
-        <div className="mx-4 border-t" style={{ borderColor: "hsl(203 25% 12%)" }} />
+        <div className="mx-4 border-t border-sidebar-border" />
 
         {/* Ballet section */}
         <div>
@@ -252,7 +252,7 @@ export function Sidebar() {
         </div>
 
         {/* Divider */}
-        <div className="mx-4 border-t" style={{ borderColor: "hsl(203 25% 12%)" }} />
+        <div className="mx-4 border-t border-sidebar-border" />
 
         {/* General */}
         <div>
@@ -271,7 +271,7 @@ export function Sidebar() {
         {/* System section — Super Admin only */}
         {user?.isSuperAdmin && (
           <>
-            <div className="mx-4 border-t" style={{ borderColor: "hsl(203 25% 12%)" }} />
+            <div className="mx-4 border-t border-sidebar-border" />
             <div>
               <div className="px-4 mb-1">
                 <span className="text-[10px] font-semibold tracking-widest uppercase text-[#00B6D6]/60">
@@ -294,15 +294,12 @@ export function Sidebar() {
       </div>
 
       {/* Footer */}
-      <div
-        className="px-4 py-3 border-t"
-        style={{ borderColor: "hsl(203 25% 10%)" }}
-      >
-        <p className="text-[11px] text-[#8A9AB0] truncate">{user?.fullName ?? "Admin"}</p>
-        <p className="text-[10px] text-[#4E6070] truncate">{user?.username}</p>
+      <div className="border-t border-sidebar-border px-4 py-3">
+        <p className="truncate text-[11px] text-muted-foreground">{user?.fullName ?? "Admin"}</p>
+        <p className="truncate text-[10px] text-muted-foreground/60">{user?.username}</p>
         <button
           onClick={logout}
-          className="mt-2 flex items-center gap-1.5 text-[10px] text-[#4E6070] hover:text-[#8A9AB0] transition-colors"
+          className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
         >
           <LogOut className="h-3 w-3" />
           Sign out

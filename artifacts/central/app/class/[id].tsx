@@ -1,12 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Image,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useGetClass, useGetInstructor, useListSchedules } from "@workspace/api-client-react";
+import { isYouTubeUrl, useGetClass, useGetInstructor, useListSchedules } from "@workspace/api-client-react";
 
 import { compareSchedulesByNextOccurrence, getScheduleLabel, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
@@ -24,6 +26,24 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+
+function ClassVideoHero({ url }: { url: string }) {
+  const player = useVideoPlayer(url, (instance) => {
+    instance.loop = true;
+    instance.muted = true;
+    instance.play();
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFill}
+      contentFit="cover"
+      nativeControls
+      allowsFullscreen
+    />
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   const cfg = {
@@ -44,6 +64,8 @@ function StatusBadge({ status }: { status: string }) {
 export default function ClassDetailScreen() {
   const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
   const insets = useSafeAreaInsets();
+  const [heroImageFailed, setHeroImageFailed] = useState(false);
+  const [instructorImageFailed, setInstructorImageFailed] = useState(false);
 
   const numericId = Number(id);
   const classQuery = useGetClass(numericId, {
@@ -109,6 +131,8 @@ export default function ClassDetailScreen() {
 
   const available = cls.capacity - cls.bookedCount;
   const hasSchedule = Boolean(cls.scheduleId && cls.dayOfWeek && cls.startTime);
+  const youtubeVideo = isYouTubeUrl(cls.classVideoUrl);
+  const playableVideoUrl = cls.classVideoUrl && !youtubeVideo ? cls.classVideoUrl : undefined;
 
   return (
     <View style={styles.container}>
@@ -119,6 +143,23 @@ export default function ClassDetailScreen() {
           { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 },
         ]}
       >
+        {playableVideoUrl ? (
+          <ClassVideoHero url={playableVideoUrl} />
+        ) : cls.photoUrl && !heroImageFailed ? (
+          <Image
+            source={{ uri: cls.photoUrl }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+            onError={() => setHeroImageFailed(true)}
+          />
+        ) : null}
+        {(playableVideoUrl || (cls.photoUrl && !heroImageFailed)) && (
+          <LinearGradient
+            colors={["rgba(0,0,0,0.28)", "rgba(11,11,15,0.82)"]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        )}
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
@@ -134,6 +175,15 @@ export default function ClassDetailScreen() {
 
         <Text style={styles.heroTitle}>{cls.title}</Text>
         <Text style={styles.heroLevel}>{cls.level} · {cls.ageGroup}</Text>
+        {youtubeVideo && cls.classVideoUrl && (
+          <TouchableOpacity
+            style={styles.youtubeButton}
+            onPress={() => Linking.openURL(cls.classVideoUrl!)}
+          >
+            <Ionicons name="logo-youtube" size={17} color="#FFFFFF" />
+            <Text style={styles.youtubeButtonText}>Watch on YouTube</Text>
+          </TouchableOpacity>
+        )}
       </LinearGradient>
 
       <ScrollView
@@ -165,8 +215,12 @@ export default function ClassDetailScreen() {
             <Text style={styles.descTitle}>Instructor</Text>
             <View style={styles.instructorRow}>
               <View style={[styles.instructorAvatar, { backgroundColor: instructor.photoColor + "30" }]}>
-                {instructor.photoUrl ? (
-                  <Image source={{ uri: instructor.photoUrl }} style={styles.instructorAvatarImage} />
+                {instructor.photoUrl && !instructorImageFailed ? (
+                  <Image
+                    source={{ uri: instructor.photoUrl }}
+                    style={styles.instructorAvatarImage}
+                    onError={() => setInstructorImageFailed(true)}
+                  />
                 ) : (
                   <Text style={[styles.instructorInitials, { color: instructor.photoColor }]}>
                     {instructor.initials}
@@ -249,7 +303,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
   },
-  heroGradient: { paddingHorizontal: 20, paddingBottom: 20, gap: 10 },
+  heroGradient: { paddingHorizontal: 20, paddingBottom: 20, gap: 10, minHeight: 270, overflow: "hidden", justifyContent: "flex-end" },
   backBtn: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center", marginBottom: 12,
@@ -259,6 +313,11 @@ const styles = StyleSheet.create({
   categoryBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.8 },
   heroTitle: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF", lineHeight: 34 },
   heroLevel: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  youtubeButton: {
+    alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 7,
+    backgroundColor: "rgba(255,0,0,0.82)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+  },
+  youtubeButtonText: { color: "#FFFFFF", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   scroll: { paddingHorizontal: 20, gap: 14 },
   quickStats: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
   statItem: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties, type PointerEvent } from "react";
 import {
   useGetDashboard,
   useGetAnalytics,
@@ -27,6 +27,8 @@ import {
   CalendarClock,
   AlertTriangle,
   RotateCcw,
+  ArrowUpRight,
+  Activity,
 } from "lucide-react";
 import {
   PieChart,
@@ -36,6 +38,7 @@ import {
   Bar,
   XAxis,
   YAxis,
+  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   Legend,
@@ -49,7 +52,14 @@ type StatCardProps = {
   note?: string;
 };
 
+type InteractiveStyle = CSSProperties & {
+  "--pointer-x"?: string;
+  "--pointer-y"?: string;
+  "--card-accent"?: string;
+};
+
 const CYAN = "#00B6D7";
+const PURPLE = "#8A5CFF";
 const GREEN = "#22C55E";
 const AMBER = "#F59E0B";
 const RED = "#EF4444";
@@ -66,54 +76,69 @@ const STATUS_COLORS: Record<string, string> = {
   no_show: "#F97316",
 };
 
-const customTooltipStyle = {
-  background: "hsl(var(--popover))",
-  border: "1px solid hsl(var(--popover-border))",
-  borderRadius: "8px",
-  color: "#fff",
-  fontSize: "12px",
-};
+function updateCardLight(event: PointerEvent<HTMLElement>) {
+  const bounds = event.currentTarget.getBoundingClientRect();
+  event.currentTarget.style.setProperty("--pointer-x", `${event.clientX - bounds.left}px`);
+  event.currentTarget.style.setProperty("--pointer-y", `${event.clientY - bounds.top}px`);
+}
 
 function StatCard({ title, value, icon: Icon, accent, note }: StatCardProps) {
   return (
-    <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md" style={{ background: `${accent}18` }}>
-          <Icon className="h-4 w-4" style={{ color: accent }} />
+    <article
+      className="premium-card group relative min-h-36 overflow-hidden rounded-lg border p-5"
+      style={{ "--card-accent": accent } as InteractiveStyle}
+      onPointerMove={updateCardLight}
+    >
+      <div className="relative z-10 flex h-full flex-col justify-between gap-5">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-transform duration-300 group-hover:scale-105"
+            style={{ background: `${accent}12`, borderColor: `${accent}28` }}
+          >
+            <Icon className="h-[18px] w-[18px]" style={{ color: accent }} />
+          </div>
+        </div>
+        <div>
+          <p className="text-3xl font-semibold text-foreground">
+            {typeof value === "number" ? value.toLocaleString() : value}
+          </p>
+          {note && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{note}</p>}
         </div>
       </div>
-      <div>
-        <p className="text-2xl font-bold text-white">{typeof value === "number" ? value.toLocaleString() : value}</p>
-        {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
-      </div>
-    </div>
+    </article>
   );
 }
 
 function SkeletonCard() {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-3">
-      <div className="flex justify-between"><Skeleton className="h-4 w-24" /><Skeleton className="h-8 w-8" /></div>
-      <Skeleton className="h-7 w-16" />
+    <div className="premium-card min-h-36 rounded-lg border p-5">
+      <div className="flex justify-between"><Skeleton className="h-4 w-24" /><Skeleton className="h-9 w-9 rounded-lg" /></div>
+      <Skeleton className="mt-10 h-8 w-20" />
     </div>
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({ title, eyebrow, children }: { title: string; eyebrow: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border bg-card p-5">
-      <p className="mb-4 text-sm font-semibold text-white">{title}</p>
+    <article className="premium-panel rounded-lg border p-6 transition-transform duration-300 hover:-translate-y-0.5">
+      <div className="mb-6">
+        <p className="text-[10px] font-semibold uppercase text-primary">{eyebrow}</p>
+        <h3 className="mt-1 text-base font-semibold text-foreground">{title}</h3>
+      </div>
       {children}
-    </div>
+    </article>
   );
 }
 
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
-    <div>
-      <h2 className="text-base font-semibold text-white">{title}</h2>
-      {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
+    <div className="flex items-start gap-3">
+      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_12px_#00B6D7]" />
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+      </div>
     </div>
   );
 }
@@ -166,31 +191,18 @@ export default function Dashboard() {
     count: item.count,
   }));
 
-  const topMetrics: StatCardProps[] = [
-    {
-      title: "Total Revenue",
-      value: dashboard?.revenueTrackingComplete ? `EGP ${(dashboard.totalRevenue ?? 0).toLocaleString()}` : "Not configured",
-      icon: CircleDollarSign,
-      accent: GREEN,
-      note: dashboard?.revenueTrackingComplete ? "Paid classes + activated packages" : "Revenue tracking not fully configured",
-    },
-    { title: "Today's Bookings", value: dashboard?.todayBookings ?? 0, icon: Ticket, accent: CYAN },
-    { title: "Today's Classes", value: dashboard?.todayClasses ?? 0, icon: CalendarDays, accent: AMBER },
-    { title: "Today's Check-ins", value: dashboard?.todayCheckIns ?? 0, icon: ScanLine, accent: GREEN },
-  ];
-
   const studioOverview: StatCardProps[] = [
     { title: "Total Users", value: dashboard?.totalUsers ?? 0, icon: Users, accent: CYAN },
-    { title: "Students", value: dashboard?.totalStudents ?? 0, icon: UserSquare2, accent: CYAN },
+    { title: "Students", value: dashboard?.totalStudents ?? 0, icon: UserSquare2, accent: PURPLE },
     { title: "Parents", value: dashboard?.totalParents ?? 0, icon: UserRound, accent: AMBER },
     { title: "Active Classes", value: dashboard?.activeClasses ?? 0, icon: CalendarDays, accent: GREEN },
-    { title: "Active Instructors", value: dashboard?.activeInstructors ?? 0, icon: Users, accent: GREEN },
+    { title: "Active Instructors", value: dashboard?.activeInstructors ?? 0, icon: Users, accent: CYAN },
   ];
 
   const bookingMetrics: StatCardProps[] = [
     { title: "Total Bookings", value: dashboard?.totalBookings ?? 0, icon: Ticket, accent: CYAN },
     { title: "Confirmed", value: dashboard?.confirmedBookings ?? 0, icon: CheckCircle2, accent: GREEN },
-    { title: "Completed / Attended", value: dashboard?.completedBookings ?? 0, icon: ScanLine, accent: GREEN },
+    { title: "Completed / Attended", value: dashboard?.completedBookings ?? 0, icon: ScanLine, accent: PURPLE },
     { title: "Cancelled", value: dashboard?.cancelledBookings ?? 0, icon: XCircle, accent: RED },
     { title: "Pending Payments", value: dashboard?.pendingPayments ?? 0, icon: Clock, accent: AMBER },
     { title: "Refunded", value: dashboard?.refundedBookings ?? 0, icon: RotateCcw, accent: CYAN },
@@ -198,114 +210,177 @@ export default function Dashboard() {
 
   const operationsMetrics: StatCardProps[] = [
     { title: "Total Check-ins", value: dashboard?.totalCheckIns ?? 0, icon: ScanLine, accent: CYAN },
-    { title: "Upcoming Classes", value: dashboard?.upcomingClasses ?? 0, icon: CalendarClock, accent: AMBER, note: "Next 7 Cairo days" },
+    { title: "Upcoming Classes", value: dashboard?.upcomingClasses ?? 0, icon: CalendarClock, accent: PURPLE, note: "Next 7 Cairo days" },
     { title: "Active Packages", value: dashboard?.activePackages ?? 0, icon: PackageCheck, accent: GREEN },
     { title: "Pending Package Orders", value: dashboard?.pendingPackageOrders ?? 0, icon: ShoppingBag, accent: AMBER },
     { title: "Missed Attendance", value: dashboard?.missedAttendance ?? 0, icon: AlertTriangle, accent: RED },
   ];
 
+  const tooltipStyle = {
+    background: "hsl(var(--popover))",
+    border: "1px solid hsl(var(--popover-border))",
+    borderRadius: "8px",
+    color: "hsl(var(--popover-foreground))",
+    boxShadow: "0 16px 40px rgba(0,0,0,.16)",
+    fontSize: "12px",
+  };
+  const chartText = theme === "night" ? "#64748B" : MUTED;
+  const chartGrid = theme === "night" ? "#E2E8F0" : "rgba(138,154,176,.12)";
+
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="dashboard-canvas space-y-12 pb-12">
+      <header className="flex flex-col gap-5 border-b border-border/70 pb-7 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-white">Operations Dashboard</h1>
-            <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: GREEN }} />
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold text-foreground">Operations Dashboard</h1>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live
             </span>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">Central Studio live operational overview</p>
-          <p className="mt-1 text-xs text-muted-foreground">Last refreshed {formatRefreshTime(lastRefreshed)} Cairo</p>
+          <p className="mt-2 text-sm text-muted-foreground">Central Studio live operational overview</p>
+          <p key={lastRefreshed.getTime()} className="refresh-time mt-1.5 text-xs text-muted-foreground">
+            Last refreshed {formatRefreshTime(lastRefreshed)} Cairo
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={toggleTheme} className="gap-2" title={`Switch to ${theme === "dark" ? "Night" : "Dark"} mode`}>
-            {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          <Button variant="outline" size="sm" onClick={toggleTheme} className="premium-action gap-2" title={`Switch to ${theme === "dark" ? "Night" : "Dark"} mode`}>
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             {theme === "dark" ? "Night" : "Dark"}
           </Button>
-          <Button variant="outline" size="sm" onClick={refreshDashboard} disabled={isRefreshing} className="gap-2">
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          <Button variant="outline" size="sm" onClick={refreshDashboard} disabled={isRefreshing} className="premium-action gap-2">
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : "transition-transform duration-300 group-hover:rotate-45"}`} />
             {isRefreshing ? "Refreshing..." : "Refresh"}
           </Button>
         </div>
       </header>
 
-      <section className="space-y-4">
-        <SectionHeader title="Live Today" description="Current Cairo-day activity and recorded operational revenue." />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {isLoading ? [...Array(4)].map((_, index) => <SkeletonCard key={index} />) : topMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
+      <section className="space-y-5">
+        <SectionHeader title="Live Today" description="Cairo-day activity and recorded operational revenue." />
+        <div className="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
+          <article className="revenue-hero relative min-h-60 overflow-hidden rounded-lg border p-7 sm:p-8">
+            <div className="revenue-grid absolute inset-0 opacity-60" />
+            <div className="absolute -right-12 -top-14 h-52 w-52 rounded-full bg-primary/20 blur-3xl" />
+            <div className="absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-[#8A5CFF]/20 blur-3xl" />
+            <div className="relative z-10 flex h-full flex-col justify-between gap-10">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 shadow-[0_0_24px_rgba(0,182,215,.16)]">
+                    <CircleDollarSign className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Paid classes + activated packages</p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-primary">
+                  <Activity className="h-3 w-3" /> Operational
+                </span>
+              </div>
+              <div>
+                {isLoading ? <Skeleton className="h-12 w-56" /> : (
+                  <p className="text-4xl font-semibold text-foreground sm:text-5xl">
+                    {dashboard?.revenueTrackingComplete ? <><span className="mr-2 text-primary">EGP</span>{(dashboard.totalRevenue ?? 0).toLocaleString()}</> : "Not configured"}
+                  </p>
+                )}
+                <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+                  <TrendingUp className="h-4 w-4 text-emerald-500" />
+                  {dashboard?.revenueTrackingComplete ? "Verified paid operational activity" : "Revenue tracking not fully configured"}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-1">
+            {isLoading ? [...Array(3)].map((_, index) => <SkeletonCard key={index} />) : [
+              { title: "Today's Bookings", value: dashboard?.todayBookings ?? 0, icon: Ticket, accent: CYAN },
+              { title: "Today's Classes", value: dashboard?.todayClasses ?? 0, icon: CalendarDays, accent: AMBER },
+              { title: "Today's Check-ins", value: dashboard?.todayCheckIns ?? 0, icon: ScanLine, accent: GREEN },
+            ].map((metric) => <StatCard key={metric.title} {...metric} />)}
+          </div>
         </div>
       </section>
 
-      <section className="space-y-4">
-        <SectionHeader title="Studio Overview" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="space-y-5">
+        <SectionHeader title="Studio Overview" description="The people and programming keeping the studio moving." />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {isLoading ? [...Array(5)].map((_, index) => <SkeletonCard key={index} />) : studioOverview.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
       </section>
 
-      <section className="space-y-4">
-        <SectionHeader title="Booking Performance" description="Live lifecycle and payment workload, without date-ranged report analysis." />
+      <section className="space-y-5">
+        <SectionHeader title="Booking Performance" description="Live lifecycle and payment workload, separate from date-ranged reporting." />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {isLoading ? [...Array(6)].map((_, index) => <SkeletonCard key={index} />) : bookingMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
-        <ChartCard title="Bookings by Status">
-          {analyticsQuery.isLoading ? (
-            <div className="flex h-56 items-center justify-center"><Skeleton className="h-40 w-40 rounded-full" /></div>
-          ) : bookingChartData.length === 0 ? (
-            <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">No booking data yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={bookingChartData} cx="50%" cy="50%" innerRadius={58} outerRadius={88} paddingAngle={3} dataKey="value">
-                  {bookingChartData.map((entry, index) => <Cell key={index} fill={entry.fill} />)}
-                </Pie>
-                <Tooltip contentStyle={customTooltipStyle} />
-                <Legend iconType="circle" iconSize={8} formatter={(value) => <span className="text-xs text-muted-foreground">{value}</span>} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
       </section>
 
-      <section className="space-y-4">
-        <SectionHeader title="Attendance & Packages" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="space-y-5">
+        <SectionHeader title="Operational Pulse" description="Booking mix and attendance movement at a glance." />
+        <div className="grid gap-6 xl:grid-cols-[.85fr_1.45fr]">
+          <ChartCard title="Bookings by Status" eyebrow="Lifecycle">
+            {analyticsQuery.isLoading ? (
+              <div className="flex h-72 items-center justify-center"><Skeleton className="h-48 w-48 rounded-full" /></div>
+            ) : bookingChartData.length === 0 ? (
+              <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">No booking data yet</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie data={bookingChartData} cx="50%" cy="45%" innerRadius={65} outerRadius={98} paddingAngle={4} dataKey="value" stroke="none">
+                    {bookingChartData.map((entry, index) => <Cell key={index} fill={entry.fill} />)}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend verticalAlign="bottom" iconType="circle" iconSize={8} formatter={(value) => <span style={{ color: chartText, fontSize: 11 }}>{value}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard title="Attendance Over Time" eyebrow="Attendance">
+            <div className="mb-5 flex flex-wrap justify-end gap-1 rounded-lg">
+              {(["daily", "monthly", "yearly"] as const).map((period) => (
+                <button
+                  key={period}
+                  onClick={() => setAttendancePeriod(period)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${attendancePeriod === period ? "bg-primary text-primary-foreground shadow-[0_0_16px_rgba(0,182,215,.2)]" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
+                >
+                  {period === "daily" ? "7 Days" : period === "monthly" ? "6 Months" : "3 Years"}
+                </button>
+              ))}
+            </div>
+            {attendanceChartData.length === 0 ? (
+              <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">No attendance data yet</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={attendanceChartData} barSize={34} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke={chartGrid} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: chartText, fontSize: 11 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: chartText, fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: theme === "night" ? "rgba(15,23,42,.04)" : "rgba(255,255,255,.03)" }} />
+                  <Bar dataKey="count" radius={[7, 7, 2, 2]} fill={CYAN} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </div>
+      </section>
+
+      <section className="space-y-5">
+        <SectionHeader title="Attendance & Packages" description="Current capacity, package activity, and operational exceptions." />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {isLoading ? [...Array(5)].map((_, index) => <SkeletonCard key={index} />) : operationsMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
-        <ChartCard title="Attendance Over Time">
-          <div className="mb-4 flex justify-end gap-1">
-            {(["daily", "monthly", "yearly"] as const).map((period) => (
-              <button
-                key={period}
-                onClick={() => setAttendancePeriod(period)}
-                className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
-                style={attendancePeriod === period ? { background: CYAN, color: "#001014" } : { background: "hsl(var(--secondary))", color: MUTED }}
-              >
-                {period === "daily" ? "7 Days" : period === "monthly" ? "6 Months" : "3 Years"}
-              </button>
-            ))}
-          </div>
-          {attendanceChartData.length === 0 ? (
-            <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">No attendance data yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={attendanceChartData} barSize={32}>
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: MUTED, fontSize: 11 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: MUTED, fontSize: 11 }} allowDecimals={false} />
-                <Tooltip contentStyle={customTooltipStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                <Bar dataKey="count" radius={[5, 5, 0, 0]} fill={CYAN} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
       </section>
 
       {(dashboardQuery.isError || analyticsQuery.isError || attendanceQuery.isError) && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-500">
           Some dashboard data could not be refreshed. Existing values remain visible.
         </div>
       )}
+
+      <div className="flex justify-end text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><ArrowUpRight className="h-3.5 w-3.5 text-primary" /> Live Studio data</span>
+      </div>
     </div>
   );
 }

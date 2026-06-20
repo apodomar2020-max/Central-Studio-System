@@ -193,5 +193,13 @@
       "tag": "0023_booking_ownership_foundation",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782734400000,
+      "tag": "0024_class_video_url",
+      "breakpoints": true
+    }
   ]
 }

@@ -17,6 +17,7 @@ export function AdminThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.classList.toggle("night", theme === "night");
+    document.documentElement.dataset.theme = theme;
     localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
