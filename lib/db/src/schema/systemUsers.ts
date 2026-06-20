@@ -24,11 +24,11 @@ export const systemUsersTable = pgTable("system_users", {
  * Roles — named sets of permissions.
  * e.g. "Receptionist", "Instructor Coordinator", "Marketing Manager"
  *
- * permissions is a JSON object: { [module]: { view, create, edit, delete } }
+ * permissions is a JSON object: { [module]: { [action]: boolean } }
  * Example:
  * {
- *   "classes": { "view": true, "create": true, "edit": true, "delete": false },
- *   "students": { "view": true, "create": false, "edit": false, "delete": false }
+ *   "classes": { "view": true, "edit": true, "mediaManage": true },
+ *   "reports": { "view": true, "exportPdf": false }
  * }
  */
 export const rolesTable = pgTable("roles", {
@@ -42,31 +42,7 @@ export const rolesTable = pgTable("roles", {
 export type SystemUser = typeof systemUsersTable.$inferSelect;
 export type Role = typeof rolesTable.$inferSelect;
 
-// The list of all modules that can have permissions assigned
-export const ADMIN_MODULES = [
-  "dashboard",
-  "instructors",
-  "classes",
-  "schedules",
-  "packages",
-  "bookings",
-  "students",
-  "offers",
-  "notifications",
-  "marketing",
-  "package_orders",
-  "attendance",
-  "hero_items",
-  "system_users",
-] as const;
-
-export type AdminModule = (typeof ADMIN_MODULES)[number];
-
-export interface ModulePermissions {
-  view: boolean;
-  create: boolean;
-  edit: boolean;
-  delete: boolean;
-}
-
-export type RolePermissions = Partial<Record<AdminModule, ModulePermissions>>;
+// The browser-safe catalog lives in @workspace/api-zod. The database keeps this
+// deliberately open so new action keys do not require schema migrations.
+export type ModulePermissions = Partial<Record<string, boolean>>;
+export type RolePermissions = Partial<Record<string, ModulePermissions>>;

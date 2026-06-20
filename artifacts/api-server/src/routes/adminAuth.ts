@@ -286,12 +286,7 @@ router.get("/admin/roles", requireAdminAuth, async (_req, res): Promise<void> =>
 const CreateRoleBody = z.object({
   name: z.string().min(2),
   description: z.string().nullable().optional(),
-  permissions: z.record(z.object({
-    view: z.boolean().default(false),
-    create: z.boolean().default(false),
-    edit: z.boolean().default(false),
-    delete: z.boolean().default(false),
-  })).optional(),
+  permissions: z.record(z.record(z.boolean())).optional(),
 });
 
 router.post("/admin/roles", requireAdminAuth, requireSuperAdmin, async (req, res): Promise<void> => {

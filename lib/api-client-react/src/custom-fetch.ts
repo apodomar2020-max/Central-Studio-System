@@ -17,6 +17,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _adminTokenGetter: AuthTokenGetter | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +43,15 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register a getter for the Admin JWT. When available it is sent alongside the
+ * existing API-key Authorization header as X-Admin-Token. Non-admin clients do
+ * not configure this getter and retain their current request behavior.
+ */
+export function setAdminTokenGetter(getter: AuthTokenGetter | null): void {
+  _adminTokenGetter = getter;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -355,6 +365,13 @@ export async function customFetch<T = unknown>(
     const token = await _authTokenGetter();
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
+    }
+  }
+
+  if (_adminTokenGetter && !headers.has("x-admin-token")) {
+    const adminToken = await _adminTokenGetter();
+    if (adminToken) {
+      headers.set("x-admin-token", adminToken);
     }
   }
 

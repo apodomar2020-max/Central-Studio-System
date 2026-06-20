@@ -1,12 +1,12 @@
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
+import { setBaseUrl, setAuthTokenGetter, setAdminTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import { Sidebar } from "@/components/layout/sidebar";
-import { AdminAuthProvider, useAdminAuth } from "@/contexts/AdminAuthContext";
+import { ADMIN_TOKEN_STORAGE_KEY, AdminAuthProvider, useAdminAuth } from "@/contexts/AdminAuthContext";
 import { AdminThemeProvider } from "@/contexts/AdminThemeContext";
 
 import LoginPage from "@/pages/login";
@@ -46,6 +46,7 @@ const adminApiKey = import.meta.env.VITE_API_KEY as string | undefined;
 if (adminApiKey) {
   setAuthTokenGetter(() => adminApiKey);
 }
+setAdminTokenGetter(() => localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY));
 
 const queryClient = new QueryClient();
 

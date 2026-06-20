@@ -36,8 +36,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Pencil, ShieldCheck, AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { Loader2, Pencil, ShieldCheck, AlertTriangle, Plus, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  PERMISSION_CATALOG,
+  PERMISSION_GROUPS,
+  countCatalogPermissions,
+  hasRolePermission,
+  normalizeRolePermissions,
+  type PermissionMap,
+  type PermissionModuleDefinition,
+} from "@workspace/api-zod";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
@@ -50,62 +59,35 @@ function makeHeaders(token: string | null): HeadersInit {
   };
 }
 
-// ── Module definitions ────────────────────────────────────────────────────────
+// ── Permission helpers ────────────────────────────────────────────────────────
 
-const MODULES = [
-  { key: "dashboard",      label: "Dashboard" },
-  { key: "instructors",    label: "Instructors" },
-  { key: "classes",        label: "Classes" },
-  { key: "schedules",      label: "Schedules" },
-  { key: "packages",       label: "Packages" },
-  { key: "bookings",       label: "Bookings" },
-  { key: "students",       label: "Students" },
-  { key: "offers",         label: "Offers" },
-  { key: "hero_items",     label: "Hero Slides" },
-  { key: "notifications",  label: "Notifications" },
-  { key: "marketing",      label: "Marketing" },
-  { key: "package_orders", label: "Package Orders" },
-  { key: "attendance",     label: "Attendance" },
-  { key: "system_users",   label: "System Users" },
-] as const;
-
-type ModuleKey = typeof MODULES[number]["key"];
-type PermAction = "view" | "create" | "edit" | "delete";
-const ACTIONS: { key: PermAction; label: string }[] = [
-  { key: "view",   label: "View" },
-  { key: "create", label: "Create" },
-  { key: "edit",   label: "Edit" },
-  { key: "delete", label: "Delete" },
-];
-
-type Permissions = Partial<Record<ModuleKey, Record<PermAction, boolean>>>;
-
-function emptyPermissions(): Permissions {
-  return {};
+function setPermission(
+  permissions: PermissionMap,
+  moduleKey: string,
+  actionKey: string,
+  enabled: boolean,
+): PermissionMap {
+  return {
+    ...permissions,
+    [moduleKey]: {
+      ...(permissions[moduleKey] ?? {}),
+      [actionKey]: enabled,
+    },
+  };
 }
 
-function getPermission(perms: Permissions, module: ModuleKey, action: PermAction): boolean {
-  return perms[module]?.[action] ?? false;
-}
-
-function setPermission(perms: Permissions, module: ModuleKey, action: PermAction, value: boolean): Permissions {
-  const updated = { ...perms };
-  updated[module] = { view: false, create: false, edit: false, delete: false, ...updated[module], [action]: value };
-  // If turning off view, turn off everything else for that module
-  if (action === "view" && !value) {
-    updated[module] = { view: false, create: false, edit: false, delete: false };
-  }
-  // If turning on create/edit/delete, auto-enable view
-  if ((action === "create" || action === "edit" || action === "delete") && value) {
-    updated[module] = { ...updated[module], view: true };
-  }
-  return updated;
-}
-
-function toggleAll(perms: Permissions, module: ModuleKey, enabled: boolean): Permissions {
-  const updated = { ...perms };
-  updated[module] = { view: enabled, create: enabled, edit: enabled, delete: enabled };
-  return updated;
+function toggleModule(
+  permissions: PermissionMap,
+  module: PermissionModuleDefinition,
+  enabled: boolean,
+): PermissionMap {
+  return {
+    ...permissions,
+    [module.key]: {
+      ...(permissions[module.key] ?? {}),
+      ...Object.fromEntries(module.actions.map((action) => [action.key, enabled])),
+    },
+  };
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -114,7 +96,7 @@ interface Role {
   id: number;
   name: string;
   description: string | null;
-  permissions: Permissions;
+  permissions: PermissionMap;
 }
 
 interface SystemUserRow {
@@ -160,58 +142,122 @@ function PermissionMatrix({
   permissions,
   onChange,
 }: {
-  permissions: Permissions;
-  onChange: (p: Permissions) => void;
+  permissions: PermissionMap;
+  onChange: (p: PermissionMap) => void;
 }) {
-  return (
-    <div className="rounded-md border overflow-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-40 min-w-40">Module</TableHead>
-            <TableHead className="text-center w-12">All</TableHead>
-            {ACTIONS.map((a) => (
-              <TableHead key={a.key} className="text-center">
-                {a.label}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {MODULES.map((mod) => {
-            const allEnabled = ACTIONS.every((a) => getPermission(permissions, mod.key, a.key));
-            const anyEnabled = ACTIONS.some((a) => getPermission(permissions, mod.key, a.key));
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const enabledCount = countCatalogPermissions(permissions);
 
-            return (
-              <TableRow key={mod.key}>
-                <TableCell className="font-medium text-sm">
-                  <span className={anyEnabled ? "text-foreground" : "text-muted-foreground"}>
-                    {mod.label}
-                  </span>
-                </TableCell>
-                {/* Toggle-all checkbox */}
-                <TableCell className="text-center">
-                  <Checkbox
-                    checked={allEnabled}
-                    onCheckedChange={(v) => onChange(toggleAll(permissions, mod.key, !!v))}
-                  />
-                </TableCell>
-                {ACTIONS.map((action) => (
-                  <TableCell key={action.key} className="text-center">
-                    <Checkbox
-                      checked={getPermission(permissions, mod.key, action.key)}
-                      disabled={action.key !== "view" && !getPermission(permissions, mod.key, "view")}
-                      onCheckedChange={(v) =>
-                        onChange(setPermission(permissions, mod.key, action.key, !!v))
-                      }
-                    />
-                  </TableCell>
-                ))}
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search permissions"
+            className="pl-9"
+          />
+        </div>
+        <Badge variant="secondary" className="w-fit">
+          {enabledCount} enabled
+        </Badge>
+      </div>
+
+      {PERMISSION_GROUPS.map((group) => {
+        const modules = PERMISSION_CATALOG.filter((module) => {
+          if (module.group !== group) return false;
+          if (!query) return true;
+          return `${module.label} ${module.description} ${module.actions.map((action) => action.label).join(" ")}`
+            .toLowerCase()
+            .includes(query);
+        });
+        if (modules.length === 0) return null;
+
+        return (
+          <section key={group} className="overflow-hidden rounded-md border">
+            <div className="border-b bg-muted/40 px-4 py-2.5">
+              <h3 className="text-xs font-semibold uppercase text-muted-foreground">{group}</h3>
+            </div>
+            <div className="divide-y">
+              {modules.map((module) => {
+                const enabledActions = module.actions.filter((action) =>
+                  hasRolePermission(permissions, module.key, action.key),
+                ).length;
+                const allEnabled = enabledActions === module.actions.length;
+
+                return (
+                  <div key={module.key} className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(220px,0.9fr)_minmax(0,1.6fr)]">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{module.label}</p>
+                        {module.reserved && <Badge variant="outline" className="text-[10px]">Reserved</Badge>}
+                        {!module.reserved && enabledActions > 0 && (
+                          <span className="text-[10px] text-muted-foreground">{enabledActions}/{module.actions.length}</span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{module.description}</p>
+                      <div className="mt-2 flex gap-3 text-[11px]">
+                        <button
+                          type="button"
+                          disabled={module.reserved || allEnabled}
+                          onClick={() => onChange(toggleModule(permissions, module, true))}
+                          className="text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          disabled={module.reserved || enabledActions === 0}
+                          onClick={() => onChange(toggleModule(permissions, module, false))}
+                          className="text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap content-start gap-2">
+                      {module.actions.map((action) => {
+                        const checked = hasRolePermission(permissions, module.key, action.key);
+                        return (
+                          <label
+                            key={action.key}
+                            className={`flex min-h-9 items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+                              module.reserved ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/40"
+                            }`}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              disabled={module.reserved}
+                              onCheckedChange={(value) =>
+                                onChange(setPermission(permissions, module.key, action.key, !!value))
+                              }
+                            />
+                            {action.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+
+      {query && !PERMISSION_CATALOG.some((module) =>
+        `${module.label} ${module.description} ${module.actions.map((action) => action.label).join(" ")}`
+          .toLowerCase()
+          .includes(query),
+      ) && (
+        <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+          No permissions match “{search}”.
+        </div>
+      )}
     </div>
   );
 }
@@ -233,7 +279,9 @@ function RoleDialog({
 
   const [name, setName] = useState(existing?.name ?? "");
   const [description, setDescription] = useState(existing?.description ?? "");
-  const [permissions, setPermissions] = useState<Permissions>(existing?.permissions ?? emptyPermissions());
+  const [permissions, setPermissions] = useState<PermissionMap>(() =>
+    normalizeRolePermissions(existing?.permissions),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const isEdit = !!existing;
@@ -292,7 +340,7 @@ function RoleDialog({
             <p className="text-sm font-medium mb-2">
               Permissions
               <span className="text-muted-foreground font-normal text-xs ml-2">
-                — "View" must be enabled before Create / Edit / Delete
+                — {countCatalogPermissions(permissions)} actions enabled
               </span>
             </p>
             <PermissionMatrix permissions={permissions} onChange={setPermissions} />
@@ -551,9 +599,9 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
       ) : (
         <div className="space-y-3">
           {roles.map((role) => {
-            const moduleCount = Object.keys(role.permissions).filter(
-              (m) => Object.values(role.permissions[m as ModuleKey] ?? {}).some(Boolean)
-            ).length;
+            const enabledModules = PERMISSION_CATALOG.filter((module) =>
+              module.actions.some((action) => hasRolePermission(role.permissions, module.key, action.key)),
+            );
 
             return (
               <div
@@ -566,14 +614,12 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
                     <p className="text-xs text-muted-foreground mt-0.5">{role.description}</p>
                   )}
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {MODULES.filter((m) =>
-                      Object.values(role.permissions[m.key] ?? {}).some(Boolean)
-                    ).map((m) => (
+                    {enabledModules.map((m) => (
                       <Badge key={m.key} variant="secondary" className="text-[10px] px-1.5 py-0">
                         {m.label}
                       </Badge>
                     ))}
-                    {moduleCount === 0 && (
+                    {enabledModules.length === 0 && (
                       <span className="text-xs text-muted-foreground">No permissions assigned</span>
                     )}
                   </div>

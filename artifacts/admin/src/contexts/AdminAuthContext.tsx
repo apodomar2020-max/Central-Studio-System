@@ -9,15 +9,16 @@
  *   const { user, token, login, logout, isLoading } = useAdminAuth();
  */
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { hasRolePermission, type PermissionMap } from "@workspace/api-zod";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
-const TOKEN_KEY = "admin_jwt";
+export const ADMIN_TOKEN_STORAGE_KEY = "admin_jwt";
 
 export interface AdminRole {
   id: number;
   name: string;
-  permissions: Record<string, { view: boolean; create: boolean; edit: boolean; delete: boolean }>;
+  permissions: PermissionMap;
 }
 
 export interface AdminUser {
@@ -37,7 +38,7 @@ interface AdminAuthContextValue {
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   /** Returns true if the current user can perform `action` on `module`. */
-  can: (module: string, action: "view" | "create" | "edit" | "delete") => boolean;
+  can: (module: string, action: string) => boolean;
 }
 
 const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
@@ -53,7 +54,7 @@ function makeHeaders(token?: string | null): HeadersInit {
 
 export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AdminUser | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY));
   const [isLoading, setIsLoading] = useState(true);
 
   // On mount (or when token changes from localStorage), verify the session.
@@ -71,7 +72,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       .then((adminUser) => setUser(adminUser))
       .catch(() => {
         // Token expired or account deactivated — clear it.
-        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
         setToken(null);
         setUser(null);
       })
@@ -91,22 +92,22 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const data = await res.json() as { token: string; user: AdminUser };
-    localStorage.setItem(TOKEN_KEY, data.token);
+    localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, data.token);
     setToken(data.token);
     setUser(data.user);
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
     setToken(null);
     setUser(null);
   }, []);
 
   const can = useCallback(
-    (module: string, action: "view" | "create" | "edit" | "delete"): boolean => {
+    (module: string, action: string): boolean => {
       if (!user) return false;
       if (user.isSuperAdmin) return true;
-      return user.role?.permissions?.[module]?.[action] === true;
+      return hasRolePermission(user.role?.permissions, module, action);
     },
     [user],
   );
