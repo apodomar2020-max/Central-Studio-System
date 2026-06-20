@@ -387,7 +387,11 @@ function ReelsSection() {
           renderItem={({ item, index }) => {
             const handlePress = () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Linking.openURL(item.permalink);
+              // Only open URLs that start with https:// to prevent javascript:
+              // or data: URI injection from a compromised API response.
+              if (typeof item.permalink === "string" && item.permalink.startsWith("https://")) {
+                Linking.openURL(item.permalink);
+              }
             };
 
             // First reel auto-plays muted for the 5-second preview window

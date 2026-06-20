@@ -76,6 +76,14 @@ export default function InstructorDetailScreen() {
   const youtubeUrl: string | null = (apiData as any)?.youtubeUrl ?? null;
   const hasSocial = instagramUrl || tiktokUrl || youtubeUrl;
 
+  // Validate URLs before opening to prevent javascript: / data: URI injection
+  // from a compromised database record. Only https:// URLs are allowed.
+  const openSafeUrl = (url: string | null) => {
+    if (typeof url === "string" && url.startsWith("https://")) {
+      Linking.openURL(url);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Hero banner */}
@@ -193,7 +201,7 @@ export default function InstructorDetailScreen() {
               {instagramUrl && (
                 <TouchableOpacity
                   style={[styles.socialBtn, { backgroundColor: "#E1306C20", borderColor: "#E1306C50" }]}
-                  onPress={() => Linking.openURL(instagramUrl)}
+                  onPress={() => openSafeUrl(instagramUrl)}
                 >
                   <Ionicons name="logo-instagram" size={20} color="#E1306C" />
                   <Text style={[styles.socialLabel, { color: "#E1306C" }]}>Instagram</Text>
@@ -202,7 +210,7 @@ export default function InstructorDetailScreen() {
               {tiktokUrl && (
                 <TouchableOpacity
                   style={[styles.socialBtn, { backgroundColor: "#ffffff15", borderColor: "#ffffff30" }]}
-                  onPress={() => Linking.openURL(tiktokUrl)}
+                  onPress={() => openSafeUrl(tiktokUrl)}
                 >
                   <Ionicons name="logo-tiktok" size={20} color="#FFFFFF" />
                   <Text style={[styles.socialLabel, { color: "#FFFFFF" }]}>TikTok</Text>
@@ -211,7 +219,7 @@ export default function InstructorDetailScreen() {
               {youtubeUrl && (
                 <TouchableOpacity
                   style={[styles.socialBtn, { backgroundColor: "#FF000020", borderColor: "#FF000050" }]}
-                  onPress={() => Linking.openURL(youtubeUrl)}
+                  onPress={() => openSafeUrl(youtubeUrl)}
                 >
                   <Ionicons name="logo-youtube" size={20} color="#FF0000" />
                   <Text style={[styles.socialLabel, { color: "#FF0000" }]}>YouTube</Text>
