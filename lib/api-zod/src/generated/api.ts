@@ -18,13 +18,28 @@ export const HealthCheckResponse = zod.object({
  * @summary Get dashboard summary stats
  */
 export const GetDashboardResponse = zod.object({
+  totalUsers: zod.number(),
   totalStudents: zod.number(),
+  totalParents: zod.number(),
   totalBookings: zod.number(),
   todayBookings: zod.number(),
+  confirmedBookings: zod.number(),
+  cancelledBookings: zod.number(),
+  completedBookings: zod.number(),
+  pendingPayments: zod.number(),
+  refundedBookings: zod.number(),
   activeClasses: zod.number(),
   activeInstructors: zod.number(),
   totalRevenue: zod.number(),
+  revenueTrackingComplete: zod.boolean(),
   pendingBookings: zod.number(),
+  activePackages: zod.number(),
+  pendingPackageOrders: zod.number(),
+  totalCheckIns: zod.number(),
+  todayCheckIns: zod.number(),
+  missedAttendance: zod.number(),
+  todayClasses: zod.number(),
+  upcomingClasses: zod.number(),
   totalOffers: zod.number(),
 });
 
@@ -142,6 +157,7 @@ export const ListClassesResponseItem = zod.object({
   durationMins: zod.number(),
   capacity: zod.number(),
   photoUrl: zod.string().nullish(),
+  classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
   createdAt: zod.string(),
 });
@@ -157,6 +173,7 @@ export const CreateClassBody = zod.object({
   durationMins: zod.number(),
   capacity: zod.number(),
   photoUrl: zod.string().nullish(),
+  classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean().optional(),
 });
 
@@ -175,6 +192,7 @@ export const GetClassResponse = zod.object({
   durationMins: zod.number(),
   capacity: zod.number(),
   photoUrl: zod.string().nullish(),
+  classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
   createdAt: zod.string(),
 });
@@ -193,6 +211,7 @@ export const UpdateClassBody = zod.object({
   durationMins: zod.number().optional(),
   capacity: zod.number().optional(),
   photoUrl: zod.string().nullish(),
+  classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean().optional(),
 });
 
@@ -207,6 +226,7 @@ export const UpdateClassResponse = zod.object({
   durationMins: zod.number(),
   capacity: zod.number(),
   photoUrl: zod.string().nullish(),
+  classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
   createdAt: zod.string(),
 });

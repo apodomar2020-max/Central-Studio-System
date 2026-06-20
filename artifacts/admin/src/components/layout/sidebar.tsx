@@ -129,15 +129,9 @@ export function Sidebar() {
       : location === href || location.startsWith(href + "/");
 
   return (
-    <div
-      className="flex h-full w-60 flex-col border-r"
-      style={{
-        background: "hsl(204 46% 3%)",
-        borderColor: "hsl(203 25% 10%)",
-      }}
-    >
+    <div className="flex h-full w-60 flex-col border-r bg-sidebar border-sidebar-border">
       {/* Logo */}
-      <div className="flex h-20 items-center px-4 border-b" style={{ borderColor: "hsl(203 25% 10%)" }}>
+      <div className="flex h-20 items-center px-4 border-b border-sidebar-border">
         <img
           src={`${import.meta.env.BASE_URL}logo-central-white.png`}
           alt="Central Studio"

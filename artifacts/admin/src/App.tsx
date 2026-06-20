@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import { Sidebar } from "@/components/layout/sidebar";
 import { AdminAuthProvider, useAdminAuth } from "@/contexts/AdminAuthContext";
+import { AdminThemeProvider } from "@/contexts/AdminThemeContext";
 
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -142,11 +143,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <AdminAuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
-            <AppShell />
-          </WouterRouter>
-        </AdminAuthProvider>
+        <AdminThemeProvider>
+          <AdminAuthProvider>
+            <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
+              <AppShell />
+            </WouterRouter>
+          </AdminAuthProvider>
+        </AdminThemeProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

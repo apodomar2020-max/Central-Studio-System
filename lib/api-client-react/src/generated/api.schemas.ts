@@ -14,18 +14,29 @@ export interface ErrorResponse {
 }
 
 export interface DashboardSummary {
+  totalUsers: number;
   totalStudents: number;
+  totalParents: number;
   totalBookings: number;
   todayBookings: number;
+  confirmedBookings: number;
+  cancelledBookings: number;
+  completedBookings: number;
+  pendingPayments: number;
+  refundedBookings: number;
   activeClasses: number;
   activeInstructors: number;
   totalRevenue: number;
+  revenueTrackingComplete: boolean;
   pendingBookings: number;
+  activePackages: number;
+  pendingPackageOrders: number;
+  totalCheckIns: number;
+  todayCheckIns: number;
+  missedAttendance: number;
+  todayClasses: number;
+  upcomingClasses: number;
   totalOffers: number;
-  /** @nullable — ballet/stage fields */
-  activeOpportunities?: number;
-  /** @nullable */
-  pendingApplications?: number;
 }
 
 export interface Instructor {
@@ -110,6 +121,8 @@ export interface Class {
   capacity: number;
   /** @nullable */
   photoUrl?: string | null;
+  /** @nullable */
+  classVideoUrl?: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -127,6 +140,8 @@ export interface CreateClassBody {
   capacity: number;
   /** @nullable */
   photoUrl?: string | null;
+  /** @nullable */
+  classVideoUrl?: string | null;
   isActive?: boolean;
 }
 
@@ -143,6 +158,8 @@ export interface UpdateClassBody {
   capacity?: number;
   /** @nullable */
   photoUrl?: string | null;
+  /** @nullable */
+  classVideoUrl?: string | null;
   isActive?: boolean;
 }
 

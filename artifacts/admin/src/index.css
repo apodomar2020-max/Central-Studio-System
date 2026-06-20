@@ -69,7 +69,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Central Studio & Stage brand — permanently dark */
+/* Central Studio admin — dark by default, with a deeper night variant. */
 :root {
   /* Brand: Studio cyan #00B6D7, Stage purple #8A5CFF */
   /* Background: #060C10, Card: #0E1619, CardLight: #162028, Border: #1E2E38 */
@@ -141,6 +141,27 @@
   /* Button outline */
   --button-outline: #ffffff22;
   --badge-outline: #ffffff22;
+}
+
+:root.night {
+  --background: 204 50% 2%;
+  --card: 204 35% 4%;
+  --card-border: 203 24% 10%;
+  --popover: 204 40% 3%;
+  --popover-border: 203 24% 11%;
+  --secondary: 207 25% 8%;
+  --muted: 207 25% 8%;
+  --accent: 207 25% 11%;
+  --border: 203 24% 12%;
+  --input: 207 25% 9%;
+  --sidebar: 204 55% 1%;
+  --sidebar-border: 203 22% 8%;
+  --sidebar-accent: 207 25% 8%;
+}
+
+:root.night .glow-studio,
+:root.night .glow-stage {
+  box-shadow: none;
 }
 
 @layer base {
