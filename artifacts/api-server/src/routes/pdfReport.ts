@@ -9,10 +9,11 @@
  * output — no Chromium, no headless browser, no runtime font/file reads.
  *
  * Internationalisation: Latin text uses the built-in Helvetica. Any cell that
- * contains Arabic is rendered with an embedded Amiri (Unicode) font after proper
- * shaping (arabic-reshaper → Presentation Forms-B) and bidirectional reordering
- * (bidi-js), and is right-aligned — so Arabic names/content render correctly,
- * never as "?".
+ * contains Arabic is rendered with an embedded Tajawal (Unicode) font and is
+ * right-aligned. Shaping (cursive joining + ligatures) and right-to-left visual
+ * ordering are handled by the full fontkit layout engine via the bidi-aware
+ * wrapper in ./arabicFontkit — so the raw logical string is passed straight to
+ * pdf-lib and comes out correctly shaped, never reversed or as "?".
  *
  * Layout (A4 landscape): repeating header (logo + wordmark / title / generated
  * stamp) and footer (Central Studio / Page X of Y / Confidential) on every page;
@@ -20,11 +21,9 @@
  * striped table whose header repeats on each page.
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type PDFImage } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
-import ArabicReshaper from "arabic-reshaper";
-import bidiFactory from "bidi-js";
+import { bidiFontkit } from "./arabicFontkit";
 import { CENTRAL_LOGO_PNG_BASE64 } from "./centralLogo";
-import { AMIRI_TTF_BASE64 } from "./amiriFont";
+import { TAJAWAL_TTF_BASE64 } from "./tajawalFont";
 
 export interface PdfReportColumn {
   key: string;
@@ -69,8 +68,6 @@ const MAX_CELL_LINES = 6;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // ─── Text helpers ─────────────────────────────────────────────────────────────
-const bidi = bidiFactory();
-
 // Arabic + Syriac/Thaana neighbours + Arabic Presentation Forms A/B.
 const ARABIC_RE = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
 function hasArabic(s: string): boolean {
@@ -113,38 +110,12 @@ function isRtlBase(s: string): boolean {
 }
 
 /**
- * Turn a logical-order Arabic (or mixed) string into a display-order string:
- * join letters into presentation forms, then apply the Unicode bidi algorithm
- * (mirroring + reordering) so it can be drawn left-to-right by pdf-lib.
+ * Greedy word-wrap to a pixel width; hard-breaks over-long words; caps lines.
+ * Works for both Latin and Arabic: widths are measured through the font's
+ * (bidi-aware, shaping) layout, and the raw logical substrings it returns are
+ * shaped + reordered by the font wrapper at draw time.
  */
-function shapeArabic(logical: string): string {
-  const reshaped = ArabicReshaper.convertArabic(logical);
-  // Pin the base direction from the source text so an Arabic-primary value always
-  // resolves RTL (rather than relying on auto-detection, which would flip to LTR
-  // for a value that merely starts with a Latin character).
-  const baseDir = isRtlBase(logical) ? "rtl" : "ltr";
-  const embedding = bidi.getEmbeddingLevels(reshaped, baseDir);
-  const chars = reshaped.split(""); // all relevant glyphs are BMP → unit == codepoint
-  const mirrored = bidi.getMirroredCharactersMap(reshaped, embedding);
-  mirrored.forEach((rep, idx) => {
-    chars[idx] = rep;
-  });
-  for (const [s, e] of bidi.getReorderSegments(reshaped, embedding)) {
-    let i = s;
-    let j = e;
-    while (i < j) {
-      const t = chars[i];
-      chars[i] = chars[j];
-      chars[j] = t;
-      i++;
-      j--;
-    }
-  }
-  return chars.join("");
-}
-
-/** Greedy word-wrap for Latin text; hard-breaks over-long words; caps lines. */
-function wrapLatin(text: string, font: PDFFont, size: number, maxW: number): string[] {
+function wrapText(text: string, font: PDFFont, size: number, maxW: number): string[] {
   if (!text) return [""];
   const words = text.split(/\s+/);
   const lines: string[] = [];
@@ -182,25 +153,6 @@ function wrapLatin(text: string, font: PDFFont, size: number, maxW: number): str
   return lines.length ? lines : [""];
 }
 
-/** Word-wrap Arabic in logical order, returning display-shaped lines. */
-function wrapArabic(logical: string, font: PDFFont, size: number, maxW: number): string[] {
-  const words = logical.split(/\s+/).filter(Boolean);
-  if (!words.length) return [""];
-  const lines: string[] = [];
-  let cur = "";
-  for (const w of words) {
-    const cand = cur ? `${cur} ${w}` : w;
-    if (!cur || font.widthOfTextAtSize(shapeArabic(cand), size) <= maxW) {
-      cur = cand;
-    } else {
-      lines.push(shapeArabic(cur));
-      cur = w;
-    }
-  }
-  if (cur) lines.push(shapeArabic(cur));
-  return lines.length > MAX_CELL_LINES ? lines.slice(0, MAX_CELL_LINES) : lines;
-}
-
 function fmtDateLong(ymd?: string): string {
   if (!ymd) return "All";
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
@@ -235,7 +187,8 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
   const { title, entityLabel, columns, rows, summary, filters, generatedBy } = input;
 
   const doc = await PDFDocument.create();
-  doc.registerFontkit(fontkit);
+  // bidiFontkit is a structural Fontkit (create/openSync); cast for pdf-lib's type.
+  doc.registerFontkit(bidiFontkit as Parameters<typeof doc.registerFontkit>[0]);
   doc.setTitle(title);
   doc.setAuthor("Central Studio");
   doc.setCreator("Central Studio Admin System");
@@ -247,9 +200,9 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
   // Embed the Arabic font only when the data actually contains Arabic, so
-  // Latin-only reports stay lean (no font embedded at all). NOTE: subsetting is
-  // intentionally OFF — @pdf-lib/fontkit's subsetter produces blank glyphs for
-  // Amiri, so we embed the full font (~430KB) to guarantee correct rendering.
+  // Latin-only reports stay lean (no font embedded at all). Subsetting is OFF —
+  // the font is small (~60KB) and embedding it whole avoids any subsetter edge
+  // cases, guaranteeing correct rendering.
   const anyArabic =
     rows.some((r) => columns.some((c) => hasArabic(rawStr(r[c.key])))) ||
     Object.values(summary).some((v) => hasArabic(rawStr(v))) ||
@@ -257,7 +210,7 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
   let arabicFont: PDFFont | null = null;
   if (anyArabic) {
     try {
-      arabicFont = await doc.embedFont(Buffer.from(AMIRI_TTF_BASE64, "base64"), { subset: false });
+      arabicFont = await doc.embedFont(Buffer.from(TAJAWAL_TTF_BASE64, "base64"), { subset: false });
     } catch {
       arabicFont = null; // fall back to "?" rather than failing the whole export
     }
@@ -280,7 +233,9 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
   const LINE_H = dense ? 8.4 : 9.6;
   const CELL_PAD_X = dense ? 4 : 6;
 
-  // ── Per-cell preparation: pick font (Latin vs Arabic), shape, wrap, align. ──
+  // ── Per-cell preparation: pick font (Latin vs Arabic), wrap, align. ──
+  // Arabic cells keep the raw logical string — the bidi-aware fontkit wrapper
+  // shapes and reorders it to visual order at draw/measure time.
   interface Cell {
     lines: string[];
     font: PDFFont;
@@ -290,19 +245,19 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
     const raw = rawStr(value);
     if (arFont && hasArabic(raw)) {
       const logical = sanitizeArabic(raw);
-      return { lines: wrapArabic(logical, arFont, BODY_SIZE, maxW), font: arFont, rtl: isRtlBase(logical) };
+      return { lines: wrapText(logical, arFont, BODY_SIZE, maxW), font: arFont, rtl: isRtlBase(logical) };
     }
-    return { lines: wrapLatin(sanitizeLatin(raw), font, BODY_SIZE, maxW), font, rtl: numeric };
+    return { lines: wrapText(sanitizeLatin(raw), font, BODY_SIZE, maxW), font, rtl: numeric };
   };
   // Single-line prep for header/filter/summary values (no wrapping).
   const prepInline = (value: unknown, latinFont: PDFFont): { text: string; font: PDFFont } => {
     const raw = rawStr(value);
-    if (arFont && hasArabic(raw)) return { text: shapeArabic(sanitizeArabic(raw)), font: arFont };
+    if (arFont && hasArabic(raw)) return { text: sanitizeArabic(raw), font: arFont };
     return { text: sanitizeLatin(raw), font: latinFont };
   };
   const valueWidth = (value: unknown): number => {
     const raw = rawStr(value);
-    if (arFont && hasArabic(raw)) return arFont.widthOfTextAtSize(shapeArabic(sanitizeArabic(raw)), BODY_SIZE);
+    if (arFont && hasArabic(raw)) return arFont.widthOfTextAtSize(sanitizeArabic(raw), BODY_SIZE);
     return font.widthOfTextAtSize(sanitizeLatin(raw), BODY_SIZE);
   };
 
@@ -358,7 +313,7 @@ export async function buildPdfBuffer(input: PdfReportInput): Promise<Buffer> {
   };
 
   const drawTableHeader = () => {
-    const lineSets = columns.map((c, i) => wrapLatin(sanitizeLatin(c.label), bold, BODY_SIZE, colW[i] - 2 * CELL_PAD_X));
+    const lineSets = columns.map((c, i) => wrapText(sanitizeLatin(c.label), bold, BODY_SIZE, colW[i] - 2 * CELL_PAD_X));
     const maxLines = Math.max(...lineSets.map((l) => l.length));
     const hH = maxLines * LINE_H + 2 * CELL_PAD_Y;
     page.drawRectangle({ x: MARGIN, y: y - hH, width: USABLE_W, height: hH, color: HEADER_FILL });

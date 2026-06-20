@@ -1,14 +1,21 @@
 /**
- * Ambient type shims for two untyped vendor packages used only by the PDF
- * report's Arabic shaping pipeline (see pdfReport.ts).
+ * Ambient type shims for untyped vendor packages used only by the PDF report's
+ * Arabic shaping pipeline (see pdfReport.ts / arabicFontkit.ts).
  */
-declare module "arabic-reshaper" {
-  const ArabicReshaper: {
-    /** Join Arabic letters into their contextual Presentation Forms-B glyphs. */
-    convertArabic(text: string): string;
-    convertArabicBack(text: string): string;
-  };
-  export default ArabicReshaper;
+declare module "fontkit" {
+  interface FontkitGlyph {
+    id: number;
+    advanceWidth: number;
+  }
+  interface FontkitGlyphRun {
+    glyphs: FontkitGlyph[];
+  }
+  interface FontkitFont {
+    layout(text: string, features?: unknown): FontkitGlyphRun;
+    [key: string]: unknown;
+  }
+  export function create(buffer: Buffer | Uint8Array, postscriptName?: string): FontkitFont;
+  export function openSync(filename: string, postscriptName?: string): FontkitFont;
 }
 
 declare module "bidi-js" {
