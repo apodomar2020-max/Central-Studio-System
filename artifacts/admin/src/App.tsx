@@ -53,8 +53,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="admin-shell flex h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-200">
       <Sidebar />
-      <main className="relative flex-1 overflow-y-auto">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(circle_at_24%_0%,rgba(0,182,215,.08),transparent_44%),radial-gradient(circle_at_82%_10%,rgba(138,92,255,.06),transparent_38%)]" />
+      <main className="relative flex-1 overflow-y-auto bg-[radial-gradient(circle_at_24%_0%,rgba(0,182,215,.08),transparent_44%),radial-gradient(circle_at_82%_10%,rgba(138,92,255,.06),transparent_38%)] bg-no-repeat">
         <div className="relative mx-auto max-w-[1540px] p-5 sm:p-8 lg:p-10">
           {children}
         </div>
