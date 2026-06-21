@@ -25,15 +25,15 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 
 const SECTION_ITEMS = [
-  { icon: "create-outline",        label: "Edit Profile",        route: "/edit-profile" },
-  { icon: "calendar-outline",      label: "My Bookings",         route: "/(tabs)/bookings"   },
-  { icon: "layers-outline",        label: "Package Center",       route: "/package-center"    },
-  { icon: "receipt-outline",       label: "Credit History",       route: "/credit-history"    },
-  { icon: "barbell-outline",       label: "Attendance History",   route: "/attendance-history" },
-  { icon: "qr-code-outline",       label: "My Studio Pass",       route: "/my-qr"             },
-  { icon: "notifications-outline", label: "Notifications",        route: "/notifications"     },
-  { icon: "help-circle-outline",   label: "Help & Support",       route: "/help-support"      },
-  { icon: "shield-checkmark-outline", label: "Privacy & Security", route: "/privacy-policy"   },
+  { icon: "create-outline",        label: "Edit Profile",        route: "/edit-profile",      color: colors.studio.primary },
+  { icon: "calendar-outline",      label: "My Bookings",         route: "/(tabs)/bookings",   color: "#FFB02E" },
+  { icon: "layers-outline",        label: "Package Center",       route: "/package-center",    color: "#7C3AED" },
+  { icon: "receipt-outline",       label: "Credit History",       route: "/credit-history",    color: colors.studio.primary },
+  { icon: "barbell-outline",       label: "Attendance History",   route: "/attendance-history",color: colors.studio.primary },
+  { icon: "qr-code-outline",       label: "My Studio Pass",       route: "/my-qr",             color: colors.studio.primary },
+  { icon: "notifications-outline", label: "Notifications",        route: "/notifications",     color: "#FF2E7E" },
+  { icon: "help-circle-outline",   label: "Help & Support",       route: "/help-support",      color: "#9CA3AF" },
+  { icon: "shield-checkmark-outline", label: "Privacy & Security", route: "/privacy-policy",   color: "#9CA3AF" },
 ];
 
 function ChildCard({
@@ -548,18 +548,26 @@ export default function ProfileScreen() {
         ]}
       >
         <View style={styles.profileCard}>
-          {user.avatarUrl ? (
-            <Image
-              source={{ uri: user.avatarUrl }}
-              style={styles.avatarImage}
-              contentFit="cover"
-              transition={150}
-            />
-          ) : (
-            <View style={[styles.avatarCircle, { backgroundColor: colors.studio.primary + "30" }]}>
-              <Text style={[styles.avatarInitials, { color: colors.studio.primary }]}>{initials}</Text>
-            </View>
-          )}
+          <LinearGradient
+            colors={["rgba(0,182,215,0.15)", "transparent"]}
+            style={StyleSheet.absoluteFillObject}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+          />
+          <View style={styles.avatarWrap}>
+            {user.avatarUrl ? (
+              <Image
+                source={{ uri: user.avatarUrl }}
+                style={styles.avatarImage}
+                contentFit="cover"
+                transition={150}
+              />
+            ) : (
+              <View style={[styles.avatarCircle, { backgroundColor: colors.studio.primary + "30" }]}>
+                <Text style={[styles.avatarInitials, { color: colors.studio.primary }]}>{initials}</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.fullName}>{user.fullName}</Text>
           <View style={styles.emailRow}>
             <Text style={styles.email}>{user.email}</Text>
@@ -592,16 +600,16 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
+          <View style={styles.statCard}>
             <Text style={[styles.statValue, { color: colors.studio.primary }]}>{totalCredits}</Text>
             <Text style={styles.statLabel}>Credits</Text>
           </View>
-          <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
-            <Text style={[styles.statValue, { color: "#22C55E" }]}>{upcoming}</Text>
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { color: "#FFB02E" }]}>{upcoming}</Text>
             <Text style={styles.statLabel}>Upcoming</Text>
           </View>
-          <View style={[styles.statCard, { backgroundColor: "#1E1E26" }]}>
-            <Text style={[styles.statValue, { color: "#8B5CF6" }]}>
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { color: "#1FB871" }]}>
               {attendedCount}
             </Text>
             <Text style={styles.statLabel}>Attended</Text>
@@ -673,61 +681,68 @@ export default function ProfileScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Account</Text>
           </View>
-          {SECTION_ITEMS.map((item) => (
-            <TouchableOpacity
-              key={item.label}
-              onPress={() => {
-                if (item.route) {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push(item.route as any);
-                }
-              }}
-              style={[styles.menuItem, { borderColor: "#2A2A35" }]}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.menuIcon, { backgroundColor: "#1E1E26" }]}>
-                <Ionicons name={item.icon as any} size={20} color="#9CA3AF" />
-              </View>
-              <Text style={styles.menuLabel}>{item.label}</Text>
-              <Ionicons name="chevron-forward" size={16} color="#6B7280" />
-            </TouchableOpacity>
-          ))}
+          <View style={styles.menuContainer}>
+            {SECTION_ITEMS.map((item, index) => (
+              <TouchableOpacity
+                key={item.label}
+                onPress={() => {
+                  if (item.route) {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push(item.route as any);
+                  }
+                }}
+                style={[
+                  styles.menuItem,
+                  index < SECTION_ITEMS.length - 1 && { borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)" }
+                ]}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.menuIcon, { backgroundColor: (item.color || "#9CA3AF") + "15" }]}>
+                  <Ionicons name={item.icon as any} size={20} color={item.color || "#9CA3AF"} />
+                </View>
+                <Text style={styles.menuLabel}>{item.label}</Text>
+                <Ionicons name="chevron-forward" size={17} color="#4C545E" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Security</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.menuItem, { borderColor: "#2A2A35" }]}
-            activeOpacity={0.7}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push("/change-password");
-            }}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: "#1E1E26" }]}>
-              <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" />
-            </View>
-            <Text style={styles.menuLabel}>Change Password</Text>
-            <Ionicons name="chevron-forward" size={16} color="#6B7280" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.menuItem, { borderColor: "#2A2A35" }]}
-            activeOpacity={0.7}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push("/verify-email");
-            }}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: user.emailVerified ? "#22C55E15" : "#F59E0B15" }]}>
-              <Ionicons name={user.emailVerified ? "mail" : "mail-open-outline"} size={20} color={user.emailVerified ? "#22C55E" : "#F59E0B"} />
-            </View>
-            <Text style={styles.menuLabel}>
-              {user.emailVerified ? "Email Verified" : "Verify Email"}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color="#6B7280" />
-          </TouchableOpacity>
+          <View style={styles.menuContainer}>
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)" }]}
+              activeOpacity={0.7}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/change-password");
+              }}
+            >
+              <View style={[styles.menuIcon, { backgroundColor: "#9CA3AF15" }]}>
+                <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" />
+              </View>
+              <Text style={styles.menuLabel}>Change Password</Text>
+              <Ionicons name="chevron-forward" size={17} color="#4C545E" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/verify-email");
+              }}
+            >
+              <View style={[styles.menuIcon, { backgroundColor: user.emailVerified ? "#1FB87115" : "#FFB02E15" }]}>
+                <Ionicons name={user.emailVerified ? "mail" : "mail-open-outline"} size={20} color={user.emailVerified ? "#1FB871" : "#FFB02E"} />
+              </View>
+              <Text style={styles.menuLabel}>
+                {user.emailVerified ? "Email Verified" : "Verify Email"}
+              </Text>
+              <Ionicons name="chevron-forward" size={17} color="#4C545E" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {user.accountType === "parent" && (
@@ -751,8 +766,10 @@ export default function ProfileScreen() {
             </View>
 
             {children.length === 0 ? (
-              <View style={[styles.emptyChildren, { borderColor: "#2A2A35" }]}>
-                <Ionicons name="people-outline" size={28} color="#4B5563" />
+              <View style={styles.emptyChildren}>
+                <View style={styles.emptyIconCircle}>
+                  <Ionicons name="people-outline" size={28} color="#4C545E" />
+                </View>
                 <Text style={styles.emptyChildrenText}>No children added yet</Text>
                 <Text style={styles.emptyChildrenDesc}>Add your child profile to book classes for them.</Text>
               </View>
@@ -798,47 +815,50 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: 20 },
   guestContainer: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 12 },
   guestAvatarCircle: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", marginBottom: 4 },
-  guestTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  guestSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
-  profileCard: { alignItems: "center", paddingVertical: 24, gap: 6 },
-  avatarCircle: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", marginBottom: 4 },
-  avatarImage: { width: 80, height: 80, borderRadius: 40, marginBottom: 4, backgroundColor: "#1E1E26" },
-  avatarInitials: { fontSize: 28, fontFamily: "Inter_700Bold" },
-  fullName: { fontSize: 22, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  guestTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  guestSubtitle: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
+  profileCard: { alignItems: "center", paddingVertical: 24, gap: 6, borderRadius: 24, overflow: "hidden", marginBottom: 12 },
+  avatarWrap: { width: 92, height: 92, borderRadius: 46, alignItems: "center", justifyContent: "center", marginBottom: 8, borderWidth: 3, borderColor: colors.studio.primary, shadowColor: colors.studio.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 10 },
+  avatarCircle: { width: 86, height: 86, borderRadius: 43, alignItems: "center", justifyContent: "center" },
+  avatarImage: { width: 86, height: 86, borderRadius: 43, backgroundColor: "#1E1E26" },
+  avatarInitials: { fontSize: 28, fontFamily: "Anton_400Regular" },
+  fullName: { fontSize: 28, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
   emailRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  email: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  email: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
   verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  verifiedText: { fontSize: 11, fontFamily: "Inter_500Medium" },
-  phone: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280" },
-  tagRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
-  accountTypeTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: "#1E1E26", borderWidth: 1, borderColor: "#2A2A35", marginTop: 2 },
-  accountTypeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
-  providerTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: "#1E1E26", borderWidth: 1, borderColor: "#2A2A35", marginTop: 2 },
-  providerText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#9CA3AF", textTransform: "capitalize" },
+  verifiedText: { fontSize: 11, fontFamily: "Archivo_600SemiBold" },
+  phone: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B7280" },
+  tagRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  accountTypeTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, backgroundColor: "#1E1E26", borderWidth: 1, borderColor: "#2A2A35" },
+  accountTypeText: { fontSize: 11, fontFamily: "Archivo_600SemiBold" },
+  providerTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, backgroundColor: "#1E1E26", borderWidth: 1, borderColor: "#2A2A35" },
+  providerText: { fontSize: 11, fontFamily: "Archivo_600SemiBold", color: "#9CA3AF", textTransform: "capitalize" },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
-  statCard: { flex: 1, padding: 14, borderRadius: 14, alignItems: "center", gap: 4 },
-  statValue: { fontSize: 22, fontFamily: "Inter_700Bold" },
-  statLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  statCard: { flex: 1, padding: 14, borderRadius: 12, alignItems: "center", gap: 4, backgroundColor: "#15171B" },
+  statValue: { fontSize: 26, fontFamily: "Anton_400Regular", lineHeight: 23 },
+  statLabel: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
   section: { marginBottom: 24 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  menuItem: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, borderBottomWidth: 1 },
-  menuIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  menuLabel: { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular", color: "#FFFFFF" },
+  sectionTitle: { fontSize: 16, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  menuContainer: { backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", overflow: "hidden" },
+  menuItem: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, paddingHorizontal: 16 },
+  menuIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  menuLabel: { flex: 1, fontSize: 15, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
   addChildBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  addChildBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  childCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, backgroundColor: colors.studio.card },
+  addChildBtnText: { fontSize: 13, fontFamily: "Archivo_600SemiBold" },
+  childCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 16, borderWidth: 1, backgroundColor: colors.studio.card },
   childAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   childInfo: { flex: 1, gap: 2 },
-  childName: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  childMeta: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  childNote: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  childName: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  childMeta: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
+  childNote: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#6B7280" },
   childAction: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-  emptyChildren: { borderRadius: 14, borderWidth: 1, borderStyle: "dashed", padding: 24, alignItems: "center", gap: 8 },
-  emptyChildrenText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#6B7280" },
-  emptyChildrenDesc: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#4B5563", textAlign: "center", lineHeight: 16 },
+  emptyChildren: { padding: 24, alignItems: "center", gap: 12 },
+  emptyIconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#15171B", alignItems: "center", justifyContent: "center" },
+  emptyChildrenText: { fontSize: 16, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  emptyChildrenDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
   logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, marginBottom: 8 },
-  logoutText: { fontSize: 15, fontFamily: "Inter_500Medium" },
+  logoutText: { fontSize: 15, fontFamily: "Archivo_700Bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: "#0E1619", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === "web" ? 34 : 40, gap: 16, maxHeight: "90%" },
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#2A2A35", alignSelf: "center" },
@@ -854,19 +874,19 @@ const styles = StyleSheet.create({
   qrCardGradient: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16 },
   qrPreview: { width: 60, height: 60, borderRadius: 12, overflow: "hidden", backgroundColor: colors.studio.primary + "12", borderWidth: 1, borderColor: colors.studio.primary + "38", alignItems: "center", justifyContent: "center" },
   qrInfo: { flex: 1 },
-  qrCardTitle: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  qrCardDesc: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: 3, lineHeight: 16 },
+  qrCardTitle: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  qrCardDesc: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 3, lineHeight: 16 },
   qrExpandBtn: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   qrModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center", padding: 24 },
   qrModal: { backgroundColor: "#0E1619", borderRadius: 24, padding: 28, alignItems: "center", gap: 12, width: "100%", borderWidth: 1, borderColor: "#1E2E38" },
   qrModalClose: { position: "absolute", top: 16, right: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center" },
-  qrModalLabel: { fontSize: 13, fontFamily: "Inter_700Bold", color: colors.studio.primary, letterSpacing: 2, textTransform: "uppercase" },
+  qrModalLabel: { fontSize: 13, fontFamily: "Archivo_800ExtraBold", color: colors.studio.primary, letterSpacing: 2, textTransform: "uppercase" },
   qrModalCode: { backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, marginVertical: 4 },
-  qrModalName: { fontSize: 20, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  qrModalEmail: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  qrModalName: { fontSize: 20, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  qrModalEmail: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
   qrPackageBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
-  qrPackageBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  qrModalHint: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "center", lineHeight: 17, marginTop: 4 },
+  qrPackageBadgeText: { fontSize: 13, fontFamily: "Archivo_600SemiBold" },
+  qrModalHint: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B7280", textAlign: "center", lineHeight: 17, marginTop: 4 },
   qrPlaceholderModal: { width: 220, height: 220, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "#F3F4F6", borderRadius: 8 },
   qrPlaceholderText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "center", lineHeight: 19, paddingHorizontal: 20 },
 });
