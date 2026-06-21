@@ -379,9 +379,10 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         <View style={styles.headerRight}>
@@ -462,43 +463,45 @@ export default function NotificationsScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 12,
-    backgroundColor: colors.studio.background,
+    paddingHorizontal: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
+  headerButton: {
+    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
   },
-  headerTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  headerButtonText: {
+    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
+  },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
   headerRight: { width: 60, alignItems: "flex-end" },
   countBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  countText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  countText: { fontSize: 12, fontFamily: "Archivo_600SemiBold" },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  scroll: { paddingHorizontal: 20, paddingTop: 16 },
   empty: { alignItems: "center", paddingTop: 80, gap: 12 },
-  emptyTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  emptyDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
-  group: { marginBottom: 24, gap: 8 },
+  emptyTitle: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  emptyDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
+  group: { marginBottom: 24, gap: 12 },
   groupLabel: {
-    fontSize: 12, fontFamily: "Inter_700Bold", color: "#6B7280",
-    letterSpacing: 1, textTransform: "uppercase", marginBottom: 4,
+    fontSize: 11, fontFamily: "SpaceMono_700Bold", color: "#6B747F",
+    letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 0,
   },
   notifCard: {
     flexDirection: "row", alignItems: "flex-start", gap: 12,
-    backgroundColor: "#0E1619", borderRadius: 14, borderWidth: 1,
-    borderColor: "#1E2E38", padding: 14,
+    backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)", padding: 16,
   },
-  notifCardUnread: { borderColor: colors.studio.primary + "55", backgroundColor: "#001820" },
-  unreadDot: { width: 7, height: 7, borderRadius: 3.5, position: "absolute", top: 14, left: 8 },
-  notifIconWrap: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  notifCardUnread: { borderColor: "rgba(0,182,215,0.38)", backgroundColor: "rgba(0,182,215,0.06)" },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, position: "absolute", top: 18, left: 10 },
+  notifIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   notifContent: { flex: 1, gap: 6, minWidth: 0 },
   notifTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
-  notifTitle: { flex: 1, fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  notifTime: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280", flexShrink: 0 },
-  notifBody: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 18 },
+  notifTitle: { flex: 1, fontSize: 15, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  notifTime: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F", flexShrink: 0 },
+  notifBody: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", lineHeight: 20 },
   eventBadge: {
     alignSelf: "flex-start",
     borderWidth: 1,
@@ -508,15 +511,15 @@ const styles = StyleSheet.create({
   },
   eventBadgeText: {
     fontSize: 10,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "SpaceMono_700Bold",
     textTransform: "uppercase",
   },
   metadataWrap: {
-    marginTop: 2,
+    marginTop: 6,
     borderTopWidth: 1,
-    borderTopColor: "#1E2E38",
-    paddingTop: 8,
-    gap: 5,
+    borderTopColor: "rgba(255,255,255,0.06)",
+    paddingTop: 10,
+    gap: 6,
   },
   metadataRow: {
     flexDirection: "row",
@@ -526,15 +529,16 @@ const styles = StyleSheet.create({
   },
   metadataLabel: {
     fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    color: "#6B7280",
+    fontFamily: "SpaceMono_700Bold",
+    color: "#6B747F",
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   metadataValue: {
     flex: 1,
     textAlign: "right",
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    color: "#D1D5DB",
+    fontSize: 13,
+    fontFamily: "Archivo_500Medium",
+    color: "#FFFFFF",
   },
 });

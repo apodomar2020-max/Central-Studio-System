@@ -106,12 +106,13 @@ export default function PrivacyPolicyScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{page.title}</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerButtonPlaceholder} />
       </View>
 
       <ScrollView
@@ -148,21 +149,28 @@ export default function PrivacyPolicyScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 12,
+    paddingHorizontal: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, textAlign: "center", fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 20, paddingTop: 8, gap: 20 },
+  headerButton: {
+    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
+  },
+  headerButtonText: {
+    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
+  },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  headerButtonPlaceholder: { minWidth: 54 },
+  scroll: { paddingHorizontal: 20, paddingTop: 16, gap: 24 },
   heroBadge: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    padding: 14, borderRadius: 14, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 14,
+    padding: 16, borderRadius: 16, borderWidth: 1,
   },
-  heroBadgeTitle: { fontSize: 15, fontFamily: "Inter_700Bold" },
-  heroBadgeSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", marginTop: 1 },
+  heroBadgeTitle: { fontSize: 16, fontFamily: "Archivo_800ExtraBold" },
+  heroBadgeSub: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 2 },
   loadingBox: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 24 },
-  loadingText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  content: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 22 },
+  loadingText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
+  content: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", lineHeight: 22 },
 });

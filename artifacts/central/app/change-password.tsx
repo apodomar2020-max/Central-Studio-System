@@ -44,12 +44,13 @@ export default function ChangePasswordScreen() {
   if (success) {
     return (
       <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <View style={[styles.header]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+        <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+            <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+            <Text style={styles.headerButtonText}>Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Change Password</Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.headerButtonPlaceholder} />
         </View>
         <View style={styles.successWrap}>
           <View style={[styles.successIcon, { backgroundColor: "#22C55E20" }]}>
@@ -67,12 +68,13 @@ export default function ChangePasswordScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Change Password</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerButtonPlaceholder} />
       </View>
 
       <KeyboardAwareScrollView
@@ -80,11 +82,11 @@ export default function ChangePasswordScreen() {
         bottomOffset={24}
         contentContainerStyle={styles.scroll}
       >
-        <View style={[styles.infoBox, { borderColor: colors.studio.primary + "30", backgroundColor: colors.studio.primary + "10" }]}>
+        <View style={styles.infoBox}>
           <Ionicons name="mail-outline" size={16} color={colors.studio.primary} />
-          <Text style={[styles.infoText, { color: colors.studio.primary }]}>
+          <Text style={styles.infoText}>
             Changing password for{" "}
-            <Text style={{ fontFamily: "Inter_600SemiBold" }}>{user?.email ?? "your account"}</Text>
+            <Text style={{ fontFamily: "Archivo_700Bold", color: "#FFFFFF" }}>{user?.email ?? "your account"}</Text>
           </Text>
         </View>
 
@@ -184,32 +186,39 @@ export default function ChangePasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 12, paddingTop: 12,
+    paddingHorizontal: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 20, paddingBottom: 60, paddingTop: 16, gap: 20 },
-  infoBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, borderWidth: 1 },
-  infoText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 18 },
-  form: { gap: 16 },
-  fieldGroup: { gap: 8 },
-  fieldLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#9CA3AF" },
+  headerButton: {
+    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
+  },
+  headerButtonText: {
+    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
+  },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  headerButtonPlaceholder: { minWidth: 54 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 60, paddingTop: 20, gap: 24 },
+  infoBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "rgba(0,182,215,0.3)", backgroundColor: "rgba(0,182,215,0.1)" },
+  infoText: { flex: 1, fontSize: 13, fontFamily: "Archivo_400Regular", lineHeight: 18, color: colors.studio.primary },
+  form: { gap: 14 },
+  fieldGroup: { gap: 6 },
+  fieldLabel: { fontSize: 11, fontFamily: "SpaceMono_700Bold", color: "#6B747F", textTransform: "uppercase", letterSpacing: 0.5 },
   inputRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "#1E1E26", borderRadius: 12, borderWidth: 1,
-    borderColor: "#2A2A35", paddingHorizontal: 14, height: 50,
+    backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 12, borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.10)", paddingHorizontal: 14, height: 50,
   },
-  input: { flex: 1, color: "#FFFFFF", fontFamily: "Inter_400Regular", fontSize: 15 },
-  divider: { height: 1, backgroundColor: "#1E2E38" },
-  strengthRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
-  strengthBar: { flex: 1, height: 3, borderRadius: 2 },
-  strengthLabel: { fontSize: 11, fontFamily: "Inter_500Medium", color: "#9CA3AF", marginLeft: 4 },
-  errorText: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#EF4444" },
+  input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15 },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.06)", marginVertical: 4 },
+  strengthRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  strengthBar: { flex: 1, height: 4, borderRadius: 2 },
+  strengthLabel: { fontSize: 11, fontFamily: "SpaceMono_700Bold", color: "#6B747F", marginLeft: 4, textTransform: "uppercase" },
+  errorText: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#EF4444", marginTop: 2 },
   successWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 16 },
-  successIcon: { width: 96, height: 96, borderRadius: 48, alignItems: "center", justifyContent: "center" },
-  successTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  successDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
+  successIcon: { width: 96, height: 96, borderRadius: 48, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(34,197,94,0.2)" },
+  successTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  successDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 22 },
 });

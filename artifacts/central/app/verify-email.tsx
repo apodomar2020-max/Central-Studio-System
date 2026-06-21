@@ -51,12 +51,13 @@ export default function VerifyEmailScreen() {
   if (user?.emailVerified) {
     return (
       <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+        <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+            <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+            <Text style={styles.headerButtonText}>Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Verify Email</Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.headerButtonPlaceholder} />
         </View>
         <View style={styles.centeredWrap}>
           <View style={[styles.iconWrap, { backgroundColor: "#22C55E20" }]}>
@@ -148,11 +149,12 @@ export default function VerifyEmailScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 30 : 0 }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Verify Email</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerButtonPlaceholder} />
       </View>
 
       <View style={styles.scroll}>
@@ -224,36 +226,43 @@ export default function VerifyEmailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 12, paddingTop: 12,
+    paddingHorizontal: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  scroll: { flex: 1, paddingHorizontal: 28, paddingTop: 24, gap: 20, alignItems: "center" },
+  headerButton: {
+    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
+  },
+  headerButtonText: {
+    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
+  },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  headerButtonPlaceholder: { minWidth: 54 },
+  scroll: { flex: 1, paddingHorizontal: 28, paddingTop: 32, gap: 20, alignItems: "center" },
   iconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  pageTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: "#FFFFFF", textAlign: "center" },
-  pageDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
-  pageDescEmail: { fontFamily: "Inter_600SemiBold" },
+  pageTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", textAlign: "center" },
+  pageDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 22 },
+  pageDescEmail: { fontFamily: "Archivo_700Bold" },
   centeredWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 16 },
-  successTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: "#FFFFFF", textAlign: "center" },
-  successDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
+  successTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", textAlign: "center" },
+  successDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 22 },
   emailBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, width: "100%",
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, width: "100%",
   },
-  emailText: { fontSize: 14, fontFamily: "Inter_600SemiBold", flex: 1 },
+  emailText: { fontSize: 14, fontFamily: "Archivo_600SemiBold", flex: 1 },
   codeRow: { flexDirection: "row", gap: 8, marginVertical: 8 },
   codeInput: {
     width: 44, height: 52, borderRadius: 12, borderWidth: 1.5,
-    textAlign: "center", fontSize: 22, fontFamily: "Inter_700Bold",
+    textAlign: "center", fontSize: 22, fontFamily: "Anton_400Regular",
   },
   resendBtn: { paddingVertical: 4 },
-  resendText: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  resendText: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#6B747F" },
   helpBox: {
     flexDirection: "row", alignItems: "flex-start", gap: 8,
-    padding: 12, borderRadius: 10, borderWidth: 1, marginTop: 4,
+    padding: 12, borderRadius: 12, borderWidth: 1, marginTop: 4,
   },
-  helpText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", lineHeight: 17 },
+  helpText: { flex: 1, fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", lineHeight: 18 },
 });

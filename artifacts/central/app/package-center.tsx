@@ -180,12 +180,13 @@ export default function PackageCenterScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Packages</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>Package Center</Text>
+        <View style={styles.headerButtonPlaceholder} />
       </View>
 
       <ScrollView
@@ -222,60 +223,67 @@ export default function PackageCenterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#1E2E38",
+    borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E2E38",
-    alignItems: "center", justifyContent: "center",
+  headerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minWidth: 54,
   },
-  headerTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 16, paddingTop: 16 },
+  headerButtonText: {
+    fontSize: 14,
+    fontFamily: "Archivo_600SemiBold",
+    color: colors.studio.primary,
+  },
+  headerButtonPlaceholder: { minWidth: 54 },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  scroll: { paddingHorizontal: 20, paddingTop: 20 },
   group: { marginBottom: 24 },
   groupHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  groupTitle: { fontSize: 13, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 },
-  groupCount: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#6B7280", backgroundColor: "#1E2E38", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  groupTitle: { fontSize: 11, fontFamily: "SpaceMono_700Bold", textTransform: "uppercase", letterSpacing: 0.5 },
+  groupCount: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: "#6B747F", backgroundColor: "#15171B", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
   card: {
-    backgroundColor: colors.studio.card,
+    backgroundColor: "#15171B",
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#1E2E38",
+    borderColor: "rgba(255,255,255,0.08)",
     gap: 14,
   },
   cardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  packageName: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFFFFF", lineHeight: 20 },
-  packageId: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280", marginTop: 2 },
+  packageName: { fontSize: 16, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", lineHeight: 22 },
+  packageId: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#6B747F", marginTop: 2 },
   statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  statusText: { fontSize: 11, fontFamily: "Archivo_700Bold" },
   creditsSection: { gap: 8 },
   creditsSummary: { flexDirection: "row", alignItems: "center" },
   creditItem: { flex: 1, alignItems: "center" },
-  creditValue: { fontSize: 22, fontFamily: "Inter_700Bold" },
-  creditLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: 2 },
-  creditDivider: { width: 1, height: 32, backgroundColor: "#1E2E38" },
-  progressTrack: { height: 8, backgroundColor: "#1E2E38", borderRadius: 4, overflow: "hidden" },
+  creditValue: { fontSize: 24, fontFamily: "Anton_400Regular" },
+  creditLabel: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 2 },
+  creditDivider: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.08)" },
+  progressTrack: { height: 7, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" },
   progressFill: { height: "100%", borderRadius: 4 },
-  progressLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "right" },
+  progressLabel: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#6B747F", textAlign: "right" },
   datesRow: { flexDirection: "row", gap: 8 },
-  dateItem: { flex: 1, backgroundColor: "#162028", borderRadius: 10, padding: 10, gap: 3 },
-  dateLabel: { fontSize: 10, fontFamily: "Inter_500Medium", color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.5 },
-  dateValue: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+  dateItem: { flex: 1, backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 10, gap: 3 },
+  dateLabel: { fontSize: 10, fontFamily: "SpaceMono_700Bold", color: "#6B747F", textTransform: "uppercase", letterSpacing: 0.5 },
+  dateValue: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
   notesRow: { flexDirection: "row", gap: 6, alignItems: "flex-start" },
-  notesText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", lineHeight: 16 },
+  notesText: { flex: 1, fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F", lineHeight: 16 },
   loadingState: { gap: 12 },
-  skeletonCard: { height: 220, backgroundColor: "#1E2E38", borderRadius: 16 },
+  skeletonCard: { height: 220, backgroundColor: "#15171B", borderRadius: 16 },
   emptyState: { alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 80 },
-  emptyTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#9CA3AF" },
-  emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#4B5563", textAlign: "center" },
+  emptyTitle: { fontSize: 16, fontFamily: "Archivo_600SemiBold", color: "#9CA3AF" },
+  emptyDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", textAlign: "center" },
 });

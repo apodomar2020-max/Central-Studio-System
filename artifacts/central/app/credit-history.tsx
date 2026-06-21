@@ -107,12 +107,13 @@ export default function CreditHistoryScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Credit History</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerButtonPlaceholder} />
       </View>
 
       <ScrollView
@@ -159,51 +160,58 @@ export default function CreditHistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#1E2E38",
+    borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E2E38",
-    alignItems: "center", justifyContent: "center",
+  headerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minWidth: 54,
   },
-  headerTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 16, paddingTop: 12 },
+  headerButtonText: {
+    fontSize: 14,
+    fontFamily: "Archivo_600SemiBold",
+    color: colors.studio.primary,
+  },
+  headerButtonPlaceholder: { minWidth: 54 },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  scroll: { paddingHorizontal: 20, paddingTop: 16 },
   totalRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 12 },
-  totalText: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280" },
-  list: { gap: 4 },
+  totalText: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F" },
+  list: { backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", overflow: "hidden" },
   row: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     paddingVertical: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#1E2E38",
+    borderBottomColor: "rgba(255,255,255,0.06)",
   },
-  rowIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  rowIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   rowBody: { flex: 1, gap: 2 },
-  rowLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  rowNotes: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  rowDate: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#4B5563" },
+  rowLabel: { fontSize: 14.5, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  rowNotes: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
+  rowDate: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F" },
   rowRight: { alignItems: "flex-end", gap: 2 },
-  rowDelta: { fontSize: 17, fontFamily: "Inter_700Bold" },
-  rowBalance: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  rowDelta: { fontSize: 15, fontFamily: "Archivo_800ExtraBold" },
+  rowBalance: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: "#6B747F" },
   loadMoreBtn: {
     alignItems: "center",
     paddingVertical: 14,
-    marginTop: 4,
   },
-  loadMoreText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#00B6D7" },
+  loadMoreText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#00B6D7" },
   loadingState: { gap: 4 },
-  skeletonRow: { height: 62, backgroundColor: "#1E2E38", borderRadius: 12, marginBottom: 4 },
+  skeletonRow: { height: 62, backgroundColor: "#15171B", borderRadius: 12, marginBottom: 4 },
   emptyState: { alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 80 },
-  emptyTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#9CA3AF" },
-  emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#4B5563", textAlign: "center", maxWidth: 260 },
+  emptyTitle: { fontSize: 16, fontFamily: "Archivo_600SemiBold", color: "#9CA3AF" },
+  emptyDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", textAlign: "center", maxWidth: 260 },
 });

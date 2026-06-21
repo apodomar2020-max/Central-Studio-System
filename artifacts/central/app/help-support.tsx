@@ -204,12 +204,13 @@ export default function HelpSupportScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 52 : insets.top) + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>{page.title}</Text>
-        <View style={{ width: 36 }} />
+        <Text style={styles.headerTitle}>{page.title}</Text>
+        <View style={styles.headerButtonPlaceholder} />
       </View>
 
       <ScrollView
@@ -290,31 +291,38 @@ export default function HelpSupportScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 14,
+    paddingHorizontal: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center" },
-  title: { flex: 1, textAlign: "center", fontSize: 20, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 20, paddingTop: 8, gap: 20 },
+  headerButton: {
+    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
+  },
+  headerButtonText: {
+    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
+  },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  headerButtonPlaceholder: { minWidth: 54 },
+  scroll: { paddingHorizontal: 20, paddingTop: 16, gap: 24 },
   hero: {
     flexDirection: "row", alignItems: "center", gap: 14,
-    borderRadius: 18, padding: 18,
-    borderWidth: 1, borderColor: `${colors.studio.primary}20`,
+    borderRadius: 16, padding: 18,
+    borderWidth: 1, borderColor: "rgba(0,182,215,0.38)",
   },
   heroIcon: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 44, height: 44, borderRadius: 22,
     alignItems: "center", justifyContent: "center",
-    backgroundColor: `${colors.studio.primary}15`,
+    backgroundColor: "rgba(0,182,215,0.1)",
   },
-  heroTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  heroSubtitle: { marginTop: 4, fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 18 },
+  heroTitle: { fontSize: 18, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  heroSubtitle: { marginTop: 4, fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF", lineHeight: 18 },
   loadingBox: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 24 },
-  loadingText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  content: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 22 },
-  section: { gap: 12 },
-  sectionTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  loadingText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
+  content: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", lineHeight: 22 },
+  section: { gap: 14 },
+  sectionTitle: { fontSize: 16, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
   contactGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   contactBtn: {
     width: "30.8%",
@@ -324,17 +332,17 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#1E2E38",
-    backgroundColor: colors.studio.card,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#15171B",
   },
-  contactIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  contactLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#FFFFFF", textAlign: "center" },
+  contactIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  contactLabel: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF", textAlign: "center" },
   faqList: { gap: 8 },
   faqItem: {
-    borderRadius: 14, borderWidth: 1, borderColor: "#1E2E38",
-    backgroundColor: colors.studio.card, padding: 16, gap: 10,
+    borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#15171B", padding: 16, gap: 10,
   },
   faqHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  faqQ: { flex: 1, fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF", lineHeight: 18 },
-  faqA: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 19 },
+  faqQ: { flex: 1, fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF", lineHeight: 18 },
+  faqA: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", lineHeight: 20 },
 });

@@ -122,7 +122,8 @@ export default function EditProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel="Back"
         >
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Profile</Text>
         <View style={styles.headerButtonPlaceholder} />
@@ -165,14 +166,16 @@ export default function EditProfileScreen() {
 
         <View style={styles.form}>
           <View>
-            <Text style={styles.label}>Full Name *</Text>
+            <Text style={styles.sectionLabel}>Personal Information</Text>
+          </View>
+          <View>
+            <Text style={styles.label}>Full Name</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="person-outline" size={18} color="#6B7280" />
               <TextInput
                 value={name}
                 onChangeText={setName}
                 placeholder="Your full name"
-                placeholderTextColor="#6B7280"
+                placeholderTextColor="#6B747F"
                 autoCapitalize="words"
                 style={styles.input}
               />
@@ -188,14 +191,13 @@ export default function EditProfileScreen() {
           </View>
 
           <View>
-            <Text style={styles.label}>Phone Number *</Text>
+            <Text style={styles.label}>Phone Number</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="call-outline" size={18} color="#6B7280" />
               <TextInput
                 value={phone}
                 onChangeText={setPhone}
                 placeholder="+20 100 000 0000"
-                placeholderTextColor="#6B7280"
+                placeholderTextColor="#6B747F"
                 keyboardType="phone-pad"
                 style={styles.input}
               />
@@ -203,7 +205,7 @@ export default function EditProfileScreen() {
           </View>
 
           <View>
-            <Text style={styles.label}>Account Type *</Text>
+            <Text style={styles.label}>Account Type</Text>
             <View style={styles.accountTypeRow}>
               {ACCOUNT_TYPES.map((item) => {
                 const selected = accountType === item.value;
@@ -214,18 +216,13 @@ export default function EditProfileScreen() {
                     style={[
                       styles.accountTypeButton,
                       selected && {
-                        borderColor: colors.studio.primary,
-                        backgroundColor: colors.studio.primary + "15",
+                        borderColor: "rgba(0,182,215,0.5)",
+                        backgroundColor: "#0A0B0D",
                       },
                     ]}
                     activeOpacity={0.82}
                   >
-                    <Ionicons
-                      name={item.icon}
-                      size={18}
-                      color={selected ? colors.studio.primary : "#6B7280"}
-                    />
-                    <Text style={[styles.accountTypeText, selected && { color: colors.studio.primary }]}>
+                    <Text style={[styles.accountTypeText, selected && { color: "#FFFFFF" }]}>
                       {item.label}
                     </Text>
                   </TouchableOpacity>
@@ -235,18 +232,16 @@ export default function EditProfileScreen() {
           </View>
 
           <View style={styles.readOnlySection}>
-            <Text style={styles.sectionLabel}>Read-only account details</Text>
+            <Text style={styles.sectionLabel}>Account Information</Text>
             <View style={styles.readOnlyRow}>
-              <Ionicons name="mail-outline" size={17} color="#6B7280" />
+              <Text style={styles.readOnlyLabel}>Email Address</Text>
               <View style={styles.readOnlyTextWrap}>
-                <Text style={styles.readOnlyLabel}>Email</Text>
                 <Text style={styles.readOnlyValue}>{user.email}</Text>
               </View>
             </View>
             <View style={styles.readOnlyRow}>
-              <Ionicons name={providerIcon(user.authProvider)} size={17} color="#6B7280" />
+              <Text style={styles.readOnlyLabel}>Connected Provider</Text>
               <View style={styles.readOnlyTextWrap}>
-                <Text style={styles.readOnlyLabel}>Connected provider</Text>
                 <Text style={styles.readOnlyValue}>{providerLabel(user.authProvider)}</Text>
               </View>
             </View>
@@ -266,51 +261,53 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.07)",
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#1E1E26",
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 4,
+    minWidth: 54,
   },
-  headerButtonPlaceholder: { width: 40, height: 40 },
-  headerTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 24, paddingBottom: 48, gap: 16 },
+  headerButtonText: {
+    fontSize: 14,
+    fontFamily: "Archivo_600SemiBold",
+    color: colors.studio.primary,
+  },
+  headerButtonPlaceholder: { minWidth: 54 },
+  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  scroll: { paddingHorizontal: 20, paddingBottom: 100, gap: 24, paddingTop: 22 },
   emptyState: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 24 },
-  emptyTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  emptyTitle: { fontSize: 20, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
   summaryCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1E2E38",
-    backgroundColor: "#0E1619",
+    gap: 16,
   },
   avatarCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.studio.primary + "25",
+    backgroundColor: "rgba(0,182,215,0.1)",
+    borderWidth: 3,
+    borderColor: colors.studio.primary,
   },
-  avatarInitials: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.studio.primary },
-  summaryText: { flex: 1, gap: 6 },
-  summaryName: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  avatarInitials: { fontSize: 24, fontFamily: "Archivo_700Bold", color: colors.studio.primary },
+  summaryText: { flex: 1, gap: 8 },
+  summaryName: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
   summaryBadgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   badge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 9 },
-  badgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  badgeText: { fontSize: 11, fontFamily: "Archivo_600SemiBold" },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -321,48 +318,42 @@ const styles = StyleSheet.create({
     borderColor: colors.error + "50",
     backgroundColor: colors.error + "20",
   },
-  errorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.error },
-  form: { gap: 16 },
-  label: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#9CA3AF", marginBottom: 7 },
+  errorText: { flex: 1, fontSize: 13, fontFamily: "Archivo_400Regular", color: colors.error },
+  form: { gap: 14 },
+  label: { fontSize: 11, fontFamily: "SpaceMono_700Bold", color: "#6B747F", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
   inputRow: {
-    height: 52,
+    height: 50,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingHorizontal: 14,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#2A2A35",
-    backgroundColor: "#1E1E26",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
-  input: { flex: 1, color: "#FFFFFF", fontFamily: "Inter_400Regular", fontSize: 15 },
+  input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15 },
   suggestionBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 9 },
-  suggestionText: { flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: colors.studio.primary },
-  accountTypeRow: { flexDirection: "row", gap: 10 },
+  suggestionText: { flex: 1, fontSize: 12, fontFamily: "Archivo_500Medium", color: colors.studio.primary },
+  accountTypeRow: { flexDirection: "row", gap: 8 },
   accountTypeButton: {
     flex: 1,
-    minHeight: 48,
+    paddingVertical: 11,
+    paddingHorizontal: 6,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#2A2A35",
-    backgroundColor: "#1E1E26",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
-  accountTypeText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#9CA3AF" },
-  readOnlySection: {
-    gap: 10,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#1E2E38",
-    backgroundColor: "#0E1619",
-  },
-  sectionLabel: { fontSize: 12, fontFamily: "Inter_700Bold", color: "#6B7280", textTransform: "uppercase" },
-  readOnlyRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  readOnlyTextWrap: { flex: 1 },
-  readOnlyLabel: { fontSize: 12, fontFamily: "Inter_500Medium", color: "#6B7280" },
-  readOnlyValue: { fontSize: 14, fontFamily: "Inter_500Medium", color: "#FFFFFF", marginTop: 1 },
+  accountTypeText: { fontSize: 12, fontFamily: "Archivo_700Bold", color: "#6B747F" },
+  readOnlySection: { gap: 14, marginTop: 10 },
+  sectionLabel: { fontSize: 11, fontFamily: "SpaceMono_700Bold", color: colors.studio.primary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: -2 },
+  readOnlyRow: { flexDirection: "column", gap: 6 },
+  readOnlyTextWrap: { height: 50, paddingHorizontal: 14, justifyContent: "center", backgroundColor: "rgba(255,255,255,0.03)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12 },
+  readOnlyLabel: { fontSize: 11, fontFamily: "SpaceMono_700Bold", color: "#6B747F", textTransform: "uppercase", letterSpacing: 0.5 },
+  readOnlyValue: { fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
 });
