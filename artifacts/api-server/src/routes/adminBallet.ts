@@ -12,7 +12,7 @@
  *   POST  /api/admin/ballet/applications/:id/assign-level — assign level + update app + event
  */
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, asc, count, desc, eq, ilike, not, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -28,7 +28,7 @@ import {
   BALLET_APPLICATION_STATUSES,
 } from "@workspace/db";
 import type { BalletApplicationStatus } from "@workspace/db";
-import { requireAdminAuth, type AdminRequest } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -39,6 +39,21 @@ const VALID_STATUSES = new Set(BALLET_APPLICATION_STATUSES);
 
 function isValidStatus(s: string): s is BalletApplicationStatus {
   return VALID_STATUSES.has(s as BalletApplicationStatus);
+}
+
+function requireApplicationStatusPermission(req: Request, res: Response, next: NextFunction): void {
+  const status = req.body?.status;
+  const action = status === "rejected"
+    ? "reject"
+    : ["accepted", "assignedToLevel", "activeBallet"].includes(status)
+      ? "approve"
+      : "review";
+  requireAdminPermission("ballet.applications", action)(req, res, next);
+}
+
+function requireAssessmentSlotUpdatePermission(req: Request, res: Response, next: NextFunction): void {
+  const action = req.body?.isActive === false ? "delete" : "edit";
+  requireAdminPermission("ballet.assessmentDates", action)(req, res, next);
 }
 
 /** Human-readable notification content for each ballet application status change. */
@@ -108,7 +123,7 @@ const ListQuerySchema = z.object({
   search: z.string().optional(),
 });
 
-router.get("/admin/ballet/applications", requireAdminAuth, async (req, res): Promise<void> => {
+router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid query parameters" });
@@ -187,7 +202,7 @@ router.get("/admin/ballet/applications", requireAdminAuth, async (req, res): Pro
 //   events    — full event history (newest first)
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get("/admin/ballet/applications/:id", requireAdminAuth, async (req, res): Promise<void> => {
+router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
 
@@ -255,6 +270,7 @@ const UpdateStatusBody = z.object({
 router.patch(
   "/admin/ballet/applications/:id/status",
   requireAdminAuth,
+  requireApplicationStatusPermission,
   async (req: AdminRequest, res): Promise<void> => {
     const id = parseInt(String(req.params["id"] ?? ""), 10);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
@@ -338,6 +354,7 @@ const AssignLevelBody = z.object({
 router.post(
   "/admin/ballet/applications/:id/assign-level",
   requireAdminAuth,
+  requireAdminPermission("ballet.applications", "approve"),
   async (req: AdminRequest, res): Promise<void> => {
     const id = parseInt(String(req.params["id"] ?? ""), 10);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
@@ -422,7 +439,7 @@ router.post(
 // Used by the Levels management page and the level assignment dropdown.
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get("/admin/ballet/levels", requireAdminAuth, async (_req, res): Promise<void> => {
+router.get("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ballet.levels", "view"), async (_req, res): Promise<void> => {
   const levels = await db
     .select({
       id:        balletLevelsTable.id,
@@ -445,7 +462,7 @@ const CreateLevelBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.post("/admin/ballet/levels", requireAdminAuth, async (req, res): Promise<void> => {
+router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req, res): Promise<void> => {
   const parsed = CreateLevelBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -476,7 +493,7 @@ const UpdateLevelBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.patch("/admin/ballet/levels/:id", requireAdminAuth, async (req, res): Promise<void> => {
+router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid level ID" }); return; }
 
@@ -521,7 +538,7 @@ router.patch("/admin/ballet/levels/:id", requireAdminAuth, async (req, res): Pro
 // Ordered by date asc, startTime asc.
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get("/admin/ballet/slots", requireAdminAuth, async (_req, res): Promise<void> => {
+router.get("/admin/ballet/slots", requireAdminAuth, requireAdminPermission("ballet.assessmentDates", "view"), async (_req, res): Promise<void> => {
   try {
     const rows = await db
       .select({
@@ -564,7 +581,7 @@ const CreateSlotBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.post("/admin/ballet/slots", requireAdminAuth, async (req, res): Promise<void> => {
+router.post("/admin/ballet/slots", requireAdminAuth, requireAdminPermission("ballet.assessmentDates", "create"), async (req, res): Promise<void> => {
   const parsed = CreateSlotBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -600,7 +617,7 @@ const UpdateSlotBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.patch("/admin/ballet/slots/:id", requireAdminAuth, async (req, res): Promise<void> => {
+router.patch("/admin/ballet/slots/:id", requireAdminAuth, requireAssessmentSlotUpdatePermission, async (req, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid slot ID" }); return; }
 
@@ -643,7 +660,7 @@ router.patch("/admin/ballet/slots/:id", requireAdminAuth, async (req, res): Prom
 
 // ─── GET /api/admin/ballet/settings ───────────────────────────────────────────
 
-router.get("/admin/ballet/settings", requireAdminAuth, async (_req, res): Promise<void> => {
+router.get("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.pricing", "view"), async (_req, res): Promise<void> => {
   try {
     const [row] = await db.select().from(balletSettingsTable).where(eq(balletSettingsTable.id, 1)).limit(1);
     if (!row) { res.status(404).json({ error: "Settings not found" }); return; }
@@ -667,7 +684,7 @@ const UpdateSettingsBody = z.object({
   acceptanceMessageTemplate: z.string().nullable().optional(),
 });
 
-router.patch("/admin/ballet/settings", requireAdminAuth, async (req, res): Promise<void> => {
+router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.pricing", "edit"), async (req, res): Promise<void> => {
   const parsed = UpdateSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
