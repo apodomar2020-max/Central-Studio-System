@@ -8,6 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Animated,
   Dimensions,
   FlatList,
   Image,
@@ -103,7 +104,8 @@ function ageGroupColor(ag: string): string {
 function HeroSlide({ item, onInteract }: { item: HeroItem; onInteract?: () => void }) {
   return (
     <View style={s.heroSlide}>
-      <Image source={{ uri: item.imageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      {/* Design: image at opacity 0.5, gradient overlay provides additional dimming */}
+      <Image source={{ uri: item.imageUrl }} style={[StyleSheet.absoluteFill, { opacity: 0.5 }]} resizeMode="cover" />
       {/* Gradient: design spec rgba(6,7,8,0.15)→0.45→0.9; content bottom-aligned */}
       <LinearGradient
         colors={["rgba(6,7,8,0.15)", "rgba(6,7,8,0.45)", "rgba(6,7,8,0.90)"]}
@@ -117,9 +119,13 @@ function HeroSlide({ item, onInteract }: { item: HeroItem; onInteract?: () => vo
           )}
           <Text style={s.heroTitle} numberOfLines={3}>{item.title}</Text>
         </View>
-        {/* CTA row: marginTop 12, sub-text placeholder left + CTA pill right */}
+        {/* CTA row: marginTop 12, sub-text left + CTA pill right */}
         <View style={s.heroCTARow}>
-          <View style={{ flex: 1 }} />
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            {!!(item as any).subtitle && (
+              <Text style={s.heroSubtitle} numberOfLines={1}>{(item as any).subtitle}</Text>
+            )}
+          </View>
           <TouchableOpacity
             onPress={() => {
               onInteract?.();
@@ -152,8 +158,8 @@ function HeroSkeleton() {
       <View style={s.heroDots}>
         {[0, 1, 2].map((i) => (
           <View key={i} style={[s.heroDot, i === 0
-            ? { width: 20, backgroundColor: CYAN }
-            : { width: 5, backgroundColor: "rgba(255,255,255,0.22)" }]} />
+            ? { width: 22, backgroundColor: CYAN }
+            : { width: 6, backgroundColor: "rgba(255,255,255,0.22)" }]} />
         ))}
       </View>
     </View>
@@ -199,7 +205,7 @@ function HeroCarousel({
   const pauseAuto = useCallback(() => {
     clearAuto(); clearResume();
     if (items.length <= 1) return;
-    resumeTimerRef.current = setTimeout(() => startAuto(), 20000);
+    resumeTimerRef.current = setTimeout(() => startAuto(), 5000);
   }, [clearAuto, clearResume, items.length, startAuto]);
 
   useEffect(() => {
@@ -225,8 +231,8 @@ function HeroCarousel({
           hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
         >
           <View style={[s.heroDot, i === active
-            ? { width: 20, backgroundColor: CYAN }
-            : { width: 5, backgroundColor: "rgba(255,255,255,0.22)" }]} />
+            ? { width: 22, backgroundColor: CYAN }
+            : { width: 6, backgroundColor: "rgba(255,255,255,0.22)" }]} />
         </TouchableOpacity>
       ))}
     </View>
@@ -283,8 +289,9 @@ function HeroCarousel({
 
 // ─── Instagram Reels ──────────────────────────────────────────────────────────
 
-const REEL_W = 150;
-const REEL_H = 210;
+// Reel cards: 9:16 aspect ratio — design spec
+const REEL_W = 120;
+const REEL_H = 213; // 120 × (16/9) ≈ 213
 
 interface InstagramReel {
   id: string;
@@ -331,7 +338,7 @@ function ReelsSection() {
   if (isError || (!isLoading && reels.length === 0)) return null;
 
   return (
-    <View style={[s.section, { marginBottom: 8 }]}>
+    <View style={[s.section, { marginBottom: 12 }]}>
       <View style={s.sectionHeader}>
         <View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
@@ -531,10 +538,10 @@ function ClassCard({
         {/* Row 2: MetaRow */}
         {hasSchedule && (
           <View style={s.classMeta}>
-            <Ionicons name="calendar-outline" size={13} color={INK_300} />
+            <Ionicons name="calendar-outline" size={15} color={INK_300} />
             <Text style={s.classMetaText}>{dayLabel} · {item.startTime}</Text>
             <View style={s.classMetaSep} />
-            <Ionicons name="time-outline" size={13} color={INK_300} />
+            <Ionicons name="time-outline" size={15} color={INK_300} />
             <Text style={s.classMetaText}>{item.duration}</Text>
           </View>
         )}
@@ -693,6 +700,16 @@ function PackagesSection() {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function StudioHomeScreen() {
+  // ── Screen entrance animation (opacity 0→1, translateY 18→0, 520ms) ────────
+  const enterOpacity = useRef(new Animated.Value(0)).current;
+  const enterY       = useRef(new Animated.Value(18)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(enterOpacity, { toValue: 1, duration: 520, useNativeDriver: true }),
+      Animated.timing(enterY,       { toValue: 0, duration: 520, useNativeDriver: true }),
+    ]).start();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner, userPackages } = useAppContext();
   const insets = useSafeAreaInsets();
 
@@ -795,7 +812,7 @@ export default function StudioHomeScreen() {
   const topPad = Platform.OS === "web" ? 20 : insets.top + 6;
 
   return (
-    <View style={s.screen}>
+    <Animated.View style={[s.screen, { opacity: enterOpacity, transform: [{ translateY: enterY }] }]}>
       {/* Dark-teal glow behind header + hero */}
       <LinearGradient
         colors={["rgba(0,98,115,0.22)", "rgba(0,98,115,0.07)", "transparent"]}
@@ -814,7 +831,7 @@ export default function StudioHomeScreen() {
         <View style={s.headerRight}>
           {/* Bell */}
           <TouchableOpacity onPress={() => router.push("/notifications")} style={s.headerBtn}>
-            <Ionicons name="notifications-outline" size={20} color={INK_200} />
+            <Ionicons name="notifications-outline" size={21} color={INK_200} />
             {totalUnread > 0 && <View style={s.badge} />}
           </TouchableOpacity>
           {/* Avatar */}
@@ -868,7 +885,7 @@ export default function StudioHomeScreen() {
               data={[1, 2, 3, 4]} keyExtractor={(i) => String(i)}
               renderItem={() => <InstructorCardSkeleton />}
               horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingLeft: 20, gap: 10 }}
+              contentContainerStyle={{ paddingLeft: 20, gap: 14 }}
               scrollEnabled={false}
             />
           ) : instError ? (
@@ -880,7 +897,7 @@ export default function StudioHomeScreen() {
               data={instructors} keyExtractor={(i) => i.id}
               renderItem={({ item }) => <InstructorCard instructor={item} />}
               horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingLeft: 20, gap: 10, paddingRight: 20 }}
+              contentContainerStyle={{ paddingLeft: 20, gap: 14, paddingRight: 20 }}
             />
           )}
         </View>
@@ -907,9 +924,11 @@ export default function StudioHomeScreen() {
               ? <OfflineState variant="compact" onRetry={() => { refetchScheds(); refetchClasses(); }} />
               : <ErrorState variant="compact" onRetry={() => { refetchScheds(); refetchClasses(); }} message="Couldn't load upcoming classes." />
           ) : weekClasses.length === 0 ? (
-            <View style={s.emptyCard}>
-              <Ionicons name="calendar-outline" size={30} color={INK_400} />
-              <Text style={s.emptyTitle}>No upcoming scheduled classes</Text>
+            <View style={s.emptyState}>
+              <View style={s.emptyIconCircle}>
+                <Ionicons name="calendar-outline" size={36} color={CYAN} />
+              </View>
+              <Text style={s.emptyTitle}>No upcoming classes</Text>
               <Text style={s.emptyDesc}>Classes will appear here once schedules are set up in the portal.</Text>
             </View>
           ) : (
@@ -932,7 +951,7 @@ export default function StudioHomeScreen() {
         {/* Reels */}
         <ReelsSection />
       </ScrollView>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -979,22 +998,25 @@ const s = StyleSheet.create({
   avatarInitials: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
 
   // ── Section headers ────────────────────────────────────────────────────────
-  section: { marginBottom: 24 },
+  // Fix Pack 2: marginBottom 24→30, sectionHeader marginBottom 12→14
+  section: { marginBottom: 30 },
   sectionHeader: {
     flexDirection: "row", justifyContent: "space-between",
-    alignItems: "flex-end", paddingHorizontal: 20, marginBottom: 12,
+    alignItems: "flex-end", paddingHorizontal: 20, marginBottom: 14,
   },
   eyebrow: {
     fontSize: 10, fontFamily: "SpaceMono_700Bold",
     letterSpacing: 1.8, color: CYAN,
     textTransform: "uppercase", marginBottom: 3,
   },
-  sectionTitle: { fontSize: 24, fontFamily: "Archivo_700Bold", color: "#fff", letterSpacing: -0.3, lineHeight: 28 },
+  // Fix Pack 2: Archivo_800ExtraBold (was 700Bold), letterSpacing -0.24 (was -0.3)
+  sectionTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#fff", letterSpacing: -0.24, lineHeight: 28 },
   seeAllRow: { flexDirection: "row", alignItems: "center", gap: 2 },
   seeAllText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_300 },
 
   // ── Hero wrap ──────────────────────────────────────────────────────────────
-  heroWrap: { marginBottom: 22, overflow: "visible" as any },
+  // Fix Pack 2: marginBottom 22→30
+  heroWrap: { marginBottom: 30, overflow: "visible" as any },
   heroSlide: {
     width: HERO_W, height: HERO_H,
     borderRadius: R_LG, overflow: "hidden",
@@ -1008,10 +1030,10 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 18, paddingBottom: 18,
   },
   heroContent: { gap: 0 },
-  // Design: role-eyebrow, marginBottom: 7
-  heroEyebrow: { fontSize: 9, fontFamily: "SpaceMono_700Bold", color: CYAN, letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 7 },
-  // Design: font-display, fontSize: 36, lineHeight: 0.9 → 36×0.9=32, uppercase
-  heroTitle: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 32, textTransform: "uppercase", letterSpacing: 0 },
+  // Design: role-eyebrow — Fix Pack 2: fontSize 9→12, letterSpacing 1.8→1.92
+  heroEyebrow: { fontSize: 12, fontFamily: "SpaceMono_700Bold", color: CYAN, letterSpacing: 1.92, textTransform: "uppercase", marginBottom: 7 },
+  // Design: font-display, fontSize: 36 — Fix Pack 2: lineHeight 32→33 (36×0.9=32.4 → round up)
+  heroTitle: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 33, textTransform: "uppercase", letterSpacing: 0 },
   // Design: marginTop: 12, justifyContent: space-between (sub text left, CTA right)
   heroCTARow: { flexDirection: "row", alignItems: "center", marginTop: 12 },
   // Design: height: 28, padding: 0 10px, gap: 15, fontSize: 10
@@ -1022,20 +1044,22 @@ const s = StyleSheet.create({
     borderRadius: R_PILL,
   },
   heroCTAText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: INK_900, letterSpacing: 0 },
-  // Dots sit BELOW the FlatList (marginTop from design: 14)
-  heroDots: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 12 },
-  heroDot: { height: 5, borderRadius: 2.5 },
+  heroSubtitle: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_200 },
+  // Dots — Fix Pack 2: marginTop 12→14, dot height 5→6, borderRadius 2.5→3
+  heroDots: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 14 },
+  heroDot: { height: 6, borderRadius: 3 },
 
   // ── Instructor cards ───────────────────────────────────────────────────────
   // Design: width=132, height=168
   instCard: { width: 132, height: 168, borderRadius: R_MD, overflow: "hidden", backgroundColor: INK_800 },
+  // Fix Pack 2: badge position top 8→9, left 8→9; letterSpacing 1→0.8
   instBadge: {
-    position: "absolute", top: 8, left: 8,
+    position: "absolute", top: 9, left: 9,
     backgroundColor: "rgba(0,182,215,0.92)",
     borderRadius: R_PILL, paddingHorizontal: 7, paddingVertical: 3,
     maxWidth: 90,
   },
-  instBadgeText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: INK_900, textTransform: "uppercase", letterSpacing: 1 },
+  instBadgeText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: INK_900, textTransform: "uppercase", letterSpacing: 0.8 },
   instInitialsBg: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: "center", justifyContent: "center",
@@ -1050,9 +1074,10 @@ const s = StyleSheet.create({
   instName: { fontSize: 13, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 16 },
 
   // ── Class card ─────────────────────────────────────────────────────────────
+  // Fix Pack 2: backgroundColor rgb(0,0,0)→INK_800 (#15171B)
   classCard: {
     borderRadius: R_LG, overflow: "hidden",
-    backgroundColor: "rgb(0,0,0)",
+    backgroundColor: INK_800,
     borderWidth: 1, borderColor: BORDER,
   },
   classImg: { height: 130, position: "relative" },
@@ -1068,11 +1093,12 @@ const s = StyleSheet.create({
   statusChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R_PILL },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusChipText: { fontSize: 11, fontFamily: "Archivo_700Bold" },
-  // Body: padding 15 16 16 from design, gap 11
-  classBody: { padding: 15, paddingBottom: 12, gap: 10 },
+  // Body — Fix Pack 2: paddingBottom 12→16, gap 10→11
+  classBody: { padding: 15, paddingBottom: 16, gap: 11 },
   classTitleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 },
-  classTitle: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 22, marginBottom: 3 },
-  classDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 19 },
+  // Fix Pack 2: classTitle fontSize 18→20; classDesc fontSize 13→14, lineHeight 19→22
+  classTitle: { fontSize: 20, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 22, marginBottom: 3 },
+  classDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 22 },
   classPrice: { fontSize: 20, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 22, flexShrink: 0 },
   classMeta: { flexDirection: "row", alignItems: "center", gap: 5 },
   classMetaText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
@@ -1103,35 +1129,44 @@ const s = StyleSheet.create({
   bookBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: R_MD },
   bookBtnText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold" },
 
-  // ── Empty state ────────────────────────────────────────────────────────────
-  emptyCard: {
-    marginHorizontal: 20, borderRadius: R_LG, borderWidth: 1, borderStyle: "dashed",
-    borderColor: "rgba(255,255,255,0.14)", padding: 28,
-    alignItems: "center", gap: 8, backgroundColor: INK_800,
+  // ── Empty state — Fix Pack 2: redesigned to match design spec ────────────
+  // Design: 84px circular icon container, no dashed card, title 26px, body 16px
+  emptyState: {
+    marginHorizontal: 20, paddingVertical: 32,
+    alignItems: "center", gap: 16,
   },
-  emptyTitle: { fontSize: 14, fontFamily: "Archivo_600SemiBold", color: "#fff", textAlign: "center" },
-  emptyDesc: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300, textAlign: "center", lineHeight: 17 },
+  emptyIconCircle: {
+    width: 84, height: 84, borderRadius: 42,
+    backgroundColor: CYAN + "12",
+    borderWidth: 1, borderColor: CYAN + "28",
+    alignItems: "center", justifyContent: "center",
+  },
+  emptyTitle: { fontSize: 26, fontFamily: "Archivo_800ExtraBold", color: "#fff", textAlign: "center", letterSpacing: -0.3 },
+  emptyDesc: { fontSize: 16, fontFamily: "Archivo_400Regular", color: INK_300, textAlign: "center", lineHeight: 24, maxWidth: 280 },
 
-  // ── Package cards ──────────────────────────────────────────────────────────
+  // ── Package cards — Fix Pack 2: width 200→230; hot border full cyan, 1.5px ──
   pkgCard: {
-    width: 200, borderRadius: R_LG, overflow: "hidden",
+    width: 230, borderRadius: R_LG, overflow: "hidden",
     backgroundColor: INK_800, borderWidth: 1, borderColor: BORDER, padding: 18,
   },
-  pkgCardHot: { borderColor: CYAN + "60", backgroundColor: "linear-gradient(160deg, rgba(0,182,215,0.16), rgba(0,182,215,0.04))" as any },
+  // Fix Pack 2: borderColor CYAN+"60"→CYAN (full opacity), borderWidth 1→1.5
+  pkgCardHot: { borderColor: CYAN, borderWidth: 1.5, backgroundColor: "rgba(0,182,215,0.08)" },
   pkgBadge: {
     flexDirection: "row", alignItems: "center", gap: 4,
     alignSelf: "flex-start", backgroundColor: CYAN,
     borderRadius: R_PILL, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 10,
   },
-  pkgBadgeText: { fontSize: 8, fontFamily: "Archivo_800ExtraBold", color: INK_900, letterSpacing: 1 },
+  // Fix Pack 2: pkgBadgeText fontSize 8→11
+  pkgBadgeText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold", color: INK_900, letterSpacing: 1 },
   pkgIcon: {
     width: 40, height: 40, borderRadius: R_MD,
     backgroundColor: "rgba(255,255,255,0.07)",
     alignItems: "center", justifyContent: "center", marginBottom: 12,
   },
-  pkgName: { fontSize: 17, fontFamily: "Archivo_700Bold", color: "#fff", marginBottom: 6 },
+  // Fix Pack 2: pkgName fontSize 17→19; pkgPrice fontSize 32→38, lineHeight 30→34
+  pkgName: { fontSize: 19, fontFamily: "Archivo_700Bold", color: "#fff", marginBottom: 6 },
   pkgPriceRow: { flexDirection: "row", alignItems: "baseline", gap: 4, marginBottom: 4 },
-  pkgPrice: { fontSize: 32, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 30 },
+  pkgPrice: { fontSize: 38, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 34 },
   pkgUnit: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
   pkgPer: { fontSize: 10, fontFamily: "Archivo_500Medium", color: INK_400, marginBottom: 14 },
   pkgBtn: {
@@ -1154,14 +1189,14 @@ const s = StyleSheet.create({
   pkgPromoBtn: { backgroundColor: CYAN, paddingHorizontal: 14, paddingVertical: 8, borderRadius: R_MD },
   pkgPromoBtnText: { fontSize: 12, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
 
-  // ── Reels ──────────────────────────────────────────────────────────────────
+  // ── Reels — Fix Pack 2: 9:16 aspect ratio (120×213); play button 36→30 ───
   reelCard: {
     width: REEL_W, height: REEL_H, borderRadius: R_MD, overflow: "hidden",
     backgroundColor: INK_700, alignItems: "center", justifyContent: "center",
     borderWidth: 1, borderColor: BORDER,
   },
   reelPlayBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 30, height: 30, borderRadius: 15,
     backgroundColor: "rgba(0,0,0,0.50)",
     alignItems: "center", justifyContent: "center",
   },
