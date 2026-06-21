@@ -1,52 +1,175 @@
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { desc, eq } from "drizzle-orm";
-import { db, packageOrdersTable, creditTransactionsTable } from "@workspace/db";
+import { z } from "zod";
+import {
+  db,
+  packageOrdersTable,
+  creditTransactionsTable,
+  pricePackagesTable,
+  studentsTable,
+} from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import {
   ListPackageOrdersQueryParams,
   ListPackageOrdersResponse,
   GetPackageOrderParams,
   GetPackageOrderResponse,
-  CreatePackageOrderBody,
   UpdatePackageOrderParams,
   UpdatePackageOrderBody,
   UpdatePackageOrderResponse,
-  DeletePackageOrderParams,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
 function requirePackageOrderAction(req: Request, res: Response, next: NextFunction): void {
   const status = req.body?.status;
+  const hasGeneralEdits = Object.keys(req.body ?? {}).some((key) => key !== "status");
+  if (req.body?.remainingCredits !== undefined) {
+    res.status(400).json({
+      error: "Credit balances must be changed through the credit adjustment endpoint.",
+    });
+    return;
+  }
+  if (status !== undefined && status !== "active" && status !== "cancelled") {
+    res.status(400).json({ error: "Unsupported package order status." });
+    return;
+  }
   if (status === "active") {
     requireAdminPermission("packageOrders", "approve")(req, res, next);
     return;
   }
   if (status === "cancelled") {
-    requireAdminPermission("packageOrders", "cancel")(req, res, next);
+    requireAdminPermission("packageOrders", "cancel")(req, res, () => {
+      if (!hasGeneralEdits) {
+        next();
+        return;
+      }
+      requireAdminPermission("packageOrders", "approve")(req, res, next);
+    });
     return;
   }
-  next();
+  requireAdminPermission("packageOrders", "approve")(req, res, next);
 }
 
-router.get("/package-orders", async (req, res): Promise<void> => {
+function requirePackageOrderReadAccess(req: Request, res: Response, next: NextFunction): void {
+  if (req.studentJwtVerified) {
+    requireVerifiedStudent(req, res, next);
+    return;
+  }
+  requireAdminAuth(req, res, () => {
+    requireAdminPermission("packageOrders", "view")(req, res, next);
+  });
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+const PurchasePackageBody = z.object({
+  packageId: z.coerce.number().int().positive(),
+  paymentMode: z.enum(["pay_at_studio", "online_payment"]).optional(),
+}).passthrough();
+
+router.get(
+  "/package-orders",
+  requireAdminAuth,
+  requireAdminPermission("packageOrders", "view"),
+  async (req, res): Promise<void> => {
   const query = ListPackageOrdersQueryParams.safeParse(req.query);
   let rows = await db.select().from(packageOrdersTable).orderBy(desc(packageOrdersTable.createdAt));
   if (query.success && query.data.status) {
     rows = rows.filter((r) => r.status === query.data.status);
   }
   res.json(ListPackageOrdersResponse.parse(rows));
-});
+  },
+);
 
-router.post("/package-orders", async (req, res): Promise<void> => {
-  const parsed = CreatePackageOrderBody.safeParse(req.body);
+router.post(
+  "/package-orders",
+  requireStudentAuth,
+  requireVerifiedStudent,
+  async (req, res): Promise<void> => {
+  const parsed = PurchasePackageBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "status")) {
+    res.status(400).json({ error: "Package order status is assigned by the server." });
+    return;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(req.body ?? {}, "price") ||
+    Object.prototype.hasOwnProperty.call(req.body ?? {}, "priceEgp")
+  ) {
+    res.status(400).json({ error: "Package price is assigned by the server." });
+    return;
+  }
+
+  const [[student], [packageDefinition]] = await Promise.all([
+    db
+      .select({
+        id: studentsTable.id,
+        name: studentsTable.name,
+        email: studentsTable.email,
+        phone: studentsTable.phone,
+      })
+      .from(studentsTable)
+      .where(eq(studentsTable.id, req.studentId!))
+      .limit(1),
+    db
+      .select()
+      .from(pricePackagesTable)
+      .where(eq(pricePackagesTable.id, parsed.data.packageId))
+      .limit(1),
+  ]);
+
+  if (!student) {
+    res.status(404).json({ error: "Student account not found." });
+    return;
+  }
+  if (!packageDefinition || !packageDefinition.isActive) {
+    res.status(404).json({ error: "Active package not found." });
+    return;
+  }
+
+  const totalCredits = packageDefinition.sessions ?? 1;
+  const legacyPackageName = req.body?.packageName;
+  const legacyTotalCredits = req.body?.totalCredits;
+  const legacyRemainingCredits = req.body?.remainingCredits;
+  if (legacyPackageName !== undefined && legacyPackageName !== packageDefinition.name) {
+    res.status(400).json({ error: "Package name does not match the selected package." });
+    return;
+  }
+  if (legacyTotalCredits !== undefined && legacyTotalCredits !== totalCredits) {
+    res.status(400).json({ error: "Package credit total does not match the selected package." });
+    return;
+  }
+  if (legacyRemainingCredits !== undefined && legacyRemainingCredits !== totalCredits) {
+    res.status(400).json({ error: "Remaining credits are assigned by the server." });
+    return;
+  }
+
   const row = await db.transaction(async (tx) => {
-    const [inserted] = await tx.insert(packageOrdersTable).values(parsed.data).returning();
+    const [inserted] = await tx
+      .insert(packageOrdersTable)
+      .values({
+        studentName: student.name,
+        studentEmail: normalizeEmail(student.email),
+        studentPhone: student.phone,
+        packageId: packageDefinition.id,
+        packageName: packageDefinition.name,
+        totalCredits,
+        remainingCredits: totalCredits,
+        status: "pendingPayment",
+        notes: null,
+        activatedAt: null,
+        expiresAt: null,
+      })
+      .returning();
     await createStudentNotification(tx, {
       studentEmail: inserted.studentEmail,
       title: "Package request submitted",
@@ -62,9 +185,10 @@ router.post("/package-orders", async (req, res): Promise<void> => {
     return inserted;
   });
   res.status(201).json(GetPackageOrderResponse.parse(row));
-});
+  },
+);
 
-router.get("/package-orders/:id", async (req, res): Promise<void> => {
+router.get("/package-orders/:id", requirePackageOrderReadAccess, async (req, res): Promise<void> => {
   const params = GetPackageOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -72,6 +196,13 @@ router.get("/package-orders/:id", async (req, res): Promise<void> => {
   }
   const [row] = await db.select().from(packageOrdersTable).where(eq(packageOrdersTable.id, params.data.id));
   if (!row) {
+    res.status(404).json({ error: "Package order not found" });
+    return;
+  }
+  if (
+    req.studentJwtVerified &&
+    normalizeEmail(row.studentEmail) !== normalizeEmail(req.studentEmail ?? "")
+  ) {
     res.status(404).json({ error: "Package order not found" });
     return;
   }
@@ -201,18 +332,10 @@ router.patch(
   },
 );
 
-router.delete("/package-orders/:id", async (req, res): Promise<void> => {
-  const params = DeletePackageOrderParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const [row] = await db.delete(packageOrdersTable).where(eq(packageOrdersTable.id, params.data.id)).returning();
-  if (!row) {
-    res.status(404).json({ error: "Package order not found" });
-    return;
-  }
-  res.sendStatus(204);
+router.delete("/package-orders/:id", (_req, res): void => {
+  res.status(405).json({
+    error: "Package orders cannot be hard-deleted. Cancel the order instead.",
+  });
 });
 
 export default router;

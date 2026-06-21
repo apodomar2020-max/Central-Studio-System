@@ -1,15 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
-import Svg, { Path } from "react-native-svg";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, {
+  useCallback, useMemo, useRef, useState,
+  useEffect,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Animated,
+  Dimensions,
   FlatList,
+  Image,
   ImageBackground,
   Platform,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -28,89 +35,844 @@ import {
   type DanceClass,
   type Instructor,
 } from "@/data/mockData";
-import { compareSchedulesByNextOccurrence, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
-import colors from "@/constants/colors";
-import ClassCard from "@/components/ClassCard";
-import EmptyState from "@/components/EmptyState";
+import {
+  compareSchedulesByNextOccurrence,
+  mapApiClassWithScheduleToMobile,
+  mapApiInstructorToMobile,
+} from "@/data/apiAdapters";
 import { ListSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
-import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import {
+  DEFAULT_SINGLE_CLASS_PRICE_EGP,
+  fetchClassPricing,
+} from "@/services/classPricingService";
 import { useAppContext } from "@/contexts/AppContext";
 
-const AGE_GROUPS: { key: AgeGroup | "All"; label: string; icon: string }[] = [
-  { key: "All", label: "All Ages", icon: "people-outline" },
-  { key: "Kids", label: "Kids", icon: "happy-outline" },
-  { key: "Teens", label: "Teens", icon: "person-outline" },
-  { key: "Adults", label: "Adults", icon: "people-circle-outline" },
-];
+/* ─── Design tokens ─────────────────────────────────────────────── */
+const INK_900 = "#060C10";
+const INK_800 = "#0E1619";
+const INK_700 = "#162028";
+const INK_400 = "#4B5563";
+const INK_300 = "#9CA3AF";
+const INK_200 = "#D1D5DB";
+const CYAN   = "#00B6D7";
+const MAGENTA = "#FF2E7E";
+const AMBER  = "#FFB02E";
+const SUCCESS = "#22C55E";
+const DANGER  = "#EF4444";
+const BORDER  = "rgba(255,255,255,0.08)";
+const R_MD = 12;
+const R_LG = 16;
+const R_PILL = 999;
 
-const BALLET_CATEGORY = DANCE_CATEGORIES.find((c) => c.isBallet);
+/* ─── Category accent colors (rgb triplets) ──────────────────────── */
+const CAT_RGB: Record<string, string> = {
+  c1:  "45,205,236",   // Hip Hop
+  c2:  "255,176,46",   // Afro Dance
+  c3:  "163,230,53",   // Breaking
+  c4:  "255,46,126",   // Salsa
+  c5:  "255,46,126",   // Bachata
+  c6:  "167,139,250",  // Contemporary
+  c8:  "45,205,236",   // Zumba
+  c9:  "163,230,53",   // Popping
+  c10: "255,176,46",
+  c11: "255,176,46",
+};
+const catRgb = (id: string) => CAT_RGB[id] ?? "45,205,236";
 
-// ─── Ballet card ──────────────────────────────────────────────────────────────
+const CAT_ICON: Record<string, any> = {
+  c1: "musical-notes-outline",
+  c2: "sunny-outline",
+  c3: "flame-outline",
+  c4: "heart-outline",
+  c5: "heart-circle-outline",
+  c6: "sync-outline",
+  c8: "barbell-outline",
+  c9: "radio-outline",
+};
+const catIcon = (id: string): any => CAT_ICON[id] ?? "star-outline";
 
+/* ─── Ballet constants ───────────────────────────────────────────── */
 const BALLET_COLOR = "#00B6D6";
-
-// Statuses that mean the parent has an active/pending application → Details mode
 const DETAIL_MODE_STATUSES = new Set([
-  "submitted", "pendingAssessment", "needsFollowUp",
-  "accepted", "assignedToLevel", "activeBallet",
+  "submitted","pendingAssessment","needsFollowUp",
+  "accepted","assignedToLevel","activeBallet",
 ]);
 
-function getStatusBadgeLabel(status: string): string {
-  switch (status) {
-    case "submitted":         return "UNDER REVIEW";
-    case "pendingAssessment": return "SCHEDULED";
-    case "needsFollowUp":     return "FOLLOW-UP";
-    case "accepted":          return "ACCEPTED";
-    case "assignedToLevel":   return "LEVEL ASSIGNED";
-    case "activeBallet":      return "ACTIVE";
-    case "rejected":          return "NOT ACCEPTED";
-    case "cancelled":         return "CANCELLED";
-    default:                  return status.toUpperCase();
+function getStatusBadgeLabel(s: string) {
+  switch (s) {
+    case "submitted":         return "Under Review";
+    case "pendingAssessment": return "Scheduled";
+    case "needsFollowUp":     return "Follow-Up";
+    case "accepted":          return "Accepted";
+    case "assignedToLevel":   return "Level Assigned";
+    case "activeBallet":      return "Active";
+    case "rejected":          return "Not Accepted";
+    case "cancelled":         return "Cancelled";
+    default:                  return s;
   }
 }
-
-/** Matches the color palette used in ballet/application-status.tsx */
-function getStatusBadgeColor(status: string): string {
-  switch (status) {
-    case "submitted":         return "#F59E0B";
+function getStatusBadgeColor(s: string) {
+  switch (s) {
+    case "submitted":         return AMBER;
     case "pendingAssessment": return "#60A5FA";
-    case "needsFollowUp":     return "#F59E0B";
-    case "accepted":          return "#22C55E";
+    case "needsFollowUp":     return AMBER;
+    case "accepted":          return SUCCESS;
     case "assignedToLevel":   return BALLET_COLOR;
     case "activeBallet":      return BALLET_COLOR;
-    case "rejected":          return "#EF4444";
-    case "cancelled":         return "#6B7280";
-    default:                  return "#9CA3AF";
+    case "rejected":          return DANGER;
+    case "cancelled":         return INK_400;
+    default:                  return INK_300;
   }
 }
 
-const BALLET_PILLS = ["Professional Instructors", "Level Assessment", "Performance Opportunities"] as const;
+/* ─── Class status helpers ───────────────────────────────────────── */
+function statusLabel(st: DanceClass["status"]) {
+  return st === "available" ? "Available"
+       : st === "fewSeats"  ? "Few Seats"
+       : st === "full"      ? "Full"
+       : "Waitlist";
+}
+function statusColor(st: DanceClass["status"]) {
+  return st === "available" ? SUCCESS
+       : st === "fewSeats"  ? AMBER
+       : st === "full"      ? DANGER
+       : INK_300;
+}
+function statusBg(st: DanceClass["status"]) {
+  return st === "available" ? "rgba(34,197,94,0.16)"
+       : st === "fewSeats"  ? "rgba(255,176,46,0.16)"
+       : st === "full"      ? "rgba(239,68,68,0.10)"
+       : "rgba(255,255,255,0.06)";
+}
 
-/** Ballerina shoe SVG icon — used in the ballet program card */
-function BalletShoeIcon({ size = 22, color = "#FFFFFF" }: { size?: number; color?: string }) {
+/* ─── Difficulty derived from ageGroup ───────────────────────────── */
+function deriveDifficulty(ag: AgeGroup) {
+  return ag === "Kids" ? "Beginner" : ag === "Teens" ? "Intermediate" : "Advanced";
+}
+function diffColor(d: string) {
+  return d === "Beginner" ? CYAN : d === "Intermediate" ? AMBER : MAGENTA;
+}
+
+/* ─── Instructor spec cleanup ────────────────────────────────────── */
+function styleLabel(t?: string) {
+  return (t ?? "").replace(/\s*Instructor\s*$/i, "").trim() || "Instructor";
+}
+
+/* ─── XStars ─────────────────────────────────────────────────────── */
+function XStars({ rating }: { rating: number }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 512 512">
-      <Path fill={color} d="M197.6 14.67c.5 4.53 1.1 9.7 1.5 16.34 1.1 15.45 1.7 35.77.8 56.37-.8 18.22-2.7 36.52-6.8 52.22 20 6.5 40.9 15.4 58.2 24.8.3-8.8.6-17.6 1-26.2-17.5-39.52-35-79.46-43.4-123.53zm29.7.12c11.2 55.18 38 105.41 60.3 159.61 15.1-5.3 30.4-9.4 45.7-12.9l-.6-1v-2.8c.7-45.5 2.6-97.35-6.4-142.91zM187.2 156.7c-.1.2-.2.4-.3.7 8.6 7.4 18.1 16.7 28 26.8 11.9 12.3 24 25.6 34.4 38.1.6-12.5 1-25 1.3-37.4-17-10.1-41.1-20.8-63.4-28.2zm-10.9 15.5c-2.5 2.2-5.2 4-8.2 5.4-1.3 39.3 5.1 75.5 17 107.8 25.6-9.6 45.5-24.1 59.9-39.6-11.2-14.8-27.3-33-43-49-9-9.3-18-17.8-25.7-24.6zm166.8 5.5c-16.7 3.8-33 8-49 13.5l-.1 1.7c-.7 8.3-1.3 16.6-1.8 24.9 6.6 6.6 13.9 12.8 21.7 18.6l.1-.1c9.3-14.2 19-28 27.4-38.8 2.5-3.1 4.9-5.9 7.2-8.5-1.7-3.8-3.6-7.5-5.5-11.3zm-195.9 1.2c-28.7-.1-49.28 6.3-51.95 30.9-3.35 30.8 75.55 202 69.25 261.7-2.9 27.8 42.5 25.5 58.3-2.8 11.6-20.8 13.1-48.2 11.6-74.1l-8-8.5c-46.8-49.3-78.6-121.9-76.4-207.2zm208.7 29.4c-.1.2-.2.3-.3.4-8 10-17.4 23.5-26.6 37.4-.1.2-.2.3-.3.5 11.6 7.3 24.3 13.9 37.8 19.4-1.4-20.1-4.8-39.4-10.6-57.7zm22.3 13.8c9.1 39.7 8.5 82.5 4.3 126.4-3.8 38.5-74.2 55.5-97.3-.2-8.3 58.5 10.2 88.8 37.3 127 14 19.6 52.3 24 64.8 4.2 27.1-43 18.5-85.7 12.7-134-5-41.3-1.4-87.8-21.8-123.4zm-87 19.2c-.2 10.4-.2 20.7.2 31 3.9-6.5 8.2-13.5 12.7-20.7-4.4-3.3-8.8-6.7-12.9-10.3zm27.8 20.5c-5.4 8.6-10.6 17-14.8 24.3-4.4 7.5-7.9 14.1-10.2 18.5 1 8.1 2.3 16.2 4 24.2 13 62.3 65.2 32.3 66.5 17.9 2.1-21 3.2-41.4 2.9-61.1-17.5-6.5-33.7-14.5-48.4-23.8zm-72.7 7.8c-14.5 12.8-32.7 24.3-54.4 32.4 10 22.6 22.8 42.8 37.5 60.4 9.1-29 14.1-60.6 16.9-92.8z" />
-    </Svg>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Ionicons
+          key={i}
+          name="star"
+          size={10}
+          color={i < Math.round(rating) ? "#FFB81C" : "rgba(255,255,255,0.18)"}
+        />
+      ))}
+      <Text style={{ fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_300, marginLeft: 3 }}>
+        {rating.toFixed(1)}
+      </Text>
+    </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════
+   EXPLORE HERO
+═══════════════════════════════════════════════════════════════════ */
+function ExploreHero({ count, topPad }: { count: number; topPad: number }) {
+  return (
+    <View style={[s.heroWrap, { paddingTop: topPad + 22 }]}>
+      <Text style={s.heroEyebrow}>Explore</Text>
+      <Text style={s.heroTitle}>Classes</Text>
+      <Text style={s.heroDesc}>
+        Discover dance styles, instructors, and programs designed for every level.
+      </Text>
+      <View style={s.heroCountBadge}>
+        <View style={s.heroCountDot} />
+        <Text style={s.heroCountText}>{count} Active Classes</Text>
+      </View>
+    </View>
+  );
+}
 
+/* ═══════════════════════════════════════════════════════════════════
+   SEARCH BAR
+═══════════════════════════════════════════════════════════════════ */
+function ExploreSearch({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (v: string) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <View style={s.searchWrap}>
+      <View style={[s.searchContainer, focused && s.searchContainerFocused]}>
+        <Ionicons name="search-outline" size={18} color={focused ? CYAN : INK_400} style={s.searchIcon} />
+        <TextInput
+          value={query}
+          onChangeText={onChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="Search classes, instructors, styles…"
+          placeholderTextColor={INK_400}
+          style={s.searchInput}
+        />
+        {!!query && (
+          <TouchableOpacity onPress={() => onChange("")} style={s.searchClear} activeOpacity={0.8}>
+            <Ionicons name="close" size={14} color="#fff" />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FILTERS
+═══════════════════════════════════════════════════════════════════ */
+const AGE_TABS = ["All", "Kids", "Teens", "Adults"] as const;
+const LEVEL_TABS = ["All Levels", "Beginner", "Intermediate", "Advanced"] as const;
+
+function ExploreFilters({
+  age, level, onAge, onLevel,
+}: {
+  age: string; level: string;
+  onAge: (v: string) => void; onLevel: (v: string) => void;
+}) {
+  return (
+    <View style={s.filtersWrap}>
+      <View style={s.ageSegment}>
+        {AGE_TABS.map((a) => {
+          const active = age === a.toLowerCase() || (age === "all" && a === "All");
+          return (
+            <TouchableOpacity
+              key={a}
+              onPress={() => { Haptics.selectionAsync(); onAge(a === "All" ? "all" : a.toLowerCase()); }}
+              style={[s.ageTab, active && s.ageTabActive]}
+              activeOpacity={0.85}
+            >
+              <Text style={[s.ageTabText, active && s.ageTabTextActive]}>{a}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.levelRow}>
+        {LEVEL_TABS.map((l) => {
+          const key = l === "All Levels" ? "all" : l.toLowerCase();
+          const active = level === key;
+          return (
+            <TouchableOpacity
+              key={l}
+              onPress={() => { Haptics.selectionAsync(); onLevel(key); }}
+              style={[s.levelChip, active && s.levelChipActive]}
+              activeOpacity={0.85}
+            >
+              <Text style={[s.levelChipText, active && s.levelChipTextActive]}>{l}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FEATURED PROGRAM (Ballet)
+═══════════════════════════════════════════════════════════════════ */
+function FeaturedProgramCard({
+  balletStatus, onView, onApply,
+}: {
+  balletStatus: string | null; onView: () => void; onApply: () => void;
+}) {
+  const isDetailMode = balletStatus !== null && DETAIL_MODE_STATUSES.has(balletStatus);
+  const stColor = balletStatus ? getStatusBadgeColor(balletStatus) : null;
+
+  return (
+    <View style={s.featProgSection}>
+      <Text style={s.featProgEyebrow}>Featured Program</Text>
+      <View style={s.featProgCard}>
+        <ImageBackground
+          source={require("@/assets/images/ballet_hero.png")}
+          style={StyleSheet.absoluteFill}
+          imageStyle={{ borderRadius: R_LG }}
+        />
+        <LinearGradient
+          colors={["rgba(5,6,8,0.22)", "rgba(5,6,8,0.30)", "rgba(5,6,8,0.97)"]}
+          locations={[0, 0.25, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.featProgTop}>
+          <View style={s.featProgBadge}>
+            <Text style={s.featProgBadgeText}>Featured Program</Text>
+          </View>
+          {stColor && (
+            <View style={[s.featProgStatusBadge, { backgroundColor: stColor + "28", borderColor: stColor + "60" }]}>
+              <Text style={[s.featProgStatusText, { color: stColor }]}>
+                {getStatusBadgeLabel(balletStatus!)}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={s.featProgBottom}>
+          <Text style={s.featProgName}>{"Ballet Intensive\nProgram"}</Text>
+          <Text style={s.featProgSub}>12 weeks · Fundamentals to performance stage</Text>
+          <View style={{ flexDirection: "row", gap: 9 }}>
+            <TouchableOpacity onPress={onView} style={s.featProgBtnPrimary} activeOpacity={0.85}>
+              <Text style={s.featProgBtnPrimaryText}>View Program</Text>
+            </TouchableOpacity>
+            {!isDetailMode && (
+              <TouchableOpacity onPress={onApply} style={s.featProgBtnGhost} activeOpacity={0.85}>
+                <Text style={s.featProgBtnGhostText}>Apply Now</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FEATURED CARD + CAROUSEL (trending)
+═══════════════════════════════════════════════════════════════════ */
+function FeaturedCard({
+  item, onSelect,
+}: {
+  item: DanceClass; onSelect: (c: DanceClass) => void;
+}) {
+  const stC = statusColor(item.status);
+  const stBg = statusBg(item.status);
+  const isTrending = item.capacity > 0 && item.bookedCount / item.capacity > 0.5;
+  return (
+    <TouchableOpacity onPress={() => onSelect(item)} style={s.featCard} activeOpacity={0.88}>
+      {item.photoUrl ? (
+        <Image source={{ uri: item.photoUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: INK_700 }]} />
+      )}
+      <LinearGradient
+        colors={["rgba(5,6,8,0.08)", "rgba(5,6,8,0.44)", "rgba(5,6,8,0.93)"]}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={s.featCardTopRow}>
+        <View style={s.featCardStyleChip}>
+          <Text style={s.featCardStyleText}>{item.categoryName}</Text>
+        </View>
+        <View style={[s.featCardStatusChip, { backgroundColor: stBg }]}>
+          <View style={[s.dot, { backgroundColor: stC }]} />
+          <Text style={[s.featCardStatusText, { color: stC }]}>{statusLabel(item.status)}</Text>
+        </View>
+      </View>
+      {isTrending && (
+        <View style={s.trendingCenterBadge}>
+          <Ionicons name="flame" size={10} color="#fff" />
+          <Text style={s.trendingBadgeText}>Trending</Text>
+        </View>
+      )}
+      <View style={s.featCardBottom}>
+        <Text style={s.featCardTitle} numberOfLines={1}>{item.title}</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          {(item as any).rating ? <XStars rating={(item as any).rating} /> : <View />}
+          <Text style={s.featCardPrice}>EGP {item.price}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function FeaturedCarousel({
+  classes, onSelect,
+}: {
+  classes: DanceClass[]; onSelect: (c: DanceClass) => void;
+}) {
+  const trending = useMemo(
+    () => classes.filter((c) => c.capacity > 0 && c.bookedCount / c.capacity > 0.4).slice(0, 6),
+    [classes],
+  );
+  if (trending.length === 0) return null;
+  return (
+    <View style={s.carouselSection}>
+      <View style={s.carouselHeader}>
+        <View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 3 }}>
+            <Ionicons name="flame" size={15} color={MAGENTA} />
+            <Text style={s.carouselEyebrow}>Most Popular</Text>
+          </View>
+          <Text style={s.carouselTitle}>Trending Now</Text>
+        </View>
+        <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", gap: 2 }} activeOpacity={0.7}>
+          <Text style={s.seeAllText}>See all</Text>
+          <Ionicons name="chevron-forward" size={14} color={INK_300} />
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        horizontal
+        data={trending}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => <FeaturedCard item={item} onSelect={onSelect} />}
+        contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+      />
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   EXPLORE CLASS CARD
+═══════════════════════════════════════════════════════════════════ */
+function ExploreClassCard({
+  item, instructor, packageCreditsRemaining, onBook, onSelect,
+}: {
+  item: DanceClass;
+  instructor?: Instructor;
+  packageCreditsRemaining: number;
+  onBook: (c: DanceClass, method: "package" | "cash") => void;
+  onSelect: (c: DanceClass) => void;
+}) {
+  const pct = item.capacity > 0 ? Math.round((item.bookedCount / item.capacity) * 100) : 0;
+  const barColor = pct >= 85 ? DANGER : pct >= 60 ? AMBER : CYAN;
+  const st = item.status;
+  const stC = statusColor(st);
+  const stBg = statusBg(st);
+  const difficulty = deriveDifficulty(item.ageGroup);
+  const isTrending = pct > 50;
+  const creditsLeft = item.packageEligible ? packageCreditsRemaining : 0;
+  const availableSeats = item.capacity - item.bookedCount;
+  const rating = (item as any).rating as number | undefined;
+
+  return (
+    <View style={s.classCard}>
+      {/* Image header */}
+      <TouchableOpacity onPress={() => onSelect(item)} style={s.classCardImg} activeOpacity={0.92}>
+        {item.photoUrl ? (
+          <Image source={{ uri: item.photoUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: INK_700 }]} />
+        )}
+        <LinearGradient
+          colors={["rgba(5,6,8,0.06)", "rgba(5,6,8,0.70)"]}
+          locations={[0, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.classCardTopChips}>
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            <View style={s.chipDark}>
+              <Text style={s.chipDarkText}>{item.categoryName}</Text>
+            </View>
+            <View style={s.chipDark}>
+              <Text style={[s.chipDarkText, { color: diffColor(difficulty) }]}>{difficulty}</Text>
+            </View>
+          </View>
+          <View style={[s.classCardStatusChip, { backgroundColor: stBg }]}>
+            <View style={[s.dot, { backgroundColor: stC }]} />
+            <Text style={[s.classCardStatusText, { color: stC }]}>{statusLabel(st)}</Text>
+          </View>
+        </View>
+        {isTrending && (
+          <View style={s.classCardTrendingBadge}>
+            <Ionicons name="flame" size={10} color="#fff" />
+            <Text style={s.trendingBadgeText}>Trending</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Body */}
+      <TouchableOpacity onPress={() => onSelect(item)} activeOpacity={0.92} style={s.classCardBody}>
+        <View style={s.classCardTitleRow}>
+          <Text style={s.classCardTitle} numberOfLines={2}>{item.title}</Text>
+          {rating ? <XStars rating={rating} /> : null}
+        </View>
+        {!!item.description && (
+          <Text style={s.classCardDesc} numberOfLines={2}>{item.description}</Text>
+        )}
+        <View style={s.classCardMeta}>
+          <View style={s.metaItem}>
+            <Ionicons name="calendar-outline" size={14} color={CYAN} />
+            <Text style={s.metaText}>
+              {item.dayOfWeek ?? "—"} · {item.startTime ?? "—"}
+            </Text>
+          </View>
+          {!!item.duration && (
+            <View style={s.metaItem}>
+              <Ionicons name="time-outline" size={13} color={INK_400} />
+              <Text style={s.metaText}>{item.duration}</Text>
+            </View>
+          )}
+        </View>
+        <View style={s.classCardInstRow}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+            {instructor?.photoUrl ? (
+              <Image source={{ uri: instructor.photoUrl }} style={s.instAvatar} resizeMode="cover" />
+            ) : (
+              <View style={[s.instAvatar, { backgroundColor: CYAN + "22", alignItems: "center", justifyContent: "center" }]}>
+                <Text style={{ fontSize: 11, fontFamily: "Archivo_700Bold", color: CYAN }}>
+                  {(instructor?.name ?? "?")[0]}
+                </Text>
+              </View>
+            )}
+            <View>
+              <Text style={s.instName}>{instructor?.name ?? "Instructor"}</Text>
+              <Text style={s.instSpec}>{styleLabel(instructor?.title)}</Text>
+            </View>
+          </View>
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={s.classCardPrice}>EGP {item.price}</Text>
+            <Text style={s.classCardPriceSub}>per class</Text>
+          </View>
+        </View>
+        <View style={s.divider} />
+        <View style={s.capacitySection}>
+          <View style={s.capacityRow}>
+            <Text style={s.capacityText}>
+              <Text style={{ color: SUCCESS, fontFamily: "Archivo_700Bold" }}>{availableSeats}</Text>
+              {" available · "}{item.bookedCount}/{item.capacity} booked
+            </Text>
+            <Ionicons name="people-outline" size={14} color={INK_400} />
+          </View>
+          <View style={s.capBarBg}>
+            <View style={[s.capBarFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
+          </View>
+        </View>
+        <View style={s.creditsRow}>
+          {creditsLeft > 0 ? (
+            <>
+              <View style={s.creditsBubble}>
+                <Text style={s.creditsBubbleText}>P</Text>
+              </View>
+              <Text style={s.creditsText}>
+                Package ·{" "}
+                <Text style={{ color: "#fff", fontFamily: "Archivo_700Bold" }}>{creditsLeft} credits left</Text>
+              </Text>
+            </>
+          ) : (
+            <>
+              <View style={[s.creditsBubble, { backgroundColor: "rgba(255,255,255,0.06)" }]}>
+                <Text style={[s.creditsBubbleText, { color: INK_400 }]}>P</Text>
+              </View>
+              <Text style={s.creditsText}>No Active Package</Text>
+            </>
+          )}
+        </View>
+      </TouchableOpacity>
+
+      {/* Actions */}
+      <View style={s.classCardActions}>
+        {creditsLeft > 0 && st !== "full" && (
+          <TouchableOpacity
+            onPress={() => onBook(item, "package")}
+            style={s.btnPackage}
+            activeOpacity={0.85}
+          >
+            <Text style={s.btnPackageText}>Use Package</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          onPress={() => { if (st !== "full") onBook(item, "cash"); }}
+          style={[s.btnBook, st === "full" && { backgroundColor: "rgba(255,255,255,0.06)" }]}
+          activeOpacity={0.85}
+        >
+          <Text style={[s.btnBookText, st === "full" && { color: INK_400 }]}>
+            {st === "full" ? "Join Waitlist" : `Book · EGP ${item.price}`}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CATEGORY SECTION (accordion)
+═══════════════════════════════════════════════════════════════════ */
+function CategorySection({
+  cat, classes, expanded, onToggle,
+  instructorById, packageCreditsRemaining, onSelect, onBook,
+}: {
+  cat: { id: string; name: string };
+  classes: DanceClass[];
+  expanded: boolean;
+  onToggle: () => void;
+  instructorById: Map<string, Instructor>;
+  packageCreditsRemaining: number;
+  onSelect: (c: DanceClass) => void;
+  onBook: (c: DanceClass, method: "package" | "cash") => void;
+}) {
+  const rgb = catRgb(cat.id);
+  const rotAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotAnim, {
+      toValue: expanded ? 1 : 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [expanded]);
+
+  const rotate = rotAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "90deg"] });
+
+  return (
+    <View>
+      <TouchableOpacity
+        onPress={() => { Haptics.selectionAsync(); onToggle(); }}
+        style={[
+          s.catHeader,
+          {
+            borderColor: expanded ? `rgba(${rgb},0.50)` : BORDER,
+            borderBottomLeftRadius: expanded ? 0 : R_LG,
+            borderBottomRightRadius: expanded ? 0 : R_LG,
+          },
+        ]}
+        activeOpacity={0.85}
+      >
+        <View style={[s.catIcon, { backgroundColor: `rgba(${rgb},0.13)` }]}>
+          <Ionicons name={catIcon(cat.id)} size={22} color={`rgba(${rgb},1)`} />
+        </View>
+        <View style={s.catHeaderText}>
+          <Text style={s.catName}>{cat.name}</Text>
+          <Text style={s.catCount}>{classes.length} {classes.length === 1 ? "class" : "classes"}</Text>
+        </View>
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <Ionicons name="chevron-forward" size={20} color={INK_400} />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={[s.catExpanded, { borderColor: `rgba(${rgb},0.38)` }]}>
+          {classes.map((c, i) => (
+            <React.Fragment key={c.id}>
+              {i > 0 && <View style={{ height: 14 }} />}
+              <ExploreClassCard
+                item={c}
+                instructor={instructorById.get(c.instructorId)}
+                packageCreditsRemaining={packageCreditsRemaining}
+                onSelect={onSelect}
+                onBook={onBook}
+              />
+            </React.Fragment>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CLASS DETAIL OVERLAY
+═══════════════════════════════════════════════════════════════════ */
+function ClassDetailOverlay({
+  item, instructor, packageCreditsRemaining, onClose, onBook, topPad,
+}: {
+  item: DanceClass;
+  instructor?: Instructor;
+  packageCreditsRemaining: number;
+  onClose: () => void;
+  onBook: (c: DanceClass, method: "package" | "cash") => void;
+  topPad: number;
+}) {
+  const slideY = useRef(new Animated.Value(Dimensions.get("window").height)).current;
+
+  useEffect(() => {
+    Animated.timing(slideY, { toValue: 0, duration: 360, useNativeDriver: true }).start();
+  }, []);
+
+  function close() {
+    Animated.timing(slideY, { toValue: Dimensions.get("window").height, duration: 280, useNativeDriver: true }).start(() => onClose());
+  }
+
+  const st = item.status;
+  const stC = statusColor(st);
+  const stBg = statusBg(st);
+  const difficulty = deriveDifficulty(item.ageGroup);
+  const availableSeats = item.capacity - item.bookedCount;
+  const pct = item.capacity > 0 ? Math.round((item.bookedCount / item.capacity) * 100) : 0;
+  const creditsLeft = item.packageEligible ? packageCreditsRemaining : 0;
+  const rating = (item as any).rating as number | undefined;
+
+  return (
+    <Animated.View
+      style={[
+        StyleSheet.absoluteFill,
+        { transform: [{ translateY: slideY }], zIndex: 200, backgroundColor: INK_900 },
+      ]}
+    >
+      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+        {/* Hero */}
+        <View style={s.detailHero}>
+          {item.photoUrl ? (
+            <Image source={{ uri: item.photoUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: INK_700 }]} />
+          )}
+          <LinearGradient
+            colors={["rgba(5,6,8,0.48)", "rgba(5,6,8,0.10)", "rgba(5,6,8,0.80)"]}
+            locations={[0, 0.38, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+          <TouchableOpacity
+            onPress={close}
+            style={[s.detailBackBtn, { top: topPad + 14 }]}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={s.detailHeroBottom}>
+            <View style={{ flexDirection: "row", gap: 7, marginBottom: 8 }}>
+              <View style={s.chipDark}>
+                <Text style={s.chipDarkText}>{item.categoryName}</Text>
+              </View>
+              <View style={[s.chipDark, { backgroundColor: stBg }]}>
+                <Text style={[s.chipDarkText, { color: stC }]}>{statusLabel(st)}</Text>
+              </View>
+            </View>
+            <Text style={s.detailTitle}>{item.title.toUpperCase()}</Text>
+          </View>
+        </View>
+
+        {/* Body */}
+        <View style={s.detailBody}>
+          <View style={s.detailTopRow}>
+            {rating ? <XStars rating={rating} /> : null}
+            <Text style={s.detailReviews}>{(item as any).reviewCount ? `(${(item as any).reviewCount} reviews)` : ""}</Text>
+            <View style={[s.detailDiffChip, { marginLeft: "auto" as any }]}>
+              <Text style={[s.detailDiffText, { color: diffColor(difficulty) }]}>{difficulty}</Text>
+            </View>
+          </View>
+          {!!item.description && (
+            <Text style={s.detailDesc}>{item.description}</Text>
+          )}
+
+          {/* TODO: benefits field not yet returned by API — wire up when backend adds it */}
+
+          <View style={s.divider} />
+
+          {/* Schedule tiles */}
+          <View style={{ marginBottom: 20 }}>
+            <Text style={s.detailEyebrow}>Schedule</Text>
+            <View style={{ flexDirection: "row", gap: 9 }}>
+              {[
+                { label: "Day",      val: item.dayOfWeek ?? "—" },
+                { label: "Time",     val: item.startTime ?? "—" },
+                { label: "Duration", val: item.duration ?? "—" },
+              ].map((r) => (
+                <View key={r.label} style={s.scheduleTile}>
+                  <Text style={s.scheduleTileLabel}>{r.label}</Text>
+                  <Text style={s.scheduleTileVal}>{r.val}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Instructor */}
+          <View style={{ marginBottom: 20 }}>
+            <Text style={s.detailEyebrow}>Instructor</Text>
+            <View style={s.detailInstCard}>
+              {instructor?.photoUrl ? (
+                <Image source={{ uri: instructor.photoUrl }} style={s.detailInstAvatar} resizeMode="cover" />
+              ) : (
+                <View style={[s.detailInstAvatar, { backgroundColor: CYAN + "22", alignItems: "center", justifyContent: "center" }]}>
+                  <Text style={{ fontSize: 15, fontFamily: "Archivo_700Bold", color: CYAN }}>
+                    {(instructor?.name ?? "?")[0]}
+                  </Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={s.detailInstName}>{instructor?.name ?? "Instructor"}</Text>
+                <Text style={s.detailInstSpec}>{styleLabel(instructor?.title)}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Capacity */}
+          <View style={{ marginBottom: 20 }}>
+            <Text style={s.detailEyebrow}>Capacity</Text>
+            <View style={s.detailCapCard}>
+              <View style={s.detailCapRow}>
+                <Text style={s.detailCapText}>
+                  <Text style={{ color: "#fff", fontFamily: "Archivo_800ExtraBold" }}>{item.capacity}</Text>{" total"}
+                </Text>
+                <Text style={s.detailCapText}>
+                  <Text style={{ color: SUCCESS, fontFamily: "Archivo_800ExtraBold" }}>{availableSeats}</Text>{" available"}
+                </Text>
+                <Text style={s.detailCapText}>
+                  <Text style={{ color: INK_200, fontFamily: "Archivo_800ExtraBold" }}>{item.bookedCount}</Text>{" booked"}
+                </Text>
+              </View>
+              <View style={s.detailCapBarBg}>
+                <View style={[s.detailCapBarFill, { width: `${pct}%` as any, backgroundColor: pct > 80 ? DANGER : CYAN }]} />
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={{ height: 150 }} />
+      </ScrollView>
+
+      {/* Sticky footer */}
+      <LinearGradient
+        colors={["rgba(6,12,16,0)", INK_900]}
+        locations={[0, 0.28]}
+        style={s.detailFooter}
+      >
+        <View style={s.detailFooterTop}>
+          <View>
+            <Text style={s.detailFooterPrice}>EGP {item.price}</Text>
+            {creditsLeft > 0 && (
+              <Text style={s.detailFooterCredits}>or {creditsLeft} credits from your package</Text>
+            )}
+          </View>
+          <View style={[s.detailFooterStatusBadge, { backgroundColor: stBg }]}>
+            <Text style={[s.detailFooterStatusText, { color: stC }]}>{statusLabel(st)}</Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          {creditsLeft > 0 && st !== "full" && (
+            <TouchableOpacity
+              onPress={() => { close(); onBook(item, "package"); }}
+              style={s.detailBtnPackage}
+              activeOpacity={0.85}
+            >
+              <Text style={s.detailBtnPackageText}>Use Package</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => { onBook(item, "cash"); if (st !== "full") close(); }}
+            style={[s.detailBtnBook, st === "full" && { backgroundColor: "rgba(255,255,255,0.06)" }]}
+            activeOpacity={0.85}
+          >
+            <Text style={[s.detailBtnBookText, st === "full" && { color: INK_400 }]}>
+              {st === "full" ? "Join Waitlist" : `Book Now · EGP ${item.price}`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN SCREEN
+═══════════════════════════════════════════════════════════════════ */
 export default function ClassesScreen() {
   const insets = useSafeAreaInsets();
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { userPackages } = useAppContext();
-  const [search, setSearch] = useState("");
-  const [activeAge, setActiveAge] = useState<AgeGroup | "All">("All");
-  const [activeCat, setActiveCat] = useState<string>("all");
 
-  // ── Ballet application status ──────────────────────────────────────────────
-  const [balletStatus, setBalletStatus] = useState<string | null>(null);
+  const [search, setSearch]     = useState("");
+  const [ageFilter, setAge]     = useState("all");
+  const [levelFilter, setLevel] = useState("all");
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
+  const [selectedClass, setSelectedClass] = useState<DanceClass | null>(null);
+  const [balletStatus, setBalletStatus]   = useState<string | null>(null);
 
-  // Re-fetch on every focus so the card stays accurate after returning from assessment/status screens
   useFocusEffect(
     useCallback(() => {
       const ctrl = new AbortController();
@@ -120,18 +882,14 @@ export default function ClassesScreen() {
           const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
           setBalletStatus(active?.status ?? apps[0]?.status ?? null);
         })
-        .catch(() => {
-          // silently ignore — card defaults to Apply mode
-        });
+        .catch(() => {});
       return () => ctrl.abort();
-    }, [])
+    }, []),
   );
 
-  // Live data from the backend API. Categories are not yet exposed by the API,
-  // so the mock category list still drives the section grouping below.
-  const classesQuery = useListClasses();
-  const instructorsQuery = useListInstructors();
-  const schedulesQuery = useListSchedules();
+  const classesQuery      = useListClasses();
+  const instructorsQuery  = useListInstructors();
+  const schedulesQuery    = useListSchedules();
   const classPricingQuery = useQuery({
     queryKey: ["class-pricing"],
     queryFn: fetchClassPricing,
@@ -141,12 +899,11 @@ export default function ClassesScreen() {
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
 
   const isLoading = classesQuery.isLoading || instructorsQuery.isLoading || schedulesQuery.isLoading;
-  const isError = classesQuery.isError || instructorsQuery.isError || schedulesQuery.isError;
-  // Prefer the classes error for offline detection (it's the primary data source)
+  const isError   = classesQuery.isError   || instructorsQuery.isError   || schedulesQuery.isError;
   const queryError = classesQuery.error ?? instructorsQuery.error ?? schedulesQuery.error;
-  const isOffline = isOfflineError(queryError);
-
+  const isOffline  = isOfflineError(queryError);
   const isRefreshing = classesQuery.isRefetching || instructorsQuery.isRefetching || schedulesQuery.isRefetching;
+
   const onRefresh = useCallback(() => {
     classesQuery.refetch();
     instructorsQuery.refetch();
@@ -154,450 +911,472 @@ export default function ClassesScreen() {
     classPricingQuery.refetch();
   }, [classesQuery, instructorsQuery, schedulesQuery, classPricingQuery]);
 
-  // Map API rows to the mobile data model. Return empty arrays when data isn't
-  // loaded yet — loading/error states are handled separately in the render.
   const instructors: Instructor[] = useMemo(
     () => (instructorsQuery.data ?? []).map(mapApiInstructorToMobile),
     [instructorsQuery.data],
   );
+  const instructorById = useMemo(() => {
+    const m = new Map<string, Instructor>();
+    instructors.forEach((i) => m.set(i.id, i));
+    return m;
+  }, [instructors]);
+
   const packageCreditsRemaining = useMemo(
     () => userPackages
-      .filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0)
-      .reduce((sum, pkg) => sum + pkg.remainingCredits, 0),
+      .filter((p) => p.status === "active" && p.remainingCredits > 0)
+      .reduce((sum, p) => sum + p.remainingCredits, 0),
     [userPackages],
   );
 
-  const classes: DanceClass[] = useMemo(
-    () => {
-      const schedulesByClassId = new Map<number, NonNullable<typeof schedulesQuery.data>[number]>();
-      [...(schedulesQuery.data ?? [])]
-        .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
-        .forEach((schedule) => {
-          if (!schedulesByClassId.has(schedule.classId)) {
-            schedulesByClassId.set(schedule.classId, schedule);
-          }
-        });
+  const allClasses: DanceClass[] = useMemo(() => {
+    const schedulesByClassId = new Map<number, NonNullable<typeof schedulesQuery.data>[number]>();
+    [...(schedulesQuery.data ?? [])]
+      .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
+      .forEach((schedule) => {
+        if (!schedulesByClassId.has(schedule.classId)) {
+          schedulesByClassId.set(schedule.classId, schedule);
+        }
+      });
+    return (classesQuery.data ?? [])
+      .filter((c) => c.isActive)
+      .map((c) => mapApiClassWithScheduleToMobile(c, schedulesByClassId.get(c.id), singleClassPriceEgp));
+  }, [classesQuery.data, schedulesQuery.data, singleClassPriceEgp]);
 
-      return (classesQuery.data ?? [])
-        .filter((c) => c.isActive)
-        .map((c) => mapApiClassWithScheduleToMobile(
-          c,
-          schedulesByClassId.get(c.id),
-          singleClassPriceEgp,
-        ));
-    },
-    [classesQuery.data, schedulesQuery.data, singleClassPriceEgp],
-  );
+  const nonBalletClasses = useMemo(() => allClasses.filter((c) => !c.isBallet), [allClasses]);
 
-  const instructorById = useMemo(() => {
-    const map = new Map<string, Instructor>();
-    instructors.forEach((i) => map.set(i.id, i));
-    return map;
-  }, [instructors]);
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return nonBalletClasses.filter((c) => {
+      if (ageFilter !== "all" && c.ageGroup.toLowerCase() !== ageFilter) return false;
+      if (levelFilter !== "all" && deriveDifficulty(c.ageGroup).toLowerCase() !== levelFilter) return false;
+      if (q && !c.title.toLowerCase().includes(q) && !c.categoryName.toLowerCase().includes(q) &&
+          !(instructorById.get(c.instructorId)?.name ?? "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [nonBalletClasses, ageFilter, levelFilter, search, instructorById]);
 
-  const nonBalletCats = DANCE_CATEGORIES.filter((c) => !c.isBallet);
-  // Known category ids set — used to detect truly unmatched classes
-  const knownCatIds = useMemo(() => new Set(nonBalletCats.map((c) => c.id)), [nonBalletCats]);
+  const nonBalletCats = useMemo(() => DANCE_CATEGORIES.filter((c) => !c.isBallet), []);
 
-  const filtered = classes.filter((cls) => {
-    if (cls.isBallet) return false;
-    const matchAge = activeAge === "All" || cls.ageGroup === activeAge;
-    const matchCat = activeCat === "all" || cls.categoryId === activeCat;
-    const matchSearch =
-      !search ||
-      cls.title.toLowerCase().includes(search.toLowerCase()) ||
-      cls.categoryName.toLowerCase().includes(search.toLowerCase());
-    return matchAge && matchCat && matchSearch;
-  });
+  /* Auto-expand first category on initial load */
+  useEffect(() => {
+    if (!isLoading && expandedCats.size === 0 && filtered.length > 0) {
+      const first = nonBalletCats.find((cat) => filtered.some((c) => c.categoryId === cat.id));
+      if (first) setExpandedCats(new Set([first.id]));
+    }
+  }, [isLoading, filtered.length]);
 
-  function handleAgeFilter(age: AgeGroup | "All") {
-    Haptics.selectionAsync();
-    setActiveAge(age);
-    setActiveCat("all");
+  const showFeatures = !search && ageFilter === "all" && levelFilter === "all";
+  const visibleCats  = nonBalletCats.filter((cat) => filtered.some((c) => c.categoryId === cat.id));
+
+  function handleBook(c: DanceClass, method: "package" | "cash") {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push({ pathname: "/booking/flow", params: { classId: c.id, method } } as any);
   }
 
   return (
-    <View style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 },
-        ]}
-      >
-        <Text style={styles.title}>Classes</Text>
-
-        <View style={[styles.searchRow, { backgroundColor: "#1E1E26", borderColor: "#2A2A35" }]}>
-          <Ionicons name="search-outline" size={16} color="#6B7280" />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search classes..."
-            placeholderTextColor="#6B7280"
-            style={styles.searchInput}
-          />
-          {!!search && (
-            <TouchableOpacity onPress={() => setSearch("")}>
-              <Ionicons name="close-circle" size={16} color="#6B7280" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.ageRow}>
-          {AGE_GROUPS.map((ag) => (
-            <TouchableOpacity
-              key={ag.key}
-              onPress={() => handleAgeFilter(ag.key)}
-              style={[
-                styles.agePill,
-                activeAge === ag.key && {
-                  backgroundColor: colors.studio.primary,
-                  borderColor: colors.studio.primary,
-                },
-              ]}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={ag.icon as any}
-                size={14}
-                color={activeAge === ag.key ? "#000" : "#9CA3AF"}
-              />
-              <Text
-                style={[
-                  styles.agePillText,
-                  activeAge === ag.key && { color: "#000", fontFamily: "Inter_700Bold" },
-                ]}
-              >
-                {ag.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
+    <View style={s.screen}>
       {isLoading ? (
-        <ListSkeleton count={4} />
+        <View style={{ paddingTop: topPad + 80 }}>
+          <ListSkeleton count={4} />
+        </View>
       ) : isError ? (
-        isOffline ? (
-          <OfflineState onRetry={onRefresh} />
-        ) : (
-          <ErrorState onRetry={onRefresh} />
-        )
+        <View style={{ paddingTop: topPad + 80 }}>
+          {isOffline ? <OfflineState onRetry={onRefresh} /> : <ErrorState onRetry={onRefresh} />}
+        </View>
       ) : (
-        <>
-      {BALLET_CATEGORY && (() => {
-        const isDetailMode = balletStatus !== null && DETAIL_MODE_STATUSES.has(balletStatus);
-        const ctaLabel = isDetailMode ? "View Details" : "Apply for Assessment";
-        const ctaRoute = isDetailMode ? "/ballet/application-status" : "/ballet/assessment";
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={CYAN} colors={[CYAN]} />
+          }
+          contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 100 }}
+        >
+          <ExploreHero count={nonBalletClasses.length} topPad={topPad} />
+          <ExploreSearch query={search} onChange={setSearch} />
+          <ExploreFilters age={ageFilter} level={levelFilter} onAge={setAge} onLevel={setLevel} />
 
-        return (
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push(ctaRoute as any);
-            }}
-            activeOpacity={0.88}
-            style={styles.balletCardWrap}
-          >
-            <ImageBackground
-              source={require("@/assets/images/ballet_hero.png")}
-              style={styles.balletCard}
-              imageStyle={styles.balletCardImage}
-            >
-              {/* Dark overlay */}
-              <View style={styles.balletOverlay} />
+          {showFeatures && (
+            <FeaturedProgramCard
+              balletStatus={balletStatus}
+              onView={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                const isDetail = balletStatus !== null && DETAIL_MODE_STATUSES.has(balletStatus);
+                router.push((isDetail ? "/ballet/application-status" : "/ballet/assessment") as any);
+              }}
+              onApply={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push("/ballet/assessment" as any);
+              }}
+            />
+          )}
 
-              {/* Card body */}
-              <View style={styles.balletCardContent}>
-                {/* TOP ROW: icon · title+subtitle · status badge (right-aligned with CTA) */}
-                <View style={styles.balletTopRow}>
-                  <View style={styles.balletIconCircle}>
-                    <BalletShoeIcon size={22} color={BALLET_COLOR} />
-                  </View>
-                  <View style={styles.balletTitleGroup}>
-                    <Text style={styles.balletTitle}>Ballet Program</Text>
-                    <Text style={styles.balletSubtitle}>
-                      Classical Ballet Program · For ages 4–12 years
-                    </Text>
-                  </View>
-                  {/* Badge sits here — right-aligned with CTA button below */}
-                  <View style={styles.balletCtaWrap}>
-                    {balletStatus ? (
-                      <View style={[
-                        styles.balletStatusBadge,
-                        {
-                          backgroundColor: getStatusBadgeColor(balletStatus) + "28",
-                          borderColor:     getStatusBadgeColor(balletStatus) + "60",
-                        },
-                      ]}>
-                        <Text style={[
-                          styles.balletStatusBadgeText,
-                          { color: getStatusBadgeColor(balletStatus) },
-                        ]}>
-                          {getStatusBadgeLabel(balletStatus)}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
+          {showFeatures && filtered.length > 0 && (
+            <FeaturedCarousel classes={filtered} onSelect={setSelectedClass} />
+          )}
+
+          {/* By Style categories */}
+          <View style={s.catsSection}>
+            <View style={s.catsSectionHeader}>
+              <Text style={s.catsSectionTitle}>By Style</Text>
+              <Text style={s.catsSectionCount}>{filtered.length} classes</Text>
+            </View>
+            {visibleCats.length === 0 ? (
+              <View style={s.emptyState}>
+                <View style={s.emptyIcon}>
+                  <Ionicons name="search-outline" size={30} color={INK_400} />
                 </View>
-
-                {/* BOTTOM ROW: features (left, flex 1) + CTA button (right, bottom-aligned) */}
-                <View style={styles.balletBottomRow}>
-                  <View style={styles.balletPills}>
-                    {BALLET_PILLS.map((pill) => (
-                      <View key={pill} style={styles.balletPill}>
-                        <Ionicons name="checkmark" size={11} color="#FFFFFF" />
-                        <Text style={styles.balletPillText}>{pill}</Text>
-                      </View>
-                    ))}
-                  </View>
-                  <View style={styles.balletCtaWrap}>
-                    <View style={styles.balletCtaBtn}>
-                      <Text style={styles.balletCtaBtnText}>{ctaLabel}</Text>
-                    </View>
-                  </View>
-                </View>
+                <Text style={s.emptyTitle}>No classes found</Text>
+                <Text style={s.emptyDesc}>Try different keywords or clear your filters.</Text>
+                <TouchableOpacity
+                  onPress={() => { setSearch(""); setAge("all"); setLevel("all"); }}
+                  style={s.clearBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.clearBtnText}>Clear Filters</Text>
+                </TouchableOpacity>
               </View>
-            </ImageBackground>
-          </TouchableOpacity>
-        );
-      })()}
-
-      {/* Only show category sections that have at least one matching class.
-          Derived from `filtered` so the list reacts to age/search/cat changes
-          without relying on the static DANCE_CATEGORIES.ageGroups config. */}
-      <FlatList
-        data={nonBalletCats.filter((c) => filtered.some((cls) => cls.categoryId === c.id))}
-        keyExtractor={(i) => i.id}
-        renderItem={({ item: cat }) => {
-          const catClasses = filtered.filter((c) => c.categoryId === cat.id);
-          if (catClasses.length === 0) return null;
-          return (
-            <View style={styles.catGroup}>
-              <TouchableOpacity
-                onPress={() => setActiveCat(activeCat === cat.id ? "all" : cat.id)}
-                style={styles.catGroupHeader}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.catDot, { backgroundColor: colors.studio.primary }]} />
-                <Text style={styles.catGroupTitle}>{cat.name}</Text>
-                <Text style={styles.catGroupCount}>{catClasses.length} class{catClasses.length !== 1 ? "es" : ""}</Text>
-                <Ionicons
-                  name={activeCat === cat.id ? "chevron-up" : "chevron-down"}
-                  size={14}
-                  color="#6B7280"
-                />
-              </TouchableOpacity>
-              {(activeCat === "all" || activeCat === cat.id) &&
-                catClasses.map((cls) => (
-                  <ClassCard
-                    key={cls.id}
-                    item={cls}
-                    instructor={instructorById.get(cls.instructorId)}
+            ) : (
+              <View style={{ gap: 12 }}>
+                {visibleCats.map((cat) => (
+                  <CategorySection
+                    key={cat.id}
+                    cat={cat}
+                    classes={filtered.filter((c) => c.categoryId === cat.id)}
+                    expanded={expandedCats.has(cat.id)}
+                    onToggle={() => {
+                      setExpandedCats((prev) => {
+                        const n = new Set(prev);
+                        n.has(cat.id) ? n.delete(cat.id) : n.add(cat.id);
+                        return n;
+                      });
+                    }}
+                    instructorById={instructorById}
                     packageCreditsRemaining={packageCreditsRemaining}
+                    onSelect={setSelectedClass}
+                    onBook={handleBook}
                   />
                 ))}
-            </View>
-          );
-        }}
-        ListEmptyComponent={
-          <EmptyState
-            icon="musical-notes-outline"
-            title="No classes found"
-            description="Try adjusting your filters or search term"
-            actionLabel="Clear filters"
-            onAction={() => { setSearch(""); setActiveAge("All"); setActiveCat("all"); }}
-          />
-        }
-        ListHeaderComponent={
-          filtered.length > 0 ? (
-            <Text style={styles.resultCount}>{filtered.length} class{filtered.length !== 1 ? "es" : ""}</Text>
-          ) : null
-        }
-        ListFooterComponent={() => {
-          // Classes that didn't match any known category after fuzzy normalization
-          const otherClasses = filtered.filter((cls) => !knownCatIds.has(cls.categoryId));
-          if (otherClasses.length === 0) return null;
-          return (
-            <View style={styles.catGroup}>
-              <View style={styles.catGroupHeader}>
-                <View style={[styles.catDot, { backgroundColor: "#6B7280" }]} />
-                <Text style={styles.catGroupTitle}>Other</Text>
-                <Text style={styles.catGroupCount}>{otherClasses.length} class{otherClasses.length !== 1 ? "es" : ""}</Text>
               </View>
-              {otherClasses.map((cls) => (
-                <ClassCard
-                  key={cls.id}
-                  item={cls}
-                  instructor={instructorById.get(cls.instructorId)}
-                  packageCreditsRemaining={packageCreditsRemaining}
-                />
-              ))}
-            </View>
-          );
-        }}
-        contentContainerStyle={[styles.list, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.studio.primary}
-            colors={[colors.studio.primary]}
-          />
-        }
-      />
-        </>
+            )}
+          </View>
+        </ScrollView>
+      )}
+
+      {selectedClass && (
+        <ClassDetailOverlay
+          item={selectedClass}
+          instructor={instructorById.get(selectedClass.instructorId)}
+          packageCreditsRemaining={packageCreditsRemaining}
+          onClose={() => setSelectedClass(null)}
+          onBook={handleBook}
+          topPad={topPad}
+        />
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    gap: 10,
+/* ═══════════════════════════════════════════════════════════════════
+   STYLES
+═══════════════════════════════════════════════════════════════════ */
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: INK_900 },
+
+  /* hero */
+  heroWrap: { paddingHorizontal: 22, paddingBottom: 22 },
+  heroEyebrow: {
+    fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
+    textTransform: "uppercase", color: CYAN, marginBottom: 8,
   },
-  title: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
+  heroTitle: {
+    fontSize: 68, fontFamily: "Anton_400Regular", textTransform: "uppercase",
+    color: "#fff", lineHeight: 60, letterSpacing: -1,
   },
+  heroDesc: {
+    fontSize: 14, fontFamily: "Archivo_400Regular", color: INK_300,
+    marginTop: 12, maxWidth: 210, lineHeight: 21,
+  },
+  heroCountBadge: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14,
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: R_PILL,
+    backgroundColor: "rgba(0,182,215,0.12)", borderWidth: 1,
+    borderColor: "rgba(0,182,215,0.38)", alignSelf: "flex-start",
+  },
+  heroCountDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: CYAN },
+  heroCountText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
+
+  /* search */
+  searchWrap: { paddingHorizontal: 20, marginBottom: 16 },
+  searchContainer: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.10)", borderRadius: R_PILL,
+  },
+  searchContainerFocused: {
+    backgroundColor: "rgba(255,255,255,0.09)",
+    borderColor: "rgba(0,182,215,0.72)",
+  },
+  searchIcon: { position: "absolute", left: 16 },
   searchInput: {
-    flex: 1,
-    color: "#FFFFFF",
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
+    flex: 1, paddingHorizontal: 46, paddingVertical: 14,
+    fontSize: 15, fontFamily: "Archivo_400Regular", color: "#fff",
   },
-  ageRow: { flexDirection: "row", gap: 8 },
-  agePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#1E1E26",
-    borderWidth: 1,
-    borderColor: "#2A2A35",
+  searchClear: {
+    position: "absolute", right: 12, width: 28, height: 28, borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center",
   },
-  agePillText: {
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    color: "#9CA3AF",
+
+  /* filters */
+  filtersWrap: { marginBottom: 20 },
+  ageSegment: {
+    flexDirection: "row", marginHorizontal: 20, marginBottom: 10, padding: 4,
+    backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)", borderRadius: R_PILL,
   },
-  balletCardWrap: { marginHorizontal: 20, marginBottom: 12 },
-  balletCard: { borderRadius: 18, overflow: "hidden" },
-  balletCardImage: { borderRadius: 18 },
-  balletOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(4, 14, 22, 0.78)",
-    borderRadius: 18,
+  ageTab: { flex: 1, paddingVertical: 9, paddingHorizontal: 4, borderRadius: R_PILL, alignItems: "center" },
+  ageTabActive: {
+    backgroundColor: INK_900,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
+    elevation: 3,
   },
-  balletStatusBadge: {
-    /* bg + border set dynamically via getStatusBadgeColor() inline style */
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    alignSelf: "center",
+  ageTabText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: INK_400 },
+  ageTabTextActive: { color: "#fff" },
+  levelRow: { paddingHorizontal: 20, gap: 8 },
+  levelChip: {
+    paddingHorizontal: 15, paddingVertical: 8, borderRadius: R_PILL,
+    backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.08)",
   },
-  balletStatusBadgeText: {
-    fontSize: 8,
-    fontFamily: "Inter_700Bold",
-    /* color set dynamically via getStatusBadgeColor() inline style */
-    letterSpacing: 0.6,
+  levelChipActive: { backgroundColor: INK_900, borderColor: "rgba(255,255,255,0.28)" },
+  levelChipText: { fontSize: 12.5, fontFamily: "Archivo_700Bold", color: INK_400 },
+  levelChipTextActive: { color: "#fff" },
+
+  /* featured program */
+  featProgSection: { paddingHorizontal: 20, marginBottom: 26 },
+  featProgEyebrow: {
+    fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
+    textTransform: "uppercase", color: CYAN, marginBottom: 12,
   },
-  balletCardContent: {
-    flexDirection: "column",
-    padding: 16,
-    gap: 14,
+  featProgCard: {
+    height: 216, borderRadius: R_LG, overflow: "hidden",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.09)",
   },
-  /* TOP ROW — icon beside title+subtitle */
-  balletTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+  featProgTop: {
+    position: "absolute", top: 14, left: 14, right: 14,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
   },
-  balletTitleGroup: {
-    flex: 1,
-    gap: 4,
+  featProgBadge: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL,
+    backgroundColor: "rgba(124,58,237,0.82)",
   },
-  /* BOTTOM ROW — pills fill left, CTA anchors bottom-right */
-  balletBottomRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 12,
+  featProgBadgeText: {
+    fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff",
+    letterSpacing: 0.7, textTransform: "uppercase",
   },
-  balletIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
+  featProgStatusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL, borderWidth: 1 },
+  featProgStatusText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold" },
+  featProgBottom: { position: "absolute", left: 16, right: 16, bottom: 14 },
+  featProgName: {
+    fontSize: 26, fontFamily: "Anton_400Regular", color: "#fff",
+    lineHeight: 24, textTransform: "uppercase", marginBottom: 6,
   },
-  balletTitle: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  balletSubtitle: {
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    color: "rgba(255,255,255,0.65)",
-    lineHeight: 16,
+  featProgSub: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, marginBottom: 12 },
+  featProgBtnPrimary: {
+    flex: 1, paddingVertical: 12, backgroundColor: CYAN,
+    borderRadius: R_MD, alignItems: "center",
   },
-  balletPills: { flex: 1, flexDirection: "column", gap: 6 },
-  balletPill: {
-    backgroundColor: "rgba(0, 182, 214, 0.22)",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    alignSelf: "flex-start",
+  featProgBtnPrimaryText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
+  featProgBtnGhost: {
+    flex: 1, paddingVertical: 12, backgroundColor: "rgba(255,255,255,0.09)",
+    borderRadius: R_MD, borderWidth: 1, borderColor: "rgba(255,255,255,0.20)", alignItems: "center",
   },
-  balletPillText: {
-    fontSize: 10,
-    fontFamily: "Inter_500Medium",
-    color: "#FFFFFF",
+  featProgBtnGhostText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#fff" },
+
+  /* trending carousel */
+  carouselSection: { marginBottom: 26 },
+  carouselHeader: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, marginBottom: 14,
   },
-  balletCtaWrap: { alignItems: "flex-end", justifyContent: "center", flexShrink: 0 },
-  balletCtaBtn: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    alignItems: "center",
-    justifyContent: "center",
+  carouselEyebrow: {
+    fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
+    textTransform: "uppercase", color: MAGENTA,
   },
-  balletCtaBtnText: {
-    fontSize: 11,
-    fontFamily: "Inter_700Bold",
-    color: BALLET_COLOR,
-    textAlign: "center",
+  carouselTitle: { fontSize: 22, fontFamily: "Archivo_700Bold", color: "#fff", letterSpacing: -0.3 },
+  seeAllText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_300 },
+  featCard: {
+    width: 260, height: 162, borderRadius: R_LG, overflow: "hidden",
+    borderWidth: 1, borderColor: BORDER, backgroundColor: INK_800,
   },
-  resultCount: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: "#6B7280",
-    paddingHorizontal: 20,
-    paddingBottom: 4,
+  featCardTopRow: {
+    position: "absolute", top: 10, left: 10, right: 10,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
   },
-  list: { paddingHorizontal: 20 },
-  catGroup: { marginBottom: 8 },
-  catGroupHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 10,
+  featCardStyleChip: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: R_PILL, backgroundColor: "rgba(0,0,0,0.50)" },
+  featCardStyleText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff", textTransform: "uppercase", letterSpacing: 0.8 },
+  featCardStatusChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R_PILL },
+  featCardStatusText: { fontSize: 10, fontFamily: "Archivo_700Bold" },
+  trendingCenterBadge: {
+    position: "absolute", top: 10, alignSelf: "center",
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 9, paddingVertical: 3, borderRadius: R_PILL,
+    backgroundColor: "rgba(255,59,71,0.85)",
+    left: "50%" as any, transform: [{ translateX: -34 }],
   },
-  catDot: { width: 8, height: 8, borderRadius: 4 },
-  catGroupTitle: { flex: 1, fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  catGroupCount: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  trendingBadgeText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
+  featCardBottom: { position: "absolute", left: 12, right: 12, bottom: 12 },
+  featCardTitle: { fontSize: 15, fontFamily: "Archivo_800ExtraBold", color: "#fff", lineHeight: 18, marginBottom: 5 },
+  featCardPrice: { fontSize: 18, fontFamily: "Anton_400Regular", color: CYAN },
+
+  /* categories */
+  catsSection: { paddingHorizontal: 20, marginBottom: 24 },
+  catsSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  catsSectionTitle: { fontSize: 22, fontFamily: "Archivo_700Bold", color: "#fff", letterSpacing: -0.3 },
+  catsSectionCount: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_400 },
+  catHeader: {
+    flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 13,
+    backgroundColor: INK_800, borderWidth: 1, borderRadius: R_LG,
+  },
+  catIcon: { width: 42, height: 42, borderRadius: R_MD, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  catHeaderText: { flex: 1 },
+  catName: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#fff", marginBottom: 1 },
+  catCount: { fontSize: 12.5, fontFamily: "Archivo_400Regular", color: INK_400 },
+  catExpanded: {
+    borderWidth: 1, borderTopWidth: 0,
+    borderBottomLeftRadius: R_LG, borderBottomRightRadius: R_LG,
+    padding: 14, backgroundColor: "rgba(255,255,255,0.02)",
+  },
+
+  /* class card */
+  classCard: { backgroundColor: INK_800, borderWidth: 1, borderColor: BORDER, borderRadius: R_LG, overflow: "hidden" },
+  classCardImg: { height: 136, position: "relative" },
+  classCardTopChips: {
+    position: "absolute", top: 12, left: 12, right: 12,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
+  },
+  chipDark: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: R_PILL, backgroundColor: "rgba(0,0,0,0.52)" },
+  chipDarkText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff", textTransform: "uppercase", letterSpacing: 0.8 },
+  classCardStatusChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: R_PILL },
+  classCardStatusText: { fontSize: 10, fontFamily: "Archivo_700Bold" },
+  classCardTrendingBadge: {
+    position: "absolute", bottom: 10, left: 12,
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: R_PILL,
+    backgroundColor: "rgba(255,59,71,0.75)",
+  },
+  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  classCardBody: { padding: 14, paddingBottom: 0 },
+  classCardTitleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 5 },
+  classCardTitle: { flex: 1, fontSize: 18, fontFamily: "Archivo_800ExtraBold", color: "#fff", lineHeight: 21 },
+  classCardDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 19, marginBottom: 11 },
+  classCardMeta: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 11 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  metaText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
+  classCardInstRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  instAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: INK_700 },
+  instName: { fontSize: 13.5, fontFamily: "Archivo_700Bold", color: "#fff" },
+  instSpec: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: INK_400 },
+  classCardPrice: { fontSize: 20, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 18 },
+  classCardPriceSub: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400, marginTop: 2, textAlign: "right" },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginBottom: 11 },
+  capacitySection: { marginBottom: 10 },
+  capacityRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
+  capacityText: { fontSize: 11.5, fontFamily: "Archivo_600SemiBold", color: INK_400 },
+  capBarBg: { height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
+  capBarFill: { height: "100%", borderRadius: 3 },
+  creditsRow: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 13 },
+  creditsBubble: {
+    width: 20, height: 20, borderRadius: 10, backgroundColor: "rgba(0,182,215,0.16)",
+    alignItems: "center", justifyContent: "center",
+  },
+  creditsBubbleText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: CYAN },
+  creditsText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_400 },
+  classCardActions: { flexDirection: "row", gap: 9, padding: 15, paddingTop: 0 },
+  btnPackage: {
+    flex: 1, paddingVertical: 11, borderRadius: R_MD,
+    borderWidth: 1.5, borderColor: "rgba(0,182,215,0.46)",
+    backgroundColor: "rgba(0,182,215,0.08)", alignItems: "center",
+  },
+  btnPackageText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
+  btnBook: { flex: 1, paddingVertical: 11, borderRadius: R_MD, backgroundColor: CYAN, alignItems: "center" },
+  btnBookText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
+
+  /* empty state */
+  emptyState: { alignItems: "center", paddingVertical: 56, paddingHorizontal: 30 },
+  emptyIcon: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: "rgba(255,255,255,0.05)", alignItems: "center", justifyContent: "center", marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 20, fontFamily: "Archivo_700Bold", color: "#fff", marginBottom: 8 },
+  emptyDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400, textAlign: "center", maxWidth: 230, marginBottom: 20 },
+  clearBtn: {
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: R_MD,
+    backgroundColor: "rgba(0,182,215,0.12)", borderWidth: 1, borderColor: "rgba(0,182,215,0.38)",
+  },
+  clearBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
+
+  /* detail overlay */
+  detailHero: { height: 224, position: "relative" },
+  detailBackBtn: {
+    position: "absolute", left: 18, width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.52)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
+    alignItems: "center", justifyContent: "center", zIndex: 10,
+  },
+  detailHeroBottom: { position: "absolute", bottom: 14, left: 18, right: 18 },
+  detailTitle: { fontSize: 42, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 38, textTransform: "uppercase" },
+  detailBody: { padding: 20, paddingBottom: 0 },
+  detailTopRow: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16,
+    paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
+  },
+  detailReviews: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400 },
+  detailDiffChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL, backgroundColor: "rgba(255,255,255,0.06)" },
+  detailDiffText: { fontSize: 12, fontFamily: "Archivo_700Bold" },
+  detailDesc: { fontSize: 15, fontFamily: "Archivo_400Regular", color: INK_200, lineHeight: 24, marginBottom: 20 },
+  detailEyebrow: {
+    fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
+    textTransform: "uppercase", color: CYAN, marginBottom: 12,
+  },
+  scheduleTile: {
+    flex: 1, paddingVertical: 12, paddingHorizontal: 10,
+    backgroundColor: INK_800, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)",
+    borderRadius: R_MD, alignItems: "center",
+  },
+  scheduleTileLabel: {
+    fontSize: 11, fontFamily: "Archivo_600SemiBold", color: INK_400,
+    textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 5,
+  },
+  scheduleTileVal: { fontSize: 13, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 16, textAlign: "center" },
+  detailInstCard: {
+    flexDirection: "row", alignItems: "center", gap: 14, padding: 14,
+    backgroundColor: INK_800, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: R_LG,
+  },
+  detailInstAvatar: {
+    width: 54, height: 54, borderRadius: 27, backgroundColor: INK_700,
+    flexShrink: 0, borderWidth: 2, borderColor: CYAN,
+  },
+  detailInstName: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
+  detailInstSpec: { fontSize: 13, fontFamily: "Archivo_400Regular", color: CYAN, marginTop: 2 },
+  detailCapCard: {
+    padding: 14, backgroundColor: INK_800,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: R_LG,
+  },
+  detailCapRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  detailCapText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
+  detailCapBarBg: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
+  detailCapBarFill: { height: "100%", borderRadius: 4 },
+  detailFooter: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 30 },
+  detailFooterTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  detailFooterPrice: { fontSize: 28, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 25 },
+  detailFooterCredits: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: CYAN, marginTop: 4 },
+  detailFooterStatusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: R_PILL },
+  detailFooterStatusText: { fontSize: 12, fontFamily: "Archivo_700Bold" },
+  detailBtnPackage: {
+    flex: 1, paddingVertical: 14, borderRadius: R_MD,
+    borderWidth: 1.5, borderColor: "rgba(0,182,215,0.46)",
+    backgroundColor: "rgba(0,182,215,0.10)", alignItems: "center",
+  },
+  detailBtnPackageText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: CYAN },
+  detailBtnBook: { flex: 1, paddingVertical: 14, borderRadius: R_MD, backgroundColor: CYAN, alignItems: "center" },
+  detailBtnBookText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
 });
