@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
@@ -222,7 +223,7 @@ router.get("/schedules", async (req, res): Promise<void> => {
   res.json(ListSchedulesResponse.parse(rows));
 });
 
-router.post("/schedules", async (req, res): Promise<void> => {
+router.post("/schedules", requireAdminAuth, requireAdminPermission("schedules", "create"), async (req, res): Promise<void> => {
   const parsed = CreateScheduleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -251,7 +252,7 @@ router.get("/schedules/:id", async (req, res): Promise<void> => {
   res.json(GetScheduleResponse.parse(row));
 });
 
-router.patch("/schedules/:id", async (req, res): Promise<void> => {
+router.patch("/schedules/:id", requireAdminAuth, requireAdminPermission("schedules", "edit"), async (req, res): Promise<void> => {
   const params = UpdateScheduleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -294,7 +295,7 @@ router.patch("/schedules/:id", async (req, res): Promise<void> => {
   res.json(UpdateScheduleResponse.parse(row));
 });
 
-router.delete("/schedules/:id", async (req, res): Promise<void> => {
+router.delete("/schedules/:id", requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req, res): Promise<void> => {
   const params = DeleteScheduleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

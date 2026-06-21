@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { asc, eq } from "drizzle-orm";
 import { db, heroItemsTable } from "@workspace/db";
 import {
@@ -22,7 +23,7 @@ router.get("/hero-items", async (req, res): Promise<void> => {
   res.json(ListHeroItemsResponse.parse(rows));
 });
 
-router.post("/hero-items", async (req, res): Promise<void> => {
+router.post("/hero-items", requireAdminAuth, requireAdminPermission("heroSlides", "create"), async (req, res): Promise<void> => {
   const parsed = CreateHeroItemBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -55,7 +56,7 @@ router.get("/hero-items/:id", async (req, res): Promise<void> => {
   res.json(GetHeroItemResponse.parse(row));
 });
 
-router.patch("/hero-items/:id", async (req, res): Promise<void> => {
+router.patch("/hero-items/:id", requireAdminAuth, requireAdminPermission("heroSlides", "edit"), async (req, res): Promise<void> => {
   const params = UpdateHeroItemParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -78,7 +79,7 @@ router.patch("/hero-items/:id", async (req, res): Promise<void> => {
   res.json(UpdateHeroItemResponse.parse(row));
 });
 
-router.delete("/hero-items/:id", async (req, res): Promise<void> => {
+router.delete("/hero-items/:id", requireAdminAuth, requireAdminPermission("heroSlides", "delete"), async (req, res): Promise<void> => {
   const params = DeleteHeroItemParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

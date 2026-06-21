@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, danceTypesTable } from "@workspace/db";
-import { requireAdminAuth, type AdminRequest } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 
 const router: IRouter = Router();
 
@@ -51,6 +51,7 @@ router.get("/dance-types", async (_req, res) => {
 router.get(
   "/admin/settings/dance-types",
   requireAdminAuth,
+  requireAdminPermission("settings", "view"),
   async (_req, res) => {
     try {
       const rows = await db
@@ -77,6 +78,7 @@ const CreateBody = z.object({
 router.post(
   "/admin/settings/dance-types",
   requireAdminAuth,
+  requireAdminPermission("settings", "edit"),
   async (req: AdminRequest, res) => {
     const parsed = CreateBody.safeParse(req.body);
     if (!parsed.success) {
@@ -120,6 +122,7 @@ const UpdateBody = z.object({
 router.patch(
   "/admin/settings/dance-types/:id",
   requireAdminAuth,
+  requireAdminPermission("settings", "edit"),
   async (req: AdminRequest, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
@@ -168,6 +171,7 @@ router.patch(
 router.delete(
   "/admin/settings/dance-types/:id",
   requireAdminAuth,
+  requireAdminPermission("settings", "edit"),
   async (req: AdminRequest, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {

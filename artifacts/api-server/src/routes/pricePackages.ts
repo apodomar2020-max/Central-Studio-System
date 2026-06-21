@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { eq } from "drizzle-orm";
 import { db, pricePackagesTable } from "@workspace/db";
 import {
@@ -19,7 +20,7 @@ router.get("/price-packages", async (req, res): Promise<void> => {
   res.json(ListPricePackagesResponse.parse(rows));
 });
 
-router.post("/price-packages", async (req, res): Promise<void> => {
+router.post("/price-packages", requireAdminAuth, requireAdminPermission("packages", "create"), async (req, res): Promise<void> => {
   const parsed = CreatePricePackageBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -43,7 +44,7 @@ router.get("/price-packages/:id", async (req, res): Promise<void> => {
   res.json(GetPricePackageResponse.parse(row));
 });
 
-router.patch("/price-packages/:id", async (req, res): Promise<void> => {
+router.patch("/price-packages/:id", requireAdminAuth, requireAdminPermission("packages", "edit"), async (req, res): Promise<void> => {
   const params = UpdatePricePackageParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -62,7 +63,7 @@ router.patch("/price-packages/:id", async (req, res): Promise<void> => {
   res.json(UpdatePricePackageResponse.parse(row));
 });
 
-router.delete("/price-packages/:id", async (req, res): Promise<void> => {
+router.delete("/price-packages/:id", requireAdminAuth, requireAdminPermission("packages", "delete"), async (req, res): Promise<void> => {
   const params = DeletePricePackageParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

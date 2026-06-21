@@ -7,7 +7,7 @@ import {
   appContentPagesTable,
   appFaqItemsTable,
 } from "@workspace/db";
-import { requireAdminAuth, type AdminRequest } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 
 const router: IRouter = Router();
 
@@ -114,6 +114,7 @@ router.get("/content/pages/:slug", async (req, res): Promise<void> => {
 router.get(
   "/admin/content/pages",
   requireAdminAuth,
+  requireAdminPermission("appContent", "view"),
   async (_req, res): Promise<void> => {
     const rows = await db
       .select()
@@ -127,6 +128,7 @@ router.get(
 router.get(
   "/admin/content/pages/:slug",
   requireAdminAuth,
+  requireAdminPermission("appContent", "view"),
   async (req, res): Promise<void> => {
     const params = SlugParams.safeParse(req.params);
     if (!params.success) {
@@ -152,6 +154,7 @@ router.get(
 router.patch(
   "/admin/content/pages/:slug",
   requireAdminAuth,
+  requireAdminPermission("appContent", "edit"),
   async (req: AdminRequest, res): Promise<void> => {
     const params = SlugParams.safeParse(req.params);
     if (!params.success) {
@@ -192,6 +195,7 @@ router.patch(
 router.get(
   "/admin/content/faqs",
   requireAdminAuth,
+  requireAdminPermission("appContent", "view"),
   async (_req, res): Promise<void> => {
     const rows = await db
       .select()
@@ -204,6 +208,7 @@ router.get(
 router.post(
   "/admin/content/faqs",
   requireAdminAuth,
+  requireAdminPermission("appContent", "create"),
   async (req, res): Promise<void> => {
     const parsed = UpsertFaqBody.safeParse(req.body);
     if (!parsed.success) {
@@ -223,6 +228,7 @@ router.post(
 router.patch(
   "/admin/content/faqs/:id",
   requireAdminAuth,
+  requireAdminPermission("appContent", "edit"),
   async (req, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
@@ -254,6 +260,7 @@ router.patch(
 router.delete(
   "/admin/content/faqs/:id",
   requireAdminAuth,
+  requireAdminPermission("appContent", "delete"),
   async (req, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
@@ -279,6 +286,7 @@ router.delete(
 router.get(
   "/admin/content/contact-links",
   requireAdminAuth,
+  requireAdminPermission("appContent", "view"),
   async (_req, res): Promise<void> => {
     const rows = await db
       .select()
@@ -291,6 +299,7 @@ router.get(
 router.post(
   "/admin/content/contact-links",
   requireAdminAuth,
+  requireAdminPermission("appContent", "create"),
   async (req, res): Promise<void> => {
     const parsed = UpsertContactLinkBody.safeParse(req.body);
     if (!parsed.success) {
@@ -313,6 +322,7 @@ router.post(
 router.patch(
   "/admin/content/contact-links/:id",
   requireAdminAuth,
+  requireAdminPermission("appContent", "edit"),
   async (req, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
@@ -348,6 +358,7 @@ router.patch(
 router.delete(
   "/admin/content/contact-links/:id",
   requireAdminAuth,
+  requireAdminPermission("appContent", "delete"),
   async (req, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {

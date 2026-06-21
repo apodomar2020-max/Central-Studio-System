@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { eq } from "drizzle-orm";
 import { db, marketingCampaignsTable, studentsTable } from "@workspace/db";
 import { count } from "drizzle-orm";
@@ -24,12 +25,12 @@ async function computeRecipientCount(audience: string): Promise<number> {
   return 0;
 }
 
-router.get("/marketing/campaigns", async (req, res): Promise<void> => {
+router.get("/marketing/campaigns", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
   const rows = await db.select().from(marketingCampaignsTable).orderBy(marketingCampaignsTable.createdAt);
   res.json(ListCampaignsResponse.parse(rows));
 });
 
-router.post("/marketing/campaigns", async (req, res): Promise<void> => {
+router.post("/marketing/campaigns", requireAdminAuth, requireAdminPermission("marketing", "create"), async (req, res): Promise<void> => {
   const parsed = CreateCampaignBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -40,7 +41,7 @@ router.post("/marketing/campaigns", async (req, res): Promise<void> => {
   res.status(201).json(GetCampaignResponse.parse(row));
 });
 
-router.get("/marketing/campaigns/:id", async (req, res): Promise<void> => {
+router.get("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
   const params = GetCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -54,7 +55,7 @@ router.get("/marketing/campaigns/:id", async (req, res): Promise<void> => {
   res.json(GetCampaignResponse.parse(row));
 });
 
-router.patch("/marketing/campaigns/:id", async (req, res): Promise<void> => {
+router.patch("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
   const params = UpdateCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -76,7 +77,7 @@ router.patch("/marketing/campaigns/:id", async (req, res): Promise<void> => {
   res.json(UpdateCampaignResponse.parse(row));
 });
 
-router.delete("/marketing/campaigns/:id", async (req, res): Promise<void> => {
+router.delete("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission("marketing", "delete"), async (req, res): Promise<void> => {
   const params = DeleteCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -90,7 +91,7 @@ router.delete("/marketing/campaigns/:id", async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-router.post("/marketing/campaigns/:id/send", async (req, res): Promise<void> => {
+router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
   const params = GetCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
