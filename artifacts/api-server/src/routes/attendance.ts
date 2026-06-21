@@ -1,7 +1,8 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, attendanceTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import {
   ListAttendanceQueryParams,
   ListAttendanceResponse,
@@ -45,6 +46,14 @@ function isCheckInError(e: unknown): e is CheckInError {
   );
 }
 
+function requirePackageDeductForManualCheckIn(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.creditDeducted !== true || req.body?.packageOrderId == null) {
+    next();
+    return;
+  }
+  requireAdminPermission("qr", "packageDeduct")(req, res, next);
+}
+
 // ---------------------------------------------------------------------------
 // GET /attendance
 // ---------------------------------------------------------------------------
@@ -76,7 +85,12 @@ router.get("/attendance", async (req, res): Promise<void> => {
 //   3. Atomic write — attendance record and credit deduction either both
 //      commit or both roll back.
 // ---------------------------------------------------------------------------
-router.post("/attendance", async (req, res): Promise<void> => {
+router.post(
+  "/attendance",
+  requireAdminAuth,
+  requireAdminPermission("attendance", "checkIn"),
+  requirePackageDeductForManualCheckIn,
+  async (req, res): Promise<void> => {
   const parsed = CheckInBodyExtended.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -295,7 +309,8 @@ router.post("/attendance", async (req, res): Promise<void> => {
     // these up and returns a 500 (without leaking stack traces in production).
     throw err;
   }
-});
+  },
+);
 
 // ---------------------------------------------------------------------------
 // GET /attendance/stats

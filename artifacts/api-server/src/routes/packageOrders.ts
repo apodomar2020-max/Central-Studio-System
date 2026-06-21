@@ -1,7 +1,8 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { desc, eq } from "drizzle-orm";
 import { db, packageOrdersTable, creditTransactionsTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import {
   ListPackageOrdersQueryParams,
   ListPackageOrdersResponse,
@@ -15,6 +16,19 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+function requirePackageOrderAction(req: Request, res: Response, next: NextFunction): void {
+  const status = req.body?.status;
+  if (status === "active") {
+    requireAdminPermission("packageOrders", "approve")(req, res, next);
+    return;
+  }
+  if (status === "cancelled") {
+    requireAdminPermission("packageOrders", "cancel")(req, res, next);
+    return;
+  }
+  next();
+}
 
 router.get("/package-orders", async (req, res): Promise<void> => {
   const query = ListPackageOrdersQueryParams.safeParse(req.query);
@@ -64,7 +78,11 @@ router.get("/package-orders/:id", async (req, res): Promise<void> => {
   res.json(GetPackageOrderResponse.parse(row));
 });
 
-router.patch("/package-orders/:id", async (req, res): Promise<void> => {
+router.patch(
+  "/package-orders/:id",
+  requireAdminAuth,
+  requirePackageOrderAction,
+  async (req, res): Promise<void> => {
   const params = UpdatePackageOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -180,7 +198,8 @@ router.patch("/package-orders/:id", async (req, res): Promise<void> => {
   }
 
   res.json(UpdatePackageOrderResponse.parse(row));
-});
+  },
+);
 
 router.delete("/package-orders/:id", async (req, res): Promise<void> => {
   const params = DeletePackageOrderParams.safeParse(req.params);

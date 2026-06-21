@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, eq, sql } from "drizzle-orm";
 import {
   db,
@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { CheckInQrBody, CheckInQrResponse } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 
 const router: IRouter = Router();
 
@@ -153,7 +154,20 @@ function isCheckInError(e: unknown): e is CheckInError {
   );
 }
 
-router.post("/check-in/qr", async (req, res): Promise<void> => {
+function requirePackageDeductForQr(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.paymentMode !== "package_credit") {
+    next();
+    return;
+  }
+  requireAdminPermission("qr", "packageDeduct")(req, res, next);
+}
+
+router.post(
+  "/check-in/qr",
+  requireAdminAuth,
+  requireAdminPermission("qr", "checkIn"),
+  requirePackageDeductForQr,
+  async (req, res): Promise<void> => {
   const parsed = CheckInQrBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -485,6 +499,7 @@ router.post("/check-in/qr", async (req, res): Promise<void> => {
     }
     throw err;
   }
-});
+  },
+);
 
 export default router;

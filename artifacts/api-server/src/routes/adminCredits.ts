@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import * as zod from "zod";
 import { db, creditTransactionsTable, packageOrdersTable } from "@workspace/db";
-import { requireAdminAuth, type AdminRequest } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { ListCreditTransactionsQueryParams } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
 
@@ -20,6 +20,7 @@ const router: IRouter = Router();
 router.get(
   "/admin/credits/ledger",
   requireAdminAuth,
+  requireAdminPermission("credits", "history"),
   async (req: AdminRequest, res): Promise<void> => {
     const query = ListCreditTransactionsQueryParams.safeParse(req.query);
     if (!query.success) {
@@ -108,6 +109,7 @@ const AdjustCreditsBody = zod.object({
 router.post(
   "/admin/package-orders/:id/credits",
   requireAdminAuth,
+  requireAdminPermission("credits", "adjust"),
   async (req: AdminRequest, res): Promise<void> => {
     const params = AdjustCreditsParams.safeParse(req.params);
     if (!params.success) {

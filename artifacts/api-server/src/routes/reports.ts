@@ -12,16 +12,14 @@
  * TODO: also chain blockStudentJwt once that middleware is committed/exported
  * globally for defence-in-depth.
  *
- * NOTE (follow-up): there is no "reports" entry in ADMIN_MODULES and no
- * requirePermission middleware in this codebase yet, so access is gated at the
- * "any authenticated admin" level (the existing pattern). A future task should
- * add `reports.view` / `reports.export` permissions and enforce them here.
+ * Report preview, analytics, and each export format have independent backend
+ * permissions so direct API calls cannot bypass the Admin UI controls.
  *
  * Date filtering is UTC and inclusive: `from` → 00:00:00.000Z of that day,
  * `to` → 23:59:59.999Z of that day. All conditions use Drizzle expressions
  * (no string interpolation of query params).
  */
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Response } from "express";
 import { and, gte, lte, eq, or, isNull, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
@@ -39,7 +37,7 @@ import {
   packageOrdersTable,
   creditTransactionsTable,
 } from "@workspace/db";
-import { requireAdminAuth, type AdminRequest } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { buildPdfBuffer } from "./pdfReport";
 
 const router: IRouter = Router();
@@ -76,6 +74,12 @@ const AnalyticsQuerySchema = z.object({
   from: z.string().regex(DATE_RE, "from must be YYYY-MM-DD").optional(),
   to: z.string().regex(DATE_RE, "to must be YYYY-MM-DD").optional(),
 });
+
+function requireReportFormatPermission(req: AdminRequest, res: Response, next: NextFunction): void {
+  const format = typeof req.query["format"] === "string" ? req.query["format"] : "json";
+  const action = format === "xlsx" ? "exportExcel" : format === "pdf" ? "exportPdf" : "view";
+  requireAdminPermission("reports", action)(req, res, next);
+}
 
 // Human-readable titles for each report (used in JSON title-less previews and
 // the Excel worksheet/heading).
@@ -838,8 +842,11 @@ async function buildXlsxBuffer(
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-// TODO: add blockStudentJwt once middleware is committed/exported globally.
-router.get("/reports/analytics", requireAdminAuth, async (req, res): Promise<void> => {
+router.get(
+  "/reports/analytics",
+  requireAdminAuth,
+  requireAdminPermission("reports", "analytics"),
+  async (req, res): Promise<void> => {
   const parsed = AnalyticsQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid query parameters" });
@@ -848,9 +855,10 @@ router.get("/reports/analytics", requireAdminAuth, async (req, res): Promise<voi
 
   const { from, to } = parsed.data;
   res.json(await analyticsReport(from, to));
-});
+  },
+);
 
-router.get("/reports/:entity", requireAdminAuth, async (req, res): Promise<void> => {
+router.get("/reports/:entity", requireAdminAuth, requireReportFormatPermission, async (req, res): Promise<void> => {
   const entity = req.params.entity as Entity;
   if (!ENTITIES.includes(entity)) {
     res.status(400).json({ error: `Unknown report entity '${req.params.entity}'. Allowed: ${ENTITIES.join(", ")}` });
@@ -875,8 +883,8 @@ router.get("/reports/:entity", requireAdminAuth, async (req, res): Promise<void>
   }
 
   // File exports (xlsx/pdf): same data builder as the JSON preview, streamed as a
-  // download. Auth is unchanged (requireAdminAuth above) — no token in the query
-  // string, the admin JWT travels in the x-admin-token header of this request.
+  // download. The admin JWT travels in the x-admin-token header and the format
+  // permission was checked before report generation.
   const stamp = new Date().toISOString().slice(0, 10);
 
   if (format === "xlsx") {

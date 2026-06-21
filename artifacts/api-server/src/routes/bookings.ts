@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
@@ -11,6 +11,7 @@ import {
   childrenTable,
 } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import {
   ListBookingsQueryParams,
   CreateBookingBody,
@@ -58,6 +59,25 @@ type BookingOwnerClient = Pick<typeof db, "select">;
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function requireBookingUpdatePermission(req: Request, res: Response, next: NextFunction): void {
+  const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+  const isCancellation = body["bookingStatus"] === "cancelled" || body["status"] === "cancelled";
+
+  if (!isCancellation) {
+    requireAdminPermission("bookings", "edit")(req, res, next);
+    return;
+  }
+
+  const cancellationOnly = Object.keys(body).every((key) => key === "bookingStatus" || key === "status");
+  requireAdminPermission("bookings", "cancel")(req, res, () => {
+    if (cancellationOnly) {
+      next();
+      return;
+    }
+    requireAdminPermission("bookings", "edit")(req, res, next);
+  });
 }
 
 async function resolveAccountOwnerStudentId(
@@ -583,7 +603,11 @@ router.get("/bookings/:id", async (req, res): Promise<void> => {
   res.json(GetBookingResponse.parse(row));
 });
 
-router.patch("/bookings/:id", async (req, res): Promise<void> => {
+router.patch(
+  "/bookings/:id",
+  requireAdminAuth,
+  requireBookingUpdatePermission,
+  async (req, res): Promise<void> => {
   const params = UpdateBookingParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -633,9 +657,14 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
   }
 
   res.json(UpdateBookingResponse.parse(row));
-});
+  },
+);
 
-router.delete("/bookings/:id", async (req, res): Promise<void> => {
+router.delete(
+  "/bookings/:id",
+  requireAdminAuth,
+  requireAdminPermission("bookings", "delete"),
+  async (req, res): Promise<void> => {
   const params = DeleteBookingParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -661,6 +690,7 @@ router.delete("/bookings/:id", async (req, res): Promise<void> => {
     return;
   }
   res.sendStatus(204);
-});
+  },
+);
 
 export default router;
