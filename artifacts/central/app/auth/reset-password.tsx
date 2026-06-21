@@ -115,6 +115,13 @@ export default function ResetPasswordScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
+      {/* Background radial glow */}
+      <LinearGradient
+        colors={["rgba(0,182,215,0.08)", "transparent"]}
+        style={[StyleSheet.absoluteFillObject, { height: 400 }]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       <TouchableOpacity
         onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/auth/login"); }}
         style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
@@ -249,12 +256,25 @@ export default function ResetPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#060C10" },
-  centeredContainer: {
-    justifyContent: "center",
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
+  centeredContainer: { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 },
+  successBadge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: "center",
-    paddingHorizontal: 32,
-    gap: 20,
+    justifyContent: "center",
+    marginBottom: 24,
+  },
+  successTitle: { fontSize: 32, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase" },
+  successBody: {
+    fontSize: 15,
+    fontFamily: "Archivo_400Regular",
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 32,
+    lineHeight: 22,
   },
   closeBtn: {
     position: "absolute",
@@ -262,12 +282,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#1E1E26",
+    backgroundColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
   },
-  scroll: { paddingHorizontal: 28, paddingBottom: 60, alignItems: "center", gap: 16 },
+  scroll: { paddingHorizontal: 24, paddingBottom: 60, alignItems: "center", gap: 16 },
   logoBadge: {
     width: 64,
     height: 64,
@@ -276,14 +296,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 8,
   },
-  title: { fontSize: 26, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  title: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", lineHeight: 40 },
   subtitle: {
     fontSize: 14,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: "#9CA3AF",
     textAlign: "center",
-    marginTop: -8,
-    lineHeight: 22,
+    marginTop: 4,
+    lineHeight: 20,
   },
   errorBanner: {
     width: "100%",
@@ -294,14 +314,16 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
-  errorText: { fontSize: 13, fontFamily: "Inter_400Regular", flex: 1 },
+  errorText: { fontSize: 13, fontFamily: "Archivo_400Regular", flex: 1 },
   form: { width: "100%", gap: 14 },
   inputGroup: { gap: 6 },
   label: {
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+    fontFamily: "Archivo_700Bold",
     color: "#9CA3AF",
     paddingLeft: 2,
+    letterSpacing: 0.66,
+    textTransform: "uppercase",
   },
   inputRow: {
     flexDirection: "row",
@@ -310,30 +332,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 50,
     borderRadius: 12,
-    borderWidth: 1,
-    backgroundColor: "#1E1E26",
-    borderColor: "#2A2A35",
+    borderWidth: 1.5,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.12)",
   },
-  input: { flex: 1, color: "#FFFFFF", fontFamily: "Inter_400Regular", fontSize: 15 },
-  codeInput: { letterSpacing: 4, fontSize: 20, fontFamily: "Inter_700Bold" },
-  resendRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
-  resendNote: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  resendLink: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  // success state
-  successBadge: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
+  input: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontFamily: "Archivo_400Regular",
+    fontSize: 15,
+  },
+  codeInput: {
+    fontSize: 20,
+    fontFamily: "SpaceMono_700Bold",
+    letterSpacing: 4,
+    color: colors.studio.primary,
+  },
+  resendRow: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
+    marginTop: 8,
   },
-  successTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: "#FFFFFF", textAlign: "center" },
-  successBody: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: "#9CA3AF",
-    textAlign: "center",
-    lineHeight: 22,
-  },
+  resendNote: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
+  resendLink: { fontSize: 14, fontFamily: "Archivo_800ExtraBold" },
 });
