@@ -51,17 +51,17 @@ import {
 import { useAppContext } from "@/contexts/AppContext";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
-const INK_900 = "#060C10";
-const INK_800 = "#0E1619";
-const INK_700 = "#162028";
-const INK_400 = "#4B5563";
-const INK_300 = "#9CA3AF";
-const INK_200 = "#D1D5DB";
+const INK_900 = "#0A0B0D";
+const INK_800 = "#15171B";
+const INK_700 = "#22262C";
+const INK_400 = "#6B747F";
+const INK_300 = "#8E97A2";
+const INK_200 = "#B6BDC6";
 const CYAN   = "#00B6D7";
 const MAGENTA = "#FF2E7E";
 const AMBER  = "#FFB02E";
-const SUCCESS = "#22C55E";
-const DANGER  = "#EF4444";
+const SUCCESS = "#1FB871";
+const DANGER  = "#FF3B47";
 const BORDER  = "rgba(255,255,255,0.08)";
 const R_MD = 12;
 const R_LG = 16;
@@ -142,9 +142,9 @@ function statusColor(st: DanceClass["status"]) {
        : INK_300;
 }
 function statusBg(st: DanceClass["status"]) {
-  return st === "available" ? "rgba(34,197,94,0.16)"
+  return st === "available" ? "rgba(31,184,113,0.16)"
        : st === "fewSeats"  ? "rgba(255,176,46,0.16)"
-       : st === "full"      ? "rgba(239,68,68,0.10)"
+       : st === "full"      ? "rgba(255,59,71,0.10)"
        : "rgba(255,255,255,0.06)";
 }
 
@@ -1023,7 +1023,7 @@ export default function ClassesScreen() {
             {visibleCats.length === 0 ? (
               <View style={s.emptyState}>
                 <View style={s.emptyIcon}>
-                  <Ionicons name="search-outline" size={30} color={INK_400} />
+                  <Ionicons name="search-outline" size={30} color="#4C545E" />
                 </View>
                 <Text style={s.emptyTitle}>No classes found</Text>
                 <Text style={s.emptyDesc}>Try different keywords or clear your filters.</Text>
