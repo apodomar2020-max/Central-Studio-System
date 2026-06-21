@@ -28,11 +28,11 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, systemUsersTable, rolesTable } from "@workspace/db";
 import type { RolePermissions } from "@workspace/db";
-import { hasRolePermission } from "@workspace/api-zod";
+import { hasRolePermission, PERMISSION_CATALOG } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -210,6 +210,52 @@ export function requireAdminPermission(moduleKey: string, actionKey: string) {
   };
 }
 
+function adminHasPermission(admin: AdminIdentity, moduleKey: string, actionKey: string): boolean {
+  return admin.isSuperAdmin || hasRolePermission(admin.permissions, moduleKey, actionKey);
+}
+
+function requireAllAdminPermissions(
+  req: AdminRequest,
+  res: Response,
+  required: Array<[moduleKey: string, actionKey: string]>,
+): boolean {
+  const admin = req.adminUser;
+  if (!admin) {
+    res.status(401).json({ error: "Admin authentication required" });
+    return false;
+  }
+
+  const missing = required.filter(([moduleKey, actionKey]) =>
+    !adminHasPermission(admin, moduleKey, actionKey),
+  );
+  if (missing.length === 0) return true;
+
+  res.status(403).json({
+    error: "Permission denied",
+    requiredPermissions: missing.map(([module, action]) => ({ module, action })),
+  });
+  return false;
+}
+
+function permissionsAreWithinAuthority(admin: AdminIdentity, requested: RolePermissions): boolean {
+  if (admin.isSuperAdmin) return true;
+
+  return Object.entries(requested).every(([moduleKey, actions]) => {
+    const canonicalModule = PERMISSION_CATALOG.find(
+      (module) => module.key === moduleKey || module.legacyAliases?.includes(moduleKey),
+    )?.key ?? moduleKey;
+    return Object.entries(actions ?? {}).every(([actionKey, enabled]) =>
+      enabled !== true || hasRolePermission(admin.permissions, canonicalModule, actionKey),
+    );
+  });
+}
+
+class AdminMutationError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
 // ─── POST /api/admin/auth/login ───────────────────────────────────────────────
 const LoginBody = z.object({
   username: z.string().min(1),
@@ -290,7 +336,7 @@ router.get("/admin/auth/me", requireAdminAuth, async (req: AdminRequest, res): P
 });
 
 // ─── GET /api/admin/users ─────────────────────────────────────────────────────
-router.get("/admin/users", requireAdminAuth, requireSuperAdmin, async (_req, res): Promise<void> => {
+router.get("/admin/users", requireAdminAuth, requireAdminPermission("adminUsers", "view"), async (_req, res): Promise<void> => {
   const users = await db
     .select({
       id: systemUsersTable.id,
@@ -317,7 +363,12 @@ const CreateUserBody = z.object({
   roleId: z.coerce.number().int().optional(),
 });
 
-router.post("/admin/users", requireAdminAuth, requireSuperAdmin, async (req, res): Promise<void> => {
+router.post("/admin/users", requireAdminAuth, requireAdminPermission("adminUsers", "create"), async (req: AdminRequest, res): Promise<void> => {
+  if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "isSuperAdmin")) {
+    res.status(400).json({ error: "Super Admin status cannot be assigned through this endpoint." });
+    return;
+  }
+
   const parsed = CreateUserBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -325,6 +376,24 @@ router.post("/admin/users", requireAdminAuth, requireSuperAdmin, async (req, res
   }
 
   const { username, email, fullName, password, roleId } = parsed.data;
+
+  let role: { id: number; permissions: RolePermissions } | undefined;
+  if (roleId != null) {
+    if (!requireAllAdminPermissions(req, res, [["adminUsers", "assignRole"]])) return;
+    [role] = await db
+      .select({ id: rolesTable.id, permissions: rolesTable.permissions })
+      .from(rolesTable)
+      .where(eq(rolesTable.id, roleId))
+      .limit(1) as Array<{ id: number; permissions: RolePermissions }>;
+    if (!role) {
+      res.status(400).json({ error: "Invalid role ID." });
+      return;
+    }
+    if (!permissionsAreWithinAuthority(req.adminUser!, role.permissions)) {
+      res.status(403).json({ error: "Cannot assign permissions beyond your authority." });
+      return;
+    }
+  }
 
   const passwordHash = await bcrypt.hash(password, 12);
 
@@ -350,7 +419,7 @@ router.post("/admin/users", requireAdminAuth, requireSuperAdmin, async (req, res
       isActive: systemUsersTable.isActive,
     });
 
-  logger.info({ newUserId: newUser.id }, "System user created by Super Admin");
+  logger.info({ newUserId: newUser.id, by: req.adminUser?.sub }, "System user created");
   res.status(201).json(newUser);
 });
 
@@ -363,9 +432,19 @@ const UpdateUserBody = z.object({
   isActive: z.boolean().optional(),
 });
 
-router.patch("/admin/users/:id", requireAdminAuth, requireSuperAdmin, async (req: AdminRequest, res): Promise<void> => {
+router.patch("/admin/users/:id", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid user ID" }); return; }
+
+  if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "isSuperAdmin")) {
+    const isSelfDemotion = id === req.adminUser?.sub && req.body?.isSuperAdmin === false;
+    res.status(400).json({
+      error: isSelfDemotion
+        ? "Cannot remove your own Super Admin authority."
+        : "Super Admin status cannot be changed through this endpoint.",
+    });
+    return;
+  }
 
   const parsed = UpdateUserBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
@@ -376,21 +455,106 @@ router.patch("/admin/users/:id", requireAdminAuth, requireSuperAdmin, async (req
   if (parsed.data.roleId !== undefined) updates.roleId = parsed.data.roleId;
   if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
   if (parsed.data.password !== undefined) updates.passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No user fields provided to update." });
+    return;
+  }
 
-  const [updated] = await db
-    .update(systemUsersTable)
-    .set(updates)
-    .where(eq(systemUsersTable.id, id))
-    .returning({ id: systemUsersTable.id, username: systemUsersTable.username, isActive: systemUsersTable.isActive });
+  try {
+    const updated = await db.transaction(async (tx) => {
+      const [target] = await tx
+        .select({
+          id: systemUsersTable.id,
+          fullName: systemUsersTable.fullName,
+          email: systemUsersTable.email,
+          roleId: systemUsersTable.roleId,
+          isSuperAdmin: systemUsersTable.isSuperAdmin,
+          isActive: systemUsersTable.isActive,
+        })
+        .from(systemUsersTable)
+        .where(eq(systemUsersTable.id, id))
+        .limit(1);
 
-  if (!updated) { res.status(404).json({ error: "User not found" }); return; }
+      if (!target) throw new AdminMutationError(404, "User not found");
+      const actor = req.adminUser!;
 
-  logger.info({ targetUserId: id, by: req.adminUser?.sub }, "System user updated");
-  res.json(updated);
+      if (!actor.isSuperAdmin && target.isSuperAdmin) {
+        throw new AdminMutationError(403, "Super Admin accounts can only be modified by another Super Admin.");
+      }
+      if (id === actor.sub && parsed.data.isActive === false) {
+        throw new AdminMutationError(400, "Cannot disable your own account.");
+      }
+      if (id === actor.sub && parsed.data.roleId !== undefined && parsed.data.roleId !== target.roleId) {
+        throw new AdminMutationError(400, "Cannot change your own role.");
+      }
+
+      const required: Array<[string, string]> = [];
+      if (
+        (parsed.data.fullName !== undefined && parsed.data.fullName !== target.fullName) ||
+        (parsed.data.email !== undefined && parsed.data.email !== target.email) ||
+        parsed.data.password !== undefined
+      ) {
+        required.push(["adminUsers", "edit"]);
+      }
+      if (parsed.data.roleId !== undefined && parsed.data.roleId !== target.roleId) {
+        required.push(["adminUsers", "assignRole"]);
+      }
+      if (parsed.data.isActive !== undefined && parsed.data.isActive !== target.isActive) {
+        required.push(["adminUsers", "disable"]);
+      }
+      const missing = required.filter(([moduleKey, actionKey]) =>
+        !adminHasPermission(actor, moduleKey, actionKey),
+      );
+      if (missing.length > 0) {
+        throw new AdminMutationError(
+          403,
+          `Permission denied: ${missing.map(([module, action]) => `${module}.${action}`).join(", ")}`,
+        );
+      }
+      if (parsed.data.roleId != null && parsed.data.roleId !== target.roleId) {
+        const [role] = await tx
+          .select({ id: rolesTable.id, permissions: rolesTable.permissions })
+          .from(rolesTable)
+          .where(eq(rolesTable.id, parsed.data.roleId))
+          .limit(1);
+        if (!role) throw new AdminMutationError(400, "Invalid role ID.");
+        if (!permissionsAreWithinAuthority(actor, role.permissions as RolePermissions)) {
+          throw new AdminMutationError(403, "Cannot assign permissions beyond your authority.");
+        }
+      }
+
+      if (target.isSuperAdmin && target.isActive && parsed.data.isActive === false) {
+        await tx.execute(sql`select pg_advisory_xact_lock(739451)`);
+        const [{ activeSuperAdmins }] = await tx
+          .select({ activeSuperAdmins: count() })
+          .from(systemUsersTable)
+          .where(and(eq(systemUsersTable.isSuperAdmin, true), eq(systemUsersTable.isActive, true)));
+        if (Number(activeSuperAdmins) <= 1) {
+          throw new AdminMutationError(400, "Cannot remove the final active Super Admin.");
+        }
+      }
+
+      const [row] = await tx
+        .update(systemUsersTable)
+        .set(updates)
+        .where(eq(systemUsersTable.id, id))
+        .returning({ id: systemUsersTable.id, username: systemUsersTable.username, isActive: systemUsersTable.isActive });
+      return row;
+    });
+
+    logger.info({ targetUserId: id, by: req.adminUser?.sub }, "System user updated");
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof AdminMutationError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
 });
 
 // ─── GET /api/admin/roles ─────────────────────────────────────────────────────
-router.get("/admin/roles", requireAdminAuth, async (_req, res): Promise<void> => {
+router.get("/admin/roles", requireAdminAuth, requireAdminPermission("roles", "view"), async (_req, res): Promise<void> => {
   const roles = await db.select().from(rolesTable).orderBy(rolesTable.name);
   res.json(roles);
 });
@@ -402,9 +566,18 @@ const CreateRoleBody = z.object({
   permissions: z.record(z.record(z.boolean())).optional(),
 });
 
-router.post("/admin/roles", requireAdminAuth, requireSuperAdmin, async (req, res): Promise<void> => {
+router.post("/admin/roles", requireAdminAuth, requireAdminPermission("roles", "create"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateRoleBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid" }); return; }
+
+  if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "permissions")) {
+    if (!requireAllAdminPermissions(req, res, [["roles", "assignPermissions"]])) return;
+    const requested = (parsed.data.permissions ?? {}) as RolePermissions;
+    if (!permissionsAreWithinAuthority(req.adminUser!, requested)) {
+      res.status(403).json({ error: "Cannot assign permissions beyond your authority." });
+      return;
+    }
+  }
 
   const [role] = await db
     .insert(rolesTable)
@@ -419,20 +592,45 @@ router.post("/admin/roles", requireAdminAuth, requireSuperAdmin, async (req, res
 });
 
 // ─── PATCH /api/admin/roles/:id ───────────────────────────────────────────────
-router.patch("/admin/roles/:id", requireAdminAuth, requireSuperAdmin, async (req, res): Promise<void> => {
+const UpdateRoleBody = z.object({
+  name: z.string().min(2).optional(),
+  description: z.string().nullable().optional(),
+  permissions: z.record(z.record(z.boolean())).optional(),
+});
+
+router.patch("/admin/roles/:id", requireAdminAuth, requireAdminPermission("roles", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid role ID" }); return; }
 
-  const parsed = CreateRoleBody.safeParse(req.body);
+  const parsed = UpdateRoleBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid" }); return; }
+
+  const actor = req.adminUser!;
+  if (!actor.isSuperAdmin && actor.roleId === id) {
+    res.status(403).json({ error: "Cannot modify your own assigned role." });
+    return;
+  }
+  if (parsed.data.permissions !== undefined) {
+    if (!requireAllAdminPermissions(req, res, [["roles", "assignPermissions"]])) return;
+    const requested = parsed.data.permissions as RolePermissions;
+    if (!permissionsAreWithinAuthority(actor, requested)) {
+      res.status(403).json({ error: "Cannot assign permissions beyond your authority." });
+      return;
+    }
+  }
+
+  const updates: Partial<typeof rolesTable.$inferInsert> = {};
+  if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+  if (parsed.data.description !== undefined) updates.description = parsed.data.description;
+  if (parsed.data.permissions !== undefined) updates.permissions = parsed.data.permissions as RolePermissions;
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No role fields provided to update." });
+    return;
+  }
 
   const [updated] = await db
     .update(rolesTable)
-    .set({
-      name: parsed.data.name,
-      description: parsed.data.description ?? null,
-      permissions: (parsed.data.permissions ?? {}) as RolePermissions,
-    })
+    .set(updates)
     .where(eq(rolesTable.id, id))
     .returning();
 
