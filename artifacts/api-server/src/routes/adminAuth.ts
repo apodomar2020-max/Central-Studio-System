@@ -32,6 +32,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, systemUsersTable, rolesTable } from "@workspace/db";
 import type { RolePermissions } from "@workspace/db";
+import { hasRolePermission } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -48,41 +49,165 @@ interface AdminTokenPayload {
   roleId: number | null;
 }
 
+interface AdminRoleIdentity {
+  id: number;
+  name: string;
+  permissions: RolePermissions;
+}
+
+/**
+ * Database-authoritative admin identity attached to protected requests.
+ * JWT role and Super Admin claims are intentionally replaced with current DB
+ * values on every request so disabling or reassigning an admin takes effect
+ * without waiting for the token to expire.
+ */
+export interface AdminIdentity {
+  sub: number;
+  id: number;
+  username: string;
+  fullName: string;
+  email: string;
+  isSuperAdmin: boolean;
+  roleId: number | null;
+  isActive: true;
+  role: AdminRoleIdentity | null;
+  permissions: RolePermissions;
+}
+
 function signAdminToken(payload: AdminTokenPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
 export function verifyAdminToken(token: string): AdminTokenPayload {
-  return jwt.verify(token, JWT_SECRET) as unknown as AdminTokenPayload;
+  const payload = jwt.verify(token, JWT_SECRET) as unknown as AdminTokenPayload;
+  if (!Number.isInteger(payload.sub) || payload.sub <= 0) {
+    throw new jwt.JsonWebTokenError("Invalid admin token subject");
+  }
+  return payload;
+}
+
+async function loadAdminIdentity(userId: number): Promise<AdminIdentity | null> {
+  const [user] = await db
+    .select({
+      id: systemUsersTable.id,
+      username: systemUsersTable.username,
+      fullName: systemUsersTable.fullName,
+      email: systemUsersTable.email,
+      roleId: systemUsersTable.roleId,
+      isSuperAdmin: systemUsersTable.isSuperAdmin,
+      isActive: systemUsersTable.isActive,
+    })
+    .from(systemUsersTable)
+    .where(eq(systemUsersTable.id, userId))
+    .limit(1);
+
+  if (!user || !user.isActive) return null;
+
+  let role: AdminRoleIdentity | null = null;
+  if (user.roleId != null) {
+    const [currentRole] = await db
+      .select({
+        id: rolesTable.id,
+        name: rolesTable.name,
+        permissions: rolesTable.permissions,
+      })
+      .from(rolesTable)
+      .where(eq(rolesTable.id, user.roleId))
+      .limit(1);
+
+    if (currentRole) {
+      role = {
+        id: currentRole.id,
+        name: currentRole.name,
+        permissions: currentRole.permissions as RolePermissions,
+      };
+    }
+  }
+
+  return {
+    sub: user.id,
+    id: user.id,
+    username: user.username,
+    fullName: user.fullName,
+    email: user.email,
+    isSuperAdmin: user.isSuperAdmin,
+    roleId: user.roleId,
+    isActive: true,
+    role,
+    permissions: role?.permissions ?? {},
+  };
 }
 
 // ─── Admin auth middleware ─────────────────────────────────────────────────────
 // Attach to any route that requires a logged-in admin user.
 
 export interface AdminRequest extends Request {
-  adminUser?: AdminTokenPayload;
+  adminUser?: AdminIdentity;
 }
 
-export function requireAdminAuth(req: AdminRequest, res: Response, next: NextFunction): void {
-  const token = req.headers["x-admin-token"] as string | undefined;
-  if (!token) {
+export async function requireAdminAuth(req: AdminRequest, res: Response, next: NextFunction): Promise<void> {
+  const token = req.headers["x-admin-token"];
+  if (typeof token !== "string" || token.length === 0) {
     res.status(401).json({ error: "Admin token required" });
     return;
   }
+
+  let payload: AdminTokenPayload;
   try {
-    req.adminUser = verifyAdminToken(token);
-    next();
+    payload = verifyAdminToken(token);
   } catch {
     res.status(401).json({ error: "Invalid or expired admin token" });
+    return;
+  }
+
+  try {
+    const identity = await loadAdminIdentity(payload.sub);
+    if (!identity) {
+      res.status(401).json({ error: "Admin account not found or inactive" });
+      return;
+    }
+
+    req.adminUser = identity;
+    next();
+  } catch (error) {
+    next(error);
   }
 }
 
 export function requireSuperAdmin(req: AdminRequest, res: Response, next: NextFunction): void {
+  if (!req.adminUser) {
+    res.status(401).json({ error: "Admin authentication required" });
+    return;
+  }
   if (!req.adminUser?.isSuperAdmin) {
     res.status(403).json({ error: "Super Admin access required" });
     return;
   }
   next();
+}
+
+/**
+ * Action-level permission guard for Phase 3 route enforcement.
+ * Must be mounted after requireAdminAuth so req.adminUser is DB-hydrated.
+ */
+export function requireAdminPermission(moduleKey: string, actionKey: string) {
+  return (req: AdminRequest, res: Response, next: NextFunction): void => {
+    const admin = req.adminUser;
+    if (!admin) {
+      res.status(401).json({ error: "Admin authentication required" });
+      return;
+    }
+
+    if (admin.isSuperAdmin || hasRolePermission(admin.permissions, moduleKey, actionKey)) {
+      next();
+      return;
+    }
+
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: { module: moduleKey, action: actionKey },
+    });
+  };
 }
 
 // ─── POST /api/admin/auth/login ───────────────────────────────────────────────
@@ -149,30 +274,18 @@ router.post("/admin/auth/login", async (req, res): Promise<void> => {
 
 // ─── GET /api/admin/auth/me ───────────────────────────────────────────────────
 router.get("/admin/auth/me", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
-  const [user] = await db
-    .select()
-    .from(systemUsersTable)
-    .where(eq(systemUsersTable.id, req.adminUser!.sub));
-
-  if (!user || !user.isActive) {
-    res.status(401).json({ error: "Account not found or inactive" });
-    return;
-  }
-
-  let roleData = null;
-  if (user.roleId) {
-    const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, user.roleId));
-    roleData = role ?? null;
-  }
+  const admin = req.adminUser!;
 
   res.json({
-    id: user.id,
-    username: user.username,
-    fullName: user.fullName,
-    email: user.email,
-    isSuperAdmin: user.isSuperAdmin,
-    roleId: user.roleId,
-    role: roleData ? { id: roleData.id, name: roleData.name, permissions: roleData.permissions } : null,
+    id: admin.id,
+    username: admin.username,
+    fullName: admin.fullName,
+    email: admin.email,
+    isSuperAdmin: admin.isSuperAdmin,
+    roleId: admin.roleId,
+    isActive: admin.isActive,
+    role: admin.role,
+    permissions: admin.permissions,
   });
 });
 
