@@ -11,12 +11,23 @@ import {
   DeleteStudentParams,
   ListStudentsResponse,
   GetStudentByTokenParams,
+  hasRolePermission,
 } from "@workspace/api-zod";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 
 const router: IRouter = Router();
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function adminCan(req: AdminRequest, moduleKey: string, actionKey: string): boolean {
+  const admin = req.adminUser;
+  return Boolean(admin && (admin.isSuperAdmin || hasRolePermission(admin.permissions, moduleKey, actionKey)));
+}
+
+function accountModule(accountType: string | null): "parents" | "students" {
+  return accountType === "parent" ? "parents" : "students";
 }
 
 // ---------------------------------------------------------------------------
@@ -29,7 +40,7 @@ function normalizeEmail(email: string): string {
 // Must be registered BEFORE /students/:id so Express doesn't try to coerce
 // the literal string "by-token" as a numeric :id.
 // ---------------------------------------------------------------------------
-router.get("/students/by-token/:token", async (req, res): Promise<void> => {
+router.get("/students/by-token/:token", requireAdminAuth, requireAdminPermission("qr", "scan"), async (req, res): Promise<void> => {
   const params = GetStudentByTokenParams.safeParse(req.params);
   if (!params.success) {
     // Token was present but not a valid UUID format
@@ -81,8 +92,26 @@ router.get("/students/by-token/:token", async (req, res): Promise<void> => {
   });
 });
 
-router.get("/students", async (req, res): Promise<void> => {
-  const rows = await db.select().from(studentsTable).orderBy(studentsTable.joinedAt);
+router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+  const canViewAll = adminCan(req, "users", "view");
+  const canViewStudents = canViewAll || adminCan(req, "students", "view");
+  const canViewParents = canViewAll || adminCan(req, "parents", "view");
+  const canViewChildren = adminCan(req, "children", "view");
+
+  if (!canViewStudents && !canViewParents) {
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: {
+        anyOf: ["users.view", "students.view", "parents.view"],
+      },
+    });
+    return;
+  }
+
+  const allRows = await db.select().from(studentsTable).orderBy(studentsTable.joinedAt);
+  const rows = allRows.filter((student) =>
+    student.accountType === "parent" ? canViewParents : canViewStudents,
+  );
   const bookingRows = await db
     .select({
       studentEmail: bookingsTable.studentEmail,
@@ -98,24 +127,26 @@ router.get("/students", async (req, res): Promise<void> => {
     bookingCounts.set(email, (bookingCounts.get(email) ?? 0) + 1);
   }
 
-  const childrenRows = await db
-    .select({ parentId: childrenTable.parentId })
-    .from(childrenTable);
   const childCounts = new Map<number, number>();
-  for (const child of childrenRows) {
-    childCounts.set(child.parentId, (childCounts.get(child.parentId) ?? 0) + 1);
+  if (canViewChildren) {
+    const childrenRows = await db
+      .select({ parentId: childrenTable.parentId })
+      .from(childrenTable);
+    for (const child of childrenRows) {
+      childCounts.set(child.parentId, (childCounts.get(child.parentId) ?? 0) + 1);
+    }
   }
 
   res.json(ListStudentsResponse.parse(
     rows.map((student) => ({
       ...student,
       totalBookings: bookingCounts.get(normalizeEmail(student.email)) ?? 0,
-      childCount: childCounts.get(student.id) ?? 0,
+      ...(canViewChildren ? { childCount: childCounts.get(student.id) ?? 0 } : {}),
     })),
   ));
 });
 
-router.post("/students", async (req, res): Promise<void> => {
+router.post("/students", requireAdminAuth, requireAdminPermission("users", "create"), async (req, res): Promise<void> => {
   const parsed = CreateStudentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -128,7 +159,7 @@ router.post("/students", async (req, res): Promise<void> => {
   res.status(201).json(GetStudentResponse.parse(row));
 });
 
-router.get("/students/:id", async (req, res): Promise<void> => {
+router.get("/students/:id", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
   const params = GetStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -140,32 +171,62 @@ router.get("/students/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const children = await db
-    .select()
-    .from(childrenTable)
-    .where(eq(childrenTable.parentId, row.id));
+  const targetModule = accountModule(row.accountType);
+  if (!adminCan(req, "users", "view") && !adminCan(req, targetModule, "view")) {
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: { anyOf: [`users.view`, `${targetModule}.view`] },
+    });
+    return;
+  }
+
+  const canViewChildren = adminCan(req, "children", "view");
+  const children = canViewChildren
+    ? await db.select().from(childrenTable).where(eq(childrenTable.parentId, row.id))
+    : [];
 
   res.json(GetStudentResponse.parse({
     ...row,
-    children: children.map(c => ({
-      id: c.id,
-      fullName: c.fullName,
-      birthday: c.birthday ?? null,
-      age: c.age ?? null,
-      gender: c.gender,
-      medicalNotes: c.medicalNotes ?? null,
-      emergencyName: c.emergencyName ?? null,
-      emergencyPhone: c.emergencyPhone ?? null,
-    })),
+    ...(canViewChildren ? {
+      children: children.map(c => ({
+        id: c.id,
+        fullName: c.fullName,
+        birthday: c.birthday ?? null,
+        age: c.age ?? null,
+        gender: c.gender,
+        medicalNotes: c.medicalNotes ?? null,
+        emergencyName: c.emergencyName ?? null,
+        emergencyPhone: c.emergencyPhone ?? null,
+      })),
+    } : {}),
   }));
 });
 
-router.patch("/students/:id", async (req, res): Promise<void> => {
+router.patch("/students/:id", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
   const params = UpdateStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const [existing] = await db
+    .select({ id: studentsTable.id, accountType: studentsTable.accountType })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, params.data.id))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  const targetModule = accountModule(existing.accountType);
+  if (!adminCan(req, "users", "edit") && !adminCan(req, targetModule, "edit")) {
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: { anyOf: [`users.edit`, `${targetModule}.edit`] },
+    });
+    return;
+  }
+
   const parsed = UpdateStudentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -182,12 +243,31 @@ router.patch("/students/:id", async (req, res): Promise<void> => {
   res.json(UpdateStudentResponse.parse(row));
 });
 
-router.delete("/students/:id", async (req, res): Promise<void> => {
+router.delete("/students/:id", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
   const params = DeleteStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const [existing] = await db
+    .select({ id: studentsTable.id, accountType: studentsTable.accountType })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, params.data.id))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  const targetModule = accountModule(existing.accountType);
+  if (!adminCan(req, "users", "delete") && !adminCan(req, targetModule, "delete")) {
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: { anyOf: [`users.delete`, `${targetModule}.delete`] },
+    });
+    return;
+  }
+
   const [row] = await db.delete(studentsTable).where(eq(studentsTable.id, params.data.id)).returning();
   if (!row) {
     res.status(404).json({ error: "Student not found" });
