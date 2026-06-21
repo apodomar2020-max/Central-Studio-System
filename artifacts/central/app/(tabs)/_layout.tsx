@@ -1,15 +1,47 @@
+/**
+ * Central Studio — Tab Navigator
+ *
+ * Design: 4 tabs — Home · Classes · Schedule · Profile
+ * (Fix Pack 1 — Visual Parity, 2026-06-22)
+ *
+ * Route safety notes
+ * ──────────────────
+ * • packages.tsx route file is NOT deleted — it remains accessible via
+ *   router.push("/(tabs)/packages") from the Home screen PackagesSection
+ *   and from profile.tsx menu item "/package-center" (a separate stack screen).
+ * • bookings.tsx route file is NOT deleted — it remains accessible via
+ *   router.push("/(tabs)/bookings") from profile menu and booking confirmation.
+ * • The "Schedule" tab name maps to the existing "bookings" route which
+ *   shows the student's schedule/booking list — semantically correct.
+ * • NativeTabLayout (Liquid Glass / iOS 26+) also updated to 4 triggers.
+ *
+ * Classes icon
+ * ─────────────
+ * Design calls for a custom dancer-figure SVG. No exact match exists in
+ * Ionicons or SF Symbols. Best safe alternatives chosen:
+ *   iOS:     SF Symbol  "figure.dance"      (exact semantic match, present in iOS 16+)
+ *   Android: Ionicons   "body-outline"      (closer semantic than "musical-notes-outline")
+ *   Web:     Ionicons   "body-outline"
+ */
+
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 
-import { useColors } from "@/hooks/useColors";
 import colors from "@/constants/colors";
 
+// ── Design tokens ────────────────────────────────────────────────────────────
+const ACTIVE_TINT   = "#00B6D7"; // --cs-cyan-500
+const INACTIVE_TINT = "#6B747F"; // --cs-ink-400
+const TAB_BG_WEB    = "rgba(10,11,13,0.92)"; // glassmorphism bg for web
+const TAB_HEIGHT    = 60; // unified height (design: 60px)
+
+// ── Native Liquid Glass layout (iOS 26+ only) ────────────────────────────────
 function NativeTabLayout() {
   return (
     <NativeTabs>
@@ -18,16 +50,13 @@ function NativeTabLayout() {
         <Label>Home</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="classes">
+        {/* "figure.dance" is the semantically correct SF Symbol for dance classes */}
         <Icon sf={{ default: "figure.dance", selected: "figure.dance" }} />
         <Label>Classes</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="bookings">
         <Icon sf={{ default: "calendar", selected: "calendar.badge.checkmark" }} />
-        <Label>Booking</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="packages">
-        <Icon sf={{ default: "creditcard", selected: "creditcard.fill" }} />
-        <Label>Packages</Label>
+        <Label>Schedule</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
@@ -37,38 +66,55 @@ function NativeTabLayout() {
   );
 }
 
+// ── Classic layout (Android, Web, iOS < 26) ──────────────────────────────────
 function ClassicTabLayout() {
-  const c = useColors();
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.studio.primary,
-        tabBarInactiveTintColor: "#6B7280",
+        tabBarActiveTintColor: ACTIVE_TINT,
+        tabBarInactiveTintColor: INACTIVE_TINT,
         headerShown: false,
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : colors.studio.background,
-          borderTopWidth: 1,
-          borderTopColor: colors.studio.border,
+          // iOS uses BlurView — background must be transparent
+          backgroundColor: isIOS ? "transparent" : "transparent",
+          // Design: no top border — gradient transition only
+          borderTopWidth: 0,
           elevation: 0,
-          height: isWeb ? 84 : 60,
+          height: TAB_HEIGHT,
         },
         tabBarBackground: () =>
           isIOS ? (
+            // iOS: native blur for glass effect
             <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
           ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: "#0F0F14" }]} />
-          ) : null,
+            // Web: semi-transparent dark glass
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: TAB_BG_WEB },
+              ]}
+            />
+          ) : (
+            // Android: solid ink-900
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: colors.studio.background },
+              ]}
+            />
+          ),
         tabBarLabelStyle: {
-          fontFamily: "Inter_500Medium",
+          fontFamily: "Archivo_600SemiBold",
           fontSize: 10,
           marginBottom: isWeb ? 10 : 2,
         },
       }}
     >
+      {/* ── Home ── */}
       <Tabs.Screen
         name="index"
         options={{
@@ -77,26 +123,33 @@ function ClassicTabLayout() {
             isIOS ? (
               <SymbolView name="house" tintColor={color} size={22} />
             ) : (
-              <Feather name="home" size={22} color={color} />
+              <Ionicons name="home-outline" size={22} color={color} />
             ),
         }}
       />
+
+      {/* ── Classes ── */}
       <Tabs.Screen
         name="classes"
         options={{
           title: "Classes",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="music.note.list" tintColor={color} size={22} />
+              // "figure.dance" — available iOS 16+, exact semantic match
+              <SymbolView name="figure.dance" tintColor={color} size={22} />
             ) : (
-              <Ionicons name="musical-notes-outline" size={22} color={color} />
+              // "body-outline" — best Ionicons semantic match for a dancer figure
+              // Note: "musical-notes-outline" (previous) had no relation to dance
+              <Ionicons name="body-outline" size={22} color={color} />
             ),
         }}
       />
+
+      {/* ── Schedule (bookings route kept, label changed to "Schedule") ── */}
       <Tabs.Screen
         name="bookings"
         options={{
-          title: "Booking",
+          title: "Schedule",
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="calendar" tintColor={color} size={22} />
@@ -105,18 +158,17 @@ function ClassicTabLayout() {
             ),
         }}
       />
+
+      {/* ── Packages — hidden from tab bar, route still accessible ── */}
       <Tabs.Screen
         name="packages"
         options={{
+          href: null, // removes from tab bar; router.push("/(tabs)/packages") still works
           title: "Packages",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="creditcard" tintColor={color} size={22} />
-            ) : (
-              <Ionicons name="card-outline" size={22} color={color} />
-            ),
         }}
       />
+
+      {/* ── Profile ── */}
       <Tabs.Screen
         name="profile"
         options={{

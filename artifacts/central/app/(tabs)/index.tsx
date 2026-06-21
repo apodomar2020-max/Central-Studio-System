@@ -54,20 +54,21 @@ import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/cl
 
 const { width: SW } = Dimensions.get("window");
 
-// ─── Design tokens (match home-lib.jsx CSS custom properties) ─────────────────
-const INK_900 = "#060C10"; // --cs-ink-900  (app background)
-const INK_800 = "#0E1619"; // --cs-ink-800  (card background)
-const INK_700 = "#162028"; // --cs-ink-700  (card-light)
-const INK_400 = "#4B5563"; // --cs-ink-400
-const INK_300 = "#9CA3AF"; // --cs-ink-300  (secondary text)
-const INK_200 = "#D1D5DB"; // --cs-ink-200
-const CYAN    = "#00B6D7"; // --cs-cyan-400 / primary
+// ─── Design tokens (aligned to _ds/tokens/colors.css — Fix Pack 1) ──────────
+// See constants/colors.ts for the canonical source.
+const INK_900 = "#0A0B0D"; // --cs-ink-900  (app background)
+const INK_800 = "#15171B"; // --cs-ink-800  (card background)
+const INK_700 = "#22262C"; // --cs-ink-700  (card-light / elevated surface)
+const INK_400 = "#6B747F"; // --cs-ink-400  (secondary icon / muted border)
+const INK_300 = "#8E97A2"; // --cs-ink-300  (secondary text)
+const INK_200 = "#B6BDC6"; // --cs-ink-200  (on-dark secondary)
+const CYAN    = "#00B6D7"; // --cs-cyan-500 / primary
 const MAGENTA = "#FF2E7E"; // --cs-magenta-500
-const LIME    = "#A3E635"; // --cs-lime-500  (Kids chips)
+const LIME    = "#B6E80A"; // --cs-lime-500  (Kids chips)
 const VIOLET  = "#7C3AED"; // --cs-violet-500 (Adults chips)
 const AMBER   = "#FFB02E"; // --cs-amber-500
-const SUCCESS = "#22C55E";
-const ERROR   = "#EF4444";
+const SUCCESS = "#1FB871"; // --cs-success-500
+const ERROR   = "#FF3B47"; // --cs-danger-500
 const BORDER  = "rgba(255,255,255,0.08)";
 const R_SM    = 8;   // --radius-sm
 const R_MD    = 12;  // --radius-md
@@ -76,8 +77,8 @@ const R_PILL  = 999; // --radius-pill
 
 // ─── Hero carousel constants ───────────────────────────────────────────────────
 const HERO_H    = 196;
-const HERO_W    = SW - 48; // 24px visible from next card on right (iOS)
-const HERO_GAP  = 12;
+const HERO_W    = SW - 40; // 20px gutter each side — matches design calc(100% - 40px)
+const HERO_GAP  = 14;      // matches design gap: 14
 const HERO_SNAP = HERO_W + HERO_GAP;
 
 // AsyncStorage key shared with notifications.tsx for read API notification IDs
