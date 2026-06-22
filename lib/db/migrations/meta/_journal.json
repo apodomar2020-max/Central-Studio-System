@@ -201,5 +201,13 @@
       "tag": "0024_class_video_url",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782820800000,
+      "tag": "0025_dance_styles_cms",
+      "breakpoints": true
+    }
   ]
 }

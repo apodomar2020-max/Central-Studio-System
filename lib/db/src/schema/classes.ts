@@ -7,7 +7,10 @@ export const classesTable = pgTable("classes", {
   title: text("title").notNull(),
   description: text("description"),
   instructorId: integer("instructor_id"),
+  // Legacy free-text category — retained only during the dance-style migration.
   category: text("category").notNull(),
+  /** FK → dance_types.id. Target of the CMS migration (ID-based relationship). */
+  danceTypeId: integer("dance_type_id"),
   level: text("level").notNull().default("All Levels"),
   ageGroup: text("age_group").notNull().default("Adults"),
   durationMins: integer("duration_mins").notNull().default(60),

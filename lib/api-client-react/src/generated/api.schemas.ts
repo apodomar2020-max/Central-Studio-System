@@ -781,6 +781,22 @@ export interface DanceType {
   id: number;
   name: string;
   slug: string;
+  /** @nullable */
+  description?: string | null;
+  /** Optional external icon URL (SVG or PNG) — fallback when no uploaded SVG. @nullable */
+  iconUrl?: string | null;
+  /** Sanitized uploaded SVG markup (render inline with <SvgXml>). @nullable */
+  iconSvg?: string | null;
+  /** @nullable */
+  iconMime?: string | null;
+  /** @nullable */
+  coverImageUrl?: string | null;
+  /** Brand color (hex), e.g. "#00B6D7". @nullable */
+  color?: string | null;
+  /** True when a sanitized SVG is stored. */
+  hasIconSvg?: boolean;
+  /** Served-SVG URL (admin/web). Mobile prefers inline `iconSvg`. @nullable */
+  iconSvgUrl?: string | null;
   isActive: boolean;
   sortOrder: number;
   createdAt: string;
@@ -790,6 +806,14 @@ export interface DanceType {
 export interface CreateDanceTypeBody {
   name: string;
   slug: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  iconUrl?: string | null;
+  /** @nullable */
+  coverImageUrl?: string | null;
+  /** @nullable */
+  color?: string | null;
   isActive?: boolean;
   sortOrder?: number;
 }
@@ -797,8 +821,22 @@ export interface CreateDanceTypeBody {
 export interface UpdateDanceTypeBody {
   name?: string;
   slug?: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  iconUrl?: string | null;
+  /** @nullable */
+  coverImageUrl?: string | null;
+  /** @nullable */
+  color?: string | null;
   isActive?: boolean;
   sortOrder?: number;
+}
+
+/** Body for POST /api/admin/settings/dance-types/:id/icon */
+export interface UploadDanceTypeIconBody {
+  /** Raw SVG file contents (sanitized server-side). */
+  svg: string;
 }
 
 // ─── Credit Ledger (migration 0013) ──────────────────────────────────────────

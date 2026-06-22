@@ -22,6 +22,7 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +58,14 @@ interface DanceType {
   id: number;
   name: string;
   slug: string;
+  description?: string | null;
+  iconUrl?: string | null;
+  iconSvg?: string | null;
+  iconMime?: string | null;
+  coverImageUrl?: string | null;
+  color?: string | null;
+  hasIconSvg?: boolean;
+  iconSvgUrl?: string | null;
   isActive: boolean;
   sortOrder: number;
   createdAt: string;
@@ -74,6 +83,14 @@ interface ClassPricingSettings {
 
 const danceTypeSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  description: z.string().max(2000).optional().or(z.literal("")),
+  color: z
+    .string()
+    .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Use a hex color, e.g. #00B6D7")
+    .optional()
+    .or(z.literal("")),
+  iconUrl: z.string().max(2000).optional().or(z.literal("")),
+  coverImageUrl: z.string().max(2000).optional().or(z.literal("")),
   sortOrder: z.coerce.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
 });
@@ -93,6 +110,10 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<DanceType | null>(null);
+  // Pending uploaded SVG (file text) + flag to clear an existing stored SVG.
+  const [iconSvgText, setIconSvgText] = useState<string | null>(null);
+  const [iconCleared, setIconCleared] = useState(false);
+  const [iconFileName, setIconFileName] = useState("");
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const { data: danceTypes, isLoading } = useQuery<DanceType[]>({
@@ -175,7 +196,7 @@ export default function SettingsPage() {
   // ── Form ──────────────────────────────────────────────────────────────────
   const form = useForm<DanceTypeForm>({
     resolver: zodResolver(danceTypeSchema),
-    defaultValues: { name: "", sortOrder: 0, isActive: true },
+    defaultValues: { name: "", description: "", color: "", iconUrl: "", coverImageUrl: "", sortOrder: 0, isActive: true },
   });
 
   const classPricingForm = useForm<ClassPricingForm>({
@@ -183,24 +204,76 @@ export default function SettingsPage() {
     values: { singleClassPriceEgp: classPricing?.singleClassPriceEgp ?? 300 },
   });
 
+  const resetIconState = () => { setIconSvgText(null); setIconCleared(false); setIconFileName(""); };
+
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", sortOrder: (danceTypes?.length ?? 0) + 1, isActive: true });
+    resetIconState();
+    form.reset({ name: "", description: "", color: "", iconUrl: "", coverImageUrl: "", sortOrder: (danceTypes?.length ?? 0) + 1, isActive: true });
     setOpen(true);
   };
 
   const openEdit = (dt: DanceType) => {
     setEditing(dt);
-    form.reset({ name: dt.name, sortOrder: dt.sortOrder, isActive: dt.isActive });
+    resetIconState();
+    form.reset({
+      name: dt.name,
+      description: dt.description ?? "",
+      color: dt.color ?? "",
+      iconUrl: dt.iconUrl ?? "",
+      coverImageUrl: dt.coverImageUrl ?? "",
+      sortOrder: dt.sortOrder,
+      isActive: dt.isActive,
+    });
     setOpen(true);
   };
 
-  const onSubmit = (values: DanceTypeForm) => {
-    if (editing) {
-      updateMutation.mutate({ id: editing.id, data: values });
-    } else {
-      createMutation.mutate(values);
+  /** Persist a pending SVG upload / clear for the saved record id. */
+  const saveIconFor = async (id: number) => {
+    if (iconSvgText) {
+      await adminFetch<DanceType>(
+        `${API}/api/admin/settings/dance-types/${id}/icon`,
+        { method: "POST", body: JSON.stringify({ svg: iconSvgText }) },
+        token,
+      );
+    } else if (iconCleared && editing?.hasIconSvg) {
+      await adminFetch<DanceType>(
+        `${API}/api/admin/settings/dance-types/${id}/icon`,
+        { method: "DELETE" },
+        token,
+      );
     }
+  };
+
+  const onSubmit = async (values: DanceTypeForm) => {
+    // Normalize empty strings to undefined so we don't overwrite with "".
+    const payload = {
+      ...values,
+      description: values.description || undefined,
+      color: values.color || undefined,
+      iconUrl: values.iconUrl || undefined,
+      coverImageUrl: values.coverImageUrl || undefined,
+    };
+    const saved = editing
+      ? await updateMutation.mutateAsync({ id: editing.id, data: payload }).catch(() => null)
+      : await createMutation.mutateAsync(payload).catch(() => null);
+    if (!saved) return; // mutation's onError already surfaced the failure
+    try {
+      await saveIconFor(saved.id);
+      resetIconState();
+      invalidate();
+    } catch (e: unknown) {
+      const err = e as { data?: { error?: string } };
+      toast({ title: "Icon not saved", description: err?.data?.error ?? "SVG was rejected", variant: "destructive" });
+    }
+  };
+
+  const onIconFile = async (file?: File) => {
+    if (!file) return;
+    const text = await file.text();
+    setIconSvgText(text);
+    setIconCleared(false);
+    setIconFileName(file.name);
   };
 
   const handleToggleActive = (dt: DanceType) => {
@@ -370,7 +443,7 @@ export default function SettingsPage() {
 
       {/* ── Create / Edit dialog ─────────────────────────────────────────── */}
       <Dialog open={canEdit && open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Dance Type" : "Add Dance Type"}</DialogTitle>
           </DialogHeader>
@@ -388,6 +461,102 @@ export default function SettingsPage() {
                         placeholder="e.g. Hip Hop"
                         {...field}
                       />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea rows={2} placeholder="Short description (optional)" {...field} value={field.value ?? ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="color"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Brand Color</FormLabel>
+                    <FormControl>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          aria-label="Brand color"
+                          value={field.value || "#00B6D7"}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          className="h-9 w-10 shrink-0 rounded border bg-transparent p-0"
+                        />
+                        <Input placeholder="#00B6D7" {...field} value={field.value ?? ""} />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {/* Icon SVG upload + preview */}
+              <FormItem>
+                <FormLabel>Icon (SVG)</FormLabel>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/30">
+                    {iconSvgText ? (
+                      <img src={`data:image/svg+xml;utf8,${encodeURIComponent(iconSvgText)}`} alt="" className="h-8 w-8" />
+                    ) : !iconCleared && editing?.iconSvg ? (
+                      <img src={`data:image/svg+xml;utf8,${encodeURIComponent(editing.iconSvg)}`} alt="" className="h-8 w-8" />
+                    ) : form.watch("iconUrl") ? (
+                      <img src={form.watch("iconUrl") || ""} alt="" className="h-8 w-8 object-contain" />
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">none</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Input
+                      type="file"
+                      accept=".svg,image/svg+xml"
+                      onChange={(e) => onIconFile(e.target.files?.[0])}
+                      className="text-xs"
+                    />
+                    {(iconFileName || (editing?.hasIconSvg && !iconCleared)) && (
+                      <button
+                        type="button"
+                        onClick={() => { setIconSvgText(null); setIconFileName(""); setIconCleared(true); }}
+                        className="self-start text-xs text-destructive"
+                      >
+                        Remove icon
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">Sanitized &amp; stored on save. Falls back to Icon URL, then the first letter.</p>
+              </FormItem>
+              <FormField
+                control={form.control}
+                name="iconUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Icon URL (fallback)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://… .svg or .png" {...field} value={field.value ?? ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="coverImageUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Cover Image URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://… (optional)" {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

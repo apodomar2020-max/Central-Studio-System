@@ -4856,6 +4856,7 @@ import type {
   DanceType,
   CreateDanceTypeBody,
   UpdateDanceTypeBody,
+  UploadDanceTypeIconBody,
 } from "./api.schemas";
 
 // ── GET /api/dance-types (public — active only, for mobile & admin reads) ─────
@@ -4931,6 +4932,70 @@ export function useListAdminDanceTypes<
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+// ── POST /api/admin/settings/dance-types/:id/icon  (admin — upload sanitized SVG) ─
+export const getUploadDanceTypeIconUrl = (id: number) => `/api/admin/settings/dance-types/${id}/icon`;
+
+export const uploadDanceTypeIcon = async (
+  id: number,
+  uploadDanceTypeIconBody: UploadDanceTypeIconBody,
+  options?: RequestInit,
+): Promise<DanceType> =>
+  customFetch<DanceType>(getUploadDanceTypeIconUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(uploadDanceTypeIconBody),
+  });
+
+export const useUploadDanceTypeIcon = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadDanceTypeIcon>>,
+    TError,
+    { id: number; data: UploadDanceTypeIconBody },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadDanceTypeIcon>>,
+    { id: number; data: UploadDanceTypeIconBody }
+  > = (props) => uploadDanceTypeIcon(props.id, props.data, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ── DELETE /api/admin/settings/dance-types/:id/icon  (admin — clear stored SVG) ──
+export const getClearDanceTypeIconUrl = (id: number) => `/api/admin/settings/dance-types/${id}/icon`;
+
+export const clearDanceTypeIcon = async (id: number, options?: RequestInit): Promise<DanceType> =>
+  customFetch<DanceType>(getClearDanceTypeIconUrl(id), { ...options, method: "DELETE" });
+
+export const useClearDanceTypeIcon = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearDanceTypeIcon>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clearDanceTypeIcon>>,
+    { id: number }
+  > = (props) => clearDanceTypeIcon(props.id, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ── GET /api/dance-types/:id/icon.svg  (public — serve stored SVG) ──
+export const getDanceTypeIconSvgUrl = (id: number) => `/api/dance-types/${id}/icon.svg`;
 
 // ─── Credit Ledger (migration 0013) ──────────────────────────────────────────
 

@@ -26,7 +26,8 @@ import {
 import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-svg";
 
 import XI from "@/components/XiIcon";
-import { useListClasses, useListInstructors, useListSchedules } from "@workspace/api-client-react";
+import CategoryIcon from "@/components/CategoryIcon";
+import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes } from "@workspace/api-client-react";
 import {
   fetchMyApplications,
   ACTIVE_APPLICATION_STATUSES,
@@ -96,6 +97,29 @@ const CAT_ICON: Record<string, any> = {
   c9: "radio-outline",
 };
 const catIcon = (id: string): any => CAT_ICON[id] ?? "star-outline";
+
+/* ── Backend-driven category view-model (with legacy fallback during migration) ── */
+type CategoryVM = {
+  id: string;
+  name: string;
+  rgb: string;                // "r,g,b" — feeds the existing rgba(...) styling unchanged
+  iconSvg: string | null;
+  iconUrl: string | null;
+  legacyIcon: string | null;  // Ionicons name — set ONLY on the legacy fallback path
+  matchesClass: (c: DanceClass) => boolean;
+};
+
+const normCat = (s: string) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const isBalletName = (name: string, slug: string) => normCat(name) === "ballet" || normCat(slug) === "ballet";
+
+function hexToRgb(hex?: string | null): string | null {
+  if (!hex) return null;
+  let h = hex.replace("#", "").trim();
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (h.length !== 6) return null;
+  const n = parseInt(h, 16);
+  return Number.isNaN(n) ? null : `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
 
 /* ─── Ballet constants ───────────────────────────────────────────── */
 const BALLET_COLOR = "#00B6D6";
@@ -600,7 +624,7 @@ function CategorySection({
   cat, classes, expanded, onToggle,
   instructorById, packageCreditsRemaining, onSelect, onBook,
 }: {
-  cat: { id: string; name: string };
+  cat: CategoryVM;
   classes: DanceClass[];
   expanded: boolean;
   onToggle: () => void;
@@ -609,7 +633,7 @@ function CategorySection({
   onSelect: (c: DanceClass) => void;
   onBook: (c: DanceClass, method: "package" | "cash") => void;
 }) {
-  const rgb = catRgb(cat.id);
+  const rgb = cat.rgb;
   const rotAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
 
   useEffect(() => {
@@ -637,7 +661,14 @@ function CategorySection({
         activeOpacity={0.85}
       >
         <View style={[s.catIcon, { backgroundColor: `rgba(${rgb},0.13)` }]}>
-          <Ionicons name={catIcon(cat.id)} size={22} color={`rgba(${rgb},1)`} />
+          <CategoryIcon
+            iconSvg={cat.iconSvg}
+            iconUrl={cat.iconUrl}
+            legacyIcon={cat.legacyIcon}
+            name={cat.name}
+            color={`rgba(${rgb},1)`}
+            size={22}
+          />
         </View>
         <View style={s.catHeaderText}>
           <Text style={s.catName}>{cat.name}</Text>
@@ -958,18 +989,52 @@ export default function ClassesScreen() {
     });
   }, [nonBalletClasses, ageFilter, levelFilter, search, instructorById]);
 
-  const nonBalletCats = useMemo(() => DANCE_CATEGORIES.filter((c) => !c.isBallet), []);
+  // ── Categories now come from backend Dance Types (with legacy fallback) ──────
+  const { data: danceTypesRaw } = useListDanceTypes();
+  const nonBalletCats: CategoryVM[] = useMemo(() => {
+    const active = (danceTypesRaw ?? []).filter(
+      (dt) => dt.isActive !== false && !isBalletName(dt.name, dt.slug),
+    );
+    if (active.length > 0) {
+      return [...active]
+        .sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name))
+        .map((dt): CategoryVM => ({
+          id: `dt-${dt.id}`,
+          name: dt.name,
+          rgb: hexToRgb(dt.color) ?? "45,205,236",
+          iconSvg: dt.iconSvg ?? null,
+          iconUrl: dt.iconUrl ?? null,
+          legacyIcon: null,
+          matchesClass: (c) => {
+            const dtId = (c as { danceTypeId?: number | null }).danceTypeId;
+            if (dtId != null) return dtId === dt.id; // prefer ID when present
+            const n = normCat(c.categoryName);        // legacy string/slug/name fallback
+            return n === normCat(dt.name) || n === normCat(dt.slug);
+          },
+        }));
+    }
+    // Legacy fallback — behaviour & icons unchanged until backend has Dance Types.
+    return DANCE_CATEGORIES.filter((c) => !c.isBallet).map((cat): CategoryVM => ({
+      id: cat.id,
+      name: cat.name,
+      rgb: catRgb(cat.id),
+      iconSvg: null,
+      iconUrl: null,
+      legacyIcon: catIcon(cat.id),
+      matchesClass: (c) => c.categoryId === cat.id,
+    }));
+  }, [danceTypesRaw]);
 
   /* Auto-expand first category on initial load */
   useEffect(() => {
     if (!isLoading && expandedCats.size === 0 && filtered.length > 0) {
-      const first = nonBalletCats.find((cat) => filtered.some((c) => c.categoryId === cat.id));
+      const first = nonBalletCats.find((cat) => filtered.some((c) => cat.matchesClass(c)));
       if (first) setExpandedCats(new Set([first.id]));
     }
   }, [isLoading, filtered.length]);
 
   const showFeatures = !search && ageFilter === "all" && levelFilter === "all";
-  const visibleCats  = nonBalletCats.filter((cat) => filtered.some((c) => c.categoryId === cat.id));
+  const visibleCats  = nonBalletCats.filter((cat) => filtered.some((c) => cat.matchesClass(c)));
 
   function handleBook(c: DanceClass, method: "package" | "cash") {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1060,7 +1125,7 @@ export default function ClassesScreen() {
                   <CategorySection
                     key={cat.id}
                     cat={cat}
-                    classes={filtered.filter((c) => c.categoryId === cat.id)}
+                    classes={filtered.filter((c) => cat.matchesClass(c))}
                     expanded={expandedCats.has(cat.id)}
                     onToggle={() => {
                       setExpandedCats((prev) => {
