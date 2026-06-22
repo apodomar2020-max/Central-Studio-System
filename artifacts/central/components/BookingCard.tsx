@@ -1,241 +1,435 @@
-import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
 import React from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View, ScrollView } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { Booking } from "@/contexts/AppContext";
-import { useColors } from "@/hooks/useColors";
-import colors from "@/constants/colors";
+import SBI from "@/components/SbIcon";
 
 interface BookingCardProps {
   item: Booking;
+  onPress?: () => void;
+  pkgInfo?: { name: string; credits: number; total: number };
 }
 
-function bookingStatusConfig(status: Booking["bookingStatus"]) {
+const TYPE_CFG: Record<string, { label: string; color: string; rgb: string }> = {
+  class: { label: "Class", color: "#00B6D7", rgb: "45,205,236" },
+  assessment: { label: "Assessment", color: "#00B6D7", rgb: "167,139,250" },
+  private: { label: "Private", color: "#FFB81C", rgb: "255,184,28" },
+  workshop: { label: "Workshop", color: "#FFB02E", rgb: "255,176,46" },
+  package: { label: "Package", color: "#00B6D7", rgb: "45,205,236" },
+  masterclass: { label: "Masterclass", color: "#FF2E7E", rgb: "255,46,126" },
+};
+
+export function bookingStatusConfig(status: Booking["bookingStatus"]) {
   switch (status) {
-    case "pending": return { label: "Pending", color: colors.warning };
-    case "confirmed": return { label: "Confirmed", color: colors.success };
-    case "rejected": return { label: "Rejected", color: colors.error };
-    case "cancelled": return { label: "Cancelled", color: colors.error };
-    case "attended": return { label: "Attended", color: colors.info };
-    case "completed": return { label: "Completed", color: colors.info };
-    case "noShow": return { label: "No-show", color: "#6B7280" };
+    case "pending":   return { label: "Pending",   c: "#FFB02E", bg: "rgba(255,176,46,0.16)" };
+    case "confirmed": return { label: "Confirmed", c: "#1FB871", bg: "rgba(31,184,113,0.16)" };
+    case "rejected":  return { label: "Rejected",  c: "#FF3B47", bg: "rgba(192,57,43,0.14)" };
+    case "cancelled": return { label: "Cancelled", c: "#FF3B47", bg: "rgba(255,59,71,0.12)" };
+    case "attended":  return { label: "Attended",  c: "#00B6D7", bg: "rgba(0,182,215,0.14)" };
+    case "completed": return { label: "Completed", c: "#00B6D7", bg: "rgba(0,182,215,0.14)" };
+    case "noShow":    return { label: "No Show",   c: "#6B747F", bg: "rgba(255,255,255,0.06)" };
+    default:          return { label: status,      c: "#6B747F", bg: "rgba(255,255,255,0.06)" };
   }
 }
 
-function paymentStatusConfig(status: Booking["paymentStatus"]) {
+export function paymentStatusConfig(status: Booking["paymentStatus"]) {
   switch (status) {
-    case "not_required": return { label: "Package", color: colors.info };
-    case "pending_payment": return { label: "Payment Pending", color: colors.warning };
-    case "paid": return { label: "Paid", color: colors.success };
-    case "refunded": return { label: "Refunded", color: colors.info };
-    case "failed": return { label: "Failed", color: colors.error };
+    case "not_required":    return { label: "Package Credit", c: "#00B6D7", ic: "P" };
+    case "pending_payment": return { label: "Pending Payment", c: "#FFB02E", ic: "!" };
+    case "paid":            return { label: "Paid",           c: "#1FB871", ic: "✓" };
+    case "refunded":        return { label: "Refunded",       c: "#00B6D7", ic: "↩" };
+    case "failed":          return { label: "Failed",         c: "#FF3B47", ic: "X" };
+    default:                return { label: status,           c: "#8E97A2", ic: "$" };
   }
 }
 
-export default function BookingCard({ item }: BookingCardProps) {
-  const c = useColors();
+function PackageMeter({ pkg }: { pkg: { name: string; credits: number; total: number } }) {
+  const pct = Math.round((pkg.credits / pkg.total) * 100);
+  return (
+    <View style={styles.pkgMeterCont}>
+      <View style={styles.pkgRow}>
+        <Text style={styles.pkgName}>{pkg.name}</Text>
+        <Text style={styles.pkgCredits}>{pkg.credits} credits left</Text>
+      </View>
+      <View style={styles.pkgBarBg}>
+        <LinearGradient
+          colors={["#00B6D7", "#00B6D7"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.pkgBarFill, { width: `${pct}%` }]}
+        />
+      </View>
+    </View>
+  );
+}
+
+function ActionBtn({ label, icon, primary, danger, disabled, onPress }: any) {
+  const bg = disabled ? "rgba(255,255,255,0.04)" : primary ? "#00B6D7" : danger ? "rgba(255,59,71,0.12)" : "rgba(255,255,255,0.07)";
+  const color = disabled ? "#6B747F" : primary ? "#0A0B0D" : danger ? "#FF3B47" : "#B6BDC6";
+
+  return (
+    <TouchableOpacity
+      activeOpacity={disabled ? 1 : 0.8}
+      onPress={disabled ? undefined : onPress}
+      style={[styles.actionBtn, { backgroundColor: bg }]}
+    >
+      {icon && <SBI name={icon} size={14} stroke={2.4} color={color} />}
+      <Text style={[styles.actionBtnText, { color }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+export default function BookingCard({ item, onPress, pkgInfo }: BookingCardProps) {
+  const isPast = item.bookingStatus === "attended" || item.bookingStatus === "completed" || item.bookingStatus === "noShow";
+  const isCanceled = item.bookingStatus === "cancelled" || item.bookingStatus === "rejected";
+  const opacity = isPast || isCanceled ? 0.6 : 1;
+
+  const tc = TYPE_CFG[item.bookingType] || TYPE_CFG.class;
   const bs = bookingStatusConfig(item.bookingStatus);
   const ps = paymentStatusConfig(item.paymentStatus);
+
   const instructorInitials = item.instructorName
     .split(/\s+/)
     .filter(Boolean)
-    .map((part) => part[0])
+    .map((part: string) => part[0])
     .join("")
     .slice(0, 2)
     .toUpperCase() || "?";
-  const priceLabel = item.bookingType === "package"
-    ? "Package Credit"
-    : item.paymentMethod === "cash"
-      ? `Studio Pay • EGP ${item.price}`
-      : `EGP ${item.price}`;
-  const scheduleLabel = item.scheduleLabel ?? (
-    item.date || item.time ? `${item.date}${item.time ? ` • ${item.time}` : ""}` : "Schedule not set"
-  );
+
+  const childInitials = item.participantName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part: string) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
+
+  const timeLabel = item.time ? `${item.time} (${item.duration})` : item.duration;
+
+  // Phase logic
+  const phase = isCanceled ? "cancelled" : isPast ? "past" : "upcoming";
 
   return (
-    <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
-      <View style={styles.header}>
-        <View style={styles.titleBlock}>
-          <Text style={[styles.className, { color: c.foreground }]} numberOfLines={1}>
-            {item.className}
-          </Text>
-          <Text style={[styles.danceType, { color: colors.studio.primary }]}>
-            {item.danceType}
-          </Text>
-        </View>
-        <Text style={[styles.bookingNum, { color: c.mutedForeground }]}>
-          #{item.bookingNumber}
-        </Text>
-      </View>
+    <View style={[styles.card, { opacity }]}>
+      <View style={[styles.accent, { backgroundColor: tc.color }]} />
 
-      <View style={styles.metaGrid}>
-        <View style={styles.metaItem}>
-          <Ionicons name="calendar-outline" size={13} color={c.mutedForeground} />
-          <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>
-            {scheduleLabel}
-          </Text>
-        </View>
-        <View style={styles.metaItem}>
-          <View style={[styles.instructorAvatar, { backgroundColor: colors.studio.primary + "25" }]}>
-            {item.instructorImage ? (
-              <Image source={{ uri: item.instructorImage }} style={styles.instructorAvatarImage} />
-            ) : (
-              <Text style={[styles.instructorInitials, { color: colors.studio.primary }]}>{instructorInitials}</Text>
-            )}
+      <View style={styles.body}>
+        {/* Header row */}
+        <View style={styles.headerRow}>
+          <View style={[styles.typeBadge, { backgroundColor: `rgba(${tc.rgb},0.16)` }]}>
+            <Text style={[styles.typeText, { color: tc.color }]}>{tc.label}</Text>
           </View>
-          <Text style={[styles.metaText, { color: c.mutedForeground }]}>{item.instructorName}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: bs.bg }]}>
+            <View style={[styles.statusDot, { backgroundColor: bs.c }]} />
+            <Text style={[styles.statusText, { color: bs.c }]}>{bs.label}</Text>
+          </View>
         </View>
-        <View style={styles.metaItem}>
-          <Ionicons name="timer-outline" size={13} color={c.mutedForeground} />
-          <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.duration}</Text>
+
+        {/* Title */}
+        <Text style={styles.className} numberOfLines={2}>{item.className}</Text>
+
+        {/* Meta Grid */}
+        <View style={styles.metaWrap}>
+          <View style={styles.metaItem}>
+            <SBI name="cal" size={14} stroke={2} color="#00B6D7" />
+            <Text style={styles.metaText}>{item.date || "TBD"}</Text>
+          </View>
+          <View style={styles.metaItem}>
+            <SBI name="clock" size={13} stroke={2} color="#6B747F" />
+            <Text style={styles.metaText}>{timeLabel}</Text>
+          </View>
+          <View style={styles.metaItem}>
+            <SBI name="pin" size={13} stroke={2} color="#6B747F" />
+            <Text style={styles.metaText}>{item.location}</Text>
+          </View>
         </View>
-        <View style={styles.metaItemWide}>
-          <Ionicons name="location-outline" size={13} color={c.mutedForeground} />
-          <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.location}</Text>
+
+        {/* Slots row */}
+        <View style={styles.slotsRow}>
+          {item.participantType === "child" && (
+            <View style={styles.slot}>
+              <View style={styles.slotAvatar}>
+                <Text style={styles.slotInitials}>{childInitials}</Text>
+              </View>
+              <View>
+                <Text style={styles.slotLabel}>Student</Text>
+                <Text style={styles.slotName} numberOfLines={1}>{item.participantName}</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.slot}>
+            <View style={styles.slotAvatar}>
+              {item.instructorImage ? (
+                <Image source={{ uri: item.instructorImage }} style={styles.slotImage} />
+              ) : (
+                <Text style={styles.slotInitials}>{instructorInitials}</Text>
+              )}
+            </View>
+            <View>
+              <Text style={styles.slotLabel}>Instructor</Text>
+              <Text style={styles.slotName} numberOfLines={1}>{item.instructorName}</Text>
+            </View>
+          </View>
         </View>
-        {item.participantType === "child" && (
-          <View style={styles.metaItemWide}>
-            <Ionicons name="person-outline" size={13} color={c.mutedForeground} />
-            <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.participantName}</Text>
+
+        {/* Payment Pill */}
+        <View style={styles.payWrapper}>
+          <View style={styles.payStatus}>
+            <View style={styles.payIconWrap}>
+              <Text style={styles.payIconText}>{ps.ic}</Text>
+            </View>
+            <Text style={[styles.payStatusText, { color: ps.c }]}>{ps.label}</Text>
+          </View>
+        </View>
+
+        {/* Package Meter */}
+        {pkgInfo && <PackageMeter pkg={pkgInfo} />}
+
+        {/* Warning if any */}
+        {item.paymentStatus === "pending_payment" && (
+          <View style={styles.warningBox}>
+            <SBI name="alert" size={15} stroke={2.4} color="#FFB02E" />
+            <Text style={styles.warningText}>Seat not guaranteed until payment is completed.</Text>
           </View>
         )}
-      </View>
 
-      <View style={styles.footer}>
-        <View style={styles.badges}>
-          <View style={[styles.badge, { backgroundColor: bs.color + "22" }]}>
-            <Text style={[styles.badgeText, { color: bs.color }]}>{bs.label}</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: ps.color + "22" }]}>
-            <Text style={[styles.badgeText, { color: ps.color }]}>{ps.label}</Text>
-          </View>
-        </View>
-        <Text style={[styles.price, { color: c.foreground }]}>{priceLabel}</Text>
-      </View>
+        {/* Actions ScrollView */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsScroll}>
+          <ActionBtn label="View Details" icon="eye" onPress={onPress} />
 
-      {item.paymentStatus === "pending_payment" && (
-        <View style={[styles.warning, { backgroundColor: colors.warning + "15", borderColor: colors.warning + "40" }]}>
-          <Ionicons name="warning-outline" size={13} color={colors.warning} />
-          <Text style={[styles.warningText, { color: colors.warning }]}>
-            Seat not guaranteed until payment is completed at studio.
-          </Text>
-        </View>
-      )}
+          {phase === "upcoming" && item.bookingStatus !== "cancelled" && item.bookingStatus !== "rejected" && (
+            <ActionBtn label="Cancel (Soon)" icon="cancel" disabled />
+          )}
+
+          {item.paymentStatus === "pending_payment" && (
+            <ActionBtn label="Pay Now" primary onPress={() => {}} />
+          )}
+
+          {(item.paymentStatus === "paid" || item.paymentStatus === "not_required") && phase !== "upcoming" && (
+            <ActionBtn label="Receipt (Soon)" icon="download" disabled />
+          )}
+        </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 14,
+    backgroundColor: "#15171B",
+    borderRadius: 16,
     borderWidth: 1,
-    padding: 14,
+    borderColor: "rgba(255,255,255,0.08)",
     marginBottom: 12,
-    gap: 12,
+    position: "relative",
+    overflow: "hidden",
   },
-  header: {
+  accent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 4,
+  },
+  body: {
+    paddingTop: 14,
+    paddingRight: 14,
+    paddingBottom: 16,
+    paddingLeft: 18,
+  },
+  headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
+    marginBottom: 9,
   },
-  titleBlock: { flex: 1, gap: 2 },
-  className: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
   },
-  danceType: {
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
+  typeText: {
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
   },
-  bookingNum: {
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontFamily: "Archivo_700Bold",
     fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    marginLeft: 8,
   },
-  metaGrid: {
+  className: {
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 18,
+    color: "#FFFFFF",
+    marginBottom: 10,
+    lineHeight: 21,
+  },
+  metaWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 10,
+    marginBottom: 10,
   },
   metaItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    width: "47%",
+    gap: 5,
   },
-  metaItemWide: {
+  metaText: {
+    fontFamily: "Archivo_600SemiBold",
+    fontSize: 13,
+    color: "#8E97A2",
+  },
+  slotsRow: {
+    flexDirection: "row",
+    gap: 18,
+    marginBottom: 10,
+  },
+  slot: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    width: "100%",
+    gap: 7,
   },
-  instructorAvatar: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  slotAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
-  instructorAvatarImage: {
+  slotImage: {
     width: "100%",
     height: "100%",
   },
-  instructorInitials: {
-    fontSize: 7,
-    fontFamily: "Inter_700Bold",
+  slotInitials: {
+    fontFamily: "Archivo_700Bold",
+    fontSize: 11,
+    color: "#FFFFFF",
   },
-  metaText: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    flex: 1,
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  badges: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    maxWidth: "100%",
-  },
-  badgeText: {
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
+  slotLabel: {
+    fontFamily: "SpaceMono_700Bold",
+    fontSize: 11,
+    letterSpacing: 0.6,
     textTransform: "uppercase",
-    letterSpacing: 0.4,
-    flexShrink: 1,
+    color: "#6B747F",
   },
-  price: {
-    fontSize: 15,
-    fontFamily: "Inter_700Bold",
-    flexShrink: 0,
+  slotName: {
+    fontFamily: "Archivo_700Bold",
+    fontSize: 13.5,
+    color: "#FFFFFF",
   },
-  warning: {
+  payWrapper: {
+    marginBottom: 10,
+  },
+  payStatus: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
+  },
+  payIconWrap: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  payIconText: {
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 10,
+    color: "#FFFFFF",
+  },
+  payStatusText: {
+    fontFamily: "Archivo_700Bold",
+    fontSize: 11.5,
+  },
+  pkgMeterCont: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "rgba(0,182,215,0.07)",
+    borderWidth: 1,
+    borderColor: "rgba(0,182,215,0.22)",
+    marginBottom: 10,
+  },
+  pkgRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 7,
+  },
+  pkgName: {
+    fontFamily: "Archivo_700Bold",
+    fontSize: 12.5,
+    color: "#00B6D7",
+  },
+  pkgCredits: {
+    fontFamily: "Archivo_600SemiBold",
+    fontSize: 12,
+    color: "#8E97A2",
+  },
+  pkgBarBg: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    overflow: "hidden",
+  },
+  pkgBarFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
+  warningBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
     padding: 10,
     borderRadius: 8,
+    backgroundColor: "rgba(255,176,46,0.10)",
     borderWidth: 1,
+    borderColor: "rgba(255,176,46,0.28)",
+    marginBottom: 10,
   },
   warningText: {
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
+    fontSize: 12,
+    color: "#FFB02E",
     flex: 1,
-    lineHeight: 16,
+    lineHeight: 17,
+  },
+  actionsScroll: {
+    flexDirection: "row",
+    gap: 10,
+    paddingTop: 4,
+    paddingBottom: 2,
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 8,
+    minHeight: 40,
+  },
+  actionBtnText: {
+    fontFamily: "Archivo_700Bold",
+    fontSize: 12.5,
   },
 });

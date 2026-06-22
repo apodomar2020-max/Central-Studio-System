@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
@@ -11,42 +12,33 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ScrollView,
+  Animated,
+  Modal,
+  TextInput,
+  Image
 } from "react-native";
+
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import { useAppContext } from "@/contexts/AppContext";
 import { Booking } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import BookingCard from "@/components/BookingCard";
+import SBI from "@/components/SbIcon";
 import EmptyState from "@/components/EmptyState";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { ListSkeleton } from "@/components/SkeletonLoader";
 import {
-  fetchStudentBookings,
-  mapApiPaymentStatusToLocal,
-  mapApiStatusToLocal,
-} from "@/services/bookingsRepository";
-import { isOfflineError } from "@/services/connectivity";
-import {
   fetchMyApplications,
   ACTIVE_APPLICATION_STATUSES,
   type BalletApplication,
 } from "@/services/balletAssessmentService";
+import { isOfflineError } from "@/services/connectivity";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const TABS = ["Upcoming", "Past", "Cancelled"] as const;
-
-// ─── Ballet Assessment card ───────────────────────────────────────────────────
-
-const BALLET_COLOR = "#00B6D6";
-
-interface BalletStatusInfo {
-  label: string;
-  color: string;
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-}
-
+const BALLET_COLOR = "#A78BFA";
+type BalletStatusInfo = { label: string; color: string; icon: any };
 function getBalletStatusInfo(status: string): BalletStatusInfo {
   switch (status) {
     case "submitted":       return { label: "Under Review",         color: "#F59E0B", icon: "time-outline" };
@@ -61,308 +53,418 @@ function getBalletStatusInfo(status: string): BalletStatusInfo {
   }
 }
 
-function BalletAssessmentCard({ app }: { app: BalletApplication }) {
-  const info = getBalletStatusInfo(app.status);
-
-  const dateStr = app.slotLabel
-    ? app.slotLabel
-    : new Date(app.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-
-  return (
-    <TouchableOpacity
-      onPress={() => router.push("/ballet/application-status" as any)}
-      style={balletCardStyles.card}
-      activeOpacity={0.85}
-    >
-      {/* Left accent bar */}
-      <View style={[balletCardStyles.accent, { backgroundColor: BALLET_COLOR }]} />
-
-      <View style={balletCardStyles.body}>
-        {/* Header row */}
-        <View style={balletCardStyles.headerRow}>
-          <View style={[balletCardStyles.iconWrap, { backgroundColor: BALLET_COLOR + "1A" }]}>
-            <Ionicons name="musical-notes-outline" size={14} color={BALLET_COLOR} />
-          </View>
-          <Text style={balletCardStyles.className}>Ballet Assessment</Text>
-          <View style={[balletCardStyles.badge, { backgroundColor: info.color + "1A", borderColor: info.color + "40" }]}>
-            <Ionicons name={info.icon} size={10} color={info.color} />
-            <Text style={[balletCardStyles.badgeText, { color: info.color }]}>{info.label}</Text>
-          </View>
-        </View>
-
-        {/* Child row */}
-        <View style={balletCardStyles.row}>
-          <Ionicons name="person-outline" size={13} color="#6B7280" />
-          <Text style={balletCardStyles.meta}>{app.childName}</Text>
-        </View>
-
-        {/* Date / slot row */}
-        <View style={balletCardStyles.row}>
-          <Ionicons name="calendar-outline" size={13} color="#6B7280" />
-          <Text style={balletCardStyles.meta}>{dateStr}</Text>
-        </View>
-
-        {/* Footer */}
-        <View style={balletCardStyles.footer}>
-          <Text style={balletCardStyles.noCharge}>No class credits deducted</Text>
-          <Ionicons name="chevron-forward" size={14} color={BALLET_COLOR + "80"} />
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-const balletCardStyles = StyleSheet.create({
-  card: {
-    flexDirection: "row",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: BALLET_COLOR + "30",
-    backgroundColor: "#071418",
-    overflow: "hidden",
-    marginBottom: 10,
-  },
-  accent: { width: 4 },
-  body: { flex: 1, padding: 12, gap: 7 },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  iconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  className: { flex: 1, fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  badgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
-  row: { flexDirection: "row", alignItems: "center", gap: 6 },
-  meta: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 },
-  noCharge: { fontSize: 10, fontFamily: "Inter_400Regular", color: BALLET_COLOR + "80", fontStyle: "italic" },
-});
-
-// ─── Union list item type ─────────────────────────────────────────────────────
+const TABS = ["Upcoming", "Past", "Cancelled"] as const;
 
 type ListItem =
-  | { kind: "booking"; data: Booking; id: string }
-  | { kind: "ballet"; data: BalletApplication; id: string };
+  | { kind: "ballet"; data: BalletApplication; timestamp: number }
+  | { kind: "booking"; data: Booking; timestamp: number };
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+// ─── AssessmentCard (matching design) ──────────────────────────────────────────
+function AssessmentCard({ app, onPress }: { app: BalletApplication, onPress?: () => void }) {
+  const info = getBalletStatusInfo(app.status);
+  const dateStr = app.slotLabel || new Date(app.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-export default function BookingsScreen() {
-  const { bookings: localBookings, user, refreshUserPackages } = useAppContext();
-  const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Upcoming");
+  const childInitials = app.childName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part: string) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
 
-  // ── API sync state ─────────────────────────────────────────────────────────
-  // The backend is the source of truth for booking STATUS.
-  // localBookings carry the display data (class name, time, instructor, etc.)
-  // because the current /api/bookings endpoint doesn't return those fields yet.
-  // We MERGE: display metadata from local, status from API.
-  //
-  // See services/bookingsRepository.ts TODO-2 for the backend enrichment plan.
-  const [syncState, setSyncState] = useState<
-    "idle" | "loading" | "success" | "offline" | "error"
-  >("idle");
-  const [fromCache, setFromCache] = useState(false);
-  // Map of String(apiBooking.id) → canonical booking/payment status from API
-  const [apiStatuses, setApiStatuses] = useState<Map<string, { bookingStatus: string; paymentStatus?: string }>>(new Map());
+  return (
+    <View style={acStyles.card}>
+      {/* gradient header */}
+      <LinearGradient colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.12)"]} style={acStyles.header}>
+        <View style={acStyles.headerRow}>
+          <View style={acStyles.typeBadge}>
+            <Text style={acStyles.typeText}>Ballet Assessment</Text>
+          </View>
+          <View style={[acStyles.statusBadge, { backgroundColor: info.color + "1A" }]}>
+            <Ionicons name={info.icon} size={10} color={info.color} />
+            <Text style={[acStyles.statusText, { color: info.color }]}>{info.label}</Text>
+          </View>
+        </View>
+        <Text style={acStyles.className}>Ballet Level Assessment</Text>
 
-  // ── Ballet applications ────────────────────────────────────────────────────
-  const [balletApps, setBalletApps] = useState<BalletApplication[]>([]);
+        <View style={acStyles.metaRow}>
+          <View style={acStyles.slot}>
+            <View style={acStyles.slotAvatar}>
+              <Text style={acStyles.slotInitials}>{childInitials}</Text>
+            </View>
+            <View>
+              <Text style={acStyles.slotLabel}>Student</Text>
+              <Text style={acStyles.slotName} numberOfLines={1}>{app.childName}</Text>
+            </View>
+          </View>
 
-  const syncWithApi = useCallback(async () => {
-    if (!user?.email) return;
-    setSyncState("loading");
-    try {
-      const result = await fetchStudentBookings(user.email);
-      const statusMap = new Map(
-        result.bookings.map((b) => [
-          String(b.id),
-          {
-            bookingStatus: b.bookingStatus ?? b.status,
-            paymentStatus: b.paymentStatus,
-          },
-        ])
-      );
-      setApiStatuses(statusMap);
-      setFromCache(result.fromCache);
-      setSyncState("success");
-    } catch (err) {
-      setSyncState(isOfflineError(err) ? "offline" : "error");
-    }
-  }, [user?.email]);
+          <View style={acStyles.levelBlock}>
+            <Text style={acStyles.levelLabel}>Status</Text>
+            <Text style={acStyles.levelValue}>Pending review</Text>
+          </View>
+        </View>
+      </LinearGradient>
 
-  useEffect(() => {
-    syncWithApi();
-  }, [syncWithApi]);
+      {/* body */}
+      <View style={acStyles.body}>
+        <View style={acStyles.scheduleRow}>
+          <View style={acStyles.metaItem}>
+            <SBI name="cal" size={14} stroke={2} color="#00B6D7" />
+            <Text style={acStyles.metaText}>{dateStr}</Text>
+          </View>
+        </View>
 
-  // Fetch ballet applications in parallel (silently — doesn't gate the UI)
-  useEffect(() => {
-    if (!user?.email) return;
-    const ctrl = new AbortController();
-    fetchMyApplications(ctrl.signal)
-      .then((apps) => {
-        if (!ctrl.signal.aborted) setBalletApps(apps);
-      })
-      .catch(() => {
-        // Silently ignore — ballet items simply won't appear if fetch fails
-      });
-    return () => ctrl.abort();
-  }, [user?.email]);
+        <View style={acStyles.instructorRow}>
+          <View style={acStyles.slot}>
+            <View style={acStyles.slotAvatar}>
+              <Text style={acStyles.slotInitials}>TBD</Text>
+            </View>
+            <View>
+              <Text style={acStyles.slotLabel}>Assessor</Text>
+              <Text style={acStyles.slotName}>TBD</Text>
+            </View>
+          </View>
+          <View>
+            <Text style={acStyles.slotLabel}>Branch</Text>
+            <Text style={acStyles.slotName}>Main Branch</Text>
+          </View>
+        </View>
 
-  const onRefresh = useCallback(async () => {
-    const refreshBallet = fetchMyApplications()
-      .then(setBalletApps)
-      .catch(() => {});
-    await Promise.all([syncWithApi(), refreshUserPackages(), refreshBallet]);
-  }, [syncWithApi, refreshUserPackages]);
+        <View style={acStyles.payStatus}>
+          <View style={acStyles.payIconWrap}>
+            <Text style={acStyles.payIconText}>✓</Text>
+          </View>
+          <Text style={acStyles.payStatusText}>Free</Text>
+        </View>
 
-  // ── Merge: API status overlays local display data ─────────────────────────
-  // Local booking ID = String(apiBooking.id) (set in booking/flow.tsx).
-  // We apply any status updates the admin made via the dashboard.
-  const mergedBookings = useMemo<Booking[]>(() => {
-    if (apiStatuses.size === 0) return localBookings;
-    return localBookings.map((b) => {
-      const apiStatus = apiStatuses.get(b.id);
-      if (!apiStatus) return b;
-      return {
-        ...b,
-        bookingStatus: mapApiStatusToLocal(apiStatus.bookingStatus),
-        paymentStatus: mapApiPaymentStatusToLocal(apiStatus.paymentStatus),
-      };
-    });
-  }, [localBookings, apiStatuses]);
-
-  // ── Tab filter — returns union list ───────────────────────────────────────
-  function filterItems(tab: (typeof TABS)[number]): ListItem[] {
-    const bookingItems: ListItem[] = (() => {
-      switch (tab) {
-        case "Upcoming":
-          return mergedBookings
-            .filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pending")
-            .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
-        case "Past":
-          return mergedBookings
-            .filter((b) => b.bookingStatus === "attended" || b.bookingStatus === "noShow")
-            .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
-        case "Cancelled":
-          return mergedBookings
-            .filter((b) => b.bookingStatus === "cancelled" || b.bookingStatus === "rejected")
-            .map((b): ListItem => ({ kind: "booking", data: b, id: `b-${b.id}` }));
-      }
-    })();
-
-    const balletItems: ListItem[] = (() => {
-      switch (tab) {
-        case "Upcoming":
-          return balletApps
-            .filter((a) => ACTIVE_APPLICATION_STATUSES.has(a.status))
-            .map((a): ListItem => ({ kind: "ballet", data: a, id: `ballet-${a.id}` }));
-        case "Past":
-          return balletApps
-            .filter((a) => a.status === "rejected")
-            .map((a): ListItem => ({ kind: "ballet", data: a, id: `ballet-${a.id}` }));
-        case "Cancelled":
-          return balletApps
-            .filter((a) => a.status === "cancelled")
-            .map((a): ListItem => ({ kind: "ballet", data: a, id: `ballet-${a.id}` }));
-      }
-    })();
-
-    // Ballet items appear first so they're visually distinct at the top
-    return [...balletItems, ...bookingItems];
-  }
-
-  const filtered = filterItems(activeTab);
-  const upcomingCount =
-    mergedBookings.filter((b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pending").length +
-    balletApps.filter((a) => ACTIVE_APPLICATION_STATUSES.has(a.status)).length;
-  const isRefreshing = syncState === "loading";
-
-  // ── Header (shared across states) ─────────────────────────────────────────
-  const Header = (
-    <View
-      style={[
-        styles.header,
-        { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 },
-      ]}
-    >
-      <View style={styles.titleRow}>
-        <Text style={styles.title}>My Bookings</Text>
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/(tabs)/classes");
-          }}
-          style={[styles.newBookingBtn, { backgroundColor: colors.studio.primary }]}
-        >
-          <Ionicons name="add" size={16} color="#000" />
-          <Text style={styles.newBookingText}>New</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.tabRow}>
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            onPress={() => {
-              Haptics.selectionAsync();
-              setActiveTab(tab);
-            }}
-            style={[
-              styles.tab,
-              activeTab === tab && {
-                backgroundColor: colors.studio.primary,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === tab
-                  ? { color: "#000", fontFamily: "Inter_700Bold" }
-                  : { color: "#9CA3AF" },
-              ]}
-            >
-              {tab}
-            </Text>
-            {tab === "Upcoming" &&
-              upcomingCount > 0 &&
-              activeTab !== "Upcoming" && (
-                <View
-                  style={[
-                    styles.tabBadge,
-                    { backgroundColor: colors.studio.primary },
-                  ]}
-                >
-                  <Text style={styles.tabBadgeText}>{upcomingCount}</Text>
-                </View>
-              )}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={acStyles.actionsScroll}>
+          <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={acStyles.actionBtn}>
+            <SBI name="eye" size={14} stroke={2.4} color="#B6BDC6" />
+            <Text style={acStyles.actionBtnText}>View Details</Text>
           </TouchableOpacity>
-        ))}
+        </ScrollView>
       </View>
     </View>
   );
+}
 
-  // ── Not signed in ──────────────────────────────────────────────────────────
+const acStyles = StyleSheet.create({
+  card: { borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: "rgba(0,182,215,0.30)", marginBottom: 12 },
+  header: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: "rgba(0,182,215,0.18)" },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  typeBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 12, backgroundColor: "rgba(0,182,215,0.22)" },
+  typeText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10, letterSpacing: 0.7, textTransform: "uppercase", color: "#00B6D7" },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  statusText: { fontFamily: "Archivo_700Bold", fontSize: 11 },
+  className: { fontFamily: "Archivo_800ExtraBold", fontSize: 17, color: "#FFFFFF", marginBottom: 6 },
+  metaRow: { flexDirection: "row", gap: 16 },
+  slot: { flexDirection: "row", alignItems: "center", gap: 7 },
+  slotAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" },
+  slotInitials: { fontFamily: "Archivo_700Bold", fontSize: 10, color: "#FFFFFF" },
+  slotLabel: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "#6B747F" },
+  slotName: { fontFamily: "Archivo_700Bold", fontSize: 13.5, color: "#FFFFFF" },
+  levelBlock: { justifyContent: "center" },
+  levelLabel: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "#6B747F" },
+  levelValue: { fontFamily: "Archivo_700Bold", fontSize: 13.5, color: "#8E97A2" },
+  body: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#15171B" },
+  scheduleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  metaText: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#8E97A2" },
+  instructorRow: { flexDirection: "row", gap: 18, marginBottom: 12 },
+  payStatus: { flexDirection: "row", alignItems: "center", gap: 5 },
+  payIconWrap: { width: 18, height: 18, borderRadius: 9, backgroundColor: "rgba(255,255,255,0.07)", alignItems: "center", justifyContent: "center" },
+  payIconText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10, color: "#FFFFFF" },
+  payStatusText: { fontFamily: "Archivo_700Bold", fontSize: 11.5, color: "#1FB871" },
+  actionsScroll: { flexDirection: "row", gap: 8, marginTop: 12, paddingBottom: 2 },
+  actionBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 8, minHeight: 40, backgroundColor: "rgba(255,255,255,0.07)" },
+  actionBtnText: { fontFamily: "Archivo_700Bold", fontSize: 12.5, color: "#B6BDC6" }
+});
+
+// ─── BookingDetailOverlay ───────────────────────────────────────────────────
+function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClose: () => void; topPad: number }) {
+  const isBallet = item.kind === "ballet";
+  const b = item.data as any;
+
+  const tc = { label: isBallet ? "Assessment" : (b.danceType || "Class"), color: "#00B6D7", rgb: isBallet ? "167,139,250" : "45,205,236" };
+  const title = isBallet ? "Ballet Assessment" : b.className;
+  const ref = isBallet ? b.id : b.bookingNumber;
+  const statusLabel = isBallet ? getBalletStatusInfo(b.status).label : b.bookingStatus;
+  const statusColor = isBallet ? getBalletStatusInfo(b.status).color : "#1FB871";
+
+  const dayDate = isBallet ? (b.slotLabel || "Pending") : (b.date ? b.date : "TBD");
+  const time = isBallet ? "TBD" : (b.time ? `${b.time} (${b.duration})` : b.duration);
+  const branch = isBallet ? "Main Branch" : b.location;
+
+  const studentName = isBallet ? b.childName : b.participantName;
+  const instName = isBallet ? "Assigned Instructor" : b.instructorName;
+
+  const isPast = isBallet ? (b.status === "rejected" || b.status === "cancelled") : (b.bookingStatus === "attended" || b.bookingStatus === "completed" || b.bookingStatus === "noShow");
+  const isCancelled = isBallet ? (b.status === "cancelled") : (b.bookingStatus === "cancelled" || b.bookingStatus === "rejected");
+  const timeline = !isPast && !isCancelled
+    ? [
+        { label: "Booking Created", done: true, date: new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") },
+        { label: "Payment Confirmed", done: b.paymentStatus === "paid" || b.paymentStatus === "not_required", date: b.paymentStatus === "paid" ? new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") : "—" },
+        { label: "Class Date", done: false, date: dayDate }
+      ]
+    : isPast
+    ? [
+        { label: "Booking Created", done: true, date: new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") },
+        { label: "Payment Confirmed", done: true, date: new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") },
+        { label: isBallet ? "Assessment Completed" : "Attended", done: true, date: dayDate }
+      ]
+    : [
+        { label: "Booking Created", done: true, date: new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") },
+        { label: "Cancelled", done: true, date: dayDate }
+      ];
+
+  return (
+    <Animated.View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0A0B0D", zIndex: 100 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        <LinearGradient
+          colors={[`rgba(${tc.rgb},0.18)`, "rgba(10,11,13,0)"]}
+          style={{ paddingTop: topPad + 10, paddingHorizontal: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)" }}
+        >
+          <TouchableOpacity onPress={onClose} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16 }}>
+            <SBI name="back" size={20} stroke={2.2} color="#8E97A2" />
+            <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: "#8E97A2" }}>Back</Text>
+          </TouchableOpacity>
+
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <View style={{ backgroundColor: `rgba(${tc.rgb},0.16)`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+              <Text style={{ fontFamily: "Archivo_800ExtraBold", fontSize: 10, letterSpacing: 0.8, textTransform: "uppercase", color: tc.color }}>{tc.label}</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.06)" }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusColor }} />
+              <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 11, color: statusColor }}>{statusLabel}</Text>
+            </View>
+          </View>
+
+          <Text style={{ fontFamily: "Anton_400Regular", fontSize: 36, lineHeight: 36, textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6 }}>{title}</Text>
+          <Text style={{ fontFamily: "SpaceMono_400Regular", fontSize: 12.5, color: "#4C545E" }}>Booking #{ref}</Text>
+        </LinearGradient>
+
+        <View style={{ padding: 20 }}>
+          <Text style={{ fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "#00B6D7", marginBottom: 10 }}>Schedule</Text>
+          <View style={{ backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", padding: 14, marginBottom: 20 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <SBI name="cal" size={14} stroke={2} color="#4C545E" />
+                <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#6B747F" }}>Day & Date</Text>
+              </View>
+              <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#FFFFFF" }}>{dayDate}</Text>
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <SBI name="clock" size={14} stroke={2} color="#4C545E" />
+                <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#6B747F" }}>Time</Text>
+              </View>
+              <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#FFFFFF" }}>{time}</Text>
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <SBI name="pin" size={14} stroke={2} color="#4C545E" />
+                <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#6B747F" }}>Branch</Text>
+              </View>
+              <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#FFFFFF" }}>{branch}</Text>
+            </View>
+          </View>
+
+          <Text style={{ fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "#00B6D7", marginBottom: 10 }}>People</Text>
+          <View style={{ backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", padding: 14, marginBottom: 20, flexDirection: "row", gap: 20 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="person" size={16} color="#6B747F" />
+              </View>
+              <View>
+                <Text style={{ fontFamily: "SpaceMono_700Bold", fontSize: 9, color: "#6B747F", textTransform: "uppercase", letterSpacing: 0.6 }}>Student</Text>
+                <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#FFFFFF" }}>{studentName}</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="person" size={16} color="#6B747F" />
+              </View>
+              <View>
+                <Text style={{ fontFamily: "SpaceMono_700Bold", fontSize: 9, color: "#6B747F", textTransform: "uppercase", letterSpacing: 0.6 }}>Instructor</Text>
+                <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#FFFFFF" }}>{instName}</Text>
+              </View>
+            </View>
+          </View>
+
+          <Text style={{ fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "#00B6D7", marginBottom: 10 }}>Booking Timeline</Text>
+          <View style={{ backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", padding: 14, paddingBottom: 0, marginBottom: 20 }}>
+            {timeline.map((step, i) => (
+              <View key={i} style={{ flexDirection: "row", gap: 12, alignItems: "flex-start", paddingBottom: 14 }}>
+                <View style={{ alignItems: "center", width: 20 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: step.done ? "#00B6D7" : "rgba(255,255,255,0.07)", borderWidth: step.done ? 0 : 1.5, borderColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" }}>
+                    {step.done && <SBI name="check" size={12} stroke={3} color="#0A0B0D" />}
+                  </View>
+                  {i < timeline.length - 1 && <View style={{ width: 1, height: 22, backgroundColor: step.done ? "rgba(0,182,215,0.35)" : "rgba(255,255,255,0.08)", marginVertical: 4 }} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 14.5, color: step.done ? "#FFFFFF" : "#6B747F" }}>{step.label}</Text>
+                  <Text style={{ fontFamily: "Archivo_400Regular", fontSize: 12, color: "#4C545E", marginTop: 2 }}>{step.date}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
+
+      <LinearGradient
+        colors={["rgba(10,11,13,0)", "#0A0B0D"]}
+        style={{ position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 30, height: 80, flexDirection: "row", gap: 10, justifyContent: "space-evenly" }}
+      >
+        {!isPast && !isCancelled && (
+          <View style={{ flex: 1, height: 48, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, opacity: 0.6 }}>
+            <SBI name="cancel" size={16} stroke={2.2} color="#6B747F" />
+            <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" }}>Cancel (Soon)</Text>
+          </View>
+        )}
+        {(isPast || b.paymentStatus === "paid") && (
+          <View style={{ flex: 1, height: 48, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, opacity: 0.6 }}>
+            <SBI name="download" size={16} stroke={2.2} color="#6B747F" />
+            <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" }}>Receipt (Soon)</Text>
+          </View>
+        )}
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
+export default function BookingsScreen() {
+  const { user, bookings: localBookings, refreshUserPackages } = useAppContext();
+  const insets = useSafeAreaInsets();
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Upcoming");
+  const [studentFilter, setStudentFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedItem, setSelectedItem] = useState<ListItem | null>(null);
+
+  const [balletApps, setBalletApps] = useState<BalletApplication[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [isOffline, setIsOffline] = useState(false);
+
+  const loadBalletApps = useCallback(async () => {
+    if (!user) return;
+    try {
+      setErrorMsg("");
+      setIsOffline(false);
+      const apps = await fetchMyApplications();
+      setBalletApps(apps);
+    } catch (err: any) {
+      if (isOfflineError(err)) {
+        setIsOffline(true);
+      } else {
+        setErrorMsg(err.message || "Failed to load assessments");
+      }
+    }
+  }, [user]);
+
+  const onRefresh = useCallback(async () => {
+    if (!user) return;
+    setRefreshing(true);
+    await Promise.all([loadBalletApps(), refreshUserPackages?.()]);
+    setRefreshing(false);
+  }, [user, loadBalletApps, refreshUserPackages]);
+
+  useEffect(() => {
+    loadBalletApps();
+  }, [loadBalletApps]);
+
+  useEffect(() => {
+    if (user && isOffline) {
+      // Offline sync logic typically goes here if supported
+    }
+  }, [user, isOffline]);
+
+  const mergedBookings = useMemo(() => {
+    return localBookings.map((b) => {
+      let isPast = false;
+      if (b.date) {
+        const bd = new Date(b.date);
+        bd.setHours(23, 59, 59, 999);
+        isPast = bd.getTime() < Date.now();
+      }
+      if (b.bookingStatus === "attended" || b.bookingStatus === "noShow" || b.bookingStatus === "completed") {
+        isPast = true;
+      }
+      return { ...b, _isPast: isPast };
+    });
+  }, [localBookings]);
+
+  const upcomingCount = useMemo(() => {
+    return mergedBookings.filter((b) => !b._isPast && b.bookingStatus !== "cancelled" && b.bookingStatus !== "rejected").length;
+  }, [mergedBookings]);
+
+  const students = useMemo(() => {
+    const names = new Set<string>();
+    mergedBookings.forEach(b => b.participantName && names.add(b.participantName));
+    balletApps.forEach(a => a.childName && names.add(a.childName));
+    return ["All", ...Array.from(names)];
+  }, [mergedBookings, balletApps]);
+
+  function filterItems(tab: (typeof TABS)[number]): ListItem[] {
+    let bookingItems: ListItem[] = [];
+    switch (tab) {
+      case "Upcoming":
+        bookingItems = mergedBookings.filter((b) => !b._isPast && b.bookingStatus !== "cancelled" && b.bookingStatus !== "rejected").map((b) => ({ kind: "booking", data: b, timestamp: new Date(b.date || 0).getTime() }));
+        break;
+      case "Past":
+        bookingItems = mergedBookings.filter((b) => b._isPast && b.bookingStatus !== "cancelled" && b.bookingStatus !== "rejected").map((b) => ({ kind: "booking", data: b, timestamp: new Date(b.date || 0).getTime() }));
+        break;
+      case "Cancelled":
+        bookingItems = mergedBookings.filter((b) => b.bookingStatus === "cancelled" || b.bookingStatus === "rejected").map((b) => ({ kind: "booking", data: b, timestamp: new Date(b.date || 0).getTime() }));
+        break;
+    }
+
+    let balletItems: ListItem[] = [];
+    switch (tab) {
+      case "Upcoming":
+        balletItems = balletApps.filter((a) => a.status === "Pending" || a.status === "Scheduled" || a.status === "Accepted").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        break;
+      case "Past":
+        balletItems = balletApps.filter((a) => a.status === "Completed").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        break;
+      case "Cancelled":
+        balletItems = balletApps.filter((a) => a.status === "Rejected").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        break;
+    }
+
+    let allItems = [...balletItems, ...bookingItems];
+
+    if (studentFilter !== "All") {
+      allItems = allItems.filter((i) => {
+        if (i.kind === "booking") return i.data.participantName === studentFilter;
+        if (i.kind === "ballet") return i.data.childName === studentFilter;
+        return false;
+      });
+    }
+
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase();
+      allItems = allItems.filter((i) => {
+        if (i.kind === "booking") {
+          return [i.data.className, i.data.danceType, i.data.bookingNumber, i.data.instructorName, i.data.participantName].some(s => s?.toLowerCase().includes(q));
+        }
+        if (i.kind === "ballet") {
+          return [i.data.childName, "Ballet Assessment"].some(s => s?.toLowerCase().includes(q));
+        }
+        return false;
+      });
+    }
+
+    return allItems;
+  }
+
+  const filtered = filterItems(activeTab);
+
   if (!user) {
     return (
-      <View
-        style={[
-          styles.container,
-          { paddingTop: Platform.OS === "web" ? 67 : insets.top },
-        ]}
-      >
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
         <View style={styles.headerSimple}>
-          <Text style={styles.title}>My Bookings</Text>
+          <Text style={styles.simpleTitle}>My Bookings</Text>
         </View>
         <EmptyState
           icon="calendar-outline"
@@ -375,224 +477,172 @@ export default function BookingsScreen() {
     );
   }
 
-  // ── Initial load — no local data yet ──────────────────────────────────────
-  // Show skeletons only when we have NO local bookings AND the API is still
-  // fetching. Once local bookings exist, we can show them immediately.
-  if (syncState === "loading" && localBookings.length === 0) {
-    return (
-      <View style={styles.container}>
-        {Header}
-        <ListSkeleton count={3} />
-      </View>
-    );
-  }
-
-  // ── Offline — no local data to show ───────────────────────────────────────
-  if (syncState === "offline" && localBookings.length === 0) {
-    return (
-      <View style={styles.container}>
-        {Header}
-        <OfflineState onRetry={syncWithApi} />
-      </View>
-    );
-  }
-
-  // ── Server error — no local data to show ──────────────────────────────────
-  if (syncState === "error" && localBookings.length === 0) {
-    return (
-      <View style={styles.container}>
-        {Header}
-        <ErrorState
-          onRetry={syncWithApi}
-          message="Couldn't load your bookings from the server. Please try again."
-        />
-      </View>
-    );
-  }
-
-  // ── Normal render (with merged data) ──────────────────────────────────────
   return (
     <View style={styles.container}>
-      {Header}
+      {/* Exact design background glows (full-bleed radials):
+          amber  → radial-gradient(85% 120% at 10% -8%,  rgba(255,176,46,0.16) 0%, transparent 50%)
+          magenta→ radial-gradient(65% 75%  at 100% 90%, rgba(255,46,126,0.12) 0%, transparent 55%) */}
+      <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Defs>
+          <RadialGradient id="schedGlowAmber" cx="10%" cy="-8%" rx="85%" ry="120%">
+            <Stop offset="0%" stopColor="#FFB02E" stopOpacity={0.16} />
+            <Stop offset="50%" stopColor="#FFB02E" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="schedGlowMagenta" cx="100%" cy="90%" rx="65%" ry="75%">
+            <Stop offset="0%" stopColor="#FF2E7E" stopOpacity={0.12} />
+            <Stop offset="55%" stopColor="#FF2E7E" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#schedGlowAmber)" />
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#schedGlowMagenta)" />
+      </Svg>
 
-      {/* Stale cache banner — device was offline, showing last-synced data */}
-      {fromCache && (
-        <View style={styles.cacheBanner}>
-          <Ionicons name="cloud-offline-outline" size={13} color="#F59E0B" />
-          <Text style={styles.cacheBannerText}>
-            Showing last synced data · Connect to refresh
-          </Text>
-          <TouchableOpacity onPress={syncWithApi}>
-            <Text style={styles.cacheBannerRetry}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <FlatList
+        data={filtered}
+        keyExtractor={(i) => (i.kind === "ballet" ? `ballet-${i.data.id}` : `booking-${i.data.id}`)}
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00B6D7" />}
+        ListHeaderComponent={
+          <View style={{ paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 20, zIndex: 1 }}>
+            {/* Hero Section */}
+            <View style={styles.heroRow}>
+              <View>
+                <Text style={styles.heroEyebrow}>My Account</Text>
+                <Text style={styles.heroTitle}>MY{"\n"}BOOKINGS</Text>
+              </View>
+              <TouchableOpacity style={styles.newBtn} onPress={() => router.push("/(tabs)/classes")}>
+                <SBI name="plus" size={16} stroke={2.6} color="#0A0B0D" />
+                <Text style={styles.newBtnText}>New</Text>
+              </TouchableOpacity>
+            </View>
 
-      {/* Sync error with existing local data — subtle inline warning */}
-      {(syncState === "error" || syncState === "offline") &&
-        !fromCache &&
-        localBookings.length > 0 && (
-          <View style={styles.syncWarning}>
-            <Ionicons
-              name={
-                syncState === "offline"
-                  ? "wifi-outline"
-                  : "alert-circle-outline"
-              }
-              size={13}
-              color="#9CA3AF"
-            />
-            <Text style={styles.syncWarningText}>
-              {syncState === "offline"
-                ? "Offline — status may not be current"
-                : "Sync error — status may not be current"}
-            </Text>
-            <TouchableOpacity onPress={syncWithApi}>
-              <Text style={styles.syncWarningRetry}>Retry</Text>
-            </TouchableOpacity>
+            {/* Search Bar */}
+            <View style={styles.searchWrap}>
+              <View style={styles.searchIcon}><SBI name="search" size={17} stroke={2.2} color="#6B747F" /></View>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search bookings, classes, refs…"
+                placeholderTextColor="#6B747F"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearSearch}>
+                  <SBI name="x" size={13} stroke={2.4} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Phase Tabs (Segmented Container) */}
+            <View style={styles.tabContainer}>
+              {TABS.map((tab) => {
+                const isActive = activeTab === tab;
+                const count = tab === "Upcoming" ? upcomingCount : 0; // Simplified count for parity demo
+                return (
+                  <TouchableOpacity key={tab} style={[styles.tabBtn, isActive && styles.tabBtnActive]} onPress={() => setActiveTab(tab)}>
+                    <Text style={[styles.tabBtnText, isActive && styles.tabBtnTextActive]}>{tab}</Text>
+                    <View style={[styles.tabBtnCounter, isActive ? { backgroundColor: "#00B6D7" } : { backgroundColor: "rgba(255,255,255,0.08)" }]}>
+                      <Text style={[styles.tabBtnCounterText, isActive ? { color: "#0A0B0D" } : { color: "#6B747F" }]}>{count}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Student Filter Chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+              {students.map((st) => {
+                const isActive = studentFilter === st;
+                return (
+                  <TouchableOpacity
+                    key={st}
+                    style={[styles.filterChip, isActive && styles.filterChipActive]}
+                    onPress={() => setStudentFilter(st)}
+                  >
+                    {st !== "All" && (
+                      <View style={styles.filterAvatar}>
+                        <Text style={styles.filterAvatarText}>{st.slice(0, 2).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                      {st === "All" ? "All Students" : st}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {isOffline && <OfflineState />}
+            {errorMsg ? <ErrorState message={errorMsg} onRetry={loadBalletApps} /> : null}
           </View>
-        )}
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon="calendar-outline"
-          title={
-            activeTab === "Upcoming"
-              ? "No upcoming bookings"
-              : activeTab === "Past"
-              ? "No past bookings"
-              : "No cancelled bookings"
-          }
-          description={
-            activeTab === "Upcoming"
-              ? "Book a class to get started — browse available classes or use your package credits."
-              : `Your ${activeTab.toLowerCase()} bookings will appear here`
-          }
-          actionLabel={activeTab === "Upcoming" ? "Book a Class" : undefined}
-          onAction={
-            activeTab === "Upcoming"
-              ? () => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push("/(tabs)/classes");
-                }
-              : undefined
-          }
-        />
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(i) => i.id}
-          renderItem={({ item }) =>
-            item.kind === "ballet"
-              ? <BalletAssessmentCard app={item.data} />
-              : <BookingCard item={item.data} />
-          }
-          contentContainerStyle={[
-            styles.list,
-            { paddingBottom: Platform.OS === "web" ? 120 : 90 },
-          ]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.studio.primary}
-              colors={[colors.studio.primary]}
-            />
-          }
-        />
-      )}
+        }
+        renderItem={({ item }) =>
+          item.kind === "ballet" ? (
+            <AssessmentCard app={item.data} onPress={() => setSelectedItem(item)} />
+          ) : (
+            <BookingCard item={item.data} onPress={() => setSelectedItem(item)} />
+          )
+        }
+        ListEmptyComponent={
+          !refreshing ? (
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyIconWrap}>
+                <SBI name="cal" size={34} stroke={1.6} color="#00B6D7" />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {activeTab === "Upcoming" ? "No upcoming bookings" : activeTab === "Past" ? "No booking history yet" : "No cancelled bookings"}
+              </Text>
+              <Text style={styles.emptySub}>
+                {activeTab === "Upcoming" ? "Your next dance adventure is waiting for you." : activeTab === "Past" ? "Completed bookings and attendance will show up here." : "Looks like you've kept every appointment."}
+              </Text>
+              {activeTab === "Upcoming" && (
+                <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push("/(tabs)/classes")}>
+                  <Text style={styles.emptyBtnText}>Book a Class</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <ListSkeleton count={4} />
+          )
+        }
+      />
+      {selectedItem && <BookingDetailOverlay item={selectedItem} onClose={() => setSelectedItem(null)} topPad={Platform.OS === "web" ? 67 : insets.top} />}
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
-  header: { paddingHorizontal: 20, paddingBottom: 12, gap: 14 },
-  headerSimple: { paddingHorizontal: 20, paddingTop: 80, paddingBottom: 12 },
-  titleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  title: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  newBookingBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  newBookingText: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#000" },
-  tabRow: { flexDirection: "row", gap: 8 },
-  tab: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#1E1E26",
-  },
-  tabText: { fontSize: 13, fontFamily: "Inter_500Medium" },
-  tabBadge: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  tabBadgeText: { fontSize: 10, fontFamily: "Inter_700Bold", color: "#000" },
-  list: { paddingHorizontal: 20, paddingTop: 8 },
-  // ── Status banners ─────────────────────────────────────────────────────────
-  cacheBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginHorizontal: 20,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: "#F59E0B15",
-    borderWidth: 1,
-    borderColor: "#F59E0B30",
-  },
-  cacheBannerText: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: "#F59E0B",
-  },
-  cacheBannerRetry: {
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
-    color: "#F59E0B",
-  },
-  syncWarning: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginHorizontal: 20,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: "#1E1E26",
-  },
-  syncWarningText: {
-    flex: 1,
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    color: "#9CA3AF",
-  },
-  syncWarningRetry: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    color: colors.studio.primary,
-  },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
+  headerSimple: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
+  simpleTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  list: { paddingHorizontal: 20 },
+  heroRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18 },
+  heroEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "#00B6D7", marginBottom: 6 },
+  heroTitle: { fontFamily: "Anton_400Regular", fontSize: 52, lineHeight: 46, textTransform: "uppercase", color: "#FFFFFF" },
+  newBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 20, backgroundColor: "#00B6D7", width: 134, marginBottom: 6 },
+  newBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 13, color: "#0A0B0D" },
+  searchWrap: { position: "relative", flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.10)", borderRadius: 24, marginBottom: 14 },
+  searchIcon: { position: "absolute", left: 14 },
+  searchInput: { flex: 1, paddingVertical: 12, paddingLeft: 42, paddingRight: 42, fontSize: 14.5, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
+  clearSearch: { position: "absolute", right: 10, width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
+  tabContainer: { flexDirection: "row", padding: 4, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: 24, marginBottom: 14 },
+  tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 10, borderRadius: 20 },
+  tabBtnActive: { backgroundColor: "#0A0B0D" },
+  tabBtnText: { fontFamily: "Archivo_700Bold", fontSize: 12.5, color: "#6B747F" },
+  tabBtnTextActive: { color: "#FFFFFF" },
+  tabBtnCounter: { width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  tabBtnCounterText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10 },
+  filterScroll: { gap: 8, paddingBottom: 20 },
+  filterChip: { flexDirection: "row", alignItems: "center", gap: 7, paddingRight: 13, paddingLeft: 7, paddingVertical: 7, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", marginRight: 8 },
+  filterChipActive: { backgroundColor: "#0A0B0D", borderColor: "rgba(0,182,215,0.5)" },
+  filterAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
+  filterAvatarText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10, color: "#FFFFFF" },
+  filterChipText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" },
+  filterChipTextActive: { color: "#FFFFFF" },
+  emptyWrap: { alignItems: "center", paddingVertical: 60, paddingHorizontal: 30 },
+  emptyIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(0,182,215,0.10)", alignItems: "center", justifyContent: "center", marginBottom: 18 },
+  emptyTitle: { fontFamily: "Archivo_800ExtraBold", fontSize: 21, color: "#FFFFFF", marginBottom: 8, textAlign: "center" },
+  emptySub: { fontFamily: "Archivo_400Regular", fontSize: 14, color: "#8E97A2", textAlign: "center", maxWidth: 230, lineHeight: 21, marginBottom: 20 },
+  emptyBtn: { paddingHorizontal: 24, paddingVertical: 13, borderRadius: 24, backgroundColor: "#00B6D7" },
+  emptyBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 14, color: "#0A0B0D" }
 });
