@@ -1000,8 +1000,7 @@ export default function ClassesScreen() {
               balletStatus={balletStatus}
               onView={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                const isDetail = balletStatus !== null && DETAIL_MODE_STATUSES.has(balletStatus);
-                router.push((isDetail ? "/ballet/application-status" : "/ballet/assessment") as any);
+                router.push("/ballet" as any);
               }}
               onApply={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
