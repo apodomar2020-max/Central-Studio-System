@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
@@ -34,13 +35,21 @@ import { probeConnectivity } from "@/services/connectivity";
 // flow after a terminal status (rejected/cancelled). Do NOT add a duplicate-app
 // check here — index.tsx handles that redirect before this screen ever renders.
 import { useAppContext, type ChildProfile } from "@/contexts/AppContext";
-import colors from "@/constants/colors";
-import AppButton from "@/components/AppButton";
-import StepIndicator from "@/components/StepIndicator";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 
-const BALLET_COLOR = "#00B6D6";
+/* ─── Design tokens (home-ballet2.jsx visual system) ─────────────── */
+const BASE    = "#0A0B0D";
+const CARD    = "#15171B";
+const SURFACE = "#22262C";
+const CYAN    = "#00B6D7";
+const AMBER   = "#FFB02E";
+const SUCCESS = "#1FB871";
+const DANGER  = "#FF3B47";
+const INK_200 = "#D1D5DB";
+const INK_300 = "#9CA3AF";
+const INK_400 = "#4B5563";
+const BALLET_COLOR = CYAN; // keep the existing semantic name; aligned to the design cyan
 const STEPS = ["About You", "Child Info", "Experience", "Select Slot", "Review"];
 
 type FormData = {
@@ -301,8 +310,8 @@ const dpStyles = StyleSheet.create({
   triggerText: {
     flex: 1,
     color: "#FFFFFF",
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 15,
   },
   overlay: {
     flex: 1,
@@ -310,11 +319,11 @@ const dpStyles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: "#0F0A1E",
+    backgroundColor: CARD,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderTopWidth: 1,
-    borderTopColor: BALLET_COLOR + "30",
+    borderTopColor: CYAN + "30",
     paddingHorizontal: 24,
     paddingBottom: Platform.OS === "ios" ? 40 : 24,
     paddingTop: 20,
@@ -327,7 +336,7 @@ const dpStyles = StyleSheet.create({
   },
   sheetTitle: {
     fontSize: 17,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: "#FFFFFF",
   },
   spinners: {
@@ -335,7 +344,7 @@ const dpStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 0,
-    backgroundColor: "#071418",
+    backgroundColor: BASE,
     borderRadius: 16,
     padding: 16,
   },
@@ -346,10 +355,10 @@ const dpStyles = StyleSheet.create({
   },
   spinnerLabel: {
     fontSize: 10,
-    fontFamily: "Inter_500Medium",
-    color: "#6B7280",
+    fontFamily: "SpaceMono_700Bold",
+    color: INK_400,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1,
   },
   col: {
     alignItems: "center",
@@ -359,8 +368,8 @@ const dpStyles = StyleSheet.create({
     padding: 4,
   },
   spinnerValue: {
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
+    fontSize: 30,
+    fontFamily: "Anton_400Regular",
     color: "#FFFFFF",
     minWidth: 60,
     textAlign: "center",
@@ -368,7 +377,7 @@ const dpStyles = StyleSheet.create({
   spinnerSep: {
     width: 1,
     height: 80,
-    backgroundColor: "#2A2A35",
+    backgroundColor: "rgba(255,255,255,0.10)",
     marginHorizontal: 4,
   },
   preview: {
@@ -377,28 +386,28 @@ const dpStyles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: BALLET_COLOR + "30",
-    backgroundColor: BALLET_COLOR + "0A",
+    borderColor: CYAN + "30",
+    backgroundColor: CYAN + "0F",
   },
   previewDate: {
     fontSize: 16,
-    fontFamily: "Inter_700Bold",
-    color: BALLET_COLOR,
+    fontFamily: "Archivo_800ExtraBold",
+    color: CYAN,
   },
   previewAge: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: "#9CA3AF",
+    fontFamily: "Archivo_400Regular",
+    color: INK_300,
   },
   confirmBtn: {
-    backgroundColor: BALLET_COLOR,
-    borderRadius: 14,
+    backgroundColor: CYAN,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
   },
   confirmText: {
     fontSize: 15,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: "#FFFFFF",
   },
 });
@@ -673,14 +682,21 @@ export default function BalletAssessmentScreen() {
 
     return (
       <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+        <LinearGradient
+          colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.05)", "transparent"]}
+          locations={[0, 0.4, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.glow}
+          pointerEvents="none"
+        />
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerBack} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={20} color={CYAN} />
+            <Text style={styles.headerBackText}>Back</Text>
           </TouchableOpacity>
-          <View style={styles.topBarCenter}>
-            <Text style={styles.topBarTitle}>Ballet Assessment</Text>
-          </View>
-          <View style={{ width: 40 }} />
+          <Text style={styles.topBarTitle}>Ballet Assessment</Text>
+          <View style={{ width: 60 }} />
         </View>
         {connectivity === "offline" ? (
           <OfflineState onRetry={handleConnectivityRetry} />
@@ -694,18 +710,40 @@ export default function BalletAssessmentScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+      <LinearGradient
+        colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.05)", "transparent"]}
+        locations={[0, 0.4, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.glow}
+        pointerEvents="none"
+      />
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={step === 0 ? () => router.back() : handleBack} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+        <TouchableOpacity onPress={step === 0 ? () => router.back() : handleBack} style={styles.headerBack} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={20} color={CYAN} />
+          <Text style={styles.headerBackText}>Back</Text>
         </TouchableOpacity>
-        <View style={styles.topBarCenter}>
-          <Text style={styles.topBarTitle}>Ballet Assessment</Text>
-          <Text style={styles.topBarSub}>Step {step + 1} of {STEPS.length}</Text>
-        </View>
-        <View style={{ width: 40 }} />
+        <Text style={styles.topBarTitle}>Ballet Assessment</Text>
+        <View style={{ width: 60 }} />
       </View>
 
-      <StepIndicator current={step + 1} total={STEPS.length} labels={STEPS} />
+      {/* Progress — segmented bar + step label (design parity) */}
+      <View style={styles.progressWrap}>
+        <View style={styles.progressTrack}>
+          {STEPS.map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.progressSeg,
+                { backgroundColor: i <= step ? CYAN : "rgba(255,255,255,0.08)" },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={styles.progressLabel}>
+          Step {step + 1} of {STEPS.length} · {STEPS[step]}
+        </Text>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -967,16 +1005,16 @@ export default function BalletAssessmentScreen() {
                       styles.slotStatusBadge,
                       {
                         backgroundColor:
-                          slot.status === "available" ? "#22C55E20" :
-                          slot.status === "fewSeats" ? "#F59E0B20" : "#EF444420",
+                          slot.status === "available" ? SUCCESS + "22" :
+                          slot.status === "fewSeats" ? AMBER + "22" : DANGER + "22",
                       },
                     ]}>
                       <Text style={[
                         styles.slotStatusText,
                         {
                           color:
-                            slot.status === "available" ? "#22C55E" :
-                            slot.status === "fewSeats" ? "#F59E0B" : "#EF4444",
+                            slot.status === "available" ? SUCCESS :
+                            slot.status === "fewSeats" ? AMBER : DANGER,
                         },
                       ]}>
                         {isFull ? "Full" : slot.status === "fewSeats" ? `${slot.availableSeats} left` : "Available"}
@@ -1065,17 +1103,25 @@ export default function BalletAssessmentScreen() {
 
       <View style={[styles.footer, { paddingBottom: Platform.OS === "web" ? 24 : (insets.bottom || 16) + 8 }]}>
         {step > 0 && (
-          <AppButton title="Back" variant="ghost" onPress={handleBack} style={{ flex: 1 }} />
+          <TouchableOpacity onPress={handleBack} style={[styles.btnGhost, { flex: 1 }]} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>Back</Text>
+          </TouchableOpacity>
         )}
         {step < STEPS.length - 1 ? (
-          <AppButton title="Continue" onPress={handleNext} style={{ flex: 2 }} />
+          <TouchableOpacity onPress={handleNext} style={[styles.btnPrimary, { flex: 2 }]} activeOpacity={0.88}>
+            <Text style={styles.btnPrimaryText}>Continue →</Text>
+          </TouchableOpacity>
         ) : (
-          <AppButton
-            title={submitting ? "Submitting…" : "Submit Application"}
+          <TouchableOpacity
             onPress={handleSubmit}
             disabled={submitting}
-            style={{ flex: 2, backgroundColor: BALLET_COLOR, opacity: submitting ? 0.7 : 1 }}
-          />
+            style={[styles.btnPrimary, { flex: 2 }, submitting && { opacity: 0.6 }]}
+            activeOpacity={0.88}
+          >
+            <Text style={styles.btnPrimaryText}>
+              {submitting ? "Submitting…" : "Submit Application ✦"}
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -1083,56 +1129,65 @@ export default function BalletAssessmentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
+  container: { flex: 1, backgroundColor: BASE },
+  glow: { position: "absolute", top: 0, left: 0, right: 0, height: 280 },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,182,215,0.14)",
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#1E1E26",
-    alignItems: "center",
-    justifyContent: "center",
+  headerBack: { flexDirection: "row", alignItems: "center", gap: 4, minWidth: 60 },
+  headerBackText: { fontSize: 14, fontFamily: "Archivo_600SemiBold", color: CYAN },
+  topBarTitle: { fontSize: 16, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+
+  // ── Progress (segmented + step label) ──
+  progressWrap: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 14 },
+  progressTrack: { flexDirection: "row", gap: 3 },
+  progressSeg: { flex: 1, height: 3, borderRadius: 2 },
+  progressLabel: {
+    fontSize: 11,
+    fontFamily: "SpaceMono_700Bold",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: INK_400,
+    marginTop: 8,
   },
-  topBarCenter: { flex: 1, alignItems: "center" },
-  topBarTitle: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  topBarSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+
   scroll: { paddingHorizontal: 20 },
   stepWrap: { gap: 14 },
-  stepHeader: { gap: 6, marginBottom: 4 },
-  stepTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  stepDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 18 },
+  stepHeader: { gap: 6, marginBottom: 6 },
+  stepTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  stepDesc: { fontSize: 13.5, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 20 },
+
   field: { gap: 6 },
-  fieldLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#9CA3AF" },
+  fieldLabel: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300 },
   input: {
-    backgroundColor: "#1E1E26",
-    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 8,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     color: "#FFFFFF",
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: "#2A2A35",
+    fontFamily: "Archivo_400Regular",
+    fontSize: 15,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.10)",
   },
-  rowFields: { flexDirection: "row", gap: 10 },
   genderRow: { flexDirection: "row", gap: 10 },
   genderBtn: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#2A2A35",
-    backgroundColor: "#1E1E26",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
-  genderBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#6B7280" },
+  genderBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: INK_400 },
   yesNoRow: { flexDirection: "row", gap: 10 },
   yesNoBtn: {
     flex: 1,
@@ -1142,13 +1197,20 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#2A2A35",
-    backgroundColor: "#1E1E26",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
-  yesNoBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#6B7280" },
-  subSectionLabel: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#FFFFFF", marginBottom: -4 },
-  divider: { height: 1, backgroundColor: "#1E2E38", marginVertical: 4 },
+  yesNoBtnText: { fontSize: 15, fontFamily: "Archivo_700Bold", color: INK_400 },
+  subSectionLabel: {
+    fontSize: 11,
+    fontFamily: "SpaceMono_700Bold",
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: CYAN,
+    marginBottom: 2,
+  },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginVertical: 4 },
   slotsPlaceholder: {
     alignItems: "center",
     gap: 10,
@@ -1157,8 +1219,8 @@ const styles = StyleSheet.create({
   },
   slotsPlaceholderText: {
     fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: BALLET_COLOR,
+    fontFamily: "Archivo_400Regular",
+    color: CYAN,
     textAlign: "center",
     lineHeight: 18,
   },
@@ -1167,134 +1229,134 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#1E2E38",
-    backgroundColor: colors.studio.card,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: CARD,
   },
   slotLeft: { gap: 3 },
-  slotDay: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  slotDate: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  slotTime: { fontSize: 12, fontFamily: "Inter_500Medium", color: "#9CA3AF" },
+  slotDay: { fontSize: 15, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  slotDate: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300 },
+  slotTime: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
   slotRight: { alignItems: "flex-end", gap: 8 },
-  slotStatusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  slotStatusText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  slotStatusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  slotStatusText: { fontSize: 11, fontFamily: "Archivo_700Bold" },
   levelsInfo: {
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#00B6D630",
+    borderColor: CYAN + "30",
     padding: 14,
-    backgroundColor: "#071418",
+    backgroundColor: CARD,
     gap: 10,
     marginTop: 4,
   },
-  levelsInfoTitle: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#00B6D6" },
+  levelsInfoTitle: {
+    fontSize: 11,
+    fontFamily: "SpaceMono_700Bold",
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: CYAN,
+  },
   levelsList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   levelItem: { flexDirection: "row", alignItems: "center", gap: 5, width: "47%" },
   levelDot: { width: 6, height: 6, borderRadius: 3 },
-  levelText: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  levelText: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300 },
   reviewRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#1E2E38",
+    borderBottomColor: "rgba(255,255,255,0.06)",
     gap: 16,
   },
-  reviewLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", flex: 1 },
-  reviewValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF", flex: 2, textAlign: "right" },
+  reviewLabel: { fontSize: 12.5, fontFamily: "Archivo_600SemiBold", color: INK_400, flex: 1 },
+  reviewValue: { fontSize: 13, fontFamily: "Archivo_700Bold", color: "#FFFFFF", flex: 2, textAlign: "right" },
   slotReview: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    backgroundColor: "#071418",
+    backgroundColor: CARD,
   },
-  slotReviewLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  slotReviewValue: { fontSize: 15, fontFamily: "Inter_700Bold" },
-  slotReviewTime: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  slotReviewLabel: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
+  slotReviewValue: { fontSize: 15, fontFamily: "Archivo_700Bold" },
+  slotReviewTime: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300 },
   pricingBox: {
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#1E2E38",
+    borderColor: "rgba(255,255,255,0.08)",
     padding: 14,
     gap: 10,
-    backgroundColor: colors.studio.card,
+    backgroundColor: CARD,
   },
-  pricingTitle: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#9CA3AF" },
+  pricingTitle: {
+    fontSize: 11,
+    fontFamily: "SpaceMono_700Bold",
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: INK_300,
+  },
   pricingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  pricingLevel: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  pricingHours: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  pricingAmount: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  pricingLevel: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  pricingHours: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
+  pricingAmount: { fontSize: 19, fontFamily: "Anton_400Regular" },
   footer: {
     flexDirection: "row",
     gap: 10,
     paddingHorizontal: 20,
     paddingTop: 12,
-    backgroundColor: colors.studio.background,
+    backgroundColor: BASE,
     borderTopWidth: 1,
-    borderTopColor: "#1E2E38",
+    borderTopColor: "rgba(255,255,255,0.07)",
   },
-  successHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 14,
-  },
-  successHeaderBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
-  },
-  successHeaderTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  successWrap: { flex: 1, padding: 20 },
-  successCard: { borderRadius: 24, padding: 24, gap: 16, alignItems: "center" },
-  successIcon: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center" },
-  successTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: "#FFFFFF", textAlign: "center" },
-  successDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 19 },
-  successInfo: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    gap: 10,
-    width: "100%",
-    backgroundColor: "#0A1014",
-  },
-  successInfoTitle: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#FFFFFF", marginBottom: 4 },
-  successStep: { flexDirection: "row", alignItems: "center", gap: 10 },
-  successStepNum: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  successStepNumText: { fontSize: 12, fontFamily: "Inter_700Bold" },
-  successStepText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", flex: 1 },
-  existingCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 24,
-    gap: 14,
+
+  // ── Footer buttons (design parity) ──
+  btnPrimary: {
+    paddingVertical: 15,
+    backgroundColor: CYAN,
+    borderRadius: 12,
     alignItems: "center",
-    backgroundColor: colors.studio.card,
+    justifyContent: "center",
+    shadowColor: CYAN,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 5,
   },
-  statusRow: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, width: "100%", alignItems: "center" },
-  statusLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  btnPrimaryText: { fontSize: 15, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
+  btnGhost: {
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  btnGhostText: { fontSize: 15, fontFamily: "Archivo_700Bold", color: INK_200 },
 
   // ── Prefill: parent summary card ──
-  summaryCard: { borderRadius: 14, borderWidth: 1, borderColor: BALLET_COLOR + "30", backgroundColor: BALLET_COLOR + "0D", padding: 14, gap: 8 },
+  summaryCard: { borderRadius: 16, borderWidth: 1, borderColor: CYAN + "30", backgroundColor: CYAN + "0D", padding: 14, gap: 8 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
-  summaryLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#9CA3AF" },
-  summaryValue: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF", flexShrink: 1, textAlign: "right" },
-  summaryHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280" },
+  summaryLabel: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_300 },
+  summaryValue: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF", flexShrink: 1, textAlign: "right" },
+  summaryHint: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
   editLink: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
-  editLinkText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: BALLET_COLOR },
+  editLinkText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: CYAN },
 
   // ── Prefill: child selector cards ──
-  childCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: "#2A2A35", backgroundColor: "#1E1E26" },
-  childCardSelected: { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "15" },
-  childAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: BALLET_COLOR + "1F" },
-  childCardName: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  childCardMeta: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: 1 },
-  emptyChildBox: { borderRadius: 12, borderWidth: 1, borderColor: "#2A2A35", backgroundColor: "#15151B", padding: 12, marginBottom: 4 },
-  emptyChildText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 19 },
+  childCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", backgroundColor: SURFACE },
+  childCardSelected: { borderColor: CYAN, backgroundColor: CYAN + "15" },
+  childAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: CYAN + "1F" },
+  childCardName: { fontSize: 15, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  childCardMeta: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300, marginTop: 1 },
+  emptyChildBox: { borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", backgroundColor: CARD, padding: 12, marginBottom: 4 },
+  emptyChildText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 19 },
 
   // ── Review: linked-profile note ──
   linkedNote: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  linkedNoteText: { fontSize: 12, fontFamily: "Inter_500Medium", color: BALLET_COLOR },
+  linkedNoteText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: CYAN },
 });
