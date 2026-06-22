@@ -18,7 +18,7 @@ import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
-import { fetchCurrentUser } from "@/services/authProfile";
+import { enterApp, fetchCurrentUser } from "@/services/authProfile";
 
 const CODE_LENGTH = 6;
 
@@ -116,7 +116,7 @@ export default function VerifyEmailScreen() {
             if (!refreshed.user.profileCompleted) {
               router.replace("/auth/complete-profile" as never);
             } else {
-              router.replace("/" as never);
+              void enterApp();
             }
           },
         },

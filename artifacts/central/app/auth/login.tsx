@@ -23,6 +23,7 @@ import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import FacebookSignInButton from "@/components/FacebookSignInButton";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
+import AppleSignInButton from "@/components/AppleSignInButton";
 import { continueAfterAuth } from "@/services/authProfile";
 
 export default function LoginScreen() {
@@ -174,6 +175,8 @@ export default function LoginScreen() {
             <Text style={styles.dividerText}>or</Text>
             <View style={styles.dividerLine} />
           </View>
+
+          <AppleSignInButton />
 
           <GoogleSignInButton onPress={google.signIn} loading={google.loading} disabled={!google.ready} />
 

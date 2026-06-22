@@ -17,7 +17,7 @@ import { customFetch } from "@workspace/api-client-react";
 import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
 import { useAppContext, type User } from "@/contexts/AppContext";
-import { mapStudentToUser, type AccountType, type AuthStudent } from "@/services/authProfile";
+import { enterApp, mapStudentToUser, type AccountType, type AuthStudent } from "@/services/authProfile";
 
 const ACCOUNT_TYPES: { value: AccountType; title: string; subtitle: string; icon: React.ComponentProps<typeof Ionicons>["name"] }[] = [
   {
@@ -81,7 +81,7 @@ export default function CompleteProfileScreen() {
       });
       const updated: User = mapStudentToUser(data.student);
       await setUser(updated);
-      router.replace("/" as never);
+      await enterApp();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save your profile.");
     } finally {

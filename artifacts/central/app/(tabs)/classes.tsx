@@ -23,6 +23,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-svg";
+
+import XI from "@/components/XiIcon";
 import { useListClasses, useListInstructors, useListSchedules } from "@workspace/api-client-react";
 import {
   fetchMyApplications,
@@ -166,10 +169,10 @@ function XStars({ rating }: { rating: number }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
       {Array.from({ length: 5 }).map((_, i) => (
-        <Ionicons
+        <XI
           key={i}
           name="star"
-          size={10}
+          size={11}
           color={i < Math.round(rating) ? "#FFB81C" : "rgba(255,255,255,0.18)"}
         />
       ))}
@@ -213,7 +216,7 @@ function ExploreSearch({
   return (
     <View style={s.searchWrap}>
       <View style={[s.searchContainer, focused && s.searchContainerFocused]}>
-        <Ionicons name="search-outline" size={18} color={focused ? CYAN : INK_400} style={s.searchIcon} />
+        <View style={s.searchIcon}><XI name="search" size={18} stroke={2.2} color={focused ? CYAN : INK_400} /></View>
         <TextInput
           value={query}
           onChangeText={onChange}
@@ -225,7 +228,7 @@ function ExploreSearch({
         />
         {!!query && (
           <TouchableOpacity onPress={() => onChange("")} style={s.searchClear} activeOpacity={0.8}>
-            <Ionicons name="close" size={14} color="#fff" />
+            <XI name="x" size={14} stroke={2.4} color="#fff" />
           </TouchableOpacity>
         )}
       </View>
@@ -374,7 +377,7 @@ function FeaturedCard({
       </View>
       {isTrending && (
         <View style={s.trendingCenterBadge}>
-          <Ionicons name="flame" size={10} color="#fff" />
+          <XI name="fire" size={10} stroke={2.2} color="#fff" />
           <Text style={s.trendingBadgeText}>Trending</Text>
         </View>
       )}
@@ -404,14 +407,14 @@ function FeaturedCarousel({
       <View style={s.carouselHeader}>
         <View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 3 }}>
-            <Ionicons name="flame" size={15} color={MAGENTA} />
+            <XI name="fire" size={15} stroke={2} color={MAGENTA} />
             <Text style={s.carouselEyebrow}>Most Popular</Text>
           </View>
           <Text style={s.carouselTitle}>Trending Now</Text>
         </View>
         <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", gap: 2 }} activeOpacity={0.7}>
           <Text style={s.seeAllText}>See all</Text>
-          <Ionicons name="chevron-forward" size={14} color={INK_300} />
+          <XI name="chevron" size={15} stroke={2.4} color={INK_300} />
         </TouchableOpacity>
       </View>
       <FlatList
@@ -480,7 +483,7 @@ function ExploreClassCard({
         </View>
         {isTrending && (
           <View style={s.classCardTrendingBadge}>
-            <Ionicons name="flame" size={10} color="#fff" />
+            <XI name="fire" size={10} stroke={2.2} color="#fff" />
             <Text style={s.trendingBadgeText}>Trending</Text>
           </View>
         )}
@@ -497,14 +500,14 @@ function ExploreClassCard({
         )}
         <View style={s.classCardMeta}>
           <View style={s.metaItem}>
-            <Ionicons name="calendar-outline" size={14} color={CYAN} />
+            <XI name="cal" size={14} stroke={2} color={CYAN} />
             <Text style={s.metaText}>
               {item.dayOfWeek ?? "—"} · {item.startTime ?? "—"}
             </Text>
           </View>
           {!!item.duration && (
             <View style={s.metaItem}>
-              <Ionicons name="time-outline" size={13} color={INK_400} />
+              <XI name="clock" size={13} stroke={2} color={INK_400} />
               <Text style={s.metaText}>{item.duration}</Text>
             </View>
           )}
@@ -537,7 +540,7 @@ function ExploreClassCard({
               <Text style={{ color: SUCCESS, fontFamily: "Archivo_700Bold" }}>{availableSeats}</Text>
               {" available · "}{item.bookedCount}/{item.capacity} booked
             </Text>
-            <Ionicons name="people-outline" size={14} color={INK_400} />
+            <XI name="users" size={14} stroke={2} color={INK_400} />
           </View>
           <View style={s.capBarBg}>
             <View style={[s.capBarFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
@@ -641,7 +644,7 @@ function CategorySection({
           <Text style={s.catCount}>{classes.length} {classes.length === 1 ? "class" : "classes"}</Text>
         </View>
         <Animated.View style={{ transform: [{ rotate }] }}>
-          <Ionicons name="chevron-forward" size={20} color={INK_400} />
+          <XI name="chevron" size={20} stroke={2.2} color={INK_400} />
         </Animated.View>
       </TouchableOpacity>
 
@@ -722,7 +725,7 @@ function ClassDetailOverlay({
             style={[s.detailBackBtn, { top: topPad + 14 }]}
             activeOpacity={0.85}
           >
-            <Ionicons name="chevron-back" size={22} color="#fff" />
+            <XI name="back" size={22} stroke={2.2} color="#fff" />
           </TouchableOpacity>
           <View style={s.detailHeroBottom}>
             <View style={{ flexDirection: "row", gap: 7, marginBottom: 8 }}>
@@ -975,6 +978,23 @@ export default function ClassesScreen() {
 
   return (
     <View style={s.screen}>
+      {/* Exact design feed glow (full-bleed cyan radials):
+          radial-gradient(90% 130% at 94% -6%, rgba(0,182,215,0.18) 0%, transparent 52%)  (top-right)
+          radial-gradient(70% 80%  at -8% 100%, rgba(0,182,215,0.10) 0%, transparent 55%)  (bottom-left) */}
+      <Svg style={s.bgGlow} pointerEvents="none">
+        <Defs>
+          <RadialGradient id="classGlowTop" cx="94%" cy="-6%" rx="90%" ry="130%">
+            <Stop offset="0%" stopColor="#00B6D7" stopOpacity={0.18} />
+            <Stop offset="52%" stopColor="#00B6D7" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="classGlowBottom" cx="-8%" cy="100%" rx="70%" ry="80%">
+            <Stop offset="0%" stopColor="#00B6D7" stopOpacity={0.10} />
+            <Stop offset="55%" stopColor="#00B6D7" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <SvgRect x="0" y="0" width="100%" height="100%" fill="url(#classGlowTop)" />
+        <SvgRect x="0" y="0" width="100%" height="100%" fill="url(#classGlowBottom)" />
+      </Svg>
       {isLoading ? (
         <View style={{ paddingTop: topPad + 80 }}>
           <ListSkeleton count={4} />
@@ -1022,7 +1042,7 @@ export default function ClassesScreen() {
             {visibleCats.length === 0 ? (
               <View style={s.emptyState}>
                 <View style={s.emptyIcon}>
-                  <Ionicons name="search-outline" size={30} color="#4C545E" />
+                  <XI name="search" size={30} stroke={1.6} color="#4C545E" />
                 </View>
                 <Text style={s.emptyTitle}>No classes found</Text>
                 <Text style={s.emptyDesc}>Try different keywords or clear your filters.</Text>
@@ -1080,6 +1100,7 @@ export default function ClassesScreen() {
 ═══════════════════════════════════════════════════════════════════ */
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: INK_900 },
+  bgGlow: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 0, pointerEvents: "none" as any },
 
   /* hero */
   heroWrap: { paddingHorizontal: 22, paddingBottom: 22 },

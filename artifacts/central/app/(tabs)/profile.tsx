@@ -571,7 +571,6 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const [addChildVisible, setAddChildVisible] = useState(false);
   const [editingChild, setEditingChild] = useState<ChildProfile | undefined>(undefined);
-  const [qrVisible, setQrVisible] = useState(false);
   const [serverAttendedCount, setServerAttendedCount] = useState<number | null>(null);
 
   // Derive recent attendance
@@ -750,7 +749,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.qrCard}
           activeOpacity={0.85}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setQrVisible(true); }}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/my-qr"); }}
         >
           <LinearGradient
             colors={["rgba(0,182,215,0.16)", "rgba(0,182,215,0.12)"]}

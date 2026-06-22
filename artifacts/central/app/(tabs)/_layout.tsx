@@ -34,11 +34,12 @@ import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 
 import colors from "@/constants/colors";
+import CsIcon from "@/components/CsIcon";
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const ACTIVE_TINT   = "#00B6D7"; // --cs-cyan-500
 const INACTIVE_TINT = "#6B747F"; // --cs-ink-400
-const TAB_BG_WEB    = "rgba(10,11,13,0.92)"; // glassmorphism bg for web
+const TAB_BG_WEB    = "rgba(10,11,13,0.80)"; // glassmorphism bg for web
 const TAB_HEIGHT    = 60; // unified height (design: 60px)
 
 // ── Native Liquid Glass layout (iOS 26+ only) ────────────────────────────────
@@ -87,24 +88,16 @@ function ClassicTabLayout() {
           height: TAB_HEIGHT,
         },
         tabBarBackground: () =>
-          isIOS ? (
-            // iOS: native blur for glass effect
-            <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-          ) : isWeb ? (
+          isWeb ? (
             // Web: semi-transparent dark glass
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: TAB_BG_WEB },
-              ]}
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: TAB_BG_WEB }]} />
           ) : (
-            // Android: solid ink-900
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: colors.studio.background },
-              ]}
+            // iOS + Android: frosted glass (translucent blur)
+            <BlurView
+              intensity={isIOS ? 80 : 32}
+              tint="dark"
+              experimentalBlurMethod={isIOS ? undefined : "dimezisBlurView"}
+              style={[StyleSheet.absoluteFill, isIOS ? null : { backgroundColor: "rgba(10,11,13,0.55)" }]}
             />
           ),
         tabBarLabelStyle: {
@@ -119,12 +112,9 @@ function ClassicTabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="house" tintColor={color} size={22} />
-            ) : (
-              <Ionicons name="home-outline" size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <CsIcon name="home" size={24} stroke={focused ? 2.4 : 2} color={color} fill={focused ? "rgba(0,182,215,0.16)" : "none"} />
+          ),
         }}
       />
 
@@ -133,15 +123,9 @@ function ClassicTabLayout() {
         name="classes"
         options={{
           title: "Classes",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              // "figure.dance" — available iOS 16+, exact semantic match
-              <SymbolView name="figure.dance" tintColor={color} size={22} />
-            ) : (
-              // "body-outline" — best Ionicons semantic match for a dancer figure
-              // Note: "musical-notes-outline" (previous) had no relation to dance
-              <Ionicons name="body-outline" size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <CsIcon name="classes" size={24} stroke={focused ? 2.4 : 2} color={color} fill={focused ? "rgba(0,182,215,0.16)" : "none"} />
+          ),
         }}
       />
 
@@ -150,12 +134,9 @@ function ClassicTabLayout() {
         name="bookings"
         options={{
           title: "Schedule",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="calendar" tintColor={color} size={22} />
-            ) : (
-              <Ionicons name="calendar-outline" size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <CsIcon name="calendar" size={24} stroke={focused ? 2.4 : 2} color={color} fill={focused ? "rgba(0,182,215,0.16)" : "none"} />
+          ),
         }}
       />
 
@@ -173,12 +154,9 @@ function ClassicTabLayout() {
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="person" tintColor={color} size={22} />
-            ) : (
-              <Ionicons name="person-outline" size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <CsIcon name="user" size={24} stroke={focused ? 2.4 : 2} color={color} fill={focused ? "rgba(0,182,215,0.16)" : "none"} />
+          ),
         }}
       />
     </Tabs>

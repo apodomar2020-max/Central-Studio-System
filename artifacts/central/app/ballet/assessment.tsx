@@ -418,6 +418,7 @@ export default function BalletAssessmentScreen() {
   const insets = useSafeAreaInsets();
   const { user, children } = useAppContext();
   const [step, setStep] = useState(0);
+  const [showIntro, setShowIntro] = useState(true);
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
 
@@ -708,6 +709,73 @@ export default function BalletAssessmentScreen() {
     );
   }
 
+  // ── Intro / overview step (design parity: home-ballet2 Step1) ──
+  if (showIntro) {
+    const HOW_IT_WORKS = [
+      { icon: "clipboard-outline", title: "Complete the form", desc: "Personal info, dance background, and physical details" },
+      { icon: "camera-outline", title: "Submit your media", desc: "Profile photo, full-body photo, and optional video" },
+      { icon: "calendar-outline", title: "Get your appointment", desc: "We'll contact you to schedule the assessment session" },
+      { icon: "ribbon-outline", title: "Receive your result", desc: "Your level placement within 48 hours of the session" },
+    ] as const;
+    return (
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+        <LinearGradient
+          colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.05)", "transparent"]}
+          locations={[0, 0.4, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.glow}
+          pointerEvents="none"
+        />
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerBack} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={20} color={CYAN} />
+            <Text style={styles.headerBackText}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.topBarTitle}>Ballet Assessment</Text>
+          <View style={{ width: 60 }} />
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: 120 }]}>
+          <View style={styles.introHeader}>
+            <View style={styles.introIconCircle}>
+              <Ionicons name="sparkles-outline" size={36} color={CYAN} />
+            </View>
+            <Text style={styles.introTitle}>{"Ballet\nAssessment"}</Text>
+            <Text style={styles.introLead}>A free placement assessment to find the perfect level for your dance journey.</Text>
+          </View>
+
+          {HOW_IT_WORKS.map((s) => (
+            <View key={s.title} style={styles.introCard}>
+              <View style={styles.introCardIcon}>
+                <Ionicons name={s.icon as any} size={20} color={CYAN} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.introCardTitle}>{s.title}</Text>
+                <Text style={styles.introCardDesc}>{s.desc}</Text>
+              </View>
+            </View>
+          ))}
+
+          <View style={styles.introFreeNote}>
+            <Ionicons name="sparkles" size={15} color={CYAN} />
+            <Text style={styles.introFreeText}>The placement assessment is completely free of charge.</Text>
+          </View>
+        </ScrollView>
+
+        <View style={[styles.footer, { paddingBottom: Platform.OS === "web" ? 24 : (insets.bottom || 16) + 8 }]}>
+          <TouchableOpacity
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowIntro(false); }}
+            style={[styles.btnPrimary, { flex: 1 }]}
+            activeOpacity={0.88}
+          >
+            <Text style={styles.btnPrimaryText}>Start Application →</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       <LinearGradient
@@ -719,7 +787,7 @@ export default function BalletAssessmentScreen() {
         pointerEvents="none"
       />
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={step === 0 ? () => router.back() : handleBack} style={styles.headerBack} activeOpacity={0.7}>
+        <TouchableOpacity onPress={step === 0 ? () => setShowIntro(true) : handleBack} style={styles.headerBack} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={20} color={CYAN} />
           <Text style={styles.headerBackText}>Back</Text>
         </TouchableOpacity>
@@ -1162,6 +1230,16 @@ const styles = StyleSheet.create({
   stepHeader: { gap: 6, marginBottom: 6 },
   stepTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
   stepDesc: { fontSize: 13.5, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 20 },
+  introHeader: { alignItems: "center", paddingVertical: 20 },
+  introIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: "rgba(0,182,215,0.12)", alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  introTitle: { fontSize: 44, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", textAlign: "center", lineHeight: 40, marginBottom: 12 },
+  introLead: { fontSize: 15, fontFamily: "Archivo_400Regular", color: "#B6BDC6", textAlign: "center", lineHeight: 23, maxWidth: 300 },
+  introCard: { flexDirection: "row", gap: 13, padding: 13, marginBottom: 12, borderRadius: 14, backgroundColor: "rgba(0,182,215,0.07)", borderWidth: 1, borderColor: "rgba(0,182,215,0.16)" },
+  introCardIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: "rgba(0,182,215,0.12)", alignItems: "center", justifyContent: "center" },
+  introCardTitle: { fontSize: 14.5, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  introCardDesc: { fontSize: 12.5, fontFamily: "Archivo_400Regular", color: INK_300, marginTop: 2, lineHeight: 18 },
+  introFreeNote: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderRadius: 12, backgroundColor: "rgba(0,182,215,0.08)", borderWidth: 1, borderColor: "rgba(0,182,215,0.22)", marginTop: 4 },
+  introFreeText: { flex: 1, fontSize: 13, fontFamily: "Archivo_600SemiBold", color: CYAN, lineHeight: 18 },
 
   field: { gap: 6 },
   fieldLabel: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300 },

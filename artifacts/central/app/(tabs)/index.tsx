@@ -1,4 +1,3 @@
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,7 +23,10 @@ import {
   View,
 } from "react-native";
 
+import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-svg";
+
 import { useAppContext } from "@/contexts/AppContext";
+import CsIcon from "@/components/CsIcon";
 import { DanceClass, Instructor } from "@/data/mockData";
 import {
   useListHeroItems,
@@ -136,7 +138,7 @@ function HeroSlide({ item, onInteract }: { item: HeroItem; onInteract?: () => vo
             activeOpacity={0.85}
           >
             <Text style={s.heroCTAText}>{item.buttonText}</Text>
-            <Ionicons name="arrow-forward" size={14} color={INK_900} />
+            <CsIcon name="arrow" size={14} stroke={2.6} color={INK_900} />
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -309,7 +311,7 @@ function AutoReelCard({ reel, onPress }: { reel: InstagramReel; onPress: () => v
     <TouchableOpacity style={s.reelCard} activeOpacity={0.82} onPress={onPress}>
       <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
       <View style={s.reelPlayBtn}>
-        <Ionicons name="logo-instagram" size={16} color="#fff" />
+        <CsIcon name="instagram" size={16} color="#fff" />
       </View>
     </TouchableOpacity>
   );
@@ -342,7 +344,7 @@ function ReelsSection() {
       <View style={s.sectionHeader}>
         <View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <Ionicons name="logo-instagram" size={13} color={MAGENTA} />
+            <CsIcon name="instagram" size={16} color={MAGENTA} />
             <Text style={[s.eyebrow, { color: MAGENTA }]}>@CENTRAL.STUDIO.EG</Text>
           </View>
           <Text style={s.sectionTitle}>Latest reels</Text>
@@ -352,7 +354,7 @@ function ReelsSection() {
           style={s.seeAllRow}
         >
           <Text style={s.seeAllText}>Follow</Text>
-          <Ionicons name="chevron-forward" size={13} color={INK_300} />
+          <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
         </TouchableOpacity>
       </View>
 
@@ -385,7 +387,7 @@ function ReelsSection() {
                   ? <Image source={{ uri: item.thumbnail_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                   : <LinearGradient colors={[INK_700, INK_800]} style={StyleSheet.absoluteFill} />}
                 <View style={s.reelPlayBtn}>
-                  <Ionicons name="play" size={18} color="#fff" />
+                  <CsIcon name="play" size={14} color="#fff" />
                 </View>
               </TouchableOpacity>
             );
@@ -538,10 +540,10 @@ function ClassCard({
         {/* Row 2: MetaRow */}
         {hasSchedule && (
           <View style={s.classMeta}>
-            <Ionicons name="calendar-outline" size={15} color={INK_300} />
+            <CsIcon name="calendar" size={15} stroke={2} color={INK_300} />
             <Text style={s.classMetaText}>{dayLabel} · {item.startTime}</Text>
             <View style={s.classMetaSep} />
-            <Ionicons name="time-outline" size={15} color={INK_300} />
+            <CsIcon name="clock" size={15} stroke={2} color={INK_300} />
             <Text style={s.classMetaText}>{item.duration}</Text>
           </View>
         )}
@@ -607,7 +609,7 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
   const hot     = pkg.isFeatured;
   const credits = pkg.sessions ?? 1;
   const perCls  = pkg.singleClassPriceEgp ?? (credits > 1 ? Math.round(pkg.priceEgp / credits) : 0);
-  const iconName = hot ? "star" : credits === 1 ? "ticket-outline" : "infinite-outline";
+  const iconName: "star" | "ticket" | "infinity" = hot ? "star" : credits === 1 ? "ticket" : "infinity";
 
   return (
     <TouchableOpacity
@@ -617,12 +619,12 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
     >
       {hot && (
         <View style={s.pkgBadge}>
-          <Ionicons name="star" size={10} color={INK_900} />
+          <CsIcon name="star" size={12} color={INK_900} />
           <Text style={s.pkgBadgeText}>POPULAR</Text>
         </View>
       )}
       <View style={[s.pkgIcon, hot && { backgroundColor: CYAN }]}>
-        <Ionicons name={iconName as any} size={20} color={hot ? INK_900 : CYAN} />
+        <CsIcon name={iconName} size={22} stroke={2.2} color={hot ? INK_900 : CYAN} />
       </View>
       <Text style={s.pkgName}>{pkg.name}</Text>
       <View style={s.pkgPriceRow}>
@@ -651,7 +653,7 @@ function PackagesSection() {
       <View style={[s.section, { paddingHorizontal: 20 }]}>
         <LinearGradient colors={["#003A47", "#001828"]} style={s.pkgPromo}>
           <View style={s.pkgPromoIcon}>
-            <Ionicons name="card" size={24} color={CYAN} />
+            <CsIcon name="ticket" size={24} stroke={2.2} color={CYAN} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.pkgPromoTitle}>Save with Class Packages</Text>
@@ -677,7 +679,7 @@ function PackagesSection() {
         </View>
         <TouchableOpacity onPress={() => router.push("/(tabs)/packages")} style={s.seeAllRow}>
           <Text style={s.seeAllText}>Compare</Text>
-          <Ionicons name="chevron-forward" size={13} color={INK_300} />
+          <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
         </TouchableOpacity>
       </View>
       {isLoading ? (
@@ -698,6 +700,38 @@ function PackagesSection() {
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
+
+/** Header bell with the design's periodic ring wobble (bellRing keyframes, every 5s). */
+function BellButton({ hasUnread, onPress }: { hasUnread: boolean; onPress: () => void }) {
+  const ring = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    function wobble() {
+      ring.setValue(0);
+      Animated.timing(ring, { toValue: 1, duration: 820, useNativeDriver: true }).start();
+    }
+    wobble();
+    const id = setInterval(wobble, 5000);
+    return () => clearInterval(id);
+  }, [ring]);
+  const rotate = ring.interpolate({
+    inputRange: [0, 0.08, 0.2, 0.32, 0.44, 0.56, 0.68, 0.8, 1],
+    outputRange: ["0deg", "18deg", "-16deg", "14deg", "-10deg", "7deg", "-4deg", "2deg", "0deg"],
+  });
+  // design bellGlow: magenta halo pushes out (0→6px→10px) and fades each ring
+  const glowOpacity = ring.interpolate({ inputRange: [0, 0.2, 0.6, 1], outputRange: [0, 0.22, 0.08, 0] });
+  const glowScale = ring.interpolate({ inputRange: [0, 0.2, 0.6, 1], outputRange: [0.7, 1.0, 1.3, 1.55] });
+  return (
+    <View style={s.bellWrap}>
+      <Animated.View pointerEvents="none" style={[s.bellGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+      <TouchableOpacity onPress={onPress} style={s.headerBtn}>
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <CsIcon name="bell" size={21} color={INK_200} />
+        </Animated.View>
+        {hasUnread && <View style={s.badge} />}
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 export default function StudioHomeScreen() {
   // ── Screen entrance animation (opacity 0→1, translateY 18→0, 520ms) ────────
@@ -813,13 +847,23 @@ export default function StudioHomeScreen() {
 
   return (
     <Animated.View style={[s.screen, { opacity: enterOpacity, transform: [{ translateY: enterY }] }]}>
-      {/* Dark-teal glow behind header + hero */}
-      <LinearGradient
-        colors={["rgba(0,98,115,0.22)", "rgba(0,98,115,0.07)", "transparent"]}
-        locations={[0, 0.4, 1]}
-        style={s.bgGlow}
-        pointerEvents="none"
-      />
+      {/* Exact design feed glow:
+          radial-gradient(80% 110% at 50% -5%, rgba(163,230,53,0.11) 0%, transparent 52%)  (lime, top-center)
+          radial-gradient(65% 70%  at 95% 95%, rgba(0,182,215,0.13) 0%, transparent 55%)   (cyan, bottom-right) */}
+      <Svg style={s.bgGlow} pointerEvents="none">
+        <Defs>
+          <RadialGradient id="homeGlowLime" cx="50%" cy="-5%" rx="80%" ry="110%">
+            <Stop offset="0%" stopColor="rgb(163,230,53)" stopOpacity={0.11} />
+            <Stop offset="52%" stopColor="rgb(163,230,53)" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="homeGlowCyan" cx="95%" cy="95%" rx="65%" ry="70%">
+            <Stop offset="0%" stopColor="#00B6D7" stopOpacity={0.13} />
+            <Stop offset="55%" stopColor="#00B6D7" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <SvgRect x="0" y="0" width="100%" height="100%" fill="url(#homeGlowLime)" />
+        <SvgRect x="0" y="0" width="100%" height="100%" fill="url(#homeGlowCyan)" />
+      </Svg>
 
       {/* ── Header ── */}
       <View style={[s.header, { paddingTop: topPad }]}>
@@ -830,10 +874,7 @@ export default function StudioHomeScreen() {
         />
         <View style={s.headerRight}>
           {/* Bell */}
-          <TouchableOpacity onPress={() => router.push("/notifications")} style={s.headerBtn}>
-            <Ionicons name="notifications-outline" size={21} color={INK_200} />
-            {totalUnread > 0 && <View style={s.badge} />}
-          </TouchableOpacity>
+          <BellButton hasUnread={totalUnread > 0} onPress={() => router.push("/notifications")} />
           {/* Avatar */}
           <TouchableOpacity
             onPress={() => router.push(user ? "/(tabs)/profile" : "/auth/login")}
@@ -844,7 +885,7 @@ export default function StudioHomeScreen() {
               ? <Image source={{ uri: user.avatarUrl }} style={s.avatarImg} resizeMode="cover" />
               : userInitials
               ? <Text style={s.avatarInitials}>{userInitials}</Text>
-              : <Ionicons name="person-outline" size={18} color={INK_300} />}
+              : <CsIcon name="user" size={18} color={INK_300} />}
           </TouchableOpacity>
         </View>
       </View>
@@ -877,7 +918,7 @@ export default function StudioHomeScreen() {
             </View>
             <TouchableOpacity onPress={() => router.push("/(tabs)/classes")} style={s.seeAllRow}>
               <Text style={s.seeAllText}>See all</Text>
-              <Ionicons name="chevron-forward" size={13} color={INK_300} />
+              <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
             </TouchableOpacity>
           </View>
           {instLoading ? (
@@ -911,7 +952,7 @@ export default function StudioHomeScreen() {
             </View>
             <TouchableOpacity onPress={() => router.push("/(tabs)/classes")} style={s.seeAllRow}>
               <Text style={s.seeAllText}>See all</Text>
-              <Ionicons name="chevron-forward" size={13} color={INK_300} />
+              <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
             </TouchableOpacity>
           </View>
 
@@ -926,7 +967,7 @@ export default function StudioHomeScreen() {
           ) : weekClasses.length === 0 ? (
             <View style={s.emptyState}>
               <View style={s.emptyIconCircle}>
-                <Ionicons name="calendar-outline" size={36} color={CYAN} />
+                <CsIcon name="calendar" size={36} stroke={1.8} color={CYAN} />
               </View>
               <Text style={s.emptyTitle}>No upcoming classes</Text>
               <Text style={s.emptyDesc}>Classes will appear here once schedules are set up in the portal.</Text>
@@ -960,7 +1001,7 @@ export default function StudioHomeScreen() {
 const s = StyleSheet.create({
   // ── Screen ────────────────────────────────────────────────────────────────
   screen: { flex: 1, backgroundColor: INK_900 },
-  bgGlow: { position: "absolute", top: 0, left: 0, right: 0, height: 400, zIndex: 0, pointerEvents: "none" as any },
+  bgGlow: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 0, pointerEvents: "none" as any },
 
   // ── Header ────────────────────────────────────────────────────────────────
   header: {
@@ -970,6 +1011,9 @@ const s = StyleSheet.create({
   // Design: width 100, height 63
   logo: { width: 100, height: 63 },
   headerRight: { flexDirection: "row", gap: 12, alignItems: "center" },
+  bellWrap: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
+  // magenta halo behind the bell (design bellGlow) — sits outside the button
+  bellGlow: { position: "absolute", width: 58, height: 58, borderRadius: 29, backgroundColor: MAGENTA },
   // Design: 42×42, bg rgba(255,255,255,0.06), border 1px rgba(255,255,255,0.10)
   headerBtn: {
     width: 42, height: 42, borderRadius: 21,

@@ -15,13 +15,17 @@ import {
   View,
 } from "react-native";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { useAppContext, User } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
+import { STORAGE_KEYS } from "@/constants/danceStyles";
 import AppButton from "@/components/AppButton";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import FacebookSignInButton from "@/components/FacebookSignInButton";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
+import AppleSignInButton from "@/components/AppleSignInButton";
 import { continueAfterAuth } from "@/services/authProfile";
 
 const ROLES: { value: User["role"]; label: string; icon: string }[] = [
@@ -81,6 +85,9 @@ export default function RegisterScreen() {
         return;
       }
 
+      // Mark this as a brand-new account so the post-auth funnel routes
+      // through the signup personalization steps (phone → styles → success).
+      await AsyncStorage.setItem(STORAGE_KEYS.needsPersonalization, "1");
       await continueAfterAuth(data.accessToken, setUser);
       setLoading(false);
     } catch {
@@ -220,6 +227,8 @@ export default function RegisterScreen() {
             <Text style={styles.dividerText}>or</Text>
             <View style={styles.dividerLine} />
           </View>
+
+          <AppleSignInButton />
 
           <GoogleSignInButton onPress={google.signIn} loading={google.loading} disabled={!google.ready} />
 
