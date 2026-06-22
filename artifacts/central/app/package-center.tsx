@@ -1,14 +1,14 @@
 /**
- * Package Center — full student package history with credit details.
+ * Package Center — student package history (design: PackageCenter).
  *
- * Uses the secure /api/my/packages endpoint (student JWT scoped) rather than
- * the old insecure pattern of fetching all orders and filtering client-side.
+ * Active-package hero card + Active/Past tabs + package list. Uses the secure
+ * /api/my/packages endpoint (student JWT scoped). All values are real
+ * (packageName, credits, dates, status) — nothing faked.
  */
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Platform,
   RefreshControl,
@@ -21,135 +21,76 @@ import {
 
 import { useGetMyPackages } from "@workspace/api-client-react";
 import type { PackageOrder } from "@workspace/api-client-react";
-import colors from "@/constants/colors";
+import SBI from "@/components/SbIcon";
 
-// ─── Status helpers ──────────────────────────────────────────────────────────
+const CYAN = "#00B6D7";
+const CYAN_400 = "#2DCDEC";
+const SUCCESS = "#1FB871";
+const INK_300 = "#8E97A2";
+const INK_400 = "#6B747F";
+const INK_800 = "#15171B";
+const BORDER = "rgba(255,255,255,0.08)";
 
+// ─── Status helpers (real data) ──────────────────────────────────────────────
 function statusLabel(pkg: PackageOrder): string {
   if (pkg.status === "fullyUsed") return "Exhausted";
   if (pkg.status === "active") {
     if (pkg.expiresAt && new Date(pkg.expiresAt) < new Date()) return "Expired";
     return "Active";
   }
-  if (pkg.status === "pendingPayment") return "Pending Activation";
+  if (pkg.status === "pendingPayment") return "Pending";
   if (pkg.status === "cancelled") return "Cancelled";
   return pkg.status;
 }
-
-function statusColor(pkg: PackageOrder): string {
-  const label = statusLabel(pkg);
-  if (label === "Active") return "#22C55E";
-  if (label === "Expired") return "#F59E0B";
-  if (label === "Pending Activation") return "#3B82F6";
-  if (label === "Exhausted") return "#EF4444";
-  return "#6B7280";
+function statusColor(label: string): string {
+  if (label === "Active") return SUCCESS;
+  if (label === "Expired") return "#FFB02E";
+  if (label === "Pending") return "#3B82F6";
+  if (label === "Exhausted") return "#FF3B47";
+  return INK_400;
 }
-
-function usedCredits(pkg: PackageOrder): number {
-  return pkg.totalCredits - pkg.remainingCredits;
+function isActivePkg(p: PackageOrder): boolean {
+  return p.status === "active" && (!p.expiresAt || new Date(p.expiresAt) >= new Date());
 }
-
-function formatDate(iso?: string | null): string {
+function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-// ─── Package card ─────────────────────────────────────────────────────────────
-
-function PackageDetailCard({ pkg }: { pkg: PackageOrder }) {
+// ─── Package list card (design parity) ───────────────────────────────────────
+function PackageCard({ pkg }: { pkg: PackageOrder }) {
   const label = statusLabel(pkg);
-  const color = statusColor(pkg);
-  const used = usedCredits(pkg);
-  const progress = pkg.totalCredits > 0 ? pkg.remainingCredits / pkg.totalCredits : 0;
-
+  const color = statusColor(label);
+  const remaining = label === "Active" ? pkg.remainingCredits : 0;
+  const pct = pkg.totalCredits > 0 ? Math.round((remaining / pkg.totalCredits) * 100) : 0;
   return (
     <View style={styles.card}>
-      {/* Header */}
-      <View style={styles.cardHeader}>
+      <View style={styles.cardTop}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.packageName} numberOfLines={2}>{pkg.packageName}</Text>
-          <Text style={styles.packageId}>Order #{pkg.id}</Text>
+          <Text style={styles.cardName} numberOfLines={1}>{pkg.packageName}</Text>
+          <Text style={styles.cardSub}>{pkg.totalCredits} classes · Order #{pkg.id}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: color + "20", borderColor: color + "40" }]}>
-          <View style={[styles.statusDot, { backgroundColor: color }]} />
-          <Text style={[styles.statusText, { color }]}>{label}</Text>
-        </View>
-      </View>
-
-      {/* Credits progress */}
-      <View style={styles.creditsSection}>
-        <View style={styles.creditsSummary}>
-          <View style={styles.creditItem}>
-            <Text style={[styles.creditValue, { color: "#22C55E" }]}>{pkg.remainingCredits}</Text>
-            <Text style={styles.creditLabel}>Remaining</Text>
-          </View>
-          <View style={styles.creditDivider} />
-          <View style={styles.creditItem}>
-            <Text style={[styles.creditValue, { color: "#F59E0B" }]}>{used}</Text>
-            <Text style={styles.creditLabel}>Used</Text>
-          </View>
-          <View style={styles.creditDivider} />
-          <View style={styles.creditItem}>
-            <Text style={[styles.creditValue, { color: "#9CA3AF" }]}>{pkg.totalCredits}</Text>
-            <Text style={styles.creditLabel}>Total</Text>
-          </View>
-        </View>
-
-        {/* Progress bar */}
-        <View style={styles.progressTrack}>
-          <LinearGradient
-            colors={["#22C55E", "#16A34A"]}
-            style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          />
-        </View>
-        <Text style={styles.progressLabel}>
-          {Math.round(progress * 100)}% remaining
-        </Text>
-      </View>
-
-      {/* Dates */}
-      <View style={styles.datesRow}>
-        <View style={styles.dateItem}>
-          <Text style={styles.dateLabel}>Purchased</Text>
-          <Text style={styles.dateValue}>{formatDate(pkg.createdAt)}</Text>
-        </View>
-        {pkg.activatedAt && (
-          <View style={styles.dateItem}>
-            <Text style={styles.dateLabel}>Activated</Text>
-            <Text style={styles.dateValue}>{formatDate(pkg.activatedAt)}</Text>
-          </View>
-        )}
-        <View style={styles.dateItem}>
-          <Text style={styles.dateLabel}>Expires</Text>
-          <Text style={[styles.dateValue, !pkg.expiresAt && { color: "#4B5563" }]}>
-            {pkg.expiresAt ? formatDate(pkg.expiresAt) : "No expiry"}
-          </Text>
+        <View style={[styles.statusPill, { backgroundColor: label === "Active" ? "rgba(31,184,113,0.16)" : "rgba(255,255,255,0.06)" }]}>
+          <Text style={[styles.statusPillText, { color }]}>{label}</Text>
         </View>
       </View>
-
-      {pkg.notes ? (
-        <View style={styles.notesRow}>
-          <Ionicons name="document-text-outline" size={13} color="#6B7280" />
-          <Text style={styles.notesText} numberOfLines={2}>{pkg.notes}</Text>
-        </View>
-      ) : null}
+      <Text style={styles.cardDates}>Purchased {fmtDate(pkg.createdAt)} · Expires {pkg.expiresAt ? fmtDate(pkg.expiresAt) : "No expiry"}</Text>
+      <View style={styles.barTrack}>
+        <LinearGradient colors={[CYAN, CYAN_400]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.barFill, { width: `${pct}%` }]} />
+      </View>
     </View>
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
+// ─── Screen ──────────────────────────────────────────────────────────────────
 export default function PackageCenterScreen() {
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
+  const [tab, setTab] = useState<"active" | "past">("active");
+  const topPad = (Platform.OS === "web" ? 67 : insets.top) + 12;
 
   const { data, isLoading, isError, refetch } = useGetMyPackages();
+  const packages = useMemo(() => data ?? [], [data]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -157,64 +98,104 @@ export default function PackageCenterScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  const packages = data ?? [];
+  const activeList = useMemo(() => packages.filter((p) => isActivePkg(p) || p.status === "pendingPayment"), [packages]);
+  const pastList = useMemo(() => packages.filter((p) => !isActivePkg(p) && p.status !== "pendingPayment"), [packages]);
+  const hero = useMemo(() => packages.find((p) => isActivePkg(p)), [packages]);
+  const list = tab === "active" ? activeList : pastList;
 
-  // Split by status groups
-  const active = packages.filter((p) => p.status === "active" && (!p.expiresAt || new Date(p.expiresAt) >= new Date()));
-  const pending = packages.filter((p) => p.status === "pendingPayment");
-  const past = packages.filter((p) => !active.includes(p) && !pending.includes(p));
-
-  function renderGroup(title: string, items: PackageOrder[], accent: string) {
-    if (items.length === 0) return null;
-    return (
-      <View style={styles.group}>
-        <View style={styles.groupHeader}>
-          <Text style={[styles.groupTitle, { color: accent }]}>{title}</Text>
-          <Text style={styles.groupCount}>{items.length}</Text>
-        </View>
-        {items.map((pkg) => <PackageDetailCard key={pkg.id} pkg={pkg} />)}
-      </View>
-    );
-  }
+  const heroPct = hero && hero.totalCredits > 0 ? Math.round((hero.remainingCredits / hero.totalCredits) * 100) : 0;
+  const heroUsed = hero ? hero.totalCredits - hero.remainingCredits : 0;
 
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
+      <View style={[styles.header, { paddingTop: topPad }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} activeOpacity={0.85}>
+          <SBI name="back" size={18} stroke={2.2} color={CYAN} />
+          <Text style={styles.headerBtnText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Package Center</Text>
-        <View style={styles.headerButtonPlaceholder} />
+        <View style={{ width: 60 }} />
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 40 : 100 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#00B6D7" />}
+        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 60 : insets.bottom + 40 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={CYAN} colors={[CYAN]} />}
       >
         {isLoading && !refreshing ? (
-          <View style={styles.loadingState}>
-            {[1, 2].map((i) => <View key={i} style={styles.skeletonCard} />)}
-          </View>
+          <View style={{ gap: 12 }}>{[1, 2].map((i) => <View key={i} style={styles.skeleton} />)}</View>
         ) : isError ? (
           <View style={styles.emptyState}>
-            <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
             <Text style={styles.emptyTitle}>Couldn't load packages</Text>
             <Text style={styles.emptyDesc}>Pull down to try again</Text>
           </View>
         ) : packages.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="card-outline" size={48} color="#4B5563" />
+            <View style={styles.emptyIcon}><SBI name="cal" size={30} stroke={1.6} color={CYAN} /></View>
             <Text style={styles.emptyTitle}>No packages yet</Text>
             <Text style={styles.emptyDesc}>Browse and purchase a class package to get started</Text>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/packages" as any)} style={styles.emptyBtn} activeOpacity={0.88}>
+              <Text style={styles.emptyBtnText}>Browse Packages</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
-            {renderGroup("Active", active, "#22C55E")}
-            {renderGroup("Pending Activation", pending, "#3B82F6")}
-            {renderGroup("Past Packages", past, "#6B7280")}
+            {/* Active package hero */}
+            {hero && (
+              <LinearGradient
+                colors={["rgba(0,182,215,0.16)", "rgba(0,182,215,0.10)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroCard}
+              >
+                <View style={styles.heroTop}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.heroEyebrow}>ACTIVE PACKAGE</Text>
+                    <Text style={styles.heroName} numberOfLines={1}>{hero.packageName}</Text>
+                    <Text style={styles.heroSub}>{hero.totalCredits} classes · Expires {hero.expiresAt ? fmtDate(hero.expiresAt) : "No expiry"}</Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={styles.heroCredits}>{hero.remainingCredits}</Text>
+                    <Text style={styles.heroCreditsLabel}>credits left</Text>
+                  </View>
+                </View>
+                <View style={styles.heroBarTrack}>
+                  <LinearGradient colors={[CYAN, CYAN_400]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.barFill, { width: `${heroPct}%` }]} />
+                </View>
+                <View style={styles.heroMetaRow}>
+                  <Text style={styles.heroMeta}>{heroUsed} used</Text>
+                  <Text style={styles.heroMeta}>{hero.remainingCredits}/{hero.totalCredits} remaining</Text>
+                </View>
+                <TouchableOpacity onPress={() => router.push("/(tabs)/packages" as any)} style={styles.buyBtn} activeOpacity={0.88}>
+                  <Text style={styles.buyBtnText}>Buy New Package</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+            )}
+
+            {/* Active / Past tabs */}
+            <View style={styles.tabBar}>
+              {(["active", "past"] as const).map((t) => {
+                const on = tab === t;
+                return (
+                  <TouchableOpacity key={t} onPress={() => setTab(t)} style={[styles.tab, on && styles.tabActive]} activeOpacity={0.85}>
+                    <Text style={[styles.tabText, on && styles.tabTextActive]}>{t === "active" ? "Active" : "Past"}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* List */}
+            {list.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>{tab === "active" ? "No active packages" : "No past packages"}</Text>
+                <Text style={styles.emptyDesc}>{tab === "active" ? "Purchase a package to start booking classes." : "Completed and expired packages will show up here."}</Text>
+              </View>
+            ) : (
+              <View style={{ gap: 12 }}>
+                {list.map((pkg) => <PackageCard key={pkg.id} pkg={pkg} />)}
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -224,66 +205,50 @@ export default function PackageCenterScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0A0B0D" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.07)",
-  },
-  headerButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    minWidth: 54,
-  },
-  headerButtonText: {
-    fontSize: 14,
-    fontFamily: "Archivo_600SemiBold",
-    color: colors.studio.primary,
-  },
-  headerButtonPlaceholder: { minWidth: 54 },
-  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 20, paddingTop: 20 },
-  group: { marginBottom: 24 },
-  groupHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  groupTitle: { fontSize: 11, fontFamily: "SpaceMono_700Bold", textTransform: "uppercase", letterSpacing: 0.5 },
-  groupCount: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: "#6B747F", backgroundColor: "#15171B", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  card: {
-    backgroundColor: "#15171B",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    gap: 14,
-  },
-  cardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  packageName: { fontSize: 16, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", lineHeight: 22 },
-  packageId: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#6B747F", marginTop: 2 },
-  statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11, fontFamily: "Archivo_700Bold" },
-  creditsSection: { gap: 8 },
-  creditsSummary: { flexDirection: "row", alignItems: "center" },
-  creditItem: { flex: 1, alignItems: "center" },
-  creditValue: { fontSize: 24, fontFamily: "Anton_400Regular" },
-  creditLabel: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 2 },
-  creditDivider: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.08)" },
-  progressTrack: { height: 7, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" },
-  progressFill: { height: "100%", borderRadius: 4 },
-  progressLabel: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "#6B747F", textAlign: "right" },
-  datesRow: { flexDirection: "row", gap: 8 },
-  dateItem: { flex: 1, backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 10, gap: 3 },
-  dateLabel: { fontSize: 10, fontFamily: "SpaceMono_700Bold", color: "#6B747F", textTransform: "uppercase", letterSpacing: 0.5 },
-  dateValue: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
-  notesRow: { flexDirection: "row", gap: 6, alignItems: "flex-start" },
-  notesText: { flex: 1, fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F", lineHeight: 16 },
-  loadingState: { gap: 12 },
-  skeletonCard: { height: 220, backgroundColor: "#15171B", borderRadius: 16 },
-  emptyState: { alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 80 },
-  emptyTitle: { fontSize: 16, fontFamily: "Archivo_600SemiBold", color: "#9CA3AF" },
-  emptyDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", textAlign: "center" },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 14 },
+  headerBtn: { flexDirection: "row", alignItems: "center", gap: 2, width: 60 },
+  headerBtnText: { fontSize: 15, fontFamily: "Archivo_600SemiBold", color: CYAN },
+  headerTitle: { fontSize: 16, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+
+  // hero
+  heroCard: { borderRadius: 16, padding: 18, borderWidth: 1, borderColor: "rgba(0,182,215,0.38)", marginBottom: 22 },
+  heroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10 },
+  heroEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 1.6, textTransform: "uppercase", color: CYAN_400, marginBottom: 5 },
+  heroName: { fontFamily: "Archivo_800ExtraBold", fontSize: 20, color: "#FFFFFF" },
+  heroSub: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_300, marginTop: 2 },
+  heroCredits: { fontFamily: "Anton_400Regular", fontSize: 44, lineHeight: 40, color: "#FFFFFF" },
+  heroCreditsLabel: { fontFamily: "Archivo_700Bold", fontSize: 11.5, color: CYAN_400, marginTop: 4 },
+  heroBarTrack: { height: 7, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.08)", overflow: "hidden", marginBottom: 8 },
+  heroMetaRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },
+  heroMeta: { fontFamily: "Archivo_600SemiBold", fontSize: 12, color: INK_400 },
+  buyBtn: { backgroundColor: CYAN, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
+  buyBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 14, color: "#0A0B0D" },
+
+  // tabs
+  tabBar: { flexDirection: "row", gap: 4, padding: 4, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: 999, marginBottom: 16 },
+  tab: { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
+  tabActive: { backgroundColor: "#0A0B0D" },
+  tabText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: INK_400 },
+  tabTextActive: { color: "#FFFFFF" },
+
+  // list card
+  card: { padding: 16, borderRadius: 16, backgroundColor: INK_800, borderWidth: 1, borderColor: BORDER },
+  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
+  cardName: { fontFamily: "Archivo_800ExtraBold", fontSize: 16, color: "#FFFFFF" },
+  cardSub: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_400, marginTop: 2 },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  statusPillText: { fontFamily: "Archivo_700Bold", fontSize: 11 },
+  cardDates: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_400, marginBottom: 8 },
+  barTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
+  barFill: { height: "100%", borderRadius: 3 },
+
+  // states
+  skeleton: { height: 150, backgroundColor: INK_800, borderRadius: 16 },
+  emptyState: { alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 56, paddingHorizontal: 30 },
+  emptyIcon: { width: 68, height: 68, borderRadius: 34, backgroundColor: "rgba(0,182,215,0.10)", alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  emptyTitle: { fontFamily: "Archivo_700Bold", fontSize: 20, color: "#FFFFFF", textAlign: "center" },
+  emptyDesc: { fontFamily: "Archivo_400Regular", fontSize: 14, color: INK_400, textAlign: "center", maxWidth: 240, lineHeight: 21 },
+  emptyBtn: { marginTop: 8, backgroundColor: CYAN, borderRadius: 999, paddingHorizontal: 24, paddingVertical: 13 },
+  emptyBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 14, color: "#0A0B0D" },
 });
