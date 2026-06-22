@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Image,
   Linking,
@@ -14,7 +14,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useGetInstructor } from "@workspace/api-client-react";
+import {
+  useGetInstructor,
+  useListClasses,
+  useListSchedules,
+} from "@workspace/api-client-react";
 
 import { mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
@@ -23,6 +27,44 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const ORDERED_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+function ISection({ title, children, action }: { title: string, children: React.ReactNode, action?: { label: string, onClick: () => void } }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {action && (
+          <TouchableOpacity onPress={action.onClick} style={styles.sectionActionBtn}>
+            <Text style={styles.sectionActionText}>{action.label}</Text>
+            <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.4)" />
+          </TouchableOpacity>
+        )}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function formatTime(timeStr: string): string {
+  if (!timeStr) return "";
+  const [hoursStr = "0", minsStr = "00"] = timeStr.split(":");
+  const hours = parseInt(hoursStr, 10);
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const h = hours % 12 || 12;
+  return `${h}:${minsStr} ${ampm}`;
+}
+
+function durationMinsText(start: string, end: string): string {
+  if (!start || !end) return "";
+  const [h1, m1] = start.split(":").map(Number);
+  const [h2, m2] = end.split(":").map(Number);
+  let d = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (d < 0) d += 24 * 60;
+  return `${d} min`;
+}
+
 export default function InstructorDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -30,13 +72,41 @@ export default function InstructorDetailScreen() {
 
   const numericId = Number(id);
   const query = useGetInstructor(numericId, {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query: { enabled: !!id && !isNaN(numericId) } as any,
+    // @ts-ignore
+    query: { enabled: !!id && !isNaN(numericId) },
   });
 
+  const { data: allClasses } = useListClasses();
+  const { data: allSchedules } = useListSchedules();
+
   const instructor = query.data ? mapApiInstructorToMobile(query.data) : null;
-  // Extra fields directly from the API (not mapped to the mobile model)
-  const apiData = query.data;
+  const apiData: any = query.data;
+
+  const instructorClasses = useMemo(() => {
+    if (!allClasses) return [];
+    return allClasses.filter((c: any) => c.instructorId === numericId);
+  }, [allClasses, numericId]);
+
+  const scheduleMap = useMemo(() => {
+    if (!allSchedules || instructorClasses.length === 0) return {};
+    const map: Record<string, any[]> = {};
+    const classIds = new Set(instructorClasses.map((c: any) => c.id));
+
+    allSchedules.forEach((sch: any) => {
+      if (classIds.has(sch.classId) && sch.type === 'weekly' && sch.dayOfWeek != null) {
+        const cls = instructorClasses.find((c: any) => c.id === sch.classId);
+        if (!cls) return;
+        const dayName = DAY_NAMES[sch.dayOfWeek];
+        if (!map[dayName]) map[dayName] = [];
+        map[dayName].push({
+          className: cls.title,
+          startTime: formatTime(sch.startTime),
+          duration: durationMinsText(sch.startTime, sch.endTime),
+        });
+      }
+    });
+    return map;
+  }, [allSchedules, instructorClasses]);
 
   if (query.isLoading) {
     return <DetailSkeleton />;
@@ -68,247 +138,371 @@ export default function InstructorDetailScreen() {
     );
   }
 
-  const accentColor = instructor.photoColor;
-  const achievements: string[] = (apiData as any)?.achievements ?? [];
-  const teachingLevel: string | null = (apiData as any)?.teachingLevel ?? null;
-  const instagramUrl: string | null = (apiData as any)?.instagramUrl ?? null;
-  const tiktokUrl: string | null = (apiData as any)?.tiktokUrl ?? null;
-  const youtubeUrl: string | null = (apiData as any)?.youtubeUrl ?? null;
-  const hasSocial = instagramUrl || tiktokUrl || youtubeUrl;
+  const accentColor = instructor.photoColor || "#00B6D7";
+  const achievements: string[] = apiData?.achievements ?? [];
+  const teachingLevel: string | null = apiData?.teachingLevel ?? null;
+  const instagramUrl: string | null = apiData?.instagramUrl ?? null;
+  const tiktokUrl: string | null = apiData?.tiktokUrl ?? null;
+  const youtubeUrl: string | null = apiData?.youtubeUrl ?? null;
+  const hasSocial = !!(instagramUrl || tiktokUrl || youtubeUrl);
 
-  // Validate URLs before opening to prevent javascript: / data: URI injection
-  // from a compromised database record. Only https:// URLs are allowed.
   const openSafeUrl = (url: string | null) => {
     if (typeof url === "string" && url.startsWith("https://")) {
       Linking.openURL(url);
     }
   };
 
+  const hasAnySchedule = Object.keys(scheduleMap).length > 0;
+
   return (
     <View style={styles.container}>
-      {/* Hero banner */}
-      <View style={[styles.heroBg, { height: Platform.OS === "web" ? 260 : 260 + insets.top }]}>
-        {instructor.photoUrl && !imageFailed ? (
-          <Image
-            source={{ uri: instructor.photoUrl }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-            onError={() => setImageFailed(true)}
-          />
-        ) : (
-          <LinearGradient
-            colors={[accentColor + "CC", accentColor + "33", "#0B0B12"]}
-            start={{ x: 0.2, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-        )}
-        <LinearGradient
-          colors={["rgba(0,0,0,0.0)", "rgba(0,0,0,0.75)", "rgba(11,11,18,1)"]}
-          locations={[0.3, 0.7, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-
-        {/* Back button */}
-        <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
-          style={[styles.backBtn, { top: Platform.OS === "web" ? 16 : insets.top + 8 }]}
-        >
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-
-        {/* Name / title overlay */}
-        <View style={[styles.heroInfo, { paddingBottom: 24 }]}>
-          {(!instructor.photoUrl || imageFailed) && (
-            <View style={[styles.initialsCircle, { backgroundColor: accentColor + "30", borderColor: accentColor + "60" }]}>
-              <Text style={[styles.initialsText, { color: accentColor }]}>{instructor.initials}</Text>
-            </View>
-          )}
-          <Text style={styles.instructorName}>{instructor.name}</Text>
-          <Text style={[styles.instructorTitle, { color: accentColor }]}>{instructor.title}</Text>
-          <View style={styles.heroMeta}>
-            {teachingLevel ? (
-              <View style={styles.levelBadge}>
-                <Text style={styles.levelText}>{teachingLevel}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      </View>
-
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
+        contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 90 + insets.bottom }}
+        style={{ flex: 1 }}
       >
-        {/* Bio */}
-        {instructor.bio ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>About</Text>
-            <Text style={styles.bioText}>{instructor.bio}</Text>
+        {/* HERO */}
+        <View style={{ position: "relative", height: 280 }}>
+          {instructor.photoUrl && !imageFailed ? (
+            <Image
+              source={{ uri: instructor.photoUrl }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <LinearGradient
+              colors={[accentColor + "CC", accentColor + "33", "#0B0B12"]}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.8, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+          <LinearGradient
+            colors={["rgba(5,6,8,0.55)", "rgba(5,6,8,0.10)", "rgba(5,6,8,0.90)"]}
+            locations={[0, 0.38, 1]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          {/* Top bar */}
+          <View style={[styles.topBar, { top: Math.max(insets.top, 16) }]}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
-        ) : null}
-
-        {/* Dance Styles */}
-        {instructor.danceStyles.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Dance Styles</Text>
-            <View style={styles.pillRow}>
-              {instructor.danceStyles.map((style) => (
-                <View key={style} style={[styles.pill, { backgroundColor: accentColor + "18", borderColor: accentColor + "50" }]}>
-                  <Text style={[styles.pillText, { color: accentColor }]}>{style}</Text>
+          {/* Name overlay */}
+          <View style={styles.heroOverlay}>
+            <View style={styles.badgeRow}>
+              {teachingLevel && (
+                <View style={styles.pillBadge}>
+                  <Text style={styles.pillBadgeText}>{teachingLevel}</Text>
                 </View>
-              ))}
+              )}
             </View>
+            <Text style={styles.nameText}>{instructor.name}</Text>
+            <Text style={[styles.titleText, { color: accentColor }]}>{instructor.title}</Text>
           </View>
-        )}
-
-        {/* Achievements */}
-        {achievements.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Achievements</Text>
-            {achievements.map((ach, i) => (
-              <View key={i} style={styles.achievementRow}>
-                <Ionicons name="trophy-outline" size={16} color="#FBBF24" />
-                <Text style={styles.achievementText}>{ach}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Stats row */}
-        <View style={styles.statsRow}>
-          {instructor.totalClasses > 0 && (
-            <View style={[styles.statCard, { borderColor: accentColor + "30" }]}>
-              <Ionicons name="time-outline" size={22} color={accentColor} />
-              <Text style={[styles.statValue, { color: accentColor }]}>{instructor.totalClasses}</Text>
-              <Text style={styles.statLabel}>Yrs Exp.</Text>
-            </View>
-          )}
-          {instructor.danceStyles.length > 0 && (
-            <View style={[styles.statCard, { borderColor: colors.studio.primary + "30" }]}>
-              <Ionicons name="musical-notes-outline" size={22} color={colors.studio.primary} />
-              <Text style={[styles.statValue, { color: colors.studio.primary }]}>{instructor.danceStyles.length}</Text>
-              <Text style={styles.statLabel}>Styles</Text>
-            </View>
-          )}
         </View>
 
-        {/* Social Media */}
-        {hasSocial && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Follow</Text>
-            <View style={styles.socialRow}>
-              {instagramUrl && (
-                <TouchableOpacity
-                  style={[styles.socialBtn, { backgroundColor: "#E1306C20", borderColor: "#E1306C50" }]}
-                  onPress={() => openSafeUrl(instagramUrl)}
-                >
-                  <Ionicons name="logo-instagram" size={20} color="#E1306C" />
-                  <Text style={[styles.socialLabel, { color: "#E1306C" }]}>Instagram</Text>
-                </TouchableOpacity>
-              )}
-              {tiktokUrl && (
-                <TouchableOpacity
-                  style={[styles.socialBtn, { backgroundColor: "#ffffff15", borderColor: "#ffffff30" }]}
-                  onPress={() => openSafeUrl(tiktokUrl)}
-                >
-                  <Ionicons name="logo-tiktok" size={20} color="#FFFFFF" />
-                  <Text style={[styles.socialLabel, { color: "#FFFFFF" }]}>TikTok</Text>
-                </TouchableOpacity>
-              )}
-              {youtubeUrl && (
-                <TouchableOpacity
-                  style={[styles.socialBtn, { backgroundColor: "#FF000020", borderColor: "#FF000050" }]}
-                  onPress={() => openSafeUrl(youtubeUrl)}
-                >
-                  <Ionicons name="logo-youtube" size={20} color="#FF0000" />
-                  <Text style={[styles.socialLabel, { color: "#FF0000" }]}>YouTube</Text>
-                </TouchableOpacity>
-              )}
+        {/* STATS */}
+        <View style={styles.statsContainer}>
+          {[
+            { key: 'exp', value: apiData?.experienceYears || "—", label: 'Experience' },
+            { key: 'classes', value: instructorClasses.length || "—", label: 'Classes' },
+            { key: 'students', value: "—", label: 'Students' },
+            { key: 'styles', value: apiData?.specialties?.length || "—", label: 'Styles' },
+          ].map((s, idx, arr) => (
+            <View key={s.key} style={[styles.statBox, idx < arr.length - 1 && styles.statBoxBorder]}>
+              <Text style={[styles.statValue, { color: accentColor }]}>{s.value}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
             </View>
-          </View>
-        )}
+          ))}
+        </View>
 
-        {/* CTA */}
+        <View style={styles.contentPadding}>
+          {/* ABOUT */}
+          <ISection title="About">
+            <Text style={styles.bioText}>{instructor.bio || "No biography provided."}</Text>
+
+            {/* Teaching Philosophy - Neutral missing state per plan */}
+            <View style={styles.comingSoonBox}>
+              <Text style={styles.comingSoonEyebrow}>Teaching Philosophy</Text>
+              <Text style={styles.comingSoonText}>Coming soon...</Text>
+            </View>
+          </ISection>
+
+          {/* SPECIALIZATIONS */}
+          {apiData?.specialties?.length > 0 && (
+            <ISection title="Specializations">
+              <View style={{ gap: 9 }}>
+                {apiData.specialties.map((style: string) => (
+                  <View key={style} style={styles.specRow}>
+                    <Text style={styles.specTitle}>{style}</Text>
+                  </View>
+                ))}
+              </View>
+            </ISection>
+          )}
+
+          {/* QUALIFICATIONS & CERTIFICATIONS - missing state */}
+          <ISection title="Qualifications & Certifications">
+            <Text style={styles.neutralEmptyText}>No certifications listed yet.</Text>
+          </ISection>
+
+          {/* EXPERIENCE TIMELINE - missing state */}
+          <ISection title="Professional Experience">
+            <Text style={styles.neutralEmptyText}>Experience timeline coming soon.</Text>
+          </ISection>
+
+          {/* WEEKLY SCHEDULE */}
+          <ISection title="Weekly Schedule">
+            {hasAnySchedule ? (
+              <View style={{ gap: 8 }}>
+                {ORDERED_DAYS.filter((d) => scheduleMap[d]?.length > 0).map((d) => (
+                  <View key={d} style={styles.scheduleRowContainer}>
+                    <Text style={styles.scheduleDay}>{d.slice(0, 3)}</Text>
+                    <View style={styles.scheduleItemsCol}>
+                      {scheduleMap[d].map((cls, i) => (
+                        <View key={i} style={styles.scheduleItem}>
+                          <Ionicons name="time-outline" size={14} color={accentColor} />
+                          <Text style={styles.scheduleItemText}>
+                            {cls.className} · {cls.startTime} · {cls.duration}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.neutralEmptyText}>No classes scheduled for this instructor.</Text>
+            )}
+          </ISection>
+
+          {/* RELATED CLASSES */}
+          {instructorClasses.length > 0 && (
+            <ISection title="Related Classes">
+              <View style={{ gap: 8 }}>
+                 {instructorClasses.map((cls: any) => (
+                    <View key={cls.id} style={styles.relatedClassRow}>
+                      <Ionicons name="musical-notes" size={16} color={accentColor} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.relatedClassTitle}>{cls.title}</Text>
+                        <Text style={styles.relatedClassSub}>{cls.level} · {cls.category}</Text>
+                      </View>
+                    </View>
+                 ))}
+              </View>
+            </ISection>
+          )}
+
+          {/* GALLERY - missing state */}
+          <ISection title="Gallery">
+            <Text style={styles.neutralEmptyText}>Instructor gallery coming soon.</Text>
+          </ISection>
+
+          {/* ACHIEVEMENTS */}
+          {achievements.length > 0 && (
+            <ISection title="Achievements">
+              <View style={{ gap: 9 }}>
+                {achievements.map((ach, i) => (
+                  <View key={i} style={styles.achievementRow}>
+                    <View style={styles.achievementIconBox}>
+                      <Ionicons name="trophy" size={20} color="#FFB81C" />
+                    </View>
+                    <View style={{ flex: 1, justifyContent: "center" }}>
+                      <Text style={styles.achievementText}>{ach}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </ISection>
+          )}
+
+          {/* CONTACT */}
+          {hasSocial && (
+            <ISection title="Contact Studio">
+              <View style={{ gap: 9 }}>
+                {instagramUrl && (
+                  <TouchableOpacity style={styles.contactBtn} onPress={() => openSafeUrl(instagramUrl)}>
+                    <View style={styles.contactIconBox}>
+                      <Ionicons name="logo-instagram" size={19} color={accentColor} />
+                    </View>
+                    <View>
+                      <Text style={styles.contactBtnTitle}>Instagram</Text>
+                      <Text style={styles.contactBtnSub}>Follow</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+                {tiktokUrl && (
+                  <TouchableOpacity style={styles.contactBtn} onPress={() => openSafeUrl(tiktokUrl)}>
+                    <View style={styles.contactIconBox}>
+                      <Ionicons name="logo-tiktok" size={19} color={accentColor} />
+                    </View>
+                    <View>
+                      <Text style={styles.contactBtnTitle}>TikTok</Text>
+                      <Text style={styles.contactBtnSub}>Follow</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+                {youtubeUrl && (
+                  <TouchableOpacity style={styles.contactBtn} onPress={() => openSafeUrl(youtubeUrl)}>
+                    <View style={styles.contactIconBox}>
+                      <Ionicons name="logo-youtube" size={19} color={accentColor} />
+                    </View>
+                    <View>
+                      <Text style={styles.contactBtnTitle}>YouTube</Text>
+                      <Text style={styles.contactBtnSub}>Subscribe</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </ISection>
+          )}
+
+        </View>
+      </ScrollView>
+
+      {/* STICKY BOTTOM BAR */}
+      <LinearGradient
+        colors={["rgba(10,11,13,0)", "#0B0B12"]}
+        locations={[0, 0.28]}
+        style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 24) }]}
+        pointerEvents="box-none"
+      >
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             router.push("/(tabs)/classes");
           }}
-          style={[styles.ctaBtn, { backgroundColor: accentColor }]}
+          style={[styles.bookBtn, { backgroundColor: accentColor }]}
         >
-          <Text style={styles.ctaBtnText}>Browse Classes</Text>
-          <Ionicons name="arrow-forward" size={18} color="#000" />
+          <Ionicons name="book" size={17} color="#0B0B12" />
+          <Text style={styles.bookBtnText}>Book a Class</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0B0B12" },
-  centered: { alignItems: "center", justifyContent: "center" },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   backBtnFallback: {
     position: "absolute", top: 60, left: 20, zIndex: 10,
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
   },
-
-  heroBg: { width: "100%", justifyContent: "flex-end" },
-  backBtn: {
-    position: "absolute", left: 16,
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    alignItems: "center", justifyContent: "center",
+  topBar: {
+    position: "absolute", left: 18, right: 18,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     zIndex: 10,
   },
-  heroInfo: { paddingHorizontal: 20, gap: 4 },
-  heroMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  initialsCircle: {
-    width: 72, height: 72, borderRadius: 36,
-    borderWidth: 2,
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
     alignItems: "center", justifyContent: "center",
-    marginBottom: 10,
   },
-  initialsText: { fontSize: 28, fontFamily: "Inter_700Bold" },
-  instructorName: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  instructorTitle: { fontSize: 14, fontFamily: "Inter_500Medium", marginTop: 2 },
-  ratingRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  ratingText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#FBBF24" },
-  levelBadge: { backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
-  levelText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#D1D5DB" },
-
-  scroll: { paddingTop: 24, paddingHorizontal: 20 },
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#9CA3AF", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 },
-  bioText: { fontSize: 15, fontFamily: "Inter_400Regular", color: "#D1D5DB", lineHeight: 24 },
-
-  pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 50, borderWidth: 1 },
-  pillText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-
-  achievementRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  achievementText: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#D1D5DB", flex: 1 },
-
-  statsRow: { flexDirection: "row", gap: 12, marginBottom: 28 },
-  statCard: {
-    flex: 1, borderRadius: 16, borderWidth: 1,
-    backgroundColor: "#111318",
-    paddingVertical: 18, alignItems: "center", gap: 6,
+  heroOverlay: {
+    position: "absolute", left: 18, right: 18, bottom: 18,
   },
-  statValue: { fontSize: 22, fontFamily: "Inter_700Bold" },
-  statLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-
-  socialRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
-  socialBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
+  pillBadge: {
+    paddingHorizontal: 9, paddingVertical: 3, borderRadius: 50,
+    backgroundColor: "rgba(0,182,215,0.85)",
   },
-  socialLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-
-  ctaBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 16, borderRadius: 14, marginBottom: 12,
+  pillBadgeText: {
+    fontFamily: "Archivo_800ExtraBold", fontSize: 10, letterSpacing: 0.7,
+    textTransform: "uppercase", color: "#0B0B12",
   },
-  ctaBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#000" },
+  nameText: {
+    fontFamily: "Anton_400Regular", fontSize: 44, lineHeight: 46,
+    textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6,
+  },
+  titleText: { fontFamily: "Archivo_600SemiBold", fontSize: 14 },
+
+  statsContainer: {
+    flexDirection: "row", backgroundColor: "#15171B",
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
+    alignItems: "center", justifyContent: "center",
+  },
+  statBox: { flex: 1, alignItems: "center", paddingVertical: 14, paddingHorizontal: 4 },
+  statBoxBorder: { borderRightWidth: 1, borderRightColor: "rgba(255,255,255,0.07)" },
+  statValue: { fontFamily: "Anton_400Regular", fontSize: 22, lineHeight: 24 },
+  statLabel: {
+    fontFamily: "Archivo_400Regular", fontSize: 10.5, color: "#9CA3AF",
+    marginTop: 5, textTransform: "uppercase", letterSpacing: 0.5,
+  },
+
+  contentPadding: { paddingHorizontal: 20 },
+
+  section: { paddingTop: 22, paddingBottom: 4, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.07)", marginTop: 8 },
+  sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  sectionTitle: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: "#00B6D7" },
+  sectionActionBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
+  sectionActionText: { fontFamily: "Archivo_600SemiBold", fontSize: 12.5, color: "#9CA3AF" },
+
+  bioText: { fontFamily: "Archivo_400Regular", color: "#E5E7EB", lineHeight: 24, fontSize: 15 },
+  comingSoonBox: {
+    marginTop: 14, paddingVertical: 13, paddingHorizontal: 16,
+    borderRadius: 8, backgroundColor: "rgba(0,182,215,0.07)",
+    borderWidth: 1, borderColor: "rgba(0,182,215,0.22)",
+  },
+  comingSoonEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: "#00B6D7", marginBottom: 6 },
+  comingSoonText: { fontFamily: "Archivo_400Regular", color: "#FFFFFF", fontStyle: "italic", lineHeight: 22 },
+  neutralEmptyText: { fontFamily: "Archivo_400Regular", color: "#9CA3AF", fontStyle: "italic", fontSize: 14 },
+
+  specRow: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 11, paddingHorizontal: 14,
+    backgroundColor: "#15171B", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 8,
+  },
+  specTitle: { flex: 1, fontFamily: "Archivo_700Bold", fontSize: 15, color: "#FFFFFF" },
+
+  scheduleRowContainer: {
+    flexDirection: "row", gap: 10, paddingVertical: 10, paddingHorizontal: 14,
+    backgroundColor: "#15171B", borderWidth: 1, borderColor: "rgba(0,182,215,0.28)", borderRadius: 8,
+  },
+  scheduleDay: { fontFamily: "Archivo_800ExtraBold", fontSize: 13.5, color: "#00B6D7", width: 45 },
+  scheduleItemsCol: { flex: 1, gap: 6 },
+  scheduleItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  scheduleItemText: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#E5E7EB" },
+
+  relatedClassRow: {
+    flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
+    backgroundColor: "#15171B", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 8,
+  },
+  relatedClassTitle: { fontFamily: "Archivo_700Bold", fontSize: 14.5, color: "#FFFFFF" },
+  relatedClassSub: { fontFamily: "Archivo_400Regular", fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+
+  achievementRow: {
+    flexDirection: "row", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
+    backgroundColor: "#15171B", borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: 8,
+  },
+  achievementIconBox: {
+    width: 38, height: 38, borderRadius: 8, backgroundColor: "rgba(255,184,28,0.12)",
+    alignItems: "center", justifyContent: "center",
+  },
+  achievementText: { fontFamily: "Archivo_700Bold", fontSize: 14.5, color: "#FFFFFF", lineHeight: 20 },
+
+  contactBtn: {
+    flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13, paddingHorizontal: 14,
+    backgroundColor: "#15171B", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12,
+  },
+  contactIconBox: {
+    width: 38, height: 38, borderRadius: 8, backgroundColor: "rgba(0,182,215,0.10)",
+    alignItems: "center", justifyContent: "center",
+  },
+  contactBtnTitle: { fontFamily: "Archivo_700Bold", fontSize: 14.5, color: "#FFFFFF" },
+  contactBtnSub: { fontFamily: "Archivo_400Regular", fontSize: 12, color: "#9CA3AF", marginTop: 1 },
+
+  bottomBar: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    paddingHorizontal: 16, paddingTop: 12,
+    flexDirection: "row", gap: 10,
+  },
+  bookBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    paddingVertical: 13, borderRadius: 8,
+  },
+  bookBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 15, color: "#0B0B12" },
 });
