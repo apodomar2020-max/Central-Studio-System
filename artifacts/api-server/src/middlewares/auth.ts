@@ -170,3 +170,22 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   next();
 }
+
+/**
+ * Blocks requests authenticated with a student JWT from reaching routes that
+ * are intended for admin/server-to-server use only.
+ *
+ * The admin dashboard authenticates via the shared API key (Bearer <key>) for
+ * resource routes — this middleware leaves those through. Only student JWTs
+ * (identified by req.studentJwtVerified) are rejected.
+ *
+ * Apply to every POST/PATCH/DELETE route that should never be called by a
+ * mobile-app student, e.g. creating/editing instructors, deleting bookings.
+ */
+export function blockStudentJwt(req: Request, res: Response, next: NextFunction): void {
+  if (req.studentJwtVerified) {
+    res.status(403).json({ error: "Students are not permitted to call this endpoint" });
+    return;
+  }
+  next();
+}
