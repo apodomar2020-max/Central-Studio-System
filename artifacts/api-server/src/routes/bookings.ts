@@ -1,4 +1,5 @@
 import { blockStudentJwt } from "../middlewares/auth";
+import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -78,6 +79,16 @@ function requireBookingUpdatePermission(req: Request, res: Response, next: NextF
       return;
     }
     requireAdminPermission("bookings", "edit")(req, res, next);
+  });
+}
+
+function requireBookingReadAccess(req: Request, res: Response, next: NextFunction): void {
+  if (req.studentJwtVerified) {
+    requireVerifiedStudent(req, res, next);
+    return;
+  }
+  requireAdminAuth(req, res, () => {
+    requireAdminPermission("bookings", "view")(req, res, next);
   });
 }
 
@@ -360,7 +371,18 @@ function formatTime(t: string | null): string | null {
   return `${h12}:${m} ${period}`;
 }
 
-router.get("/bookings", async (req, res): Promise<void> => {
+router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void> => {
+  if (req.studentJwtVerified) {
+    if (req.studentEmailVerified === false) {
+      res.status(403).json({
+        error: "Email verification required.",
+        requiresOtp: true,
+        email: req.studentEmail,
+      });
+      return;
+    }
+  }
+
   const query = ListBookingsQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
@@ -371,8 +393,15 @@ router.get("/bookings", async (req, res): Promise<void> => {
   if (query.data.status) conditions.push(eq(bookingsTable.status, query.data.status));
   if (query.data.bookingStatus) conditions.push(eq(bookingsTable.bookingStatus, query.data.bookingStatus));
   if (query.data.paymentStatus) conditions.push(eq(bookingsTable.paymentStatus, query.data.paymentStatus));
-  if (query.data.studentEmail) {
-    conditions.push(sql`lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(query.data.studentEmail)}`);
+
+  if (req.studentJwtVerified) {
+    conditions.push(
+      sql`(${bookingsTable.accountOwnerStudentId} = ${req.studentId!} OR lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(req.studentEmail!)})`
+    );
+  } else {
+    if (query.data.studentEmail) {
+      conditions.push(sql`lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(query.data.studentEmail)}`);
+    }
   }
 
   // Left-join class/schedule/instructor so the response carries display-ready
@@ -486,14 +515,26 @@ router.get("/bookings", async (req, res): Promise<void> => {
   res.json(ListBookingsResponse.parse(enriched));
 });
 
-router.post("/bookings", async (req, res): Promise<void> => {
+router.post(
+  "/bookings",
+  requireStudentAuth,
+  requireVerifiedStudent,
+  async (req, res): Promise<void> => {
   const parsed = CreateBookingBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const normalized = normalizeBookingWrite(parsed.data);
+  // Force booking owner identity from verified JWT claims
+  const studentEmail = req.studentEmail!;
+  const accountOwnerStudentId = req.studentId!;
+
+  const normalized = normalizeBookingWrite({
+    ...parsed.data,
+    studentEmail,
+    accountOwnerStudentId,
+  });
 
   if (normalized.paymentMode === "free") {
     res.status(400).json({ error: "Free class booking is currently disabled." });
@@ -526,12 +567,7 @@ router.post("/bookings", async (req, res): Promise<void> => {
 
   const requestedParticipantChildId =
     parsed.data.participantChildId ?? parsed.data.childId ?? normalized.participantChildId ?? null;
-  const accountOwnerStudentId = await resolveAccountOwnerStudentId(
-    db,
-    req,
-    parsed.data.studentEmail,
-    parsed.data.accountOwnerStudentId ?? normalized.accountOwnerStudentId ?? null,
-  );
+
   let participantChildId = requestedParticipantChildId;
   let bookingScope = normalized.bookingScope ?? (participantChildId != null ? "child" : "self");
   let participantName = parsed.data.studentName;
@@ -576,7 +612,7 @@ router.post("/bookings", async (req, res): Promise<void> => {
         // CreateBookingBody (zod) guarantees studentName/studentEmail at runtime;
         // normalizeBookingWrite widens them to optional, so assert the insert shape.
         studentName: participantName,
-        studentEmail: normalizeEmail(parsed.data.studentEmail),
+        studentEmail: normalizeEmail(studentEmail),
         accountOwnerStudentId,
         participantChildId,
         bookingScope,
@@ -595,7 +631,7 @@ router.post("/bookings", async (req, res): Promise<void> => {
   res.status(201).json(GetBookingResponse.parse(row));
 });
 
-router.get("/bookings/:id", async (req, res): Promise<void> => {
+router.get("/bookings/:id", requireBookingReadAccess, async (req, res): Promise<void> => {
   const params = GetBookingParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -603,6 +639,14 @@ router.get("/bookings/:id", async (req, res): Promise<void> => {
   }
   const [row] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
   if (!row) {
+    res.status(404).json({ error: "Booking not found" });
+    return;
+  }
+  if (
+    req.studentJwtVerified &&
+    row.accountOwnerStudentId !== req.studentId &&
+    normalizeEmail(row.studentEmail) !== normalizeEmail(req.studentEmail ?? "")
+  ) {
     res.status(404).json({ error: "Booking not found" });
     return;
   }
