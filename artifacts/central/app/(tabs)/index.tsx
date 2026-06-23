@@ -54,6 +54,7 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -467,6 +468,7 @@ function ClassCard({
   instructorMap?: Map<string, Instructor>;
   packageCreditsRemaining?: number;
 }) {
+  const { user } = useAppContext();
   const instructor = instructorMap?.get(item.instructorId);
   const available = item.capacity - item.bookedCount;
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
@@ -572,6 +574,10 @@ function ClassCard({
             <TouchableOpacity
               onPress={() => {
                 if (!isBookable) return;
+                if (!user) {
+                  showAuthRequiredPrompt();
+                  return;
+                }
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
               }}
@@ -584,6 +590,10 @@ function ClassCard({
           <TouchableOpacity
             onPress={() => {
               if (!isBookable) return;
+              if (!user) {
+                showAuthRequiredPrompt();
+                return;
+              }
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
             }}
@@ -606,6 +616,7 @@ function ClassCard({
 // ─── Package cards ────────────────────────────────────────────────────────────
 
 function PackageCard({ pkg }: { pkg: PricePackage }) {
+  const { user } = useAppContext();
   const hot     = pkg.isFeatured;
   const credits = pkg.sessions ?? 1;
   const perCls  = pkg.singleClassPriceEgp ?? (credits > 1 ? Math.round(pkg.priceEgp / credits) : 0);
@@ -615,7 +626,14 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
     <TouchableOpacity
       style={[s.pkgCard, hot && s.pkgCardHot]}
       activeOpacity={0.88}
-      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/(tabs)/packages"); }}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (!user) {
+          showAuthRequiredPrompt();
+          return;
+        }
+        router.push("/(tabs)/packages");
+      }}
     >
       {hot && (
         <View style={s.pkgBadge}>
@@ -747,7 +765,7 @@ export default function StudioHomeScreen() {
   const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner, userPackages } = useAppContext();
   const insets = useSafeAreaInsets();
 
-  const showNewStudentBanner = bookings.length === 0 && !newStudentBannerDismissed;
+  const showNewStudentBanner = false;
 
   const userInitials = React.useMemo(() => {
     if (!user?.fullName) return "";

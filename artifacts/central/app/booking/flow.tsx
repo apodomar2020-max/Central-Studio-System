@@ -30,6 +30,15 @@ import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/cl
 
 type PaymentMethod = "online" | "cash" | "packageCredit";
 
+const INK = {
+  bg: "#0A0B0D",     // --cs-ink-900
+  card: "#15171B",   // --cs-ink-800
+  raised: "#22262C", // --cs-ink-700
+  border: "rgba(255,255,255,0.08)",
+  text3: "#8E97A2",  // --cs-ink-300
+  text4: "#6B747F",  // --cs-ink-400
+};
+
 const NEW_MEMBER_OFFER_TITLE = "New Member Welcome";
 
 export default function BookingFlowScreen() {
@@ -82,13 +91,14 @@ export default function BookingFlowScreen() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [packageParamApplied, setPackageParamApplied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [bookingFailed, setBookingFailed] = useState(false);
   const [refCodeInput, setRefCodeInput] = useState("");
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
   const [refCodeState, setRefCodeState] = useState<"idle" | "valid" | "invalid">("idle");
   const selectedChild = children.find((child) => child.id === selectedChildId);
   const isPackageMode = paymentMethod === "packageCredit" && canUsePackageCredits;
-  const isFirstBooking = bookings.length === 0;
-  const finalPrice = isFirstBooking || isPackageMode ? 0 : (cls?.price ?? 0);
+  const isFirstBooking = false;
+  const finalPrice = isPackageMode ? 0 : (cls?.price ?? 0);
   const hasSchedule = Boolean(cls?.scheduleId && cls?.dayOfWeek && cls?.startTime);
   const participantName =
     participantType === "self"
@@ -130,7 +140,7 @@ export default function BookingFlowScreen() {
   if (!user) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Ionicons name="lock-closed-outline" size={48} color="#6B7280" />
+        <Ionicons name="lock-closed-outline" size={48} color="#6B747F" />
         <Text style={styles.centeredTitle}>Sign in required</Text>
         <Text style={styles.centeredDesc}>Please sign in to book a class</Text>
         <AppButton title="Sign In" onPress={() => router.replace("/auth/login")} />
@@ -262,12 +272,46 @@ export default function BookingFlowScreen() {
       });
     } catch (err) {
       setLoading(false);
-      Alert.alert(
-        "Booking Failed",
-        "We couldn't complete your booking. Please check your connection and try again.",
-        [{ text: "OK" }],
-      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setBookingFailed(true);
     }
+  }
+
+  // ── Failure result screen (design parity: ResultScreen) ──
+  if (bookingFailed) {
+    return (
+      <View style={[styles.container, styles.resultScreen, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
+        <LinearGradient
+          colors={[colors.error + "22", INK.bg]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 0.6 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[styles.resultIconRing, { backgroundColor: colors.error + "1F" }]}>
+          <View style={[styles.resultIconCircle, { backgroundColor: colors.error }]}>
+            <Ionicons name="close" size={40} color="#FFFFFF" />
+          </View>
+        </View>
+        <Text style={styles.resultTitle}>Booking Failed</Text>
+        <Text style={styles.resultSub}>
+          Something went wrong. Please check your connection and try again, or contact the studio.
+        </Text>
+        <View style={styles.resultButtons}>
+          <AppButton
+            title="Try Again"
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setBookingFailed(false); }}
+            fullWidth
+            size="lg"
+          />
+          <AppButton
+            title="Back to Class"
+            onPress={() => router.back()}
+            variant="ghost"
+            fullWidth
+          />
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -299,7 +343,7 @@ export default function BookingFlowScreen() {
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Who are you booking for?</Text>
 
-            <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+            <View style={[styles.summaryCard, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
               {[
                 { label: "Class", value: cls.title },
                 { label: "Schedule", value: getScheduleLabel(cls) },
@@ -310,7 +354,7 @@ export default function BookingFlowScreen() {
                     <Text style={styles.summaryLabel}>{row.label}</Text>
                     <Text style={styles.summaryValue}>{row.value}</Text>
                   </View>
-                  {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />}
+                  {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />}
                 </React.Fragment>
               ))}
             </View>
@@ -322,11 +366,11 @@ export default function BookingFlowScreen() {
                 participantType === "self" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "15" },
               ]}
             >
-              <View style={[styles.participantIcon, { backgroundColor: "#1E1E26" }]}>
-                <Ionicons name="person" size={24} color={participantType === "self" ? colors.studio.primary : "#6B7280"} />
+              <View style={[styles.participantIcon, { backgroundColor: "#22262C" }]}>
+                <Ionicons name="person" size={24} color={participantType === "self" ? colors.studio.primary : "#6B747F"} />
               </View>
               <View style={styles.participantText}>
-                <Text style={[styles.participantLabel, { color: participantType === "self" ? "#FFFFFF" : "#9CA3AF" }]}>
+                <Text style={[styles.participantLabel, { color: participantType === "self" ? "#FFFFFF" : "#8E97A2" }]}>
                   Myself
                 </Text>
                 <Text style={styles.participantSub}>{user.fullName}</Text>
@@ -351,11 +395,11 @@ export default function BookingFlowScreen() {
                 !children.length && styles.disabledCard,
               ]}
             >
-              <View style={[styles.participantIcon, { backgroundColor: "#1E1E26" }]}>
-                <Ionicons name="people" size={24} color={participantType === "child" ? colors.studio.primary : "#6B7280"} />
+              <View style={[styles.participantIcon, { backgroundColor: "#22262C" }]}>
+                <Ionicons name="people" size={24} color={participantType === "child" ? colors.studio.primary : "#6B747F"} />
               </View>
               <View style={styles.participantText}>
-                <Text style={[styles.participantLabel, { color: participantType === "child" ? "#FFFFFF" : "#9CA3AF" }]}>
+                <Text style={[styles.participantLabel, { color: participantType === "child" ? "#FFFFFF" : "#8E97A2" }]}>
                   My Child
                 </Text>
                 <Text style={styles.participantSub}>
@@ -413,10 +457,10 @@ export default function BookingFlowScreen() {
                 <Ionicons name="gift-outline" size={13} color={colors.studio.primary} /> Have a referral code?
               </Text>
               {refCodeState === "valid" ? (
-                <View style={[styles.refCodeSuccess, { backgroundColor: "#22C55E15", borderColor: "#22C55E40" }]}>
-                  <Ionicons name="checkmark-circle" size={18} color="#22C55E" />
+                <View style={[styles.refCodeSuccess, { backgroundColor: "#1FB87115", borderColor: "#1FB87140" }]}>
+                  <Ionicons name="checkmark-circle" size={18} color="#1FB871" />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.refCodeSuccessTitle, { color: "#22C55E" }]}>Referral Applied!</Text>
+                    <Text style={[styles.refCodeSuccessTitle, { color: "#1FB871" }]}>Referral Applied!</Text>
                     <Text style={styles.refCodeSuccessDesc}>
                       Code {appliedCode ?? refCodeInput.toUpperCase()} — your referrer earns EGP 100 credit.
                     </Text>
@@ -428,11 +472,11 @@ export default function BookingFlowScreen() {
                     value={refCodeInput}
                     onChangeText={(t) => { setRefCodeInput(t.toUpperCase()); setRefCodeState("idle"); }}
                     placeholder="e.g. SARA-XK7F"
-                    placeholderTextColor="#6B7280"
+                    placeholderTextColor="#6B747F"
                     autoCapitalize="characters"
                     style={[
                       styles.refCodeInput,
-                      { borderColor: refCodeState === "invalid" ? "#EF4444" : "#1E2E38", color: "#FFFFFF", backgroundColor: "#14141A" },
+                      { borderColor: refCodeState === "invalid" ? "#EF4444" : "#1E2E38", color: "#FFFFFF", backgroundColor: "#15171B" },
                     ]}
                   />
                   <TouchableOpacity
@@ -440,7 +484,7 @@ export default function BookingFlowScreen() {
                     disabled={!refCodeInput.trim()}
                     style={[styles.refCodeBtn, { backgroundColor: refCodeInput.trim() ? colors.studio.primary : "#1E2E38" }]}
                   >
-                    <Text style={[styles.refCodeBtnText, { color: refCodeInput.trim() ? "#000" : "#6B7280" }]}>Apply</Text>
+                    <Text style={[styles.refCodeBtnText, { color: refCodeInput.trim() ? "#000" : "#6B747F" }]}>Apply</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -456,7 +500,7 @@ export default function BookingFlowScreen() {
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Confirm Booking Details</Text>
 
-            <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+            <View style={[styles.summaryCard, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
               {[
                 { label: "Class", value: cls.title },
                 { label: "Day & Time", value: getScheduleLabel(cls) },
@@ -469,13 +513,13 @@ export default function BookingFlowScreen() {
                     <Text style={styles.summaryLabel}>{row.label}</Text>
                     <Text style={styles.summaryValue}>{row.value}</Text>
                   </View>
-                  {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />}
+                  {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />}
                 </React.Fragment>
               ))}
 
               {isFirstBooking && (
                 <>
-                  <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />
+                  <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
                   <View style={[styles.summaryRow, { backgroundColor: "#00B6D715" }]}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <Ionicons name="pricetag" size={13} color={colors.studio.primary} />
@@ -488,18 +532,18 @@ export default function BookingFlowScreen() {
                 </>
               )}
 
-              <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />
+              <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.studio.primary }]}>
                   {isPackageMode ? "Package Credit" : "Total Price"}
                 </Text>
                 <View style={styles.priceValueWrap}>
                   {isFirstBooking && !isPackageMode && cls.price > 0 && (
-                    <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", textDecorationLine: "line-through" }}>
+                    <Text style={{ fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", textDecorationLine: "line-through" }}>
                       EGP {cls.price}
                     </Text>
                   )}
-                  <Text style={[styles.summaryValue, { color: colors.studio.primary, fontSize: 18, fontFamily: "Inter_700Bold" }]}>
+                  <Text style={[styles.summaryValue, { color: colors.studio.primary, fontSize: 18, fontFamily: "Archivo_700Bold" }]}>
                     {isPackageMode ? "Uses 1 credit" : isFirstBooking ? "FREE" : `EGP ${cls.price}`}
                   </Text>
                 </View>
@@ -517,7 +561,7 @@ export default function BookingFlowScreen() {
 
               {isFirstBooking && !isPackageMode ? (
               <>
-              <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+              <View style={[styles.summaryCard, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Schedule</Text>
                   <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
@@ -542,7 +586,7 @@ export default function BookingFlowScreen() {
               </>
             ) : (
               <>
-                <View style={[styles.summaryCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+                <View style={[styles.summaryCard, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryLabel}>Schedule</Text>
                     <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
@@ -557,15 +601,15 @@ export default function BookingFlowScreen() {
                   activeOpacity={0.8}
                 >
                   <LinearGradient
-                    colors={["#1A1A22", "#14141A"]}
+                    colors={["#22262C", "#15171B"]}
                     style={styles.paymentGradient}
                   >
                     <View style={styles.paymentTop}>
                       <View style={[styles.paymentIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
                         <Ionicons name="card-outline" size={24} color={colors.studio.primary} />
                       </View>
-                      <View style={[styles.recommendedBadge, { backgroundColor: "#2A2A35" }]}>
-                        <Text style={[styles.recommendedText, { color: "#9CA3AF" }]}>COMING SOON</Text>
+                      <View style={[styles.recommendedBadge, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
+                        <Text style={[styles.recommendedText, { color: "#8E97A2" }]}>COMING SOON</Text>
                       </View>
                     </View>
                     <Text style={styles.paymentTitle}>Pay Now - Coming Soon</Text>
@@ -578,18 +622,18 @@ export default function BookingFlowScreen() {
                   onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("cash"); }}
                   style={[
                     styles.paymentCard,
-                    paymentMethod === "cash" && { borderColor: "#6B7280", backgroundColor: "#1E1E26" },
+                    paymentMethod === "cash" && { borderColor: "#6B747F", backgroundColor: "#22262C" },
                   ]}
                   activeOpacity={0.8}
                 >
                   <LinearGradient
-                    colors={["#14141A", "#0F0F14"]}
+                    colors={["#15171B", "#0A0B0D"]}
                     style={styles.paymentGradient}
                   >
-                    <View style={[styles.paymentIconCircle, { backgroundColor: "#2A2A35" }]}>
-                      <Ionicons name="business-outline" size={24} color="#9CA3AF" />
+                    <View style={[styles.paymentIconCircle, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
+                      <Ionicons name="business-outline" size={24} color="#8E97A2" />
                     </View>
-                    <Text style={[styles.paymentTitle, { color: "#9CA3AF" }]}>Pay at Studio</Text>
+                    <Text style={[styles.paymentTitle, { color: "#8E97A2" }]}>Pay at Studio</Text>
                     <Text style={styles.paymentDesc}>Pay in cash when you arrive at the studio.</Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -604,7 +648,7 @@ export default function BookingFlowScreen() {
                     activeOpacity={0.8}
                   >
                     <LinearGradient
-                      colors={paymentMethod === "packageCredit" ? [colors.studio.primary + "20", colors.studio.primary + "05"] : ["#14141A", "#0F0F14"]}
+                      colors={paymentMethod === "packageCredit" ? [colors.studio.primary + "20", colors.studio.primary + "05"] : ["#15171B", "#0A0B0D"]}
                       style={styles.paymentGradient}
                     >
                       <View style={styles.paymentTop}>
@@ -622,9 +666,9 @@ export default function BookingFlowScreen() {
                 )}
 
                 {!schedulePackageEligible && packageCreditsRemaining > 0 && (
-                  <View style={[styles.warningBanner, { backgroundColor: "#1E1E26", borderColor: "#2A2A35" }]}>
-                    <Ionicons name="information-circle-outline" size={16} color="#9CA3AF" />
-                    <Text style={[styles.warningText, { color: "#9CA3AF" }]}>
+                  <View style={[styles.warningBanner, { backgroundColor: "#22262C", borderColor: "rgba(255,255,255,0.08)" }]}>
+                    <Ionicons name="information-circle-outline" size={16} color="#8E97A2" />
+                    <Text style={[styles.warningText, { color: "#8E97A2" }]}>
                       Package credits are not available for this class.
                     </Text>
                   </View>
@@ -668,32 +712,38 @@ export default function BookingFlowScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0B0B0F" },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   centered: { justifyContent: "center", alignItems: "center", gap: 12, padding: 24 },
-  centeredTitle: { fontSize: 20, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  centeredDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  centeredTitle: { fontSize: 20, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
+  centeredDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#8E97A2" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 20, paddingBottom: 8,
   },
   backBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#22262C", alignItems: "center", justifyContent: "center",
   },
-  headerTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+  headerTitle: { fontSize: 16, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
   stepIndicatorWrap: { paddingHorizontal: 20, paddingBottom: 12 },
   scroll: { paddingHorizontal: 20 },
   stepContent: { gap: 14 },
-  stepTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: "#FFFFFF", marginBottom: 4 },
+  stepTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", marginBottom: 4, letterSpacing: -0.3 },
+  resultScreen: { alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 18 },
+  resultIconRing: { width: 110, height: 110, borderRadius: 55, alignItems: "center", justifyContent: "center" },
+  resultIconCircle: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
+  resultTitle: { fontSize: 40, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", textAlign: "center", letterSpacing: 0.5 },
+  resultSub: { fontSize: 14, fontFamily: "Archivo_400Regular", color: INK.text3, textAlign: "center", lineHeight: 21, maxWidth: 300 },
+  resultButtons: { width: "100%", gap: 10, marginTop: 8 },
   participantCard: {
     flexDirection: "row", alignItems: "center", gap: 14,
-    padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: "#2A2A35", backgroundColor: "#14141A",
+    padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", backgroundColor: "#15171B",
   },
   disabledCard: { opacity: 0.5 },
   participantIcon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   participantText: { flex: 1 },
-  participantLabel: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  participantSub: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", marginTop: 2 },
+  participantLabel: { fontSize: 16, fontFamily: "Archivo_600SemiBold" },
+  participantSub: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", marginTop: 2 },
   checkCircle: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   childPicker: { gap: 8 },
   childOption: {
@@ -703,18 +753,18 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#2A2A35",
-    backgroundColor: "#101017",
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#0A0B0D",
   },
   childAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  childName: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+  childName: { fontSize: 14, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
   summaryCard: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
   summaryRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12,
     paddingHorizontal: 16, paddingVertical: 13,
   },
-  summaryLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", flexShrink: 0 },
-  summaryValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF", textAlign: "right", flex: 1, minWidth: 0 },
+  summaryLabel: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#8E97A2", flexShrink: 0 },
+  summaryValue: { fontSize: 13, fontFamily: "Archivo_500Medium", color: "#FFFFFF", textAlign: "right", flex: 1, minWidth: 0 },
   priceValueWrap: {
     flex: 1,
     minWidth: 0,
@@ -725,37 +775,37 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   divider: { height: 1 },
-  paymentCard: { borderRadius: 16, borderWidth: 1.5, borderColor: "#2A2A35", overflow: "hidden" },
+  paymentCard: { borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", overflow: "hidden" },
   paymentCardDisabled: { opacity: 0.45 },
   paymentGradient: { padding: 18, gap: 8 },
   paymentTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   paymentIconCircle: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   recommendedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  recommendedText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#000", letterSpacing: 0.8 },
-  paymentTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-  paymentDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 18 },
-  paymentAmount: { fontSize: 22, fontFamily: "Inter_700Bold" },
+  recommendedText: { fontSize: 9, fontFamily: "Archivo_700Bold", color: "#000", letterSpacing: 0.8 },
+  paymentTitle: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  paymentDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#8E97A2", lineHeight: 18 },
+  paymentAmount: { fontSize: 22, fontFamily: "Archivo_700Bold" },
   warningBanner: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: "flex-start" },
-  warningText: { fontSize: 13, fontFamily: "Inter_500Medium", flex: 1, lineHeight: 18 },
+  warningText: { fontSize: 13, fontFamily: "Archivo_500Medium", flex: 1, lineHeight: 18 },
   refCodeSection: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 10 },
-  refCodeLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+  refCodeLabel: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
   refCodeRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   refCodeInput: {
     flex: 1, height: 44, borderRadius: 10, borderWidth: 1,
-    paddingHorizontal: 12, fontFamily: "Inter_600SemiBold", fontSize: 14, letterSpacing: 1,
+    paddingHorizontal: 12, fontFamily: "Archivo_600SemiBold", fontSize: 14, letterSpacing: 1,
   },
   refCodeBtn: { height: 44, paddingHorizontal: 16, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  refCodeBtnText: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  refCodeBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold" },
   refCodeSuccess: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 10, borderWidth: 1 },
-  refCodeSuccessTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  refCodeSuccessDesc: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", marginTop: 2, lineHeight: 16 },
-  refCodeError: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#EF4444", lineHeight: 16 },
+  refCodeSuccessTitle: { fontSize: 13, fontFamily: "Archivo_600SemiBold" },
+  refCodeSuccessDesc: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#8E97A2", marginTop: 2, lineHeight: 16 },
+  refCodeError: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#EF4444", lineHeight: 16 },
   freeCard: { borderRadius: 18, borderWidth: 1, padding: 22, alignItems: "center", gap: 14 },
   freeIconCircle: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center" },
-  freeTitle: { fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center" },
-  freeDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
+  freeTitle: { fontSize: 20, fontFamily: "Archivo_700Bold", textAlign: "center" },
+  freeDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#8E97A2", textAlign: "center", lineHeight: 20 },
   footer: {
     paddingHorizontal: 20, paddingTop: 12,
-    borderTopWidth: 1, borderTopColor: "#2A2A35", backgroundColor: "#0B0B0F",
+    borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)", backgroundColor: "#0A0B0D",
   },
 });

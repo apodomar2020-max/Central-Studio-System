@@ -35,8 +35,8 @@ const HOW_IT_WORKS = [
   {
     step: "3",
     icon: "gift-outline",
-    title: "Both Earn Rewards",
-    desc: "Your friend gets their first class free. You earn EGP 100 credit on your account.",
+    title: "Earn Rewards",
+    desc: "You earn EGP 100 credit on your account when your friend registers and books a class.",
   },
 ];
 
@@ -57,7 +57,7 @@ export default function ReferralScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await Share.share({
-        message: `Join me at Central Studio — Egypt's top dance school! 🎉\n\nUse my referral code ${referralCode} when you book your first class and it's completely FREE.\n\nDownload the Central Studio app and start dancing! 💃🕺`,
+        message: `Join me at Central Studio — Egypt's top dance school! 🎉\n\nUse my referral code ${referralCode} when you book your class.\n\nDownload the Central Studio app and start dancing! 💃🕺`,
         title: "Join Central Studio",
       });
     } catch {}
@@ -94,9 +94,9 @@ export default function ReferralScreen() {
           <View style={[styles.giftIcon, { backgroundColor: colors.studio.primary + "20" }]}>
             <Ionicons name="gift" size={40} color={colors.studio.primary} />
           </View>
-          <Text style={styles.heroTitle}>Give a Free Class,{"\n"}Earn EGP 100</Text>
+          <Text style={styles.heroTitle}>Refer a Friend,{"\n"}Earn EGP 100</Text>
           <Text style={styles.heroDesc}>
-            Every friend you refer gets their first class free. You earn EGP 100 credit for every successful referral.
+            Refer your friends to Central Studio and earn EGP 100 credit for every successful referral.
           </Text>
         </LinearGradient>
 

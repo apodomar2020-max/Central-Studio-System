@@ -1,3 +1,4 @@
+import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -494,6 +495,11 @@ router.post("/bookings", async (req, res): Promise<void> => {
 
   const normalized = normalizeBookingWrite(parsed.data);
 
+  if (normalized.paymentMode === "free") {
+    res.status(400).json({ error: "Free class booking is currently disabled." });
+    return;
+  }
+
   if (normalized.paymentMode === "package_credit" && normalized.packageOrderId == null) {
     res.status(400).json({
       error: "package_required",
@@ -605,6 +611,7 @@ router.get("/bookings/:id", async (req, res): Promise<void> => {
 
 router.patch(
   "/bookings/:id",
+  blockStudentJwt,
   requireAdminAuth,
   requireBookingUpdatePermission,
   async (req, res): Promise<void> => {
@@ -662,6 +669,7 @@ router.patch(
 
 router.delete(
   "/bookings/:id",
+  blockStudentJwt,
   requireAdminAuth,
   requireAdminPermission("bookings", "delete"),
   async (req, res): Promise<void> => {
