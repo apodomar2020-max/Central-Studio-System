@@ -1,282 +1,345 @@
-import { Ionicons } from "@expo/vector-icons";
+/**
+ * Create Account — design `CreateAccount` (signup-views.jsx). Step 1 of 4.
+ *
+ * INPUTS: plain controlled React Native `TextInput` inside a lightweigh
+ * `SignupTextInput` block. The old `FloatInput` (floating label) is intentionally
+ * NOT used here — its absolutely-positioned label over the input touch area plus
+ * the per-input onFocus/onBlur re-render caused a focus/keyboard freeze on this
+ * screen. This block has: a STATIC label above each field, NO floating-label
+ * animation, NO onFocus/onBlur, NO absolute element over the touch area, NO
+ * Touchable wrapping the input, and it never remounts on focus or calls focus().
+ *
+ * Visual matches the design: labels above fields, FIRST/LAST side by side, EMAIL
+ * and PASSWORD full width, large dark rounded boxes, left field icons, password
+ * eye toggle. Same title/spacing/divider/social/footer. Backend + routing unchanged.
+ */
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
-import {
-  Image,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React, { useState, useEffect } from "react";
 
+let draftFirstName = "";
+let draftLastName = "";
+let draftEmail = "";
+let draftPassword = "";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { useAppContext, User } from "@/contexts/AppContext";
-import colors from "@/constants/colors";
+import { useAppContext } from "@/contexts/AppContext";
 import { STORAGE_KEYS } from "@/constants/danceStyles";
-import AppButton from "@/components/AppButton";
-import GoogleSignInButton from "@/components/GoogleSignInButton";
-import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
-import FacebookSignInButton from "@/components/FacebookSignInButton";
-import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
-import AppleSignInButton from "@/components/AppleSignInButton";
 import { continueAfterAuth } from "@/services/authProfile";
+import ProgressDots from "@/components/ProgressDots";
+import {
+  BackBtn, CS, Divider, Eyebrow, FacebookLogo, GhostBtn, GoogleLogo, Icon, PrimaryCTA, ScreenTitle,
+  type SignupIconName,
+} from "@/components/signup/SignupKit";
+import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
+import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 
-const ROLES: { value: User["role"]; label: string; icon: string }[] = [
-  { value: "student", label: "Student", icon: "school-outline" },
-  { value: "parent", label: "Parent / Guardian", icon: "people-outline" },
-];
+// Stable social icon elements.
+const FACEBOOK_ICON = <FacebookLogo />;
+const GOOGLE_ICON = <GoogleLogo />;
 
+/** Static background glow — renders once. */
+const RegisterGlow = React.memo(function RegisterGlow() {
+  return (
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+      shouldRasterizeIOS
+      renderToHardwareTextureAndroid
+      collapsable={false}
+    >
+      <Svg style={StyleSheet.absoluteFill}>
+        <Defs>
+          <RadialGradient id="caGlow" cx="80%" cy="-10%" rx="80%" ry="60%">
+            <Stop offset="0%" stopColor={CS.cyan500} stopOpacity={0.1} />
+            <Stop offset="60%" stopColor={CS.cyan500} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#caGlow)" />
+      </Svg>
+    </View>
+  );
+});
+
+/**
+ * Lightweight design-matched input block. Structurally simple and flat:
+ *   Container (dark rounded box) ─ Left Icon ─ TextInput ─ Optional Eye Button
+ * The text label lives INSIDE the field as the native `placeholder` (no floating
+ * label, no animated label, no absolute-positioned label over the touch area).
+ * The left icon and optional right element are flex SIBLINGS of the TextInput —
+ * neither wraps it. No focus state, no onFocus/onBlur, never remounts on focus,
+ * never calls focus().
+ */
+const SignupTextInput = React.memo(function SignupTextInput({
+  placeholder,
+  value,
+  onChangeText,
+  icon,
+  keyboardType,
+  autoCapitalize,
+  secureTextEntry,
+  rightEl,
+}: {
+  placeholder: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  icon?: SignupIconName;
+  keyboardType?: "default" | "email-address" | "phone-pad" | "number-pad";
+  autoCapitalize?: "none" | "words" | "sentences";
+  secureTextEntry?: boolean;
+  rightEl?: React.ReactNode;
+}) {
+  return (
+    <View style={styles.fieldBox}>
+      {icon ? <Icon name={icon} size={18} stroke={2} color="rgba(255,255,255,0.32)" /> : null}
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="rgba(255,255,255,0.38)"
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={false}
+        secureTextEntry={secureTextEntry}
+        style={styles.fieldInput}
+      />
+      {rightEl ?? null}
+    </View>
+  );
+});
+
+
+export function clearSignupDrafts() {
+  draftFirstName = "";
+  draftLastName = "";
+  draftEmail = "";
+  draftPassword = "";
+}
 export default function RegisterScreen() {
-  const { setUser } = useAppContext();
+  const { setUser, user } = useAppContext();
   const insets = useSafeAreaInsets();
   const google = useGoogleSignIn();
   const facebook = useFacebookSignIn();
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<User["role"]>("student");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  async function handleRegister() {
-    if (!fullName.trim() || !email.trim() || !password.trim()) {
-      setError("Please fill in all required fields.");
+  // Plain controlled state (same proven pattern as the Sign In screen).
+  const [firstName, setFirstName] = useState(draftFirstName);
+  const [lastName, setLastName] = useState(draftLastName);
+  const [email, setEmail] = useState(draftEmail);
+  const [password, setPassword] = useState(draftPassword);
+
+  useEffect(() => {
+    draftFirstName = firstName;
+    draftLastName = lastName;
+    draftEmail = email;
+    draftPassword = password;
+  }, [firstName, lastName, email, password]);
+  const [showPwd, setShowPwd] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState("");
+
+  async function submit() {
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !/\S+@\S+\.\S+/.test(email) || password.length < 6) {
+      setApiError("Please complete all fields (valid email, password ≥ 6 characters).");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-    setError("");
+    setApiError("");
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const isSameEmail = user?.email?.toLowerCase() === email.trim().toLowerCase();
+
+    if (user) {
+      if (isSameEmail) {
+        try {
+          const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+          const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
+          const name = `${firstName.trim()} ${lastName.trim()}`.trim();
+
+          await fetch(`${apiUrl}/api/auth/profile`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({ name }),
+          });
+          await AsyncStorage.setItem(STORAGE_KEYS.needsPersonalization, "1");
+          await continueAfterAuth(undefined, setUser);
+          setLoading(false);
+        } catch {
+          setApiError("Network error. Please check your connection.");
+          setLoading(false);
+        }
+        return;
+      } else {
+        setLoading(false);
+        Alert.alert(
+          "Restart Signup?",
+          "Changing your email will restart signup. Continue?",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Continue",
+              style: "destructive",
+              onPress: async () => {
+                await setUser(null);
+                clearSignupDrafts();
+                setFirstName("");
+                setLastName("");
+                setEmail("");
+                setPassword("");
+                // We don't automatically resubmit because fields are now empty.
+                // Just clear the state and let user type again.
+              }
+            }
+          ]
+        );
+        return;
+      }
+    }
 
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
       const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
+      const name = `${firstName.trim()} ${lastName.trim()}`.trim();
       const response = await fetch(`${apiUrl}/api/auth/register`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          name: fullName.trim(),
-          email: email.trim(),
-          phone: phone.trim() || undefined,
-          accountType: role,
-          password,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ name, email: email.trim(), accountType: "student", password }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
-        setError(data.error ?? "Registration failed. Please try again.");
+        if (response.status === 409 || data.error?.toLowerCase().includes("exists")) {
+          setLoading(false);
+          Alert.alert(
+            "Email Registered",
+            "This email is already registered. Please sign in or use another email.",
+            [
+              { text: "Sign In", onPress: () => router.push("/auth/login") },
+              { text: "Cancel", style: "cancel" }
+            ]
+          );
+          return;
+        }
+        setApiError(data.error ?? "Registration failed. Please try again.");
         setLoading(false);
         return;
       }
-
-      // Mark this as a brand-new account so the post-auth funnel routes
-      // through the signup personalization steps (phone → styles → success).
       await AsyncStorage.setItem(STORAGE_KEYS.needsPersonalization, "1");
       await continueAfterAuth(data.accessToken, setUser);
       setLoading(false);
     } catch {
-      setError("Network error. Please check your connection.");
+      setApiError("Network error. Please check your connection.");
       setLoading(false);
     }
   }
 
+  const topPad = (Platform.OS === "web" ? 40 : insets.top) + 24;
+  const canSubmit = !!(firstName.trim() && lastName.trim() && email.trim() && password.length > 0);
+
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
-      <TouchableOpacity
-        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/" as never); }}
-        style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
+    <View style={styles.screen}>
+      <RegisterGlow />
+
+      <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
+        <BackBtn onPress={() => { draftPassword = ""; router.replace("/onboarding/welcome"); }} />
+        <ProgressDots total={5} current={0} />
+        <View style={{ width: 42 }} />
+      </View>
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <Ionicons name="close" size={22} color="#9CA3AF" />
-      </TouchableOpacity>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          <Eyebrow>Step 1 of 5</Eyebrow>
+          <ScreenTitle text={"CREATE\nACCOUNT"} />
+          <Text style={styles.sub}>Join thousands of dancers at Central Studio.</Text>
 
-      <KeyboardAwareScrollView
-        showsVerticalScrollIndicator={false}
-        bottomOffset={20}
-        contentContainerStyle={[styles.scroll, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 60 }]}
-      >
-        <Image
-          source={require("@/assets/images/central_studio_logo.png")}
-          style={styles.logoBadge}
-          resizeMode="contain"
-        />
+          {apiError ? <Text style={styles.apiError}>{apiError}</Text> : null}
 
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join Central Studio</Text>
-
-        {(error || google.error || facebook.error) !== "" && (
-          <View style={[styles.errorBanner, { backgroundColor: colors.error + "20", borderColor: colors.error + "50" }]}>
-            <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error || facebook.error}</Text>
-          </View>
-        )}
-
-        <View style={styles.form}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Full Name *</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="person-outline" size={18} color="#6B7280" />
-              <TextInput
-                value={fullName}
-                onChangeText={setFullName}
-                placeholder="Your full name"
-                placeholderTextColor="#6B7280"
-                autoCapitalize="words"
-                style={styles.input}
-              />
+          <View style={{ gap: 16, marginTop: 4 }}>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <SignupTextInput placeholder="First Name" value={firstName} onChangeText={setFirstName} icon="user" autoCapitalize="words" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <SignupTextInput placeholder="Last Name" value={lastName} onChangeText={setLastName} icon="user" autoCapitalize="words" />
+              </View>
             </View>
-          </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone Number</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="call-outline" size={18} color="#6B7280" />
-              <TextInput
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="+20 100 000 0000"
-                placeholderTextColor="#6B7280"
-                keyboardType="phone-pad"
-                style={styles.input}
-              />
-            </View>
-          </View>
+            <SignupTextInput
+              placeholder="Email Address"
+              value={email}
+              onChangeText={setEmail}
+              icon="mail"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email *</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="mail-outline" size={18} color="#6B7280" />
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                placeholderTextColor="#6B7280"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password *</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B7280" />
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Create a password"
-                placeholderTextColor="#6B7280"
-                secureTextEntry
-                style={styles.input}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>I am a...</Text>
-            <View style={styles.roleRow}>
-              {ROLES.map((r) => (
-                <TouchableOpacity
-                  key={r.value}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setRole(r.value);
-                  }}
-                  style={[
-                    styles.roleCard,
-                    {
-                      borderColor: role === r.value ? colors.studio.primary : "#2A2A35",
-                      backgroundColor: role === r.value ? colors.studio.primary + "15" : "#1E1E26",
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={r.icon as any}
-                    size={20}
-                    color={role === r.value ? colors.studio.primary : "#6B7280"}
-                  />
-                  <Text style={[styles.roleLabel, { color: role === r.value ? colors.studio.primary : "#9CA3AF" }]}>
-                    {r.label}
-                  </Text>
+            <SignupTextInput
+              placeholder="Password"
+              value={password}
+              onChangeText={setPassword}
+              icon="lock"
+              secureTextEntry={!showPwd}
+              rightEl={
+                <TouchableOpacity onPress={() => setShowPwd((s) => !s)} hitSlop={8}>
+                  <Icon name={showPwd ? "eyeOff" : "eye"} size={17} stroke={2} color="rgba(255,255,255,0.38)" />
                 </TouchableOpacity>
-              ))}
+              }
+            />
+
+            <Divider label="or sign up with" />
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <GhostBtn label="Facebook" icon={FACEBOOK_ICON} onPress={() => facebook.signIn()} />
+              <GhostBtn label="Google" icon={GOOGLE_ICON} onPress={() => google.signIn()} />
             </View>
+            <Text style={styles.terms}>
+              By continuing you agree to our <Text style={styles.termsLink}>Terms</Text> and <Text style={styles.termsLink}>Privacy Policy</Text>
+            </Text>
           </View>
+        </ScrollView>
 
-          <AppButton title="Create Account" onPress={handleRegister} loading={loading} fullWidth size="lg" />
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <AppleSignInButton />
-
-          <GoogleSignInButton onPress={google.signIn} loading={google.loading} disabled={!google.ready} />
-
-          <FacebookSignInButton onPress={facebook.signIn} loading={facebook.loading} disabled={facebook.loading} />
+        <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>
+          <PrimaryCTA label="Continue" icon="arrow" onPress={submit} loading={loading} disabled={!canSubmit} />
         </View>
-
-        <View style={styles.loginRow}>
-          <Text style={styles.loginNote}>Already have an account?</Text>
-          <TouchableOpacity onPress={() => router.replace("/auth/login")}>
-            <Text style={[styles.loginLink, { color: colors.studio.primary }]}> Sign in</Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAwareScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0B0D" },
-  closeBtn: {
-    position: "absolute",
-    right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
+  screen: { flex: 1, backgroundColor: CS.base },
+  flex: { flex: 1 },
+  topRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, height: 56,
+    zIndex: 50, elevation: 10,
   },
-  scroll: { paddingHorizontal: 24, paddingBottom: 60, alignItems: "center", gap: 16 },
-  logoBadge: { width: "100%", height: 160, marginBottom: 8, marginHorizontal: -24 },
-  title: { fontSize: 44, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", lineHeight: 43 },
-  subtitle: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 4 },
-  errorBanner: { width: "100%", flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, borderWidth: 1 },
-  errorText: { fontSize: 13, fontFamily: "Archivo_400Regular", flex: 1 },
-  form: { width: "100%", gap: 14 },
-  inputGroup: { gap: 6 },
-  label: { fontSize: 11, fontFamily: "Archivo_700Bold", color: "#9CA3AF", paddingLeft: 2, letterSpacing: 0.66, textTransform: "uppercase" },
-  inputRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, height: 50, borderRadius: 12, borderWidth: 1.5, backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.12)" },
-  input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15 },
-  dividerRow: { flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 2 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.10)" },
-  dividerText: { fontSize: 12, fontFamily: "SpaceMono_700Bold", color: "#6B7280", textTransform: "uppercase" },
-  roleRow: { gap: 8 },
-  roleCard: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 12, borderWidth: 1.5 },
-  roleLabel: { fontSize: 14, fontFamily: "Archivo_700Bold" },
-  loginRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
-  loginNote: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
-  loginLink: { fontSize: 14, fontFamily: "Archivo_800ExtraBold" },
+  body: { paddingHorizontal: 24, paddingTop: 28, paddingBottom: 24 },
+  // Title kept at the design's full 85px. lineHeight ≥ fontSize + includeFontPadding
+  // off + a small paddingTop prevents the tall Anton caps from being clipped/cut a
+  // the top, and guarantees both lines ("CREATE" / "ACCOUNT") render in full.
+  title: {
+    fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78,
+    includeFontPadding: false, paddingTop: 6,
+    textTransform: "uppercase", color: CS.cyan500, marginBottom: 6,
+  },
+  sub: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, marginBottom: 24, fontFamily: "Archivo_400Regular" },
+  apiError: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: CS.danger, marginBottom: 12 },
+  // Dark rounded input box — same radius/border/background/height family as the design.
+  fieldBox: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    height: 56, borderRadius: 12, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.04)", paddingHorizontal: 14,
+  },
+  fieldInput: { flex: 1, paddingVertical: 0, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
+  terms: { fontSize: 12, color: "rgba(255,255,255,0.28)", lineHeight: 18, textAlign: "center", marginTop: 4, paddingBottom: 8, fontFamily: "Archivo_400Regular" },
+  termsLink: { color: CS.cyan400, fontFamily: "Archivo_600SemiBold" },
+  footer: { paddingHorizontal: 24, paddingTop: 12, borderTopWidth: 0 },
 });

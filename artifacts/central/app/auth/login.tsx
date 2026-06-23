@@ -19,12 +19,14 @@ import {
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
-import GoogleSignInButton from "@/components/GoogleSignInButton";
+
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
-import FacebookSignInButton from "@/components/FacebookSignInButton";
+
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 import AppleSignInButton from "@/components/AppleSignInButton";
+import { BackBtn, GhostBtn, FacebookLogo, GoogleLogo } from "@/components/signup/SignupKit";
 import { continueAfterAuth } from "@/services/authProfile";
+import { clearSignupDrafts } from "./register";
 
 export default function LoginScreen() {
   const { setUser } = useAppContext();
@@ -36,6 +38,11 @@ export default function LoginScreen() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  async function continueAsGuest() {
+    await setUser(null);
+    router.replace("/(tabs)" as never);
+  }
 
   const player = useVideoPlayer(
     require("@/assets/EntroVideo.mp4"),
@@ -75,6 +82,7 @@ export default function LoginScreen() {
         return;
       }
 
+      clearSignupDrafts();
       await continueAfterAuth(data.accessToken, setUser);
       setLoading(false);
     } catch {
@@ -100,12 +108,9 @@ export default function LoginScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      <TouchableOpacity
-        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/" as never); }}
-        style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
-      >
-        <Ionicons name="close" size={22} color="#9CA3AF" />
-      </TouchableOpacity>
+      <View style={{ position: "absolute", top: (Platform.OS === "web" ? 67 : insets.top) + 12, left: 24, zIndex: 50 }} pointerEvents="box-none">
+        <BackBtn onPress={() => router.replace("/onboarding/welcome")} />
+      </View>
 
       <KeyboardAwareScrollView
         showsVerticalScrollIndicator={false}
@@ -177,10 +182,10 @@ export default function LoginScreen() {
           </View>
 
           <AppleSignInButton />
-
-          <GoogleSignInButton onPress={google.signIn} loading={google.loading} disabled={!google.ready} />
-
-          <FacebookSignInButton onPress={facebook.signIn} loading={facebook.loading} disabled={facebook.loading} />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <GhostBtn label="Google" icon={<GoogleLogo />} onPress={google.signIn} />
+            <GhostBtn label="Facebook" icon={<FacebookLogo />} onPress={facebook.signIn} />
+          </View>
         </View>
 
         <View style={styles.registerRow}>
@@ -190,7 +195,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/" as never); }} style={styles.guestBtn}>
+        <TouchableOpacity onPress={continueAsGuest} style={styles.guestBtn}>
           <Text style={styles.guestText}>Continue browsing as guest</Text>
         </TouchableOpacity>
       </KeyboardAwareScrollView>

@@ -8,7 +8,7 @@ import colors from "@/constants/colors";
  * `ProgressDots` primitive. Active dot stretches to a 20px cyan pill,
  * completed dots are dim cyan, upcoming dots are faint white.
  */
-export default function ProgressDots({
+function ProgressDots({
   total,
   current,
 }: {
@@ -42,3 +42,5 @@ const styles = StyleSheet.create({
   done: { backgroundColor: "rgba(0,182,215,0.45)" },
   upcoming: { backgroundColor: "rgba(255,255,255,0.15)" },
 });
+
+export default React.memo(ProgressDots);

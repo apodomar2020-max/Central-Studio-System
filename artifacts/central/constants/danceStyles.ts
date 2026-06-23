@@ -30,4 +30,13 @@ export const STORAGE_KEYS = {
   needsPersonalization: "cs_needs_personalization",
   danceStyles: "cs_dance_styles",
   phoneVerified: "cs_phone_verified",
+  /**
+   * TEMPORARY — stored locally until the backend adds these columns to the
+   * students table:  date_of_birth (text/date), city (text), nationality (text).
+   * Once the columns and PATCH /api/auth/profile support them, migrate these
+   * values to the server and remove these keys.
+   */
+  profileDob: "cs_profile_dob",
+  profileCity: "cs_profile_city",
+  profileNationality: "cs_profile_nationality",
 } as const;

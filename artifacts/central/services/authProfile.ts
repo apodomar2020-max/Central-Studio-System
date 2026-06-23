@@ -3,6 +3,32 @@ import { router } from "expo-router";
 import { customFetch } from "@workspace/api-client-react";
 
 import type { User } from "@/contexts/AppContext";
+import { STORAGE_KEYS } from "@/constants/danceStyles";
+
+/**
+ * New 5-step onboarding flow (post-registration):
+ *   1. /auth/register         → Create Account
+ *   2. /auth/complete-profile → Complete Client Profile (phone, accountType, DOB*, city*, nationality*)
+ *   3. /onboarding/styles     → Your Vibe / Dance Styles
+ *   4. /auth/verify-phone     → Verification (email-based, SMS not yet active)
+ *   5. /onboarding/success    → You're in!
+ *
+ * The `needsPersonalization` flag is set during register and cleared in success.tsx.
+ * Once set, the user is routed through the full 5-step flow after profile completion.
+ *
+ * * = Stored locally in AsyncStorage only — backend columns pending:
+ *       students.date_of_birth, students.city, students.nationality
+ */
+export async function enterApp() {
+  const needsPersonalization = await AsyncStorage.getItem(STORAGE_KEYS.needsPersonalization);
+  if (needsPersonalization === "1") {
+    // New registration: route to Step 4 (verification) — they've already done
+    // styles in Step 3 and are now continuing to the end of the funnel.
+    router.push("/verify-email" as never);
+    return;
+  }
+  router.replace("/" as never);
+}
 
 export type AccountType = "student" | "parent";
 
@@ -64,15 +90,27 @@ export async function continueAfterAuth(
   const { user, requiresOtp } = await fetchCurrentUser();
   await setUser(user);
 
+  const needsPersonalization = await AsyncStorage.getItem(STORAGE_KEYS.needsPersonalization);
+  if (needsPersonalization === "1") {
+    if (!user.profileCompleted) {
+      router.push("/auth/complete-profile" as never);
+      return;
+    }
+    router.push("/onboarding/styles" as never);
+    return;
+  }
+
   if (requiresOtp || !user.emailVerified) {
-    router.replace("/verify-email" as never);
+    router.push("/verify-email" as never);
     return;
   }
 
   if (!user.profileCompleted) {
-    router.replace("/auth/complete-profile" as never);
+    // Route to Step 2 of the new flow (complete-profile).
+    // After saving phone + accountType, complete-profile routes to /onboarding/styles.
+    router.push("/auth/complete-profile" as never);
     return;
   }
 
-  router.replace("/" as never);
+  await enterApp();
 }

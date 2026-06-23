@@ -17,8 +17,30 @@ import {
 import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
+
+import { BackBtn, CS, Eyebrow, PrimaryCTA, SignupIconName, Icon, ScreenTitle } from "@/components/signup/SignupKit";
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
+import ProgressDots from "@/components/ProgressDots";
+
 import AppButton from "@/components/AppButton";
 import { enterApp, fetchCurrentUser } from "@/services/authProfile";
+import { clearSignupDrafts } from "./auth/register";
+
+const VerifyGlow = React.memo(function VerifyGlow() {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Svg style={StyleSheet.absoluteFill}>
+        <Defs>
+          <RadialGradient id="verifyGlow" cx="20%" cy="110%" rx="70%" ry="50%">
+            <Stop offset="0%" stopColor={CS.cyan500} stopOpacity={0.09} />
+            <Stop offset="60%" stopColor={CS.cyan500} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#verifyGlow)" />
+      </Svg>
+    </View>
+  );
+});
 
 const CODE_LENGTH = 6;
 
@@ -30,6 +52,10 @@ export default function VerifyEmailScreen() {
   const [resendCountdown, setResendCountdown] = useState(0);
   const [sent, setSent] = useState(false);
   const refs = useRef<(TextInput | null)[]>([]);
+
+  function handleSafeBack() {
+    router.replace("/onboarding/styles" as never);
+  }
 
   // Auto-send OTP as soon as the screen opens (if not already verified)
   useEffect(() => {
@@ -50,30 +76,30 @@ export default function VerifyEmailScreen() {
 
   if (user?.emailVerified) {
     return (
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-            <Text style={styles.headerButtonText}>Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Verify Email</Text>
-          <View style={styles.headerButtonPlaceholder} />
+
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 40 : insets.top + 24 }]}>
+        <VerifyGlow />
+        <View style={styles.topRow} pointerEvents="box-none">
+          <BackBtn onPress={handleSafeBack} />
+          <ProgressDots total={5} current={3} />
+          <View style={{ width: 42 }} />
         </View>
         <View style={styles.centeredWrap}>
-          <View style={[styles.iconWrap, { backgroundColor: "#22C55E20" }]}>
-            <Ionicons name="checkmark-circle" size={56} color="#22C55E" />
+          <View style={[styles.iconWrap, { backgroundColor: "rgba(0,182,215,0.13)" }]}>
+            <Icon name="check" size={32} stroke={2} color={CS.cyan400} />
           </View>
           <Text style={styles.successTitle}>Already Verified!</Text>
           <Text style={styles.successDesc}>Your email address is verified. You have full access to all features.</Text>
-          <View style={[styles.emailBox, { borderColor: "#22C55E30", backgroundColor: "#22C55E10" }]}>
-            <Ionicons name="mail" size={16} color="#22C55E" />
-            <Text style={[styles.emailText, { color: "#22C55E" }]}>{user.email}</Text>
-          </View>
-          <View style={{ marginTop: 8, width: "100%" }}>
-            <AppButton title="Back to Profile" onPress={() => router.back()} fullWidth />
+          <View style={[styles.emailBox, { borderColor: "rgba(0,182,215,0.30)", backgroundColor: "rgba(0,182,215,0.10)" }]}>
+            <Icon name="mail" size={16} stroke={2} color={CS.cyan400} />
+            <Text style={[styles.emailText, { color: CS.cyan400 }]}>{user.email}</Text>
           </View>
         </View>
+        <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>
+          <PrimaryCTA label="Back to Profile" onPress={handleSafeBack} />
+        </View>
       </View>
+
     );
   }
 
@@ -109,12 +135,13 @@ export default function VerifyEmailScreen() {
       }
       const refreshed = await fetchCurrentUser();
       await setUser(refreshed.user);
+      clearSignupDrafts();
       Alert.alert("Email Verified!", "Your email has been verified successfully.", [
         {
           text: "Continue",
           onPress: () => {
             if (!refreshed.user.profileCompleted) {
-              router.replace("/auth/complete-profile" as never);
+              router.push("/auth/complete-profile" as never);
             } else {
               void enterApp();
             }
@@ -122,8 +149,8 @@ export default function VerifyEmailScreen() {
         },
       ]);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Invalid or expired code.";
-      Alert.alert("Verification Failed", msg);
+      // const msg = err instanceof Error ? err.message : "Invalid or expired code.";
+      Alert.alert("Verification Failed", "Invalid or expired verification code. Please request a new code and try again.");
     } finally {
       setLoading(false);
     }
@@ -141,31 +168,28 @@ export default function VerifyEmailScreen() {
       setSent(true);
       Alert.alert("Email Sent", `A new verification code has been sent to ${user?.email}.`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Could not send code.";
-      Alert.alert("Failed to Send", msg);
+      // const msg = err instanceof Error ? err.message : "Could not send code.";
+      Alert.alert("Failed to Send", "We couldn't resend the code. Please try again in a few moments.");
     }
   }
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 30 : 0 }]}>
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Verify Email</Text>
-        <View style={styles.headerButtonPlaceholder} />
+
+    <View style={styles.container}>
+      <VerifyGlow />
+      <View style={[styles.topRow, { paddingTop: Platform.OS === "web" ? 40 : insets.top + 24 }]} pointerEvents="box-none">
+        <BackBtn onPress={handleSafeBack} />
+        <ProgressDots total={5} current={3} />
+        <View style={{ width: 42 }} />
       </View>
 
-      <View style={styles.scroll}>
-        <View style={[styles.iconWrap, { backgroundColor: colors.studio.primary + "20" }]}>
-          <Ionicons name="mail-open-outline" size={40} color={colors.studio.primary} />
-        </View>
+      <View style={styles.body}>
+        <Eyebrow>Step 4 of 5</Eyebrow>
+        <ScreenTitle text={"VERIFY\nEMAIL"} />
 
-        <Text style={styles.pageTitle}>Check your inbox</Text>
-        <Text style={styles.pageDesc}>
+        <Text style={styles.lead}>
           We sent a 6-digit verification code to{"\n"}
-          <Text style={[styles.pageDescEmail, { color: colors.studio.primary }]}>{user?.email}</Text>
+          <Text style={[styles.pageDescEmail, { color: CS.cyan400 }]}>{user?.email}</Text>
         </Text>
 
         <View style={styles.codeRow}>
@@ -181,23 +205,15 @@ export default function VerifyEmailScreen() {
               style={[
                 styles.codeInput,
                 {
-                  borderColor: digit ? colors.studio.primary : "#2A2A35",
-                  backgroundColor: digit ? colors.studio.primary + "15" : "#1E1E26",
-                  color: digit ? colors.studio.primary : "#FFFFFF",
+                  borderColor: digit ? CS.cyan500 : "rgba(255,255,255,0.12)",
+                  backgroundColor: digit ? "rgba(0,182,215,0.13)" : "rgba(255,255,255,0.05)",
+                  color: digit ? CS.cyan500 : "#FFFFFF",
                 },
               ]}
               selectTextOnFocus
             />
           ))}
         </View>
-
-        <AppButton
-          title="Verify Email"
-          onPress={handleVerify}
-          loading={loading}
-          fullWidth
-          size="lg"
-        />
 
         <TouchableOpacity
           onPress={handleResend}
@@ -207,62 +223,64 @@ export default function VerifyEmailScreen() {
           {resendCountdown > 0 ? (
             <Text style={styles.resendText}>
               Resend code in{" "}
-              <Text style={{ color: colors.studio.primary }}>{resendCountdown}s</Text>
+              <Text style={{ color: CS.cyan400 }}>{resendCountdown}s</Text>
             </Text>
           ) : (
-            <Text style={[styles.resendText, { color: colors.studio.primary }]}>Resend verification email</Text>
+            <Text style={[styles.resendText, { color: CS.cyan400, fontFamily: "Archivo_700Bold" }]}>Resend verification email</Text>
           )}
         </TouchableOpacity>
 
-        <View style={[styles.helpBox, { borderColor: "#1E2E38", backgroundColor: "#0E1619" }]}>
-          <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
-          <Text style={styles.helpText}>
+        <View style={[styles.notice, { marginTop: 24 }]}>
+          <View style={styles.noticeIcon}>
+            <Icon name="lock" size={15} stroke={2} color={CS.amber} />
+          </View>
+          <Text style={styles.noticeText}>
             Can't find the email? Check your spam folder or make sure you signed up with the correct address.
           </Text>
         </View>
       </View>
+
+      <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>
+        <PrimaryCTA
+          label="Verify Email"
+          onPress={handleVerify}
+          loading={loading}
+          icon="arrow"
+        />
+      </View>
     </View>
+
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0B0D" },
-  header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
+  container: { flex: 1, backgroundColor: CS.base },
+  topRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, height: 56,
+    zIndex: 50, elevation: 10,
   },
-  headerButton: {
-    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
-  },
-  headerButtonText: {
-    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
-  },
-  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  headerButtonPlaceholder: { minWidth: 54 },
-  scroll: { flex: 1, paddingHorizontal: 28, paddingTop: 32, gap: 20, alignItems: "center" },
-  iconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  pageTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", textAlign: "center" },
-  pageDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 22 },
+  body: { flex: 1, paddingHorizontal: 24, paddingTop: 28 },
+  title: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, textTransform: "uppercase", color: CS.cyan500, marginBottom: 10, includeFontPadding: false, paddingTop: 6 },
+  lead: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, marginBottom: 24, fontFamily: "Archivo_400Regular" },
   pageDescEmail: { fontFamily: "Archivo_700Bold" },
   centeredWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 16 },
+  iconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 8 },
   successTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", textAlign: "center" },
-  successDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 22 },
+  successDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "rgba(255,255,255,0.42)", textAlign: "center", lineHeight: 22 },
   emailBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, width: "100%",
   },
   emailText: { fontSize: 14, fontFamily: "Archivo_600SemiBold", flex: 1 },
-  codeRow: { flexDirection: "row", gap: 8, marginVertical: 8 },
+  codeRow: { flexDirection: "row", gap: 10, marginVertical: 8, justifyContent: "space-between" },
   codeInput: {
-    width: 44, height: 52, borderRadius: 12, borderWidth: 1.5,
-    textAlign: "center", fontSize: 22, fontFamily: "Anton_400Regular",
+    flex: 1, height: 56, borderRadius: 12, borderWidth: 1.5,
+    textAlign: "center", fontSize: 26, fontFamily: "Anton_400Regular",
   },
-  resendBtn: { paddingVertical: 4 },
-  resendText: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#6B747F" },
-  helpBox: {
-    flexDirection: "row", alignItems: "flex-start", gap: 8,
-    padding: 12, borderRadius: 12, borderWidth: 1, marginTop: 4,
-  },
-  helpText: { flex: 1, fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", lineHeight: 18 },
+  resendBtn: { paddingVertical: 12, alignSelf: "flex-start" },
+  resendText: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "rgba(255,255,255,0.42)" },
+  notice: { flexDirection: "row", gap: 10, padding: 13, borderRadius: 12, backgroundColor: "rgba(255,176,46,0.10)", borderWidth: 1, borderColor: "rgba(255,176,46,0.28)", marginBottom: 20 },
+  noticeIcon: { width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,176,46,0.16)", alignItems: "center", justifyContent: "center" },
+  noticeText: { flex: 1, fontSize: 12.5, lineHeight: 18, color: "rgba(255,255,255,0.65)", fontFamily: "Archivo_400Regular" },
+  footer: { paddingHorizontal: 24, paddingTop: 12, gap: 6 },
 });

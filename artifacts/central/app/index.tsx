@@ -4,15 +4,13 @@ import { router } from "expo-router";
 import { useAppContext } from "@/contexts/AppContext";
 
 export default function IndexScreen() {
-  const { isOnboarded, isLoading, user } = useAppContext();
+  const { isLoading, user } = useAppContext();
 
   useEffect(() => {
     if (isLoading) return;
-    if (!isOnboarded) {
-      router.replace("/onboarding/language");
-    } else if (!user) {
-      // Require login before accessing the app
-      router.replace("/auth/login");
+    if (!user) {
+      // Unauthenticated → design Welcome landing (offers Sign Up + Sign In).
+      router.replace("/onboarding/welcome");
     } else if (!user.emailVerified) {
       router.replace("/verify-email" as never);
     } else if (!user.profileCompleted) {
@@ -20,7 +18,7 @@ export default function IndexScreen() {
     } else {
       router.replace("/(tabs)" as never);
     }
-  }, [isLoading, isOnboarded, user]);
+  }, [isLoading, user]);
 
   return <View style={{ flex: 1, backgroundColor: "#060C10" }} />;
 }
