@@ -69,6 +69,7 @@ const INK_400 = "#6B747F"; // --cs-ink-400  (secondary icon / muted border)
 const INK_300 = "#8E97A2"; // --cs-ink-300  (secondary text)
 const INK_200 = "#B6BDC6"; // --cs-ink-200  (on-dark secondary)
 const CYAN    = "#00B6D7"; // --cs-cyan-500 / primary
+const CYAN_400 = "#2DCDEC"; // --cs-cyan-400 (feature check / accents)
 const MAGENTA = "#FF2E7E"; // --cs-magenta-500
 const LIME    = "#B6E80A"; // --cs-lime-500  (Kids chips)
 const VIOLET  = "#7C3AED"; // --cs-violet-500 (Adults chips)
@@ -591,7 +592,6 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
   const { user } = useAppContext();
   const hot     = pkg.isFeatured;
   const credits = pkg.sessions ?? 1;
-  const perCls  = pkg.singleClassPriceEgp ?? (credits > 1 ? Math.round(pkg.priceEgp / credits) : 0);
   const iconName: "star" | "ticket" | "infinity" = hot ? "star" : credits === 1 ? "ticket" : "infinity";
 
   return (
@@ -609,23 +609,36 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
         router.push({ pathname: "/(tabs)/packages", params: { purchaseId: String(pkg.id) } });
       }}
     >
-      {hot && (
-        <View style={s.pkgBadge}>
-          <CsIcon name="star" size={12} color={INK_900} />
-          <Text style={s.pkgBadgeText}>POPULAR</Text>
+      {/* Top row: icon left + POPULAR badge right (design: space-between) */}
+      <View style={s.pkgTopRow}>
+        <View style={[s.pkgIcon, hot && { backgroundColor: CYAN }]}>
+          <CsIcon name={iconName} size={22} stroke={2.2} color={hot ? INK_900 : CYAN} />
         </View>
-      )}
-      <View style={[s.pkgIcon, hot && { backgroundColor: CYAN }]}>
-        <CsIcon name={iconName} size={22} stroke={2.2} color={hot ? INK_900 : CYAN} />
+        {hot && (
+          <View style={s.pkgBadge}>
+            <CsIcon name="star" size={12} color={INK_900} />
+            <Text style={s.pkgBadgeText}>POPULAR</Text>
+          </View>
+        )}
       </View>
       <Text style={s.pkgName}>{pkg.name}</Text>
       <View style={s.pkgPriceRow}>
         <Text style={[s.pkgPrice, !hot && { color: "#fff" }]}>EGP {pkg.priceEgp}</Text>
         <Text style={s.pkgUnit}>/{credits === 1 ? "class" : `${credits} cls`}</Text>
       </View>
-      {perCls > 0 && credits > 1 && (
-        <Text style={s.pkgPer}>EGP {perCls} per class</Text>
-      )}
+      {/* Description (design parity) */}
+      {pkg.description ? <Text style={s.pkgDesc}>{pkg.description}</Text> : null}
+      {/* Feature bullets with check icons (design parity) */}
+      {pkg.features?.length ? (
+        <View style={s.pkgFeatures}>
+          {pkg.features.map((f, i) => (
+            <View key={i} style={s.pkgFeatureRow}>
+              <CsIcon name="check" size={15} stroke={2.6} color={CYAN_400} />
+              <Text style={s.pkgFeatureText}>{f}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
       <View style={[s.pkgBtn, hot && { backgroundColor: CYAN }]}>
         <Text style={[s.pkgBtnText, hot && { color: INK_900 }]}>Choose {pkg.name}</Text>
       </View>
@@ -1183,29 +1196,33 @@ const s = StyleSheet.create({
   },
   // Fix Pack 2: borderColor CYAN+"60"→CYAN (full opacity), borderWidth 1→1.5
   pkgCardHot: { borderColor: CYAN, borderWidth: 1.5, backgroundColor: "rgba(0,182,215,0.08)" },
+  // Icon + badge share one row (design: justify-content space-between).
+  pkgTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   pkgBadge: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    alignSelf: "flex-start", backgroundColor: CYAN,
-    borderRadius: R_PILL, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 10,
+    backgroundColor: CYAN,
+    borderRadius: R_PILL, paddingHorizontal: 10, paddingVertical: 4,
   },
-  // Fix Pack 2: pkgBadgeText fontSize 8→11
   pkgBadgeText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold", color: INK_900, letterSpacing: 1 },
   pkgIcon: {
     width: 40, height: 40, borderRadius: R_MD,
     backgroundColor: "rgba(255,255,255,0.07)",
-    alignItems: "center", justifyContent: "center", marginBottom: 12,
+    alignItems: "center", justifyContent: "center",
   },
-  // Fix Pack 2: pkgName fontSize 17→19; pkgPrice fontSize 32→38, lineHeight 30→34
-  pkgName: { fontSize: 19, fontFamily: "Archivo_700Bold", color: "#fff", marginBottom: 6 },
-  pkgPriceRow: { flexDirection: "row", alignItems: "baseline", gap: 4, marginBottom: 4 },
+  pkgName: { fontSize: 19, fontFamily: "Archivo_700Bold", color: "#fff" },
+  pkgPriceRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 6, marginBottom: 8 },
   pkgPrice: { fontSize: 38, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 34 },
-  pkgUnit: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
-  pkgPer: { fontSize: 10, fontFamily: "Archivo_500Medium", color: INK_400, marginBottom: 14 },
+  pkgUnit: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400 },
+  // Description + feature bullets (design parity).
+  pkgDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 19, marginBottom: 14 },
+  pkgFeatures: { gap: 8, marginBottom: 16 },
+  pkgFeatureRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pkgFeatureText: { flex: 1, fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_200 },
   pkgBtn: {
-    marginTop: "auto" as any, paddingVertical: 11, borderRadius: R_MD,
+    marginTop: "auto" as any, paddingVertical: 13, borderRadius: R_MD,
     backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center",
   },
-  pkgBtnText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
+  pkgBtnText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
 
   // ── Package promo fallback ─────────────────────────────────────────────────
   pkgPromo: {
