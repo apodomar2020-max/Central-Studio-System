@@ -941,6 +941,7 @@ export const ListPackageOrdersResponseItem = zod.object({
   studentPhone: zod.string().nullish(),
   packageId: zod.number().nullish(),
   packageName: zod.string(),
+  priceEgp: zod.number().nullish(),
   totalCredits: zod.number(),
   remainingCredits: zod.number(),
   status: zod.string(),

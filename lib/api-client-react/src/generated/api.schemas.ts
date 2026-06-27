@@ -641,6 +641,7 @@ export interface PackageOrder {
   /** @nullable */
   packageId?: number | null;
   packageName: string;
+  priceEgp?: number | null;
   totalCredits: number;
   remainingCredits: number;
   status: string;

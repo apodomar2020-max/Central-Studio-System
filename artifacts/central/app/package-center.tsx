@@ -119,10 +119,10 @@ function expiresAtOf(pkg: PackageOrderWithDateAliases): Dateish {
   return pkg.expiresAt ?? pkg.expires_at ?? null;
 }
 
-function requestDateText(pkg: PackageOrderWithDateAliases, isRequest: boolean): string | null {
+function requestDateText(pkg: PackageOrderWithDateAliases, isRequest: boolean): string {
   const formatted = fmtDate(createdAtOf(pkg));
   if (formatted) return formatted;
-  return isRequest ? "Requested recently" : null;
+  return isRequest ? "Requested recently" : "Purchased recently";
 }
 
 function priceOf(pkg: PackageOrderWithDateAliases): number | null {
@@ -178,7 +178,7 @@ function PackageCard({ pkg }: { pkg: PackageOrderWithDateAliases }) {
         </View>
       </View>
       <View style={styles.dateBox}>
-        {purchaseDate ? <DateRow label={isRequest ? "Requested" : "Purchased"} value={purchaseDate} /> : null}
+        <DateRow label={isRequest ? "Requested" : "Purchased"} value={purchaseDate} />
         <DateRow label="Expiry" value={expiryText(pkg)} valueColor={DANGER} />
       </View>
       <View style={styles.barTrack}>
@@ -276,9 +276,7 @@ export default function PackageCenterScreen() {
                   <Text style={styles.heroMeta}>{hero.remainingCredits}/{hero.totalCredits} remaining</Text>
                 </View>
                 <View style={styles.heroDateBox}>
-                  {requestDateText(hero, false) ? (
-                    <DateRow label="Purchased" value={requestDateText(hero, false)!} />
-                  ) : null}
+                  <DateRow label="Purchased" value={requestDateText(hero, false)} />
                   <DateRow label="Expiry" value={expiryText(hero)} valueColor={DANGER} />
                 </View>
                 <TouchableOpacity onPress={() => router.push("/(tabs)" as any)} style={styles.buyBtn} activeOpacity={0.88}>
