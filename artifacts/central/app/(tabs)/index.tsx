@@ -26,6 +26,7 @@ import {
 import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-svg";
 
 import { useAppContext } from "@/contexts/AppContext";
+import { isSafeAppRoute, safePush } from "@/utils/navigation";
 import CsIcon from "@/components/CsIcon";
 import { DanceClass, Instructor } from "@/data/mockData";
 import {
@@ -35,6 +36,7 @@ import {
   useListClasses,
   useListPricePackages,
   customFetch,
+  normalizeMediaUrl,
 } from "@workspace/api-client-react";
 import type {
   HeroItem,
@@ -105,45 +107,35 @@ function ageGroupColor(ag: string): string {
 // ─── Hero Carousel ────────────────────────────────────────────────────────────
 
 function HeroSlide({ item, onInteract }: { item: HeroItem; onInteract?: () => void }) {
+  // Task 1.1: Hero is an IMAGE CAROUSEL ONLY — no tagline / title / CTA text.
+  // Each slide is just the image; tapping the card navigates to its optional,
+  // validated path (`buttonRoute`). normalizeMediaUrl makes Google Drive share
+  // links render and returns undefined for invalid/non-http URLs (graceful — the
+  // slide just shows its dark background instead of crashing).
+  const uri = normalizeMediaUrl(item.imageUrl);
+  const canTap = isSafeAppRoute(item.buttonRoute);
+
+  // Dark INK_800 background (heroSlide) shows through if the image is missing or
+  // fails to load — broken images never crash the hero.
+  const Img = uri ? (
+    <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+  ) : null;
+
+  if (!canTap) {
+    return <View style={s.heroSlide}>{Img}</View>;
+  }
   return (
-    <View style={s.heroSlide}>
-      {/* Design: image at opacity 0.5, gradient overlay provides additional dimming */}
-      <Image source={{ uri: item.imageUrl }} style={[StyleSheet.absoluteFill, { opacity: 0.5 }]} resizeMode="cover" />
-      {/* Gradient: design spec rgba(6,7,8,0.15)→0.45→0.9; content bottom-aligned */}
-      <LinearGradient
-        colors={["rgba(6,7,8,0.15)", "rgba(6,7,8,0.45)", "rgba(6,7,8,0.90)"]}
-        locations={[0, 0.45, 1]}
-        style={s.heroGradient}
-      >
-        {/* All content stacks at the bottom (justifyContent: flex-end on parent) */}
-        <View style={s.heroContent}>
-          {!!item.tagline && (
-            <Text style={s.heroEyebrow}>{item.tagline.toUpperCase()}</Text>
-          )}
-          <Text style={s.heroTitle} numberOfLines={3}>{item.title}</Text>
-        </View>
-        {/* CTA row: marginTop 12, sub-text left + CTA pill right */}
-        <View style={s.heroCTARow}>
-          <View style={{ flex: 1, paddingRight: 10 }}>
-            {!!(item as any).subtitle && (
-              <Text style={s.heroSubtitle} numberOfLines={1}>{(item as any).subtitle}</Text>
-            )}
-          </View>
-          <TouchableOpacity
-            onPress={() => {
-              onInteract?.();
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(item.buttonRoute as any);
-            }}
-            style={s.heroCTA}
-            activeOpacity={0.85}
-          >
-            <Text style={s.heroCTAText}>{item.buttonText}</Text>
-            <CsIcon name="arrow" size={14} stroke={2.6} color={INK_900} />
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
-    </View>
+    <TouchableOpacity
+      style={s.heroSlide}
+      activeOpacity={0.9}
+      onPress={() => {
+        onInteract?.();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        safePush(item.buttonRoute); // validated + guarded; ignored if unavailable
+      }}
+    >
+      {Img}
+    </TouchableOpacity>
   );
 }
 

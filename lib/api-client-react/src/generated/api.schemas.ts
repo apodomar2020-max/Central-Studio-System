@@ -743,10 +743,6 @@ export type GetAttendanceStatsParams = {
 export interface HeroItem {
   id: number;
   imageUrl: string;
-  /** @nullable */
-  tagline?: string | null;
-  title: string;
-  buttonText: string;
   buttonRoute: string;
   sortOrder: number;
   isActive: boolean;
@@ -755,10 +751,6 @@ export interface HeroItem {
 
 export interface CreateHeroItemBody {
   imageUrl: string;
-  /** @nullable */
-  tagline?: string | null;
-  title: string;
-  buttonText?: string;
   buttonRoute?: string;
   sortOrder?: number;
   isActive?: boolean;
@@ -766,10 +758,6 @@ export interface CreateHeroItemBody {
 
 export interface UpdateHeroItemBody {
   imageUrl?: string;
-  /** @nullable */
-  tagline?: string | null;
-  title?: string;
-  buttonText?: string;
   buttonRoute?: string;
   sortOrder?: number;
   isActive?: boolean;

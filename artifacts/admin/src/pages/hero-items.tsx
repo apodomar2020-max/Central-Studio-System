@@ -26,12 +26,13 @@ import { Trash2, Edit, GripVertical, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 
+// Task 1.1: Hero is an image carousel only. The CMS collects just the image URL
+// and an optional tap path (where the app navigates when the slide is pressed).
+// Legacy content columns (title/tagline/buttonText) were removed from the entire
+// stack (DB migration 0026_hero_image_only) — no placeholders, no dead fields.
 const formSchema = z.object({
   imageUrl: z.string().min(1, "Image URL is required"),
-  tagline: z.string().nullish(),
-  title: z.string().min(1, "Title is required"),
-  buttonText: z.string().default("Get Started"),
-  buttonRoute: z.string().default("/(tabs)/classes"),
+  buttonRoute: z.string().default(""),
   sortOrder: z.coerce.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
 });
@@ -54,8 +55,7 @@ export default function HeroItems() {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      imageUrl: "", tagline: "", title: "",
-      buttonText: "Get Started", buttonRoute: "/(tabs)/classes",
+      imageUrl: "", buttonRoute: "",
       sortOrder: 0, isActive: true,
     },
   });
@@ -63,8 +63,7 @@ export default function HeroItems() {
   const openCreate = () => {
     setEditing(null);
     form.reset({
-      imageUrl: "", tagline: "", title: "",
-      buttonText: "Get Started", buttonRoute: "/(tabs)/classes",
+      imageUrl: "", buttonRoute: "",
       sortOrder: (items?.length ?? 0) * 10, isActive: true,
     });
     setOpen(true);
@@ -74,9 +73,6 @@ export default function HeroItems() {
     setEditing(item);
     form.reset({
       imageUrl: item.imageUrl,
-      tagline: item.tagline ?? "",
-      title: item.title,
-      buttonText: item.buttonText,
       buttonRoute: item.buttonRoute,
       sortOrder: item.sortOrder,
       isActive: item.isActive,
@@ -90,9 +86,12 @@ export default function HeroItems() {
   };
 
   const onSubmit = (values: FormValues) => {
+    // Hero is image-only: image URL + tap route + ordering + active flag.
     const data = {
-      ...values,
-      tagline: values.tagline || null,
+      imageUrl: values.imageUrl,
+      buttonRoute: values.buttonRoute || "",
+      sortOrder: values.sortOrder,
+      isActive: values.isActive,
     };
     const onError = (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -128,9 +127,7 @@ export default function HeroItems() {
             <TableRow>
               <TableHead className="w-8">Order</TableHead>
               <TableHead>Preview</TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead>Tagline</TableHead>
-              <TableHead>Button</TableHead>
+              <TableHead>Tap Path</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -138,11 +135,11 @@ export default function HeroItems() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">Loading...</TableCell>
+                <TableCell colSpan={5} className="text-center py-8">Loading...</TableCell>
               </TableRow>
             ) : items?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                   No hero slides yet. Add one to replace the static banner on the mobile home screen.
                 </TableCell>
               </TableRow>
@@ -159,22 +156,21 @@ export default function HeroItems() {
                     <div className="relative h-14 w-24 rounded overflow-hidden bg-muted flex-shrink-0">
                       <img
                         src={item.imageUrl}
-                        alt={item.title}
+                        alt={`Hero slide ${item.id}`}
                         className="absolute inset-0 w-full h-full object-cover"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                       />
                     </div>
                   </TableCell>
-                  <TableCell className="font-medium max-w-[160px] truncate">{item.title}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm max-w-[140px] truncate">
-                    {item.tagline ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-sm">
-                      <span>{item.buttonText}</span>
-                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                    </div>
-                    <span className="text-xs text-muted-foreground">{item.buttonRoute}</span>
+                  <TableCell className="text-sm max-w-[200px] truncate">
+                    {item.buttonRoute ? (
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <ExternalLink className="h-3 w-3" />
+                        <span className="truncate">{item.buttonRoute}</span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">— (no link)</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={item.isActive ? "default" : "outline"}>
@@ -240,55 +236,19 @@ export default function HeroItems() {
                 </div>
               )}
 
-              <FormField control={form.control} name="tagline" render={({ field }) => (
+              <FormField control={form.control} name="buttonRoute" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tagline (optional)</FormLabel>
+                  <FormLabel>Tap Path (optional)</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Egypt's Top Dance School"
-                      data-testid="input-hero-tagline"
-                      {...field}
-                      value={field.value ?? ""}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-
-              <FormField control={form.control} name="title" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Explore The Art Of Movement"
-                      data-testid="input-hero-title"
+                      placeholder="/(tabs)/classes — where the app goes when the slide is tapped"
+                      data-testid="input-hero-button-route"
                       {...field}
                     />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="buttonText" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Button Text</FormLabel>
-                    <FormControl>
-                      <Input data-testid="input-hero-button-text" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="buttonRoute" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Button Route</FormLabel>
-                    <FormControl>
-                      <Input placeholder="/(tabs)/classes" data-testid="input-hero-button-route" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
 
               <FormField control={form.control} name="sortOrder" render={({ field }) => (
                 <FormItem>

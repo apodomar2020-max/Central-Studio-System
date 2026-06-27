@@ -209,5 +209,13 @@
       "tag": "0025_dance_styles_cms",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782907200000,
+      "tag": "0026_hero_image_only",
+      "breakpoints": true
+    }
   ]
 }

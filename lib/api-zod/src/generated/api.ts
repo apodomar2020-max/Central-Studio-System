@@ -1073,9 +1073,6 @@ export const GetAttendanceStatsResponse = zod.object({
 export const ListHeroItemsResponseItem = zod.object({
   id: zod.number(),
   imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string(),
   buttonRoute: zod.string(),
   sortOrder: zod.number(),
   isActive: zod.boolean(),
@@ -1088,9 +1085,6 @@ export const ListHeroItemsResponse = zod.array(ListHeroItemsResponseItem);
  */
 export const CreateHeroItemBody = zod.object({
   imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string().optional(),
   buttonRoute: zod.string().optional(),
   sortOrder: zod.number().int().optional(),
   isActive: zod.boolean().optional(),
@@ -1103,9 +1097,6 @@ export const GetHeroItemParams = zod.object({
 export const GetHeroItemResponse = zod.object({
   id: zod.number(),
   imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string(),
   buttonRoute: zod.string(),
   sortOrder: zod.number(),
   isActive: zod.boolean(),
@@ -1118,9 +1109,6 @@ export const UpdateHeroItemParams = zod.object({
 
 export const UpdateHeroItemBody = zod.object({
   imageUrl: zod.string().optional(),
-  tagline: zod.string().nullish(),
-  title: zod.string().optional(),
-  buttonText: zod.string().optional(),
   buttonRoute: zod.string().optional(),
   sortOrder: zod.number().int().optional(),
   isActive: zod.boolean().optional(),
@@ -1129,9 +1117,6 @@ export const UpdateHeroItemBody = zod.object({
 export const UpdateHeroItemResponse = zod.object({
   id: zod.number(),
   imageUrl: zod.string(),
-  tagline: zod.string().nullish(),
-  title: zod.string(),
-  buttonText: zod.string(),
   buttonRoute: zod.string(),
   sortOrder: zod.number(),
   isActive: zod.boolean(),
