@@ -1,5 +1,5 @@
 import React from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View, ScrollView } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { Booking } from "@/contexts/AppContext";
@@ -8,6 +8,8 @@ import SBI from "@/components/SbIcon";
 interface BookingCardProps {
   item: Booking;
   onPress?: () => void;
+  onCancel?: () => void;
+  onPayNow?: () => void;
   pkgInfo?: { name: string; credits: number; total: number };
 }
 
@@ -80,7 +82,7 @@ function ActionBtn({ label, icon, primary, danger, disabled, onPress }: any) {
   );
 }
 
-export default function BookingCard({ item, onPress, pkgInfo }: BookingCardProps) {
+export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo }: BookingCardProps) {
   const isPast = item.bookingStatus === "attended" || item.bookingStatus === "completed" || item.bookingStatus === "noShow";
   const isCanceled = item.bookingStatus === "cancelled" || item.bookingStatus === "rejected";
   const opacity = isPast || isCanceled ? 0.6 : 1;
@@ -195,22 +197,33 @@ export default function BookingCard({ item, onPress, pkgInfo }: BookingCardProps
           </View>
         )}
 
-        {/* Actions ScrollView */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsScroll}>
-          <ActionBtn label="View Details" icon="eye" onPress={onPress} />
+        {/* Actions — dynamic-width buttons that fill the card row (no empty space).
+            Set depends on booking type/state:
+              • Package (upcoming):       View Details + Cancel
+              • Regular awaiting payment: Cancel + Pay Now
+              • Regular settled:          View Details + Cancel
+              • Past / cancelled:         View Details (full width) */}
+        {(() => {
+          const isPackage = item.bookingType === "package" || item.paymentMethod === "packageCredit";
+          const isUpcomingActive =
+            phase === "upcoming" && item.bookingStatus !== "cancelled" && item.bookingStatus !== "rejected";
 
-          {phase === "upcoming" && item.bookingStatus !== "cancelled" && item.bookingStatus !== "rejected" && (
-            <ActionBtn label="Cancel (Soon)" icon="cancel" disabled />
-          )}
+          const viewBtn = <ActionBtn key="view" label="View Details" icon="eye" onPress={onPress} />;
+          const cancelBtn = <ActionBtn key="cancel" label="Cancel" icon="cancel" danger onPress={onCancel} />;
+          const payBtn = <ActionBtn key="pay" label="Pay Now" primary onPress={onPayNow} />;
 
-          {item.paymentStatus === "pending_payment" && (
-            <ActionBtn label="Pay Now" primary onPress={() => {}} />
-          )}
-
-          {(item.paymentStatus === "paid" || item.paymentStatus === "not_required") && phase !== "upcoming" && (
-            <ActionBtn label="Receipt (Soon)" icon="download" disabled />
-          )}
-        </ScrollView>
+          let buttons: React.ReactNode[];
+          if (!isUpcomingActive) {
+            buttons = [viewBtn];
+          } else if (isPackage) {
+            buttons = [viewBtn, cancelBtn];
+          } else if (item.paymentStatus === "pending_payment") {
+            buttons = [cancelBtn, payBtn];
+          } else {
+            buttons = [viewBtn, cancelBtn];
+          }
+          return <View style={styles.actionsRow}>{buttons}</View>;
+        })()}
       </View>
     </View>
   );
@@ -413,15 +426,18 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 17,
   },
-  actionsScroll: {
+  // Buttons fill the row equally (flex:1) and auto-resize by count — no gaps.
+  actionsRow: {
     flexDirection: "row",
     gap: 10,
-    paddingTop: 4,
+    paddingTop: 8,
     paddingBottom: 2,
   },
   actionBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
     paddingHorizontal: 13,
     paddingVertical: 9,

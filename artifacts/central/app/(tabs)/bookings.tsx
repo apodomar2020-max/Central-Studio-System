@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Platform,
   RefreshControl,
@@ -334,7 +335,7 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function BookingsScreen() {
-  const { user, bookings: localBookings, refreshUserPackages } = useAppContext();
+  const { user, bookings: localBookings, refreshUserPackages, children: childProfiles, cancelBooking } = useAppContext();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Upcoming");
   const [studentFilter, setStudentFilter] = useState("All");
@@ -398,12 +399,30 @@ export default function BookingsScreen() {
     return mergedBookings.filter((b) => !b._isPast && b.bookingStatus !== "cancelled" && b.bookingStatus !== "rejected").length;
   }, [mergedBookings]);
 
+  // Student selector, grouped in a stable order:
+  //   1) "All Students" (default overview filter, first)
+  //   2) Owner account
+  //   3) Children (saved order)
+  //   4) Any other participants (alphabetical)
+  // Only names with activity show.
   const students = useMemo(() => {
     const names = new Set<string>();
     mergedBookings.forEach(b => b.participantName && names.add(b.participantName));
     balletApps.forEach(a => a.childName && names.add(a.childName));
-    return ["All", ...Array.from(names)];
-  }, [mergedBookings, balletApps]);
+
+    const ordered: string[] = [];
+    // 2) Owner account
+    const ownerName = user?.fullName;
+    if (ownerName && names.has(ownerName)) { ordered.push(ownerName); names.delete(ownerName); }
+    // 3) Children, in their saved order
+    for (const c of childProfiles) {
+      if (c.fullName && names.has(c.fullName)) { ordered.push(c.fullName); names.delete(c.fullName); }
+    }
+    // 4) Any remaining participant names, alphabetical
+    for (const n of Array.from(names).sort((a, b) => a.localeCompare(b))) ordered.push(n);
+    // 1) "All Students" stays first (default overview)
+    return ["All", ...ordered];
+  }, [mergedBookings, balletApps, user, childProfiles]);
 
   function filterItems(tab: (typeof TABS)[number]): ListItem[] {
     let bookingItems: ListItem[] = [];
@@ -556,7 +575,7 @@ export default function BookingsScreen() {
                 return (
                   <TouchableOpacity
                     key={st}
-                    style={[styles.filterChip, isActive && styles.filterChipActive]}
+                    style={[styles.filterChip, st === "All" && styles.filterChipAll, isActive && styles.filterChipActive]}
                     onPress={() => setStudentFilter(st)}
                   >
                     {st !== "All" && (
@@ -580,7 +599,36 @@ export default function BookingsScreen() {
           item.kind === "ballet" ? (
             <AssessmentCard app={item.data} onPress={() => setSelectedItem(item)} />
           ) : (
-            <BookingCard item={item.data} onPress={() => setSelectedItem(item)} />
+            <BookingCard
+              item={item.data}
+              onPress={() => setSelectedItem(item)}
+              onCancel={() => {
+                Alert.alert(
+                  "Cancel booking?",
+                  `Cancel your booking for ${item.data.className}? This frees up your seat.`,
+                  [
+                    { text: "Keep booking", style: "cancel" },
+                    {
+                      text: "Cancel booking",
+                      style: "destructive",
+                      onPress: async () => {
+                        try {
+                          await cancelBooking(item.data.id);
+                        } catch (e) {
+                          Alert.alert("Couldn't cancel", e instanceof Error ? e.message : "Please try again.");
+                        }
+                      },
+                    },
+                  ],
+                );
+              }}
+              onPayNow={() => {
+                Alert.alert(
+                  "Pay at the studio",
+                  "Your booking is pending. Please complete payment at the studio — your booking is confirmed once payment is received.",
+                );
+              }}
+            />
           )
         }
         ListEmptyComponent={
@@ -634,6 +682,8 @@ const styles = StyleSheet.create({
   tabBtnCounterText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10 },
   filterScroll: { gap: 8, paddingBottom: 20 },
   filterChip: { flexDirection: "row", alignItems: "center", gap: 7, paddingRight: 13, paddingLeft: 7, paddingVertical: 7, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", marginRight: 8 },
+  // "All Students" has no avatar → symmetric padding + centered text.
+  filterChipAll: { paddingLeft: 16, paddingRight: 16, justifyContent: "center" },
   filterChipActive: { backgroundColor: "#0A0B0D", borderColor: "rgba(0,182,215,0.5)" },
   filterAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
   filterAvatarText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10, color: "#FFFFFF" },
