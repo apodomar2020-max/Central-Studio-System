@@ -1,0 +1,241 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 200" style="display: none;">
+  
+  <symbol id="icon-hiphop" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="20" r="8" fill="white"></circle>
+      <path d="M 40 28 L 35 45"></path>
+      <path d="M 40 28 L 45 45"></path>
+      
+      <path d="M 35 45 L 30 70" stroke-width="3"></path>
+      <path d="M 45 45 L 55 68" stroke-width="3"></path>
+      
+      <path d="M 40 32 L 20 25" stroke-width="3"></path>
+      <path d="M 40 32 L 60 28" stroke-width="3"></path>
+      
+      <line x1="15" y1="40" x2="25" y2="35"></line>
+      <line x1="65" y1="38" x2="75" y2="45"></line>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-salsa" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="18" r="7" fill="white"></circle>
+      
+      <path d="M 40 25 Q 38 35 42 45"></path>
+      
+      <path d="M 42 28 L 65 20" stroke-width="3"></path>
+      
+      <path d="M 38 28 L 25 35" stroke-width="3"></path>
+      
+      <path d="M 40 45 L 35 70"></path>
+      <path d="M 42 45 L 50 72"></path>
+      
+      <path d="M 25 50 Q 30 55 35 50"></path>
+      <path d="M 55 55 Q 60 60 65 55"></path>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-ballet" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="15" r="6" fill="white"></circle>
+      
+      <path d="M 40 21 L 40 40"></path>
+      
+      <path d="M 40 25 L 25 30" stroke-width="2.5"></path>
+      <path d="M 40 25 L 55 30" stroke-width="2.5"></path>
+      
+      <path d="M 40 40 Q 42 50 40 60"></path>
+      
+      <path d="M 40 40 L 30 72"></path>
+      <path d="M 40 40 L 52 70"></path>
+      
+      <path d="M 30 72 L 32 75"></path>
+      <path d="M 52 70 L 54 73"></path>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-contemporary" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="18" r="7" fill="white"></circle>
+      
+      <path d="M 40 25 Q 35 35 38 50" stroke-width="3"></path>
+      <path d="M 40 25 Q 45 38 42 55" stroke-width="3"></path>
+      
+      <path d="M 40 30 L 18 28" stroke-width="3"></path>
+      <path d="M 40 32 L 62 35" stroke-width="3"></path>
+      
+      <path d="M 38 50 Q 32 62 30 72" stroke-width="2.5"></path>
+      <path d="M 42 55 Q 48 65 55 72" stroke-width="2.5"></path>
+      
+      <path d="M 20 45 Q 25 50 30 48"></path>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-jazz" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="18" r="7" fill="white"></circle>
+      
+      <path d="M 40 25 L 42 45"></path>
+      
+      <path d="M 42 28 L 65 25" stroke-width="3"></path>
+      <path d="M 40 32 L 22 40" stroke-width="3"></path>
+      
+      <path d="M 42 45 L 45 72"></path>
+      <path d="M 40 45 L 32 68"></path>
+      
+      <path d="M 68 28 Q 72 32 68 36"></path>
+      <path d="M 20 42 Q 18 46 22 48"></path>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-zumba" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="16" r="7" fill="white"></circle>
+      
+      <path d="M 40 23 Q 42 38 38 50"></path>
+      
+      <path d="M 40 26 L 20 18" stroke-width="3"></path>
+      <path d="M 40 28 L 62 22" stroke-width="3"></path>
+      
+      <path d="M 38 50 L 28 72" stroke-width="3"></path>
+      <path d="M 40 50 L 52 70" stroke-width="3"></path>
+      
+      <path d="M 15 25 L 12 20"></path>
+      <path d="M 65 30 L 70 25"></path>
+      <path d="M 25 65 L 20 70"></path>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-breaking" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="38" cy="25" r="7" fill="white"></circle>
+      
+      <path d="M 38 32 L 42 50"></path>
+      
+      <path d="M 42 35 L 68 28" stroke-width="3"></path>
+      
+      <path d="M 38 36 L 22 48" stroke-width="3"></path>
+      
+      <path d="M 42 50 L 55 72" stroke-width="3"></path>
+      
+      <path d="M 40 50 L 28 70" stroke-width="3"></path>
+      
+      <line x1="70" y1="25" x2="75" y2="18"></line>
+      <line x1="20" y1="50" x2="15" y2="58"></line>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-popping" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="20" r="6" fill="white"></circle>
+      
+      <path d="M 40 26 L 38 40" stroke-width="3"></path>
+      
+      <path d="M 38 28 L 60 32" stroke-width="3"></path>
+      
+      <path d="M 40 32 L 22 38" stroke-width="2"></path>
+      
+      <path d="M 38 40 L 35 72"></path>
+      <path d="M 40 40 L 45 72"></path>
+      
+      <circle cx="60" cy="32" r="3" fill="white" opacity="0.6"></circle>
+      <circle cx="22" cy="38" r="3" fill="white" opacity="0.6"></circle>
+      <circle cx="40" cy="40" r="3" fill="white" opacity="0.6"></circle>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-locking" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="18" r="7" fill="white"></circle>
+      
+      <path d="M 40 25 L 40 48" stroke-width="3"></path>
+      
+      <path d="M 40 30 L 65 30" stroke-width="3"></path>
+      
+      <path d="M 40 32 L 18 42" stroke-width="2.5"></path>
+      
+      <path d="M 40 48 L 32 72" stroke-width="3"></path>
+      <path d="M 40 48 L 50 72" stroke-width="3"></path>
+      
+      <line x1="65" y1="28" x2="70" y2="20"></line>
+      <line x1="65" y1="32" x2="72" y2="38"></line>
+      <line x1="18" y1="40" x2="12" y2="48"></line>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-house" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="18" r="7" fill="white"></circle>
+      
+      <path d="M 40 25 Q 38 38 40 50"></path>
+      
+      <path d="M 40 28 L 20 35" stroke-width="3"></path>
+      <path d="M 40 32 L 62 28" stroke-width="3"></path>
+      
+      <path d="M 40 50 L 28 72" stroke-width="2.5"></path>
+      <path d="M 40 50 L 55 72" stroke-width="2.5"></path>
+      
+      <path d="M 20 40 Q 25 45 30 40"></path>
+      <path d="M 55 35 Q 60 40 65 35"></path>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-afro" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="22" r="14" fill="none" stroke="white" stroke-width="2.5"></circle>
+      
+      <circle cx="40" cy="22" r="7" fill="white"></circle>
+      
+      <path d="M 40 29 L 40 48"></path>
+      
+      <path d="M 40 32 L 18 28" stroke-width="3"></path>
+      <path d="M 40 35 L 65 32" stroke-width="3"></path>
+      
+      <path d="M 40 48 L 30 72" stroke-width="3"></path>
+      <path d="M 40 48 L 52 72" stroke-width="3"></path>
+      
+      <line x1="28" y1="22" x2="22" y2="18"></line>
+      <line x1="52" y1="22" x2="60" y2="20"></line>
+    </g>
+  </symbol>
+
+  
+  <symbol id="icon-bachata" viewBox="0 0 80 80">
+    <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      
+      <circle cx="40" cy="18" r="7" fill="white"></circle>
+      
+      <path d="M 40 25 Q 42 38 38 50"></path>
+      
+      <path d="M 40 28 L 25 32" stroke-width="3"></path>
+      <path d="M 40 30 L 58 35" stroke-width="3"></path>
+      
+      <path d="M 38 50 L 32 72" stroke-width="2.5"></path>
+      <path d="M 40 50 L 48 72" stroke-width="2.5"></path>
+      
+      <path d="M 25 35 Q 28 42 25 48" stroke-width="2"></path>
+      <path d="M 58 38 Q 62 45 60 52" stroke-width="2"></path>
+    </g>
+  </symbol>
+</svg>

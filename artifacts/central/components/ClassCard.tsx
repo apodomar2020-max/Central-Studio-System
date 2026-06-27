@@ -5,7 +5,7 @@ import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { DanceClass, Instructor } from "@/data/mockData";
-import { getScheduleLabel } from "@/data/apiAdapters";
+import { classCapacityDisplay, getScheduleLabel } from "@/data/apiAdapters";
 import { useColors } from "@/hooks/useColors";
 import colors from "@/constants/colors";
 import { useAppContext } from "@/contexts/AppContext";
@@ -50,7 +50,8 @@ export default function ClassCard({
   }
 
   const statusConfig = getStatusConfig(item.status);
-  const availableSeats = item.capacity - item.bookedCount;
+  // Display-only: full/completed reads as 0 available (real bookedCount kept).
+  const availableSeats = classCapacityDisplay(item).available;
   const scheduleLabel = getScheduleLabel(item);
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
   const isBookable = hasSchedule && item.status !== "full" && item.status !== "cancelled";

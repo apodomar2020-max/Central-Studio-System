@@ -249,5 +249,13 @@
       "tag": "0030_booking_occurrence",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783339200000,
+      "tag": "0031_backfill_package_expiry",
+      "breakpoints": true
+    }
   ]
 }

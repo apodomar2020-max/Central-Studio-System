@@ -1,0 +1,50 @@
+/* ============================================================
+   CENTRAL STUDIO — EFFECTS
+   Radii (modest — the brand's edge comes from angular CUTS,
+   not soft corners), shadows, stage-light glows, blur, cuts.
+   ============================================================ */
+
+:root {
+  /* ---- Corner radii ---- */
+  --radius-none: 0;
+  --radius-xs:   4px;
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-xl:   22px;
+  --radius-2xl:  30px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  /* ---- Elevation (grounded, neutral) ---- */
+  --shadow-xs: 0 1px 2px rgba(10, 11, 13, 0.06);
+  --shadow-sm: 0 2px 8px rgba(10, 11, 13, 0.08);
+  --shadow-md: 0 10px 26px rgba(10, 11, 13, 0.10);
+  --shadow-lg: 0 20px 48px rgba(10, 11, 13, 0.16);
+  --shadow-xl: 0 36px 90px rgba(10, 11, 13, 0.24);
+
+  /* ---- Stage-light glows (energy / focus moments) ---- */
+  --glow-cyan:    0 10px 34px rgba(0, 182, 215, 0.42);
+  --glow-cyan-sm: 0 4px 16px rgba(0, 182, 215, 0.34);
+  --glow-magenta: 0 10px 34px rgba(255, 46, 126, 0.40);
+  --glow-amber:   0 10px 34px rgba(255, 176, 46, 0.38);
+
+  /* ---- Inner / hairline ---- */
+  --inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --ring-brand: 0 0 0 3px rgba(0, 182, 215, 0.32);
+
+  /* ---- Blur (glass over imagery) ---- */
+  --blur-sm: 8px; /* @kind other */
+  --blur-md: 16px; /* @kind other */
+  --blur-lg: 28px; /* @kind other */
+
+  /* ---- Border widths ---- */
+  --border-hair: 1px; /* @kind other */
+  --border-thick: 2px; /* @kind other */
+
+  /* ---- Signature angular cut (the logo's diagonal slash) ----
+     Apply via clip-path on hero blocks / image frames. */
+  --cut-tl: polygon(0 6%, 100% 0, 100% 94%, 0 100%); /* @kind other */
+  --cut-corner: polygon(0 0, 100% 0, 100% 100%, 28px 100%, 0 calc(100% - 28px)); /* @kind other */
+  --cut-tag: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px); /* @kind other */
+}

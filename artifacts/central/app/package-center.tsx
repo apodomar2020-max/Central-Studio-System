@@ -57,6 +57,17 @@ function fmtDate(iso?: string | null): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+// Expiry label. Validity starts at Admin activation (expiresAt = activatedAt +
+// validityMonths). So:
+//   • expiresAt set        → the real date
+//   • not yet activated    → "Expiry starts after activation"
+//   • activated, no expiry → "No expiry" (genuinely unlimited / no validity months)
+function expiryText(pkg: PackageOrder): string {
+  if (pkg.expiresAt) return `Expires ${fmtDate(pkg.expiresAt)}`;
+  if (!pkg.activatedAt) return "Expiry starts after activation";
+  return "No expiry";
+}
+
 // ─── Package list card (design parity) ───────────────────────────────────────
 function PackageCard({ pkg }: { pkg: PackageOrder }) {
   const label = statusLabel(pkg);
@@ -74,7 +85,7 @@ function PackageCard({ pkg }: { pkg: PackageOrder }) {
           <Text style={[styles.statusPillText, { color }]}>{label}</Text>
         </View>
       </View>
-      <Text style={styles.cardDates}>Purchased {fmtDate(pkg.createdAt)} · Expires {pkg.expiresAt ? fmtDate(pkg.expiresAt) : "No expiry"}</Text>
+      <Text style={styles.cardDates}>Purchased {fmtDate(pkg.createdAt)} · {expiryText(pkg)}</Text>
       <View style={styles.barTrack}>
         <LinearGradient colors={[CYAN, CYAN_400]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.barFill, { width: `${pct}%` }]} />
       </View>
@@ -153,7 +164,7 @@ export default function PackageCenterScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.heroEyebrow}>ACTIVE PACKAGE</Text>
                     <Text style={styles.heroName} numberOfLines={1}>{hero.packageName}</Text>
-                    <Text style={styles.heroSub}>{hero.totalCredits} classes · Expires {hero.expiresAt ? fmtDate(hero.expiresAt) : "No expiry"}</Text>
+                    <Text style={styles.heroSub}>{hero.totalCredits} classes · {expiryText(hero)}</Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
                     <Text style={styles.heroCredits}>{hero.remainingCredits}</Text>

@@ -1,11 +1,20 @@
+/**
+ * Booking Request Submitted — redesigned to match the Claude Design "SuccessScreen"
+ * (home-booking.jsx). Adapted for the real booking policy: a new booking is
+ * PENDING (Admin confirms), so the copy says "Booking Request Submitted" unless the
+ * returned status is actually "confirmed".
+ *
+ * Layout: a scrollable details area (icon + title + message + details card) with a
+ * FIXED bottom action bar (two equal-width buttons, safe-area aware).
+ */
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
-  Image,
+  Animated,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,27 +22,49 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
 
 import { useAppContext } from "@/contexts/AppContext";
-import colors from "@/constants/colors";
-import AppButton from "@/components/AppButton";
+
+// Design tokens (Claude Design CSS variables)
+const CYAN = "#00B6D7"; // --cs-cyan-500
+const CYAN_400 = "#2DCDEC"; // --cs-cyan-400
+const INK_900 = "#0A0B0D"; // --cs-ink-900
+const INK_800 = "#15171B"; // --cs-ink-800
+const INK_300 = "#8E97A2"; // --cs-ink-300
+const INK_400 = "#6B747F"; // --cs-ink-400
+const SUCCESS = "#1FB871"; // --cs-success-500
+const AMBER = "#FFB02E"; // --cs-amber-500
+
+function Row({ label, value, accent, mono }: { label: string; value: string; accent?: string; mono?: boolean }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text
+        style={[
+          styles.rowValue,
+          accent ? { color: accent } : null,
+          mono ? { fontFamily: "SpaceMono_700Bold" } : null,
+        ]}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
 
 export default function ConfirmationScreen() {
-  const { bookingNumber, classId } = useLocalSearchParams<{ bookingNumber: string; classId: string }>();
+  const { bookingNumber } = useLocalSearchParams<{ bookingNumber: string; classId: string }>();
   const { bookings } = useAppContext();
   const insets = useSafeAreaInsets();
 
   const booking = bookings.find((b) => b.bookingNumber === bookingNumber);
+  const isConfirmed = booking?.bookingStatus === "confirmed";
+
   const scheduleLabel = booking?.scheduleLabel ?? (
     booking?.date || booking?.time ? `${booking.date}${booking.time ? ` • ${booking.time}` : ""}` : "Schedule not set"
   );
-  const instructorInitials = booking?.instructorName
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase() || "?";
   const paymentLabel = booking?.bookingType === "package"
     ? "Package Credit"
     : booking?.paymentStatus === "not_required"
@@ -41,239 +72,161 @@ export default function ConfirmationScreen() {
     : booking?.paymentStatus === "paid"
       ? `EGP ${booking.price} · Paid`
       : `EGP ${booking?.price ?? 0} · Pay at Studio`;
-  const isCashPendingPayment = booking?.paymentMethod === "cash" && booking.paymentStatus === "pending_payment";
-  const successTitle = isCashPendingPayment ? "Booking Request Submitted" : "Booking Confirmed!";
 
+  const firstName = (booking?.participantName ?? "").trim().split(/\s+/)[0] || "there";
+
+  // Pending-aware copy: only say "Confirmed" when the booking actually is.
+  const title = isConfirmed ? "Booking\nConfirmed!" : "Booking Request\nSubmitted";
+  const message = isConfirmed
+    ? "You're all set!"
+    : "Your booking request has been sent to the studio team. You will be notified once it is confirmed.";
+  const statusLabel = isConfirmed ? "Confirmed" : "Pending confirmation";
+  const statusColor = isConfirmed ? SUCCESS : AMBER;
+
+  // ── Entrance animation (design: circle pop + glow pulse) ──────────────────
+  const pop = useRef(new Animated.Value(0)).current;
+  const glow = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, []);
+    Animated.spring(pop, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0, duration: 1100, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [glow, pop]);
+
+  const popScale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] });
+  const glowOpacity = glow.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0.95] });
+  const glowScale = glow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] });
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-      <LinearGradient
-        colors={["#0A1A00", "#0A0B0D"]}
-        style={StyleSheet.absoluteFill}
-      />
+    <View style={styles.container}>
+      <LinearGradient colors={["#04161B", "#0A0B0D"]} style={StyleSheet.absoluteFill} />
 
+      {/* Scrollable content */}
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: 40 + (Platform.OS === "web" ? 0 : insets.bottom) }]}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scroll, { paddingTop: (Platform.OS === "web" ? 40 : insets.top) + 30 }]}
       >
-        <View style={styles.successIconWrap}>
-          <LinearGradient
-            colors={[colors.success + "40", colors.success + "10"]}
-            style={styles.successRing}
-          >
-            <View style={[styles.successCircle, { backgroundColor: colors.success }]}>
-              <Ionicons name="checkmark" size={40} color="#FFFFFF" />
-            </View>
-          </LinearGradient>
+        {/* Animated success icon */}
+        <View style={styles.iconWrap}>
+          <Animated.View style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+          <Animated.View style={[styles.iconCircle, { transform: [{ scale: popScale }] }]}>
+            {/* Bold check (design stroke width 3.5) */}
+            <Svg width={42} height={42} viewBox="0 0 24 24" fill="none">
+              <Path d="M20 6 9 17l-5-5" stroke={INK_900} strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </Animated.View>
         </View>
 
-        <Text style={styles.successTitle}>{successTitle}</Text>
-        <Text style={[styles.successSubtitle, { color: "#8E97A2" }]}>
-          {isCashPendingPayment
-            ? "Booking request submitted. Please pay at the studio."
-            : booking?.paymentMethod === "packageCredit"
-              ? "Booking confirmed. Credit will be deducted at check-in."
-            : "Your payment was successful. You are all set!"}
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.message}>{message}</Text>
+        <Text style={styles.seeYou}>
+          See you on the floor, <Text style={styles.seeYouName}>{firstName}</Text>!
         </Text>
 
-        <View style={[styles.card, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
-          <View style={styles.bookingNumberRow}>
-            <Text style={[styles.bookingNumberLabel, { color: "#8E97A2" }]}>Booking Ref</Text>
-            <Text style={[styles.bookingNumber, { color: colors.studio.primary }]}>{bookingNumber}</Text>
-          </View>
-
-          <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
-
+        {/* Details card */}
+        <View style={styles.card}>
+          <Row label="Booking Ref" value={bookingNumber ?? "—"} accent={CYAN_400} mono />
+          <Row label="Status" value={statusLabel} accent={statusColor} />
           {booking && (
             <>
-              <View style={styles.cardRow}>
-                <Ionicons name="musical-notes-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>Class</Text>
-                <Text style={styles.cardValue}>{booking.className}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Ionicons name="calendar-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>Schedule</Text>
-                <Text style={styles.cardValue}>{scheduleLabel}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <View style={[styles.instructorAvatar, { backgroundColor: colors.studio.primary + "25" }]}>
-                  {booking.instructorImage ? (
-                    <Image source={{ uri: booking.instructorImage }} style={styles.instructorAvatarImage} />
-                  ) : (
-                    <Text style={[styles.instructorInitials, { color: colors.studio.primary }]}>{instructorInitials}</Text>
-                  )}
-                </View>
-                <Text style={styles.cardLabel}>Teacher</Text>
-                <Text style={styles.cardValue}>{booking.instructorName}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Ionicons name="timer-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>Duration</Text>
-                <Text style={styles.cardValue}>{booking.duration}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Ionicons name="pricetag-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>Type</Text>
-                <Text style={styles.cardValue}>{booking.danceType}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Ionicons name="person-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>For</Text>
-                <Text style={styles.cardValue}>{booking.participantName}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Ionicons name="location-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>Where</Text>
-                <Text style={styles.cardValue}>{booking.location}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>Status</Text>
-                <Text style={styles.cardValue}>
-                  {booking.bookingStatus === "pending" ? "Waiting for confirmation" : "Booking confirmed"}
-                </Text>
-              </View>
-              <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
-              <View style={styles.cardRow}>
-                <Ionicons name="card-outline" size={16} color="#6B747F" />
-                <Text style={styles.cardLabel}>Payment</Text>
-                <View style={[styles.payBadge, {
-                  backgroundColor: booking.paymentStatus === "paid" || booking.paymentStatus === "not_required" ? colors.success + "20" : colors.warning + "20",
-                  }]}>
-                  <Text style={[styles.payBadgeText, {
-                    color: booking.paymentStatus === "paid" || booking.paymentStatus === "not_required" ? colors.success : colors.warning,
-                  }]}>
-                    {paymentLabel}
-                  </Text>
-                </View>
-              </View>
+              <Row label="Class" value={booking.className || "—"} />
+              <Row label="Schedule" value={scheduleLabel} />
+              <Row label="Teacher" value={booking.instructorName || "—"} />
+              <Row label="For" value={booking.participantName || "—"} />
+              <Row label="Where" value={booking.location || "Central Studio"} />
+              <Row label="Payment" value={paymentLabel} />
             </>
           )}
         </View>
-
-        <View style={[styles.reminderBanner, { backgroundColor: colors.info + "10", borderColor: colors.info + "30" }]}>
-          <Ionicons name="notifications-outline" size={16} color={colors.info} />
-          <Text style={[styles.reminderText, { color: "#8E97A2" }]}>
-            You will receive a reminder 2 hours before your class starts.
-          </Text>
-        </View>
-
-        <View style={styles.buttonsRow}>
-          <AppButton
-            title="View My Bookings"
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.replace("/(tabs)/bookings");
-            }}
-            fullWidth
-            size="lg"
-          />
-          <AppButton
-            title="Back to Home"
-            onPress={() => {
-              router.replace("/(tabs)/" as any);
-            }}
-            variant="ghost"
-            fullWidth
-          />
-        </View>
       </ScrollView>
+
+      {/* Fixed bottom action bar — two equal-width buttons, safe-area aware */}
+      <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnPrimary]}
+          activeOpacity={0.88}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.replace("/(tabs)/bookings");
+          }}
+        >
+          <Ionicons name="calendar-outline" size={17} color={INK_900} />
+          <Text style={[styles.btnText, { color: INK_900 }]}>View My Bookings</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnGhost]}
+          activeOpacity={0.88}
+          onPress={() => router.replace("/(tabs)/" as never)}
+        >
+          <Ionicons name="home-outline" size={17} color="#FFFFFF" />
+          <Text style={[styles.btnText, { color: "#FFFFFF" }]}>Back to Home</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0B0D" },
-  content: {
-    // flexGrow (not flex:1) so the ScrollView centers content when it fits and
-    // scrolls when it's taller than the viewport — never overflows on small phones.
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 40,
-    gap: 20,
-    alignItems: "center",
-    justifyContent: "center",
+  container: { flex: 1, backgroundColor: INK_900 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 28, alignItems: "center" },
+
+  // Icon (design: 80px cyan circle + radial glow halo)
+  iconWrap: { width: 80, height: 80, alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  glow: {
+    position: "absolute", width: 108, height: 108, borderRadius: 54,
+    backgroundColor: "rgba(0,182,215,0.22)",
   },
-  successIconWrap: { marginBottom: 8 },
-  successRing: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    alignItems: "center",
-    justifyContent: "center",
+  iconCircle: {
+    width: 80, height: 80, borderRadius: 40, backgroundColor: CYAN,
+    alignItems: "center", justifyContent: "center",
   },
-  successCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
+
+  // Title (design: font-display 44 / lineHeight 0.88 / uppercase / white)
+  title: {
+    fontFamily: "Anton_400Regular", fontSize: 40, lineHeight: 38,
+    textTransform: "uppercase", color: "#FFFFFF", textAlign: "center", letterSpacing: 0.5,
+    marginBottom: 12,
   },
-  successTitle: {
-    fontSize: 40,
-    fontFamily: "Anton_400Regular",
-    color: "#FFFFFF",
-    textAlign: "center",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    lineHeight: 40,
+  message: {
+    fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 21,
+    color: INK_300, textAlign: "center", marginBottom: 8, maxWidth: 320,
   },
-  successSubtitle: {
-    fontSize: 14,
-    fontFamily: "Archivo_400Regular",
-    textAlign: "center",
-    lineHeight: 20,
-    marginTop: -8,
+  seeYou: {
+    fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 21,
+    color: INK_300, textAlign: "center", marginBottom: 24,
   },
+  seeYouName: { color: "#FFFFFF", fontFamily: "Archivo_700Bold" },
+
+  // Details card (design: ink-800 + cyan/0.28 border, radius-lg)
   card: {
-    width: "100%",
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: "hidden",
+    width: "100%", backgroundColor: INK_800,
+    borderWidth: 1, borderColor: "rgba(0,182,215,0.28)", borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 2,
   },
-  bookingNumberRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
+  row: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)",
   },
-  bookingNumberLabel: { fontSize: 13, fontFamily: "Archivo_400Regular" },
-  bookingNumber: { fontSize: 18, fontFamily: "SpaceMono_700Bold", letterSpacing: 1 },
-  divider: { height: 1 },
-  cardRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  rowLabel: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: INK_400 },
+  rowValue: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "#FFFFFF", textAlign: "right", maxWidth: "58%" },
+
+  // Fixed bottom action bar
+  bottomBar: {
+    flexDirection: "row", gap: 10,
+    paddingHorizontal: 20, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.07)",
+    backgroundColor: "rgba(10,11,13,0.92)",
   },
-  cardLabel: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", width: 56 },
-  cardValue: { fontSize: 13, fontFamily: "Archivo_500Medium", color: "#FFFFFF", flex: 1 },
-  instructorAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
+  btn: {
+    flex: 1, height: 50, borderRadius: 12,
+    flexDirection: "row", gap: 8,
+    alignItems: "center", justifyContent: "center",
   },
-  instructorAvatarImage: { width: "100%", height: "100%" },
-  instructorInitials: { fontSize: 8, fontFamily: "Archivo_700Bold" },
-  payBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  payBadgeText: { fontSize: 12, fontFamily: "Archivo_600SemiBold" },
-  reminderBanner: {
-    width: "100%",
-    flexDirection: "row",
-    gap: 10,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "flex-start",
-  },
-  reminderText: { fontSize: 13, fontFamily: "Archivo_400Regular", flex: 1, lineHeight: 18 },
-  buttonsRow: { width: "100%", gap: 10 },
+  btnPrimary: { backgroundColor: CYAN },
+  btnGhost: { backgroundColor: "rgba(255,255,255,0.07)", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)" },
+  btnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 14 },
 });

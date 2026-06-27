@@ -1,0 +1,10 @@
+/* Central Studio — Webfonts
+   NOTE: The Central Studio logo uses a custom bold condensed geometric face.
+   These Google Fonts are close, App-Store-ready substitutes:
+     · Anton      → poster/hero display (the logo's blocky condensed energy)
+     · Archivo     → headings + UI + body (geometric grotesque, wide weight range)
+     · Space Mono  → eyebrows, timecodes, metadata (performance/stage-cue feel)
+   If you have the licensed brand font, replace the @import below with @font-face
+   rules pointing at the binaries and keep the same --font-* variable names. */
+
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&family=Space+Mono:wght@400;700&display=swap');

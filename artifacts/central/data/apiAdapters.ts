@@ -213,6 +213,23 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
   };
 }
 
+/**
+ * Display-only capacity values for a class card. When a class is full/completed
+ * (Admin marks a schedule "completed" → mapped to status "full"), it must READ as
+ * fully booked everywhere — 0 available, capacity/capacity booked, 100% bar — even
+ * if the app's real bookedCount is lower (offline bookings filled the seats). The
+ * real backend bookedCount is NEVER mutated; this only affects what's shown.
+ */
+export function classCapacityDisplay(
+  cls: Pick<DanceClass, "status" | "capacity" | "bookedCount">,
+): { booked: number; available: number; pct: number; isFull: boolean } {
+  const isFull = cls.status === "full";
+  const booked = isFull ? cls.capacity : cls.bookedCount;
+  const available = Math.max(0, cls.capacity - booked);
+  const pct = cls.capacity > 0 ? Math.round((booked / cls.capacity) * 100) : isFull ? 100 : 0;
+  return { booked, available, pct, isFull };
+}
+
 export function getScheduleLabel(cls: DanceClass): string {
   if (cls.scheduleLabel) return cls.scheduleLabel;
   if (!cls.dayOfWeek || !cls.startTime) return "Schedule not set";

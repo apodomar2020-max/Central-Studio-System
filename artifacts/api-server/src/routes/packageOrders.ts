@@ -246,6 +246,23 @@ router.patch(
         .where(eq(packageOrdersTable.id, params.data.id));
       if (!current) return undefined;
 
+      // Bind the Expiration Date: when activating, default expiresAt to
+      // activatedAt + the package's validity window (from price_packages), unless
+      // the admin set an explicit expiry. Orders with no linked package or no
+      // validity simply have no expiry.
+      if (!parsed.data.expiresAt && current.packageId != null) {
+        const [pp] = await tx
+          .select({ validityMonths: pricePackagesTable.validityMonths })
+          .from(pricePackagesTable)
+          .where(eq(pricePackagesTable.id, current.packageId))
+          .limit(1);
+        if (pp?.validityMonths && pp.validityMonths > 0) {
+          const base = new Date((update.activatedAt as string) ?? new Date().toISOString());
+          base.setMonth(base.getMonth() + pp.validityMonths);
+          update.expiresAt = base.toISOString();
+        }
+      }
+
       const [updated] = await tx
         .update(packageOrdersTable)
         .set(update)

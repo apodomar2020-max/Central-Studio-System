@@ -1,0 +1,64 @@
+/* ============================================================
+   CENTRAL STUDIO — TYPOGRAPHY
+   Display: Anton (poster/hero) · Headings + UI + Body: Archivo
+   Mono eyebrows / timecodes: Space Mono
+   ============================================================ */
+
+:root {
+  --font-display: 'Anton', 'Archivo', 'Arial Narrow', sans-serif;
+  --font-heading: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body:    'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:    'Space Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* ---- Font sizes (px) ---- */
+  --text-2xs:  11px;
+  --text-xs:   12px;
+  --text-sm:   14px;
+  --text-base: 16px;
+  --text-md:   18px;
+  --text-lg:   20px;
+  --text-xl:   24px;
+  --text-2xl:  30px;
+  --text-3xl:  38px;
+  --text-4xl:  48px;
+  --display-sm: 64px;
+  --display-md: 88px;
+  --display-lg: 120px;
+  --display-xl: 168px;
+
+  /* ---- Weights ---- */
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+  --fw-extrabold:800; /* @kind font */
+  --fw-black:    900; /* @kind font */
+
+  /* ---- Line heights ---- */
+  --lh-poster:  0.90; /* @kind other */
+  --lh-tight:   0.98; /* @kind other */
+  --lh-snug:    1.10; /* @kind other */
+  --lh-heading: 1.18; /* @kind other */
+  --lh-body:    1.55; /* @kind other */
+  --lh-relaxed: 1.72; /* @kind other */
+
+  /* ---- Letter spacing ---- */
+  --ls-poster:  -0.02em; /* @kind other */
+  --ls-tight:   -0.01em; /* @kind other */
+  --ls-normal:  0; /* @kind other */
+  --ls-wide:    0.04em; /* @kind other */
+  --ls-eyebrow: 0.16em; /* @kind other */
+  --ls-widest:  0.26em; /* @kind other */
+
+  /* ---- Composite roles ---- */
+  --role-display:  var(--fw-regular) var(--display-md)/var(--lh-poster) var(--font-display);
+  --role-h1:       var(--fw-extrabold) var(--text-4xl)/var(--lh-tight) var(--font-heading);
+  --role-h2:       var(--fw-extrabold) var(--text-3xl)/var(--lh-snug) var(--font-heading);
+  --role-h3:       var(--fw-bold) var(--text-2xl)/var(--lh-heading) var(--font-heading);
+  --role-h4:       var(--fw-bold) var(--text-xl)/var(--lh-heading) var(--font-heading);
+  --role-body-lg:  var(--fw-regular) var(--text-md)/var(--lh-body) var(--font-body);
+  --role-body:     var(--fw-regular) var(--text-base)/var(--lh-body) var(--font-body);
+  --role-body-sm:  var(--fw-regular) var(--text-sm)/var(--lh-body) var(--font-body);
+  --role-label:    var(--fw-semibold) var(--text-sm)/1.2 var(--font-body);
+  --role-eyebrow:  var(--fw-bold) var(--text-xs)/1.2 var(--font-mono);
+}
