@@ -233,5 +233,13 @@
       "tag": "0028_instructor_cms",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1783166400000,
+      "tag": "0029_schedule_status",
+      "breakpoints": true
+    }
   ]
 }

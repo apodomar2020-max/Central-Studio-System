@@ -27,6 +27,8 @@ function getStatusConfig(status: DanceClass["status"]) {
       return { label: "Few Seats Left", color: colors.warning };
     case "full":
       return { label: "Full", color: colors.error };
+    case "cancelled":
+      return { label: "Cancelled", color: colors.error };
     case "waitingList":
       return { label: "Waiting List", color: colors.info };
   }
@@ -51,7 +53,7 @@ export default function ClassCard({
   const availableSeats = item.capacity - item.bookedCount;
   const scheduleLabel = getScheduleLabel(item);
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
-  const isBookable = hasSchedule && item.status !== "full";
+  const isBookable = hasSchedule && item.status !== "full" && item.status !== "cancelled";
   const canUsePackageCredits = item.packageEligible !== false && packageCreditsRemaining > 0;
   const priceLabel = purchaseMode === "package"
     ? "Uses 1 credit"
@@ -180,7 +182,7 @@ export default function ClassCard({
             ]}
           >
             <Text style={[styles.bookBtnText, { color: isBookable ? colors.studio.primary : "#6B7280" }]}>
-              {hasSchedule ? "Book" : "Not available"}
+              {item.status === "cancelled" ? "Cancelled" : hasSchedule ? "Book" : "Not available"}
             </Text>
           </TouchableOpacity>
         </View>

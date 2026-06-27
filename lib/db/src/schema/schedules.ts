@@ -6,6 +6,7 @@ export const schedulesTable = pgTable("schedules", {
   id: serial("id").primaryKey(),
   classId: integer("class_id").notNull(),
   type: text("type").notNull().default("weekly"),
+  status: text("status").notNull().default("active"),
   dayOfWeek: integer("day_of_week"),
   date: date("date", { mode: "string" }),
   startTime: text("start_time").notNull(),

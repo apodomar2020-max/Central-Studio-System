@@ -59,6 +59,39 @@ type NotificationPayload = {
 type BookingNotificationClient = Pick<typeof db, "select">;
 type BookingOwnerClient = Pick<typeof db, "select">;
 
+async function refreshScheduleLifecycle(scheduleId: number): Promise<void> {
+  await db
+    .update(schedulesTable)
+    .set({ status: "expired" })
+    .where(sql`
+      ${schedulesTable.id} = ${scheduleId}
+      and ${schedulesTable.type} = 'one_time'
+      and ${schedulesTable.date} is not null
+      and (${schedulesTable.date}::text || ' ' || ${schedulesTable.endTime})::timestamp
+        < (now() at time zone 'Africa/Cairo')
+      and ${schedulesTable.status} <> 'expired'
+    `);
+
+  await db
+    .update(schedulesTable)
+    .set({ status: "completed" })
+    .where(sql`
+      ${schedulesTable.id} = ${scheduleId}
+      and ${schedulesTable.status} = 'active'
+      and exists (
+        select 1
+        from ${classesTable}
+        where ${classesTable.id} = ${schedulesTable.classId}
+          and ${classesTable.capacity} <= (
+            select count(*)::int
+            from ${bookingsTable}
+            where ${bookingsTable.scheduleId} = ${schedulesTable.id}
+              and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+          )
+      )
+    `);
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -549,14 +582,39 @@ router.post(
     return;
   }
 
-  if (normalized.packageOrderId != null && normalized.scheduleId != null) {
+  if (normalized.scheduleId != null) {
+    await refreshScheduleLifecycle(normalized.scheduleId);
     const [schedule] = await db
-      .select({ packageEligible: schedulesTable.packageEligible })
+      .select({
+        id: schedulesTable.id,
+        status: schedulesTable.status,
+        packageEligible: schedulesTable.packageEligible,
+      })
       .from(schedulesTable)
       .where(eq(schedulesTable.id, normalized.scheduleId))
       .limit(1);
 
-    if (schedule?.packageEligible === false) {
+    if (!schedule) {
+      res.status(400).json({
+        error: "schedule_not_found",
+        message: "The selected schedule is no longer available.",
+      });
+      return;
+    }
+
+    if (schedule.status !== "active") {
+      res.status(409).json({
+        error: "schedule_unavailable",
+        message: schedule.status === "cancelled"
+          ? "This class schedule has been cancelled."
+          : schedule.status === "completed"
+            ? "This class schedule is full."
+            : "This class schedule has expired.",
+      });
+      return;
+    }
+
+    if (normalized.packageOrderId != null && schedule.packageEligible === false) {
       res.status(400).json({
         error: "package_not_eligible",
         message: "This schedule is not eligible for package credits.",
@@ -624,6 +682,27 @@ router.post(
       studentEmail: inserted.studentEmail,
       ...notification,
     });
+
+    if (inserted.scheduleId != null) {
+      await tx
+        .update(schedulesTable)
+        .set({ status: "completed" })
+        .where(sql`
+          ${schedulesTable.id} = ${inserted.scheduleId}
+          and ${schedulesTable.status} = 'active'
+          and exists (
+            select 1
+            from ${classesTable}
+            where ${classesTable.id} = ${schedulesTable.classId}
+              and ${classesTable.capacity} <= (
+                select count(*)::int
+                from ${bookingsTable}
+                where ${bookingsTable.scheduleId} = ${schedulesTable.id}
+                  and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+              )
+          )
+        `);
+    }
 
     return inserted;
   });

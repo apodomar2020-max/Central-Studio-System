@@ -253,6 +253,7 @@ export const ListSchedulesResponseItem = zod.object({
   id: zod.number(),
   classId: zod.number(),
   type: zod.enum(["weekly", "one_time"]).default("weekly"),
+  status: zod.enum(["active", "completed", "expired", "cancelled"]).default("active"),
   dayOfWeek: zod.number().nullish(),
   date: zod.string().nullish(),
   startTime: zod.string(),
@@ -263,6 +264,7 @@ export const ListSchedulesResponseItem = zod.object({
   isRecurring: zod.boolean(),
   effectiveFrom: zod.string().nullish(),
   effectiveUntil: zod.string().nullish(),
+  bookedCount: zod.number().optional(),
   createdAt: zod.string(),
 });
 export const ListSchedulesResponse = zod.array(ListSchedulesResponseItem);
@@ -270,6 +272,7 @@ export const ListSchedulesResponse = zod.array(ListSchedulesResponseItem);
 export const CreateScheduleBody = zod.object({
   classId: zod.number(),
   type: zod.enum(["weekly", "one_time"]).optional(),
+  status: zod.enum(["active", "completed", "expired", "cancelled"]).optional(),
   dayOfWeek: zod.number().nullish(),
   date: zod.string().nullish(),
   startTime: zod.string(),
@@ -290,6 +293,7 @@ export const GetScheduleResponse = zod.object({
   id: zod.number(),
   classId: zod.number(),
   type: zod.enum(["weekly", "one_time"]).default("weekly"),
+  status: zod.enum(["active", "completed", "expired", "cancelled"]).default("active"),
   dayOfWeek: zod.number().nullish(),
   date: zod.string().nullish(),
   startTime: zod.string(),
@@ -310,6 +314,7 @@ export const UpdateScheduleParams = zod.object({
 export const UpdateScheduleBody = zod.object({
   classId: zod.number().optional(),
   type: zod.enum(["weekly", "one_time"]).optional(),
+  status: zod.enum(["active", "completed", "expired", "cancelled"]).optional(),
   dayOfWeek: zod.number().nullish(),
   date: zod.string().nullish(),
   startTime: zod.string().optional(),
@@ -326,6 +331,7 @@ export const UpdateScheduleResponse = zod.object({
   id: zod.number(),
   classId: zod.number(),
   type: zod.enum(["weekly", "one_time"]).default("weekly"),
+  status: zod.enum(["active", "completed", "expired", "cancelled"]).default("active"),
   dayOfWeek: zod.number().nullish(),
   date: zod.string().nullish(),
   startTime: zod.string(),

@@ -176,6 +176,7 @@ export interface Schedule {
   id: number;
   classId: number;
   type: "weekly" | "one_time";
+  status: "active" | "completed" | "expired" | "cancelled";
   /** @nullable */
   dayOfWeek?: number | null;
   /** @nullable */
@@ -192,12 +193,15 @@ export interface Schedule {
   effectiveFrom?: string | null;
   /** @nullable */
   effectiveUntil?: string | null;
+  /** Non-cancelled bookings for this schedule (list endpoint only). */
+  bookedCount?: number;
   createdAt: string;
 }
 
 export interface CreateScheduleBody {
   classId: number;
   type?: "weekly" | "one_time";
+  status?: "active" | "completed" | "expired" | "cancelled";
   /** @nullable */
   dayOfWeek?: number | null;
   /** @nullable */
@@ -219,6 +223,7 @@ export interface CreateScheduleBody {
 export interface UpdateScheduleBody {
   classId?: number;
   type?: "weekly" | "one_time";
+  status?: "active" | "completed" | "expired" | "cancelled";
   /** @nullable */
   dayOfWeek?: number | null;
   /** @nullable */

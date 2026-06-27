@@ -1,7 +1,7 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { Router, type IRouter } from "express";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import {
@@ -19,11 +19,14 @@ import {
 const router: IRouter = Router();
 
 const SCHEDULE_TYPES = ["weekly", "one_time"] as const;
+const SCHEDULE_STATUSES = ["active", "completed", "expired", "cancelled"] as const;
 type ScheduleType = (typeof SCHEDULE_TYPES)[number];
+type ScheduleStatus = (typeof SCHEDULE_STATUSES)[number];
 
 type ScheduleInput = {
   classId?: number;
   type?: ScheduleType;
+  status?: ScheduleStatus;
   dayOfWeek?: number | null;
   date?: string | null;
   startTime?: string;
@@ -54,6 +57,94 @@ function cairoToday(): { date: string; dayOfWeek: number } {
   return { date, dayOfWeek: dayOfWeekFromDate(date) ?? new Date().getDay() };
 }
 
+function cairoNow(): { date: string; time: string } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date()).map((part) => [part.type, part.value]),
+  );
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  };
+}
+
+function isPastOneTimeSchedule(schedule: Pick<ScheduleInput, "type" | "date" | "endTime">): boolean {
+  if (schedule.type !== "one_time" || !schedule.date || !schedule.endTime) return false;
+  const now = cairoNow();
+  return schedule.date < now.date || (schedule.date === now.date && schedule.endTime <= now.time);
+}
+
+async function validateActiveScheduleAllowed(
+  schedule: ScheduleInput,
+  scheduleId?: number,
+): Promise<string | null> {
+  if (schedule.status !== "active") return null;
+
+  if (isPastOneTimeSchedule(schedule)) {
+    return "Expired one-time schedules cannot be set back to active.";
+  }
+
+  if (scheduleId == null || schedule.classId == null) return null;
+
+  const [capacityRow] = await db
+    .select({
+      capacity: classesTable.capacity,
+      bookedCount: sql<number>`(
+        select count(*)::int
+        from ${bookingsTable}
+        where ${bookingsTable.scheduleId} = ${scheduleId}
+          and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+      )`,
+    })
+    .from(classesTable)
+    .where(eq(classesTable.id, schedule.classId))
+    .limit(1);
+
+  if (capacityRow && capacityRow.bookedCount >= capacityRow.capacity) {
+    return "Full schedules cannot be set back to active while booked seats are at capacity.";
+  }
+
+  return null;
+}
+
+async function syncAutomaticScheduleStatuses(): Promise<void> {
+  await db
+    .update(schedulesTable)
+    .set({ status: "expired" })
+    .where(sql`
+      ${schedulesTable.type} = 'one_time'
+      and ${schedulesTable.date} is not null
+      and (${schedulesTable.date}::text || ' ' || ${schedulesTable.endTime})::timestamp
+        < (now() at time zone 'Africa/Cairo')
+      and ${schedulesTable.status} <> 'expired'
+    `);
+
+  await db
+    .update(schedulesTable)
+    .set({ status: "completed" })
+    .where(sql`
+      ${schedulesTable.status} = 'active'
+      and exists (
+        select 1
+        from ${classesTable}
+        where ${classesTable.id} = ${schedulesTable.classId}
+          and ${classesTable.capacity} <= (
+            select count(*)::int
+            from ${bookingsTable}
+            where ${bookingsTable.scheduleId} = ${schedulesTable.id}
+              and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+          )
+      )
+    `);
+}
+
 function normalizeScheduleInput(
   input: ScheduleInput,
   existing?: typeof schedulesTable.$inferSelect,
@@ -63,6 +154,10 @@ function normalizeScheduleInput(
 
   if (!SCHEDULE_TYPES.includes(type)) {
     return { error: "Schedule type must be weekly or one_time." };
+  }
+
+  if (merged.status && !SCHEDULE_STATUSES.includes(merged.status)) {
+    return { error: "Schedule status must be active, completed, expired, or cancelled." };
   }
 
   if (type === "weekly") {
@@ -174,12 +269,14 @@ async function notifyScheduleBookings(
 // the literal string "today" as a numeric :id parameter.
 // ---------------------------------------------------------------------------
 router.get("/schedules/today", async (req, res): Promise<void> => {
+  await syncAutomaticScheduleStatuses();
   const { dayOfWeek: todayDow, date: todayIso } = cairoToday();
 
   const rows = await db
     .select({
       scheduleId: schedulesTable.id,
       scheduleType: schedulesTable.type,
+      scheduleStatus: schedulesTable.status,
       classId: classesTable.id,
       classTitle: classesTable.title,
       scheduleDate: schedulesTable.date,
@@ -194,8 +291,8 @@ router.get("/schedules/today", async (req, res): Promise<void> => {
     .innerJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
     .where(or(
-      and(eq(schedulesTable.type, "weekly"), eq(schedulesTable.dayOfWeek, todayDow)),
-      and(eq(schedulesTable.type, "one_time"), eq(schedulesTable.date, todayIso)),
+      and(eq(schedulesTable.type, "weekly"), eq(schedulesTable.dayOfWeek, todayDow), eq(schedulesTable.status, "active")),
+      and(eq(schedulesTable.type, "one_time"), eq(schedulesTable.date, todayIso), eq(schedulesTable.status, "active")),
     ))
     .orderBy(schedulesTable.startTime);
 
@@ -203,21 +300,31 @@ router.get("/schedules/today", async (req, res): Promise<void> => {
 });
 
 router.get("/schedules", async (req, res): Promise<void> => {
+  await syncAutomaticScheduleStatuses();
   const query = ListSchedulesQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
     return;
   }
+  // Per-schedule BOOKINGS count (not attendance): distinct non-cancelled bookings
+  // for the schedule. Drives the class capacity/progress bar in the app.
+  const bookedCount = sql<number>`(
+    select count(*)::int from ${bookingsTable}
+    where ${bookingsTable.scheduleId} = ${schedulesTable.id}
+      and ${bookingsTable.bookingStatus} <> 'cancelled'
+      and ${bookingsTable.bookingStatus} <> 'rejected'
+  )`;
+  const selection = { ...getTableColumns(schedulesTable), bookedCount };
   let rows;
   if (query.data.classId != null) {
     rows = await db
-      .select()
+      .select(selection)
       .from(schedulesTable)
       .where(eq(schedulesTable.classId, query.data.classId))
       .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
   } else {
     rows = await db
-      .select()
+      .select(selection)
       .from(schedulesTable)
       .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
   }
@@ -235,6 +342,14 @@ router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermiss
     res.status(400).json({ error: normalized.error });
     return;
   }
+  const activeError = await validateActiveScheduleAllowed({
+    ...normalized,
+    status: normalized.status ?? "active",
+  });
+  if (activeError) {
+    res.status(400).json({ error: activeError });
+    return;
+  }
   // normalizeScheduleInput widens every field to optional, but CreateScheduleBody
   // (zod) already guarantees the required columns (classId/startTime/endTime) are
   // present, so this insert payload is complete at runtime.
@@ -246,6 +361,7 @@ router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermiss
 });
 
 router.get("/schedules/:id", async (req, res): Promise<void> => {
+  await syncAutomaticScheduleStatuses();
   const params = GetScheduleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -278,6 +394,12 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
   const normalized = normalizeScheduleInput(parsed.data, existing);
   if ("error" in normalized) {
     res.status(400).json({ error: normalized.error });
+    return;
+  }
+  const candidate = { ...existing, ...normalized } as ScheduleInput;
+  const activeError = await validateActiveScheduleAllowed(candidate, existing.id);
+  if (activeError) {
+    res.status(400).json({ error: activeError });
     return;
   }
   const row = await db.transaction(async (tx) => {

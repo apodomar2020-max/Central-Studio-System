@@ -45,6 +45,7 @@ import type {
 } from "@workspace/api-client-react";
 import {
   compareSchedulesByNextOccurrence,
+  isMobileVisibleSchedule,
   mapApiClassWithScheduleToMobile,
   mapApiInstructorToMobile,
 } from "@/data/apiAdapters";
@@ -463,7 +464,7 @@ function ClassCard({
   const instructor = instructorMap?.get(item.instructorId);
   const available = item.capacity - item.bookedCount;
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
-  const isBookable  = hasSchedule && item.status !== "full";
+  const isBookable  = hasSchedule && item.status !== "full" && item.status !== "cancelled";
 
   const today     = formatCairoDateKey();
   const tomorrow  = getCairoTomorrowDateKey();
@@ -473,13 +474,15 @@ function ClassCard({
     !hasSchedule ? INK_400 :
     item.status === "available" ? SUCCESS :
     item.status === "fewSeats"  ? AMBER :
-    item.status === "full"      ? ERROR : VIOLET;
+    item.status === "full"      ? ERROR :
+    item.status === "cancelled" ? ERROR : VIOLET;
 
   const statusLabel =
     !hasSchedule ? "No schedule" :
     item.status === "available" ? "Available" :
     item.status === "fewSeats"  ? `${available} left` :
-    item.status === "full"      ? "Full" : "Waitlist";
+    item.status === "full"      ? "Full" :
+    item.status === "cancelled" ? "Cancelled" : "Waitlist";
 
   const levelCol = ageGroupColor(item.ageGroup);
 
@@ -578,7 +581,7 @@ function ClassCard({
           ]}
         >
           <Text style={[s.bookBtnText, { color: isBookable ? INK_900 : INK_300 }]}>
-            {item.status === "full" ? "Waitlist" : isBookable ? "Book" : "N/A"}
+            {item.status === "cancelled" ? "Cancelled" : item.status === "full" ? "Full" : isBookable ? "Book" : "N/A"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -807,6 +810,7 @@ export default function StudioHomeScreen() {
     const classMap = new Map(apiClasses.map((c) => [c.id, c]));
 
     const result = [...apiScheds]
+      .filter(isMobileVisibleSchedule)
       .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
       .map((sched) => {
         const cls = classMap.get(sched.classId);

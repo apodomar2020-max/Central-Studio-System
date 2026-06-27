@@ -29,10 +29,12 @@ import { Badge } from "@/components/ui/badge";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const SCHEDULE_STATUSES = ["active", "completed", "expired", "cancelled"] as const;
 
 const formSchema = z.object({
   classId: z.coerce.number().int().min(1, "Class is required"),
   type: z.enum(["weekly", "one_time"]).default("weekly"),
+  status: z.enum(SCHEDULE_STATUSES).default("active"),
   dayOfWeek: z.coerce.number().int().min(0).max(6).nullish(),
   date: z.string().nullish(),
   startTime: z.string().min(1, "Start time required"),
@@ -60,6 +62,7 @@ type Schedule = {
   id: number;
   classId: number;
   type: "weekly" | "one_time";
+  status: "active" | "completed" | "expired" | "cancelled";
   dayOfWeek?: number | null;
   date?: string | null;
   startTime: string;
@@ -69,6 +72,24 @@ type Schedule = {
   location?: string | null;
   isRecurring: boolean;
 };
+
+function statusLabel(status: Schedule["status"]) {
+  switch (status) {
+    case "active": return "Active";
+    case "completed": return "Completed";
+    case "expired": return "Expired";
+    case "cancelled": return "Cancelled";
+  }
+}
+
+function statusBadgeClass(status: Schedule["status"]) {
+  switch (status) {
+    case "active": return "bg-emerald-500/15 text-emerald-300 border-emerald-400/30";
+    case "completed": return "bg-cyan-500/15 text-cyan-300 border-cyan-400/30";
+    case "expired": return "bg-slate-500/15 text-slate-300 border-slate-400/30";
+    case "cancelled": return "bg-red-500/15 text-red-300 border-red-400/30";
+  }
+}
 
 export default function Schedules() {
   const { can } = useAdminAuth();
@@ -88,6 +109,7 @@ export default function Schedules() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       type: "weekly",
+      status: "active",
       dayOfWeek: 1,
       date: "",
       startTime: "10:00",
@@ -103,6 +125,7 @@ export default function Schedules() {
     setEditing(null);
     form.reset({
       type: "weekly",
+      status: "active",
       dayOfWeek: 1,
       date: "",
       startTime: "10:00",
@@ -119,6 +142,7 @@ export default function Schedules() {
     form.reset({
       classId: s.classId,
       type: s.type ?? (s.isRecurring ? "weekly" : "one_time"),
+      status: s.status ?? "active",
       dayOfWeek: s.dayOfWeek ?? 1,
       date: s.date ?? "",
       startTime: s.startTime,
@@ -166,6 +190,7 @@ export default function Schedules() {
           <TableHeader>
             <TableRow>
               <TableHead>Class</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Date / Day</TableHead>
               <TableHead>Time</TableHead>
@@ -177,13 +202,18 @@ export default function Schedules() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : schedules?.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No schedules yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No schedules yet.</TableCell></TableRow>
             ) : (
               schedules?.map((schedule) => (
                 <TableRow key={schedule.id} data-testid={`row-schedule-${schedule.id}`}>
                   <TableCell className="font-medium">{getClassName(schedule.classId)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={statusBadgeClass((schedule.status ?? "active") as Schedule["status"])}>
+                      {statusLabel((schedule.status ?? "active") as Schedule["status"])}
+                    </Badge>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={schedule.type === "one_time" ? "secondary" : "default"}>
                       {schedule.type === "one_time" ? "One-time" : "Weekly"}
@@ -254,6 +284,21 @@ export default function Schedules() {
                     <SelectContent>
                       <SelectItem value="weekly">Regular weekly class</SelectItem>
                       <SelectItem value="one_time">One-time workshop / class</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="status" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Status</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value ?? "active"}>
+                    <FormControl><SelectTrigger data-testid="select-schedule-status"><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="completed">Completed / Full</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="expired">Expired</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { isYouTubeUrl, useGetClass, useGetInstructor, useListSchedules } from "@workspace/api-client-react";
 
-import { compareSchedulesByNextOccurrence, getScheduleLabel, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { compareSchedulesByNextOccurrence, getScheduleLabel, isMobileVisibleSchedule, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
@@ -52,6 +52,7 @@ function StatusBadge({ status }: { status: string }) {
     available: { label: "Available", color: colors.success },
     fewSeats: { label: "Few Seats Left", color: colors.warning },
     full: { label: "Full", color: colors.error },
+    cancelled: { label: "Cancelled", color: colors.error },
     waitingList: { label: "Waiting List", color: colors.info },
   }[status] ?? { label: status, color: "#6B7280" };
   return (
@@ -87,8 +88,8 @@ export default function ClassDetailScreen() {
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
 
   const primarySchedule = schedulesQuery.data
-    ? schedulesQuery.data.find((schedule) => String(schedule.id) === scheduleId) ??
-      [...schedulesQuery.data].sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
+    ? schedulesQuery.data.filter(isMobileVisibleSchedule).find((schedule) => String(schedule.id) === scheduleId) ??
+      [...schedulesQuery.data].filter(isMobileVisibleSchedule).sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
     ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
@@ -266,9 +267,9 @@ export default function ClassDetailScreen() {
           </Text>
         </View>
         <View style={{ flex: 1 }}>
-          {cls.status === "full" ? (
+          {cls.status === "full" || cls.status === "cancelled" ? (
             <AppButton
-              title="Join Waiting List"
+              title={cls.status === "cancelled" ? "Class Cancelled" : "Class Full"}
               onPress={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)}
               variant="ghost"
               fullWidth

@@ -18,7 +18,7 @@ import {
 import { useGetClass, useGetInstructor, useCreateBooking, useListSchedules } from "@workspace/api-client-react";
 
 import { useAppContext, type Booking } from "@/contexts/AppContext";
-import { compareSchedulesByNextOccurrence, getScheduleLabel, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
+import { compareSchedulesByNextOccurrence, getScheduleLabel, isBookableScheduleStatus, isMobileVisibleSchedule, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
@@ -63,8 +63,8 @@ export default function BookingFlowScreen() {
   const singleClassPriceEgp =
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
   const primarySchedule = schedulesQuery.data
-    ? schedulesQuery.data.find((schedule) => String(schedule.id) === scheduleId) ??
-      [...schedulesQuery.data].sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
+    ? schedulesQuery.data.filter(isMobileVisibleSchedule).find((schedule) => String(schedule.id) === scheduleId) ??
+      [...schedulesQuery.data].filter(isMobileVisibleSchedule).sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
     ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
@@ -100,6 +100,7 @@ export default function BookingFlowScreen() {
   const isFirstBooking = false;
   const finalPrice = isPackageMode ? 0 : (cls?.price ?? 0);
   const hasSchedule = Boolean(cls?.scheduleId && cls?.dayOfWeek && cls?.startTime);
+  const canBookSchedule = hasSchedule && isBookableScheduleStatus(cls?.scheduleStatus);
   const participantName =
     participantType === "self"
       ? user?.fullName ?? ""
@@ -182,6 +183,15 @@ export default function BookingFlowScreen() {
       Alert.alert(
         "Schedule not set",
         "This class cannot be booked until the studio adds a day and time.",
+      );
+      return;
+    }
+    if (!canBookSchedule) {
+      Alert.alert(
+        cls.scheduleStatus === "cancelled" ? "Class cancelled" : "Class full",
+        cls.scheduleStatus === "cancelled"
+          ? "This class schedule has been cancelled and cannot be booked."
+          : "This class schedule is full and cannot accept more bookings.",
       );
       return;
     }
@@ -691,9 +701,9 @@ export default function BookingFlowScreen() {
       <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 12 }]}>
         {step < 3 ? (
           <AppButton
-            title={hasSchedule ? "Continue" : "Schedule Not Set"}
+            title={!hasSchedule ? "Schedule Not Set" : canBookSchedule ? "Continue" : cls?.scheduleStatus === "cancelled" ? "Class Cancelled" : "Class Full"}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep(step + 1); }}
-            disabled={!hasSchedule}
+            disabled={!canBookSchedule}
             fullWidth
             size="lg"
           />

@@ -101,6 +101,26 @@ function formatTime(timeStr: string): string {
 }
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+type ScheduleStatus = "active" | "completed" | "expired" | "cancelled";
+
+function coerceScheduleStatus(status: unknown): ScheduleStatus {
+  switch (status) {
+    case "completed":
+    case "expired":
+    case "cancelled":
+      return status;
+    default:
+      return "active";
+  }
+}
+
+export function isMobileVisibleSchedule(schedule?: ApiSchedule | null): boolean {
+  return coerceScheduleStatus(schedule?.status) !== "expired";
+}
+
+export function isBookableScheduleStatus(status?: string | null): boolean {
+  return coerceScheduleStatus(status) === "active";
+}
 
 function coerceDayOfWeek(raw: unknown): number | null {
   if (typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= 6) {
@@ -161,10 +181,23 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
     ? `${dayName} • ${startTime}${endTime ? ` - ${endTime}` : ""}`
     : "Schedule not set";
 
+  // Real BOOKINGS count for this schedule (from the backend; non-cancelled
+  // bookings — NOT attendance). Drives the capacity/progress bar and a coherent
+  // availability status so the bar, the "X available · Y/Z booked" text, and the
+  // status chip all agree.
+  const bookedCount = schedule.bookedCount ?? cls.bookedCount;
+  const availableSeats = cls.capacity - bookedCount;
+  const scheduleStatus = coerceScheduleStatus(schedule.status);
+  const status: DanceClass["status"] =
+    scheduleStatus === "cancelled" ? "cancelled"
+    : scheduleStatus === "completed" ? "full"
+    : availableSeats <= 0 ? "full" : availableSeats <= 3 ? "fewSeats" : "available";
+
   return {
     ...cls,
     scheduleId: String(schedule.id),
     scheduleType: schedule.type,
+    scheduleStatus,
     packageEligible: schedule.packageEligible ?? true,
     date: occurrenceDate ?? getNextScheduleOccurrenceDate(schedule),
     dayOfWeek: dayName,
@@ -173,6 +206,8 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
     scheduleLabel,
     location: schedule.location ?? cls.location,
     price: schedule.priceEgp ?? cls.price,
+    bookedCount,
+    status,
   };
 }
 

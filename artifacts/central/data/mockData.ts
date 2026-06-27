@@ -29,6 +29,7 @@ export interface DanceClass {
   id: string;
   scheduleId?: string;
   scheduleType?: "weekly" | "one_time";
+  scheduleStatus?: "active" | "completed" | "expired" | "cancelled";
   packageEligible?: boolean;
   categoryId: string;
   categoryName: string;
@@ -50,7 +51,7 @@ export interface DanceClass {
   bookedCount: number;
   level: "Beginner" | "Intermediate" | "Advanced" | "All Levels";
   ageGroup: AgeGroup;
-  status: "available" | "fewSeats" | "full" | "waitingList";
+  status: "available" | "fewSeats" | "full" | "waitingList" | "cancelled";
   policy: string;
   featured: boolean;
   isBallet?: boolean;

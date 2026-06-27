@@ -19,6 +19,7 @@ import {
 
 import {
   compareSchedulesByNextOccurrence,
+  isMobileVisibleSchedule,
   mapApiClassWithScheduleToMobile,
   mapApiInstructorToMobile,
 } from "@/data/apiAdapters";
@@ -41,13 +42,18 @@ export default function BalletClassesScreen() {
 
   const balletClasses: DanceClass[] = useMemo(() => {
     const byClassId = new Map<number, NonNullable<typeof schedulesQuery.data>[number]>();
+    const scheduledClassIds = new Set((schedulesQuery.data ?? []).map((schedule) => schedule.classId));
+    const visibleScheduledClassIds = new Set<number>();
     [...(schedulesQuery.data ?? [])]
+      .filter(isMobileVisibleSchedule)
       .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
       .forEach((sch) => {
+        visibleScheduledClassIds.add(sch.classId);
         if (!byClassId.has(sch.classId)) byClassId.set(sch.classId, sch);
       });
     return (classesQuery.data ?? [])
       .filter((c) => c.isActive)
+      .filter((c) => !scheduledClassIds.has(c.id) || visibleScheduledClassIds.has(c.id))
       .map((c) => mapApiClassWithScheduleToMobile(c, byClassId.get(c.id), 0))
       .filter((c) => c.isBallet);
   }, [classesQuery.data, schedulesQuery.data]);

@@ -41,6 +41,7 @@ import {
 } from "@/data/mockData";
 import {
   compareSchedulesByNextOccurrence,
+  isMobileVisibleSchedule,
   mapApiClassWithScheduleToMobile,
   mapApiInstructorToMobile,
 } from "@/data/apiAdapters";
@@ -161,18 +162,21 @@ function statusLabel(st: DanceClass["status"]) {
   return st === "available" ? "Available"
        : st === "fewSeats"  ? "Few Seats"
        : st === "full"      ? "Full"
+       : st === "cancelled" ? "Cancelled"
        : "Waitlist";
 }
 function statusColor(st: DanceClass["status"]) {
   return st === "available" ? SUCCESS
        : st === "fewSeats"  ? AMBER
        : st === "full"      ? DANGER
+       : st === "cancelled" ? DANGER
        : INK_300;
 }
 function statusBg(st: DanceClass["status"]) {
   return st === "available" ? "rgba(31,184,113,0.16)"
        : st === "fewSeats"  ? "rgba(255,176,46,0.16)"
        : st === "full"      ? "rgba(255,59,71,0.10)"
+       : st === "cancelled" ? "rgba(255,59,71,0.10)"
        : "rgba(255,255,255,0.06)";
 }
 
@@ -595,7 +599,7 @@ function ExploreClassCard({
 
       {/* Actions */}
       <View style={s.classCardActions}>
-        {creditsLeft > 0 && st !== "full" && (
+        {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
           <TouchableOpacity
             onPress={() => onBook(item, "package")}
             style={s.btnPackage}
@@ -605,12 +609,12 @@ function ExploreClassCard({
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          onPress={() => { if (st !== "full") onBook(item, "cash"); }}
-          style={[s.btnBook, st === "full" && { backgroundColor: "rgba(255,255,255,0.06)" }]}
+          onPress={() => { if (st !== "full" && st !== "cancelled") onBook(item, "cash"); }}
+          style={[s.btnBook, (st === "full" || st === "cancelled") && { backgroundColor: "rgba(255,255,255,0.06)" }]}
           activeOpacity={0.85}
         >
-          <Text style={[s.btnBookText, st === "full" && { color: INK_400 }]}>
-            {st === "full" ? "Join Waitlist" : `Book · EGP ${item.price}`}
+          <Text style={[s.btnBookText, (st === "full" || st === "cancelled") && { color: INK_400 }]}>
+            {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : `Book · EGP ${item.price}`}
           </Text>
         </TouchableOpacity>
       </View>
@@ -869,7 +873,7 @@ function ClassDetailOverlay({
           </View>
         </View>
         <View style={{ flexDirection: "row", gap: 10 }}>
-          {creditsLeft > 0 && st !== "full" && (
+          {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
             <TouchableOpacity
               onPress={() => { close(); onBook(item, "package"); }}
               style={s.detailBtnPackage}
@@ -879,12 +883,12 @@ function ClassDetailOverlay({
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            onPress={() => { onBook(item, "cash"); if (st !== "full") close(); }}
-            style={[s.detailBtnBook, st === "full" && { backgroundColor: "rgba(255,255,255,0.06)" }]}
+            onPress={() => { if (st !== "full" && st !== "cancelled") { onBook(item, "cash"); close(); } }}
+            style={[s.detailBtnBook, (st === "full" || st === "cancelled") && { backgroundColor: "rgba(255,255,255,0.06)" }]}
             activeOpacity={0.85}
           >
-            <Text style={[s.detailBtnBookText, st === "full" && { color: INK_400 }]}>
-              {st === "full" ? "Join Waitlist" : `Book Now · EGP ${item.price}`}
+            <Text style={[s.detailBtnBookText, (st === "full" || st === "cancelled") && { color: INK_400 }]}>
+              {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : `Book Now · EGP ${item.price}`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -965,15 +969,20 @@ export default function ClassesScreen() {
 
   const allClasses: DanceClass[] = useMemo(() => {
     const schedulesByClassId = new Map<number, NonNullable<typeof schedulesQuery.data>[number]>();
+    const scheduledClassIds = new Set((schedulesQuery.data ?? []).map((schedule) => schedule.classId));
+    const visibleScheduledClassIds = new Set<number>();
     [...(schedulesQuery.data ?? [])]
+      .filter(isMobileVisibleSchedule)
       .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
       .forEach((schedule) => {
+        visibleScheduledClassIds.add(schedule.classId);
         if (!schedulesByClassId.has(schedule.classId)) {
           schedulesByClassId.set(schedule.classId, schedule);
         }
       });
     return (classesQuery.data ?? [])
       .filter((c) => c.isActive)
+      .filter((c) => !scheduledClassIds.has(c.id) || visibleScheduledClassIds.has(c.id))
       .map((c) => mapApiClassWithScheduleToMobile(c, schedulesByClassId.get(c.id), singleClassPriceEgp));
   }, [classesQuery.data, schedulesQuery.data, singleClassPriceEgp]);
 
@@ -1038,6 +1047,7 @@ export default function ClassesScreen() {
   const visibleCats  = nonBalletCats.filter((cat) => filtered.some((c) => cat.matchesClass(c)));
 
   function handleBook(c: DanceClass, method: "package" | "cash") {
+    if (c.status === "full" || c.status === "cancelled") return;
     if (!user) {
       showAuthRequiredPrompt();
       return;
