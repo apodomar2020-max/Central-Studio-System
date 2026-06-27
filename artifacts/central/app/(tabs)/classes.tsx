@@ -1398,8 +1398,13 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(0,182,215,0.08)", alignItems: "center",
   },
   btnPackageText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
-  btnBook: { flex: 1, paddingVertical: 11, borderRadius: R_MD, backgroundColor: CYAN, alignItems: "center" },
-  btnBookText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
+  // Design parity: button content centered via row + justify/align center (was
+  // alignItems-only, which left the label visually off-centre in some states).
+  btnBook: {
+    flex: 1, paddingVertical: 11, borderRadius: R_MD, backgroundColor: CYAN,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+  },
+  btnBookText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold", color: INK_900, textAlign: "center" },
 
   /* empty state */
   emptyState: { alignItems: "center", paddingVertical: 56, paddingHorizontal: 30 },
