@@ -1,3 +1,4 @@
+import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { desc, eq, or } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
@@ -42,7 +43,7 @@ router.get("/notifications", requireAdminAuth, requireAdminPermission("notificat
   res.json(ListNotificationsResponse.parse(rows));
 });
 
-router.post("/notifications", requireAdminAuth, requireAdminPermission("notifications", "create"), requireSendWhenPublishing, async (req, res): Promise<void> => {
+router.post("/notifications", blockStudentJwt, requireAdminAuth, requireAdminPermission("notifications", "create"), requireSendWhenPublishing, async (req, res): Promise<void> => {
   const parsed = CreateNotificationBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -87,7 +88,7 @@ router.get("/notifications/:id", requireAdminAuth, requireAdminPermission("notif
   res.json(GetNotificationResponse.parse(row));
 });
 
-router.patch("/notifications/:id", requireAdminAuth, requireNotificationUpdatePermission, async (req, res): Promise<void> => {
+router.patch("/notifications/:id", blockStudentJwt, requireAdminAuth, requireNotificationUpdatePermission, async (req, res): Promise<void> => {
   const params = UpdateNotificationParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -106,7 +107,7 @@ router.patch("/notifications/:id", requireAdminAuth, requireNotificationUpdatePe
   res.json(UpdateNotificationResponse.parse(row));
 });
 
-router.delete("/notifications/:id", requireAdminAuth, requireAdminPermission("notifications", "delete"), async (req, res): Promise<void> => {
+router.delete("/notifications/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("notifications", "delete"), async (req, res): Promise<void> => {
   const params = DeleteNotificationParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

@@ -1,5 +1,6 @@
-import { Router, type IRouter } from "express";
+import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { Router, type IRouter } from "express";
 import { asc, eq } from "drizzle-orm";
 import { db, heroItemsTable } from "@workspace/db";
 import {
@@ -23,7 +24,7 @@ router.get("/hero-items", async (req, res): Promise<void> => {
   res.json(ListHeroItemsResponse.parse(rows));
 });
 
-router.post("/hero-items", requireAdminAuth, requireAdminPermission("heroSlides", "create"), async (req, res): Promise<void> => {
+router.post("/hero-items", blockStudentJwt, requireAdminAuth, requireAdminPermission("heroSlides", "create"), async (req, res): Promise<void> => {
   const parsed = CreateHeroItemBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -56,7 +57,7 @@ router.get("/hero-items/:id", async (req, res): Promise<void> => {
   res.json(GetHeroItemResponse.parse(row));
 });
 
-router.patch("/hero-items/:id", requireAdminAuth, requireAdminPermission("heroSlides", "edit"), async (req, res): Promise<void> => {
+router.patch("/hero-items/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("heroSlides", "edit"), async (req, res): Promise<void> => {
   const params = UpdateHeroItemParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -79,7 +80,7 @@ router.patch("/hero-items/:id", requireAdminAuth, requireAdminPermission("heroSl
   res.json(UpdateHeroItemResponse.parse(row));
 });
 
-router.delete("/hero-items/:id", requireAdminAuth, requireAdminPermission("heroSlides", "delete"), async (req, res): Promise<void> => {
+router.delete("/hero-items/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("heroSlides", "delete"), async (req, res): Promise<void> => {
   const params = DeleteHeroItemParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

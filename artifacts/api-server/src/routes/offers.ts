@@ -1,5 +1,6 @@
-import { Router, type IRouter } from "express";
+import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, offersTable } from "@workspace/db";
 import { createBroadcastNotification } from "../lib/notifications";
@@ -21,7 +22,7 @@ router.get("/offers", async (req, res): Promise<void> => {
   res.json(ListOffersResponse.parse(rows));
 });
 
-router.post("/offers", requireAdminAuth, requireAdminPermission("offers", "create"), async (req, res): Promise<void> => {
+router.post("/offers", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "create"), async (req, res): Promise<void> => {
   const parsed = CreateOfferBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -61,7 +62,7 @@ router.get("/offers/:id", async (req, res): Promise<void> => {
   res.json(GetOfferResponse.parse(row));
 });
 
-router.patch("/offers/:id", requireAdminAuth, requireAdminPermission("offers", "edit"), async (req, res): Promise<void> => {
+router.patch("/offers/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "edit"), async (req, res): Promise<void> => {
   const params = UpdateOfferParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -99,7 +100,7 @@ router.patch("/offers/:id", requireAdminAuth, requireAdminPermission("offers", "
   res.json(UpdateOfferResponse.parse(row));
 });
 
-router.delete("/offers/:id", requireAdminAuth, requireAdminPermission("offers", "delete"), async (req, res): Promise<void> => {
+router.delete("/offers/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "delete"), async (req, res): Promise<void> => {
   const params = DeleteOfferParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

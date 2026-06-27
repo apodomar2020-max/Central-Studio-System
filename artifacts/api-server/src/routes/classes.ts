@@ -1,3 +1,4 @@
+import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, bookingsTable, classesTable } from "@workspace/db";
@@ -68,7 +69,7 @@ router.get("/classes", async (req, res): Promise<void> => {
   res.json(ListClassesResponse.parse(rows));
 });
 
-router.post("/classes", requireAdminAuth, requireAdminPermission("classes", "create"), requireClassMediaPermission, async (req, res): Promise<void> => {
+router.post("/classes", blockStudentJwt, requireAdminAuth, requireAdminPermission("classes", "create"), requireClassMediaPermission, async (req, res): Promise<void> => {
   const parsed = CreateClassBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -92,7 +93,7 @@ router.get("/classes/:id", async (req, res): Promise<void> => {
   res.json(GetClassResponse.parse(row));
 });
 
-router.patch("/classes/:id", requireAdminAuth, requireAdminPermission("classes", "edit"), requireClassMediaPermission, async (req, res): Promise<void> => {
+router.patch("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("classes", "edit"), requireClassMediaPermission, async (req, res): Promise<void> => {
   const params = UpdateClassParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -120,7 +121,7 @@ router.patch("/classes/:id", requireAdminAuth, requireAdminPermission("classes",
   res.json(UpdateClassResponse.parse(row));
 });
 
-router.delete("/classes/:id", requireAdminAuth, requireAdminPermission("classes", "delete"), async (req, res): Promise<void> => {
+router.delete("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("classes", "delete"), async (req, res): Promise<void> => {
   const params = DeleteClassParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

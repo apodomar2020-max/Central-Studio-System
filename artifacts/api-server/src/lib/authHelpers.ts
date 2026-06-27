@@ -6,6 +6,7 @@
  * exactly one place.
  */
 import jwt from "jsonwebtoken";
+import { randomInt } from "crypto";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { db, emailOtpsTable } from "@workspace/db";
 import { STUDENT_JWT_SECRET, type StudentTokenPayload } from "../middlewares/auth";
@@ -41,14 +42,21 @@ export const OTP_MAX_ATTEMPTS = 5;             // wrong guesses before a code is
 
 export type OtpPurpose = "verify" | "reset";
 
-/** Generate a 6-digit numeric code (zero-padded). */
+/** Generate a cryptographically secure 6-digit numeric code (zero-padded). */
 export function generateOtp(): string {
-  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
+  // crypto.randomInt is a CSPRNG; Math.random() is predictable — never use
+  // Math.random() for security-sensitive values.
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 /**
- * Deliver an OTP. In development the code is only logged; in production this is
- * where a real email provider (Resend / SendGrid / Nodemailer) would be wired.
+ * Deliver an OTP. In development the code is logged to console.
+ * In production this MUST be wired to a real email provider — if no provider
+ * is configured the function throws so the caller returns a 500 instead of
+ * silently succeeding (which would leave the user stuck, unable to verify).
+ *
+ * To wire an email provider, set RESEND_API_KEY (or similar) and implement
+ * the send call below. See https://resend.com/docs for a minimal example.
  */
 export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose): Promise<void> {
   if (process.env["NODE_ENV"] !== "production") {
@@ -56,8 +64,16 @@ export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose
     return;
   }
   // TODO: integrate a real email provider. Example (Resend):
-  //   await resend.emails.send({ from, to, subject, text: `Your code is ${code}` });
-  logger.warn({ to, purpose }, "Email provider not configured — OTP not sent in production");
+  //   const { Resend } = await import("resend");
+  //   const resend = new Resend(process.env["RESEND_API_KEY"]);
+  //   await resend.emails.send({ from: "noreply@centralstudio.app", to, subject: "Your code", text: `Your code is ${code}` });
+  //
+  // Until an email provider is configured, throw so callers surface the error
+  // rather than returning a fake success to the user.
+  throw new Error(
+    "Email provider not configured. Set RESEND_API_KEY (or equivalent) and " +
+    "wire it in sendOtpEmail() in src/lib/authHelpers.ts before deploying."
+  );
 }
 
 export class OtpRateLimitError extends Error {

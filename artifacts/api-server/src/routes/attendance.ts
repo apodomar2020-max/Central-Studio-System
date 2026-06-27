@@ -1,3 +1,4 @@
+import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, attendanceTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
@@ -87,6 +88,7 @@ router.get("/attendance", async (req, res): Promise<void> => {
 // ---------------------------------------------------------------------------
 router.post(
   "/attendance",
+  blockStudentJwt,
   requireAdminAuth,
   requireAdminPermission("attendance", "checkIn"),
   requirePackageDeductForManualCheckIn,

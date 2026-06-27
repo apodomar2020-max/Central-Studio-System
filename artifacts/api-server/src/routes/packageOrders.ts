@@ -1,3 +1,4 @@
+import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -211,6 +212,7 @@ router.get("/package-orders/:id", requirePackageOrderReadAccess, async (req, res
 
 router.patch(
   "/package-orders/:id",
+  blockStudentJwt,
   requireAdminAuth,
   requirePackageOrderAction,
   async (req, res): Promise<void> => {

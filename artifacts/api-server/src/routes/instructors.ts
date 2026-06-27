@@ -1,3 +1,4 @@
+import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import { db, instructorsTable } from "@workspace/db";
@@ -28,7 +29,7 @@ router.get("/instructors", async (req, res): Promise<void> => {
   res.json(ListInstructorsResponse.parse(rows));
 });
 
-router.post("/instructors", requireAdminAuth, requireAdminPermission("instructors", "create"), requireInstructorMediaPermission, async (req, res): Promise<void> => {
+router.post("/instructors", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "create"), requireInstructorMediaPermission, async (req, res): Promise<void> => {
   const parsed = CreateInstructorBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -52,7 +53,7 @@ router.get("/instructors/:id", async (req, res): Promise<void> => {
   res.json(GetInstructorResponse.parse(row));
 });
 
-router.patch("/instructors/:id", requireAdminAuth, requireAdminPermission("instructors", "edit"), requireInstructorMediaPermission, async (req, res): Promise<void> => {
+router.patch("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "edit"), requireInstructorMediaPermission, async (req, res): Promise<void> => {
   const params = UpdateInstructorParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -71,7 +72,7 @@ router.patch("/instructors/:id", requireAdminAuth, requireAdminPermission("instr
   res.json(UpdateInstructorResponse.parse(row));
 });
 
-router.delete("/instructors/:id", requireAdminAuth, requireAdminPermission("instructors", "delete"), async (req, res): Promise<void> => {
+router.delete("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "delete"), async (req, res): Promise<void> => {
   const params = DeleteInstructorParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

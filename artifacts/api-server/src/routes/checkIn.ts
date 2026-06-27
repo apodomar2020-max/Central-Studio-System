@@ -402,7 +402,7 @@ router.post(
           balanceAfter: newRemaining,
           referenceId: attendance.id,
           referenceType: "attendance",
-          notes: `QR check-in for booking #${booking.id}`,
+          notes: `QR check-in for ${notificationContext.label}`,
           createdBy: performedBy,
         });
 

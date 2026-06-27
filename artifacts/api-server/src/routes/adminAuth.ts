@@ -42,6 +42,17 @@ const router: IRouter = Router();
 const JWT_SECRET = process.env["ADMIN_JWT_SECRET"] ?? "dev-admin-secret-change-in-production";
 const JWT_EXPIRES_IN = "8h"; // admin session lasts 8 hours
 
+// Guard: in production a missing secret means admin JWTs can be forged with
+// the public default value — abort startup rather than silently run insecurely.
+if (!process.env["ADMIN_JWT_SECRET"]) {
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error(
+      "ADMIN_JWT_SECRET must be set in production. " +
+      "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+    );
+  }
+}
+
 interface AdminTokenPayload {
   sub: number;         // system_user.id
   username: string;
@@ -313,6 +324,7 @@ router.post("/admin/auth/login", async (req, res): Promise<void> => {
       email: user.email,
       isSuperAdmin: user.isSuperAdmin,
       roleId: user.roleId,
+      isActive: user.isActive,
       role: roleData ? { id: roleData.id, name: roleData.name, permissions: roleData.permissions } : null,
     },
   });

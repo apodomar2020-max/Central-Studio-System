@@ -1,5 +1,6 @@
-import { Router, type IRouter } from "express";
+import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { Router, type IRouter } from "express";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
@@ -223,7 +224,7 @@ router.get("/schedules", async (req, res): Promise<void> => {
   res.json(ListSchedulesResponse.parse(rows));
 });
 
-router.post("/schedules", requireAdminAuth, requireAdminPermission("schedules", "create"), async (req, res): Promise<void> => {
+router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "create"), async (req, res): Promise<void> => {
   const parsed = CreateScheduleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -234,7 +235,13 @@ router.post("/schedules", requireAdminAuth, requireAdminPermission("schedules", 
     res.status(400).json({ error: normalized.error });
     return;
   }
-  const [row] = await db.insert(schedulesTable).values(normalized).returning();
+  // normalizeScheduleInput widens every field to optional, but CreateScheduleBody
+  // (zod) already guarantees the required columns (classId/startTime/endTime) are
+  // present, so this insert payload is complete at runtime.
+  const [row] = await db
+    .insert(schedulesTable)
+    .values(normalized as typeof schedulesTable.$inferInsert)
+    .returning();
   res.status(201).json(GetScheduleResponse.parse(row));
 });
 
@@ -252,7 +259,7 @@ router.get("/schedules/:id", async (req, res): Promise<void> => {
   res.json(GetScheduleResponse.parse(row));
 });
 
-router.patch("/schedules/:id", requireAdminAuth, requireAdminPermission("schedules", "edit"), async (req, res): Promise<void> => {
+router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "edit"), async (req, res): Promise<void> => {
   const params = UpdateScheduleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -295,7 +302,7 @@ router.patch("/schedules/:id", requireAdminAuth, requireAdminPermission("schedul
   res.json(UpdateScheduleResponse.parse(row));
 });
 
-router.delete("/schedules/:id", requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req, res): Promise<void> => {
+router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req, res): Promise<void> => {
   const params = DeleteScheduleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

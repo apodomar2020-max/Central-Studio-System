@@ -1,3 +1,4 @@
+import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
 import { db, studentsTable, packageOrdersTable, bookingsTable, childrenTable } from "@workspace/db";
@@ -146,7 +147,7 @@ router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promis
   ));
 });
 
-router.post("/students", requireAdminAuth, requireAdminPermission("users", "create"), async (req, res): Promise<void> => {
+router.post("/students", blockStudentJwt, requireAdminAuth, requireAdminPermission("users", "create"), async (req, res): Promise<void> => {
   const parsed = CreateStudentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -202,7 +203,7 @@ router.get("/students/:id", requireAdminAuth, async (req: AdminRequest, res): Pr
   }));
 });
 
-router.patch("/students/:id", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
   const params = UpdateStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -243,7 +244,7 @@ router.patch("/students/:id", requireAdminAuth, async (req: AdminRequest, res): 
   res.json(UpdateStudentResponse.parse(row));
 });
 
-router.delete("/students/:id", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+router.delete("/students/:id", blockStudentJwt, requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
   const params = DeleteStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
