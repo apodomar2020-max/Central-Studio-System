@@ -223,7 +223,10 @@ export default function BookingFlowScreen() {
       ].filter(Boolean).join("\n") || undefined;
 
       // 1. Create booking in the database
-      const apiBookingStatus = isPackageMode || finalPrice === 0 ? "confirmed" : "pending";
+      // Policy: every student booking starts as PENDING — Admin confirms it (and,
+      // for package bookings, the credit is deducted only at QR check-in, never at
+      // booking time). Pay-on-arrival and package both create a pending request.
+      const apiBookingStatus = "pending";
       const apiPaymentStatus = isPackageMode || finalPrice === 0 ? "not_required" : "pending_payment";
       const apiPaymentMode = isPackageMode ? "package_credit" : finalPrice === 0 ? "free" : "pay_at_studio";
       const apiBooking = await createBookingAsync({

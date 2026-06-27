@@ -1,9 +1,10 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { Router, type IRouter } from "express";
-import { and, eq, inArray, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
 import { currentOccurrenceDate } from "../lib/occurrence";
+import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
 import { createStudentNotification } from "../lib/notifications";
 import {
   ListSchedulesQueryParams,
@@ -101,7 +102,8 @@ async function validateActiveScheduleAllowed(
         select count(*)::int
         from ${bookingsTable}
         where ${bookingsTable.scheduleId} = ${scheduleId}
-          and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+          -- RESERVED seats only; pending requests do not reserve a seat.
+          and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
       )`,
     })
     .from(classesTable)
@@ -140,7 +142,8 @@ async function syncAutomaticScheduleStatuses(): Promise<void> {
             select count(*)::int
             from ${bookingsTable}
             where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-              and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+              -- RESERVED seats only; pending requests do not auto-complete a schedule.
+              and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
           )
       )
     `);
@@ -335,7 +338,8 @@ router.get("/schedules", async (req, res): Promise<void> => {
         .from(bookingsTable)
         .where(and(
           inArray(bookingsTable.scheduleId, ids),
-          notInArray(bookingsTable.bookingStatus, ["cancelled", "rejected"]),
+          // RESERVED seats only — pending requests do NOT count toward the bar.
+          inArray(bookingsTable.bookingStatus, [...RESERVED_SEAT_STATUSES]),
         ))
         .groupBy(bookingsTable.scheduleId, bookingsTable.occurrenceDate)
     : [];

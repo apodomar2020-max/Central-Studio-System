@@ -26,6 +26,7 @@ import {
   ListBookingsResponse,
 } from "@workspace/api-zod";
 import { currentOccurrenceDate } from "../lib/occurrence";
+import { DUPLICATE_BLOCKING_STATUSES } from "../lib/bookingStatus";
 
 const router: IRouter = Router();
 
@@ -87,7 +88,8 @@ async function refreshScheduleLifecycle(scheduleId: number): Promise<void> {
             select count(*)::int
             from ${bookingsTable}
             where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-              and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+              -- RESERVED seats only; pending requests do not reserve a seat.
+              and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
           )
       )
     `);
@@ -200,7 +202,9 @@ function normalizeBookingWrite(data: BookingWrite, existing?: typeof bookingsTab
     ? data.bookingStatus
     : legacyToBookingStatus(data.status)
       ?? (isOneOf(BOOKING_STATUSES, existing?.bookingStatus) ? existing.bookingStatus : null)
-      ?? (paymentMode === "pay_at_studio" ? "pending" : "confirmed");
+      // Policy: new student bookings default to PENDING (Admin confirms) — for both
+      // pay-on-arrival AND package credit. Only non-reserving payment modes left.
+      ?? (paymentMode === "pay_at_studio" || paymentMode === "package_credit" ? "pending" : "confirmed");
 
   const paymentStatus = isOneOf(PAYMENT_STATUSES, data.paymentStatus)
     ? data.paymentStatus
@@ -705,7 +709,9 @@ router.post(
           occurrenceDate != null
             ? eq(bookingsTable.occurrenceDate, occurrenceDate)
             : sql`${bookingsTable.occurrenceDate} is null`,
-          inArray(bookingsTable.bookingStatus, ["pending", "confirmed"]),
+          // pending OR confirmed blocks a duplicate request (pending does not
+          // reserve a seat, but still blocks a second request for the occurrence).
+          inArray(bookingsTable.bookingStatus, [...DUPLICATE_BLOCKING_STATUSES]),
         ))
         .limit(1);
       if (existingActive) {
@@ -755,7 +761,9 @@ router.post(
                 select count(*)::int
                 from ${bookingsTable}
                 where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-                  and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+                  -- RESERVED seats only (see lib/bookingStatus RESERVED_SEAT_STATUSES);
+                  -- pending requests do NOT reserve a seat.
+                  and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
               )
           )
         `);
@@ -832,7 +840,8 @@ router.patch(
               and ${classesTable.capacity} > (
                 select count(*)::int from ${bookingsTable}
                 where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-                  and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+                  -- RESERVED seats only; pending requests do not reserve a seat.
+                  and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
               )
           )
         `);
