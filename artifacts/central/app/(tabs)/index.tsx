@@ -454,18 +454,15 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
 function ClassCard({
   item,
   instructorMap,
-  packageCreditsRemaining = 0,
 }: {
   item: DanceClass;
   instructorMap?: Map<string, Instructor>;
-  packageCreditsRemaining?: number;
 }) {
   const { user } = useAppContext();
   const instructor = instructorMap?.get(item.instructorId);
   const available = item.capacity - item.bookedCount;
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
   const isBookable  = hasSchedule && item.status !== "full";
-  const canCredits  = item.packageEligible !== false && packageCreditsRemaining > 0;
 
   const today     = formatCairoDateKey();
   const tomorrow  = getCairoTomorrowDateKey();
@@ -560,46 +557,29 @@ function ClassCard({
           <Text style={s.instTagName} numberOfLines={1}>{instructor?.name ?? "—"}</Text>
         </View>
 
-        {/* Buttons */}
-        <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-          {canCredits && (
-            <TouchableOpacity
-              onPress={() => {
-                if (!isBookable) return;
-                if (!user) {
-                  showAuthRequiredPrompt();
-                  return;
-                }
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
-              }}
-              disabled={!isBookable}
-              style={[s.creditBtn, !isBookable && { opacity: 0.4 }]}
-            >
-              <Text style={s.creditBtnText}>{packageCreditsRemaining} cr</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            onPress={() => {
-              if (!isBookable) return;
-              if (!user) {
-                showAuthRequiredPrompt();
-                return;
-              }
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
-            }}
-            disabled={!isBookable}
-            style={[
-              s.bookBtn,
-              isBookable ? { backgroundColor: CYAN } : { backgroundColor: INK_700 },
-            ]}
-          >
-            <Text style={[s.bookBtnText, { color: isBookable ? INK_900 : INK_400 }]}>
-              {item.status === "full" ? "Waitlist" : isBookable ? "Book" : "N/A"}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {/* Book — the single booking entry point. Payment selection (pay now vs
+            package credits) happens INSIDE the booking flow, not here. */}
+        <TouchableOpacity
+          onPress={() => {
+            if (!isBookable) return;
+            if (!user) {
+              showAuthRequiredPrompt();
+              return;
+            }
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
+          }}
+          disabled={!isBookable}
+          style={[
+            s.bookBtn,
+            // Design: bookable = cyan-500; disabled/full = rgba(255,255,255,0.06).
+            isBookable ? { backgroundColor: CYAN } : { backgroundColor: "rgba(255,255,255,0.06)" },
+          ]}
+        >
+          <Text style={[s.bookBtnText, { color: isBookable ? INK_900 : INK_300 }]}>
+            {item.status === "full" ? "Waitlist" : isBookable ? "Book" : "N/A"}
+          </Text>
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -754,7 +734,7 @@ export default function StudioHomeScreen() {
       Animated.timing(enterY,       { toValue: 0, duration: 520, useNativeDriver: true }),
     ]).start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner, userPackages } = useAppContext();
+  const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner } = useAppContext();
   const insets = useSafeAreaInsets();
 
   const showNewStudentBanner = false;
@@ -763,11 +743,6 @@ export default function StudioHomeScreen() {
     if (!user?.fullName) return "";
     return user.fullName.split(/\s+/).filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
   }, [user?.fullName]);
-
-  const packageCreditsRemaining = React.useMemo(
-    () => userPackages.filter((p) => p.status === "active" && p.remainingCredits > 0).reduce((sum, p) => sum + p.remainingCredits, 0),
-    [userPackages],
-  );
 
   // ── Unread notifications count (bell badge) ──────────────────────────────
   const [apiUnread, setApiUnread] = useState(0);
@@ -989,7 +964,6 @@ export default function StudioHomeScreen() {
                   key={`${cls.id}-${cls.date}`}
                   item={cls}
                   instructorMap={instructorMap}
-                  packageCreditsRemaining={packageCreditsRemaining}
                 />
               ))}
             </View>
@@ -1158,30 +1132,32 @@ const s = StyleSheet.create({
   classMetaText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
   classMetaSep: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: INK_400 },
   classDiv: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginHorizontal: 0 },
-  // Footer: design has InstructorTag left + BookButton right
+  // Footer: design has InstructorTag left + BookButton right.
+  // Proportional (responsive): in the design the Book button is ~54% of the
+  // footer width and the instructor tag ~43% (gap ~10). We reproduce that ratio
+  // with flex instead of fixed px so it holds across phone sizes.
   classFooter: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 15, paddingVertical: 12,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 15, paddingVertical: 12, gap: 12,
   },
-  instTag: { flexDirection: "row", alignItems: "center", gap: 8 },
+  instTag: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
   instTagAvatar: {
-    width: 28, height: 28, borderRadius: 14,
+    width: 30, height: 30, borderRadius: 15,
     overflow: "hidden", alignItems: "center", justifyContent: "center",
     backgroundColor: CYAN + "22",
   },
   instTagImage: { width: "100%", height: "100%" },
   instTagInitials: { fontSize: 10, fontFamily: "Archivo_700Bold", color: CYAN },
-  instTagName: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_200, maxWidth: 110 },
-  // Package credits ghost pill (only shown when user has credits)
-  creditBtn: {
-    paddingHorizontal: 9, paddingVertical: 6, borderRadius: R_MD,
-    borderWidth: 1, borderColor: CYAN + "50",
-    backgroundColor: CYAN + "10",
+  instTagName: { flex: 1, fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_200 },
+  // Book button — design parity (home-feed.jsx BookButton, standard layout).
+  // Responsive: flex 1.3 vs the instructor tag's flex 1 reproduces the design's
+  // ~54/43 width split on any phone (instead of a hardcoded 174px). Fixed
+  // height/typography keep it visually identical across devices.
+  bookBtn: {
+    flex: 1.3, paddingVertical: 10, paddingHorizontal: 16, borderRadius: R_MD,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
   },
-  creditBtnText: { fontSize: 10, fontFamily: "Archivo_700Bold", color: CYAN },
-  // Book button — matches design BookButton: padding 10 20, borderRadius radius-md, font-heading 800 14
-  bookBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: R_MD },
-  bookBtnText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold" },
+  bookBtnText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold" },
 
   // ── Empty state — Fix Pack 2: redesigned to match design spec ────────────
   // Design: 84px circular icon container, no dashed card, title 26px, body 16px
