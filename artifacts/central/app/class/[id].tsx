@@ -4,9 +4,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useCallback, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   Image,
   Linking,
   Platform,
@@ -16,11 +17,22 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { isYouTubeUrl, useGetClass, useGetInstructor, useListSchedules } from "@workspace/api-client-react";
+import {
+  getListSchedulesQueryKey,
+  isYouTubeUrl,
+  useGetClass,
+  useGetInstructor,
+  useListSchedules,
+} from "@workspace/api-client-react";
 
-import { compareSchedulesByNextOccurrence, getScheduleLabel, isMobileVisibleSchedule, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
-import colors from "@/constants/colors";
-import AppButton from "@/components/AppButton";
+import XI from "@/components/XiIcon";
+import {
+  classCapacityDisplay,
+  compareSchedulesByNextOccurrence,
+  isMobileVisibleSchedule,
+  mapApiClassWithScheduleToMobile,
+  mapApiInstructorToMobile,
+} from "@/data/apiAdapters";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
@@ -28,6 +40,22 @@ import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import type { AgeGroup, DanceClass, Instructor } from "@/data/mockData";
+
+const INK_900 = "#0A0B0D";
+const INK_800 = "#15171B";
+const INK_700 = "#22262C";
+const INK_400 = "#6B747F";
+const INK_300 = "#8E97A2";
+const INK_200 = "#B6BDC6";
+const CYAN = "#00B6D7";
+const MAGENTA = "#FF2E7E";
+const AMBER = "#FFB02E";
+const SUCCESS = "#1FB871";
+const DANGER = "#FF3B47";
+const R_MD = 12;
+const R_LG = 16;
+const R_PILL = 999;
 
 function ClassVideoHero({ url }: { url: string }) {
   const player = useVideoPlayer(url, (instance) => {
@@ -47,19 +75,54 @@ function ClassVideoHero({ url }: { url: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg = {
-    available: { label: "Available", color: colors.success },
-    fewSeats: { label: "Few Seats Left", color: colors.warning },
-    full: { label: "Full", color: colors.error },
-    cancelled: { label: "Cancelled", color: colors.error },
-    waitingList: { label: "Waiting List", color: colors.info },
-  }[status] ?? { label: status, color: "#6B7280" };
+function statusLabel(st: DanceClass["status"]) {
+  return st === "available" ? "Available"
+       : st === "fewSeats" ? "Few Seats"
+       : st === "full" ? "Full"
+       : st === "cancelled" ? "Cancelled"
+       : "Waitlist";
+}
+
+function statusColor(st: DanceClass["status"]) {
+  return st === "available" ? SUCCESS
+       : st === "fewSeats" ? AMBER
+       : st === "full" ? DANGER
+       : st === "cancelled" ? DANGER
+       : INK_300;
+}
+
+function statusBg(st: DanceClass["status"]) {
+  return st === "available" ? "rgba(31,184,113,0.16)"
+       : st === "fewSeats" ? "rgba(255,176,46,0.16)"
+       : st === "full" ? "rgba(255,59,71,0.10)"
+       : st === "cancelled" ? "rgba(255,59,71,0.10)"
+       : "rgba(255,255,255,0.06)";
+}
+
+function deriveDifficulty(ageGroup: AgeGroup) {
+  return ageGroup === "Kids" ? "Beginner" : ageGroup === "Teens" ? "Intermediate" : "Advanced";
+}
+
+function diffColor(difficulty: string) {
+  return difficulty === "Beginner" ? CYAN : difficulty === "Intermediate" ? AMBER : MAGENTA;
+}
+
+function styleLabel(title?: string) {
+  return (title ?? "").replace(/\s*Instructor\s*$/i, "").trim() || "Instructor";
+}
+
+function XStars({ rating }: { rating: number }) {
   return (
-    <View style={[{ backgroundColor: cfg.color + "22", paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 }]}>
-      <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: cfg.color, textTransform: "uppercase", letterSpacing: 0.5 }}>
-        {cfg.label}
-      </Text>
+    <View style={styles.stars}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <XI
+          key={i}
+          name="star"
+          size={11}
+          color={i < Math.round(rating) ? "#FFB81C" : "rgba(255,255,255,0.18)"}
+        />
+      ))}
+      <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
     </View>
   );
 }
@@ -67,7 +130,8 @@ function StatusBadge({ status }: { status: string }) {
 export default function ClassDetailScreen() {
   const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
   const insets = useSafeAreaInsets();
-  const { user } = useAppContext();
+  const queryClient = useQueryClient();
+  const { user, bookings, cancelBooking, userPackages } = useAppContext();
   const [heroImageFailed, setHeroImageFailed] = useState(false);
   const [instructorImageFailed, setInstructorImageFailed] = useState(false);
 
@@ -98,31 +162,72 @@ export default function ClassDetailScreen() {
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {
     query: { queryKey: ["instructor", classQuery.data?.instructorId ?? 0], enabled: !!classQuery.data?.instructorId },
   });
-  const instructor = instructorQuery.data ? mapApiInstructorToMobile(instructorQuery.data) : null;
+  const instructor: Instructor | null = instructorQuery.data
+    ? mapApiInstructorToMobile(instructorQuery.data)
+    : null;
 
-  // ── Loading ──
+  const packageCreditsRemaining = useMemo(
+    () => userPackages
+      .filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0)
+      .reduce((sum, pkg) => sum + pkg.remainingCredits, 0),
+    [userPackages],
+  );
+
+  const activeBooking = useMemo(() => {
+    if (!cls) return undefined;
+    return bookings.find((booking) =>
+      booking.classId === cls.id &&
+      (cls.scheduleId ? booking.scheduleId === cls.scheduleId : true) &&
+      booking.occurrenceDate === cls.date &&
+      (booking.bookingStatus === "pending" || booking.bookingStatus === "confirmed"),
+    );
+  }, [bookings, cls]);
+
+  const handleCancel = useCallback(() => {
+    if (!activeBooking || !cls) return;
+    Alert.alert(
+      "Cancel booking?",
+      `Cancel your booking for ${cls.title}? This frees up your seat.`,
+      [
+        { text: "Keep booking", style: "cancel" },
+        {
+          text: "Cancel booking",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await cancelBooking(activeBooking.id);
+              await queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() });
+              await schedulesQuery.refetch();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (error) {
+              Alert.alert("Couldn't cancel", error instanceof Error ? error.message : "Please try again.");
+            }
+          },
+        },
+      ],
+    );
+  }, [activeBooking, cancelBooking, cls, queryClient, schedulesQuery]);
+
   if (classQuery.isLoading || schedulesQuery.isLoading) {
     return <DetailSkeleton />;
   }
 
-  // ── Offline ──
   if ((classQuery.isError && isOfflineError(classQuery.error)) || (schedulesQuery.isError && isOfflineError(schedulesQuery.error))) {
     return (
       <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+          <XI name="back" size={22} stroke={2.2} color="#FFFFFF" />
         </TouchableOpacity>
         <OfflineState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} />
       </View>
     );
   }
 
-  // ── Server error / not found ──
   if (classQuery.isError || schedulesQuery.isError || !cls) {
     return (
       <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+          <XI name="back" size={22} stroke={2.2} color="#FFFFFF" />
         </TouchableOpacity>
         {classQuery.isError || schedulesQuery.isError ? (
           <ErrorState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} message="Couldn't load class details." />
@@ -133,235 +238,313 @@ export default function ClassDetailScreen() {
     );
   }
 
-  const available = cls.capacity - cls.bookedCount;
+  const st = cls.status;
+  const stC = statusColor(st);
+  const stBg = statusBg(st);
+  const difficulty = deriveDifficulty(cls.ageGroup);
+  const cap = classCapacityDisplay(cls);
+  const availableSeats = cap.available;
+  const creditsLeft = cls.packageEligible ? packageCreditsRemaining : 0;
+  const rating = (cls as unknown as { rating?: number }).rating;
+  const reviewCount = (cls as unknown as { reviewCount?: number }).reviewCount;
   const hasSchedule = Boolean(cls.scheduleId && cls.dayOfWeek && cls.startTime);
   const youtubeVideo = isYouTubeUrl(cls.classVideoUrl);
   const playableVideoUrl = cls.classVideoUrl && !youtubeVideo ? cls.classVideoUrl : undefined;
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const bottomPad = (Platform.OS === "web" ? 24 : insets.bottom) + 18;
+
+  function openBooking(usePackage: boolean) {
+    const currentClass = cls;
+    if (!currentClass || st === "full" || st === "cancelled" || !hasSchedule) return;
+    if (!user) {
+      showAuthRequiredPrompt();
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push({
+      pathname: "/booking/flow",
+      params: {
+        classId: currentClass.id,
+        scheduleId: currentClass.scheduleId,
+        ...(usePackage ? { usePackage: "true" } : {}),
+      },
+    });
+  }
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={["#1A1200", "#0B0B0F"]}
-        style={[
-          styles.heroGradient,
-          { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 },
-        ]}
-      >
-        {playableVideoUrl ? (
-          <ClassVideoHero url={playableVideoUrl} />
-        ) : cls.photoUrl && !heroImageFailed ? (
-          <Image
-            source={{ uri: cls.photoUrl }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-            onError={() => setHeroImageFailed(true)}
-          />
-        ) : null}
-        {(playableVideoUrl || (cls.photoUrl && !heroImageFailed)) && (
-          <LinearGradient
-            colors={["rgba(0,0,0,0.28)", "rgba(11,11,15,0.82)"]}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-        )}
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-
-        <View style={styles.heroCategoryRow}>
-          <View style={[styles.categoryBadge, { backgroundColor: colors.studio.primary + "20" }]}>
-            <Text style={[styles.categoryBadgeText, { color: colors.studio.primary }]}>
-              {cls.categoryName}
-            </Text>
-          </View>
-          <StatusBadge status={cls.status} />
-        </View>
-
-        <Text style={styles.heroTitle}>{cls.title}</Text>
-        <Text style={styles.heroLevel}>{cls.level} · {cls.ageGroup}</Text>
-        {youtubeVideo && cls.classVideoUrl && (
-          <TouchableOpacity
-            style={styles.youtubeButton}
-            onPress={() => Linking.openURL(cls.classVideoUrl!)}
-          >
-            <Ionicons name="logo-youtube" size={17} color="#FFFFFF" />
-            <Text style={styles.youtubeButtonText}>Watch on YouTube</Text>
-          </TouchableOpacity>
-        )}
-      </LinearGradient>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: 100 }]}
-      >
-        <View style={styles.quickStats}>
-          {[
-            { icon: "calendar-outline", label: getScheduleLabel(cls) },
-            { icon: "timer-outline", label: cls.duration },
-            { icon: "location-outline", label: cls.room || cls.location },
-          ].map((s, i) => (
-            <View key={i} style={[styles.statItem, { backgroundColor: "#1E1E26" }]}>
-              <Ionicons name={s.icon as any} size={16} color={colors.studio.primary} />
-              <Text style={styles.statText}>{s.label}</Text>
-            </View>
-          ))}
-        </View>
-
-        {!!cls.description && (
-          <View style={[styles.descCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
-            <Text style={styles.descTitle}>About This Class</Text>
-            <Text style={styles.descText}>{cls.description}</Text>
-          </View>
-        )}
-
-        {instructor && (
-          <View style={[styles.instructorCard, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
-            <Text style={styles.descTitle}>Instructor</Text>
-            <View style={styles.instructorRow}>
-              <View style={[styles.instructorAvatar, { backgroundColor: instructor.photoColor + "30" }]}>
-                {instructor.photoUrl && !instructorImageFailed ? (
-                  <Image
-                    source={{ uri: instructor.photoUrl }}
-                    style={styles.instructorAvatarImage}
-                    onError={() => setInstructorImageFailed(true)}
-                  />
-                ) : (
-                  <Text style={[styles.instructorInitials, { color: instructor.photoColor }]}>
-                    {instructor.initials}
-                  </Text>
-                )}
-              </View>
-              <View style={styles.instructorInfo}>
-                <Text style={styles.instructorName}>{instructor.name}</Text>
-                <Text style={styles.instructorBio} numberOfLines={2}>{instructor.bio}</Text>
-                <View style={styles.instructorMeta}>
-                  <Text style={styles.metaChipText2}>{instructor.totalClasses} yrs experience</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-
-        <View style={[styles.detailsGrid, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
-          <Text style={styles.descTitle}>Class Details</Text>
-          {[
-            { label: "Location", value: cls.location },
-            { label: "Capacity", value: `${cls.capacity} students` },
-            { label: "Available Seats", value: available > 0 ? `${available} remaining` : "Full" },
-            { label: "Level", value: cls.level },
-            { label: "Age Group", value: cls.ageGroup },
-          ].map((row) => (
-            <View key={row.label} style={[styles.detailRow, { borderBottomColor: "#2A2A35" }]}>
-              <Text style={styles.detailLabel}>{row.label}</Text>
-              <Text style={styles.detailValue}>{row.value}</Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-
-      <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 12 }]}>
-        <View style={styles.footerPrice}>
-          <Text style={[styles.priceLabel, { color: "#9CA3AF" }]}>Class Price</Text>
-          <Text style={[styles.priceValue, { color: colors.studio.primary }]}>
-            {cls.price > 0 ? `EGP ${cls.price}` : "Price TBC"}
-          </Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          {cls.status === "full" || cls.status === "cancelled" ? (
-            <AppButton
-              title={cls.status === "cancelled" ? "Class Cancelled" : "Class Full"}
-              onPress={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)}
-              variant="ghost"
-              fullWidth
-            />
-          ) : !hasSchedule ? (
-            <AppButton
-              title="Schedule Not Set"
-              onPress={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)}
-              disabled
-              fullWidth
-              size="lg"
+      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+        <View style={styles.hero}>
+          {playableVideoUrl ? (
+            <ClassVideoHero url={playableVideoUrl} />
+          ) : cls.photoUrl && !heroImageFailed ? (
+            <Image
+              source={{ uri: cls.photoUrl }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              onError={() => setHeroImageFailed(true)}
             />
           ) : (
-            <AppButton
-              title="Book Now"
-              onPress={() => {
-                if (!user) {
-                  showAuthRequiredPrompt();
-                  return;
-                }
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                router.push({ pathname: "/booking/flow", params: { classId: cls.id, scheduleId: cls.scheduleId } });
-              }}
-              fullWidth
-              size="lg"
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: INK_700 }]} />
           )}
+          <LinearGradient
+            colors={["rgba(5,6,8,0.48)", "rgba(5,6,8,0.10)", "rgba(5,6,8,0.80)"]}
+            locations={[0, 0.38, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.backBtn, { top: topPad + 14 }]}
+            activeOpacity={0.85}
+          >
+            <XI name="back" size={22} stroke={2.2} color="#fff" />
+          </TouchableOpacity>
+          {youtubeVideo && cls.classVideoUrl && (
+            <TouchableOpacity
+              onPress={() => Linking.openURL(cls.classVideoUrl!)}
+              style={[styles.videoBtn, { top: topPad + 14 }]}
+              activeOpacity={0.86}
+            >
+              <Ionicons name="logo-youtube" size={16} color="#FFFFFF" />
+              <Text style={styles.videoBtnText}>Watch</Text>
+            </TouchableOpacity>
+          )}
+          <View style={styles.heroBottom}>
+            <View style={styles.heroChips}>
+              <View style={styles.chipDark}>
+                <Text style={styles.chipDarkText}>{cls.categoryName}</Text>
+              </View>
+              <View style={[styles.chipDark, { backgroundColor: stBg }]}>
+                <Text style={[styles.chipDarkText, { color: stC }]}>{statusLabel(st)}</Text>
+              </View>
+            </View>
+            <Text style={styles.title}>{cls.title.toUpperCase()}</Text>
+          </View>
         </View>
-      </View>
+
+        <View style={styles.body}>
+          <View style={styles.topRow}>
+            {rating ? <XStars rating={rating} /> : null}
+            <Text style={styles.reviews}>{reviewCount ? `(${reviewCount} reviews)` : ""}</Text>
+            <View style={styles.diffChip}>
+              <Text style={[styles.diffText, { color: diffColor(difficulty) }]}>{difficulty}</Text>
+            </View>
+          </View>
+
+          {!!cls.description && <Text style={styles.desc}>{cls.description}</Text>}
+
+          <View style={styles.divider} />
+
+          <View style={styles.section}>
+            <Text style={styles.eyebrow}>Schedule</Text>
+            <View style={styles.scheduleGrid}>
+              {[
+                { label: "Day", val: cls.dayOfWeek ?? "-" },
+                { label: "Time", val: cls.startTime ?? "-" },
+                { label: "Duration", val: cls.duration ?? "-" },
+              ].map((row) => (
+                <View key={row.label} style={styles.scheduleTile}>
+                  <Text style={styles.scheduleTileLabel}>{row.label}</Text>
+                  <Text style={styles.scheduleTileVal}>{row.val}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.eyebrow}>Instructor</Text>
+            <View style={styles.instructorCard}>
+              {instructor?.photoUrl && !instructorImageFailed ? (
+                <Image
+                  source={{ uri: instructor.photoUrl }}
+                  style={styles.instructorAvatar}
+                  resizeMode="cover"
+                  onError={() => setInstructorImageFailed(true)}
+                />
+              ) : (
+                <View style={[styles.instructorAvatar, styles.instructorFallback]}>
+                  <Text style={styles.instructorInitial}>{(instructor?.name ?? "?")[0]}</Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.instructorName}>{instructor?.name ?? "Instructor"}</Text>
+                <Text style={styles.instructorSpec}>{styleLabel(instructor?.title)}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.eyebrow}>Capacity</Text>
+            <View style={styles.capCard}>
+              <View style={styles.capRow}>
+                <Text style={styles.capText}>
+                  <Text style={styles.capStrong}>{cls.capacity}</Text>{" total"}
+                </Text>
+                <Text style={styles.capText}>
+                  <Text style={[styles.capStrong, { color: SUCCESS }]}>{availableSeats}</Text>{" available"}
+                </Text>
+                <Text style={styles.capText}>
+                  <Text style={[styles.capStrong, { color: INK_200 }]}>{cap.booked}</Text>{" booked"}
+                </Text>
+              </View>
+              <View style={styles.capBarBg}>
+                <View style={[styles.capBarFill, { width: `${cap.pct}%` as any, backgroundColor: cap.pct > 80 ? DANGER : CYAN }]} />
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={{ height: 160 }} />
+      </ScrollView>
+
+      <LinearGradient
+        colors={["rgba(6,12,16,0)", INK_900]}
+        locations={[0, 0.28]}
+        style={[styles.footer, { paddingBottom: bottomPad }]}
+      >
+        <View style={styles.footerTop}>
+          <View>
+            <Text style={styles.footerPrice}>EGP {cls.price}</Text>
+            {creditsLeft > 0 && (
+              <Text style={styles.footerCredits}>or {creditsLeft} credits from your package</Text>
+            )}
+          </View>
+          <View style={[styles.footerStatusBadge, { backgroundColor: stBg }]}>
+            <Text style={[styles.footerStatusText, { color: stC }]}>{statusLabel(st)}</Text>
+          </View>
+        </View>
+
+        {activeBooking ? (
+          <TouchableOpacity onPress={handleCancel} style={styles.btnCancel} activeOpacity={0.85}>
+            <Text style={styles.btnCancelText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.actionRow}>
+            {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
+              <TouchableOpacity
+                onPress={() => openBooking(true)}
+                style={styles.btnPackage}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnPackageText}>Use Package</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => openBooking(false)}
+              style={[
+                styles.btnBook,
+                (st === "full" || st === "cancelled" || !hasSchedule) && styles.btnDisabled,
+              ]}
+              activeOpacity={0.85}
+            >
+              <Text style={[
+                styles.btnBookText,
+                (st === "full" || st === "cancelled" || !hasSchedule) && styles.btnDisabledText,
+              ]}>
+                {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : hasSchedule ? "Book Now" : "Schedule Not Set"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0B0B0F" },
-  centered: { justifyContent: "center", alignItems: "center" },
+  container: { flex: 1, backgroundColor: INK_900 },
   backBtnAbsolute: {
     position: "absolute", top: 60, left: 20, zIndex: 10,
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center",
+    backgroundColor: INK_800, alignItems: "center", justifyContent: "center",
   },
-  heroGradient: { paddingHorizontal: 20, paddingBottom: 20, gap: 10, minHeight: 270, overflow: "hidden", justifyContent: "flex-end" },
+  hero: { height: 224, position: "relative" },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E1E26", alignItems: "center", justifyContent: "center", marginBottom: 12,
+    position: "absolute", left: 18, width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.52)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
+    alignItems: "center", justifyContent: "center", zIndex: 10,
   },
-  heroCategoryRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  categoryBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  categoryBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.8 },
-  heroTitle: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF", lineHeight: 34 },
-  heroLevel: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  youtubeButton: {
-    alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 7,
-    backgroundColor: "rgba(255,0,0,0.82)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+  videoBtn: {
+    position: "absolute", right: 18, height: 40, borderRadius: 20,
+    paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(255,0,0,0.82)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", zIndex: 10,
   },
-  youtubeButtonText: { color: "#FFFFFF", fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  scroll: { paddingHorizontal: 20, gap: 14 },
-  quickStats: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
-  statItem: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
-  statText: { fontSize: 12, fontFamily: "Inter_500Medium", color: "#FFFFFF" },
-  descCard: { padding: 16, borderRadius: 14, borderWidth: 1, gap: 8 },
-  descTitle: {
-    fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#9CA3AF",
-    textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4,
+  videoBtnText: { color: "#FFFFFF", fontSize: 12, fontFamily: "Archivo_700Bold" },
+  heroBottom: { position: "absolute", bottom: 14, left: 18, right: 18 },
+  heroChips: { flexDirection: "row", gap: 7, marginBottom: 8 },
+  chipDark: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: R_PILL, backgroundColor: "rgba(0,0,0,0.52)" },
+  chipDarkText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff", textTransform: "uppercase", letterSpacing: 0.8 },
+  title: { fontSize: 42, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 38, textTransform: "uppercase" },
+  body: { padding: 20, paddingBottom: 0 },
+  topRow: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16,
+    paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  descText: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#FFFFFF", lineHeight: 20 },
-  instructorCard: { padding: 16, borderRadius: 14, borderWidth: 1, gap: 12 },
-  instructorRow: { flexDirection: "row", gap: 14 },
-  instructorAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  instructorAvatarImage: { width: "100%", height: "100%" },
-  instructorInitials: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  instructorInfo: { flex: 1, gap: 4 },
-  instructorName: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  instructorBio: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF", lineHeight: 18 },
-  instructorMeta: { flexDirection: "row", alignItems: "center", gap: 6 },
-  metaChip: { flexDirection: "row", alignItems: "center", gap: 3 },
-  metaChipText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  metaChipSep: { color: "#6B7280", fontSize: 12 },
-  metaChipText2: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  detailsGrid: { padding: 16, borderRadius: 14, borderWidth: 1, gap: 8 },
-  detailRow: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingVertical: 10, borderBottomWidth: 1,
+  stars: { flexDirection: "row", alignItems: "center", gap: 2 },
+  ratingText: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_300, marginLeft: 3 },
+  reviews: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400 },
+  diffChip: { marginLeft: "auto", paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL, backgroundColor: "rgba(255,255,255,0.06)" },
+  diffText: { fontSize: 12, fontFamily: "Archivo_700Bold" },
+  desc: { fontSize: 15, fontFamily: "Archivo_400Regular", color: INK_200, lineHeight: 24, marginBottom: 20 },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginBottom: 20 },
+  section: { marginBottom: 20 },
+  eyebrow: {
+    fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
+    textTransform: "uppercase", color: CYAN, marginBottom: 12,
   },
-  detailLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  detailValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF" },
-  footer: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    paddingHorizontal: 20, paddingTop: 12,
-    borderTopWidth: 1, borderTopColor: "#2A2A35", backgroundColor: "#0B0B0F",
+  scheduleGrid: { flexDirection: "row", gap: 9 },
+  scheduleTile: {
+    flex: 1, paddingVertical: 12, paddingHorizontal: 10,
+    backgroundColor: INK_800, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)",
+    borderRadius: R_MD, alignItems: "center",
   },
-  footerPrice: { gap: 2 },
-  priceLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  priceValue: { fontSize: 20, fontFamily: "Inter_700Bold" },
+  scheduleTileLabel: {
+    fontSize: 11, fontFamily: "Archivo_600SemiBold", color: INK_400,
+    textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 5,
+  },
+  scheduleTileVal: { fontSize: 13, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 16, textAlign: "center" },
+  instructorCard: {
+    flexDirection: "row", alignItems: "center", gap: 14, padding: 14,
+    backgroundColor: INK_800, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: R_LG,
+  },
+  instructorAvatar: {
+    width: 54, height: 54, borderRadius: 27, backgroundColor: INK_700,
+    flexShrink: 0, borderWidth: 2, borderColor: CYAN,
+  },
+  instructorFallback: { alignItems: "center", justifyContent: "center", backgroundColor: CYAN + "22" },
+  instructorInitial: { fontSize: 15, fontFamily: "Archivo_700Bold", color: CYAN },
+  instructorName: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
+  instructorSpec: { fontSize: 13, fontFamily: "Archivo_400Regular", color: CYAN, marginTop: 2 },
+  capCard: {
+    padding: 14, backgroundColor: INK_800,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: R_LG,
+  },
+  capRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  capText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
+  capStrong: { color: "#fff", fontFamily: "Archivo_800ExtraBold" },
+  capBarBg: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
+  capBarFill: { height: "100%", borderRadius: 4 },
+  footer: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingTop: 14 },
+  footerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  footerPrice: { fontSize: 28, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 25 },
+  footerCredits: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: CYAN, marginTop: 4 },
+  footerStatusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: R_PILL },
+  footerStatusText: { fontSize: 12, fontFamily: "Archivo_700Bold" },
+  actionRow: { flexDirection: "row", gap: 10 },
+  btnPackage: {
+    flex: 1, paddingVertical: 14, borderRadius: R_MD,
+    borderWidth: 1.5, borderColor: "rgba(0,182,215,0.46)",
+    backgroundColor: "rgba(0,182,215,0.10)", alignItems: "center",
+  },
+  btnPackageText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: CYAN },
+  btnBook: { flex: 1, paddingVertical: 14, borderRadius: R_MD, backgroundColor: CYAN, alignItems: "center" },
+  btnBookText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
+  btnDisabled: { backgroundColor: "rgba(255,255,255,0.06)" },
+  btnDisabledText: { color: INK_400 },
+  btnCancel: {
+    paddingVertical: 14, borderRadius: R_MD,
+    borderWidth: 1.5, borderColor: "rgba(255,59,71,0.5)",
+    backgroundColor: "rgba(255,59,71,0.10)", alignItems: "center",
+  },
+  btnCancelText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: DANGER },
 });

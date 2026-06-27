@@ -11,7 +11,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Animated,
-  Dimensions,
   FlatList,
   Image,
   ImageBackground,
@@ -41,6 +40,7 @@ import {
   type Instructor,
 } from "@/data/mockData";
 import {
+  classCapacityDisplay,
   compareSchedulesByNextOccurrence,
   isMobileVisibleSchedule,
   mapApiClassWithScheduleToMobile,
@@ -516,14 +516,11 @@ function ExploreClassCard({
     );
   }, [activeBooking, cancelBooking, item.title, queryClient]);
 
-  // Progress bar reflects REAL active bookings for the CURRENT occurrence (backend
-  // bookedCount excludes cancelled/rejected). Cancelling refreshes the schedules
-  // query so this updates. When Admin marks the schedule full ("completed" →
-  // mapped to status "full"), the bar shows full WITHOUT faking the real count.
+  // Display-only capacity (full/completed reads as fully booked; real backend
+  // bookedCount is never mutated). Reflects the CURRENT occurrence.
   // TODO: Replace schedule-level bookedCount with occurrence-level bookedCount when recurring occurrence model is introduced.
-  const pct = item.status === "full"
-    ? 100
-    : item.capacity > 0 ? Math.round((item.bookedCount / item.capacity) * 100) : 0;
+  const cap = classCapacityDisplay(item);
+  const pct = cap.pct;
   const barColor = pct >= 85 ? DANGER : pct >= 60 ? AMBER : CYAN;
   const st = item.status;
   const stC = statusColor(st);
@@ -531,7 +528,7 @@ function ExploreClassCard({
   const difficulty = deriveDifficulty(item.ageGroup);
   const isTrending = pct > 50;
   const creditsLeft = item.packageEligible ? packageCreditsRemaining : 0;
-  const availableSeats = item.capacity - item.bookedCount;
+  const availableSeats = cap.available;
   const rating = (item as any).rating as number | undefined;
 
   return (
@@ -619,7 +616,7 @@ function ExploreClassCard({
           <View style={s.capacityRow}>
             <Text style={s.capacityText}>
               <Text style={{ color: SUCCESS, fontFamily: "Archivo_700Bold" }}>{availableSeats}</Text>
-              {" available · "}{item.bookedCount}/{item.capacity} booked
+              {" available · "}{cap.booked}/{item.capacity} booked
             </Text>
             <XI name="users" size={14} stroke={2} color={INK_400} />
           </View>
@@ -767,199 +764,6 @@ function CategorySection({
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   CLASS DETAIL OVERLAY
-═══════════════════════════════════════════════════════════════════ */
-function ClassDetailOverlay({
-  item, instructor, packageCreditsRemaining, onClose, onBook, topPad,
-}: {
-  item: DanceClass;
-  instructor?: Instructor;
-  packageCreditsRemaining: number;
-  onClose: () => void;
-  onBook: (c: DanceClass, method: "package" | "cash") => void;
-  topPad: number;
-}) {
-  const slideY = useRef(new Animated.Value(Dimensions.get("window").height)).current;
-
-  useEffect(() => {
-    Animated.timing(slideY, { toValue: 0, duration: 360, useNativeDriver: true }).start();
-  }, []);
-
-  function close() {
-    Animated.timing(slideY, { toValue: Dimensions.get("window").height, duration: 280, useNativeDriver: true }).start(() => onClose());
-  }
-
-  const st = item.status;
-  const stC = statusColor(st);
-  const stBg = statusBg(st);
-  const difficulty = deriveDifficulty(item.ageGroup);
-  const availableSeats = item.capacity - item.bookedCount;
-  const pct = item.capacity > 0 ? Math.round((item.bookedCount / item.capacity) * 100) : 0;
-  const creditsLeft = item.packageEligible ? packageCreditsRemaining : 0;
-  const rating = (item as any).rating as number | undefined;
-
-  return (
-    <Animated.View
-      style={[
-        StyleSheet.absoluteFill,
-        { transform: [{ translateY: slideY }], zIndex: 200, backgroundColor: INK_900 },
-      ]}
-    >
-      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-        {/* Hero */}
-        <View style={s.detailHero}>
-          {item.photoUrl ? (
-            <Image source={{ uri: item.photoUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: INK_700 }]} />
-          )}
-          <LinearGradient
-            colors={["rgba(5,6,8,0.48)", "rgba(5,6,8,0.10)", "rgba(5,6,8,0.80)"]}
-            locations={[0, 0.38, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-          <TouchableOpacity
-            onPress={close}
-            style={[s.detailBackBtn, { top: topPad + 14 }]}
-            activeOpacity={0.85}
-          >
-            <XI name="back" size={22} stroke={2.2} color="#fff" />
-          </TouchableOpacity>
-          <View style={s.detailHeroBottom}>
-            <View style={{ flexDirection: "row", gap: 7, marginBottom: 8 }}>
-              <View style={s.chipDark}>
-                <Text style={s.chipDarkText}>{item.categoryName}</Text>
-              </View>
-              <View style={[s.chipDark, { backgroundColor: stBg }]}>
-                <Text style={[s.chipDarkText, { color: stC }]}>{statusLabel(st)}</Text>
-              </View>
-            </View>
-            <Text style={s.detailTitle}>{item.title.toUpperCase()}</Text>
-          </View>
-        </View>
-
-        {/* Body */}
-        <View style={s.detailBody}>
-          <View style={s.detailTopRow}>
-            {rating ? <XStars rating={rating} /> : null}
-            <Text style={s.detailReviews}>{(item as any).reviewCount ? `(${(item as any).reviewCount} reviews)` : ""}</Text>
-            <View style={[s.detailDiffChip, { marginLeft: "auto" as any }]}>
-              <Text style={[s.detailDiffText, { color: diffColor(difficulty) }]}>{difficulty}</Text>
-            </View>
-          </View>
-          {!!item.description && (
-            <Text style={s.detailDesc}>{item.description}</Text>
-          )}
-
-          {/* TODO: benefits field not yet returned by API — wire up when backend adds it */}
-
-          <View style={s.divider} />
-
-          {/* Schedule tiles */}
-          <View style={{ marginBottom: 20 }}>
-            <Text style={s.detailEyebrow}>Schedule</Text>
-            <View style={{ flexDirection: "row", gap: 9 }}>
-              {[
-                { label: "Day",      val: item.dayOfWeek ?? "—" },
-                { label: "Time",     val: item.startTime ?? "—" },
-                { label: "Duration", val: item.duration ?? "—" },
-              ].map((r) => (
-                <View key={r.label} style={s.scheduleTile}>
-                  <Text style={s.scheduleTileLabel}>{r.label}</Text>
-                  <Text style={s.scheduleTileVal}>{r.val}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Instructor */}
-          <View style={{ marginBottom: 20 }}>
-            <Text style={s.detailEyebrow}>Instructor</Text>
-            <View style={s.detailInstCard}>
-              {instructor?.photoUrl ? (
-                <Image source={{ uri: instructor.photoUrl }} style={s.detailInstAvatar} resizeMode="cover" />
-              ) : (
-                <View style={[s.detailInstAvatar, { backgroundColor: CYAN + "22", alignItems: "center", justifyContent: "center" }]}>
-                  <Text style={{ fontSize: 15, fontFamily: "Archivo_700Bold", color: CYAN }}>
-                    {(instructor?.name ?? "?")[0]}
-                  </Text>
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={s.detailInstName}>{instructor?.name ?? "Instructor"}</Text>
-                <Text style={s.detailInstSpec}>{styleLabel(instructor?.title)}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Capacity */}
-          <View style={{ marginBottom: 20 }}>
-            <Text style={s.detailEyebrow}>Capacity</Text>
-            <View style={s.detailCapCard}>
-              <View style={s.detailCapRow}>
-                <Text style={s.detailCapText}>
-                  <Text style={{ color: "#fff", fontFamily: "Archivo_800ExtraBold" }}>{item.capacity}</Text>{" total"}
-                </Text>
-                <Text style={s.detailCapText}>
-                  <Text style={{ color: SUCCESS, fontFamily: "Archivo_800ExtraBold" }}>{availableSeats}</Text>{" available"}
-                </Text>
-                <Text style={s.detailCapText}>
-                  <Text style={{ color: INK_200, fontFamily: "Archivo_800ExtraBold" }}>{item.bookedCount}</Text>{" booked"}
-                </Text>
-              </View>
-              <View style={s.detailCapBarBg}>
-                <View style={[s.detailCapBarFill, { width: `${pct}%` as any, backgroundColor: pct > 80 ? DANGER : CYAN }]} />
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={{ height: 150 }} />
-      </ScrollView>
-
-      {/* Sticky footer */}
-      <LinearGradient
-        colors={["rgba(6,12,16,0)", INK_900]}
-        locations={[0, 0.28]}
-        style={s.detailFooter}
-      >
-        <View style={s.detailFooterTop}>
-          <View>
-            <Text style={s.detailFooterPrice}>EGP {item.price}</Text>
-            {creditsLeft > 0 && (
-              <Text style={s.detailFooterCredits}>or {creditsLeft} credits from your package</Text>
-            )}
-          </View>
-          <View style={[s.detailFooterStatusBadge, { backgroundColor: stBg }]}>
-            <Text style={[s.detailFooterStatusText, { color: stC }]}>{statusLabel(st)}</Text>
-          </View>
-        </View>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
-            <TouchableOpacity
-              onPress={() => { close(); onBook(item, "package"); }}
-              style={s.detailBtnPackage}
-              activeOpacity={0.85}
-            >
-              <Text style={s.detailBtnPackageText}>Use Package</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            onPress={() => { if (st !== "full" && st !== "cancelled") { onBook(item, "cash"); close(); } }}
-            style={[s.detailBtnBook, (st === "full" || st === "cancelled") && { backgroundColor: "rgba(255,255,255,0.06)" }]}
-            activeOpacity={0.85}
-          >
-            <Text style={[s.detailBtnBookText, (st === "full" || st === "cancelled") && { color: INK_400 }]}>
-              {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : "Book Now"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
-    </Animated.View>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════
    MAIN SCREEN
 ═══════════════════════════════════════════════════════════════════ */
 export default function ClassesScreen() {
@@ -971,7 +775,6 @@ export default function ClassesScreen() {
   const [ageFilter, setAge]     = useState("all");
   const [levelFilter, setLevel] = useState("all");
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
-  const [selectedClass, setSelectedClass] = useState<DanceClass | null>(null);
   const [balletStatus, setBalletStatus]   = useState<string | null>(null);
 
   useFocusEffect(
@@ -1108,6 +911,11 @@ export default function ClassesScreen() {
   const showFeatures = !search && ageFilter === "all" && levelFilter === "all";
   const visibleCats  = nonBalletCats.filter((cat) => filtered.some((c) => cat.matchesClass(c)));
 
+  function handleSelectClass(c: DanceClass) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({ pathname: "/class/[id]", params: { id: c.id, scheduleId: c.scheduleId } });
+  }
+
   function handleBook(c: DanceClass, method: "package" | "cash") {
     if (c.status === "full" || c.status === "cancelled") return;
     if (!user) {
@@ -1115,7 +923,14 @@ export default function ClassesScreen() {
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({ pathname: "/booking/flow", params: { classId: c.id, method } } as any);
+    router.push({
+      pathname: "/booking/flow",
+      params: {
+        classId: c.id,
+        scheduleId: c.scheduleId,
+        ...(method === "package" ? { usePackage: "true" } : {}),
+      },
+    } as any);
   }
 
   return (
@@ -1172,7 +987,7 @@ export default function ClassesScreen() {
           )}
 
           {showFeatures && filtered.length > 0 && (
-            <FeaturedCarousel classes={filtered} onSelect={setSelectedClass} />
+            <FeaturedCarousel classes={filtered} onSelect={handleSelectClass} />
           )}
 
           {/* By Style categories */}
@@ -1213,7 +1028,7 @@ export default function ClassesScreen() {
                     }}
                     instructorById={instructorById}
                     packageCreditsRemaining={packageCreditsRemaining}
-                    onSelect={setSelectedClass}
+                    onSelect={handleSelectClass}
                     onBook={handleBook}
                   />
                 ))}
@@ -1223,16 +1038,6 @@ export default function ClassesScreen() {
         </ScrollView>
       )}
 
-      {selectedClass && (
-        <ClassDetailOverlay
-          item={selectedClass}
-          instructor={instructorById.get(selectedClass.instructorId)}
-          packageCreditsRemaining={packageCreditsRemaining}
-          onClose={() => setSelectedClass(null)}
-          onBook={handleBook}
-          topPad={topPad}
-        />
-      )}
     </View>
   );
 }
@@ -1489,28 +1294,6 @@ const s = StyleSheet.create({
   },
   clearBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
 
-  /* detail overlay */
-  detailHero: { height: 224, position: "relative" },
-  detailBackBtn: {
-    position: "absolute", left: 18, width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.52)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
-    alignItems: "center", justifyContent: "center", zIndex: 10,
-  },
-  detailHeroBottom: { position: "absolute", bottom: 14, left: 18, right: 18 },
-  detailTitle: { fontSize: 42, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 38, textTransform: "uppercase" },
-  detailBody: { padding: 20, paddingBottom: 0 },
-  detailTopRow: {
-    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16,
-    paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
-  },
-  detailReviews: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400 },
-  detailDiffChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL, backgroundColor: "rgba(255,255,255,0.06)" },
-  detailDiffText: { fontSize: 12, fontFamily: "Archivo_700Bold" },
-  detailDesc: { fontSize: 15, fontFamily: "Archivo_400Regular", color: INK_200, lineHeight: 24, marginBottom: 20 },
-  detailEyebrow: {
-    fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
-    textTransform: "uppercase", color: CYAN, marginBottom: 12,
-  },
   scheduleTile: {
     flex: 1, paddingVertical: 12, paddingHorizontal: 10,
     backgroundColor: INK_800, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)",
@@ -1521,36 +1304,4 @@ const s = StyleSheet.create({
     textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 5,
   },
   scheduleTileVal: { fontSize: 13, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 16, textAlign: "center" },
-  detailInstCard: {
-    flexDirection: "row", alignItems: "center", gap: 14, padding: 14,
-    backgroundColor: INK_800, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: R_LG,
-  },
-  detailInstAvatar: {
-    width: 54, height: 54, borderRadius: 27, backgroundColor: INK_700,
-    flexShrink: 0, borderWidth: 2, borderColor: CYAN,
-  },
-  detailInstName: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
-  detailInstSpec: { fontSize: 13, fontFamily: "Archivo_400Regular", color: CYAN, marginTop: 2 },
-  detailCapCard: {
-    padding: 14, backgroundColor: INK_800,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: R_LG,
-  },
-  detailCapRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  detailCapText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
-  detailCapBarBg: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
-  detailCapBarFill: { height: "100%", borderRadius: 4 },
-  detailFooter: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 30 },
-  detailFooterTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  detailFooterPrice: { fontSize: 28, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 25 },
-  detailFooterCredits: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: CYAN, marginTop: 4 },
-  detailFooterStatusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: R_PILL },
-  detailFooterStatusText: { fontSize: 12, fontFamily: "Archivo_700Bold" },
-  detailBtnPackage: {
-    flex: 1, paddingVertical: 14, borderRadius: R_MD,
-    borderWidth: 1.5, borderColor: "rgba(0,182,215,0.46)",
-    backgroundColor: "rgba(0,182,215,0.10)", alignItems: "center",
-  },
-  detailBtnPackageText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: CYAN },
-  detailBtnBook: { flex: 1, paddingVertical: 14, borderRadius: R_MD, backgroundColor: CYAN, alignItems: "center" },
-  detailBtnBookText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
 });

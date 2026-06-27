@@ -35,6 +35,7 @@ import { Platform, StyleSheet, View } from "react-native";
 
 import colors from "@/constants/colors";
 import CsIcon from "@/components/CsIcon";
+import { useTabVisibility } from "@/contexts/TabVisibilityContext";
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const ACTIVE_TINT   = "#00B6D7"; // --cs-cyan-500
@@ -43,7 +44,9 @@ const TAB_BG_WEB    = "rgba(10,11,13,0.80)"; // glassmorphism bg for web
 const TAB_HEIGHT    = 60; // unified height (design: 60px)
 
 // ── Native Liquid Glass layout (iOS 26+ only) ────────────────────────────────
-function NativeTabLayout() {
+function NativeTabLayout({ hidden }: { hidden: boolean }) {
+  if (hidden) return null;
+
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
@@ -68,7 +71,7 @@ function NativeTabLayout() {
 }
 
 // ── Classic layout (Android, Web, iOS < 26) ──────────────────────────────────
-function ClassicTabLayout() {
+function ClassicTabLayout({ hidden }: { hidden: boolean }) {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
@@ -79,6 +82,7 @@ function ClassicTabLayout() {
         tabBarInactiveTintColor: INACTIVE_TINT,
         headerShown: false,
         tabBarStyle: {
+          display: hidden ? "none" : "flex",
           position: "absolute",
           // iOS uses BlurView — background must be transparent
           backgroundColor: isIOS ? "transparent" : "transparent",
@@ -164,6 +168,8 @@ function ClassicTabLayout() {
 }
 
 export default function StudioTabLayout() {
-  if (isLiquidGlassAvailable()) return <NativeTabLayout />;
-  return <ClassicTabLayout />;
+  const { hideBottomTabs } = useTabVisibility();
+
+  if (isLiquidGlassAvailable()) return <NativeTabLayout hidden={hideBottomTabs} />;
+  return <ClassicTabLayout hidden={hideBottomTabs} />;
 }

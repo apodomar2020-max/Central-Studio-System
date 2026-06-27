@@ -18,7 +18,7 @@ import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/spac
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as WebBrowser from "expo-web-browser";
 import React, { useEffect } from "react";
@@ -29,6 +29,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppContextProvider } from "@/contexts/AppContext";
+import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -60,58 +61,63 @@ setAuthTokenGetter(async () => {
 const queryClient = new QueryClient();
 
 function RootLayoutNav() {
+  const pathname = usePathname();
+  const hideBottomTabs = pathname.startsWith("/class/");
+
   return (
-    <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="onboarding/welcome" options={{ animation: "fade" }} />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen
-        name="auth/login"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="auth/register"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="auth/complete-profile"
-        options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
-      />
-      <Stack.Screen
-        name="auth/forgot-password"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="auth/reset-password"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="auth/verify-phone"
-        options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
-      />
-      <Stack.Screen name="onboarding/styles" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="onboarding/success" options={{ animation: "fade", gestureEnabled: false }} />
-      <Stack.Screen name="class/[id]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="instructor/[id]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="booking/flow" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen
-        name="booking/confirmation"
-        options={{ animation: "fade", gestureEnabled: false }}
-      />
-      <Stack.Screen
-        name="ballet/assessment"
-        options={{ animation: "slide_from_right" }}
-      />
-      <Stack.Screen name="referral" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="notifications" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="edit-profile" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="change-password" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="verify-email" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="privacy-policy" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="help-support" options={{ animation: "slide_from_right" }} />
-      {/* DEV-ONLY: design lab — not linked from any production navigation */}
-      <Stack.Screen name="dev/design-lab" options={{ animation: "slide_from_right" }} />
-    </Stack>
+    <TabVisibilityProvider hideBottomTabs={hideBottomTabs}>
+      <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="onboarding/welcome" options={{ animation: "fade" }} />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="auth/login"
+          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+        />
+        <Stack.Screen
+          name="auth/register"
+          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+        />
+        <Stack.Screen
+          name="auth/complete-profile"
+          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="auth/forgot-password"
+          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+        />
+        <Stack.Screen
+          name="auth/reset-password"
+          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+        />
+        <Stack.Screen
+          name="auth/verify-phone"
+          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
+        />
+        <Stack.Screen name="onboarding/styles" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="onboarding/success" options={{ animation: "fade", gestureEnabled: false }} />
+        <Stack.Screen name="class/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="instructor/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="booking/flow" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen
+          name="booking/confirmation"
+          options={{ animation: "fade", gestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="ballet/assessment"
+          options={{ animation: "slide_from_right" }}
+        />
+        <Stack.Screen name="referral" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="notifications" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="edit-profile" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="change-password" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="verify-email" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="privacy-policy" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="help-support" options={{ animation: "slide_from_right" }} />
+        {/* DEV-ONLY: design lab — not linked from any production navigation */}
+        <Stack.Screen name="dev/design-lab" options={{ animation: "slide_from_right" }} />
+      </Stack>
+    </TabVisibilityProvider>
   );
 }
 
