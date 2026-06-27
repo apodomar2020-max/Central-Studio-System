@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,10 +13,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 import {
   useGetInstructor,
   useListClasses,
   useListSchedules,
+  customFetch,
 } from "@workspace/api-client-react";
 
 import { mapApiInstructorToMobile } from "@/data/apiAdapters";
@@ -78,6 +79,16 @@ export default function InstructorDetailScreen() {
 
   const { data: allClasses } = useListClasses();
   const { data: allSchedules } = useListSchedules();
+
+  // Unique-student count comes from the backend (counts distinct students, not
+  // attendance records). Never computed on the client.
+  const studentCountQuery = useQuery({
+    queryKey: ["instructor-student-count", numericId],
+    queryFn: () => customFetch<{ studentCount: number }>(`/api/instructors/${numericId}/student-count`),
+    enabled: !!id && !isNaN(numericId),
+    staleTime: 5 * 60 * 1000,
+  });
+  const studentCount = studentCountQuery.data?.studentCount;
 
   const instructor = query.data ? mapApiInstructorToMobile(query.data) : null;
   const apiData: any = query.data;
@@ -140,6 +151,8 @@ export default function InstructorDetailScreen() {
 
   const accentColor = instructor.photoColor || "#00B6D7";
   const achievements: string[] = apiData?.achievements ?? [];
+  const teachingPhilosophy: string | null = apiData?.teachingPhilosophy ?? null;
+  const professionalExperience: string[] = apiData?.professionalExperience ?? [];
   const teachingLevel: string | null = apiData?.teachingLevel ?? null;
   const instagramUrl: string | null = apiData?.instagramUrl ?? null;
   const tiktokUrl: string | null = apiData?.tiktokUrl ?? null;
@@ -158,7 +171,7 @@ export default function InstructorDetailScreen() {
     <View style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 90 + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 40 : 24 + insets.bottom }}
         style={{ flex: 1 }}
       >
         {/* HERO */}
@@ -209,7 +222,7 @@ export default function InstructorDetailScreen() {
           {[
             { key: 'exp', value: apiData?.experienceYears || "—", label: 'Experience' },
             { key: 'classes', value: instructorClasses.length || "—", label: 'Classes' },
-            { key: 'students', value: "—", label: 'Students' },
+            { key: 'students', value: studentCount ?? "—", label: 'Students' },
             { key: 'styles', value: apiData?.specialties?.length || "—", label: 'Styles' },
           ].map((s, idx, arr) => (
             <View key={s.key} style={[styles.statBox, idx < arr.length - 1 && styles.statBoxBorder]}>
@@ -224,11 +237,13 @@ export default function InstructorDetailScreen() {
           <ISection title="About">
             <Text style={styles.bioText}>{instructor.bio || "No biography provided."}</Text>
 
-            {/* Teaching Philosophy - Neutral missing state per plan */}
-            <View style={styles.comingSoonBox}>
-              <Text style={styles.comingSoonEyebrow}>Teaching Philosophy</Text>
-              <Text style={styles.comingSoonText}>Coming soon...</Text>
-            </View>
+            {/* Teaching Philosophy — CMS-managed (Task 2.2) */}
+            {teachingPhilosophy ? (
+              <View style={styles.philosophyBox}>
+                <Text style={styles.philosophyEyebrow}>Teaching Philosophy</Text>
+                <Text style={styles.philosophyText}>{teachingPhilosophy}</Text>
+              </View>
+            ) : null}
           </ISection>
 
           {/* SPECIALIZATIONS */}
@@ -244,15 +259,21 @@ export default function InstructorDetailScreen() {
             </ISection>
           )}
 
-          {/* QUALIFICATIONS & CERTIFICATIONS - missing state */}
-          <ISection title="Qualifications & Certifications">
-            <Text style={styles.neutralEmptyText}>No certifications listed yet.</Text>
-          </ISection>
+          {/* Certifications section removed (Task 2.3) */}
 
-          {/* EXPERIENCE TIMELINE - missing state */}
-          <ISection title="Professional Experience">
-            <Text style={styles.neutralEmptyText}>Experience timeline coming soon.</Text>
-          </ISection>
+          {/* PROFESSIONAL EXPERIENCE — CMS-managed (Task 2.4) */}
+          {professionalExperience.length > 0 && (
+            <ISection title="Professional Experience">
+              <View style={{ gap: 10 }}>
+                {professionalExperience.map((entry, i) => (
+                  <View key={i} style={styles.experienceRow}>
+                    <View style={[styles.experienceDot, { backgroundColor: accentColor }]} />
+                    <Text style={styles.experienceText}>{entry}</Text>
+                  </View>
+                ))}
+              </View>
+            </ISection>
+          )}
 
           {/* WEEKLY SCHEDULE */}
           <ISection title="Weekly Schedule">
@@ -296,10 +317,7 @@ export default function InstructorDetailScreen() {
             </ISection>
           )}
 
-          {/* GALLERY - missing state */}
-          <ISection title="Gallery">
-            <Text style={styles.neutralEmptyText}>Instructor gallery coming soon.</Text>
-          </ISection>
+          {/* Gallery section removed (Task 2.5) */}
 
           {/* ACHIEVEMENTS */}
           {achievements.length > 0 && (
@@ -362,25 +380,7 @@ export default function InstructorDetailScreen() {
 
         </View>
       </ScrollView>
-
-      {/* STICKY BOTTOM BAR */}
-      <LinearGradient
-        colors={["rgba(10,11,13,0)", "#0B0B12"]}
-        locations={[0, 0.28]}
-        style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 24) }]}
-        pointerEvents="box-none"
-      >
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/(tabs)/classes");
-          }}
-          style={[styles.bookBtn, { backgroundColor: accentColor }]}
-        >
-          <Ionicons name="book" size={17} color="#0B0B12" />
-          <Text style={styles.bookBtnText}>Book a Class</Text>
-        </TouchableOpacity>
-      </LinearGradient>
+      {/* "Book a Class" sticky bar removed (Task 2.6) */}
     </View>
   );
 }
@@ -443,14 +443,17 @@ const styles = StyleSheet.create({
   sectionActionText: { fontFamily: "Archivo_600SemiBold", fontSize: 12.5, color: "#9CA3AF" },
 
   bioText: { fontFamily: "Archivo_400Regular", color: "#E5E7EB", lineHeight: 24, fontSize: 15 },
-  comingSoonBox: {
+  philosophyBox: {
     marginTop: 14, paddingVertical: 13, paddingHorizontal: 16,
     borderRadius: 8, backgroundColor: "rgba(0,182,215,0.07)",
     borderWidth: 1, borderColor: "rgba(0,182,215,0.22)",
   },
-  comingSoonEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: "#00B6D7", marginBottom: 6 },
-  comingSoonText: { fontFamily: "Archivo_400Regular", color: "#FFFFFF", fontStyle: "italic", lineHeight: 22 },
+  philosophyEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: "#00B6D7", marginBottom: 6 },
+  philosophyText: { fontFamily: "Archivo_400Regular", color: "#FFFFFF", fontStyle: "italic", lineHeight: 22 },
   neutralEmptyText: { fontFamily: "Archivo_400Regular", color: "#9CA3AF", fontStyle: "italic", fontSize: 14 },
+  experienceRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingLeft: 2 },
+  experienceDot: { width: 7, height: 7, borderRadius: 4, marginTop: 7 },
+  experienceText: { flex: 1, fontFamily: "Archivo_400Regular", color: "#E5E7EB", fontSize: 14, lineHeight: 21 },
 
   specRow: {
     flexDirection: "row", alignItems: "center", paddingVertical: 11, paddingHorizontal: 14,
@@ -494,15 +497,4 @@ const styles = StyleSheet.create({
   },
   contactBtnTitle: { fontFamily: "Archivo_700Bold", fontSize: 14.5, color: "#FFFFFF" },
   contactBtnSub: { fontFamily: "Archivo_400Regular", fontSize: 12, color: "#9CA3AF", marginTop: 1 },
-
-  bottomBar: {
-    position: "absolute", left: 0, right: 0, bottom: 0,
-    paddingHorizontal: 16, paddingTop: 12,
-    flexDirection: "row", gap: 10,
-  },
-  bookBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
-    paddingVertical: 13, borderRadius: 8,
-  },
-  bookBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 15, color: "#0B0B12" },
 });

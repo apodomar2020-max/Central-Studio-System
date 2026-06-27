@@ -60,6 +60,9 @@ export interface Instructor {
   /** @nullable */
   teachingLevel?: string | null;
   achievements: string[];
+  /** @nullable */
+  teachingPhilosophy?: string | null;
+  professionalExperience: string[];
   createdAt: string;
 }
 
@@ -83,6 +86,9 @@ export interface CreateInstructorBody {
   /** @nullable */
   teachingLevel?: string | null;
   achievements?: string[];
+  /** @nullable */
+  teachingPhilosophy?: string | null;
+  professionalExperience?: string[];
 }
 
 export interface UpdateInstructorBody {
@@ -105,6 +111,9 @@ export interface UpdateInstructorBody {
   /** @nullable */
   teachingLevel?: string | null;
   achievements?: string[];
+  /** @nullable */
+  teachingPhilosophy?: string | null;
+  professionalExperience?: string[];
 }
 
 export interface Class {

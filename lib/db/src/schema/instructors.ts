@@ -18,6 +18,14 @@ export const instructorsTable = pgTable("instructors", {
   // Profile extras
   teachingLevel: text("teaching_level"), // e.g. "All Levels", "Beginner", "Advanced"
   achievements: text("achievements").array().notNull().default([]),
+  // CMS-managed long-form fields shown on the instructor profile.
+  teachingPhilosophy: text("teaching_philosophy"),
+  // Professional experience timeline. INTENTIONALLY a simple text[]: each element
+  // is ONE display-ready timeline line (e.g. "Role · Place · Years"), authored one
+  // per line in the admin CMS and rendered as one timeline row in the app. Not a
+  // structured {role,place,years} object — kept flat on purpose (the codebase has
+  // no structured-list editor; this avoids over-engineering).
+  professionalExperience: text("professional_experience").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 });

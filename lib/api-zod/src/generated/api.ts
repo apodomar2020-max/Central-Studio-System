@@ -60,6 +60,8 @@ export const ListInstructorsResponseItem = zod.object({
   youtubeUrl: zod.string().nullish(),
   teachingLevel: zod.string().nullish(),
   achievements: zod.array(zod.string()),
+  teachingPhilosophy: zod.string().nullish(),
+  professionalExperience: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 export const ListInstructorsResponse = zod.array(ListInstructorsResponseItem);
@@ -80,6 +82,8 @@ export const CreateInstructorBody = zod.object({
   youtubeUrl: zod.string().nullish(),
   teachingLevel: zod.string().nullish(),
   achievements: zod.array(zod.string()).optional(),
+  teachingPhilosophy: zod.string().nullish(),
+  professionalExperience: zod.array(zod.string()).optional(),
 });
 
 export const GetInstructorParams = zod.object({
@@ -100,6 +104,8 @@ export const GetInstructorResponse = zod.object({
   youtubeUrl: zod.string().nullish(),
   teachingLevel: zod.string().nullish(),
   achievements: zod.array(zod.string()),
+  teachingPhilosophy: zod.string().nullish(),
+  professionalExperience: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 
@@ -120,6 +126,8 @@ export const UpdateInstructorBody = zod.object({
   youtubeUrl: zod.string().nullish(),
   teachingLevel: zod.string().nullish(),
   achievements: zod.array(zod.string()).optional(),
+  teachingPhilosophy: zod.string().nullish(),
+  professionalExperience: zod.array(zod.string()).optional(),
 });
 
 export const UpdateInstructorResponse = zod.object({
@@ -136,6 +144,8 @@ export const UpdateInstructorResponse = zod.object({
   youtubeUrl: zod.string().nullish(),
   teachingLevel: zod.string().nullish(),
   achievements: zod.array(zod.string()),
+  teachingPhilosophy: zod.string().nullish(),
+  professionalExperience: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 

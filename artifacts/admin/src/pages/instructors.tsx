@@ -49,6 +49,9 @@ const formSchema = z.object({
   tiktokUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
   youtubeUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
   achievements: z.string().nullish(),
+  teachingPhilosophy: z.string().max(600, "Keep it under 600 characters").nullish(),
+  // One professional-experience entry per line.
+  professionalExperience: z.string().nullish(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -67,6 +70,8 @@ type Instructor = {
   youtubeUrl?: string | null;
   teachingLevel?: string | null;
   achievements: string[];
+  teachingPhilosophy?: string | null;
+  professionalExperience?: string[];
 };
 
 function InstructorPhoto({ url, name, preview = false }: { url?: string | null; name: string; preview?: boolean }) {
@@ -113,6 +118,7 @@ export default function Instructors() {
       name: "", bio: "", photoUrl: "", specialties: "",
       experienceYears: 0, rating: undefined, isActive: true,
       teachingLevel: "", instagramUrl: "", tiktokUrl: "", youtubeUrl: "", achievements: "",
+      teachingPhilosophy: "", professionalExperience: "",
     },
   });
 
@@ -122,6 +128,7 @@ export default function Instructors() {
       name: "", bio: "", photoUrl: "", specialties: "",
       experienceYears: 0, rating: undefined, isActive: true,
       teachingLevel: "", instagramUrl: "", tiktokUrl: "", youtubeUrl: "", achievements: "",
+      teachingPhilosophy: "", professionalExperience: "",
     });
     setOpen(true);
   };
@@ -141,6 +148,8 @@ export default function Instructors() {
       tiktokUrl: instructor.tiktokUrl ?? "",
       youtubeUrl: instructor.youtubeUrl ?? "",
       achievements: instructor.achievements?.join(", ") ?? "",
+      teachingPhilosophy: instructor.teachingPhilosophy ?? "",
+      professionalExperience: instructor.professionalExperience?.join("\n") ?? "",
     });
     setOpen(true);
   };
@@ -150,10 +159,14 @@ export default function Instructors() {
   const onSubmit = (values: FormValues) => {
     const specialtiesArray = values.specialties.split(",").map((s) => s.trim()).filter(Boolean);
     const achievementsArray = values.achievements?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+    // Professional experience: one entry per line.
+    const experienceArray = values.professionalExperience?.split("\n").map((s) => s.trim()).filter(Boolean) ?? [];
     const data = {
       ...values,
       specialties: specialtiesArray,
       achievements: achievementsArray,
+      professionalExperience: experienceArray,
+      teachingPhilosophy: nullIfEmpty(values.teachingPhilosophy as string | null | undefined),
       photoUrl: nullIfEmpty(values.photoUrl as string | null | undefined),
       teachingLevel: nullIfEmpty(values.teachingLevel as string | null | undefined),
       instagramUrl: nullIfEmpty(values.instagramUrl as string | null | undefined),
@@ -307,6 +320,23 @@ export default function Instructors() {
                 <FormItem>
                   <FormLabel>Achievements (comma-separated)</FormLabel>
                   <FormControl><Input placeholder="National Champion 2022, Certified ISTD" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="teachingPhilosophy" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Teaching Philosophy</FormLabel>
+                  <FormControl><Textarea rows={3} maxLength={600} placeholder="A short statement about how this instructor teaches." data-testid="input-instructor-philosophy" {...field} value={field.value ?? ""} /></FormControl>
+                  <div className="text-xs text-muted-foreground text-right">{(field.value ?? "").length}/600</div>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="professionalExperience" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Professional Experience (one per line)</FormLabel>
+                  <FormControl><Textarea rows={4} placeholder={"Senior Instructor · Central Studio · 2019–Present\nGuest Instructor · Cairo Dance Academy · 2017–2019"} data-testid="input-instructor-experience" {...field} value={field.value ?? ""} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

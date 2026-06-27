@@ -1,7 +1,7 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
-import { db, instructorsTable } from "@workspace/db";
+import { and, eq, ne, sql } from "drizzle-orm";
+import { db, instructorsTable, bookingsTable, classesTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import {
   CreateInstructorBody,
@@ -51,6 +51,36 @@ router.get("/instructors/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json(GetInstructorResponse.parse(row));
+});
+
+// Unique-student count for an instructor — counts DISTINCT students who have a
+// (non-cancelled) booking for any class taught by this instructor. A student who
+// attended 100 classes still counts once. Computed in the database, never on the
+// client.
+//
+// Identity precedence (most stable first):
+//   1. accountOwnerStudentId — the stable account/student ID (primary).
+//   2. normalized student_email (lower(trim(...))) — fallback for legacy rows
+//      that predate owner IDs. Normalizing avoids casing/whitespace duplicates.
+// A CASE expression picks ID when present, else the normalized email, so the two
+// keyspaces never collide ("id:" / "email:" prefixes).
+router.get("/instructors/:id/student-count", async (req, res): Promise<void> => {
+  const params = GetInstructorParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const identity = sql`case
+    when ${bookingsTable.accountOwnerStudentId} is not null
+      then 'id:' || ${bookingsTable.accountOwnerStudentId}
+    else 'email:' || lower(trim(${bookingsTable.studentEmail}))
+  end`;
+  const [row] = await db
+    .select({ count: sql<number>`count(distinct ${identity})` })
+    .from(bookingsTable)
+    .innerJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
+    .where(and(eq(classesTable.instructorId, params.data.id), ne(bookingsTable.bookingStatus, "cancelled")));
+  res.json({ studentCount: Number(row?.count ?? 0) });
 });
 
 router.patch("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "edit"), requireInstructorMediaPermission, async (req, res): Promise<void> => {
