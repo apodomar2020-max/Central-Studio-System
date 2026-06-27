@@ -604,7 +604,9 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
           showAuthRequiredPrompt();
           return;
         }
-        router.push("/(tabs)/packages");
+        // Start the purchase flow for THIS package directly (deep link opens the
+        // purchase confirmation on the Packages screen) instead of just listing.
+        router.push({ pathname: "/(tabs)/packages", params: { purchaseId: String(pkg.id) } });
       }}
     >
       {hot && (

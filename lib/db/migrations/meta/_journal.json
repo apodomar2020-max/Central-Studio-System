@@ -217,5 +217,13 @@
       "tag": "0026_hero_image_only",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782993600000,
+      "tag": "0027_package_features",
+      "breakpoints": true
+    }
   ]
 }

@@ -2,8 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -78,6 +78,17 @@ function PackageCard({
             </View>
           </View>
         </View>
+
+        {pkg.features?.length ? (
+          <View style={styles.pkgFeatures}>
+            {pkg.features.map((f, i) => (
+              <View key={i} style={styles.pkgFeatureRow}>
+                <Ionicons name="checkmark-circle" size={15} color={accent} />
+                <Text style={styles.pkgFeatureText}>{f}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.pkgFooter}>
           <View>
@@ -272,6 +283,20 @@ export default function PackagesScreen() {
     }
     setConfirmPkg(pkg);
   }
+
+  // Deep link from the home Package card CTA: ?purchaseId=<id> opens the purchase
+  // confirmation for that package directly (reuses the existing purchase flow).
+  const { purchaseId } = useLocalSearchParams<{ purchaseId?: string }>();
+  const purchaseHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!purchaseId || purchaseHandledRef.current === purchaseId) return;
+    const pkg = (packages ?? []).find((p) => String(p.id) === String(purchaseId) && p.isActive);
+    if (pkg) {
+      purchaseHandledRef.current = purchaseId;
+      setActiveTab("buy");
+      handleBuy(pkg);
+    }
+  }, [purchaseId, packages]);
 
   async function confirmPurchase() {
     if (!confirmPkg) return;
@@ -549,6 +574,9 @@ const styles = StyleSheet.create({
   pkgPriceLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
   pkgPrice: { fontSize: 22, fontFamily: "Inter_700Bold" },
   pkgPerClass: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  pkgFeatures: { gap: 7, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.06)" },
+  pkgFeatureRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pkgFeatureText: { flex: 1, fontSize: 13, fontFamily: "Inter_500Medium", color: "#D1D5DB" },
   buyBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
   buyBtnText: { fontSize: 14, fontFamily: "Inter_700Bold" },
   activeCard: {

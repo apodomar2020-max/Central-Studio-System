@@ -243,6 +243,7 @@ export interface PricePackage {
   /** @nullable */
   singleClassPriceEgp?: number | null;
   allowedDanceTypes: string[];
+  features: string[];
   createdAt: string;
 }
 
@@ -260,6 +261,7 @@ export interface CreatePricePackageBody {
   /** @nullable */
   singleClassPriceEgp?: number | null;
   allowedDanceTypes?: string[];
+  features?: string[];
 }
 
 export interface UpdatePricePackageBody {
@@ -276,6 +278,7 @@ export interface UpdatePricePackageBody {
   /** @nullable */
   singleClassPriceEgp?: number | null;
   allowedDanceTypes?: string[];
+  features?: string[];
 }
 
 export interface Booking {

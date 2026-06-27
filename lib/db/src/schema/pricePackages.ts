@@ -17,6 +17,8 @@ export const pricePackagesTable = pgTable("price_packages", {
   singleClassPriceEgp: real("single_class_price_egp"),
   // Empty array means all dance types; non-empty restricts to the listed styles
   allowedDanceTypes: text("allowed_dance_types").array().notNull().default([]),
+  // Up to 3 short selling-point bullets shown on the package card (CMS-managed)
+  features: text("features").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 });

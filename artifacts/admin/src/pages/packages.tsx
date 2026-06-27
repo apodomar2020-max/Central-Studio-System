@@ -29,21 +29,28 @@ import { Badge } from "@/components/ui/badge";
 
 const TYPES = ["per_class", "monthly", "term"];
 
+const DESC_MAX = 160;
+const FEATURE_MAX = 48;
+
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
   type: z.string().default("per_class"),
   priceEgp: z.coerce.number().min(0, "Price required"),
   sessions: z.coerce.number().int().nullish(),
-  description: z.string().nullish(),
+  description: z.string().max(DESC_MAX, `Keep it under ${DESC_MAX} characters`).nullish(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
   validityMonths: z.coerce.number().int().min(1).default(6),
   singleClassPriceEgp: z.coerce.number().nullish(),
   allowedDanceTypes: z.string().default(""),
+  // Up to 3 short feature bullets shown on the package card.
+  feature1: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
+  feature2: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
+  feature3: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
 });
 
 type FormValues = z.input<typeof formSchema>;
-type Package = { id: number; name: string; type: string; priceEgp: number; sessions?: number | null; description?: string | null; isActive: boolean; isFeatured: boolean; validityMonths: number; singleClassPriceEgp?: number | null; allowedDanceTypes: string[] };
+type Package = { id: number; name: string; type: string; priceEgp: number; sessions?: number | null; description?: string | null; isActive: boolean; isFeatured: boolean; validityMonths: number; singleClassPriceEgp?: number | null; allowedDanceTypes: string[]; features?: string[] };
 
 export default function Packages() {
   const { can } = useAdminAuth();
@@ -60,12 +67,12 @@ export default function Packages() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "" },
+    defaultValues: { name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "", feature1: "", feature2: "", feature3: "" },
   });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "" });
+    form.reset({ name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "", feature1: "", feature2: "", feature3: "" });
     setOpen(true);
   };
 
@@ -76,17 +83,21 @@ export default function Packages() {
       description: p.description ?? "", isActive: p.isActive, isFeatured: p.isFeatured,
       validityMonths: p.validityMonths, singleClassPriceEgp: p.singleClassPriceEgp ?? undefined,
       allowedDanceTypes: p.allowedDanceTypes.join(", "),
+      feature1: p.features?.[0] ?? "", feature2: p.features?.[1] ?? "", feature3: p.features?.[2] ?? "",
     });
     setOpen(true);
   };
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
+    const { feature1, feature2, feature3, allowedDanceTypes: adtStr, ...rest } = parsed;
     // Convert comma-separated dance types string to array
-    const allowedDanceTypes = parsed.allowedDanceTypes
-      ? parsed.allowedDanceTypes.split(",").map((s) => s.trim()).filter(Boolean)
+    const allowedDanceTypes = adtStr
+      ? adtStr.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
-    const data = { ...parsed, allowedDanceTypes };
+    // Collect the 3 feature inputs into an array, dropping blanks.
+    const features = [feature1, feature2, feature3].map((s) => s.trim()).filter(Boolean);
+    const data = { ...rest, allowedDanceTypes, features };
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListPricePackagesQueryKey() }); setOpen(false); };
     if (editing) {
       updatePackage.mutate({ id: editing.id, data }, { onSuccess: invalidate });
@@ -197,11 +208,32 @@ export default function Packages() {
               )} />
               <FormField control={form.control} name="description" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl><Textarea data-testid="input-package-description" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormLabel>Description (short, max {DESC_MAX})</FormLabel>
+                  <FormControl><Textarea maxLength={DESC_MAX} data-testid="input-package-description" {...field} value={field.value ?? ""} /></FormControl>
+                  <div className="text-xs text-muted-foreground text-right">{(field.value ?? "").length}/{DESC_MAX}</div>
                   <FormMessage />
                 </FormItem>
               )} />
+
+              <div className="space-y-2">
+                <FormLabel>Features (up to 3 — shown as bullets on the package card)</FormLabel>
+                {(["feature1", "feature2", "feature3"] as const).map((fn, i) => (
+                  <FormField key={fn} control={form.control} name={fn} render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input
+                          maxLength={FEATURE_MAX}
+                          placeholder={`Feature ${i + 1}`}
+                          data-testid={`input-package-${fn}`}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                ))}
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField control={form.control} name="validityMonths" render={({ field }) => (
                   <FormItem>

@@ -345,6 +345,7 @@ export const ListPricePackagesResponseItem = zod.object({
   validityMonths: zod.number(),
   singleClassPriceEgp: zod.number().nullish(),
   allowedDanceTypes: zod.array(zod.string()),
+  features: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 export const ListPricePackagesResponse = zod.array(
@@ -362,6 +363,7 @@ export const CreatePricePackageBody = zod.object({
   validityMonths: zod.number().optional(),
   singleClassPriceEgp: zod.number().nullish(),
   allowedDanceTypes: zod.array(zod.string()).optional(),
+  features: zod.array(zod.string()).optional(),
 });
 
 export const GetPricePackageParams = zod.object({
@@ -380,6 +382,7 @@ export const GetPricePackageResponse = zod.object({
   validityMonths: zod.number(),
   singleClassPriceEgp: zod.number().nullish(),
   allowedDanceTypes: zod.array(zod.string()),
+  features: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 
@@ -398,6 +401,7 @@ export const UpdatePricePackageBody = zod.object({
   validityMonths: zod.number().optional(),
   singleClassPriceEgp: zod.number().nullish(),
   allowedDanceTypes: zod.array(zod.string()).optional(),
+  features: zod.array(zod.string()).optional(),
 });
 
 export const UpdatePricePackageResponse = zod.object({
@@ -412,6 +416,7 @@ export const UpdatePricePackageResponse = zod.object({
   validityMonths: zod.number(),
   singleClassPriceEgp: zod.number().nullish(),
   allowedDanceTypes: zod.array(zod.string()),
+  features: zod.array(zod.string()),
   createdAt: zod.string(),
 });
 
