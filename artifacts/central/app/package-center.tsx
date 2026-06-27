@@ -38,7 +38,7 @@ type Dateish = string | Date | null | undefined;
 // ─── Status helpers (real data) ──────────────────────────────────────────────
 function isPastDate(iso?: Dateish): boolean {
   if (!iso) return false;
-  const date = new Date(iso);
+  const date = parsePackageDate(iso);
   return !Number.isNaN(date.getTime()) && date < new Date();
 }
 
@@ -89,9 +89,32 @@ function isPastPkg(pkg: PackageOrderWithDateAliases): boolean {
   const kind = packageStatusKind(pkg);
   return kind === "expired" || kind === "exhausted" || (kind === "cancelled" && Boolean(activatedAtOf(pkg)));
 }
+function normalizePostgresTimestamp(value: string): string {
+  const trimmed = value.trim();
+  const normalizedSeparator = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
+
+  return normalizedSeparator
+    .replace(/\.(\d{3})\d+/, ".$1")
+    .replace(/([+-]\d{2})$/, "$1:00")
+    .replace(/\+00:00$/, "Z");
+}
+
+function parsePackageDate(value: Dateish): Date {
+  if (value instanceof Date) return value;
+  if (!value) return new Date(Number.NaN);
+
+  const direct = new Date(value);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  if (typeof value === "string") {
+    return new Date(normalizePostgresTimestamp(value));
+  }
+
+  return new Date(Number.NaN);
+}
+
 function fmtDate(iso?: Dateish): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
+  const date = parsePackageDate(iso);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
@@ -119,7 +142,7 @@ function expiresAtOf(pkg: PackageOrderWithDateAliases): Dateish {
   return pkg.expiresAt ?? pkg.expires_at ?? null;
 }
 
-function requestDateText(pkg: PackageOrderWithDateAliases, isRequest: boolean): string {
+function requestDateValue(pkg: PackageOrderWithDateAliases, isRequest: boolean): string {
   const formatted = fmtDate(createdAtOf(pkg));
   if (formatted) return formatted;
   return isRequest ? "Requested recently" : "Purchased recently";
@@ -151,8 +174,10 @@ function expiryText(pkg: PackageOrderWithDateAliases): string {
 function DateRow({ label, value, valueColor = "#FFFFFF" }: { label: string; value: string; valueColor?: string }) {
   return (
     <View style={styles.dateRow}>
-      <Text style={styles.dateLabel}>{label}</Text>
-      <Text style={[styles.dateValue, { color: valueColor }]}>{value}</Text>
+      <Text style={[styles.dateValue, { color: valueColor }]}>
+        {label ? <Text style={styles.dateLabel}>{label} </Text> : null}
+        {value}
+      </Text>
     </View>
   );
 }
@@ -165,7 +190,7 @@ function PackageCard({ pkg }: { pkg: PackageOrderWithDateAliases }) {
   const remaining = kind === "active" ? pkg.remainingCredits : 0;
   const pct = pkg.totalCredits > 0 ? Math.round((remaining / pkg.totalCredits) * 100) : 0;
   const isRequest = kind === "pending" || kind === "rejected" || (kind === "cancelled" && !activatedAtOf(pkg));
-  const purchaseDate = requestDateText(pkg, isRequest);
+  const purchaseDate = requestDateValue(pkg, isRequest);
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
@@ -179,7 +204,7 @@ function PackageCard({ pkg }: { pkg: PackageOrderWithDateAliases }) {
       </View>
       <View style={styles.dateBox}>
         <DateRow label={isRequest ? "Requested" : "Purchased"} value={purchaseDate} />
-        <DateRow label="Expiry" value={expiryText(pkg)} valueColor={DANGER} />
+        <DateRow label="" value={expiryText(pkg)} valueColor={DANGER} />
       </View>
       <View style={styles.barTrack}>
         <LinearGradient colors={[CYAN, CYAN_400]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.barFill, { width: `${pct}%` }]} />
@@ -276,8 +301,8 @@ export default function PackageCenterScreen() {
                   <Text style={styles.heroMeta}>{hero.remainingCredits}/{hero.totalCredits} remaining</Text>
                 </View>
                 <View style={styles.heroDateBox}>
-                  <DateRow label="Purchased" value={requestDateText(hero, false)} />
-                  <DateRow label="Expiry" value={expiryText(hero)} valueColor={DANGER} />
+                  <DateRow label="Purchased" value={requestDateValue(hero, false)} />
+                  <DateRow label="" value={expiryText(hero)} valueColor={DANGER} />
                 </View>
                 <TouchableOpacity onPress={() => router.push("/(tabs)" as any)} style={styles.buyBtn} activeOpacity={0.88}>
                   <Text style={styles.buyBtnText}>Buy New Package</Text>
