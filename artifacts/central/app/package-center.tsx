@@ -54,7 +54,27 @@ function isActivePkg(p: PackageOrder): boolean {
 }
 function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+type PackageOrderWithDateAliases = PackageOrder & {
+  created_at?: string | null;
+  activated_at?: string | null;
+  expires_at?: string | null;
+};
+
+function createdAtOf(pkg: PackageOrderWithDateAliases): string | null {
+  return pkg.createdAt ?? pkg.created_at ?? null;
+}
+
+function activatedAtOf(pkg: PackageOrderWithDateAliases): string | null {
+  return pkg.activatedAt ?? pkg.activated_at ?? null;
+}
+
+function expiresAtOf(pkg: PackageOrderWithDateAliases): string | null {
+  return pkg.expiresAt ?? pkg.expires_at ?? null;
 }
 
 // Expiry label. Validity starts at Admin activation (expiresAt = activatedAt +
@@ -62,10 +82,21 @@ function fmtDate(iso?: string | null): string {
 //   • expiresAt set        → the real date
 //   • not yet activated    → "Expiry starts after activation"
 //   • activated, no expiry → "No expiry" (genuinely unlimited / no validity months)
-function expiryText(pkg: PackageOrder): string {
-  if (pkg.expiresAt) return `Expires ${fmtDate(pkg.expiresAt)}`;
-  if (!pkg.activatedAt) return "Expiry starts after activation";
+function expiryText(pkg: PackageOrderWithDateAliases): string {
+  const expiresAt = expiresAtOf(pkg);
+  const activatedAt = activatedAtOf(pkg);
+  if (expiresAt) return `Expires ${fmtDate(expiresAt)}`;
+  if (!activatedAt) return "Expiry starts after activation";
   return "No expiry";
+}
+
+function DateRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.dateRow}>
+      <Text style={styles.dateLabel}>{label}</Text>
+      <Text style={styles.dateValue}>{value}</Text>
+    </View>
+  );
 }
 
 // ─── Package list card (design parity) ───────────────────────────────────────
@@ -85,7 +116,10 @@ function PackageCard({ pkg }: { pkg: PackageOrder }) {
           <Text style={[styles.statusPillText, { color }]}>{label}</Text>
         </View>
       </View>
-      <Text style={styles.cardDates}>Purchased {fmtDate(pkg.createdAt)} · {expiryText(pkg)}</Text>
+      <View style={styles.dateBox}>
+        <DateRow label="Purchased" value={fmtDate(createdAtOf(pkg))} />
+        <DateRow label="Expiry" value={expiryText(pkg)} />
+      </View>
       <View style={styles.barTrack}>
         <LinearGradient colors={[CYAN, CYAN_400]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.barFill, { width: `${pct}%` }]} />
       </View>
@@ -164,7 +198,7 @@ export default function PackageCenterScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.heroEyebrow}>ACTIVE PACKAGE</Text>
                     <Text style={styles.heroName} numberOfLines={1}>{hero.packageName}</Text>
-                    <Text style={styles.heroSub}>{hero.totalCredits} classes · {expiryText(hero)}</Text>
+                    <Text style={styles.heroSub}>{hero.totalCredits} classes</Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
                     <Text style={styles.heroCredits}>{hero.remainingCredits}</Text>
@@ -177,6 +211,10 @@ export default function PackageCenterScreen() {
                 <View style={styles.heroMetaRow}>
                   <Text style={styles.heroMeta}>{heroUsed} used</Text>
                   <Text style={styles.heroMeta}>{hero.remainingCredits}/{hero.totalCredits} remaining</Text>
+                </View>
+                <View style={styles.heroDateBox}>
+                  <DateRow label="Purchased" value={fmtDate(createdAtOf(hero))} />
+                  <DateRow label="Expiry" value={expiryText(hero)} />
                 </View>
                 <TouchableOpacity onPress={() => router.push("/(tabs)/packages" as any)} style={styles.buyBtn} activeOpacity={0.88}>
                   <Text style={styles.buyBtnText}>Buy New Package</Text>
@@ -233,6 +271,7 @@ const styles = StyleSheet.create({
   heroBarTrack: { height: 7, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.08)", overflow: "hidden", marginBottom: 8 },
   heroMetaRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },
   heroMeta: { fontFamily: "Archivo_600SemiBold", fontSize: 12, color: INK_400 },
+  heroDateBox: { gap: 7, padding: 12, borderRadius: 12, backgroundColor: "rgba(10,11,13,0.36)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", marginBottom: 14 },
   buyBtn: { backgroundColor: CYAN, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
   buyBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 14, color: "#0A0B0D" },
 
@@ -250,7 +289,10 @@ const styles = StyleSheet.create({
   cardSub: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_400, marginTop: 2 },
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   statusPillText: { fontFamily: "Archivo_700Bold", fontSize: 11 },
-  cardDates: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_400, marginBottom: 8 },
+  dateBox: { gap: 7, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.035)", borderWidth: 1, borderColor: "rgba(255,255,255,0.06)", marginBottom: 10 },
+  dateRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  dateLabel: { fontFamily: "Archivo_700Bold", fontSize: 12, color: INK_300 },
+  dateValue: { flex: 1, textAlign: "right", fontFamily: "Archivo_600SemiBold", fontSize: 12, color: "#FFFFFF" },
   barTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 3 },
 
