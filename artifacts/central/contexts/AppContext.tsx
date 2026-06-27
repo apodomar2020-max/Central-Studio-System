@@ -528,7 +528,9 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     await customFetch(`/api/bookings/${bookingId}/cancel`, { method: "PATCH" });
     setBookings((prev) => {
       const updated = prev.map((b) =>
-        b.id === bookingId ? { ...b, bookingStatus: "cancelled" as const } : b,
+        b.id === bookingId
+          ? { ...b, bookingStatus: "cancelled" as const, attendanceStatus: "cancelled" as const }
+          : b,
       );
       AsyncStorage.setItem("bookings", JSON.stringify(updated));
       return updated;

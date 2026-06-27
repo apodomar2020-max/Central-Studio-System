@@ -99,6 +99,38 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+async function countDailyBookingAttempts(args: {
+  accountOwnerStudentId: number;
+  studentEmail: string;
+  scheduleId?: number | null;
+  classId?: number | null;
+  occurrenceDate?: string | null;
+}): Promise<number> {
+  const targetMatch = args.scheduleId != null
+    ? eq(bookingsTable.scheduleId, args.scheduleId)
+    : args.classId != null
+      ? eq(bookingsTable.classId, args.classId)
+      : null;
+
+  if (!targetMatch) return 0;
+
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+    })
+    .from(bookingsTable)
+    .where(and(
+      sql`(${bookingsTable.accountOwnerStudentId} = ${args.accountOwnerStudentId} OR lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(args.studentEmail)})`,
+      targetMatch,
+      args.occurrenceDate != null
+        ? eq(bookingsTable.occurrenceDate, args.occurrenceDate)
+        : sql`${bookingsTable.occurrenceDate} is null`,
+      sql`(${bookingsTable.createdAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
+    ));
+
+  return row?.count ?? 0;
+}
+
 function requireBookingUpdatePermission(req: Request, res: Response, next: NextFunction): void {
   const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
   const isCancellation = body["bookingStatus"] === "cancelled" || body["status"] === "cancelled";
@@ -724,6 +756,22 @@ router.post(
     }
   }
 
+  const attemptsToday = await countDailyBookingAttempts({
+    accountOwnerStudentId,
+    studentEmail,
+    scheduleId: normalized.scheduleId,
+    classId: normalized.classId,
+    occurrenceDate,
+  });
+
+  if (attemptsToday >= 3) {
+    res.status(429).json({
+      error: "You have reached the daily booking limit for this class.",
+      code: "booking_attempt_limit_reached",
+    });
+    return;
+  }
+
   const row = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(bookingsTable)
@@ -834,6 +882,12 @@ router.patch(
         await tx.update(schedulesTable).set({ status: "active" }).where(sql`
           ${schedulesTable.id} = ${updated.scheduleId}
           and ${schedulesTable.status} = 'completed'
+          and not (
+            ${schedulesTable.type} = 'one_time'
+            and ${schedulesTable.date} is not null
+            and (${schedulesTable.date}::text || ' ' || ${schedulesTable.endTime})::timestamp
+              < (now() at time zone 'Africa/Cairo')
+          )
           and exists (
             select 1 from ${classesTable}
             where ${classesTable.id} = ${schedulesTable.classId}

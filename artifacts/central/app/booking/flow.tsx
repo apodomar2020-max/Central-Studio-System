@@ -291,7 +291,15 @@ export default function BookingFlowScreen() {
       // Friendly handling for the backend duplicate-booking guard (HTTP 409 /
       // code "duplicate_booking") instead of the generic failure screen.
       const status = (err as { status?: number })?.status;
+      const code = (err as { data?: { code?: string } })?.data?.code;
       const msg = err instanceof Error ? err.message : "";
+      if (code === "booking_attempt_limit_reached" || /booking_attempt_limit_reached/i.test(msg)) {
+        Alert.alert(
+          "Booking limit reached",
+          "You have reached the daily booking limit for this class. Please contact the studio if you need help.",
+        );
+        return;
+      }
       if (status === 409 || /duplicate_booking|already have an active booking/i.test(msg)) {
         Alert.alert(
           "Already booked",
