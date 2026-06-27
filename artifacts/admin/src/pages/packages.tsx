@@ -216,7 +216,9 @@ export default function Packages() {
               )} />
 
               <div className="space-y-2">
-                <FormLabel>Features (up to 3 — shown as bullets on the package card)</FormLabel>
+                {/* Plain label — NOT <FormLabel>, which calls useFormField() and
+                    throws when rendered outside a <FormField>/<FormItem>. */}
+                <p className="text-sm font-medium leading-none">Features (up to 3 — shown as bullets on the package card)</p>
                 {(["feature1", "feature2", "feature3"] as const).map((fn, i) => (
                   <FormField key={fn} control={form.control} name={fn} render={({ field }) => (
                     <FormItem>
