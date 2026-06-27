@@ -18,6 +18,7 @@ import {
   attendanceTable,
   classesTable,
   instructorsTable,
+  pricePackagesTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 
@@ -34,8 +35,25 @@ router.use("/my", requireStudentAuth, requireVerifiedStudent);
 // ---------------------------------------------------------------------------
 router.get("/my/packages", async (req, res): Promise<void> => {
   const rows = await db
-    .select()
+    .select({
+      id: packageOrdersTable.id,
+      studentName: packageOrdersTable.studentName,
+      studentEmail: packageOrdersTable.studentEmail,
+      studentPhone: packageOrdersTable.studentPhone,
+      packageId: packageOrdersTable.packageId,
+      packageName: packageOrdersTable.packageName,
+      totalCredits: packageOrdersTable.totalCredits,
+      remainingCredits: packageOrdersTable.remainingCredits,
+      status: packageOrdersTable.status,
+      notes: packageOrdersTable.notes,
+      activatedAt: packageOrdersTable.activatedAt,
+      expiresAt: packageOrdersTable.expiresAt,
+      createdAt: packageOrdersTable.createdAt,
+      updatedAt: packageOrdersTable.updatedAt,
+      priceEgp: pricePackagesTable.priceEgp,
+    })
     .from(packageOrdersTable)
+    .leftJoin(pricePackagesTable, eq(packageOrdersTable.packageId, pricePackagesTable.id))
     .where(eq(packageOrdersTable.studentEmail, req.studentEmail!))
     .orderBy(desc(packageOrdersTable.createdAt));
 

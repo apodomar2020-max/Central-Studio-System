@@ -26,55 +26,113 @@ import SBI from "@/components/SbIcon";
 const CYAN = "#00B6D7";
 const CYAN_400 = "#2DCDEC";
 const SUCCESS = "#1FB871";
+const DANGER = "#FF3B47";
 const INK_300 = "#8E97A2";
 const INK_400 = "#6B747F";
 const INK_800 = "#15171B";
 const BORDER = "rgba(255,255,255,0.08)";
 
+type PackageStatusKind = "active" | "pending" | "expired" | "exhausted" | "cancelled" | "rejected" | "other";
+type Dateish = string | Date | null | undefined;
+
 // ─── Status helpers (real data) ──────────────────────────────────────────────
-function statusLabel(pkg: PackageOrder): string {
-  if (pkg.status === "fullyUsed") return "Exhausted";
+function isPastDate(iso?: Dateish): boolean {
+  if (!iso) return false;
+  const date = new Date(iso);
+  return !Number.isNaN(date.getTime()) && date < new Date();
+}
+
+function packageStatusKind(pkg: PackageOrderWithDateAliases): PackageStatusKind {
   if (pkg.status === "active") {
-    if (pkg.expiresAt && new Date(pkg.expiresAt) < new Date()) return "Expired";
-    return "Active";
+    if (isPastDate(expiresAtOf(pkg))) return "expired";
+    if (pkg.remainingCredits <= 0) return "exhausted";
+    return "active";
   }
-  if (pkg.status === "pendingPayment") return "Pending";
-  if (pkg.status === "cancelled") return "Cancelled";
+  if (pkg.status === "fullyUsed") return "exhausted";
+  if (pkg.status === "expired") return "expired";
+  if (pkg.status === "pendingPayment" || pkg.status === "pending") return "pending";
+  if (pkg.status === "rejected") return "rejected";
+  if (pkg.status === "cancelled") return "cancelled";
+  return "other";
+}
+
+function statusLabel(pkg: PackageOrderWithDateAliases): string {
+  const kind = packageStatusKind(pkg);
+  if (kind === "active") return "Active";
+  if (kind === "pending") return "Pending Request";
+  if (kind === "expired") return "Expired";
+  if (kind === "exhausted") return "Fully Used";
+  if (kind === "cancelled") return activatedAtOf(pkg) ? "Cancelled" : "Cancelled Request";
+  if (kind === "rejected") return "Rejected Request";
   return pkg.status;
 }
 function statusColor(label: string): string {
   if (label === "Active") return SUCCESS;
   if (label === "Expired") return "#FFB02E";
-  if (label === "Pending") return "#3B82F6";
-  if (label === "Exhausted") return "#FF3B47";
+  if (label === "Pending Request") return "#3B82F6";
+  if (label === "Fully Used") return "#FF3B47";
+  if (label === "Rejected Request") return "#FF3B47";
+  if (label === "Cancelled Request") return "#6B7280";
   return INK_400;
 }
-function isActivePkg(p: PackageOrder): boolean {
-  return p.status === "active" && (!p.expiresAt || new Date(p.expiresAt) >= new Date());
+function isActivePkg(pkg: PackageOrderWithDateAliases): boolean {
+  return packageStatusKind(pkg) === "active";
 }
-function fmtDate(iso?: string | null): string {
-  if (!iso) return "—";
+function isPendingRequest(pkg: PackageOrderWithDateAliases): boolean {
+  return packageStatusKind(pkg) === "pending";
+}
+function isRejectedRequest(pkg: PackageOrderWithDateAliases): boolean {
+  const kind = packageStatusKind(pkg);
+  return kind === "rejected" || (kind === "cancelled" && !activatedAtOf(pkg));
+}
+function isPastPkg(pkg: PackageOrderWithDateAliases): boolean {
+  const kind = packageStatusKind(pkg);
+  return kind === "expired" || kind === "exhausted" || (kind === "cancelled" && Boolean(activatedAtOf(pkg)));
+}
+function fmtDate(iso?: Dateish): string | null {
+  if (!iso) return null;
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 type PackageOrderWithDateAliases = PackageOrder & {
-  created_at?: string | null;
-  activated_at?: string | null;
-  expires_at?: string | null;
+  created_at?: Dateish;
+  activated_at?: Dateish;
+  expires_at?: Dateish;
+  priceEgp?: number | null;
+  price_egp?: number | null;
+  packagePrice?: number | null;
+  package_price?: number | null;
+  amount?: number | null;
 };
 
-function createdAtOf(pkg: PackageOrderWithDateAliases): string | null {
+function createdAtOf(pkg: PackageOrderWithDateAliases): Dateish {
   return pkg.createdAt ?? pkg.created_at ?? null;
 }
 
-function activatedAtOf(pkg: PackageOrderWithDateAliases): string | null {
+function activatedAtOf(pkg: PackageOrderWithDateAliases): Dateish {
   return pkg.activatedAt ?? pkg.activated_at ?? null;
 }
 
-function expiresAtOf(pkg: PackageOrderWithDateAliases): string | null {
+function expiresAtOf(pkg: PackageOrderWithDateAliases): Dateish {
   return pkg.expiresAt ?? pkg.expires_at ?? null;
+}
+
+function requestDateText(pkg: PackageOrderWithDateAliases, isRequest: boolean): string | null {
+  const formatted = fmtDate(createdAtOf(pkg));
+  if (formatted) return formatted;
+  return isRequest ? "Requested recently" : null;
+}
+
+function priceOf(pkg: PackageOrderWithDateAliases): number | null {
+  return pkg.priceEgp ?? pkg.price_egp ?? pkg.packagePrice ?? pkg.package_price ?? pkg.amount ?? null;
+}
+
+function priceText(pkg: PackageOrderWithDateAliases): string {
+  const price = priceOf(pkg);
+  if (typeof price !== "number" || !Number.isFinite(price)) return "Price unavailable";
+  return `EGP ${price.toLocaleString()}`;
 }
 
 // Expiry label. Validity starts at Admin activation (expiresAt = activatedAt +
@@ -85,40 +143,43 @@ function expiresAtOf(pkg: PackageOrderWithDateAliases): string | null {
 function expiryText(pkg: PackageOrderWithDateAliases): string {
   const expiresAt = expiresAtOf(pkg);
   const activatedAt = activatedAtOf(pkg);
-  if (expiresAt) return `Expires ${fmtDate(expiresAt)}`;
+  if (expiresAt) return `Expires ${fmtDate(expiresAt) ?? "Expiry not set"}`;
   if (!activatedAt) return "Expiry starts after activation";
   return "No expiry";
 }
 
-function DateRow({ label, value }: { label: string; value: string }) {
+function DateRow({ label, value, valueColor = "#FFFFFF" }: { label: string; value: string; valueColor?: string }) {
   return (
     <View style={styles.dateRow}>
       <Text style={styles.dateLabel}>{label}</Text>
-      <Text style={styles.dateValue}>{value}</Text>
+      <Text style={[styles.dateValue, { color: valueColor }]}>{value}</Text>
     </View>
   );
 }
 
 // ─── Package list card (design parity) ───────────────────────────────────────
-function PackageCard({ pkg }: { pkg: PackageOrder }) {
+function PackageCard({ pkg }: { pkg: PackageOrderWithDateAliases }) {
   const label = statusLabel(pkg);
   const color = statusColor(label);
-  const remaining = label === "Active" ? pkg.remainingCredits : 0;
+  const kind = packageStatusKind(pkg);
+  const remaining = kind === "active" ? pkg.remainingCredits : 0;
   const pct = pkg.totalCredits > 0 ? Math.round((remaining / pkg.totalCredits) * 100) : 0;
+  const isRequest = kind === "pending" || kind === "rejected" || (kind === "cancelled" && !activatedAtOf(pkg));
+  const purchaseDate = requestDateText(pkg, isRequest);
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardName} numberOfLines={1}>{pkg.packageName}</Text>
-          <Text style={styles.cardSub}>{pkg.totalCredits} classes · Order #{pkg.id}</Text>
+          <Text style={styles.cardSub}>{pkg.totalCredits} classes · {priceText(pkg)}</Text>
         </View>
         <View style={[styles.statusPill, { backgroundColor: label === "Active" ? "rgba(31,184,113,0.16)" : "rgba(255,255,255,0.06)" }]}>
           <Text style={[styles.statusPillText, { color }]}>{label}</Text>
         </View>
       </View>
       <View style={styles.dateBox}>
-        <DateRow label="Purchased" value={fmtDate(createdAtOf(pkg))} />
-        <DateRow label="Expiry" value={expiryText(pkg)} />
+        {purchaseDate ? <DateRow label={isRequest ? "Requested" : "Purchased"} value={purchaseDate} /> : null}
+        <DateRow label="Expiry" value={expiryText(pkg)} valueColor={DANGER} />
       </View>
       <View style={styles.barTrack}>
         <LinearGradient colors={[CYAN, CYAN_400]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.barFill, { width: `${pct}%` }]} />
@@ -143,8 +204,10 @@ export default function PackageCenterScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  const activeList = useMemo(() => packages.filter((p) => isActivePkg(p) || p.status === "pendingPayment"), [packages]);
-  const pastList = useMemo(() => packages.filter((p) => !isActivePkg(p) && p.status !== "pendingPayment"), [packages]);
+  const pendingRequests = useMemo(() => packages.filter(isPendingRequest), [packages]);
+  const rejectedRequests = useMemo(() => packages.filter(isRejectedRequest), [packages]);
+  const activeList = useMemo(() => packages.filter(isActivePkg), [packages]);
+  const pastList = useMemo(() => packages.filter(isPastPkg), [packages]);
   const hero = useMemo(() => packages.find((p) => isActivePkg(p)), [packages]);
   const list = tab === "active" ? activeList : pastList;
 
@@ -180,7 +243,7 @@ export default function PackageCenterScreen() {
             <View style={styles.emptyIcon}><SBI name="cal" size={30} stroke={1.6} color={CYAN} /></View>
             <Text style={styles.emptyTitle}>No packages yet</Text>
             <Text style={styles.emptyDesc}>Browse and purchase a class package to get started</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/packages" as any)} style={styles.emptyBtn} activeOpacity={0.88}>
+            <TouchableOpacity onPress={() => router.push("/(tabs)" as any)} style={styles.emptyBtn} activeOpacity={0.88}>
               <Text style={styles.emptyBtnText}>Browse Packages</Text>
             </TouchableOpacity>
           </View>
@@ -198,7 +261,7 @@ export default function PackageCenterScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.heroEyebrow}>ACTIVE PACKAGE</Text>
                     <Text style={styles.heroName} numberOfLines={1}>{hero.packageName}</Text>
-                    <Text style={styles.heroSub}>{hero.totalCredits} classes</Text>
+                    <Text style={styles.heroSub}>{hero.totalCredits} classes · {priceText(hero)}</Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
                     <Text style={styles.heroCredits}>{hero.remainingCredits}</Text>
@@ -213,13 +276,33 @@ export default function PackageCenterScreen() {
                   <Text style={styles.heroMeta}>{hero.remainingCredits}/{hero.totalCredits} remaining</Text>
                 </View>
                 <View style={styles.heroDateBox}>
-                  <DateRow label="Purchased" value={fmtDate(createdAtOf(hero))} />
-                  <DateRow label="Expiry" value={expiryText(hero)} />
+                  {requestDateText(hero, false) ? (
+                    <DateRow label="Purchased" value={requestDateText(hero, false)!} />
+                  ) : null}
+                  <DateRow label="Expiry" value={expiryText(hero)} valueColor={DANGER} />
                 </View>
-                <TouchableOpacity onPress={() => router.push("/(tabs)/packages" as any)} style={styles.buyBtn} activeOpacity={0.88}>
+                <TouchableOpacity onPress={() => router.push("/(tabs)" as any)} style={styles.buyBtn} activeOpacity={0.88}>
                   <Text style={styles.buyBtnText}>Buy New Package</Text>
                 </TouchableOpacity>
               </LinearGradient>
+            )}
+
+            {pendingRequests.length > 0 && (
+              <View style={styles.sectionBlock}>
+                <Text style={[styles.sectionLabel, { color: "#3B82F6" }]}>Pending Requests</Text>
+                <View style={{ gap: 12 }}>
+                  {pendingRequests.map((pkg) => <PackageCard key={pkg.id} pkg={pkg} />)}
+                </View>
+              </View>
+            )}
+
+            {rejectedRequests.length > 0 && (
+              <View style={styles.sectionBlock}>
+                <Text style={[styles.sectionLabel, { color: "#FF3B47" }]}>Request History</Text>
+                <View style={{ gap: 12 }}>
+                  {rejectedRequests.map((pkg) => <PackageCard key={pkg.id} pkg={pkg} />)}
+                </View>
+              </View>
             )}
 
             {/* Active / Past tabs */}
@@ -238,7 +321,7 @@ export default function PackageCenterScreen() {
             {list.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyTitle}>{tab === "active" ? "No active packages" : "No past packages"}</Text>
-                <Text style={styles.emptyDesc}>{tab === "active" ? "Purchase a package to start booking classes." : "Completed and expired packages will show up here."}</Text>
+                <Text style={styles.emptyDesc}>{tab === "active" ? "Approved packages with usable credits will show here." : "Expired and fully used packages will show up here."}</Text>
               </View>
             ) : (
               <View style={{ gap: 12 }}>
@@ -275,6 +358,9 @@ const styles = StyleSheet.create({
   buyBtn: { backgroundColor: CYAN, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
   buyBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 14, color: "#0A0B0D" },
 
+  sectionBlock: { marginBottom: 18 },
+  sectionLabel: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 },
+
   // tabs
   tabBar: { flexDirection: "row", gap: 4, padding: 4, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: 999, marginBottom: 16 },
   tab: { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
@@ -289,10 +375,10 @@ const styles = StyleSheet.create({
   cardSub: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_400, marginTop: 2 },
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   statusPillText: { fontFamily: "Archivo_700Bold", fontSize: 11 },
-  dateBox: { gap: 7, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.035)", borderWidth: 1, borderColor: "rgba(255,255,255,0.06)", marginBottom: 10 },
-  dateRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  dateBox: { gap: 10, paddingVertical: 11, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.045)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", marginBottom: 10 },
+  dateRow: { gap: 3 },
   dateLabel: { fontFamily: "Archivo_700Bold", fontSize: 12, color: INK_300 },
-  dateValue: { flex: 1, textAlign: "right", fontFamily: "Archivo_600SemiBold", fontSize: 12, color: "#FFFFFF" },
+  dateValue: { fontFamily: "Archivo_700Bold", fontSize: 13, lineHeight: 18 },
   barTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 3 },
 

@@ -6,9 +6,8 @@
  *
  * Route safety notes
  * ──────────────────
- * • packages.tsx route file is NOT deleted — it remains accessible via
- *   router.push("/(tabs)/packages") from the Home screen PackagesSection
- *   and from profile.tsx menu item "/package-center" (a separate stack screen).
+ * • packages.tsx route file is NOT deleted — it remains hidden/internal for
+ *   direct package browsing fallbacks; Package Center is a separate stack screen.
  * • bookings.tsx route file is NOT deleted — it remains accessible via
  *   router.push("/(tabs)/bookings") from profile menu and booking confirmation.
  * • The "Schedule" tab name maps to the existing "bookings" route which

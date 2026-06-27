@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -51,6 +52,7 @@ import {
 } from "@/data/apiAdapters";
 import { formatCairoDateKey, getCairoTomorrowDateKey } from "@/utils/cairoDate";
 import colors from "@/constants/colors";
+import PackagePurchaseModal from "@/components/PackagePurchaseModal";
 import NewStudentBanner from "@/components/NewStudentBanner";
 import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
@@ -591,7 +593,7 @@ function ClassCard({
 
 // ─── Package cards ────────────────────────────────────────────────────────────
 
-function PackageCard({ pkg }: { pkg: PricePackage }) {
+function PackageCard({ pkg, onChoose }: { pkg: PricePackage; onChoose: (pkg: PricePackage) => void }) {
   const { user } = useAppContext();
   const hot     = pkg.isFeatured;
   const credits = pkg.sessions ?? 1;
@@ -607,9 +609,7 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
           showAuthRequiredPrompt();
           return;
         }
-        // Start the purchase flow for THIS package directly (deep link opens the
-        // purchase confirmation on the Packages screen) instead of just listing.
-        router.push({ pathname: "/(tabs)/packages", params: { purchaseId: String(pkg.id) } });
+        onChoose(pkg);
       }}
     >
       {/* Top row: icon left + POPULAR badge right (design: space-between) */}
@@ -650,11 +650,47 @@ function PackageCard({ pkg }: { pkg: PricePackage }) {
 }
 
 function PackagesSection() {
+  const { user, purchasePackage } = useAppContext();
   const { data: raw, isLoading, isError } = useListPricePackages();
+  const [confirmPkg, setConfirmPkg] = useState<PricePackage | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
   const pkgs = React.useMemo(
     () => (raw ?? []).filter((p: PricePackage) => p.isActive !== false),
     [raw],
   );
+
+  const handleChoosePackage = useCallback((pkg: PricePackage) => {
+    if (!user) {
+      showAuthRequiredPrompt();
+      return;
+    }
+    setConfirmPkg(pkg);
+  }, [user]);
+
+  const confirmPurchase = useCallback(async () => {
+    if (!confirmPkg) return;
+    setPurchasing(true);
+    try {
+      await purchasePackage({
+        id: confirmPkg.id,
+        name: confirmPkg.name,
+        sessions: confirmPkg.sessions ?? 1,
+        validityMonths: 0,
+      });
+      const packageName = confirmPkg.name;
+      setConfirmPkg(null);
+      router.push("/package-center");
+      Alert.alert(
+        "Request Submitted!",
+        `Your ${packageName} request has been submitted. Our team will confirm payment and activate it shortly.`,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      Alert.alert("Request Failed", `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`);
+    } finally {
+      setPurchasing(false);
+    }
+  }, [confirmPkg, purchasePackage]);
 
   if (isError || (!isLoading && pkgs.length === 0)) {
     return (
@@ -668,7 +704,7 @@ function PackagesSection() {
             <Text style={s.pkgPromoDesc}>4, 8, or 12 classes — any style, 6-month validity</Text>
           </View>
           <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/(tabs)/packages"); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/package-center"); }}
             style={s.pkgPromoBtn}
           >
             <Text style={s.pkgPromoBtnText}>View</Text>
@@ -685,8 +721,8 @@ function PackagesSection() {
           <Text style={s.eyebrow}>SAVE MORE, DANCE MORE</Text>
           <Text style={s.sectionTitle}>Packages</Text>
         </View>
-        <TouchableOpacity onPress={() => router.push("/(tabs)/packages")} style={s.seeAllRow}>
-          <Text style={s.seeAllText}>Compare</Text>
+        <TouchableOpacity onPress={() => router.push("/package-center")} style={s.seeAllRow}>
+          <Text style={s.seeAllText}>Manage</Text>
           <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
         </TouchableOpacity>
       </View>
@@ -698,11 +734,18 @@ function PackagesSection() {
         <FlatList
           data={pkgs}
           keyExtractor={(p) => String(p.id)}
-          renderItem={({ item }) => <PackageCard pkg={item} />}
+          renderItem={({ item }) => <PackageCard pkg={item} onChoose={handleChoosePackage} />}
           horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingLeft: 20, gap: 12, paddingRight: 20 }}
         />
       )}
+      <PackagePurchaseModal
+        pkg={confirmPkg}
+        visible={!!confirmPkg}
+        submitting={purchasing}
+        onCancel={() => setConfirmPkg(null)}
+        onConfirm={confirmPurchase}
+      />
     </View>
   );
 }
