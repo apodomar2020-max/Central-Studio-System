@@ -8,6 +8,8 @@ import { DanceClass, Instructor } from "@/data/mockData";
 import { getScheduleLabel } from "@/data/apiAdapters";
 import { useColors } from "@/hooks/useColors";
 import colors from "@/constants/colors";
+import { useAppContext } from "@/contexts/AppContext";
+import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 interface ClassCardProps {
   item: DanceClass;
@@ -38,6 +40,7 @@ export default function ClassCard({
   packageCreditsRemaining = 0,
 }: ClassCardProps) {
   const c = useColors();
+  const { user } = useAppContext();
 
   function handlePress() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -138,6 +141,10 @@ export default function ClassCard({
             <TouchableOpacity
               onPress={() => {
                 if (!isBookable) return;
+                if (!user) {
+                  showAuthRequiredPrompt();
+                  return;
+                }
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
               }}
@@ -157,6 +164,10 @@ export default function ClassCard({
           <TouchableOpacity
             onPress={() => {
               if (!isBookable) return;
+              if (!user) {
+                showAuthRequiredPrompt();
+                return;
+              }
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
             }}

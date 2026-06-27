@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -37,6 +37,7 @@ import { probeConnectivity } from "@/services/connectivity";
 import { useAppContext, type ChildProfile } from "@/contexts/AppContext";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
+import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 /* ─── Design tokens (home-ballet2.jsx visual system) ─────────────── */
 const BASE    = "#0A0B0D";
@@ -431,6 +432,14 @@ export default function BalletAssessmentScreen() {
   // Whether the prefilled About You / Child sections are in (submission-only) edit mode.
   const [editAboutYou, setEditAboutYou] = useState(false);
   const [editChild, setEditChild] = useState(false);
+  const authPromptShownRef = useRef(false);
+
+  useEffect(() => {
+    if (user || authPromptShownRef.current) return;
+    authPromptShownRef.current = true;
+    showAuthRequiredPrompt();
+    router.replace("/ballet" as any);
+  }, [user]);
 
   // Prefill the parent fields from the logged-in account once — only filling
   // blanks so we never clobber something the user already typed.
@@ -484,12 +493,13 @@ export default function BalletAssessmentScreen() {
   const [liveSettings, setLiveSettings] = useState<BalletSettings | null>(null);
 
   useFocusEffect(useCallback(() => {
+    if (!user) return;
     let active = true;
     fetchBalletSettings()
       .then((s) => { if (active) setLiveSettings(s); })
       .catch(() => { /* keep BALLET_PRICING fallback on error */ });
     return () => { active = false; };
-  }, []));
+  }, [user]));
 
   // Pricing shown on Review step — live from admin settings, with static fallback
   const displayPricing = liveSettings
@@ -516,6 +526,7 @@ export default function BalletAssessmentScreen() {
   }, []);
 
   useEffect(() => {
+    if (!user) return;
     const controller = new AbortController();
 
     // 1. Probe connectivity.
@@ -533,7 +544,11 @@ export default function BalletAssessmentScreen() {
       });
 
     return () => controller.abort();
-  }, [loadSlots]);
+  }, [loadSlots, user]);
+
+  if (!user) {
+    return <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]} />;
+  }
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));

@@ -53,6 +53,7 @@ import {
   fetchClassPricing,
 } from "@/services/classPricingService";
 import { useAppContext } from "@/contexts/AppContext";
+import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 const INK_900 = "#0A0B0D";
@@ -898,7 +899,7 @@ function ClassDetailOverlay({
 export default function ClassesScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const { userPackages } = useAppContext();
+  const { user, userPackages } = useAppContext();
 
   const [search, setSearch]     = useState("");
   const [ageFilter, setAge]     = useState("all");
@@ -1037,6 +1038,10 @@ export default function ClassesScreen() {
   const visibleCats  = nonBalletCats.filter((cat) => filtered.some((c) => cat.matchesClass(c)));
 
   function handleBook(c: DanceClass, method: "package" | "cash") {
+    if (!user) {
+      showAuthRequiredPrompt();
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push({ pathname: "/booking/flow", params: { classId: c.id, method } } as any);
   }

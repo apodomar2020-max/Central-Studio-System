@@ -6,7 +6,6 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 
 const FEATURES = [
@@ -19,12 +18,9 @@ const FEATURES = [
 ];
 
 export default function ChooseScreen() {
-  const { setIsOnboarded } = useAppContext();
-
   async function handleStart() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await setIsOnboarded(true);
-    router.replace("/" as never);
+    router.replace("/onboarding/welcome" as never);
   }
 
   return (

@@ -50,7 +50,7 @@ export default function ConfirmationScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       <LinearGradient
-        colors={["#0A1A00", "#0B0B0F"]}
+        colors={["#0A1A00", "#0A0B0D"]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -67,7 +67,7 @@ export default function ConfirmationScreen() {
         </View>
 
         <Text style={styles.successTitle}>{successTitle}</Text>
-        <Text style={[styles.successSubtitle, { color: "#9CA3AF" }]}>
+        <Text style={[styles.successSubtitle, { color: "#8E97A2" }]}>
           {isCashPendingPayment
             ? "Booking request submitted. Please pay at the studio."
             : booking?.paymentMethod === "packageCredit"
@@ -75,23 +75,23 @@ export default function ConfirmationScreen() {
             : "Your payment was successful. You are all set!"}
         </Text>
 
-        <View style={[styles.card, { backgroundColor: "#14141A", borderColor: "#2A2A35" }]}>
+        <View style={[styles.card, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
           <View style={styles.bookingNumberRow}>
-            <Text style={[styles.bookingNumberLabel, { color: "#9CA3AF" }]}>Booking Ref</Text>
+            <Text style={[styles.bookingNumberLabel, { color: "#8E97A2" }]}>Booking Ref</Text>
             <Text style={[styles.bookingNumber, { color: colors.studio.primary }]}>{bookingNumber}</Text>
           </View>
 
-          <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />
+          <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
 
           {booking && (
             <>
               <View style={styles.cardRow}>
-                <Ionicons name="musical-notes-outline" size={16} color="#6B7280" />
+                <Ionicons name="musical-notes-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>Class</Text>
                 <Text style={styles.cardValue}>{booking.className}</Text>
               </View>
               <View style={styles.cardRow}>
-                <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                <Ionicons name="calendar-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>Schedule</Text>
                 <Text style={styles.cardValue}>{scheduleLabel}</Text>
               </View>
@@ -107,35 +107,35 @@ export default function ConfirmationScreen() {
                 <Text style={styles.cardValue}>{booking.instructorName}</Text>
               </View>
               <View style={styles.cardRow}>
-                <Ionicons name="timer-outline" size={16} color="#6B7280" />
+                <Ionicons name="timer-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>Duration</Text>
                 <Text style={styles.cardValue}>{booking.duration}</Text>
               </View>
               <View style={styles.cardRow}>
-                <Ionicons name="pricetag-outline" size={16} color="#6B7280" />
+                <Ionicons name="pricetag-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>Type</Text>
                 <Text style={styles.cardValue}>{booking.danceType}</Text>
               </View>
               <View style={styles.cardRow}>
-                <Ionicons name="person-outline" size={16} color="#6B7280" />
+                <Ionicons name="person-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>For</Text>
                 <Text style={styles.cardValue}>{booking.participantName}</Text>
               </View>
               <View style={styles.cardRow}>
-                <Ionicons name="location-outline" size={16} color="#6B7280" />
+                <Ionicons name="location-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>Where</Text>
                 <Text style={styles.cardValue}>{booking.location}</Text>
               </View>
               <View style={styles.cardRow}>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#6B7280" />
+                <Ionicons name="checkmark-circle-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>Status</Text>
                 <Text style={styles.cardValue}>
                   {booking.bookingStatus === "pending" ? "Waiting for confirmation" : "Booking confirmed"}
                 </Text>
               </View>
-              <View style={[styles.divider, { backgroundColor: "#2A2A35" }]} />
+              <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
               <View style={styles.cardRow}>
-                <Ionicons name="card-outline" size={16} color="#6B7280" />
+                <Ionicons name="card-outline" size={16} color="#6B747F" />
                 <Text style={styles.cardLabel}>Payment</Text>
                 <View style={[styles.payBadge, {
                   backgroundColor: booking.paymentStatus === "paid" || booking.paymentStatus === "not_required" ? colors.success + "20" : colors.warning + "20",
@@ -153,7 +153,7 @@ export default function ConfirmationScreen() {
 
         <View style={[styles.reminderBanner, { backgroundColor: colors.info + "10", borderColor: colors.info + "30" }]}>
           <Ionicons name="notifications-outline" size={16} color={colors.info} />
-          <Text style={[styles.reminderText, { color: "#9CA3AF" }]}>
+          <Text style={[styles.reminderText, { color: "#8E97A2" }]}>
             You will receive a reminder 2 hours before your class starts.
           </Text>
         </View>
@@ -183,7 +183,7 @@ export default function ConfirmationScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0B0B0F" },
+  container: { flex: 1, backgroundColor: "#0A0B0D" },
   content: {
     flex: 1,
     paddingHorizontal: 24,
@@ -209,14 +209,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   successTitle: {
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
+    fontSize: 40,
+    fontFamily: "Anton_400Regular",
     color: "#FFFFFF",
     textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    lineHeight: 40,
   },
   successSubtitle: {
     fontSize: 14,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     textAlign: "center",
     lineHeight: 20,
     marginTop: -8,
@@ -233,8 +236,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
   },
-  bookingNumberLabel: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  bookingNumber: { fontSize: 18, fontFamily: "Inter_700Bold", letterSpacing: 1 },
+  bookingNumberLabel: { fontSize: 13, fontFamily: "Archivo_400Regular" },
+  bookingNumber: { fontSize: 18, fontFamily: "SpaceMono_700Bold", letterSpacing: 1 },
   divider: { height: 1 },
   cardRow: {
     flexDirection: "row",
@@ -243,8 +246,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  cardLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#6B7280", width: 56 },
-  cardValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF", flex: 1 },
+  cardLabel: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", width: 56 },
+  cardValue: { fontSize: 13, fontFamily: "Archivo_500Medium", color: "#FFFFFF", flex: 1 },
   instructorAvatar: {
     width: 20,
     height: 20,
@@ -254,9 +257,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   instructorAvatarImage: { width: "100%", height: "100%" },
-  instructorInitials: { fontSize: 8, fontFamily: "Inter_700Bold" },
+  instructorInitials: { fontSize: 8, fontFamily: "Archivo_700Bold" },
   payBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  payBadgeText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  payBadgeText: { fontSize: 12, fontFamily: "Archivo_600SemiBold" },
   reminderBanner: {
     width: "100%",
     flexDirection: "row",
@@ -266,6 +269,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "flex-start",
   },
-  reminderText: { fontSize: 13, fontFamily: "Inter_400Regular", flex: 1, lineHeight: 18 },
+  reminderText: { fontSize: 13, fontFamily: "Archivo_400Regular", flex: 1, lineHeight: 18 },
   buttonsRow: { width: "100%", gap: 10 },
 });

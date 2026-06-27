@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Alert } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
+import { STORAGE_KEYS } from "@/constants/danceStyles";
 
 export interface User {
   id: string;
@@ -176,6 +177,23 @@ function addMonths(dateStr: string, months: number): string {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+const AUTH_SCOPED_STORAGE_KEYS = [
+  "user",
+  "studentToken",
+  "bookings",
+  "children",
+  "packageUsageHistory",
+  "baletApplications",
+  "notifications",
+  "referralCode",
+  "referralCredits",
+  STORAGE_KEYS.needsPersonalization,
+];
+
+async function clearAuthScopedStorage() {
+  await AsyncStorage.multiRemove(AUTH_SCOPED_STORAGE_KEYS);
+}
+
 export function AppContextProvider({ children: childrenNodes }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<"en" | "ar">("en");
   const [isOnboarded, setIsOnboardedState] = useState(false);
@@ -230,7 +248,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         // so the user is prompted to log in and receive a proper signed token.
         const studentToken = await AsyncStorage.getItem("studentToken");
         if (!studentToken) {
-          await AsyncStorage.removeItem("user");
+          await clearAuthScopedStorage();
           // parsedUser is intentionally not set in state — session is invalidated.
         } else {
           let effectiveUser = parsedUser;
@@ -246,16 +264,18 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         }
       }
 
-      if (bks) setBookings(JSON.parse(bks));
-      if (chldrn) setChildren(JSON.parse(chldrn));
-      if (usage) setPackageUsageHistory(JSON.parse(usage));
-      if (ballets) setBaletApplications(JSON.parse(ballets));
-      if (notifs) setNotifications(JSON.parse(notifs));
+      const confirmedUser = userRef.current;
+      if (confirmedUser) {
+        if (bks) setBookings(JSON.parse(bks));
+        if (chldrn) setChildren(JSON.parse(chldrn));
+        if (usage) setPackageUsageHistory(JSON.parse(usage));
+        if (ballets) setBaletApplications(JSON.parse(ballets));
+        if (notifs) setNotifications(JSON.parse(notifs));
+      }
       if (bannerDismissed === "true") setNewStudentBannerDismissed(true);
-      if (refCredits) setReferralCredits(parseInt(refCredits, 10));
+      if (confirmedUser && refCredits) setReferralCredits(parseInt(refCredits, 10));
 
       // Reload the referral code for the now-confirmed user (may be null if invalidated)
-      const confirmedUser = userRef.current;
       if (refCode) {
         setReferralCode(refCode);
       } else if (confirmedUser) {
@@ -354,7 +374,13 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     setUserState(usr);
     userRef.current = usr;
     if (usr) {
-      await AsyncStorage.setItem("user", JSON.stringify(usr));
+      // Strip qrToken before writing to AsyncStorage — it is a sensitive
+      // check-in secret and AsyncStorage is unencrypted on-device storage.
+      // The token stays in React state (userState) so my-qr.tsx still works
+      // in-session; it just won't be exposed to any process that reads the
+      // raw AsyncStorage file on a rooted/jailbroken device.
+      const { qrToken: _qrToken, ...persistedUser } = usr;
+      await AsyncStorage.setItem("user", JSON.stringify(persistedUser));
       const existing = await AsyncStorage.getItem("referralCode");
       if (!existing) {
         const generated = generateCode(usr.fullName);
@@ -373,11 +399,15 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       // Logout — clear both the user record and the student JWT.
       // After this, setAuthTokenGetter falls back to the shared API key
       // so guest browsing (classes, packages) still works.
-      await AsyncStorage.removeItem("user");
-      await AsyncStorage.removeItem("studentToken");
+      await clearAuthScopedStorage();
+      setBookings([]);
       setUserPackages([]);
       setChildren([]);
-      await AsyncStorage.removeItem("children");
+      setPackageUsageHistory([]);
+      setBaletApplications([]);
+      setNotifications([]);
+      setReferralCode("");
+      setReferralCredits(0);
     }
   }, []);
 

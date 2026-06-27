@@ -26,6 +26,8 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { useAppContext } from "@/contexts/AppContext";
+import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 function ClassVideoHero({ url }: { url: string }) {
   const player = useVideoPlayer(url, (instance) => {
@@ -64,6 +66,7 @@ function StatusBadge({ status }: { status: string }) {
 export default function ClassDetailScreen() {
   const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
   const insets = useSafeAreaInsets();
+  const { user } = useAppContext();
   const [heroImageFailed, setHeroImageFailed] = useState(false);
   const [instructorImageFailed, setInstructorImageFailed] = useState(false);
 
@@ -282,6 +285,10 @@ export default function ClassDetailScreen() {
             <AppButton
               title="Book This Class"
               onPress={() => {
+                if (!user) {
+                  showAuthRequiredPrompt();
+                  return;
+                }
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 router.push({ pathname: "/booking/flow", params: { classId: cls.id, scheduleId: cls.scheduleId } });
               }}

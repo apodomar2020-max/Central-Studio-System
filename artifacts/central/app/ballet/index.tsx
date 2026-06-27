@@ -27,6 +27,8 @@ import {
   ACTIVE_APPLICATION_STATUSES,
 } from "@/services/balletAssessmentService";
 import { mapApiClassToMobile } from "@/data/apiAdapters";
+import { useAppContext } from "@/contexts/AppContext";
+import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 // Base/card/border values taken from the explicit task spec (override the
@@ -137,11 +139,16 @@ function BNavCard({
 export default function BalletProgramScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const { user } = useAppContext();
 
   /* Fetch ballet status for apply-routing (non-blocking — page shows immediately) */
   const [hasActiveApplication, setHasActiveApplication] = useState<boolean | null>(null);
 
   useEffect(() => {
+    if (!user) {
+      setHasActiveApplication(false);
+      return;
+    }
     const ctrl = new AbortController();
     fetchMyApplications(ctrl.signal)
       .then((apps) => {
@@ -153,7 +160,7 @@ export default function BalletProgramScreen() {
         setHasActiveApplication(false);
       });
     return () => ctrl.abort();
-  }, []);
+  }, [user]);
 
   /* Live ballet-class count for the "Ballet Classes" nav card subtitle.
      Uses the existing classes API filtered via the adapter's isBallet flag —
@@ -174,6 +181,10 @@ export default function BalletProgramScreen() {
 
   function handleApply() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (!user) {
+      showAuthRequiredPrompt();
+      return;
+    }
     if (hasActiveApplication) {
       router.push("/ballet/application-status" as any);
     } else {

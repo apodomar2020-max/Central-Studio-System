@@ -25,6 +25,7 @@ import { PackageCardSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
+import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 function PackageCard({
   pkg,
@@ -266,10 +267,7 @@ export default function PackagesScreen() {
 
   function handleBuy(pkg: PricePackage) {
     if (!user) {
-      Alert.alert("Sign In Required", "Please sign in to purchase a package.", [
-        { text: "Sign In", onPress: () => router.push("/auth/login") },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      showAuthRequiredPrompt();
       return;
     }
     setConfirmPkg(pkg);
