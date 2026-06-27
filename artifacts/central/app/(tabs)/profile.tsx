@@ -935,25 +935,6 @@ export default function ProfileScreen() {
             </View>
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/verify-email")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
-            <View style={[styles.menuIcon, { backgroundColor: "#00B6D715" }]}>
-              <PIcon name="mail" size={19} stroke={2.1} color="#00B6D7" />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuLabel}>Email Verification</Text>
-            </View>
-            {user.emailVerified ? (
-              <View style={styles.verifiedGreenBadge}>
-                <PIcon name="check" size={12} stroke={3} color="#1FB871" />
-                <Text style={styles.verifiedGreenBadgeText}>Verified</Text>
-              </View>
-            ) : (
-              <View style={styles.unverifiedBadge}>
-                <Text style={styles.unverifiedBadgeText}>Unverified</Text>
-              </View>
-            )}
-            <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
-          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push("/two-factor-auth")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#FFB02E15" }]}>
               <PIcon name="shield" size={19} stroke={2.1} color="#FFB02E" />
@@ -1066,10 +1047,6 @@ const styles = StyleSheet.create({
   menuTrailingText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: "#9CA3AF", marginRight: 4 },
   notificationBadge: { backgroundColor: "#FF2E7E", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginRight: 4 },
   notificationBadgeText: { fontSize: 12, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  verifiedGreenBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(31, 184, 113, 0.15)", borderWidth: 1, borderColor: "rgba(31, 184, 113, 0.3)" },
-  verifiedGreenBadgeText: { fontSize: 11, fontFamily: "Archivo_700Bold", color: "#1FB871" },
-  unverifiedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(255,176,46,0.14)", borderWidth: 1, borderColor: "rgba(255,176,46,0.3)" },
-  unverifiedBadgeText: { fontSize: 11, fontFamily: "Archivo_700Bold", color: "#FFB02E" },
 
   attendanceItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 16 },
   attendanceDot: { width: 8, height: 8, borderRadius: 4 },
