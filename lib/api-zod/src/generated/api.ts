@@ -265,6 +265,7 @@ export const ListSchedulesResponseItem = zod.object({
   effectiveFrom: zod.string().nullish(),
   effectiveUntil: zod.string().nullish(),
   bookedCount: zod.number().optional(),
+  currentOccurrenceDate: zod.string().nullish(),
   createdAt: zod.string(),
 });
 export const ListSchedulesResponse = zod.array(ListSchedulesResponseItem);
@@ -472,6 +473,7 @@ export const ListBookingsResponseItem = zod.object({
   paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string(),
+  occurrenceDate: zod.string().nullish(),
   createdAt: zod.string(),
   // Display-ready fields joined from class / schedule / instructor. All nullish
   // so bookings with missing relations still validate (additive, backward-compatible).
@@ -541,6 +543,7 @@ export const GetBookingResponse = zod.object({
   paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string(),
+  occurrenceDate: zod.string().nullish(),
   createdAt: zod.string(),
 });
 
@@ -584,6 +587,7 @@ export const UpdateBookingResponse = zod.object({
   paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string(),
+  occurrenceDate: zod.string().nullish(),
   createdAt: zod.string(),
 });
 

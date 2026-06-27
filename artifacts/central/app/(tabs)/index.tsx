@@ -581,7 +581,7 @@ function ClassCard({
           ]}
         >
           <Text style={[s.bookBtnText, { color: isBookable ? INK_900 : INK_300 }]}>
-            {item.status === "cancelled" ? "Cancelled" : item.status === "full" ? "Full" : isBookable ? "Book" : "N/A"}
+            {item.status === "cancelled" ? "Cancelled" : item.status === "full" ? "Full" : isBookable ? "Book Now" : "N/A"}
           </Text>
         </TouchableOpacity>
       </View>

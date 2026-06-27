@@ -39,6 +39,9 @@ export interface Booking {
   id: string;
   classId: string;
   scheduleId?: string;
+  /** The specific class occurrence this booking is for (YYYY-MM-DD), from the
+   *  backend. Used to scope the Cancel CTA to the current occurrence only. */
+  occurrenceDate?: string;
   className: string;
   danceType: string;
   instructorName: string;
@@ -144,6 +147,7 @@ interface AppContextType {
   removeChild: (childId: string) => void;
   bookings: Booking[];
   addBooking: (booking: Booking) => void;
+  cancelBooking: (bookingId: string) => Promise<void>;
   userPackages: UserPackage[];
   packageUsageHistory: PackageUsage[];
   purchasePackage: (pkg: { id: number; name: string; sessions: number | null; validityMonths: number }) => Promise<void>;
@@ -517,6 +521,20 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     });
   }, []);
 
+  // Cancel one of the user's own bookings. The backend flips bookingStatus to
+  // 'cancelled' (keeps the record + releases the seat); we mirror that locally so
+  // the CTA/progress update immediately. Throws on failure so callers can alert.
+  const cancelBooking = useCallback(async (bookingId: string): Promise<void> => {
+    await customFetch(`/api/bookings/${bookingId}/cancel`, { method: "PATCH" });
+    setBookings((prev) => {
+      const updated = prev.map((b) =>
+        b.id === bookingId ? { ...b, bookingStatus: "cancelled" as const } : b,
+      );
+      AsyncStorage.setItem("bookings", JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   const refreshUserPackages = useCallback(async () => {
     await fetchAndSetPackages();
   }, []);
@@ -657,6 +675,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         removeChild,
         bookings,
         addBooking,
+        cancelBooking,
         userPackages,
         packageUsageHistory,
         purchasePackage,

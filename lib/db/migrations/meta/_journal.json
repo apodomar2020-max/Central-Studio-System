@@ -241,5 +241,13 @@
       "tag": "0029_schedule_status",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783252800000,
+      "tag": "0030_booking_occurrence",
+      "breakpoints": true
+    }
   ]
 }

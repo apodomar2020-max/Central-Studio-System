@@ -1,4 +1,4 @@
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { date, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { childrenTable } from "./children";
@@ -14,6 +14,10 @@ export const bookingsTable = pgTable("bookings", {
   bookingScope: text("booking_scope"),
   scheduleId: integer("schedule_id"),
   classId: integer("class_id"),
+  // The specific class occurrence this booking is for (YYYY-MM-DD). Booking
+  // identity = student + schedule + occurrence, so a weekly class can be re-booked
+  // for the next occurrence once the previous one passes. Null for legacy rows.
+  occurrenceDate: date("occurrence_date", { mode: "string" }),
   packageId: integer("package_id"),
   // Explicit packageOrderId added in migration 0013. Legacy packageId field kept for
   // backward-compat but packageOrderId is the authoritative FK to package_orders.id.

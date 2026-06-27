@@ -284,7 +284,7 @@ export default function ClassDetailScreen() {
             />
           ) : (
             <AppButton
-              title="Book This Class"
+              title="Book Now"
               onPress={() => {
                 if (!user) {
                   showAuthRequiredPrompt();

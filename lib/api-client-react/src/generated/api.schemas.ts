@@ -193,8 +193,10 @@ export interface Schedule {
   effectiveFrom?: string | null;
   /** @nullable */
   effectiveUntil?: string | null;
-  /** Non-cancelled bookings for this schedule (list endpoint only). */
+  /** Non-cancelled bookings for this schedule's current occurrence (list endpoint only). */
   bookedCount?: number;
+  /** The current upcoming occurrence date YYYY-MM-DD (list endpoint only). */
+  currentOccurrenceDate?: string | null;
   createdAt: string;
 }
 
@@ -331,6 +333,8 @@ export interface Booking {
   /** @nullable */
   notes?: string | null;
   bookedAt: string;
+  /** @nullable — the specific class occurrence this booking is for (YYYY-MM-DD) */
+  occurrenceDate?: string | null;
   createdAt: string;
   /** @nullable — class title joined from classes.id */
   classTitle?: string | null;

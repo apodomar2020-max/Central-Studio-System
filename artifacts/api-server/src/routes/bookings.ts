@@ -1,7 +1,7 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   bookingsTable,
@@ -25,6 +25,7 @@ import {
   DeleteBookingParams,
   ListBookingsResponse,
 } from "@workspace/api-zod";
+import { currentOccurrenceDate } from "../lib/occurrence";
 
 const router: IRouter = Router();
 
@@ -582,6 +583,13 @@ router.post(
     return;
   }
 
+  // Occurrence date for this booking (computed server-side from the schedule's
+  // current upcoming occurrence). Booking identity = student + schedule +
+  // occurrence, so weekly classes can be re-booked next week once today's passes.
+  // TODO: When a full recurring occurrence model is introduced, derive this from
+  // the explicit occurrence row instead of recomputing from the schedule.
+  let occurrenceDate: string | null = null;
+
   if (normalized.scheduleId != null) {
     await refreshScheduleLifecycle(normalized.scheduleId);
     const [schedule] = await db
@@ -589,10 +597,18 @@ router.post(
         id: schedulesTable.id,
         status: schedulesTable.status,
         packageEligible: schedulesTable.packageEligible,
+        type: schedulesTable.type,
+        date: schedulesTable.date,
+        dayOfWeek: schedulesTable.dayOfWeek,
+        startTime: schedulesTable.startTime,
       })
       .from(schedulesTable)
       .where(eq(schedulesTable.id, normalized.scheduleId))
       .limit(1);
+
+    if (schedule) {
+      occurrenceDate = currentOccurrenceDate(schedule);
+    }
 
     if (!schedule) {
       res.status(400).json({
@@ -662,6 +678,46 @@ router.post(
     bookingScope = "self";
   }
 
+  // ── Duplicate-booking guard (backend-enforced, OCCURRENCE-aware) ────────────
+  // Block a second ACTIVE booking by the same account/participant for the same
+  // class OCCURRENCE. Active = a booking that still reserves a seat (pending or
+  // confirmed). Cancelled/rejected (and past attended/completed) do NOT block, so
+  // a user can re-book after cancelling or — for a weekly class — once the current
+  // occurrence has passed and the schedule rolls to next week.
+  {
+    const targetMatch = normalized.scheduleId != null
+      ? eq(bookingsTable.scheduleId, normalized.scheduleId)
+      : normalized.classId != null
+        ? eq(bookingsTable.classId, normalized.classId)
+        : null;
+    if (targetMatch) {
+      const [existingActive] = await db
+        .select({ id: bookingsTable.id })
+        .from(bookingsTable)
+        .where(and(
+          sql`(${bookingsTable.accountOwnerStudentId} = ${accountOwnerStudentId} OR lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(studentEmail)})`,
+          targetMatch,
+          // Same participant (self vs a specific child); null = self.
+          sql`${bookingsTable.participantChildId} is not distinct from ${participantChildId}`,
+          // Same occurrence. When we have a computed occurrence date, only an
+          // active booking for the SAME occurrence blocks; a different/next-week
+          // occurrence (or legacy null rows) does not.
+          occurrenceDate != null
+            ? eq(bookingsTable.occurrenceDate, occurrenceDate)
+            : sql`${bookingsTable.occurrenceDate} is null`,
+          inArray(bookingsTable.bookingStatus, ["pending", "confirmed"]),
+        ))
+        .limit(1);
+      if (existingActive) {
+        res.status(409).json({
+          error: "You already have an active booking for this class.",
+          code: "duplicate_booking",
+        });
+        return;
+      }
+    }
+  }
+
   const row = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(bookingsTable)
@@ -674,6 +730,7 @@ router.post(
         accountOwnerStudentId,
         participantChildId,
         bookingScope,
+        occurrenceDate,
       } as typeof bookingsTable.$inferInsert)
       .returning();
 
@@ -731,6 +788,72 @@ router.get("/bookings/:id", requireBookingReadAccess, async (req, res): Promise<
   }
   res.json(GetBookingResponse.parse(row));
 });
+
+// ── Student-safe cancellation ────────────────────────────────────────────────
+// Students may cancel ONLY their own ACTIVE booking. Sets bookingStatus =
+// 'cancelled' (keeps the record for history — never deletes), which releases the
+// seat (booked count excludes cancelled). If the schedule had been auto-marked
+// "completed" (full), free it back to "active" so the seat is reusable.
+router.patch(
+  "/bookings/:id/cancel",
+  requireStudentAuth,
+  requireVerifiedStudent,
+  async (req, res): Promise<void> => {
+    const params = GetBookingParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const result = await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
+      if (!existing) return { kind: "not_found" as const };
+      const ownsIt =
+        (existing.accountOwnerStudentId != null && existing.accountOwnerStudentId === req.studentId) ||
+        normalizeEmail(existing.studentEmail) === normalizeEmail(req.studentEmail ?? "");
+      if (!ownsIt) return { kind: "not_found" as const }; // 404 — never leak others' bookings
+      if (existing.bookingStatus === "cancelled") return { kind: "ok" as const, booking: existing };
+      if (existing.bookingStatus !== "pending" && existing.bookingStatus !== "confirmed") {
+        return { kind: "not_cancellable" as const };
+      }
+      const [updated] = await tx
+        .update(bookingsTable)
+        .set({ bookingStatus: "cancelled", status: "cancelled" })
+        .where(eq(bookingsTable.id, existing.id))
+        .returning();
+      // Release the seat: revert a "completed" (full) schedule back to active when
+      // it is now below capacity.
+      if (updated.scheduleId != null) {
+        await tx.update(schedulesTable).set({ status: "active" }).where(sql`
+          ${schedulesTable.id} = ${updated.scheduleId}
+          and ${schedulesTable.status} = 'completed'
+          and exists (
+            select 1 from ${classesTable}
+            where ${classesTable.id} = ${schedulesTable.classId}
+              and ${classesTable.capacity} > (
+                select count(*)::int from ${bookingsTable}
+                where ${bookingsTable.scheduleId} = ${schedulesTable.id}
+                  and ${bookingsTable.bookingStatus} not in ('cancelled', 'rejected')
+              )
+          )
+        `);
+      }
+      const notification = await bookingStatusNotification(tx, updated, "cancelled");
+      if (notification) {
+        await createStudentNotification(tx, { studentEmail: updated.studentEmail, ...notification });
+      }
+      return { kind: "ok" as const, booking: updated };
+    });
+    if (result.kind === "not_found") {
+      res.status(404).json({ error: "Booking not found" });
+      return;
+    }
+    if (result.kind === "not_cancellable") {
+      res.status(409).json({ error: "This booking can no longer be cancelled.", code: "not_cancellable" });
+      return;
+    }
+    res.json(GetBookingResponse.parse(result.booking));
+  },
+);
 
 router.patch(
   "/bookings/:id",

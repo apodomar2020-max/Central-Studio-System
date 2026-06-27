@@ -252,6 +252,8 @@ export default function BookingFlowScreen() {
         id: String(apiBooking.id),
         classId: cls.id,
         scheduleId: cls.scheduleId,
+        // Server-computed occurrence (falls back to the displayed occurrence date).
+        occurrenceDate: apiBooking.occurrenceDate ?? cls.date,
         className: cls.title,
         danceType: cls.categoryName,
         instructorName: instructor?.name ?? "Instructor",
@@ -283,6 +285,18 @@ export default function BookingFlowScreen() {
     } catch (err) {
       setLoading(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      // Friendly handling for the backend duplicate-booking guard (HTTP 409 /
+      // code "duplicate_booking") instead of the generic failure screen.
+      const status = (err as { status?: number })?.status;
+      const msg = err instanceof Error ? err.message : "";
+      if (status === 409 || /duplicate_booking|already have an active booking/i.test(msg)) {
+        Alert.alert(
+          "Already booked",
+          "You already have an active booking for this class. You can cancel it from the Classes screen first.",
+          [{ text: "OK", onPress: () => router.back() }],
+        );
+        return;
+      }
       setBookingFailed(true);
     }
   }

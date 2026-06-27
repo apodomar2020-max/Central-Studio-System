@@ -1,8 +1,9 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { Router, type IRouter } from "express";
-import { and, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, or, sql } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
+import { currentOccurrenceDate } from "../lib/occurrence";
 import { createStudentNotification } from "../lib/notifications";
 import {
   ListSchedulesQueryParams,
@@ -306,29 +307,48 @@ router.get("/schedules", async (req, res): Promise<void> => {
     res.status(400).json({ error: query.error.message });
     return;
   }
-  // Per-schedule BOOKINGS count (not attendance): distinct non-cancelled bookings
-  // for the schedule. Drives the class capacity/progress bar in the app.
-  const bookedCount = sql<number>`(
-    select count(*)::int from ${bookingsTable}
-    where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-      and ${bookingsTable.bookingStatus} <> 'cancelled'
-      and ${bookingsTable.bookingStatus} <> 'rejected'
-  )`;
-  const selection = { ...getTableColumns(schedulesTable), bookedCount };
-  let rows;
-  if (query.data.classId != null) {
-    rows = await db
-      .select(selection)
-      .from(schedulesTable)
-      .where(eq(schedulesTable.classId, query.data.classId))
-      .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
-  } else {
-    rows = await db
-      .select(selection)
-      .from(schedulesTable)
-      .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
+  const scheduleRows = query.data.classId != null
+    ? await db
+        .select()
+        .from(schedulesTable)
+        .where(eq(schedulesTable.classId, query.data.classId))
+        .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime)
+    : await db
+        .select()
+        .from(schedulesTable)
+        .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
+
+  // Occurrence-aware booked count (BOOKINGS, not attendance): tally active
+  // (non-cancelled/rejected) bookings grouped by (schedule, occurrence_date), then
+  // take only the count for each schedule's CURRENT upcoming occurrence. So a
+  // weekly class's progress bar reflects this week, not lifetime bookings.
+  // TODO: Replace schedule-level grouping with occurrence-level bookedCount when
+  // the recurring occurrence model is introduced.
+  const ids = scheduleRows.map((s) => s.id);
+  const countRows = ids.length
+    ? await db
+        .select({
+          scheduleId: bookingsTable.scheduleId,
+          occ: bookingsTable.occurrenceDate,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(bookingsTable)
+        .where(and(
+          inArray(bookingsTable.scheduleId, ids),
+          notInArray(bookingsTable.bookingStatus, ["cancelled", "rejected"]),
+        ))
+        .groupBy(bookingsTable.scheduleId, bookingsTable.occurrenceDate)
+    : [];
+  const countByKey = new Map<string, number>();
+  for (const c of countRows) {
+    countByKey.set(`${c.scheduleId}|${c.occ ?? ""}`, Number(c.n));
   }
-  res.json(ListSchedulesResponse.parse(rows));
+  const enriched = scheduleRows.map((s) => {
+    const occ = currentOccurrenceDate(s);
+    const bookedCount = occ ? countByKey.get(`${s.id}|${occ}`) ?? 0 : 0;
+    return { ...s, bookedCount, currentOccurrenceDate: occ };
+  });
+  res.json(ListSchedulesResponse.parse(enriched));
 });
 
 router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "create"), async (req, res): Promise<void> => {

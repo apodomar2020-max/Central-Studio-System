@@ -7,8 +7,9 @@ import React, {
   useCallback, useMemo, useRef, useState,
   useEffect,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -27,7 +28,7 @@ import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-s
 
 import XI from "@/components/XiIcon";
 import CategoryIcon from "@/components/CategoryIcon";
-import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes } from "@workspace/api-client-react";
+import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes, getListSchedulesQueryKey } from "@workspace/api-client-react";
 import {
   fetchMyApplications,
   ACTIVE_APPLICATION_STATUSES,
@@ -471,7 +472,58 @@ function ExploreClassCard({
   onBook: (c: DanceClass, method: "package" | "cash") => void;
   onSelect: (c: DanceClass) => void;
 }) {
-  const pct = item.capacity > 0 ? Math.round((item.bookedCount / item.capacity) * 100) : 0;
+  const { bookings, cancelBooking } = useAppContext();
+  const queryClient = useQueryClient();
+
+  // The current user's ACTIVE booking for THIS occurrence (drives Cancel CTA).
+  // Occurrence-scoped: the booking must be for the same occurrence the card is
+  // currently showing (item.date = the schedule's current upcoming occurrence), so
+  // a weekly class's Cancel CTA flips back to "Book Now" once that occurrence
+  // passes — it does NOT stay "Cancel Booking" forever.
+  // TODO: When a full recurring occurrence model lands, match on occurrenceId.
+  const activeBooking = useMemo(
+    () => bookings.find((b) =>
+      b.classId === item.id &&
+      (item.scheduleId ? b.scheduleId === item.scheduleId : true) &&
+      b.occurrenceDate === item.date &&
+      (b.bookingStatus === "pending" || b.bookingStatus === "confirmed"),
+    ),
+    [bookings, item.id, item.scheduleId, item.date],
+  );
+
+  const handleCancel = useCallback(() => {
+    if (!activeBooking) return;
+    Alert.alert(
+      "Cancel booking?",
+      `Cancel your booking for ${item.title}? This frees up your seat.`,
+      [
+        { text: "Keep booking", style: "cancel" },
+        {
+          text: "Cancel booking",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await cancelBooking(activeBooking.id);
+              // Refresh schedules so the progress bar / booked count update.
+              await queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (e) {
+              Alert.alert("Couldn't cancel", e instanceof Error ? e.message : "Please try again.");
+            }
+          },
+        },
+      ],
+    );
+  }, [activeBooking, cancelBooking, item.title, queryClient]);
+
+  // Progress bar reflects REAL active bookings for the CURRENT occurrence (backend
+  // bookedCount excludes cancelled/rejected). Cancelling refreshes the schedules
+  // query so this updates. When Admin marks the schedule full ("completed" →
+  // mapped to status "full"), the bar shows full WITHOUT faking the real count.
+  // TODO: Replace schedule-level bookedCount with occurrence-level bookedCount when recurring occurrence model is introduced.
+  const pct = item.status === "full"
+    ? 100
+    : item.capacity > 0 ? Math.round((item.bookedCount / item.capacity) * 100) : 0;
   const barColor = pct >= 85 ? DANGER : pct >= 60 ? AMBER : CYAN;
   const st = item.status;
   const stC = statusColor(st);
@@ -599,24 +651,34 @@ function ExploreClassCard({
 
       {/* Actions */}
       <View style={s.classCardActions}>
-        {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
-          <TouchableOpacity
-            onPress={() => onBook(item, "package")}
-            style={s.btnPackage}
-            activeOpacity={0.85}
-          >
-            <Text style={s.btnPackageText}>Use Package</Text>
+        {activeBooking ? (
+          // User already has an active booking for this class/schedule → Cancel CTA
+          // (no Book). Cancelling releases the seat and returns the CTA to Book.
+          <TouchableOpacity onPress={handleCancel} style={s.btnCancel} activeOpacity={0.85}>
+            <Text style={s.btnCancelText}>Cancel Booking</Text>
           </TouchableOpacity>
+        ) : (
+          <>
+            {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
+              <TouchableOpacity
+                onPress={() => onBook(item, "package")}
+                style={s.btnPackage}
+                activeOpacity={0.85}
+              >
+                <Text style={s.btnPackageText}>Use Package</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => { if (st !== "full" && st !== "cancelled") onBook(item, "cash"); }}
+              style={[s.btnBook, (st === "full" || st === "cancelled") && { backgroundColor: "rgba(255,255,255,0.06)" }]}
+              activeOpacity={0.85}
+            >
+              <Text style={[s.btnBookText, (st === "full" || st === "cancelled") && { color: INK_400 }]}>
+                {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : "Book Now"}
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
-        <TouchableOpacity
-          onPress={() => { if (st !== "full" && st !== "cancelled") onBook(item, "cash"); }}
-          style={[s.btnBook, (st === "full" || st === "cancelled") && { backgroundColor: "rgba(255,255,255,0.06)" }]}
-          activeOpacity={0.85}
-        >
-          <Text style={[s.btnBookText, (st === "full" || st === "cancelled") && { color: INK_400 }]}>
-            {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : `Book · EGP ${item.price}`}
-          </Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -888,7 +950,7 @@ function ClassDetailOverlay({
             activeOpacity={0.85}
           >
             <Text style={[s.detailBtnBookText, (st === "full" || st === "cancelled") && { color: INK_400 }]}>
-              {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : `Book Now · EGP ${item.price}`}
+              {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : "Book Now"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1405,6 +1467,13 @@ const s = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
   },
   btnBookText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold", color: INK_900, textAlign: "center" },
+  // Cancel Booking CTA (shown when the user already has an active booking).
+  btnCancel: {
+    flex: 1, paddingVertical: 11, borderRadius: R_MD,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: "rgba(255,59,71,0.5)", backgroundColor: "rgba(255,59,71,0.10)",
+  },
+  btnCancelText: { fontSize: 13, fontFamily: "Archivo_800ExtraBold", color: DANGER, textAlign: "center" },
 
   /* empty state */
   emptyState: { alignItems: "center", paddingVertical: 56, paddingHorizontal: 30 },

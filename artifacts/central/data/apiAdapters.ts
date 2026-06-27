@@ -199,7 +199,9 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
     scheduleType: schedule.type,
     scheduleStatus,
     packageEligible: schedule.packageEligible ?? true,
-    date: occurrenceDate ?? getNextScheduleOccurrenceDate(schedule),
+    // Prefer the backend-computed current occurrence so item.date lines up exactly
+    // with a booking's occurrenceDate (both server-computed) for Cancel-CTA matching.
+    date: occurrenceDate ?? schedule.currentOccurrenceDate ?? getNextScheduleOccurrenceDate(schedule),
     dayOfWeek: dayName,
     startTime,
     endTime,
