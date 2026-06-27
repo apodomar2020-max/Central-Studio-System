@@ -47,3 +47,16 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local/design/temp files
+.pnpm-store/
+.vscode/
+Central Studio Redesign App/
+*.bak
+_tmp_*
+build_instructor.js
+clean.js
+clean_backticks.js
+fix_*.js
+patch.js
+rewrite_profile*.js
