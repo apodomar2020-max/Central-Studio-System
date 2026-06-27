@@ -7,6 +7,7 @@ import React, { useEffect } from "react";
 import {
   Image,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -54,7 +55,10 @@ export default function ConfirmationScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      <View style={styles.content}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: 40 + (Platform.OS === "web" ? 0 : insets.bottom) }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.successIconWrap}>
           <LinearGradient
             colors={[colors.success + "40", colors.success + "10"]}
@@ -177,7 +181,7 @@ export default function ConfirmationScreen() {
             fullWidth
           />
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -185,10 +189,11 @@ export default function ConfirmationScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0A0B0D" },
   content: {
-    flex: 1,
+    // flexGrow (not flex:1) so the ScrollView centers content when it fits and
+    // scrolls when it's taller than the viewport — never overflows on small phones.
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 40,
-    paddingBottom: 40,
     gap: 20,
     alignItems: "center",
     justifyContent: "center",
