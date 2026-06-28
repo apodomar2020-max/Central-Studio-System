@@ -101,7 +101,7 @@ export default function LoginPage() {
 
   return (
     <div
-      className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden px-4 py-10"
+      className="relative flex h-screen w-full flex-col items-center justify-center overflow-hidden px-4 py-10"
       style={{ background: "#060C10" }}
     >
       {/* ── Background: stage photo ──────────────────────────────────────── */}
@@ -165,13 +165,6 @@ export default function LoginPage() {
           backgroundSize: "64px 64px",
           backgroundPosition: "center center",
         }}
-      />
-
-      {/* Bottom gradient fade — card floats above darkness */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 left-0 right-0 h-40"
-        style={{ background: "linear-gradient(to bottom, transparent, rgba(6,12,16,0.9))" }}
       />
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
