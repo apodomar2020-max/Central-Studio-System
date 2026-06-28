@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -335,7 +335,7 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function BookingsScreen() {
-  const { user, bookings: localBookings, refreshUserPackages, children: childProfiles, cancelBooking } = useAppContext();
+  const { user, bookings: localBookings, refreshUserPackages, refreshBookings, children: childProfiles, cancelBooking } = useAppContext();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Upcoming");
   const [studentFilter, setStudentFilter] = useState("All");
@@ -366,13 +366,22 @@ export default function BookingsScreen() {
   const onRefresh = useCallback(async () => {
     if (!user) return;
     setRefreshing(true);
-    await Promise.all([loadBalletApps(), refreshUserPackages?.()]);
+    await Promise.all([loadBalletApps(), refreshUserPackages?.(), refreshBookings?.()]);
     setRefreshing(false);
-  }, [user, loadBalletApps, refreshUserPackages]);
+  }, [user, loadBalletApps, refreshUserPackages, refreshBookings]);
 
   useEffect(() => {
     loadBalletApps();
   }, [loadBalletApps]);
+
+  // Backend is the source of truth for booking status — re-sync every time the
+  // Schedule comes into focus so admin changes (confirm / reject / cancel /
+  // attended) and check-ins are reflected without a manual pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      if (user) refreshBookings?.();
+    }, [user, refreshBookings]),
+  );
 
   useEffect(() => {
     if (user && isOffline) {

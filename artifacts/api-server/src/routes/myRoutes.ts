@@ -9,7 +9,7 @@
  * /api/package-orders (all orders) and filtered client-side.
  */
 import { Router, type IRouter } from "express";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import * as zod from "zod";
 import {
   db,
@@ -19,6 +19,8 @@ import {
   bookingsTable,
   classesTable,
   instructorsTable,
+  schedulesTable,
+  childrenTable,
   pricePackagesTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
@@ -27,6 +29,28 @@ const router: IRouter = Router();
 
 // Apply student authentication + mandatory email verification to every /my/* route
 router.use("/my", requireStudentAuth, requireVerifiedStudent);
+
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+/** "18:00" / "18:00:00" → "6:00 PM"; returns null for empty input. */
+function formatTime(t: string | null): string | null {
+  if (!t) return null;
+  const match = /^(\d{1,2}):(\d{2})/.exec(t);
+  if (!match) return t;
+  const h = Number(match[1]);
+  const m = match[2];
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m} ${period}`;
+}
 
 // ---------------------------------------------------------------------------
 // GET /my/packages
@@ -233,6 +257,112 @@ router.get("/my/attendance", async (req, res): Promise<void> => {
   const data = allRows.slice((page - 1) * limit, page * limit);
 
   res.json({ data, total, page, limit });
+});
+
+// ---------------------------------------------------------------------------
+// GET /my/bookings  (Phase C — single backend source of truth for the app's
+// Schedule / My Bookings flow)
+//
+// Returns all bookings owned by the authenticated student (self OR any of
+// their children), scoped by account-owner id OR email. Each row is enriched
+// with display-ready class / schedule / instructor / participant fields so the
+// mobile app can render directly from the server instead of relying on local
+// optimistic state. The backend booking_status is authoritative and always
+// wins over the app's cached copy.
+// ---------------------------------------------------------------------------
+router.get("/my/bookings", async (req, res): Promise<void> => {
+  const email = (req.studentEmail ?? "").trim().toLowerCase();
+
+  const rows = await db
+    .select({
+      booking: bookingsTable,
+      classTitle: classesTable.title,
+      classCategory: classesTable.category,
+      classDurationMins: classesTable.durationMins,
+      instructorName: instructorsTable.name,
+      instructorPhotoUrl: instructorsTable.photoUrl,
+      scheduleType: schedulesTable.type,
+      scheduleDayOfWeek: schedulesTable.dayOfWeek,
+      scheduleDate: schedulesTable.date,
+      scheduleStartTime: schedulesTable.startTime,
+      scheduleEndTime: schedulesTable.endTime,
+      scheduleLocation: schedulesTable.location,
+      schedulePriceEgp: schedulesTable.priceEgp,
+      participantChildName: childrenTable.fullName,
+    })
+    .from(bookingsTable)
+    .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
+    .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
+    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+    .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
+    .where(sql`(${bookingsTable.accountOwnerStudentId} = ${req.studentId!} OR lower(trim(${bookingsTable.studentEmail})) = ${email})`)
+    .orderBy(desc(bookingsTable.createdAt));
+
+  const data = rows.map((r) => {
+    const b = r.booking;
+    const start = formatTime(r.scheduleStartTime);
+    const end = formatTime(r.scheduleEndTime);
+    const dayName = r.scheduleDayOfWeek != null ? DAY_NAMES[r.scheduleDayOfWeek] ?? null : null;
+    const dateLabel = r.scheduleDate
+      ? new Date(`${r.scheduleDate}T00:00:00Z`).toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+        })
+      : null;
+    const schedulePrefix = r.scheduleType === "one_time" ? dateLabel : dayName;
+    const scheduleLabel =
+      schedulePrefix && start ? `${schedulePrefix} • ${end ? `${start} - ${end}` : start}` : null;
+    const time = start ? (end ? `${start} - ${end}` : start) : "";
+
+    const bookingStatus = b.bookingStatus ?? b.status;
+    const paymentMode = b.paymentMode ?? (b.packageOrderId != null ? "package_credit" : null);
+    const participantType = b.bookingScope ?? (b.participantChildId != null ? "child" : "self");
+    const isPackage = paymentMode === "package_credit" || b.packageOrderId != null;
+    const paymentMethod =
+      paymentMode === "package_credit"
+        ? "packageCredit"
+        : paymentMode === "online_payment"
+          ? "online"
+          : "cash";
+    const attendanceStatus =
+      bookingStatus === "attended" || bookingStatus === "completed"
+        ? "attended"
+        : bookingStatus === "cancelled" || bookingStatus === "rejected"
+          ? "cancelled"
+          : "booked";
+
+    return {
+      id: b.id,
+      classId: b.classId,
+      scheduleId: b.scheduleId,
+      // Raw occurrence key (YYYY-MM-DD) — used by the app to scope Cancel CTAs
+      // and to decide whether a confirmed booking is past.
+      occurrenceDate: b.occurrenceDate ?? null,
+      className: r.classTitle ?? "Class",
+      danceType: r.classCategory ?? "",
+      instructorName: r.instructorName ?? "Instructor",
+      // Raw stored URL — the app normalizes it to an absolute media URL.
+      instructorImage: r.instructorPhotoUrl ?? null,
+      date: b.occurrenceDate ?? r.scheduleDate ?? "",
+      time,
+      scheduleLabel,
+      duration: r.classDurationMins != null ? `${r.classDurationMins} min` : "",
+      location: r.scheduleLocation ?? "Central Studio",
+      price: r.schedulePriceEgp ?? 0,
+      participantType,
+      participantName: r.participantChildName ?? b.studentName,
+      paymentMethod,
+      paymentStatus: b.paymentStatus ?? "not_required",
+      bookingStatus,
+      bookingType: isPackage ? "package" : "single",
+      bookingNumber: "CS" + String(b.id).padStart(6, "0"),
+      attendanceStatus,
+      createdAt: b.createdAt,
+    };
+  });
+
+  res.json({ data });
 });
 
 export default router;

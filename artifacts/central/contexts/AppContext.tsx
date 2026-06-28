@@ -1,8 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
-import { customFetch } from "@workspace/api-client-react";
+import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
+import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/services/bookingsRepository";
 import { STORAGE_KEYS } from "@/constants/danceStyles";
 
 export interface User {
@@ -148,6 +149,9 @@ interface AppContextType {
   bookings: Booking[];
   addBooking: (booking: Booking) => void;
   cancelBooking: (bookingId: string) => Promise<void>;
+  /** Re-fetch bookings from the backend (source of truth) and reconcile with
+   *  any local optimistic rows. Call on Schedule focus / pull-to-refresh. */
+  refreshBookings: () => Promise<void>;
   userPackages: UserPackage[];
   packageUsageHistory: PackageUsage[];
   purchasePackage: (pkg: { id: number; name: string; sessions: number | null; validityMonths: number }) => Promise<void>;
@@ -177,6 +181,71 @@ function addMonths(dateStr: string, months: number): string {
   const d = new Date(dateStr);
   d.setMonth(d.getMonth() + months);
   return d.toISOString().slice(0, 10);
+}
+
+/** Row shape returned by GET /api/my/bookings (enriched, display-ready). */
+interface ApiMyBooking {
+  id: number;
+  classId: number | null;
+  scheduleId: number | null;
+  occurrenceDate: string | null;
+  className: string;
+  danceType: string;
+  instructorName: string;
+  instructorImage: string | null;
+  date: string;
+  time: string;
+  scheduleLabel: string | null;
+  duration: string;
+  location: string;
+  price: number;
+  participantType: string;
+  participantName: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  bookingStatus: string;
+  bookingType: string;
+  bookingNumber: string;
+  attendanceStatus: string;
+  createdAt: string;
+}
+
+/** Map a server booking row onto the app's local Booking shape. The backend is
+ *  authoritative for status; the mobile enums are coerced from the raw values. */
+function mapMyBookingToLocal(r: ApiMyBooking): Booking {
+  return {
+    id: String(r.id),
+    classId: r.classId != null ? String(r.classId) : "",
+    scheduleId: r.scheduleId != null ? String(r.scheduleId) : undefined,
+    occurrenceDate: r.occurrenceDate ?? undefined,
+    className: r.className || "Class",
+    danceType: r.danceType || "",
+    instructorName: r.instructorName || "Instructor",
+    instructorImage: r.instructorImage ? normalizeMediaUrl(r.instructorImage, "image") : undefined,
+    date: r.date || "",
+    time: r.time || "",
+    scheduleLabel: r.scheduleLabel ?? undefined,
+    duration: r.duration || "",
+    location: r.location || "Central Studio",
+    price: r.price ?? 0,
+    participantType: r.participantType === "child" ? "child" : "self",
+    participantName: r.participantName || "",
+    paymentMethod:
+      r.paymentMethod === "packageCredit" ? "packageCredit" : r.paymentMethod === "online" ? "online" : "cash",
+    paymentStatus: mapApiPaymentStatusToLocal(r.paymentStatus),
+    bookingStatus: mapApiStatusToLocal(r.bookingStatus),
+    bookingType: r.bookingType === "package" ? "package" : "single",
+    bookingNumber: r.bookingNumber || "CS" + String(r.id).padStart(6, "0"),
+    attendanceStatus:
+      r.attendanceStatus === "attended"
+        ? "attended"
+        : r.attendanceStatus === "cancelled"
+          ? "cancelled"
+          : r.attendanceStatus === "noShow"
+            ? "noShow"
+            : "booked",
+    createdAt: r.createdAt || new Date().toISOString(),
+  };
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -287,9 +356,10 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         setReferralCode(generated);
         await AsyncStorage.setItem("referralCode", generated);
       }
-      // Load packages from API for the confirmed user
+      // Load packages + bookings from API for the confirmed user
       if (confirmedUser) {
         fetchAndSetPackages().catch(() => {});
+        fetchAndSetBookings().catch(() => {});
         if (confirmedUser.accountType === "parent") {
           fetchAndSetChildren().catch(() => {});
         } else {
@@ -332,6 +402,35 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       if (isMountedRef.current) setUserPackages(mapped);
     } catch {
       // Network unavailable — keep whatever was in state
+    }
+  }
+
+  /**
+   * Phase C — fetch this student's bookings from the secure, JWT-scoped
+   * /api/my/bookings endpoint (the single source of truth) and reconcile with
+   * local state.
+   *
+   * Server rows ALWAYS win: admin status changes (pending → confirmed →
+   * attended / rejected / cancelled) are reflected after the next fetch. Local
+   * optimistic rows are only kept while the server hasn't returned them yet
+   * (the brief window right after creating a booking, or while offline).
+   */
+  async function fetchAndSetBookings() {
+    try {
+      const res = await customFetch<{ data: ApiMyBooking[] }>(`/api/my/bookings`);
+      const serverBookings: Booking[] = res.data.map(mapMyBookingToLocal);
+
+      if (!isMountedRef.current) return;
+      setBookings((prev) => {
+        const serverIds = new Set(serverBookings.map((b) => b.id));
+        // Keep only local optimistic rows the server doesn't know about yet.
+        const localOnly = prev.filter((b) => !serverIds.has(b.id));
+        const merged = [...serverBookings, ...localOnly];
+        AsyncStorage.setItem("bookings", JSON.stringify(merged));
+        return merged;
+      });
+    } catch {
+      // Offline or backend unavailable — keep the cached local bookings.
     }
   }
 
@@ -391,8 +490,9 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         setReferralCode(generated);
         await AsyncStorage.setItem("referralCode", generated);
       }
-      // Load this user's packages from the API
+      // Load this user's packages + bookings from the API
       fetchAndSetPackages().catch(() => {});
+      fetchAndSetBookings().catch(() => {});
       if (usr.accountType === "parent") {
         fetchAndSetChildren().catch(() => {});
       } else {
@@ -541,6 +641,10 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     await fetchAndSetPackages();
   }, []);
 
+  const refreshBookings = useCallback(async () => {
+    await fetchAndSetBookings();
+  }, []);
+
   const purchasePackage = useCallback(
     async (pkg: { id: number; name: string; sessions: number | null; validityMonths: number }): Promise<void> => {
       const usr = userRef.current;
@@ -678,6 +782,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         bookings,
         addBooking,
         cancelBooking,
+        refreshBookings,
         userPackages,
         packageUsageHistory,
         purchasePackage,
