@@ -25,7 +25,7 @@ import {
   DeleteBookingParams,
   ListBookingsResponse,
 } from "@workspace/api-zod";
-import { currentOccurrenceDate } from "../lib/occurrence";
+import { currentOccurrenceDate, checkInWindowState } from "../lib/occurrence";
 import { DUPLICATE_BLOCKING_STATUSES } from "../lib/bookingStatus";
 
 const router: IRouter = Router();
@@ -539,6 +539,16 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
       ? await findParticipantDuplicateAttendance(db, r.booking)
       : false;
     const alreadyCheckedIn = hasAttendance || participantDuplicateAttendance;
+    // Phase A — QR check-in eligibility. A booking is eligible ONLY when it is
+    // confirmed, for today's occurrence, inside the grace window (opens 2h
+    // before start, closes at end of the Cairo day), and not already attended.
+    // Pending / future / past / cancelled / rejected / attended are all blocked,
+    // and the backend enforces the same rules at the /check-in/qr write path so
+    // the UI flag can never be bypassed.
+    const windowState = checkInWindowState(
+      { startTime: r.scheduleStartTime },
+      r.booking.occurrenceDate,
+    );
     const checkInBlockedReason =
       alreadyCheckedIn
         ? "Already checked in"
@@ -546,7 +556,13 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
           ? "Already checked in"
           : bookingStatus === "cancelled" || bookingStatus === "rejected"
             ? "Booking is not eligible for check-in"
-            : null;
+            : bookingStatus !== "confirmed"
+              ? "Awaiting admin confirmation"
+              : windowState === "too_early"
+                ? "Check-in opens 2 hours before class"
+                : windowState === "not_today"
+                  ? "Not scheduled for today"
+                  : null;
     enrichedById.set(r.booking.id, {
       ...(existing ?? {}),
       ...r.booking,

@@ -376,13 +376,14 @@ export function ScanCheckInDialog({
           ).catch(() => [] as Booking[]),
           fetchSchedules(),
         ]);
-        // Keep non-terminal bookings visible, but let the backend eligibility
-        // flags disable rows that would fail duplicate check-in validation.
-        const open = bookings.filter(
-          (b) => !["cancelled", "rejected"].includes(b.bookingStatus ?? b.status),
-        );
-        setStudentBookings(open);
-        const eligible = open.filter(isBookingCheckInEligible);
+        // Phase A — only surface bookings that are actually eligible for
+        // check-in right now: confirmed, today's occurrence, inside the grace
+        // window, and not already attended. The backend computes
+        // `checkInEligible` authoritatively (and enforces the same rules at the
+        // /check-in/qr write path), so we never show pending, future, past,
+        // cancelled, rejected, or already-attended bookings here.
+        const eligible = bookings.filter(isBookingCheckInEligible);
+        setStudentBookings(eligible);
         if (eligible.length === 1) setSelectedBookingId(eligible[0].id);
         setPhase("selecting");
       } catch (err: unknown) {
@@ -484,7 +485,16 @@ export function ScanCheckInDialog({
       return;
     }
 
-    // ── Path B: Legacy attendance endpoint (email scan or no booking) ─────────
+    // In the QR token flow, check-in must go through an eligible booking. Never
+    // fall through to the legacy manual path for a scanned member — that would
+    // bypass the Phase A confirmed/today-occurrence rules.
+    if (scannedQrToken) {
+      setDuplicateError("Select an eligible booking for today to check this member in.");
+      setPhase("selecting");
+      return;
+    }
+
+    // ── Path B: Legacy attendance endpoint (email scan / walk-in) ─────────────
     // Backward-compatible for walk-ins and legacy QR formats.
     const creditActuallyDeducted = canPackageDeduct && deductCredit && !!selectedPackageId;
 
@@ -1062,6 +1072,20 @@ export function ScanCheckInDialog({
               </div>
             )}
 
+            {/* No confirmed booking for today's occurrence — nothing to check in. */}
+            {isTokenFlow && studentBookings.length === 0 && (
+              <div
+                className="flex flex-col items-center gap-1.5 px-3 py-6 rounded-xl text-center"
+                style={{ background: "hsl(203 30% 12%)", border: "1px solid hsl(203 30% 18%)" }}
+              >
+                <AlertTriangle className="h-5 w-5" style={{ color: AMBER }} />
+                <p className="text-sm font-semibold text-white">No eligible class today</p>
+                <p className="text-xs" style={{ color: "#8A9AB0" }}>
+                  This member has no confirmed booking for today&apos;s class. Check-in opens 2 hours before the class starts.
+                </p>
+              </div>
+            )}
+
             {canCheckIn && isTokenFlow && selectedBookingId && selectedBookingEligible && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
@@ -1129,8 +1153,10 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            {/* Package picker is shown only for legacy (email) flow or when no booking is selected */}
-            {canCheckIn && canPackageDeduct && (!isTokenFlow || !selectedBookingId) && (
+            {/* Package picker + manual schedule are LEGACY (email-scan / walk-in)
+                controls only. In the QR token flow, check-in must go through an
+                eligible booking — never a manually picked class. */}
+            {canCheckIn && canPackageDeduct && !isTokenFlow && (
               activePackages.length === 0 ? (
                 <div
                   className="text-sm px-3 py-2.5 rounded-xl"
@@ -1166,8 +1192,9 @@ export function ScanCheckInDialog({
               )
             )}
 
-            {/* Schedule + manual credit controls — hidden when using QR booking path */}
-            {(!isTokenFlow || !selectedBookingId) && (<>
+            {/* Schedule + manual credit controls — legacy (email-scan) path only;
+                hidden entirely in the QR token flow. */}
+            {!isTokenFlow && (<>
               <div>
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Today's Class
@@ -1236,8 +1263,10 @@ export function ScanCheckInDialog({
                   disabled={
                     Boolean(
                       scannedQrToken &&
-                        selectedBookingId &&
-                        (!selectedBookingEligible || !paymentMode || (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId))),
+                        (!selectedBookingId ||
+                          !selectedBookingEligible ||
+                          !paymentMode ||
+                          (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId))),
                     )
                   }
                   className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-40"

@@ -14,6 +14,7 @@ import {
 import { CheckInQrBody, CheckInQrResponse } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { checkInWindowState } from "../lib/occurrence";
 
 const router: IRouter = Router();
 
@@ -125,6 +126,9 @@ type CheckInErrorCode =
   | "already_attended"
   | "duplicate_attendance"
   | "booking_not_actionable"
+  | "booking_not_confirmed"
+  | "not_todays_occurrence"
+  | "check_in_too_early"
   | "package_required"
   | "package_not_found"
   | "invalid_package"
@@ -241,6 +245,54 @@ router.post(
           400,
           "booking_not_actionable",
           "Cancelled or rejected bookings cannot be checked in.",
+        );
+      }
+
+      // ------------------------------------------------------------------
+      // Phase A — only CONFIRMED bookings may be checked in. Pending requests
+      // must be confirmed by an admin first; they never reserve a seat and are
+      // never eligible for QR check-in.
+      // ------------------------------------------------------------------
+      if (currentBookingStatus !== "confirmed") {
+        throw makeError(
+          400,
+          "booking_not_confirmed",
+          "Only confirmed bookings can be checked in. Confirm the booking first.",
+        );
+      }
+
+      // ------------------------------------------------------------------
+      // Phase A — occurrence + grace window. Check-in is allowed only on the
+      // booking's stored occurrence date, from 2 hours before the class start
+      // time until the end of that Cairo day. This mirrors the eligibility
+      // flag returned by GET /bookings and cannot be bypassed from the client.
+      // ------------------------------------------------------------------
+      let scheduleStartTime: string | null = null;
+      if (booking.scheduleId != null) {
+        const [sched] = await tx
+          .select({ startTime: schedulesTable.startTime })
+          .from(schedulesTable)
+          .where(eq(schedulesTable.id, booking.scheduleId))
+          .limit(1);
+        scheduleStartTime = sched?.startTime ?? null;
+      }
+
+      const windowState = checkInWindowState(
+        { startTime: scheduleStartTime },
+        booking.occurrenceDate,
+      );
+      if (windowState === "too_early") {
+        throw makeError(
+          400,
+          "check_in_too_early",
+          "Check-in for this class opens 2 hours before it starts.",
+        );
+      }
+      if (windowState === "not_today") {
+        throw makeError(
+          400,
+          "not_todays_occurrence",
+          "This booking is not for today's class. Only today's confirmed booking can be checked in.",
         );
       }
 
