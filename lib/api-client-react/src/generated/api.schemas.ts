@@ -868,6 +868,8 @@ export interface CreditTransaction {
   /** @nullable */
   notes?: string | null;
   createdBy: string;
+  /** @nullable — class name resolved from the row's reference (attendance/booking) */
+  className?: string | null;
   createdAt: string;
 }
 

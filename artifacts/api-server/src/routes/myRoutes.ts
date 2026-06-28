@@ -16,6 +16,7 @@ import {
   packageOrdersTable,
   creditTransactionsTable,
   attendanceTable,
+  bookingsTable,
   classesTable,
   instructorsTable,
   pricePackagesTable,
@@ -120,7 +121,71 @@ router.get("/my/credits", async (req, res): Promise<void> => {
   const total = allRows.length;
   const data = allRows.slice((page - 1) * limit, page * limit);
 
-  res.json({ data, total, page, limit });
+  // Resolve a human-friendly class name for each row so the app shows the class
+  // instead of a raw note like "QR check-in for booking #29" (legacy). We resolve
+  // from several sources (in priority order), since older rows stored the booking
+  // id only in the note text rather than a structured reference:
+  //   1. referenceType "attendance" → attendance.classId/classTitle
+  //   2. referenceType "booking"    → booking → class.title
+  //   3. a booking id parsed from the note ("… booking #29") → booking → class.title
+  const bookingIdFromNote = (note?: string | null): number | null => {
+    if (!note) return null;
+    const m = note.match(/booking\s+#?(\d+)/i) ?? note.match(/#(\d+)/);
+    return m ? Number(m[1]) : null;
+  };
+
+  const attendanceIds = [...new Set(
+    data.filter((t) => t.referenceType === "attendance" && t.referenceId != null).map((t) => t.referenceId!),
+  )];
+  const bookingIds = [...new Set(
+    data.flatMap((t) => {
+      const ids: number[] = [];
+      if (t.referenceType === "booking" && t.referenceId != null) ids.push(t.referenceId);
+      const fromNote = bookingIdFromNote(t.notes);
+      if (fromNote != null) ids.push(fromNote);
+      return ids;
+    }),
+  )];
+
+  const classByAttendance = new Map<number, string>();
+  if (attendanceIds.length > 0) {
+    const rows = await db
+      .select({ id: attendanceTable.id, classTitle: attendanceTable.classTitle, fromClass: classesTable.title })
+      .from(attendanceTable)
+      .leftJoin(classesTable, eq(attendanceTable.classId, classesTable.id))
+      .where(inArray(attendanceTable.id, attendanceIds));
+    for (const r of rows) {
+      const name = r.fromClass ?? r.classTitle;
+      if (name) classByAttendance.set(r.id, name);
+    }
+  }
+
+  const classByBooking = new Map<number, string>();
+  if (bookingIds.length > 0) {
+    const rows = await db
+      .select({ id: bookingsTable.id, title: classesTable.title })
+      .from(bookingsTable)
+      .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
+      .where(inArray(bookingsTable.id, bookingIds));
+    for (const r of rows) if (r.title) classByBooking.set(r.id, r.title);
+  }
+
+  const enriched = data.map((t) => {
+    let className: string | null = null;
+    if (t.referenceType === "attendance" && t.referenceId != null) {
+      className = classByAttendance.get(t.referenceId) ?? null;
+    }
+    if (!className && t.referenceType === "booking" && t.referenceId != null) {
+      className = classByBooking.get(t.referenceId) ?? null;
+    }
+    if (!className) {
+      const fromNote = bookingIdFromNote(t.notes);
+      if (fromNote != null) className = classByBooking.get(fromNote) ?? null;
+    }
+    return { ...t, className };
+  });
+
+  res.json({ data: enriched, total, page, limit });
 });
 
 // ---------------------------------------------------------------------------

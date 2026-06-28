@@ -1,13 +1,14 @@
 /**
- * Credit History — student's immutable credit ledger.
+ * Credit History — student's immutable credit ledger (design parity:
+ * home-profile-pages.jsx CreditHistory).
  *
- * Shows all credit transactions for the authenticated student.
- * Data sourced from GET /api/my/credits (student JWT scoped).
+ * Data: GET /api/my/credits (ledger, student-scoped) + GET /api/my/packages
+ * (for the "Available Credits" hero). Nothing faked.
  */
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Platform,
   RefreshControl,
@@ -18,71 +19,110 @@ import {
   View,
 } from "react-native";
 
-import { useGetMyCredits } from "@workspace/api-client-react";
-import type { CreditTransaction } from "@workspace/api-client-react";
-import colors from "@/constants/colors";
+import { useGetMyCredits, useGetMyPackages } from "@workspace/api-client-react";
+import type { CreditTransaction, PackageOrder } from "@workspace/api-client-react";
 
-// ─── Transaction helpers ──────────────────────────────────────────────────────
+// Design tokens
+const CYAN = "#00B6D7";
+const CYAN_400 = "#2DCDEC";
+const SUCCESS = "#1FB871";
+const DANGER = "#FF3B47";
+const INK_300 = "#8E97A2";
+const INK_400 = "#6B747F";
+const INK_500 = "#565E68";
+const INK_800 = "#15171B";
 
-function txLabel(type: string): string {
-  switch (type) {
-    case "package_activated":   return "Package Activated";
-    case "attendance_deduction": return "Class Attended";
-    case "manual_adjustment":   return "Manual Adjustment";
-    case "package_bonus":       return "Bonus Credits";
-    case "package_refund":      return "Refund";
-    default:                    return type.replace(/_/g, " ");
+type Category = "added" | "used" | "refunded" | "expired";
+type Filter = "all" | Category;
+
+// Derive a design category from the ledger transaction (robust to exact type names).
+function txCategory(tx: CreditTransaction): Category {
+  if (tx.type === "package_refund") return "refunded";
+  if (tx.type.includes("expired")) return "expired";
+  return tx.delta > 0 ? "added" : "used";
+}
+
+function catIcon(cat: Category): { name: keyof typeof Ionicons.glyphMap; color: string } {
+  switch (cat) {
+    case "added":    return { name: "arrow-up",        color: SUCCESS };
+    case "used":     return { name: "arrow-down",      color: DANGER };
+    case "refunded": return { name: "arrow-undo",      color: CYAN_400 };
+    case "expired":  return { name: "close",           color: INK_400 };
   }
 }
 
-function txIcon(type: string): { name: keyof typeof Ionicons.glyphMap; color: string } {
-  switch (type) {
-    case "package_activated":    return { name: "checkmark-circle",      color: "#22C55E" };
-    case "attendance_deduction": return { name: "fitness",               color: "#EF4444" };
-    case "manual_adjustment":    return { name: "settings",              color: "#3B82F6" };
-    case "package_bonus":        return { name: "gift",                  color: "#8B5CF6" };
-    case "package_refund":       return { name: "arrow-undo-circle",     color: "#22C55E" };
-    default:                     return { name: "swap-horizontal",       color: "#9CA3AF" };
+function txLabel(tx: CreditTransaction): string {
+  // For attendance deductions, prefer the resolved class name (backend) so the row
+  // reads as the class, not a raw note like "QR check-in for booking #29".
+  if (tx.type === "attendance_deduction") {
+    return tx.className || "Class Attended";
+  }
+  if (tx.notes) return tx.notes;
+  switch (tx.type) {
+    case "package_activated":    return "Package Activated";
+    case "manual_adjustment":    return "Manual Adjustment";
+    case "package_bonus":        return "Bonus Credits";
+    case "package_refund":       return "Refund";
+    default:                     return tx.type.replace(/_/g, " ");
   }
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+// Robust date parsing. Postgres timestamptz (drizzle mode "string") returns
+// "2026-06-28 12:00:00+00" — a space separator + "+00" offset that Hermes (the RN
+// JS engine) refuses to parse with `new Date()`, yielding Invalid Date. We try the
+// raw string, then an ISO-normalized form, then fall back to the YYYY-MM-DD prefix.
+function parseDate(iso?: string | null): Date | null {
+  if (!iso) return null;
+  let d = new Date(iso);
+  if (!isNaN(d.getTime())) return d;
+  d = new Date(iso.trim().replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
+  if (!isNaN(d.getTime())) return d;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return null;
 }
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+function fmtDate(iso?: string | null, withYear = false): string {
+  const d = parseDate(iso);
+  if (!d) return "—";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
 }
 
-// ─── Row ─────────────────────────────────────────────────────────────────────
+function pkgExpiry(pkg?: PackageOrder): string {
+  if (!pkg) return "";
+  if (pkg.expiresAt) return `Expires ${fmtDate(pkg.expiresAt, true)}`;
+  if (!pkg.activatedAt) return "Expiry starts after activation";
+  return "No expiry";
+}
 
-function TransactionRow({ tx }: { tx: CreditTransaction }) {
-  const { name: iconName, color: iconColor } = txIcon(tx.type);
-  const isPositive = tx.delta > 0;
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "added", label: "Added" },
+  { key: "used", label: "Used" },
+  { key: "refunded", label: "Refunded" },
+  { key: "expired", label: "Expired" },
+];
 
+function TransactionRow({ tx, last }: { tx: CreditTransaction; last: boolean }) {
+  const cat = txCategory(tx);
+  const { name, color } = catIcon(cat);
+  const positive = tx.delta > 0;
   return (
-    <View style={styles.row}>
-      <View style={[styles.rowIcon, { backgroundColor: iconColor + "20" }]}>
-        <Ionicons name={iconName} size={18} color={iconColor} />
+    <View style={[styles.row, last && { borderBottomWidth: 0 }]}>
+      <View style={styles.rowIcon}>
+        <Ionicons name={name} size={17} color={color} />
       </View>
       <View style={styles.rowBody}>
-        <Text style={styles.rowLabel}>{txLabel(tx.type)}</Text>
-        {tx.notes ? <Text style={styles.rowNotes} numberOfLines={1}>{tx.notes}</Text> : null}
-        <Text style={styles.rowDate}>{formatDate(tx.createdAt)} · {formatTime(tx.createdAt)}</Text>
+        <Text style={styles.rowLabel} numberOfLines={1}>{txLabel(tx)}</Text>
+        <Text style={styles.rowDate}>{fmtDate(tx.createdAt)}</Text>
       </View>
       <View style={styles.rowRight}>
-        <Text style={[styles.rowDelta, { color: isPositive ? "#22C55E" : "#EF4444" }]}>
-          {isPositive ? "+" : ""}{tx.delta}
-        </Text>
-        <Text style={styles.rowBalance}>{tx.balanceAfter} left</Text>
+        <Text style={[styles.rowDelta, { color }]}>{positive ? `+${tx.delta}` : `${tx.delta}`}</Text>
+        <Text style={styles.rowBalance}>bal {tx.balanceAfter}</Text>
       </View>
     </View>
   );
 }
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 30;
 
@@ -90,26 +130,47 @@ export default function CreditHistoryScreen() {
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<Filter>("all");
 
   const { data, isLoading, isError, refetch } = useGetMyCredits({ page, limit: PAGE_SIZE });
+  const { data: packages, refetch: refetchPackages } = useGetMyPackages();
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     setPage(1);
-    await refetch();
+    await Promise.all([refetch(), refetchPackages()]);
     setRefreshing(false);
-  }, [refetch]);
+  }, [refetch, refetchPackages]);
 
   const transactions = data?.data ?? [];
   const total = data?.total ?? 0;
   const hasMore = page * PAGE_SIZE < total;
 
+  // Available Credits hero: sum of remaining credits across active packages.
+  // Use parseDate for the expiry check — a raw `new Date(p.expiresAt)` would be
+  // Invalid Date on Hermes and wrongly drop active packages (undercounting credits).
+  const activePackages = useMemo(
+    () => (packages ?? []).filter((p) => {
+      if (p.status !== "active") return false;
+      const exp = parseDate(p.expiresAt);
+      return !exp || exp >= new Date();
+    }),
+    [packages],
+  );
+  const availableCredits = useMemo(() => activePackages.reduce((s, p) => s + p.remainingCredits, 0), [activePackages]);
+  const heroPkg = activePackages[0];
+
+  const visible = useMemo(
+    () => (filter === "all" ? transactions : transactions.filter((t) => txCategory(t) === filter)),
+    [transactions, filter],
+  );
+
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 12 : insets.top) + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Ionicons name="chevron-back" size={20} color={CYAN} />
           <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Credit History</Text>
@@ -118,15 +179,29 @@ export default function CreditHistoryScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 40 : 100 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#00B6D7" />}
+        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 40 : insets.bottom + 40 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={CYAN} colors={[CYAN]} />}
       >
-        {total > 0 && (
-          <View style={styles.totalRow}>
-            <Ionicons name="layers-outline" size={14} color="#6B7280" />
-            <Text style={styles.totalText}>{total} transaction{total !== 1 ? "s" : ""}</Text>
-          </View>
-        )}
+        {/* Available Credits hero */}
+        <View style={styles.hero}>
+          <Text style={styles.heroEyebrow}>AVAILABLE CREDITS</Text>
+          <Text style={styles.heroNumber}>{availableCredits}</Text>
+          <Text style={styles.heroSub}>
+            {heroPkg ? `${heroPkg.packageName}${pkgExpiry(heroPkg) ? ` · ${pkgExpiry(heroPkg)}` : ""}` : "No active package"}
+          </Text>
+        </View>
+
+        {/* Filter chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+          {FILTERS.map((f) => {
+            const on = filter === f.key;
+            return (
+              <TouchableOpacity key={f.key} onPress={() => setFilter(f.key)} style={[styles.chip, on && styles.chipOn]} activeOpacity={0.85}>
+                <Text style={[styles.chipText, on && styles.chipTextOn]}>{f.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         {isLoading && !refreshing ? (
           <View style={styles.loadingState}>
@@ -134,20 +209,24 @@ export default function CreditHistoryScreen() {
           </View>
         ) : isError ? (
           <View style={styles.emptyState}>
-            <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
+            <Ionicons name="alert-circle-outline" size={40} color={DANGER} />
             <Text style={styles.emptyTitle}>Couldn't load history</Text>
             <Text style={styles.emptyDesc}>Pull down to try again</Text>
           </View>
-        ) : transactions.length === 0 ? (
+        ) : visible.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="receipt-outline" size={48} color="#4B5563" />
-            <Text style={styles.emptyTitle}>No transactions yet</Text>
-            <Text style={styles.emptyDesc}>Your credit history will appear here after you activate a package or attend a class</Text>
+            <Text style={styles.emptyTitle}>{filter === "all" ? "No transactions yet" : "Nothing here"}</Text>
+            <Text style={styles.emptyDesc}>
+              {filter === "all"
+                ? "Your credit history will appear here after you activate a package or attend a class"
+                : "No transactions match this filter."}
+            </Text>
           </View>
         ) : (
           <View style={styles.list}>
-            {transactions.map((tx) => <TransactionRow key={tx.id} tx={tx} />)}
-            {hasMore && (
+            {visible.map((tx, i) => <TransactionRow key={tx.id} tx={tx} last={i === visible.length - 1 && !hasMore} />)}
+            {hasMore && filter === "all" && (
               <TouchableOpacity style={styles.loadMoreBtn} onPress={() => setPage((p) => p + 1)}>
                 <Text style={styles.loadMoreText}>Load more</Text>
               </TouchableOpacity>
@@ -162,56 +241,56 @@ export default function CreditHistoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0A0B0D" },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.07)",
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
   },
-  headerButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    minWidth: 54,
-  },
-  headerButtonText: {
-    fontSize: 14,
-    fontFamily: "Archivo_600SemiBold",
-    color: colors.studio.primary,
-  },
+  headerButton: { flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54 },
+  headerButtonText: { fontSize: 14, fontFamily: "Archivo_600SemiBold", color: CYAN },
   headerButtonPlaceholder: { minWidth: 54 },
   headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  scroll: { paddingHorizontal: 20, paddingTop: 16 },
-  totalRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 12 },
-  totalText: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F" },
-  list: { backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", overflow: "hidden" },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
+  scroll: { paddingHorizontal: 20, paddingTop: 18 },
+
+  // Available Credits hero (design parity)
+  hero: {
+    borderRadius: 16, padding: 18, marginBottom: 20, alignItems: "center",
+    backgroundColor: "rgba(0,182,215,0.10)",
+    borderWidth: 1, borderColor: "rgba(0,182,215,0.35)",
   },
-  rowIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  heroEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 1.6, textTransform: "uppercase", color: CYAN_400, marginBottom: 6 },
+  heroNumber: { fontFamily: "Anton_400Regular", fontSize: 56, lineHeight: 52, color: "#FFFFFF" },
+  heroSub: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_300, marginTop: 8, textAlign: "center" },
+
+  // Filter chips
+  chipsRow: { gap: 8, paddingBottom: 16 },
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)",
+  },
+  chipOn: { backgroundColor: "#0A0B0D", borderColor: "rgba(255,255,255,0.3)" },
+  chipText: { fontFamily: "Archivo_700Bold", fontSize: 12.5, color: INK_400 },
+  chipTextOn: { color: "#FFFFFF" },
+
+  // Transactions card
+  list: { backgroundColor: INK_800, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", overflow: "hidden" },
+  row: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  rowIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.05)" },
   rowBody: { flex: 1, gap: 2 },
   rowLabel: { fontSize: 14.5, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  rowNotes: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
-  rowDate: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F" },
+  rowDate: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_400 },
   rowRight: { alignItems: "flex-end", gap: 2 },
   rowDelta: { fontSize: 15, fontFamily: "Archivo_800ExtraBold" },
-  rowBalance: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: "#6B747F" },
-  loadMoreBtn: {
-    alignItems: "center",
-    paddingVertical: 14,
-  },
-  loadMoreText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#00B6D7" },
+  rowBalance: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: INK_500 },
+
+  loadMoreBtn: { alignItems: "center", paddingVertical: 14 },
+  loadMoreText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: CYAN },
   loadingState: { gap: 4 },
-  skeletonRow: { height: 62, backgroundColor: "#15171B", borderRadius: 12, marginBottom: 4 },
-  emptyState: { alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 80 },
+  skeletonRow: { height: 62, backgroundColor: INK_800, borderRadius: 12, marginBottom: 4 },
+  emptyState: { alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 70 },
   emptyTitle: { fontSize: 16, fontFamily: "Archivo_600SemiBold", color: "#9CA3AF" },
-  emptyDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", textAlign: "center", maxWidth: 260 },
+  emptyDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400, textAlign: "center", maxWidth: 260 },
 });
