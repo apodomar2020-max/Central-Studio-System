@@ -236,7 +236,7 @@ router.get("/my/attendance", async (req, res): Promise<void> => {
       id: attendanceTable.id,
       studentEmail: attendanceTable.studentEmail,
       studentName: attendanceTable.studentName,
-      classTitle: attendanceTable.classTitle,
+      classTitle: sql<string | null>`coalesce(${attendanceTable.classTitle}, ${classesTable.title})`,
       status: attendanceTable.status,
       creditDeducted: attendanceTable.creditDeducted,
       checkedInAt: attendanceTable.checkedInAt,

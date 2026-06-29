@@ -8,7 +8,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Platform,
   RefreshControl,
@@ -45,20 +45,48 @@ function statusConfig(status?: string | null): { color: string; icon: keyof type
   }
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+// Robust date parsing. Postgres timestamptz (drizzle mode "string") can return
+// "2026-06-28 12:00:00.123456+00" — a space separator, microseconds, and "+00"
+// offset that Hermes refuses to parse with `new Date()`. Normalize to ISO first.
+function normalizeApiTimestamp(value: string): string {
+  const trimmed = value.trim();
+  const normalizedSeparator = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
+
+  return normalizedSeparator
+    .replace(/\.(\d{3})\d+/, ".$1")
+    .replace(/([+-]\d{2})$/, "$1:00")
+    .replace(/\+00:00$/, "Z");
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function parseDate(iso?: string | null): Date | null {
+  if (!iso) return null;
+  let d = new Date(iso);
+  if (!isNaN(d.getTime())) return d;
+  d = new Date(normalizeApiTimestamp(iso));
+  if (!isNaN(d.getTime())) return d;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return null;
+}
+
+function formatDate(iso?: string | null): string {
+  const d = parseDate(iso);
+  if (!d) return "—";
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatTime(iso?: string | null): string {
+  const d = parseDate(iso);
+  if (!d) return "";
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+function attendanceTimestamp(record: MyAttendanceRecord): number {
+  return parseDate(record.checkedInAt)?.getTime() ?? 0;
+}
+
+function sortAttendanceNewestFirst(records: MyAttendanceRecord[]): MyAttendanceRecord[] {
+  return [...records].sort((a, b) => attendanceTimestamp(b) - attendanceTimestamp(a));
 }
 
 // ─── Attendance row ───────────────────────────────────────────────────────────
@@ -74,7 +102,7 @@ function AttendanceRow({ record }: { record: MyAttendanceRecord }) {
 
       <View style={styles.rowBody}>
         <Text style={styles.className} numberOfLines={1}>
-          {record.classTitle ?? "Class"}
+          {record.classTitle ?? "Studio session"}
         </Text>
         {record.instructorName ? (
           <Text style={styles.instructor} numberOfLines={1}>
@@ -106,6 +134,7 @@ export default function AttendanceHistoryScreen() {
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
+  const [loadedRecords, setLoadedRecords] = useState<MyAttendanceRecord[]>([]);
 
   const { data, isLoading, isError, refetch } = useGetMyAttendance({ page, limit: PAGE_SIZE });
 
@@ -116,19 +145,31 @@ export default function AttendanceHistoryScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  const records = data?.data ?? [];
   const total = data?.total ?? 0;
   const hasMore = page * PAGE_SIZE < total;
+  const records = useMemo(() => sortAttendanceNewestFirst(loadedRecords), [loadedRecords]);
+
+  useEffect(() => {
+    if (!data) return;
+    setLoadedRecords((prev) => {
+      const base = page === 1 ? [] : prev;
+      const byId = new Map<number, MyAttendanceRecord>();
+      for (const record of base) byId.set(record.id, record);
+      for (const record of data.data) byId.set(record.id, record);
+      return sortAttendanceNewestFirst([...byId.values()]);
+    });
+  }, [data, page]);
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Attendance History</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerButtonPlaceholder} />
       </View>
 
       <ScrollView
@@ -185,11 +226,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#1E2E38",
   },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1E2E38",
-    alignItems: "center", justifyContent: "center",
-  },
+  headerButton: { flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54 },
+  headerButtonText: { fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary },
+  headerButtonPlaceholder: { minWidth: 54 },
   headerTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   scroll: { paddingHorizontal: 16, paddingTop: 12 },
   totalRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 12 },

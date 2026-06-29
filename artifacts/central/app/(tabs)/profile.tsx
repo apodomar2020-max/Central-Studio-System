@@ -19,7 +19,7 @@ import QRCode from "react-native-qrcode-svg";
 import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import { Image } from "expo-image";
 import { customFetch } from "@workspace/api-client-react";
-import type { MyAttendanceResponse } from "@workspace/api-client-react";
+import type { MyAttendanceRecord, MyAttendanceResponse } from "@workspace/api-client-react";
 
 import { useAppContext, ChildProfile } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
@@ -178,6 +178,61 @@ function ChildCard({
       </TouchableOpacity>
     </View>
   );
+}
+
+function normalizeApiTimestamp(value: string): string {
+  const trimmed = value.trim();
+  const normalizedSeparator = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
+
+  return normalizedSeparator
+    .replace(/\.(\d{3})\d+/, ".$1")
+    .replace(/([+-]\d{2})$/, "$1:00")
+    .replace(/\+00:00$/, "Z");
+}
+
+function parseApiDate(value?: string | null): Date | null {
+  if (!value) return null;
+  let date = new Date(value);
+  if (!Number.isNaN(date.getTime())) return date;
+  date = new Date(normalizeApiTimestamp(value));
+  if (!Number.isNaN(date.getTime())) return date;
+  const fallback = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (fallback) return new Date(Number(fallback[1]), Number(fallback[2]) - 1, Number(fallback[3]));
+  return null;
+}
+
+function attendanceTimestamp(record: MyAttendanceRecord): number {
+  return parseApiDate(record.checkedInAt)?.getTime() ?? 0;
+}
+
+function sortAttendanceNewestFirst(records: MyAttendanceRecord[]): MyAttendanceRecord[] {
+  return [...records].sort((a, b) => attendanceTimestamp(b) - attendanceTimestamp(a));
+}
+
+function formatAttendanceDate(value?: string | null): string {
+  const date = parseApiDate(value);
+  if (!date) return "";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatAttendanceTime(value?: string | null): string {
+  const date = parseApiDate(value);
+  if (!date) return "";
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+function attendanceBadge(record: MyAttendanceRecord): { text: string; color: string } {
+  switch (record.status) {
+    case "late":
+      return { text: "Late", color: "#FFB02E" };
+    case "absent":
+      return { text: "Missed", color: "#EF4444" };
+    case "cancelled":
+      return { text: "Cancelled", color: "#6B7280" };
+    case "checked_in":
+    default:
+      return { text: "Attended", color: "#1FB871" };
+  }
 }
 
 function calculateAgeFromBirthday(birthdayStr: string): number | null {
@@ -572,14 +627,7 @@ export default function ProfileScreen() {
   const [addChildVisible, setAddChildVisible] = useState(false);
   const [editingChild, setEditingChild] = useState<ChildProfile | undefined>(undefined);
   const [serverAttendedCount, setServerAttendedCount] = useState<number | null>(null);
-
-  // Derive recent attendance
-  const recentAttendance = React.useMemo(() => {
-    return [...bookings]
-      .filter((b) => b.bookingStatus === "attended" || b.bookingStatus === "noShow" || b.attendanceStatus === "attended" || b.attendanceStatus === "noShow")
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 4);
-  }, [bookings]);
+  const [recentAttendance, setRecentAttendance] = useState<MyAttendanceRecord[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -593,9 +641,13 @@ export default function ProfileScreen() {
             record.status === "checked_in" || record.status === "late",
           ).length;
           setServerAttendedCount(count);
+          setRecentAttendance(sortAttendanceNewestFirst(res.data).slice(0, 4));
         })
         .catch(() => {
-          if (active) setServerAttendedCount(null);
+          if (active) {
+            setServerAttendedCount(null);
+            setRecentAttendance([]);
+          }
         });
 
       return () => {
@@ -821,7 +873,12 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={[styles.sectionEyebrow, { marginTop: 24 }]}>ATTENDANCE HISTORY</Text>
+        <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
+          <Text style={[styles.sectionEyebrow, { marginBottom: 0 }]}>ATTENDANCE HISTORY</Text>
+          <TouchableOpacity onPress={() => router.push("/attendance-history")} activeOpacity={0.75}>
+            <Text style={styles.seeMoreText}>See More</Text>
+          </TouchableOpacity>
+        </View>
         <View style={[styles.menuContainer, { paddingVertical: 4 }]}>
           {recentAttendance.length === 0 ? (
             <View style={{ padding: 24, alignItems: "center", gap: 8 }}>
@@ -830,24 +887,21 @@ export default function ProfileScreen() {
             </View>
           ) : (
             recentAttendance.map((rec, idx) => {
-              const isAttended = rec.bookingStatus === "attended" || rec.attendanceStatus === "attended";
-              const dotColor = isAttended ? "#1FB871" : "#FFB02E"; // Wait, "Missed" was red, "Late" was orange. I will use Red for missed.
-              let badgeText = "Attended";
-              let badgeColor = "#1FB871";
-              if (rec.attendanceStatus === "noShow" || rec.bookingStatus === "noShow") {
-                badgeText = "Missed";
-                badgeColor = "#EF4444";
-              }
+              const badge = attendanceBadge(rec);
+              const date = formatAttendanceDate(rec.checkedInAt);
+              const time = formatAttendanceTime(rec.checkedInAt);
 
               return (
-                <View key={rec.bookingNumber + idx} style={[styles.attendanceItem, idx < recentAttendance.length - 1 && styles.menuItemBorder]}>
-                  <View style={[styles.attendanceDot, { backgroundColor: badgeColor }]} />
+                <View key={rec.id} style={[styles.attendanceItem, idx < recentAttendance.length - 1 && styles.menuItemBorder]}>
+                  <View style={[styles.attendanceDot, { backgroundColor: badge.color }]} />
                   <View style={styles.attendanceTextCol}>
-                    <Text style={styles.attendanceTitle}>{rec.className || rec.danceType}</Text>
-                    <Text style={styles.attendanceSubtitle}>{rec.instructorName} · {rec.date} {rec.time ? `· ${rec.time}` : ""}</Text>
+                    <Text style={styles.attendanceTitle}>{rec.classTitle || "Studio session"}</Text>
+                    <Text style={styles.attendanceSubtitle}>
+                      {rec.instructorName || "Instructor"}{date ? ` · ${date}` : ""}{time ? ` · ${time}` : ""}
+                    </Text>
                   </View>
-                  <View style={[styles.attendanceBadge, { backgroundColor: badgeColor + "15" }]}>
-                    <Text style={[styles.attendanceBadgeText, { color: badgeColor }]}>{badgeText}</Text>
+                  <View style={[styles.attendanceBadge, { backgroundColor: badge.color + "15" }]}>
+                    <Text style={[styles.attendanceBadgeText, { color: badge.color }]}>{badge.text}</Text>
                   </View>
                 </View>
               )
@@ -1027,6 +1081,8 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: "#6B747F", marginTop: 3 },
 
   sectionEyebrow: { fontSize: 12, fontFamily: "SpaceMono_700Bold", color: "#6B747F", letterSpacing: 1.9, marginBottom: 10, textTransform: "uppercase", marginLeft: 4 },
+  sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, marginLeft: 4, marginRight: 4 },
+  seeMoreText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: colors.studio.primary },
 
   qrCard: { flexDirection: "row", backgroundColor: "#15171B", borderRadius: 16, overflow: "hidden", marginBottom: 24, borderWidth: 1, borderColor: "rgba(0,182,215,0.4)", alignItems: "center", padding: 18, gap: 16 },
   qrCardLeft: { backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", padding: 8, borderRadius: 10 },

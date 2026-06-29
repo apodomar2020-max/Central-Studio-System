@@ -425,7 +425,12 @@ export default function Bookings() {
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger data-testid="select-booking-status"><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {BOOKING_STATUSES.map((s) => <SelectItem key={s} value={s}>{bookingStatusLabel(s)}</SelectItem>)}
+                      {/* "attended"/"completed" are produced only by the check-in
+                          flow (which also records attendance + credit), never set
+                          manually here — the backend rejects such transitions. */}
+                      {BOOKING_STATUSES
+                        .filter((s) => s !== "attended" && s !== "completed")
+                        .map((s) => <SelectItem key={s} value={s}>{bookingStatusLabel(s)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />

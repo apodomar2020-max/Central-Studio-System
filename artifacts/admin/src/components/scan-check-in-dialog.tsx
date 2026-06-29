@@ -95,8 +95,6 @@ type LegacyPackageOrder = {
   status: string;
 };
 
-const CLOSED_BOOKING_STATUSES = new Set(["attended", "completed", "cancelled", "rejected"]);
-
 function bookingStatusStyle(status: string): { background: string; color: string } {
   switch (status) {
     case "confirmed":
@@ -169,8 +167,12 @@ function bookingSortRank(bk: Booking): number {
 }
 
 function isBookingCheckInEligible(bk: Booking): boolean {
-  if (bk.checkInEligible === false || bk.alreadyCheckedIn) return false;
-  return !CLOSED_BOOKING_STATUSES.has(bk.bookingStatus ?? bk.status);
+  // Eligible ONLY when the backend explicitly authorises check-in right now
+  // (confirmed + today's occurrence + inside the grace window + not already
+  // attended). Strict `=== true` — so pending, attended, cancelled, rejected,
+  // future, past and legacy bookings (whose checkInEligible is not true) are all
+  // hidden from the default reception list. We never fall back to a status guess.
+  return bk.checkInEligible === true && bk.alreadyCheckedIn !== true;
 }
 
 function bookingBlockedReason(bk: Booking): string {
@@ -266,7 +268,12 @@ export function ScanCheckInDialog({
 
   // Credit ledger — QR check-in path
   const [scannedQrToken, setScannedQrToken] = useState<string | null>(null);
+  // studentBookings = the ELIGIBLE bookings only (the default reception list).
   const [studentBookings, setStudentBookings] = useState<Booking[]>([]);
+  // allStudentBookings = every booking returned for the member, used ONLY when the
+  // optional "Show all" debug toggle is on (shows blocked bookings, disabled).
+  const [allStudentBookings, setAllStudentBookings] = useState<Booking[]>([]);
+  const [showAllBookings, setShowAllBookings] = useState(false);
   // Quick filter for the booking list: all participants, self only, or children only.
   const [scopeFilter, setScopeFilter] = useState<"all" | "self" | "child">("all");
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
@@ -347,6 +354,8 @@ export function ScanCheckInDialog({
     setSuccessMsg("");
     setScannedQrToken(null);
     setStudentBookings([]);
+    setAllStudentBookings([]);
+    setShowAllBookings(false);
     setSelectedBookingId(null);
     setScopeFilter("all");
     setPaymentMode(null);
@@ -376,13 +385,13 @@ export function ScanCheckInDialog({
           ).catch(() => [] as Booking[]),
           fetchSchedules(),
         ]);
-        // Phase A — only surface bookings that are actually eligible for
-        // check-in right now: confirmed, today's occurrence, inside the grace
-        // window, and not already attended. The backend computes
-        // `checkInEligible` authoritatively (and enforces the same rules at the
-        // /check-in/qr write path), so we never show pending, future, past,
-        // cancelled, rejected, or already-attended bookings here.
+        // Default reception list = ONLY bookings the backend marks
+        // checkInEligible === true (confirmed, today's occurrence, inside the
+        // grace window, not already attended). Pending, attended, cancelled,
+        // rejected, future, past and legacy bookings are never shown by default.
+        // The full set is kept for the optional, off-by-default "Show all" toggle.
         const eligible = bookings.filter(isBookingCheckInEligible);
+        setAllStudentBookings(bookings);
         setStudentBookings(eligible);
         if (eligible.length === 1) setSelectedBookingId(eligible[0].id);
         setPhase("selecting");
@@ -850,12 +859,17 @@ export function ScanCheckInDialog({
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // Default list is eligible-only; the "Show all" debug toggle widens it to every
+  // booking (ineligible rows render disabled with their blocked reason).
+  const displayBookings = showAllBookings ? allStudentBookings : studentBookings;
+  // Number of ineligible bookings that the toggle would reveal.
+  const ineligibleCount = allStudentBookings.length - studentBookings.length;
   // Booking list filtered by the scope chip and sorted by check-in priority.
-  const visibleBookings = studentBookings
+  const visibleBookings = displayBookings
     .filter((bk) => scopeFilter === "all" || bookingScopeOf(bk) === scopeFilter)
     .slice()
     .sort((a, b) => bookingSortRank(a) - bookingSortRank(b));
-  const selectedBooking = studentBookings.find((bk) => bk.id === selectedBookingId) ?? null;
+  const selectedBooking = displayBookings.find((bk) => bk.id === selectedBookingId) ?? null;
   const selectedBookingEligible = selectedBooking ? isBookingCheckInEligible(selectedBooking) : true;
 
   return (
@@ -953,8 +967,28 @@ export function ScanCheckInDialog({
               </div>
             )}
 
+            {/* Optional debug/support toggle — OFF by default. Reveals blocked
+                bookings (pending / attended / future / …) as DISABLED rows so
+                reception can see why a member has no eligible class, without ever
+                being able to check them in. Never the default reception view. */}
+            {isTokenFlow && ineligibleCount > 0 && (
+              <button
+                onClick={() => setShowAllBookings((v) => !v)}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                style={{
+                  background: showAllBookings ? `${AMBER}15` : "hsl(203 30% 12%)",
+                  color: showAllBookings ? AMBER : "#8A9AB0",
+                  border: `1px solid ${showAllBookings ? AMBER + "40" : "hsl(203 30% 18%)"}`,
+                }}
+              >
+                {showAllBookings
+                  ? "Hide ineligible bookings"
+                  : `Show all bookings (${ineligibleCount} ineligible · debug)`}
+              </button>
+            )}
+
             {/* ── Booking picker (token flow only, credit ledger path) ─────── */}
-            {isTokenFlow && studentBookings.length > 0 && (
+            {isTokenFlow && displayBookings.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
@@ -1072,8 +1106,10 @@ export function ScanCheckInDialog({
               </div>
             )}
 
-            {/* No confirmed booking for today's occurrence — nothing to check in. */}
-            {isTokenFlow && studentBookings.length === 0 && (
+            {/* No confirmed booking for today's occurrence — nothing to check in.
+                (Shown when the current list is empty; with "Show all" off this
+                means there is no ELIGIBLE booking today.) */}
+            {isTokenFlow && displayBookings.length === 0 && (
               <div
                 className="flex flex-col items-center gap-1.5 px-3 py-6 rounded-xl text-center"
                 style={{ background: "hsl(203 30% 12%)", border: "1px solid hsl(203 30% 18%)" }}

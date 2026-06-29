@@ -950,14 +950,44 @@ router.patch(
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const row = await db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
-    if (!existing) return null;
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(bookingsTable)
+      .where(eq(bookingsTable.id, params.data.id))
+      .for("update");
+    if (!existing) return { kind: "not_found" as const };
 
     const data = parsed.data.studentEmail
       ? { ...parsed.data, studentEmail: normalizeEmail(parsed.data.studentEmail) }
       : parsed.data;
     const normalized = normalizeBookingWrite(data, existing);
+
+    // ── State-machine guard (Phase D) ───────────────────────────────────────
+    // "attended" is a CHECK-IN outcome, not an admin-editable label. It must be
+    // produced only by the attendance flow (/check-in/qr or POST /attendance),
+    // which atomically creates the attendance record (+ credit + notification)
+    // alongside the status change. So the booking PATCH may NOT:
+    //   • move a booking INTO attended/completed (no attendance row would exist), or
+    //   • move a booking OUT of attended/completed (a booking can never return
+    //     from Attended to Confirmed).
+    const wasAttended = existing.bookingStatus === "attended" || existing.bookingStatus === "completed";
+    const willBeAttended = normalized.bookingStatus === "attended" || normalized.bookingStatus === "completed";
+    if (normalized.bookingStatus !== existing.bookingStatus) {
+      if (willBeAttended) {
+        return {
+          kind: "forbidden" as const,
+          message: "Attendance can only be recorded through check-in, not by editing the booking status.",
+        };
+      }
+      if (wasAttended) {
+        return {
+          kind: "forbidden" as const,
+          message: "An attended booking cannot be changed back to another status.",
+        };
+      }
+    }
+
     const [updated] = await tx.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
 
     if (updated.bookingStatus !== existing.bookingStatus) {
@@ -980,15 +1010,20 @@ router.patch(
       }
     }
 
-    return updated;
+    return { kind: "ok" as const, booking: updated };
   });
 
-  if (!row) {
+  if (result.kind === "not_found") {
     res.status(404).json({ error: "Booking not found" });
     return;
   }
 
-  res.json(UpdateBookingResponse.parse(row));
+  if (result.kind === "forbidden") {
+    res.status(409).json({ error: result.message, code: "invalid_status_transition" });
+    return;
+  }
+
+  res.json(UpdateBookingResponse.parse(result.booking));
   },
 );
 
