@@ -494,8 +494,8 @@ export function ScanCheckInDialog({
       return;
     }
 
-    // ── Path B: Legacy attendance endpoint (email scan / walk-in) ─────────────
-    // Backward-compatible for walk-ins and legacy QR formats.
+    // ── Path B: Walk-in / legacy attendance endpoint (email scan, no booking) ──
+    // Separate flow — records walk-in attendance, optionally deducting a credit.
     const creditActuallyDeducted = canPackageDeduct && deductCredit && !!selectedPackageId;
 
     const body = {

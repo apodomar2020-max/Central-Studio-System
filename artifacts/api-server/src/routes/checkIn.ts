@@ -1,162 +1,21 @@
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, eq, sql } from "drizzle-orm";
-import {
-  db,
-  studentsTable,
-  bookingsTable,
-  packageOrdersTable,
-  schedulesTable,
-  classesTable,
-  instructorsTable,
-  attendanceTable,
-  creditTransactionsTable,
-} from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { db, studentsTable, bookingsTable } from "@workspace/db";
 import { CheckInQrBody, CheckInQrResponse } from "@workspace/api-zod";
-import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
-import { checkInWindowState } from "../lib/occurrence";
+import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
 
 const router: IRouter = Router();
 
-const DAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-] as const;
-
-function formatTime(t: string | null): string | null {
-  if (!t) return null;
-  const match = /^(\d{1,2}):(\d{2})/.exec(t);
-  if (!match) return t;
-  const h = Number(match[1]);
-  const m = match[2];
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${m} ${period}`;
-}
-
-function bookingParticipantKey(booking: typeof bookingsTable.$inferSelect): string {
-  if (booking.participantChildId != null) return `child:${booking.participantChildId}`;
-  if (booking.bookingScope === "child") return `child:unknown:${booking.id}`;
-  return `self:${booking.accountOwnerStudentId ?? normalizeLegacyEmail(booking.studentEmail)}`;
-}
-
-function normalizeLegacyEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-async function getBookingNotificationContext(
-  client: Pick<typeof db, "select">,
-  booking: typeof bookingsTable.$inferSelect,
-) {
-  const [details] = await client
-    .select({
-      className: classesTable.title,
-      instructorName: instructorsTable.name,
-      branch: schedulesTable.location,
-      scheduleType: schedulesTable.type,
-      scheduleDayOfWeek: schedulesTable.dayOfWeek,
-      scheduleDate: schedulesTable.date,
-      scheduleStartTime: schedulesTable.startTime,
-      scheduleEndTime: schedulesTable.endTime,
-    })
-    .from(bookingsTable)
-    .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
-    .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
-    .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
-    .where(eq(bookingsTable.id, booking.id))
-    .limit(1);
-
-  const start = formatTime(details?.scheduleStartTime ?? null);
-  const end = formatTime(details?.scheduleEndTime ?? null);
-  const dayName = details?.scheduleDayOfWeek != null ? DAY_NAMES[details.scheduleDayOfWeek] ?? null : null;
-  const dateLabel = details?.scheduleDate
-    ? new Date(`${details.scheduleDate}T00:00:00Z`).toLocaleDateString("en-GB", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      })
-    : null;
-  const schedulePrefix = details?.scheduleType === "one_time" ? dateLabel : dayName;
-  const scheduleLabel = schedulePrefix && start
-    ? `${schedulePrefix} • ${end ? `${start} - ${end}` : start}`
-    : null;
-  const className = details?.className ?? null;
-
-  return {
-    className,
-    instructorName: details?.instructorName ?? null,
-    branch: details?.branch ?? null,
-    scheduleLabel,
-    participantName: booking.studentName,
-    bookingScope: booking.bookingScope ?? (booking.participantChildId != null ? "child" : "self"),
-    label: className ?? "your class",
-  };
-}
-
 // ---------------------------------------------------------------------------
-// POST /check-in/qr
+// POST /check-in/qr — QR entry point into the shared check-in flow.
 //
-// Atomic QR-code check-in for the credit ledger system (migration 0013).
-//
-// Accepts:
-//   { qrToken: UUID, bookingId: number, paymentMode, packageOrderId?, checkedInBy? }
-//
-// Flow (all inside one DB transaction):
-//   1. Resolve student by qrToken (never reveals email in error messages)
-//   2. Resolve booking by bookingId, verify it belongs to the student
-//   3. Verify booking has not already been attended
-//   4. Prevent duplicate attendance for the same class/schedule today
-//   5. Create attendance record (status: checked_in)
-//   6. If admin selected package credit: deduct 1 credit (SELECT FOR UPDATE)
-//   7. Insert credit_transactions ledger row for the deduction
-//
-// Credits are deducted at check-in time (NOT at booking time). A booking
-// Pay-at-studio checks in successfully without credit deduction.
+// This route ONLY does QR-specific work: resolve the student from the scanned
+// qrToken, load + lock the selected booking, and verify the booking belongs to
+// the scanned student. The actual attendance/credit/notification/booking
+// transition is performed by performBookingCheckIn() — the SINGLE shared
+// implementation also used by the manual booking-based check-in path.
 // ---------------------------------------------------------------------------
-
-type CheckInErrorCode =
-  | "invalid_qr"
-  | "booking_not_found"
-  | "booking_mismatch"
-  | "already_attended"
-  | "duplicate_attendance"
-  | "booking_not_actionable"
-  | "booking_not_confirmed"
-  | "not_todays_occurrence"
-  | "check_in_too_early"
-  | "package_required"
-  | "package_not_found"
-  | "invalid_package"
-  | "package_not_eligible"
-  | "no_credits";
-
-interface CheckInError {
-  isCheckInError: true;
-  status: number;
-  code: CheckInErrorCode;
-  message: string;
-}
-
-function makeError(
-  status: number,
-  code: CheckInErrorCode,
-  message: string,
-): CheckInError {
-  return { isCheckInError: true, status, code, message };
-}
-
-function isCheckInError(e: unknown): e is CheckInError {
-  return (
-    typeof e === "object" &&
-    e !== null &&
-    (e as CheckInError).isCheckInError === true
-  );
-}
 
 function requirePackageDeductForQr(req: Request, res: Response, next: NextFunction): void {
   if (req.body?.paymentMode !== "package_credit") {
@@ -172,385 +31,68 @@ router.post(
   requireAdminPermission("qr", "checkIn"),
   requirePackageDeductForQr,
   async (req, res): Promise<void> => {
-  const parsed = CheckInQrBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-
-  const { qrToken, bookingId, paymentMode, packageOrderId, checkedInBy } = parsed.data;
-  const performedBy = checkedInBy ?? "system";
-
-  if (paymentMode === "package_credit" && packageOrderId == null) {
-    res.status(400).json({
-      error: "package_required",
-      message: "Package credit check-in requires a packageOrderId.",
-    });
-    return;
-  }
-
-  try {
-    const result = await db.transaction(async (tx) => {
-      // ------------------------------------------------------------------
-      // Step 1 — Resolve student by QR token
-      // ------------------------------------------------------------------
-      const [student] = await tx
-        .select()
-        .from(studentsTable)
-        .where(eq(studentsTable.qrToken, qrToken))
-        .limit(1);
-
-      if (!student) {
-        throw makeError(404, "invalid_qr", "QR code is not recognised.");
-      }
-
-      // ------------------------------------------------------------------
-      // Step 2 — Resolve and validate booking
-      // ------------------------------------------------------------------
-      const [booking] = await tx
-        .select()
-        .from(bookingsTable)
-        .where(eq(bookingsTable.id, bookingId))
-        .limit(1);
-
-      if (!booking) {
-        throw makeError(404, "booking_not_found", "Booking not found.");
-      }
-      const notificationContext = await getBookingNotificationContext(tx, booking);
-
-      // Verify the booking belongs to the student who presented this QR code.
-      if (booking.studentEmail !== student.email) {
-        throw makeError(
-          403,
-          "booking_mismatch",
-          "This booking does not belong to the scanned student.",
-        );
-      }
-
-      // ------------------------------------------------------------------
-      // Step 3 — Prevent double check-in on the same booking
-      // ------------------------------------------------------------------
-      const currentBookingStatus = booking.bookingStatus ?? booking.status;
-
-      if (currentBookingStatus === "attended" || currentBookingStatus === "completed") {
-        throw makeError(
-          409,
-          "already_attended",
-          "This booking has already been marked as attended.",
-        );
-      }
-
-      if (currentBookingStatus === "cancelled" || currentBookingStatus === "rejected") {
-        throw makeError(
-          400,
-          "booking_not_actionable",
-          "Cancelled or rejected bookings cannot be checked in.",
-        );
-      }
-
-      // ------------------------------------------------------------------
-      // Phase A — only CONFIRMED bookings may be checked in. Pending requests
-      // must be confirmed by an admin first; they never reserve a seat and are
-      // never eligible for QR check-in.
-      // ------------------------------------------------------------------
-      if (currentBookingStatus !== "confirmed") {
-        throw makeError(
-          400,
-          "booking_not_confirmed",
-          "Only confirmed bookings can be checked in. Confirm the booking first.",
-        );
-      }
-
-      // ------------------------------------------------------------------
-      // Phase A — occurrence + grace window. Check-in is allowed only on the
-      // booking's stored occurrence date, from 2 hours before the class start
-      // time until the end of that Cairo day. This mirrors the eligibility
-      // flag returned by GET /bookings and cannot be bypassed from the client.
-      // ------------------------------------------------------------------
-      let scheduleStartTime: string | null = null;
-      if (booking.scheduleId != null) {
-        const [sched] = await tx
-          .select({ startTime: schedulesTable.startTime })
-          .from(schedulesTable)
-          .where(eq(schedulesTable.id, booking.scheduleId))
-          .limit(1);
-        scheduleStartTime = sched?.startTime ?? null;
-      }
-
-      const windowState = checkInWindowState(
-        { startTime: scheduleStartTime },
-        booking.occurrenceDate,
-      );
-      if (windowState === "too_early") {
-        throw makeError(
-          400,
-          "check_in_too_early",
-          "Check-in for this class opens 2 hours before it starts.",
-        );
-      }
-      if (windowState === "not_today") {
-        throw makeError(
-          400,
-          "not_todays_occurrence",
-          "This booking is not for today's class. Only today's confirmed booking can be checked in.",
-        );
-      }
-
-      const [existingForBooking] = await tx
-        .select({ id: attendanceTable.id })
-        .from(attendanceTable)
-        .where(eq(attendanceTable.bookingId, booking.id))
-        .limit(1);
-
-      if (existingForBooking) {
-        throw makeError(
-          409,
-          "already_attended",
-          "This booking already has an attendance record.",
-        );
-      }
-
-      // ------------------------------------------------------------------
-      // Step 4 — Prevent duplicate attendance for same participant + class/schedule today
-      // ------------------------------------------------------------------
-      if (booking.classId != null || booking.scheduleId != null) {
-        const dupConditions = [
-          eq(attendanceTable.studentEmail, student.email),
-          sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
-        ];
-
-        if (booking.scheduleId != null) {
-          dupConditions.push(eq(attendanceTable.scheduleId, booking.scheduleId));
-        } else {
-          dupConditions.push(eq(attendanceTable.classId, booking.classId!));
-        }
-
-        const existingRows = await tx
-          .select({
-            attendanceId: attendanceTable.id,
-            existingBooking: bookingsTable,
-          })
-          .from(attendanceTable)
-          .leftJoin(bookingsTable, eq(attendanceTable.bookingId, bookingsTable.id))
-          .where(and(...dupConditions))
-          .limit(50);
-
-        const participantKey = bookingParticipantKey(booking);
-        const existing = existingRows.find((row) => {
-          if (row.existingBooking) {
-            return bookingParticipantKey(row.existingBooking) === participantKey;
-          }
-          return booking.participantChildId == null && booking.bookingScope !== "child";
-        });
-
-        if (existing) {
-          throw makeError(
-            409,
-            "duplicate_attendance",
-            "Student is already checked in for this class today.",
-          );
-        }
-      }
-
-      // ------------------------------------------------------------------
-      // Step 5 — Validate selected package credit, if requested
-      // ------------------------------------------------------------------
-      let selectedOrder:
-        | {
-            id: number;
-            studentEmail: string;
-            remainingCredits: number;
-            status: string;
-          }
-        | null = null;
-
-      if (paymentMode === "package_credit") {
-        if (booking.scheduleId != null) {
-          const [schedule] = await tx
-            .select({ packageEligible: schedulesTable.packageEligible })
-            .from(schedulesTable)
-            .where(eq(schedulesTable.id, booking.scheduleId))
-            .limit(1);
-
-          if (schedule?.packageEligible === false) {
-            throw makeError(
-              400,
-              "package_not_eligible",
-              "This schedule is not eligible for package credits.",
-            );
-          }
-        }
-
-        const [order] = await tx
-          .select({
-            id: packageOrdersTable.id,
-            studentEmail: packageOrdersTable.studentEmail,
-            remainingCredits: packageOrdersTable.remainingCredits,
-            status: packageOrdersTable.status,
-          })
-          .from(packageOrdersTable)
-          .where(eq(packageOrdersTable.id, packageOrderId!))
-          .for("update");
-
-        if (!order) {
-          throw makeError(404, "package_not_found", "The selected package order could not be found.");
-        }
-
-        if (order.studentEmail !== student.email || order.status !== "active") {
-          throw makeError(403, "invalid_package", "The selected package is not active for this student.");
-        }
-
-        if (order.remainingCredits <= 0) {
-          throw makeError(400, "no_credits", "This package has no remaining credits.");
-        }
-
-        selectedOrder = order;
-      }
-
-      // ------------------------------------------------------------------
-      // Step 6 — Create attendance record
-      // ------------------------------------------------------------------
-      const [attendance] = await tx
-        .insert(attendanceTable)
-        .values({
-          studentName: student.name,
-          studentEmail: student.email,
-          studentId: student.id,
-          classId: booking.classId ?? null,
-          scheduleId: booking.scheduleId ?? null,
-          bookingId: booking.id,
-          packageOrderId: selectedOrder?.id ?? null,
-          creditDeducted: paymentMode === "package_credit",
-          checkedInBy: performedBy,
-          status: "checked_in",
-          classTitle: null,
-          notes: paymentMode === "pay_at_studio" ? "Payment mode: pay at studio" : null,
-          checkedInAt: new Date().toISOString(),
-        })
-        .returning();
-
-      // ------------------------------------------------------------------
-      // Step 7 — Credit deduction + ledger row (if package credit selected)
-      // ------------------------------------------------------------------
-      let remainingCredits: number | null = null;
-
-      if (selectedOrder) {
-        const newRemaining = selectedOrder.remainingCredits - 1;
-
-        await tx
-          .update(packageOrdersTable)
-          .set({
-            remainingCredits: newRemaining,
-            status: newRemaining <= 0 ? "fullyUsed" : selectedOrder.status,
-          })
-          .where(eq(packageOrdersTable.id, selectedOrder.id));
-
-        await tx.insert(creditTransactionsTable).values({
-          packageOrderId: selectedOrder.id,
-          studentId: student.id,
-          type: "attendance_deduction",
-          delta: -1,
-          balanceBefore: selectedOrder.remainingCredits,
-          balanceAfter: newRemaining,
-          referenceId: attendance.id,
-          referenceType: "attendance",
-          notes: `QR check-in for ${notificationContext.label}`,
-          createdBy: performedBy,
-        });
-
-        remainingCredits = newRemaining;
-      }
-
-      // ------------------------------------------------------------------
-      // Step 8 — Mark booking as attended
-      // ------------------------------------------------------------------
-      await tx
-        .update(bookingsTable)
-        .set({ status: "attended", bookingStatus: "attended" })
-        .where(eq(bookingsTable.id, booking.id));
-
-      await createStudentNotification(tx, {
-        studentId: student.id,
-        title: "Checked in",
-        body: `You have been checked in for ${notificationContext.label}.`,
-        type: "attendance_checked_in",
-        relatedEntityType: "booking",
-        relatedEntityId: booking.id,
-        metadata: {
-          bookingId: booking.id,
-          classId: booking.classId,
-          scheduleId: booking.scheduleId,
-          className: notificationContext.className,
-          instructorName: notificationContext.instructorName,
-          branch: notificationContext.branch,
-          scheduleLabel: notificationContext.scheduleLabel,
-          participantName: notificationContext.participantName,
-          bookingScope: notificationContext.bookingScope,
-        },
-      });
-
-      if (selectedOrder) {
-        await createStudentNotification(tx, {
-          studentId: student.id,
-          title: "Credit used",
-          body: `1 credit was used for ${notificationContext.label}.`,
-          type: "credits_exhausted",
-          relatedEntityType: "booking",
-          relatedEntityId: booking.id,
-          metadata: {
-            bookingId: booking.id,
-            className: notificationContext.className,
-            instructorName: notificationContext.instructorName,
-            branch: notificationContext.branch,
-            scheduleLabel: notificationContext.scheduleLabel,
-            participantName: notificationContext.participantName,
-            bookingScope: notificationContext.bookingScope,
-            remainingCredits,
-          },
-        });
-
-        if (remainingCredits === 0) {
-          await createStudentNotification(tx, {
-            studentId: student.id,
-            title: "Package credits used",
-            body: "Your package credits have been used.",
-            type: "credits_exhausted",
-            relatedEntityType: selectedOrder ? "package_order" : "booking",
-            relatedEntityId: selectedOrder?.id ?? booking.id,
-            metadata: {
-              bookingId: booking.id,
-              packageName: selectedOrder?.packageName,
-              className: notificationContext.className,
-              instructorName: notificationContext.instructorName,
-              branch: notificationContext.branch,
-              scheduleLabel: notificationContext.scheduleLabel,
-              participantName: notificationContext.participantName,
-              bookingScope: notificationContext.bookingScope,
-              remainingCredits,
-            },
-          });
-        }
-      }
-
-      return {
-        attendanceId: attendance.id,
-        studentName: student.name,
-        studentEmail: student.email,
-        classTitle: null as string | null,
-        creditDeducted: paymentMode === "package_credit",
-        remainingCredits,
-        checkedInAt: attendance.checkedInAt,
-      };
-    });
-
-    res.status(201).json(CheckInQrResponse.parse(result));
-  } catch (err: unknown) {
-    if (isCheckInError(err)) {
-      res.status(err.status).json({ error: err.code, message: err.message });
+    const parsed = CheckInQrBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
       return;
     }
-    throw err;
-  }
+
+    const { qrToken, bookingId, paymentMode, packageOrderId, checkedInBy } = parsed.data;
+    const performedBy = checkedInBy ?? "system";
+
+    if (paymentMode === "package_credit" && packageOrderId == null) {
+      res.status(400).json({
+        error: "package_required",
+        message: "Package credit check-in requires a packageOrderId.",
+      });
+      return;
+    }
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        // Resolve student by QR token (never reveals email in error messages).
+        const [student] = await tx
+          .select()
+          .from(studentsTable)
+          .where(eq(studentsTable.qrToken, qrToken))
+          .limit(1);
+        if (!student) {
+          throw makeCheckInError(404, "invalid_qr", "QR code is not recognised.");
+        }
+
+        // Load + lock the booking. FOR UPDATE serializes concurrent scans of the
+        // same booking so attendance/credit can never be processed twice.
+        const [booking] = await tx
+          .select()
+          .from(bookingsTable)
+          .where(eq(bookingsTable.id, bookingId))
+          .for("update");
+        if (!booking) {
+          throw makeCheckInError(404, "booking_not_found", "Booking not found.");
+        }
+
+        // The scanned student must own this booking.
+        if (booking.studentEmail !== student.email) {
+          throw makeCheckInError(403, "booking_mismatch", "This booking does not belong to the scanned student.");
+        }
+
+        return performBookingCheckIn(tx, {
+          booking,
+          student: { id: student.id, name: student.name, email: student.email },
+          paymentMode,
+          packageOrderId,
+          performedBy,
+        });
+      });
+
+      res.status(201).json(CheckInQrResponse.parse(result));
+    } catch (err: unknown) {
+      if (isCheckInError(err)) {
+        res.status(err.status).json({ error: err.code, message: err.message });
+        return;
+      }
+      throw err;
+    }
   },
 );
 
