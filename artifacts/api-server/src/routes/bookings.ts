@@ -458,11 +458,32 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
     res.status(400).json({ error: query.error.message });
     return;
   }
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 50;
+  const offset = (page - 1) * pageSize;
   // Build WHERE conditions from optional filters
   const conditions = [];
   if (query.data.status) conditions.push(eq(bookingsTable.status, query.data.status));
   if (query.data.bookingStatus) conditions.push(eq(bookingsTable.bookingStatus, query.data.bookingStatus));
   if (query.data.paymentStatus) conditions.push(eq(bookingsTable.paymentStatus, query.data.paymentStatus));
+  if (query.data.scope === "child") {
+    conditions.push(sql`(${bookingsTable.bookingScope} = 'child' OR ${bookingsTable.participantChildId} IS NOT NULL)`);
+  } else if (query.data.scope === "self") {
+    conditions.push(sql`(coalesce(${bookingsTable.bookingScope}, 'self') = 'self' AND ${bookingsTable.participantChildId} IS NULL)`);
+  }
+
+  const search = query.data.search?.trim().toLowerCase();
+  if (search) {
+    const pattern = `%${search}%`;
+    conditions.push(sql`(
+      lower(coalesce(${childrenTable.fullName}, '')) like ${pattern}
+      OR lower(coalesce(${studentsTable.name}, '')) like ${pattern}
+      OR lower(coalesce(${studentsTable.email}, '')) like ${pattern}
+      OR lower(coalesce(${bookingsTable.studentName}, '')) like ${pattern}
+      OR lower(coalesce(${bookingsTable.studentEmail}, '')) like ${pattern}
+      OR lower(coalesce(${classesTable.title}, '')) like ${pattern}
+    )`);
+  }
 
   if (req.studentJwtVerified) {
     conditions.push(
@@ -507,9 +528,21 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
     .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
     .leftJoin(attendanceTable, eq(attendanceTable.bookingId, bookingsTable.id));
 
+  const countBase = db
+    .select({ total: sql<number>`count(distinct ${bookingsTable.id})` })
+    .from(bookingsTable)
+    .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
+    .leftJoin(studentsTable, eq(bookingsTable.accountOwnerStudentId, studentsTable.id))
+    .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id));
+
+  const [countRow] = conditions.length > 0
+    ? await countBase.where(and(...conditions))
+    : await countBase;
+  const total = Number(countRow?.total ?? 0);
+
   const rows = conditions.length > 0
-    ? await base.where(and(...conditions)).orderBy(desc(bookingsTable.createdAt))
-    : await base.orderBy(desc(bookingsTable.createdAt));
+    ? await base.where(and(...conditions)).orderBy(desc(bookingsTable.createdAt)).limit(pageSize).offset(offset)
+    : await base.orderBy(desc(bookingsTable.createdAt)).limit(pageSize).offset(offset);
 
   const enrichedById = new Map<number, Record<string, unknown>>();
 
@@ -598,7 +631,13 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
 
   const enriched = Array.from(enrichedById.values());
 
-  res.json(ListBookingsResponse.parse(enriched));
+  res.json(ListBookingsResponse.parse({
+    bookings: enriched,
+    total,
+    page,
+    totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
+    pageSize,
+  }));
 });
 
 router.post(

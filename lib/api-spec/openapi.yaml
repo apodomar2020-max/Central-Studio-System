@@ -16,6 +16,7 @@ tags:
   - name: bookings
   - name: students
   - name: offers
+  - name: heroItems
   - name: notifications
   - name: marketing
   - name: analytics
@@ -412,15 +413,20 @@ paths:
       tags: [bookings]
       parameters:
         - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: bookingStatus, in: query, required: false, schema: { type: string } }
+        - { name: paymentStatus, in: query, required: false, schema: { type: string } }
+        - { name: studentEmail, in: query, required: false, schema: { type: string } }
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: scope, in: query, required: false, schema: { type: string, enum: [self, child] } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
       responses:
         "200":
-          description: List of bookings
+          description: Paginated list of bookings
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Booking"
+                $ref: "#/components/schemas/ListBookingsResponse"
     post:
       operationId: createBooking
       tags: [bookings]
@@ -660,6 +666,96 @@ paths:
     delete:
       operationId: deleteOffer
       tags: [offers]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /hero-items:
+    get:
+      operationId: listHeroItems
+      tags: [heroItems]
+      summary: List hero slides
+      responses:
+        "200":
+          description: List of hero slides
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HeroItem"
+    post:
+      operationId: createHeroItem
+      tags: [heroItems]
+      summary: Create hero slide
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHeroItemBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeroItem"
+
+  /hero-items/{id}:
+    get:
+      operationId: getHeroItem
+      tags: [heroItems]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Hero slide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeroItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateHeroItem
+      tags: [heroItems]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHeroItemBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeroItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteHeroItem
+      tags: [heroItems]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -1228,9 +1324,19 @@ components:
         packageId: { type: ["integer", "null"] }
         packageOrderId: { type: ["integer", "null"] }
         status: { type: string }
+        bookingStatus: { type: ["string", "null"] }
+        paymentStatus: { type: ["string", "null"] }
+        paymentMode: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         bookedAt: { type: string }
         createdAt: { type: string }
+        accountOwnerStudentId: { type: ["integer", "null"] }
+        accountOwnerName: { type: ["string", "null"] }
+        accountOwnerEmail: { type: ["string", "null"] }
+        participantChildId: { type: ["integer", "null"] }
+        participantName: { type: ["string", "null"] }
+        participantType: { type: ["string", "null"], enum: [self, child, null] }
+        bookingScope: { type: ["string", "null"], enum: [self, child, null] }
         # Display-ready fields joined from class / schedule / instructor (list endpoint).
         # All nullable: a booking may have no class, schedule, or instructor.
         classTitle: { type: ["string", "null"] }
@@ -1240,11 +1346,32 @@ components:
         instructorName: { type: ["string", "null"] }
         instructorPhotoUrl: { type: ["string", "null"] }
         scheduleDayOfWeek: { type: ["integer", "null"] }
+        scheduleType: { type: ["string", "null"], enum: [weekly, one_time, null] }
+        scheduleDate: { type: ["string", "null"] }
         scheduleStartTime: { type: ["string", "null"] }
         scheduleEndTime: { type: ["string", "null"] }
         scheduleLocation: { type: ["string", "null"] }
+        schedulePriceEgp: { type: ["number", "null"] }
+        schedulePackageEligible: { type: ["boolean", "null"] }
         scheduleLabel: { type: ["string", "null"] }
         displayTitle: { type: ["string", "null"] }
+        hasAttendance: { type: ["boolean", "null"] }
+        alreadyCheckedIn: { type: ["boolean", "null"] }
+        checkInEligible: { type: ["boolean", "null"] }
+        checkInBlockedReason: { type: ["string", "null"] }
+
+    ListBookingsResponse:
+      type: object
+      required: [bookings, total, page, totalPages, pageSize]
+      properties:
+        bookings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Booking"
+        total: { type: integer }
+        page: { type: integer }
+        totalPages: { type: integer }
+        pageSize: { type: integer }
 
     CreateBookingBody:
       type: object
@@ -1257,6 +1384,9 @@ components:
         classId: { type: ["integer", "null"] }
         packageId: { type: ["integer", "null"] }
         status: { type: string }
+        bookingStatus: { type: string }
+        paymentStatus: { type: string }
+        paymentMode: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         bookedAt: { type: string }
 
@@ -1337,6 +1467,34 @@ components:
         validUntil: { type: ["string", "null"] }
         isActive: { type: boolean }
         classIds: { type: array, items: { type: integer } }
+
+    HeroItem:
+      type: object
+      required: [id, imageUrl, buttonRoute, sortOrder, isActive, createdAt]
+      properties:
+        id: { type: integer }
+        imageUrl: { type: string }
+        buttonRoute: { type: string }
+        sortOrder: { type: integer }
+        isActive: { type: boolean }
+        createdAt: { type: string }
+
+    CreateHeroItemBody:
+      type: object
+      required: [imageUrl]
+      properties:
+        imageUrl: { type: string }
+        buttonRoute: { type: string }
+        sortOrder: { type: integer }
+        isActive: { type: boolean }
+
+    UpdateHeroItemBody:
+      type: object
+      properties:
+        imageUrl: { type: string }
+        buttonRoute: { type: string }
+        sortOrder: { type: integer }
+        isActive: { type: boolean }
 
     Notification:
       type: object

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,6 +30,7 @@ const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "atte
 const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"];
 const FILTERS = ["all", "pending", "confirmed", "rejected", "cancelled", "attended"] as const;
 const SCOPE_FILTERS = ["all", "self", "child"] as const;
+const PAGE_SIZE = 50;
 
 const formSchema = z.object({
   studentName: z.string().min(1, "Name is required"),
@@ -124,15 +125,35 @@ export default function Bookings() {
   const canCreate = can("bookings", "create");
   const canEdit = can("bookings", "edit");
   const canCancel = can("bookings", "cancel");
-  const { data: bookings, isLoading } = useListBookings();
+  const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [scopeFilter, setScopeFilter] = useState<(typeof SCOPE_FILTERS)[number]>("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const listParams = {
+    page,
+    pageSize: PAGE_SIZE,
+    ...(activeFilter !== "all" ? { bookingStatus: activeFilter } : {}),
+    ...(scopeFilter !== "all" ? { scope: scopeFilter } : {}),
+    ...(search.trim() ? { search: search.trim() } : {}),
+  };
+  const { data: bookingsResponse, isLoading } = useListBookings(listParams);
+  const bookings = (bookingsResponse?.bookings ?? []) as Booking[];
+  const total = bookingsResponse?.total ?? 0;
+  const totalPages = bookingsResponse?.totalPages ?? 0;
+  const currentPage = bookingsResponse?.page ?? page;
+  const pageSize = bookingsResponse?.pageSize ?? PAGE_SIZE;
+  const startItem = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endItem = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
   const createBooking = useCreateBooking();
   const updateBooking = useUpdateBooking();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
-  const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("all");
-  const [scopeFilter, setScopeFilter] = useState<(typeof SCOPE_FILTERS)[number]>("all");
-  const [search, setSearch] = useState("");
+  const [statusConfirm, setStatusConfirm] = useState<{ booking: Booking; status: "confirmed" | "rejected" } | null>(null);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, scopeFilter, search]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -189,24 +210,20 @@ export default function Bookings() {
     );
   };
 
-  const visibleBookings = (bookings ?? []).filter((booking) => {
-    if (activeFilter !== "all" && (booking.bookingStatus ?? booking.status) !== activeFilter) {
-      return false;
+  const confirmStatusChange = () => {
+    if (!statusConfirm) return;
+    setBookingStatus(statusConfirm.booking, statusConfirm.status);
+    setStatusConfirm(null);
+  };
+
+  const paginationPages = (() => {
+    if (totalPages <= 0) return [];
+    const pages = new Set<number>([1, totalPages]);
+    for (let p = currentPage - 2; p <= currentPage + 2; p += 1) {
+      if (p >= 1 && p <= totalPages) pages.add(p);
     }
-    if (scopeFilter !== "all" && (isChildBooking(booking) ? "child" : "self") !== scopeFilter) {
-      return false;
-    }
-    const query = search.trim().toLowerCase();
-    if (!query) return true;
-    return [
-      participantName(booking),
-      accountOwnerName(booking),
-      accountOwnerEmail(booking),
-      booking.studentName,
-      booking.studentEmail,
-      booking.classTitle ?? "",
-    ].some((value) => value.toLowerCase().includes(query));
-  });
+    return Array.from(pages).sort((a, b) => a - b);
+  })();
 
   return (
     <div className="space-y-6">
@@ -266,10 +283,10 @@ export default function Bookings() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={9} className="text-center py-8">Loading...</TableCell></TableRow>
-            ) : visibleBookings.length === 0 ? (
+            ) : bookings.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
             ) : (
-              visibleBookings.map((booking) => (
+              bookings.map((booking) => (
                 <TableRow key={booking.id} data-testid={`row-booking-${booking.id}`}>
                   <TableCell>
                     <div className="font-medium">{participantName(booking)}</div>
@@ -319,22 +336,26 @@ export default function Bookings() {
                     {canEdit && (booking.bookingStatus ?? booking.status) === "pending" && (
                       <>
                         <Button
-                          variant="ghost"
-                          size="icon"
+                          variant="outline"
+                          size="sm"
+                          className="mr-2 border-emerald-600/30 text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-700"
                           data-testid={`button-approve-booking-${booking.id}`}
-                          onClick={() => setBookingStatus(booking, "confirmed")}
+                          onClick={() => setStatusConfirm({ booking, status: "confirmed" })}
                           title="Approve booking"
                         >
-                          <Check className="h-4 w-4 text-emerald-600" />
+                          <Check className="mr-1 h-4 w-4" />
+                          Confirm
                         </Button>
                         <Button
-                          variant="ghost"
-                          size="icon"
+                          variant="outline"
+                          size="sm"
+                          className="mr-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                           data-testid={`button-reject-booking-${booking.id}`}
-                          onClick={() => setBookingStatus(booking, "rejected")}
+                          onClick={() => setStatusConfirm({ booking, status: "rejected" })}
                           title="Reject booking"
                         >
-                          <X className="h-4 w-4 text-destructive" />
+                          <X className="mr-1 h-4 w-4" />
+                          Reject
                         </Button>
                       </>
                     )}
@@ -371,6 +392,54 @@ export default function Bookings() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-md border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-muted-foreground">
+          Showing {startItem}–{endItem} of {total.toLocaleString()} bookings
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={currentPage <= 1 || isLoading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </Button>
+          <div className="flex items-center gap-1">
+            {paginationPages.map((p, index) => {
+              const previous = paginationPages[index - 1];
+              return (
+                <div key={p} className="flex items-center gap-1">
+                  {previous != null && p - previous > 1 && (
+                    <span className="px-1 text-sm text-muted-foreground">...</span>
+                  )}
+                  <Button
+                    type="button"
+                    variant={p === currentPage ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 min-w-8 px-2"
+                    disabled={isLoading}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={totalPages === 0 || currentPage >= totalPages || isLoading}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </Button>
+        </div>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -463,6 +532,44 @@ export default function Bookings() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={statusConfirm != null} onOpenChange={(next) => !next && setStatusConfirm(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {statusConfirm?.status === "confirmed" ? "Confirm Booking" : "Reject Booking"}
+            </DialogTitle>
+          </DialogHeader>
+          {statusConfirm && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-4 text-sm">
+                <div className="grid grid-cols-[96px_1fr] gap-y-2">
+                  <span className="text-muted-foreground">Participant:</span>
+                  <span className="font-medium">{participantName(statusConfirm.booking)}</span>
+                  <span className="text-muted-foreground">Class:</span>
+                  <span className="font-medium">{statusConfirm.booking.classTitle ?? `Class #${statusConfirm.booking.classId ?? "—"}`}</span>
+                  <span className="text-muted-foreground">Schedule:</span>
+                  <span className="font-medium">{statusConfirm.booking.scheduleLabel ?? (statusConfirm.booking.scheduleId ? `Schedule #${statusConfirm.booking.scheduleId}` : "—")}</span>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to {statusConfirm.status === "confirmed" ? "confirm" : "reject"} this booking?
+              </p>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setStatusConfirm(null)}>Cancel</Button>
+                <Button
+                  type="button"
+                  variant={statusConfirm.status === "rejected" ? "destructive" : "default"}
+                  onClick={confirmStatusChange}
+                  disabled={updateBooking.isPending}
+                >
+                  {statusConfirm.status === "confirmed" ? "Confirm Booking" : "Reject Booking"}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
