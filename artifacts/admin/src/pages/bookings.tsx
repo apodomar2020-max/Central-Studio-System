@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Edit, X } from "lucide-react";
+import { CalendarCheck, Check, CreditCard, Edit, X } from "lucide-react";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -298,124 +298,178 @@ export default function Bookings() {
             ) : bookings.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
             ) : (
-              bookings.map((booking) => (
-                <TableRow key={booking.id} data-testid={`row-booking-${booking.id}`}>
-                  <TableCell>
-                    <div className="font-medium">{participantName(booking)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {isChildBooking(booking) ? "Child attendee" : "Account holder"}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {isChildBooking(booking) && booking.accountOwnerStudentId ? (
-                      <Link href={`/parents/${booking.accountOwnerStudentId}`} className="font-medium text-[#00B6D7] hover:underline">
-                        {accountOwnerName(booking)}
-                      </Link>
-                    ) : (
-                      <div className="font-medium">{accountOwnerName(booking)}</div>
-                    )}
-                    <div className="text-xs text-muted-foreground">{accountOwnerEmail(booking)}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={isChildBooking(booking) ? "secondary" : "outline"} className={isChildBooking(booking) ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-700" : ""}>
-                      {scopeLabel(booking)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
-                    <div className="text-xs text-muted-foreground">Booking #{booking.id}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div>{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
-                    {booking.scheduleType && (
-                      <div className="text-xs text-muted-foreground">
-                        {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell>{new Date(booking.bookedAt).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <Badge variant={bookingStatusVariant(booking.bookingStatus ?? booking.status)}>
-                      {bookingStatusLabel(booking.bookingStatus ?? booking.status)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={paymentStatusVariant(booking.paymentStatus ?? "not_required")}>
-                      {paymentStatusLabel(booking.paymentStatus ?? "not_required")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {canEdit && (booking.bookingStatus ?? booking.status) === "pending" && (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mr-2 border-emerald-600/30 text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-700"
-                          data-testid={`button-approve-booking-${booking.id}`}
-                          onClick={() => setStatusConfirm({ booking, status: "confirmed" })}
-                          title="Approve booking"
-                        >
-                          <Check className="mr-1 h-4 w-4" />
-                          Confirm Booking
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mr-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          data-testid={`button-reject-booking-${booking.id}`}
-                          onClick={() => setStatusConfirm({ booking, status: "rejected" })}
-                          title="Reject booking"
-                        >
-                          <X className="mr-1 h-4 w-4" />
-                          Reject Booking
-                        </Button>
-                      </>
-                    )}
-                    {canEdit && booking.paymentStatus === "pending_payment" && (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mr-2 border-sky-600/30 text-sky-600 hover:bg-sky-600/10 hover:text-sky-700"
-                          data-testid={`button-confirm-payment-booking-${booking.id}`}
-                          onClick={() => setPaymentConfirm({ booking, status: "paid" })}
-                          title="Confirm payment"
-                        >
-                          <Check className="mr-1 h-4 w-4" />
-                          Confirm Payment
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mr-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          data-testid={`button-reject-payment-booking-${booking.id}`}
-                          onClick={() => setPaymentConfirm({ booking, status: "failed" })}
-                          title="Reject payment"
-                        >
-                          <X className="mr-1 h-4 w-4" />
-                          Reject Payment
-                        </Button>
-                      </>
-                    )}
-                    {canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        data-testid={`button-cancel-booking-${booking.id}`}
-                        onClick={() => setBookingStatus(booking, "cancelled")}
-                        title="Cancel booking"
-                      >
-                        <X className="h-4 w-4 text-orange-600" />
-                      </Button>
-                    )}
-                    {canEdit && (
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+              bookings.map((booking) => {
+                const canShowBookingActions = canEdit && (booking.bookingStatus ?? booking.status) === "pending";
+                const canShowCancelAction = canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status);
+                const canShowPaymentActions = canEdit && booking.paymentStatus === "pending_payment";
+                const hasAnyActions = canShowBookingActions || canShowCancelAction || canShowPaymentActions;
+
+                return (
+                  <Fragment key={booking.id}>
+                    <TableRow key={`${booking.id}-summary`} data-testid={`row-booking-${booking.id}`} className="border-b-0 bg-card/60 hover:bg-card/80">
+                      <TableCell className="pt-5">
+                        <div className="font-medium">{participantName(booking)}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {isChildBooking(booking) ? "Child attendee" : "Account holder"}
+                        </div>
+                      </TableCell>
+                      <TableCell className="pt-5">
+                        {isChildBooking(booking) && booking.accountOwnerStudentId ? (
+                          <Link href={`/parents/${booking.accountOwnerStudentId}`} className="font-medium text-[#00B6D7] hover:underline">
+                            {accountOwnerName(booking)}
+                          </Link>
+                        ) : (
+                          <div className="font-medium">{accountOwnerName(booking)}</div>
+                        )}
+                        <div className="text-xs text-muted-foreground">{accountOwnerEmail(booking)}</div>
+                      </TableCell>
+                      <TableCell className="pt-5">
+                        <Badge variant={isChildBooking(booking) ? "secondary" : "outline"} className={isChildBooking(booking) ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-700" : ""}>
+                          {scopeLabel(booking)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="pt-5">
+                        <div className="font-medium">{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
+                        <div className="text-xs text-muted-foreground">Booking #{booking.id}</div>
+                      </TableCell>
+                      <TableCell className="pt-5">
+                        <div>{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
+                        {booking.scheduleType && (
+                          <div className="text-xs text-muted-foreground">
+                            {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="pt-5">{new Date(booking.bookedAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="pt-5">
+                        <Badge variant={bookingStatusVariant(booking.bookingStatus ?? booking.status)}>
+                          {bookingStatusLabel(booking.bookingStatus ?? booking.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="pt-5">
+                        <Badge variant={paymentStatusVariant(booking.paymentStatus ?? "not_required")}>
+                          {paymentStatusLabel(booking.paymentStatus ?? "not_required")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="pt-5 text-right">
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)} title="Edit booking">
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow key={`${booking.id}-actions`} className="border-b bg-card/60 hover:bg-card/80">
+                      <TableCell colSpan={9} className="px-4 pb-5 pt-0">
+                        <div className="rounded-md border border-cyan-500/10 bg-background/50 p-4 shadow-[0_14px_40px_rgba(0,0,0,0.16)]">
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <div className="space-y-3 lg:border-r lg:border-border/70 lg:pr-4">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-500">
+                                  <CalendarCheck className="h-4 w-4" />
+                                </div>
+                                <div>
+                                  <div className="text-sm font-semibold">Booking Actions</div>
+                                  <div className="text-xs text-muted-foreground">Review and manage this booking request</div>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {canShowBookingActions && (
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-9 border-emerald-600/40 px-3 text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-700"
+                                      data-testid={`button-approve-booking-${booking.id}`}
+                                      onClick={() => setStatusConfirm({ booking, status: "confirmed" })}
+                                      title="Approve booking"
+                                    >
+                                      <Check className="mr-1 h-4 w-4" />
+                                      Confirm Booking
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                      data-testid={`button-reject-booking-${booking.id}`}
+                                      onClick={() => setStatusConfirm({ booking, status: "rejected" })}
+                                      title="Reject booking"
+                                    >
+                                      <X className="mr-1 h-4 w-4" />
+                                      Reject Booking
+                                    </Button>
+                                  </>
+                                )}
+                                {canShowCancelAction && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 border-orange-500/40 px-3 text-orange-600 hover:bg-orange-500/10 hover:text-orange-700"
+                                    data-testid={`button-cancel-booking-${booking.id}`}
+                                    onClick={() => setBookingStatus(booking, "cancelled")}
+                                    title="Cancel booking"
+                                  >
+                                    <X className="mr-1 h-4 w-4" />
+                                    Cancel Booking
+                                  </Button>
+                                )}
+                                {!canShowBookingActions && !canShowCancelAction && (
+                                  <span className="text-sm text-muted-foreground">No booking actions available</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="space-y-3 lg:pl-1">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-cyan-500/25 bg-cyan-500/10 text-cyan-500">
+                                  <CreditCard className="h-4 w-4" />
+                                </div>
+                                <div>
+                                  <div className="text-sm font-semibold">Payment Actions</div>
+                                  <div className="text-xs text-muted-foreground">Review and manage payment status</div>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {canShowPaymentActions ? (
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-9 border-sky-600/40 px-3 text-sky-600 hover:bg-sky-600/10 hover:text-sky-700"
+                                      data-testid={`button-confirm-payment-booking-${booking.id}`}
+                                      onClick={() => setPaymentConfirm({ booking, status: "paid" })}
+                                      title="Confirm payment"
+                                    >
+                                      <Check className="mr-1 h-4 w-4" />
+                                      Confirm Payment
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                      data-testid={`button-reject-payment-booking-${booking.id}`}
+                                      onClick={() => setPaymentConfirm({ booking, status: "failed" })}
+                                      title="Reject payment"
+                                    >
+                                      <X className="mr-1 h-4 w-4" />
+                                      Reject Payment
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">No payment actions available</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {!hasAnyActions && (
+                            <div className="mt-3 text-xs text-muted-foreground">This booking is currently read-only from the actions panel.</div>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  </Fragment>
+                );
+              })
             )}
           </TableBody>
         </Table>
