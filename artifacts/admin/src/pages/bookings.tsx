@@ -21,10 +21,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, Check, CreditCard, Edit, X } from "lucide-react";
+import { CalendarCheck, CalendarDays, Check, Clock3, CreditCard, Edit, PersonStanding, UserRound, X } from "lucide-react";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
-import { Badge } from "@/components/ui/badge";
 
 const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed"];
 const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"];
@@ -73,24 +72,6 @@ type Booking = {
   notes?: string | null;
 };
 
-const bookingStatusVariant = (s: string) =>
-  s === "confirmed" || s === "attended" || s === "completed"
-    ? "default"
-    : s === "pending"
-      ? "secondary"
-      : s === "cancelled" || s === "rejected"
-        ? "destructive"
-        : "outline";
-
-const paymentStatusVariant = (s: string) =>
-  s === "paid" || s === "not_required"
-    ? "default"
-    : s === "pending_payment"
-      ? "secondary"
-      : s === "refunded"
-        ? "outline"
-        : "destructive";
-
 const bookingStatusLabel = (s: string) => {
   const labels: Record<string, string> = {
     pending: "Pending",
@@ -124,6 +105,30 @@ const paymentAmountLabel = (booking: Booking) =>
 const isChildBooking = (booking: Booking) =>
   booking.bookingScope === "child" || booking.participantType === "child" || booking.participantChildId != null;
 const scopeLabel = (booking: Booking) => (isChildBooking(booking) ? "Child" : "Self");
+const initialsFor = (name: string) => {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+  return initials || "?";
+};
+
+const bookingStatusPillClass = (status: string) => {
+  if (status === "pending") return "border-amber-500/60 bg-amber-500/10 text-amber-400";
+  if (status === "confirmed" || status === "attended" || status === "completed") return "border-emerald-500/50 bg-emerald-500/10 text-emerald-400";
+  if (status === "cancelled" || status === "rejected") return "border-red-500/50 bg-red-500/10 text-red-400";
+  return "border-slate-500/50 bg-slate-500/10 text-slate-300";
+};
+
+const paymentStatusPillClass = (status: string) => {
+  if (status === "pending_payment") return "border-blue-500/60 bg-blue-500/10 text-blue-400";
+  if (status === "paid" || status === "not_required") return "border-emerald-500/50 bg-emerald-500/10 text-emerald-400";
+  if (status === "failed") return "border-red-500/50 bg-red-500/10 text-red-400";
+  return "border-slate-500/50 bg-slate-500/10 text-slate-300";
+};
 
 export default function Bookings() {
   const { can } = useAdminAuth();
@@ -277,19 +282,19 @@ export default function Bookings() {
         </div>
       </div>
 
-      <div className="border rounded-md">
+      <div className="overflow-hidden rounded-xl border border-slate-700/70 bg-[#071321]/70 shadow-[0_22px_80px_rgba(0,0,0,0.28)]">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Participant</TableHead>
-              <TableHead>Account Owner</TableHead>
-              <TableHead>Scope</TableHead>
-              <TableHead>Class</TableHead>
-              <TableHead>Schedule</TableHead>
-              <TableHead>Booked</TableHead>
-              <TableHead>Booking Status</TableHead>
-              <TableHead>Payment Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+            <TableRow className="border-slate-700/70 bg-[#0b1725]/80 hover:bg-[#0b1725]/80">
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Participant</TableHead>
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Account Owner</TableHead>
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Scope</TableHead>
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Class</TableHead>
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Schedule</TableHead>
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Booked</TableHead>
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Booking Status</TableHead>
+              <TableHead className="h-16 text-sm font-semibold text-slate-300">Payment Status</TableHead>
+              <TableHead className="h-16 text-right text-sm font-semibold text-slate-300">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -303,83 +308,130 @@ export default function Bookings() {
                 const canShowCancelAction = canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status);
                 const canShowPaymentActions = canEdit && booking.paymentStatus === "pending_payment";
                 const hasAnyActions = canShowBookingActions || canShowCancelAction || canShowPaymentActions;
+                const bookingStatus = booking.bookingStatus ?? booking.status;
+                const paymentStatus = booking.paymentStatus ?? "not_required";
+                const BookingStatusIcon = bookingStatus === "pending" ? Clock3 : bookingStatus === "confirmed" || bookingStatus === "attended" || bookingStatus === "completed" ? Check : X;
+                const PaymentStatusIcon = paymentStatus === "pending_payment" ? Clock3 : paymentStatus === "paid" || paymentStatus === "not_required" ? Check : X;
 
                 return (
                   <Fragment key={booking.id}>
-                    <TableRow key={`${booking.id}-summary`} data-testid={`row-booking-${booking.id}`} className="border-b-0 bg-card/60 hover:bg-card/80">
-                      <TableCell className="pt-5">
-                        <div className="font-medium">{participantName(booking)}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {isChildBooking(booking) ? "Child attendee" : "Account holder"}
+                    <TableRow key={`${booking.id}-summary`} data-testid={`row-booking-${booking.id}`} className="border-b-0 bg-[#081724]/85 hover:bg-[#0a1b2b]">
+                      <TableCell className="py-7">
+                        <div className="flex items-center gap-3 border-r border-slate-700/50 pr-5">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-violet-300/40 bg-gradient-to-br from-violet-500/80 to-slate-700 text-lg font-semibold text-white shadow-[0_0_24px_rgba(139,92,246,0.18)]">
+                            {initialsFor(participantName(booking))}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-100">{participantName(booking)}</div>
+                            <div className="text-sm text-slate-400">
+                              {isChildBooking(booking) ? "Child attendee" : "Account holder"}
+                            </div>
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell className="pt-5">
-                        {isChildBooking(booking) && booking.accountOwnerStudentId ? (
-                          <Link href={`/parents/${booking.accountOwnerStudentId}`} className="font-medium text-[#00B6D7] hover:underline">
-                            {accountOwnerName(booking)}
-                          </Link>
-                        ) : (
-                          <div className="font-medium">{accountOwnerName(booking)}</div>
-                        )}
-                        <div className="text-xs text-muted-foreground">{accountOwnerEmail(booking)}</div>
+                      <TableCell className="py-7">
+                        <div className="border-r border-slate-700/50 pr-5">
+                          {isChildBooking(booking) && booking.accountOwnerStudentId ? (
+                            <Link href={`/parents/${booking.accountOwnerStudentId}`} className="font-semibold text-slate-100 hover:text-[#00B6D7] hover:underline">
+                              {accountOwnerName(booking)}
+                            </Link>
+                          ) : (
+                            <div className="font-semibold text-slate-100">{accountOwnerName(booking)}</div>
+                          )}
+                          <div className="max-w-[170px] break-words text-sm text-slate-400">{accountOwnerEmail(booking)}</div>
+                        </div>
                       </TableCell>
-                      <TableCell className="pt-5">
-                        <Badge variant={isChildBooking(booking) ? "secondary" : "outline"} className={isChildBooking(booking) ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-700" : ""}>
-                          {scopeLabel(booking)}
-                        </Badge>
+                      <TableCell className="py-7">
+                        <div className="flex border-r border-slate-700/50 pr-5">
+                          <span className="inline-flex min-w-[86px] items-center justify-center gap-2 rounded-md border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-slate-100">
+                            <UserRound className="h-4 w-4 text-cyan-400" />
+                            {scopeLabel(booking)}
+                          </span>
+                        </div>
                       </TableCell>
-                      <TableCell className="pt-5">
-                        <div className="font-medium">{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
-                        <div className="text-xs text-muted-foreground">Booking #{booking.id}</div>
-                      </TableCell>
-                      <TableCell className="pt-5">
-                        <div>{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
-                        {booking.scheduleType && (
-                          <div className="text-xs text-muted-foreground">
-                            {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
+                      <TableCell className="py-7">
+                        <div className="flex items-center gap-3 border-r border-slate-700/50 pr-5">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/15 text-cyan-300 shadow-[0_0_24px_rgba(0,182,215,0.16)]">
+                            <PersonStanding className="h-5 w-5" />
                           </div>
-                        )}
+                          <div>
+                            <div className="font-semibold text-slate-100">{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
+                            <div className="text-sm text-slate-400">Booking #{booking.id}</div>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell className="pt-5">{new Date(booking.bookedAt).toLocaleDateString()}</TableCell>
-                      <TableCell className="pt-5">
-                        <Badge variant={bookingStatusVariant(booking.bookingStatus ?? booking.status)}>
-                          {bookingStatusLabel(booking.bookingStatus ?? booking.status)}
-                        </Badge>
+                      <TableCell className="py-7">
+                        <div className="border-r border-slate-700/50 pr-5">
+                          <div className="flex items-start gap-2 text-slate-100">
+                            <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-slate-200" />
+                            <div>
+                              <div className="font-medium">{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
+                              {booking.scheduleType && (
+                                <div className="mt-2 inline-flex rounded-md bg-blue-500/15 px-2 py-1 text-xs font-medium text-blue-300">
+                                  {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell className="pt-5">
-                        <Badge variant={paymentStatusVariant(booking.paymentStatus ?? "not_required")}>
-                          {paymentStatusLabel(booking.paymentStatus ?? "not_required")}
-                        </Badge>
+                      <TableCell className="py-7">
+                        <div className="flex items-center gap-3 border-r border-slate-700/50 pr-5">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-600/60 bg-slate-700/40 text-blue-200">
+                            <CalendarDays className="h-4 w-4" />
+                          </div>
+                          <span className="font-medium text-slate-100">{new Date(booking.bookedAt).toLocaleDateString()}</span>
+                        </div>
                       </TableCell>
-                      <TableCell className="pt-5 text-right">
+                      <TableCell className="py-7">
+                        <div className="border-r border-slate-700/50 pr-5 text-center">
+                          <span className={`inline-flex min-w-[116px] items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${bookingStatusPillClass(bookingStatus)}`}>
+                            <BookingStatusIcon className="h-4 w-4" />
+                            {bookingStatusLabel(bookingStatus)}
+                          </span>
+                          <div className="mt-2 text-sm text-slate-400">Booking</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-7">
+                        <div className="border-r border-slate-700/50 pr-5 text-center">
+                          <span className={`inline-flex min-w-[156px] items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${paymentStatusPillClass(paymentStatus)}`}>
+                            <PaymentStatusIcon className="h-4 w-4" />
+                            {paymentStatusLabel(paymentStatus)}
+                          </span>
+                          <div className="mt-2 text-sm text-slate-400">Payment</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-7 text-right">
                         {canEdit && (
-                          <Button variant="ghost" size="icon" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)} title="Edit booking">
+                          <Button variant="outline" size="icon" className="h-12 w-12 border-slate-700/80 bg-[#071321]/80 text-slate-200 hover:bg-slate-800 hover:text-white" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)} title="Edit booking">
                             <Edit className="h-4 w-4" />
                           </Button>
                         )}
                       </TableCell>
                     </TableRow>
-                    <TableRow key={`${booking.id}-actions`} className="border-b bg-card/60 hover:bg-card/80">
-                      <TableCell colSpan={9} className="px-4 pb-5 pt-0">
-                        <div className="rounded-md border border-cyan-500/10 bg-background/50 p-4 shadow-[0_14px_40px_rgba(0,0,0,0.16)]">
-                          <div className="grid gap-4 lg:grid-cols-2">
-                            <div className="space-y-3 lg:border-r lg:border-border/70 lg:pr-4">
-                              <div className="flex items-start gap-3">
-                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-500">
-                                  <CalendarCheck className="h-4 w-4" />
+                    {hasAnyActions && (
+                      <TableRow key={`${booking.id}-actions`} className="border-b border-slate-700/70 bg-[#081724]/85 hover:bg-[#0a1b2b]">
+                        <TableCell colSpan={9} className="px-6 pb-6 pt-0">
+                          <div className="rounded-xl border border-slate-700/70 bg-[#081521]/80 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_16px_50px_rgba(0,0,0,0.2)]">
+                            <div className={canShowBookingActions || canShowCancelAction ? canShowPaymentActions ? "grid gap-5 lg:grid-cols-2" : "grid gap-5" : "grid gap-5"}>
+                              {(canShowBookingActions || canShowCancelAction) && (
+                                <div className={`flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between ${canShowPaymentActions ? "lg:border-r lg:border-slate-700/70 lg:pr-7" : ""}`}>
+                              <div className="flex items-center gap-4">
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
+                                  <CalendarCheck className="h-6 w-6" />
                                 </div>
                                 <div>
-                                  <div className="text-sm font-semibold">Booking Actions</div>
-                                  <div className="text-xs text-muted-foreground">Review and manage this booking request</div>
+                                  <div className="text-base font-semibold text-slate-100">Booking Actions</div>
+                                  <div className="text-sm text-slate-400">Review and manage this booking request</div>
                                 </div>
                               </div>
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap gap-3 lg:justify-end">
                                 {canShowBookingActions && (
                                   <>
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      className="h-9 border-emerald-600/40 px-3 text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-700"
+                                      className="h-11 min-w-[178px] border-emerald-500/60 bg-emerald-500/5 px-5 text-sm font-semibold text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
                                       data-testid={`button-approve-booking-${booking.id}`}
                                       onClick={() => setStatusConfirm({ booking, status: "confirmed" })}
                                       title="Approve booking"
@@ -390,7 +442,7 @@ export default function Bookings() {
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                      className="h-11 min-w-[168px] border-red-500/70 bg-red-500/5 px-5 text-sm font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300"
                                       data-testid={`button-reject-booking-${booking.id}`}
                                       onClick={() => setStatusConfirm({ booking, status: "rejected" })}
                                       title="Reject booking"
@@ -404,7 +456,7 @@ export default function Bookings() {
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-9 border-orange-500/40 px-3 text-orange-600 hover:bg-orange-500/10 hover:text-orange-700"
+                                    className="h-11 min-w-[160px] border-orange-500/60 bg-orange-500/5 px-5 text-sm font-semibold text-orange-400 hover:bg-orange-500/10 hover:text-orange-300"
                                     data-testid={`button-cancel-booking-${booking.id}`}
                                     onClick={() => setBookingStatus(booking, "cancelled")}
                                     title="Cancel booking"
@@ -413,60 +465,52 @@ export default function Bookings() {
                                     Cancel Booking
                                   </Button>
                                 )}
-                                {!canShowBookingActions && !canShowCancelAction && (
-                                  <span className="text-sm text-muted-foreground">No booking actions available</span>
-                                )}
                               </div>
-                            </div>
+                                </div>
+                              )}
 
-                            <div className="space-y-3 lg:pl-1">
-                              <div className="flex items-start gap-3">
-                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-cyan-500/25 bg-cyan-500/10 text-cyan-500">
-                                  <CreditCard className="h-4 w-4" />
+                              {canShowPaymentActions && (
+                                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:pl-2">
+                              <div className="flex items-center gap-4">
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-blue-500/25 bg-blue-500/10 text-blue-400">
+                                  <CreditCard className="h-6 w-6" />
                                 </div>
                                 <div>
-                                  <div className="text-sm font-semibold">Payment Actions</div>
-                                  <div className="text-xs text-muted-foreground">Review and manage payment status</div>
+                                  <div className="text-base font-semibold text-slate-100">Payment Actions</div>
+                                  <div className="text-sm text-slate-400">Review and manage payment status</div>
                                 </div>
                               </div>
-                              <div className="flex flex-wrap gap-2">
-                                {canShowPaymentActions ? (
-                                  <>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-9 border-sky-600/40 px-3 text-sky-600 hover:bg-sky-600/10 hover:text-sky-700"
-                                      data-testid={`button-confirm-payment-booking-${booking.id}`}
-                                      onClick={() => setPaymentConfirm({ booking, status: "paid" })}
-                                      title="Confirm payment"
-                                    >
-                                      <Check className="mr-1 h-4 w-4" />
-                                      Confirm Payment
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                      data-testid={`button-reject-payment-booking-${booking.id}`}
-                                      onClick={() => setPaymentConfirm({ booking, status: "failed" })}
-                                      title="Reject payment"
-                                    >
-                                      <X className="mr-1 h-4 w-4" />
-                                      Reject Payment
-                                    </Button>
-                                  </>
-                                ) : (
-                                  <span className="text-sm text-muted-foreground">No payment actions available</span>
-                                )}
+                              <div className="flex flex-wrap gap-3 lg:justify-end">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-11 min-w-[178px] border-blue-500/60 bg-blue-500/5 px-5 text-sm font-semibold text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                                  data-testid={`button-confirm-payment-booking-${booking.id}`}
+                                  onClick={() => setPaymentConfirm({ booking, status: "paid" })}
+                                  title="Confirm payment"
+                                >
+                                  <Check className="mr-1 h-4 w-4" />
+                                  Confirm Payment
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-11 min-w-[168px] border-red-500/70 bg-red-500/5 px-5 text-sm font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                                  data-testid={`button-reject-payment-booking-${booking.id}`}
+                                  onClick={() => setPaymentConfirm({ booking, status: "failed" })}
+                                  title="Reject payment"
+                                >
+                                  <X className="mr-1 h-4 w-4" />
+                                  Reject Payment
+                                </Button>
                               </div>
+                                </div>
+                              )}
                             </div>
                           </div>
-                          {!hasAnyActions && (
-                            <div className="mt-3 text-xs text-muted-foreground">This booking is currently read-only from the actions panel.</div>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </Fragment>
                 );
               })
