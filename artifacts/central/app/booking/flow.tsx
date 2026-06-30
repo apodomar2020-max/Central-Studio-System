@@ -22,6 +22,7 @@ import { compareSchedulesByNextOccurrence, getScheduleLabel, isBookableScheduleS
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
+import ParticipantAvatar from "@/components/ParticipantAvatar";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
@@ -401,9 +402,7 @@ export default function BookingFlowScreen() {
                 participantType === "self" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "15" },
               ]}
             >
-              <View style={[styles.participantIcon, { backgroundColor: "#22262C" }]}>
-                <Ionicons name="person" size={24} color={participantType === "self" ? colors.studio.primary : "#6B747F"} />
-              </View>
+              <ParticipantAvatar type="self" name={user.fullName} avatarUrl={user.avatarUrl} size={48} />
               <View style={styles.participantText}>
                 <Text style={[styles.participantLabel, { color: participantType === "self" ? "#FFFFFF" : "#8E97A2" }]}>
                   Myself
@@ -430,9 +429,12 @@ export default function BookingFlowScreen() {
                 !children.length && styles.disabledCard,
               ]}
             >
-              <View style={[styles.participantIcon, { backgroundColor: "#22262C" }]}>
-                <Ionicons name="people" size={24} color={participantType === "child" ? colors.studio.primary : "#6B747F"} />
-              </View>
+              <ParticipantAvatar
+                type="child"
+                name={(selectedChild ?? children[0])?.fullName ?? "Child"}
+                gender={(selectedChild ?? children[0])?.gender}
+                size={48}
+              />
               <View style={styles.participantText}>
                 <Text style={[styles.participantLabel, { color: participantType === "child" ? "#FFFFFF" : "#8E97A2" }]}>
                   My Child
@@ -472,9 +474,7 @@ export default function BookingFlowScreen() {
                       },
                     ]}
                   >
-                    <View style={[styles.childAvatar, { backgroundColor: colors.studio.primary + "20" }]}>
-                      <Ionicons name="person-outline" size={18} color={colors.studio.primary} />
-                    </View>
+                    <ParticipantAvatar type="child" name={child.fullName} gender={child.gender} size={36} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.childName}>{child.fullName}</Text>
                       <Text style={styles.participantSub}>Age {child.age}</Text>

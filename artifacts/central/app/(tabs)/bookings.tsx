@@ -404,9 +404,6 @@ export default function BookingsScreen() {
     });
   }, [localBookings]);
 
-  const upcomingCount = useMemo(() => {
-    return mergedBookings.filter((b) => !b._isPast && b.bookingStatus !== "cancelled" && b.bookingStatus !== "rejected").length;
-  }, [mergedBookings]);
 
   // Student selector, grouped in a stable order:
   //   1) "All Students" (default overview filter, first)
@@ -486,7 +483,17 @@ export default function BookingsScreen() {
     return allItems;
   }
 
-  const filtered = filterItems(activeTab);
+  // Build all three tab lists from the SAME filterItems() used for rendering, so
+  // each tab's count is exactly the length of the list shown when it's selected
+  // (ballet + bookings, with the active student/search filters applied). A
+  // booking falls into exactly one of upcoming/past/cancelled, so nothing is
+  // double-counted.
+  const itemsByTab = {
+    Upcoming: filterItems("Upcoming"),
+    Past: filterItems("Past"),
+    Cancelled: filterItems("Cancelled"),
+  } as const;
+  const filtered = itemsByTab[activeTab];
 
   if (!user) {
     return (
@@ -565,7 +572,8 @@ export default function BookingsScreen() {
             <View style={styles.tabContainer}>
               {TABS.map((tab) => {
                 const isActive = activeTab === tab;
-                const count = tab === "Upcoming" ? upcomingCount : 0; // Simplified count for parity demo
+                // Count = length of that tab's rendered list (same source array).
+                const count = itemsByTab[tab].length;
                 return (
                   <TouchableOpacity key={tab} style={[styles.tabBtn, isActive && styles.tabBtnActive]} onPress={() => setActiveTab(tab)}>
                     <Text style={[styles.tabBtnText, isActive && styles.tabBtnTextActive]}>{tab}</Text>
