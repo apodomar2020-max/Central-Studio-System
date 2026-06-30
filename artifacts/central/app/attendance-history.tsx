@@ -22,6 +22,7 @@ import {
 import { useGetMyAttendance } from "@workspace/api-client-react";
 import type { MyAttendanceRecord } from "@workspace/api-client-react";
 import colors from "@/constants/colors";
+import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
@@ -45,44 +46,16 @@ function statusConfig(status?: string | null): { color: string; icon: keyof type
   }
 }
 
-// Robust date parsing. Postgres timestamptz (drizzle mode "string") can return
-// "2026-06-28 12:00:00.123456+00" — a space separator, microseconds, and "+00"
-// offset that Hermes refuses to parse with `new Date()`. Normalize to ISO first.
-function normalizeApiTimestamp(value: string): string {
-  const trimmed = value.trim();
-  const normalizedSeparator = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
-
-  return normalizedSeparator
-    .replace(/\.(\d{3})\d+/, ".$1")
-    .replace(/([+-]\d{2})$/, "$1:00")
-    .replace(/\+00:00$/, "Z");
-}
-
-function parseDate(iso?: string | null): Date | null {
-  if (!iso) return null;
-  let d = new Date(iso);
-  if (!isNaN(d.getTime())) return d;
-  d = new Date(normalizeApiTimestamp(iso));
-  if (!isNaN(d.getTime())) return d;
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return null;
-}
-
 function formatDate(iso?: string | null): string {
-  const d = parseDate(iso);
-  if (!d) return "—";
-  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  return formatApiDate(iso, "—", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 }
 
 function formatTime(iso?: string | null): string {
-  const d = parseDate(iso);
-  if (!d) return "";
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return formatApiTime(iso, "", { hour: "2-digit", minute: "2-digit" });
 }
 
 function attendanceTimestamp(record: MyAttendanceRecord): number {
-  return parseDate(record.checkedInAt)?.getTime() ?? 0;
+  return parseApiDate(record.checkedInAt)?.getTime() ?? 0;
 }
 
 function sortAttendanceNewestFirst(records: MyAttendanceRecord[]): MyAttendanceRecord[] {

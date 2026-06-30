@@ -21,6 +21,7 @@ import {
 
 import { useGetMyCredits, useGetMyPackages } from "@workspace/api-client-react";
 import type { CreditTransaction, PackageOrder } from "@workspace/api-client-react";
+import { formatApiDate, parseApiDate } from "@/utils/dateTime";
 
 // Design tokens
 const CYAN = "#00B6D7";
@@ -67,25 +68,8 @@ function txLabel(tx: CreditTransaction): string {
   }
 }
 
-// Robust date parsing. Postgres timestamptz (drizzle mode "string") returns
-// "2026-06-28 12:00:00+00" — a space separator + "+00" offset that Hermes (the RN
-// JS engine) refuses to parse with `new Date()`, yielding Invalid Date. We try the
-// raw string, then an ISO-normalized form, then fall back to the YYYY-MM-DD prefix.
-function parseDate(iso?: string | null): Date | null {
-  if (!iso) return null;
-  let d = new Date(iso);
-  if (!isNaN(d.getTime())) return d;
-  d = new Date(iso.trim().replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
-  if (!isNaN(d.getTime())) return d;
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return null;
-}
-
 function fmtDate(iso?: string | null, withYear = false): string {
-  const d = parseDate(iso);
-  if (!d) return "—";
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
+  return formatApiDate(iso, "—", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
 }
 
 function pkgExpiry(pkg?: PackageOrder): string {
@@ -147,12 +131,12 @@ export default function CreditHistoryScreen() {
   const hasMore = page * PAGE_SIZE < total;
 
   // Available Credits hero: sum of remaining credits across active packages.
-  // Use parseDate for the expiry check — a raw `new Date(p.expiresAt)` would be
+  // Use parseApiDate for the expiry check — a raw `new Date(p.expiresAt)` would be
   // Invalid Date on Hermes and wrongly drop active packages (undercounting credits).
   const activePackages = useMemo(
     () => (packages ?? []).filter((p) => {
       if (p.status !== "active") return false;
-      const exp = parseDate(p.expiresAt);
+      const exp = parseApiDate(p.expiresAt);
       return !exp || exp >= new Date();
     }),
     [packages],

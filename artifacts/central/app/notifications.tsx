@@ -21,6 +21,7 @@ import { NotifCardSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
+import { formatRelativeOrCalendarTime, parseApiDate } from "@/utils/dateTime";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,32 +77,8 @@ type TypedApiNotification = ApiNotification & {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function normalizeApiTimestamp(value: string): string {
-  const trimmed = value.trim();
-  const normalizedSeparator = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
-
-  return normalizedSeparator
-    .replace(/\.(\d{3})\d+/, ".$1")
-    .replace(/([+-]\d{2})$/, "$1:00")
-    .replace(/\+00:00$/, "Z");
-}
-
 function parseDateValue(value?: string | null): number | null {
-  if (!value) return null;
-  let time = new Date(value).getTime();
-  if (Number.isFinite(time)) return time;
-
-  time = new Date(normalizeApiTimestamp(value)).getTime();
-  if (Number.isFinite(time)) return time;
-
-  const fallback = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (fallback) {
-    const date = new Date(Number(fallback[1]), Number(fallback[2]) - 1, Number(fallback[3]));
-    time = date.getTime();
-    if (Number.isFinite(time)) return time;
-  }
-
-  return null;
+  return parseApiDate(value)?.getTime() ?? null;
 }
 
 function resolveTimestamp(...values: Array<string | null | undefined>): number | null {
@@ -110,23 +87,6 @@ function resolveTimestamp(...values: Array<string | null | undefined>): number |
     if (parsed != null) return parsed;
   }
   return null;
-}
-
-function formatNotificationTime(timestamp: number | null): string {
-  if (timestamp == null) return "Time unavailable";
-  const diff = Math.max(0, Date.now() - timestamp);
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins} min ago`;
-
-  const date = new Date(timestamp);
-  const time = date.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" });
-  const today = startOfDay(Date.now());
-  const itemDay = startOfDay(timestamp);
-  if (itemDay === today) return `Today, ${time}`;
-  if (itemDay === today - 86_400_000) return `Yesterday, ${time}`;
-
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function startOfDay(time: number): number {
@@ -264,7 +224,7 @@ function NotifItem({
       <View style={styles.notifContent}>
         <View style={styles.notifTopRow}>
           <Text style={styles.notifTitle} numberOfLines={1}>{notif.title}</Text>
-          <Text style={styles.notifTime}>{formatNotificationTime(notif.timestamp)}</Text>
+          <Text style={styles.notifTime}>{formatRelativeOrCalendarTime(notif.timestamp, "Time unavailable")}</Text>
         </View>
         <View style={[styles.eventBadge, { backgroundColor: config.color + "18", borderColor: config.color + "45" }]}>
           <Text style={[styles.eventBadgeText, { color: config.color }]}>{config.badge}</Text>
