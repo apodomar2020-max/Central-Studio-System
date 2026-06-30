@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
@@ -34,20 +35,62 @@ const formSchema = z.object({
 
 type FormValues = z.input<typeof formSchema>;
 type Student = { id: number; name: string; email: string; phone?: string | null; notes?: string | null; avatarUrl?: string | null; totalBookings: number; joinedAt: string };
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [value, delayMs]);
+
+  return debounced;
+}
+
+function paginationRange(currentPage: number, totalPages: number): number[] {
+  if (totalPages <= 0) return [];
+  const pages = new Set<number>([1, totalPages]);
+  for (let p = currentPage - 2; p <= currentPage + 2; p += 1) {
+    if (p >= 1 && p <= totalPages) pages.add(p);
+  }
+  return Array.from(pages).sort((a, b) => a - b);
+}
 
 export default function Students() {
   const { can } = useAdminAuth();
   const canCreate = can("users", "create");
   const canEdit = can("students", "edit");
   const canDelete = can("students", "delete");
-  const { data: allStudents, isLoading } = useListStudents();
-  const students = allStudents?.filter((s) => s.accountType === "student" || !s.accountType);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(50);
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const listParams = {
+    accountType: "student" as const,
+    page,
+    pageSize,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  };
+  const { data: studentsResponse, isLoading } = useListStudents(listParams);
+  const students = studentsResponse?.students ?? [];
+  const total = studentsResponse?.total ?? 0;
+  const currentPage = studentsResponse?.page ?? page;
+  const totalPages = studentsResponse?.totalPages ?? 0;
+  const responsePageSize = studentsResponse?.pageSize ?? pageSize;
+  const startItem = total === 0 ? 0 : (currentPage - 1) * responsePageSize + 1;
+  const endItem = total === 0 ? 0 : Math.min(currentPage * responsePageSize, total);
+  const paginationPages = paginationRange(currentPage, totalPages);
   const createStudent = useCreateStudent();
   const updateStudent = useUpdateStudent();
   const deleteStudent = useDeleteStudent();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, pageSize]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -86,6 +129,29 @@ export default function Students() {
     <div className="space-y-6">
       <PageHeader title="Students" description="Manage your community" mode="studio" addLabel="Add Student" addTestId="button-add-student" onAdd={canCreate ? openCreate : undefined} />
 
+      <div className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search students by name, email, or phone"
+          className="max-w-md"
+          data-testid="input-student-search"
+        />
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Rows</span>
+          <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value) as (typeof PAGE_SIZE_OPTIONS)[number])}>
+            <SelectTrigger className="w-24" data-testid="select-student-page-size">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={String(option)}>{option}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <div className="border rounded-md">
         <Table>
           <TableHeader>
@@ -100,10 +166,10 @@ export default function Students() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
-            ) : students?.length === 0 ? (
+            ) : students.length === 0 ? (
               <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No students yet.</TableCell></TableRow>
             ) : (
-              students?.map((student) => (
+              students.map((student) => (
                 <TableRow key={student.id} data-testid={`row-student-${student.id}`}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
@@ -137,6 +203,54 @@ export default function Students() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-md border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-muted-foreground">
+          Showing {startItem}–{endItem} of {total.toLocaleString()} students
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={currentPage <= 1 || isLoading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </Button>
+          <div className="flex items-center gap-1">
+            {paginationPages.map((p, index) => {
+              const previous = paginationPages[index - 1];
+              return (
+                <div key={p} className="flex items-center gap-1">
+                  {previous != null && p - previous > 1 && (
+                    <span className="px-1 text-sm text-muted-foreground">...</span>
+                  )}
+                  <Button
+                    type="button"
+                    variant={p === currentPage ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 min-w-8 px-2"
+                    disabled={isLoading}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={totalPages === 0 || currentPage >= totalPages || isLoading}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </Button>
+        </div>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>

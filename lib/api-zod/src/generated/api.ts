@@ -605,6 +605,13 @@ export const DeleteBookingParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const ListStudentsQueryParams = zod.object({
+  accountType: zod.enum(["student", "parent"]).optional(),
+  search: zod.coerce.string().optional(),
+  page: zod.coerce.number().int().positive().optional(),
+  pageSize: zod.coerce.number().int().positive().max(200).optional(),
+});
+
 export const ListStudentsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
@@ -618,7 +625,13 @@ export const ListStudentsResponseItem = zod.object({
   accountType: zod.string().nullish(),
   childCount: zod.number().optional(),
 });
-export const ListStudentsResponse = zod.array(ListStudentsResponseItem);
+export const ListStudentsResponse = zod.object({
+  students: zod.array(ListStudentsResponseItem),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+  totalPages: zod.number(),
+});
 
 export const CreateStudentBody = zod.object({
   name: zod.string(),

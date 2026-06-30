@@ -1,6 +1,6 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, studentsTable, packageOrdersTable, bookingsTable, childrenTable } from "@workspace/db";
 import {
   CreateStudentBody,
@@ -10,6 +10,7 @@ import {
   UpdateStudentBody,
   UpdateStudentResponse,
   DeleteStudentParams,
+  ListStudentsQueryParams,
   ListStudentsResponse,
   GetStudentByTokenParams,
   hasRolePermission,
@@ -94,6 +95,12 @@ router.get("/students/by-token/:token", requireAdminAuth, requireAdminPermission
 });
 
 router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+  const query = ListStudentsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+
   const canViewAll = adminCan(req, "users", "view");
   const canViewStudents = canViewAll || adminCan(req, "students", "view");
   const canViewParents = canViewAll || adminCan(req, "parents", "view");
@@ -109,41 +116,99 @@ router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promis
     return;
   }
 
-  const allRows = await db.select().from(studentsTable).orderBy(studentsTable.joinedAt);
-  const rows = allRows.filter((student) =>
-    student.accountType === "parent" ? canViewParents : canViewStudents,
-  );
-  const bookingRows = await db
-    .select({
-      studentEmail: bookingsTable.studentEmail,
-      bookingStatus: bookingsTable.bookingStatus,
-    })
-    .from(bookingsTable);
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 50;
+  const offset = (page - 1) * pageSize;
+  const conditions = [];
+
+  if (query.data.accountType === "parent") {
+    if (!canViewParents) {
+      res.status(403).json({ error: "Permission denied", requiredPermission: "parents.view" });
+      return;
+    }
+    conditions.push(eq(studentsTable.accountType, "parent"));
+  } else if (query.data.accountType === "student") {
+    if (!canViewStudents) {
+      res.status(403).json({ error: "Permission denied", requiredPermission: "students.view" });
+      return;
+    }
+    conditions.push(sql`(${studentsTable.accountType} IS NULL OR ${studentsTable.accountType} = 'student')`);
+  } else if (!canViewAll) {
+    if (canViewStudents && !canViewParents) {
+      conditions.push(sql`(${studentsTable.accountType} IS NULL OR ${studentsTable.accountType} = 'student')`);
+    } else if (canViewParents && !canViewStudents) {
+      conditions.push(eq(studentsTable.accountType, "parent"));
+    }
+  }
+
+  const search = query.data.search?.trim().toLowerCase();
+  if (search) {
+    const pattern = `%${search}%`;
+    conditions.push(sql`(
+      lower(coalesce(${studentsTable.name}, '')) like ${pattern}
+      OR lower(coalesce(${studentsTable.email}, '')) like ${pattern}
+      OR lower(coalesce(${studentsTable.phone}, '')) like ${pattern}
+    )`);
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [countRow] = whereClause
+    ? await db.select({ total: sql<number>`count(*)::int` }).from(studentsTable).where(whereClause)
+    : await db.select({ total: sql<number>`count(*)::int` }).from(studentsTable);
+  const total = Number(countRow?.total ?? 0);
+
+  const rows = whereClause
+    ? await db.select().from(studentsTable).where(whereClause).orderBy(desc(studentsTable.joinedAt)).limit(pageSize).offset(offset)
+    : await db.select().from(studentsTable).orderBy(desc(studentsTable.joinedAt)).limit(pageSize).offset(offset);
 
   const bookingCounts = new Map<string, number>();
-  for (const booking of bookingRows) {
-    const status = booking.bookingStatus.trim().toLowerCase();
-    if (status === "cancelled" || status === "rejected") continue;
-    const email = normalizeEmail(booking.studentEmail);
-    bookingCounts.set(email, (bookingCounts.get(email) ?? 0) + 1);
+  const emails = rows.map((student) => student.email);
+  if (emails.length > 0) {
+    const bookingRows = await db
+      .select({
+        studentEmail: bookingsTable.studentEmail,
+        total: sql<number>`count(*)::int`,
+      })
+      .from(bookingsTable)
+      .where(and(
+        inArray(bookingsTable.studentEmail, emails),
+        sql`lower(trim(${bookingsTable.bookingStatus})) not in ('cancelled', 'rejected')`,
+      ))
+      .groupBy(bookingsTable.studentEmail);
+
+    for (const booking of bookingRows) {
+      bookingCounts.set(normalizeEmail(booking.studentEmail), Number(booking.total ?? 0));
+    }
   }
 
   const childCounts = new Map<number, number>();
-  if (canViewChildren) {
+  const parentIds = rows
+    .filter((student) => student.accountType === "parent")
+    .map((student) => student.id);
+  if (canViewChildren && parentIds.length > 0) {
     const childrenRows = await db
-      .select({ parentId: childrenTable.parentId })
-      .from(childrenTable);
+      .select({ parentId: childrenTable.parentId, total: sql<number>`count(*)::int` })
+      .from(childrenTable)
+      .where(inArray(childrenTable.parentId, parentIds))
+      .groupBy(childrenTable.parentId);
     for (const child of childrenRows) {
-      childCounts.set(child.parentId, (childCounts.get(child.parentId) ?? 0) + 1);
+      childCounts.set(child.parentId, Number(child.total ?? 0));
     }
   }
 
   res.json(ListStudentsResponse.parse(
-    rows.map((student) => ({
-      ...student,
-      totalBookings: bookingCounts.get(normalizeEmail(student.email)) ?? 0,
-      ...(canViewChildren ? { childCount: childCounts.get(student.id) ?? 0 } : {}),
-    })),
+    {
+      students: rows.map((student) => ({
+        ...student,
+        totalBookings: bookingCounts.get(normalizeEmail(student.email)) ?? 0,
+        ...(canViewChildren ? { childCount: childCounts.get(student.id) ?? 0 } : {}),
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
+    },
   ));
 });
 

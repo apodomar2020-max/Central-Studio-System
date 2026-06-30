@@ -472,6 +472,14 @@ export interface Student {
   children?: GetStudentChildItem[];
 }
 
+export interface ListStudentsResponse {
+  students: Student[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface CreateStudentBody {
   name: string;
   email: string;
@@ -760,6 +768,13 @@ export type ListBookingsParams = {
   pageSize?: number;
   /** Filter bookings by student email (mobile client convenience filter). */
   studentEmail?: string;
+};
+
+export type ListStudentsParams = {
+  accountType?: "student" | "parent";
+  search?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 export type ListPackageOrdersParams = {

@@ -64,6 +64,7 @@ type Booking = {
   classTitle?: string | null;
   scheduleLabel?: string | null;
   scheduleType?: "weekly" | "one_time" | null;
+  schedulePriceEgp?: number | null;
   status: string;
   bookingStatus: string;
   paymentStatus: string;
@@ -116,6 +117,10 @@ const paymentStatusLabel = (s: string) => {
 const participantName = (booking: Booking) => booking.participantName || booking.studentName;
 const accountOwnerName = (booking: Booking) => booking.accountOwnerName || booking.studentName;
 const accountOwnerEmail = (booking: Booking) => booking.accountOwnerEmail || booking.studentEmail;
+const paymentAmountLabel = (booking: Booking) =>
+  typeof booking.schedulePriceEgp === "number"
+    ? `EGP ${booking.schedulePriceEgp.toLocaleString()}`
+    : "Amount unavailable";
 const isChildBooking = (booking: Booking) =>
   booking.bookingScope === "child" || booking.participantType === "child" || booking.participantChildId != null;
 const scopeLabel = (booking: Booking) => (isChildBooking(booking) ? "Child" : "Self");
@@ -150,6 +155,7 @@ export default function Bookings() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
   const [statusConfirm, setStatusConfirm] = useState<{ booking: Booking; status: "confirmed" | "rejected" } | null>(null);
+  const [paymentConfirm, setPaymentConfirm] = useState<{ booking: Booking; status: "paid" | "failed" } | null>(null);
 
   useEffect(() => {
     setPage(1);
@@ -214,6 +220,12 @@ export default function Bookings() {
     if (!statusConfirm) return;
     setBookingStatus(statusConfirm.booking, statusConfirm.status);
     setStatusConfirm(null);
+  };
+
+  const confirmPaymentChange = () => {
+    if (!paymentConfirm) return;
+    setPaymentStatus(paymentConfirm.booking, paymentConfirm.status);
+    setPaymentConfirm(null);
   };
 
   const paginationPages = (() => {
@@ -344,7 +356,7 @@ export default function Bookings() {
                           title="Approve booking"
                         >
                           <Check className="mr-1 h-4 w-4" />
-                          Confirm
+                          Confirm Booking
                         </Button>
                         <Button
                           variant="outline"
@@ -355,20 +367,35 @@ export default function Bookings() {
                           title="Reject booking"
                         >
                           <X className="mr-1 h-4 w-4" />
-                          Reject
+                          Reject Booking
                         </Button>
                       </>
                     )}
                     {canEdit && booking.paymentStatus === "pending_payment" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        data-testid={`button-mark-paid-booking-${booking.id}`}
-                        onClick={() => setPaymentStatus(booking, "paid")}
-                        title="Mark paid"
-                      >
-                        <Check className="h-4 w-4 text-sky-600" />
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mr-2 border-sky-600/30 text-sky-600 hover:bg-sky-600/10 hover:text-sky-700"
+                          data-testid={`button-confirm-payment-booking-${booking.id}`}
+                          onClick={() => setPaymentConfirm({ booking, status: "paid" })}
+                          title="Confirm payment"
+                        >
+                          <Check className="mr-1 h-4 w-4" />
+                          Confirm Payment
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mr-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          data-testid={`button-reject-payment-booking-${booking.id}`}
+                          onClick={() => setPaymentConfirm({ booking, status: "failed" })}
+                          title="Reject payment"
+                        >
+                          <X className="mr-1 h-4 w-4" />
+                          Reject Payment
+                        </Button>
+                      </>
                     )}
                     {canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status) && (
                       <Button
@@ -566,6 +593,42 @@ export default function Bookings() {
                   disabled={updateBooking.isPending}
                 >
                   {statusConfirm.status === "confirmed" ? "Confirm Booking" : "Reject Booking"}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentConfirm != null} onOpenChange={(next) => !next && setPaymentConfirm(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {paymentConfirm?.status === "paid" ? "Confirm Payment" : "Reject Payment"}
+            </DialogTitle>
+          </DialogHeader>
+          {paymentConfirm && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-4 text-sm">
+                <div className="grid grid-cols-[96px_1fr] gap-y-2">
+                  <span className="text-muted-foreground">Participant:</span>
+                  <span className="font-medium">{participantName(paymentConfirm.booking)}</span>
+                  <span className="text-muted-foreground">Amount:</span>
+                  <span className="font-medium">{paymentAmountLabel(paymentConfirm.booking)}</span>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to {paymentConfirm.status === "paid" ? "confirm" : "reject"} this payment?
+              </p>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setPaymentConfirm(null)}>Cancel</Button>
+                <Button
+                  type="button"
+                  variant={paymentConfirm.status === "failed" ? "destructive" : "default"}
+                  onClick={confirmPaymentChange}
+                  disabled={updateBooking.isPending}
+                >
+                  {paymentConfirm.status === "paid" ? "Confirm Payment" : "Reject Payment"}
                 </Button>
               </DialogFooter>
             </div>
