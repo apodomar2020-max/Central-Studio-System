@@ -257,5 +257,13 @@
       "tag": "0031_backfill_package_expiry",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783425600000,
+      "tag": "0032_performance_indexes",
+      "breakpoints": true
+    }
   ]
 }
