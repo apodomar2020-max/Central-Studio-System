@@ -18,6 +18,19 @@ export default function FeedbackGate() {
   const [isChecking, setIsChecking] = useState(false);
   const mountedRef = useRef(true);
 
+  const [sessionTotal, setSessionTotal] = useState(0);
+  const [sessionIndex, setSessionIndex] = useState(0);
+
+  useEffect(() => {
+    if (required.length === 0) {
+      setSessionTotal(0);
+      setSessionIndex(0);
+    } else if (sessionTotal === 0) {
+      setSessionTotal(required.length);
+      setSessionIndex(1);
+    }
+  }, [required.length, sessionTotal]);
+
   const studentKey = useMemo(() => {
     if (!user) return null;
     return `${user.id}:${user.email.trim().toLowerCase()}`;
@@ -93,6 +106,7 @@ export default function FeedbackGate() {
 
   function completeCurrent() {
     setRequired((items) => items.slice(1));
+    setSessionIndex((idx) => idx + 1);
     setTimeout(() => {
       refresh();
     }, 250);
@@ -104,8 +118,8 @@ export default function FeedbackGate() {
     <FeedbackModal
       visible={Boolean(current)}
       item={current}
-      queueIndex={1}
-      queueTotal={required.length}
+      queueIndex={sessionIndex}
+      queueTotal={sessionTotal}
       onSubmit={handleSubmit}
       onComplete={completeCurrent}
     />

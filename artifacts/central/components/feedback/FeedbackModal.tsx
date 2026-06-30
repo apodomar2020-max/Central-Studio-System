@@ -1,7 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -55,6 +55,14 @@ export default function FeedbackModal({
   const [comment, setComment] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStage("rating");
+    setRating(0);
+    setComment("");
+    setTags([]);
+    setError(null);
+  }, [item?.attendanceId]);
 
   const commentRequired = rating > 0 && rating <= 2;
   const canSubmit = rating > 0 && (!commentRequired || comment.trim().length > 0);
