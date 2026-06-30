@@ -80,9 +80,18 @@ export default function AttendancePage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const { data: allAttendance = [], isLoading: attendanceLoading } = useListAttendance(
-    searchEmail ? { studentEmail: searchEmail } : undefined
-  );
+  const attendanceParams = {
+    ...(searchEmail ? { studentEmail: searchEmail } : {}),
+    ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+    page: 1,
+    pageSize: 50,
+  } as Parameters<typeof useListAttendance>[0] & {
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  };
+
+  const { data: allAttendance = [], isLoading: attendanceLoading } = useListAttendance(attendanceParams);
   const { data: packageOrders = [] } = useListPackageOrders(undefined);
   const { data: stats } = useGetAttendanceStats({ period });
 

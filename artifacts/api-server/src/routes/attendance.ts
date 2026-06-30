@@ -1,12 +1,12 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
+import * as zod from "zod";
 import { db, attendanceTable, bookingsTable, studentsTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
 import {
-  ListAttendanceQueryParams,
   ListAttendanceResponse,
   GetAttendanceStatsQueryParams,
   CheckInBodyExtended,
@@ -25,15 +25,58 @@ function requirePackageDeductForManualCheckIn(req: Request, res: Response, next:
 // ---------------------------------------------------------------------------
 // GET /attendance
 // ---------------------------------------------------------------------------
+const ListAttendanceQueryParams = zod.object({
+  studentEmail: zod.coerce.string().optional(),
+  status: zod.coerce.string().optional(),
+  page: zod.coerce.number().int().min(1).optional(),
+  pageSize: zod.coerce.number().int().min(1).max(500).optional(),
+});
+
 router.get("/attendance", async (req, res): Promise<void> => {
   const query = ListAttendanceQueryParams.safeParse(req.query);
-  let rows = await db
-    .select()
-    .from(attendanceTable)
-    .orderBy(desc(attendanceTable.checkedInAt));
-  if (query.success && query.data.studentEmail) {
-    rows = rows.filter((r) => r.studentEmail === query.data.studentEmail);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
   }
+
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 50;
+  const offset = (page - 1) * pageSize;
+  const conditions = [];
+
+  if (query.data.studentEmail) {
+    conditions.push(eq(attendanceTable.studentEmail, query.data.studentEmail));
+  }
+  if (query.data.status) {
+    conditions.push(eq(attendanceTable.status, query.data.status));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [countRow] = whereClause
+    ? await db.select({ total: sql<number>`count(*)::int` }).from(attendanceTable).where(whereClause)
+    : await db.select({ total: sql<number>`count(*)::int` }).from(attendanceTable);
+  const total = Number(countRow?.total ?? 0);
+
+  const rows = whereClause
+    ? await db
+        .select()
+        .from(attendanceTable)
+        .where(whereClause)
+        .orderBy(desc(attendanceTable.checkedInAt))
+        .limit(pageSize)
+        .offset(offset)
+    : await db
+        .select()
+        .from(attendanceTable)
+        .orderBy(desc(attendanceTable.checkedInAt))
+        .limit(pageSize)
+        .offset(offset);
+
+  res.setHeader("X-Total-Count", String(total));
+  res.setHeader("X-Page", String(page));
+  res.setHeader("X-Page-Size", String(pageSize));
+  res.setHeader("X-Total-Pages", String(total === 0 ? 0 : Math.ceil(total / pageSize)));
   res.json(ListAttendanceResponse.parse(rows));
 });
 
