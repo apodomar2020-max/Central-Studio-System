@@ -22,6 +22,7 @@ import {
 import { useGetMyPackages } from "@workspace/api-client-react";
 import type { PackageOrder } from "@workspace/api-client-react";
 import SBI from "@/components/SbIcon";
+import { formatApiDate, isApiDatePast } from "@/utils/dateTime";
 
 const CYAN = "#00B6D7";
 const CYAN_400 = "#2DCDEC";
@@ -37,9 +38,7 @@ type Dateish = string | Date | null | undefined;
 
 // ─── Status helpers (real data) ──────────────────────────────────────────────
 function isPastDate(iso?: Dateish): boolean {
-  if (!iso) return false;
-  const date = parsePackageDate(iso);
-  return !Number.isNaN(date.getTime()) && date < new Date();
+  return isApiDatePast(iso);
 }
 
 function packageStatusKind(pkg: PackageOrderWithDateAliases): PackageStatusKind {
@@ -89,34 +88,9 @@ function isPastPkg(pkg: PackageOrderWithDateAliases): boolean {
   const kind = packageStatusKind(pkg);
   return kind === "expired" || kind === "exhausted" || (kind === "cancelled" && Boolean(activatedAtOf(pkg)));
 }
-function normalizePostgresTimestamp(value: string): string {
-  const trimmed = value.trim();
-  const normalizedSeparator = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
-
-  return normalizedSeparator
-    .replace(/\.(\d{3})\d+/, ".$1")
-    .replace(/([+-]\d{2})$/, "$1:00")
-    .replace(/\+00:00$/, "Z");
-}
-
-function parsePackageDate(value: Dateish): Date {
-  if (value instanceof Date) return value;
-  if (!value) return new Date(Number.NaN);
-
-  const direct = new Date(value);
-  if (!Number.isNaN(direct.getTime())) return direct;
-
-  if (typeof value === "string") {
-    return new Date(normalizePostgresTimestamp(value));
-  }
-
-  return new Date(Number.NaN);
-}
-
 function fmtDate(iso?: Dateish): string | null {
-  const date = parsePackageDate(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const formatted = formatApiDate(iso, "", { day: "numeric", month: "short", year: "numeric" });
+  return formatted || null;
 }
 
 type PackageOrderWithDateAliases = PackageOrder & {

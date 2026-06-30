@@ -18,6 +18,7 @@ import QRCode from "react-native-qrcode-svg";
 
 import { useAppContext } from "@/contexts/AppContext";
 import SBI from "@/components/SbIcon";
+import { formatApiDate, parseApiDate } from "@/utils/dateTime";
 
 const CYAN = "#00B6D7";
 const CYAN_400 = "#2DCDEC";
@@ -50,7 +51,10 @@ export default function MyQRScreen() {
   }
 
   const activePackages = userPackages.filter(
-    (p) => p.status === "active" && new Date(p.expiryDate) >= new Date(),
+    (p) => {
+      const expiryDate = parseApiDate(p.expiryDate);
+      return p.status === "active" && Boolean(expiryDate && expiryDate >= new Date());
+    },
   );
   const totalCredits = activePackages.reduce((sum, p) => sum + (p.remainingCredits ?? 0), 0);
   const primaryPkg = activePackages[0];
@@ -64,7 +68,7 @@ export default function MyQRScreen() {
   const initials = user.fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
   const memberId = `CS-MEM-${String(user.id).replace(/\D/g, "").padStart(5, "0").slice(-5)}`;
   const fmtDate = (d?: string) =>
-    d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+    formatApiDate(d, "—", { day: "numeric", month: "short", year: "numeric" });
 
   const qrValue = user.qrToken
     ? JSON.stringify({ app: "centralstudio", token: user.qrToken })

@@ -24,6 +24,7 @@ import type { MyAttendanceRecord, MyAttendanceResponse } from "@workspace/api-cl
 import { useAppContext, ChildProfile } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
 
 /**
  * PIcon — exact replica of the design's `PIcon` (home-profile.jsx) rendered
@@ -180,27 +181,6 @@ function ChildCard({
   );
 }
 
-function normalizeApiTimestamp(value: string): string {
-  const trimmed = value.trim();
-  const normalizedSeparator = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
-
-  return normalizedSeparator
-    .replace(/\.(\d{3})\d+/, ".$1")
-    .replace(/([+-]\d{2})$/, "$1:00")
-    .replace(/\+00:00$/, "Z");
-}
-
-function parseApiDate(value?: string | null): Date | null {
-  if (!value) return null;
-  let date = new Date(value);
-  if (!Number.isNaN(date.getTime())) return date;
-  date = new Date(normalizeApiTimestamp(value));
-  if (!Number.isNaN(date.getTime())) return date;
-  const fallback = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (fallback) return new Date(Number(fallback[1]), Number(fallback[2]) - 1, Number(fallback[3]));
-  return null;
-}
-
 function attendanceTimestamp(record: MyAttendanceRecord): number {
   return parseApiDate(record.checkedInAt)?.getTime() ?? 0;
 }
@@ -210,15 +190,11 @@ function sortAttendanceNewestFirst(records: MyAttendanceRecord[]): MyAttendanceR
 }
 
 function formatAttendanceDate(value?: string | null): string {
-  const date = parseApiDate(value);
-  if (!date) return "";
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return formatApiDate(value, "", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function formatAttendanceTime(value?: string | null): string {
-  const date = parseApiDate(value);
-  if (!date) return "";
-  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return formatApiTime(value, "", { hour: "2-digit", minute: "2-digit" });
 }
 
 function attendanceBadge(record: MyAttendanceRecord): { text: string; color: string } {
@@ -659,11 +635,12 @@ export default function ProfileScreen() {
   const upcoming = bookings.filter(
     (b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pending"
   ).length;
-  const activePackages = userPackages.filter(
-    (p) => p.status === "active" && new Date(p.expiryDate) >= new Date()
-  ).length;
-  const totalCredits = userPackages
-    .filter((p) => p.status === "active" && new Date(p.expiryDate) >= new Date())
+  const activeUserPackages = userPackages.filter((p) => {
+    const expiryDate = parseApiDate(p.expiryDate);
+    return p.status === "active" && Boolean(expiryDate && expiryDate >= new Date());
+  });
+  const activePackages = activeUserPackages.length;
+  const totalCredits = activeUserPackages
     .reduce((sum, p) => sum + (p.remainingCredits ?? 0), 0);
   const attendedCount =
     serverAttendedCount ??
