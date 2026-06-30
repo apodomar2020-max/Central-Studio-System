@@ -1,0 +1,7 @@
+{
+  "admin": {
+    "username": "admin@example.com",
+    "password": "password",
+    "notes": "Use a staging-only admin account with the minimum permissions needed for read-only bookings and QR testing."
+  }
+}

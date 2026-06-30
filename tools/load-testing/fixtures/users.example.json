@@ -1,0 +1,7 @@
+{
+  "student": {
+    "email": "test@example.com",
+    "password": "password",
+    "notes": "Use a verified staging-only student account with disposable packages and bookings."
+  }
+}

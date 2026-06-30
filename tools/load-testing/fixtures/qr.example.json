@@ -1,0 +1,8 @@
+{
+  "qr": {
+    "qrToken": "test-token",
+    "testBookingId": 1,
+    "testPackageOrderId": 1,
+    "notes": "Use a resettable staging booking owned by the QR token's staging student. Never use production QR tokens."
+  }
+}
