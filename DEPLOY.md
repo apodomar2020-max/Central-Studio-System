@@ -130,7 +130,7 @@ In Vercel → Project → **Settings → Environment Variables**:
 Click **Deploy**. Vercel runs:
 
 ```
-cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @workspace/admin run build
+cd ../.. && pnpm install --frozen-lockfile --prod=false && pnpm --filter @workspace/admin run build
 ```
 
 Output is served from `artifacts/admin/dist/public/`.
