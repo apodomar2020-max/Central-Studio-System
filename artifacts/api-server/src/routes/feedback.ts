@@ -41,6 +41,26 @@ function isEligibleAttendanceStatus() {
   return inArray(attendanceTable.status, [...FEEDBACK_ELIGIBLE_ATTENDANCE_STATUSES]);
 }
 
+function parseDbTimestamp(value: string): Date | null {
+  const raw = value.trim();
+  const normalized = raw
+    .replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T")
+    .replace(/([+-]\d{2})$/, "$1:00")
+    .replace(/\+00:00$/, "Z");
+  const date = new Date(normalized);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function toIsoTimestamp(value: string): string {
+  return parseDbTimestamp(value)?.toISOString() ?? value;
+}
+
+function addHoursIso(value: string, hours: number): string {
+  const date = parseDbTimestamp(value);
+  if (!date) return value;
+  return new Date(date.getTime() + hours * 60 * 60 * 1000).toISOString();
+}
+
 function scheduleLabel(row: {
   scheduleType: string | null;
   scheduleDayOfWeek: number | null;
@@ -86,8 +106,8 @@ router.get("/my/feedback/required", requireStudentAuth, requireVerifiedStudent, 
       attendanceId: attendanceTable.id,
       checkedInAt: attendanceTable.checkedInAt,
       studentName: attendanceTable.studentName,
-      classId: attendanceTable.classId,
-      scheduleId: attendanceTable.scheduleId,
+      classId: sql<number | null>`coalesce(${attendanceTable.classId}, ${bookingsTable.classId})`,
+      scheduleId: sql<number | null>`coalesce(${attendanceTable.scheduleId}, ${bookingsTable.scheduleId})`,
       bookingId: attendanceTable.bookingId,
       classTitle: sql<string | null>`coalesce(${attendanceTable.classTitle}, ${classesTable.title})`,
       instructorName: instructorsTable.name,
@@ -105,24 +125,24 @@ router.get("/my/feedback/required", requireStudentAuth, requireVerifiedStudent, 
     .leftJoin(feedbackTable, eq(feedbackTable.attendanceId, attendanceTable.id))
     .leftJoin(bookingsTable, eq(attendanceTable.bookingId, bookingsTable.id))
     .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
-    .leftJoin(classesTable, eq(attendanceTable.classId, classesTable.id))
+    .leftJoin(classesTable, sql`${classesTable.id} = coalesce(${attendanceTable.classId}, ${bookingsTable.classId})`)
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
     .leftJoin(danceTypesTable, eq(classesTable.danceTypeId, danceTypesTable.id))
-    .leftJoin(schedulesTable, eq(attendanceTable.scheduleId, schedulesTable.id))
+    .leftJoin(schedulesTable, sql`${schedulesTable.id} = coalesce(${attendanceTable.scheduleId}, ${bookingsTable.scheduleId})`)
     .where(and(
       ownsAttendance(studentId, studentEmail),
       isEligibleAttendanceStatus(),
       isFeedbackDue(),
       isNull(feedbackTable.id),
     ))
-    .orderBy(attendanceTable.checkedInAt)
+    .orderBy(desc(attendanceTable.checkedInAt))
     .limit(limit);
 
   res.json({
     data: rows.map((row) => ({
       attendanceId: row.attendanceId,
-      checkedInAt: row.checkedInAt,
-      dueAt: new Date(new Date(row.checkedInAt).getTime() + 3 * 60 * 60 * 1000).toISOString(),
+      checkedInAt: toIsoTimestamp(row.checkedInAt),
+      dueAt: addHoursIso(row.checkedInAt, 3),
       studentName: row.studentName,
       childName: row.childName,
       classId: row.classId,
@@ -209,6 +229,28 @@ router.post("/my/feedback", requireStudentAuth, requireVerifiedStudent, async (r
         return existingForAttendance;
       }
 
+      const [lockedAttendance] = await tx
+        .select({
+          id: attendanceTable.id,
+          checkedInAt: attendanceTable.checkedInAt,
+          status: attendanceTable.status,
+        })
+        .from(attendanceTable)
+        .where(and(eq(attendanceTable.id, attendanceId), ownsAttendance(studentId, studentEmail)))
+        .limit(1)
+        .for("update");
+
+      if (!lockedAttendance) {
+        throw Object.assign(new Error("Attendance not found."), { status: 404 });
+      }
+      if (!FEEDBACK_ELIGIBLE_ATTENDANCE_STATUSES.includes(lockedAttendance.status as typeof FEEDBACK_ELIGIBLE_ATTENDANCE_STATUSES[number])) {
+        throw Object.assign(new Error("Feedback is not available for this attendance status."), { status: 400 });
+      }
+      const dueAt = parseDbTimestamp(lockedAttendance.checkedInAt);
+      if (!dueAt || dueAt.getTime() + 3 * 60 * 60 * 1000 > Date.now()) {
+        throw Object.assign(new Error("Feedback is not due yet."), { status: 400 });
+      }
+
       const [row] = await tx
         .select({
           attendanceId: attendanceTable.id,
@@ -218,8 +260,8 @@ router.post("/my/feedback", requireStudentAuth, requireVerifiedStudent, async (r
           checkedInAt: attendanceTable.checkedInAt,
           status: attendanceTable.status,
           bookingId: attendanceTable.bookingId,
-          classId: attendanceTable.classId,
-          scheduleId: attendanceTable.scheduleId,
+          classId: sql<number | null>`coalesce(${attendanceTable.classId}, ${bookingsTable.classId})`,
+          scheduleId: sql<number | null>`coalesce(${attendanceTable.scheduleId}, ${bookingsTable.scheduleId})`,
           classTitle: sql<string | null>`coalesce(${attendanceTable.classTitle}, ${classesTable.title})`,
           instructorId: instructorsTable.id,
           instructorName: instructorsTable.name,
@@ -237,22 +279,15 @@ router.post("/my/feedback", requireStudentAuth, requireVerifiedStudent, async (r
         .from(attendanceTable)
         .leftJoin(bookingsTable, eq(attendanceTable.bookingId, bookingsTable.id))
         .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
-        .leftJoin(classesTable, eq(attendanceTable.classId, classesTable.id))
+        .leftJoin(classesTable, sql`${classesTable.id} = coalesce(${attendanceTable.classId}, ${bookingsTable.classId})`)
         .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
         .leftJoin(danceTypesTable, eq(classesTable.danceTypeId, danceTypesTable.id))
-        .leftJoin(schedulesTable, eq(attendanceTable.scheduleId, schedulesTable.id))
+        .leftJoin(schedulesTable, sql`${schedulesTable.id} = coalesce(${attendanceTable.scheduleId}, ${bookingsTable.scheduleId})`)
         .where(and(eq(attendanceTable.id, attendanceId), ownsAttendance(studentId, studentEmail)))
-        .limit(1)
-        .for("update");
+        .limit(1);
 
       if (!row) {
         throw Object.assign(new Error("Attendance not found."), { status: 404 });
-      }
-      if (!FEEDBACK_ELIGIBLE_ATTENDANCE_STATUSES.includes(row.status as typeof FEEDBACK_ELIGIBLE_ATTENDANCE_STATUSES[number])) {
-        throw Object.assign(new Error("Feedback is not available for this attendance status."), { status: 400 });
-      }
-      if (new Date(row.checkedInAt).getTime() + 3 * 60 * 60 * 1000 > Date.now()) {
-        throw Object.assign(new Error("Feedback is not due yet."), { status: 400 });
       }
 
       const [created] = await tx

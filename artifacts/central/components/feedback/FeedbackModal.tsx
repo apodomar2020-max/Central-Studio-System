@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,6 +18,7 @@ import {
 } from "react-native";
 import colors from "@/constants/colors";
 import type { RequiredFeedbackItem } from "@/services/feedbackService";
+import { formatApiDate, formatApiTime } from "@/utils/dateTime";
 
 const RATING_LABELS: Record<number, string> = {
   0: "Tap a star to rate",
@@ -206,6 +208,7 @@ export default function FeedbackModal({
               body={error ?? "Please try again."}
               buttonTitle="Retry Now"
               onPress={submit}
+              scrollBody
             />
           )}
         </View>
@@ -224,7 +227,7 @@ function PrivacyChip() {
 }
 
 function ClassCard({ item, instructorImage }: { item: RequiredFeedbackItem; instructorImage?: string }) {
-  const attended = item.scheduleLabel ?? new Date(item.checkedInAt).toLocaleString();
+  const attended = item.scheduleLabel ?? [formatApiDate(item.checkedInAt), formatApiTime(item.checkedInAt)].filter(Boolean).join(" • ");
   return (
     <View style={styles.classCard}>
       <Text style={styles.classTitle} numberOfLines={2}>{item.classTitle}</Text>
@@ -299,18 +302,26 @@ function CenteredState({
   body,
   buttonTitle,
   onPress,
+  scrollBody,
 }: {
   icon: React.ReactNode;
   title: string;
   body: string;
   buttonTitle?: string;
   onPress?: () => void;
+  scrollBody?: boolean;
 }) {
   return (
     <View style={styles.centered}>
       {icon}
       <Text style={styles.stateTitle}>{title}</Text>
-      <Text style={styles.stateBody}>{body}</Text>
+      {scrollBody ? (
+        <ScrollView style={styles.stateBodyScroll} contentContainerStyle={styles.stateBodyScrollContent}>
+          <Text style={styles.stateBody}>{body}</Text>
+        </ScrollView>
+      ) : (
+        <Text style={styles.stateBody}>{body}</Text>
+      )}
       {buttonTitle && onPress && (
         <TouchableOpacity onPress={onPress} style={styles.stateButton}>
           <Text style={styles.primaryButtonText}>{buttonTitle}</Text>
@@ -442,6 +453,8 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, paddingVertical: 30 },
   stateTitle: { marginTop: 24, fontFamily: "Anton_400Regular", fontSize: 46, lineHeight: 48, textTransform: "uppercase", color: "#fff", textAlign: "center" },
   stateBody: { marginTop: 12, maxWidth: 280, fontFamily: "Inter_400Regular", fontSize: 14.5, lineHeight: 22, color: colors.ink[300], textAlign: "center" },
+  stateBodyScroll: { maxHeight: 220, width: "100%", marginTop: 12 },
+  stateBodyScrollContent: { alignItems: "center", paddingBottom: 4 },
   stateButton: { marginTop: 30, width: "100%", padding: 15, borderRadius: 12, alignItems: "center", backgroundColor: colors.cyan },
   successCircle: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center", backgroundColor: colors.cyan },
   offlineCircle: { width: 78, height: 78, borderRadius: 39, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,176,46,0.12)", borderWidth: 2, borderColor: colors.amber },
