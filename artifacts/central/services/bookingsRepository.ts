@@ -127,8 +127,8 @@ export async function fetchStudentBookings(
     //       param is active, or to listMyBookings() once the scoped endpoint
     //       exists.  For now the backend already supports ?studentEmail= (added
     //       in the same hardening pass), so we pass it directly.
-    const all = await listBookings({ studentEmail });
-    const mine = all as ApiBookingStatus[];
+    const response = await listBookings({ studentEmail });
+    const mine = (Array.isArray(response) ? response : response.bookings) as ApiBookingStatus[];
 
     // Success — persist to cache so we can serve it offline next time.
     await writeCache(studentEmail, mine);

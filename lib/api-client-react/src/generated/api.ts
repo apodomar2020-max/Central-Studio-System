@@ -41,6 +41,7 @@ import type {
   Instructor,
   ListAttendanceParams,
   ListBookingsParams,
+  ListBookingsResponse,
   ListPackageOrdersParams,
   ListSchedulesParams,
   Notification,
@@ -1839,8 +1840,8 @@ export const getListBookingsUrl = (params?: ListBookingsParams) => {
 export const listBookings = async (
   params?: ListBookingsParams,
   options?: RequestInit,
-): Promise<Booking[]> => {
-  return customFetch<Booking[]>(getListBookingsUrl(params), {
+): Promise<ListBookingsResponse> => {
+  return customFetch<ListBookingsResponse>(getListBookingsUrl(params), {
     ...options,
     method: "GET",
   });

@@ -374,6 +374,14 @@ export interface Booking {
   checkInBlockedReason?: string | null;
 }
 
+export interface ListBookingsResponse {
+  bookings: Booking[];
+  total: number;
+  page: number;
+  totalPages: number;
+  pageSize: number;
+}
+
 export interface CreateBookingBody {
   studentName: string;
   studentEmail: string;
@@ -746,6 +754,10 @@ export type ListBookingsParams = {
   status?: string;
   bookingStatus?: string;
   paymentStatus?: string;
+  scope?: "all" | "self" | "child";
+  search?: string;
+  page?: number;
+  pageSize?: number;
   /** Filter bookings by student email (mobile client convenience filter). */
   studentEmail?: string;
 };

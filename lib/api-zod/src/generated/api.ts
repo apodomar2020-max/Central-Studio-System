@@ -445,6 +445,10 @@ export const ListBookingsQueryParams = zod.object({
   status: zod.coerce.string().optional(),
   bookingStatus: zod.coerce.string().optional(),
   paymentStatus: zod.coerce.string().optional(),
+  scope: zod.enum(["all", "self", "child"]).optional(),
+  search: zod.coerce.string().optional(),
+  page: zod.coerce.number().int().positive().optional(),
+  pageSize: zod.coerce.number().int().positive().max(200).optional(),
   // Optional student-email filter so mobile clients can fetch their own bookings.
   // TODO: Replace with a JWT-scoped /api/me/bookings endpoint so the server
   //       enforces identity server-side instead of trusting a client param.
@@ -498,7 +502,13 @@ export const ListBookingsResponseItem = zod.object({
   checkInEligible: zod.boolean().optional(),
   checkInBlockedReason: zod.string().nullish(),
 });
-export const ListBookingsResponse = zod.array(ListBookingsResponseItem);
+export const ListBookingsResponse = zod.object({
+  bookings: zod.array(ListBookingsResponseItem),
+  total: zod.number(),
+  page: zod.number(),
+  totalPages: zod.number(),
+  pageSize: zod.number(),
+});
 
 export const CreateBookingBody = zod.object({
   studentName: zod.string(),
