@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Alert } from "react-native";
 import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
-import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/services/bookingsRepository";
+import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/utils/bookingStatus";
 import { STORAGE_KEYS } from "@/constants/danceStyles";
 
 export interface User {
