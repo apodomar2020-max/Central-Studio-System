@@ -22,6 +22,7 @@ import {
   Trophy,
   FileText,
   ChevronDown,
+  MessageSquareText,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ const generalNav: NavEntry[] = [
   { name: "Marketing", href: "/marketing", icon: Megaphone, perm: [["marketing", "view"]] },
   { name: "Package Orders", href: "/package-orders", icon: ShoppingBag, perm: [["packageOrders", "view"]] },
   { name: "Attendance", href: "/attendance", icon: ScanLine, perm: [["attendance", "view"]] },
+  { name: "Feedback", href: "/feedback", icon: MessageSquareText, perm: [["feedback", "view"]] },
   { name: "Reports", href: "/reports", icon: BarChart3, perm: [["reports", "view"]] },
 ];
 

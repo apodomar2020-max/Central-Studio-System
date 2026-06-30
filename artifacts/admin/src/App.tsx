@@ -26,6 +26,8 @@ import Notifications from "@/pages/notifications";
 import Marketing from "@/pages/marketing";
 import PackageOrders from "@/pages/package-orders";
 import AttendancePage from "@/pages/attendance";
+import FeedbackPage from "@/pages/feedback";
+import FeedbackDetailPage from "@/pages/feedback-detail";
 import ReportsPage from "@/pages/reports";
 import HeroItems from "@/pages/hero-items";
 import SystemUsers from "@/pages/system-users";
@@ -84,6 +86,7 @@ const ROUTE_PERMS = {
   marketing: [["marketing", "view"]],
   packageOrders: [["packageOrders", "view"]],
   attendance: [["attendance", "view"]],
+  feedback: [["feedback", "view"]],
   reports: [["reports", "view"]],
   heroSlides: [["heroSlides", "view"]],
   appContent: [["appContent", "view"]],
@@ -123,6 +126,8 @@ function ProtectedRouter() {
         <Route path="/marketing">{guarded(ROUTE_PERMS.marketing, <Marketing />)}</Route>
         <Route path="/package-orders">{guarded(ROUTE_PERMS.packageOrders, <PackageOrders />)}</Route>
         <Route path="/attendance">{guarded(ROUTE_PERMS.attendance, <AttendancePage />)}</Route>
+        <Route path="/feedback/:id">{guarded(ROUTE_PERMS.feedback, <FeedbackDetailPage />)}</Route>
+        <Route path="/feedback">{guarded(ROUTE_PERMS.feedback, <FeedbackPage />)}</Route>
         <Route path="/reports">{guarded(ROUTE_PERMS.reports, <ReportsPage />)}</Route>
         <Route path="/hero-items">{guarded(ROUTE_PERMS.heroSlides, <HeroItems />)}</Route>
         <Route path="/app-content">{guarded(ROUTE_PERMS.appContent, <AppContentPage />)}</Route>

@@ -51,6 +51,13 @@ const permissionCatalog = [
     actions: actions(["view", "View"], ["checkIn", "Check In"], ["edit", "Edit"], ["export", "Export"]),
   },
   {
+    key: "feedback",
+    label: "Feedback",
+    description: "Internal post-class feedback and quality review.",
+    group: "Operations",
+    actions: actions(["view", "View"], ["viewComments", "View Comments"], ["review", "Review"]),
+  },
+  {
     key: "qr",
     label: "QR Check-In",
     description: "QR scanning, check-in confirmation, and package deduction.",

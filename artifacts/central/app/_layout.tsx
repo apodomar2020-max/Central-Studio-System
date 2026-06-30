@@ -28,6 +28,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import FeedbackGate from "@/components/feedback/FeedbackGate";
 import { AppContextProvider } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
 
@@ -154,6 +155,7 @@ export default function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView>
               <KeyboardProvider>
+                <FeedbackGate />
                 <RootLayoutNav />
               </KeyboardProvider>
             </GestureHandlerRootView>
