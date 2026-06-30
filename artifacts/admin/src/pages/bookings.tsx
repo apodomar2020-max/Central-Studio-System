@@ -411,7 +411,7 @@ export default function Bookings() {
                     </TableRow>
                     {hasAnyActions && (
                       <TableRow key={`${booking.id}-actions`} className="border-b bg-card hover:bg-muted/20">
-                        <TableCell colSpan={9} className="px-3 pb-3 pt-0">
+                        <TableCell colSpan={9} className="px-2 pb-3 pt-0">
                           <div className="rounded-md border bg-background/50 p-2.5">
                             <div className={canShowBookingActions || canShowCancelAction ? canShowPaymentActions ? "grid gap-2 lg:grid-cols-2" : "grid gap-2" : "grid gap-2"}>
                               {(canShowBookingActions || canShowCancelAction) && (
