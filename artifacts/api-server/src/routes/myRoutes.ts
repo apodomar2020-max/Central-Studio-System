@@ -134,16 +134,24 @@ router.get("/my/credits", async (req, res): Promise<void> => {
     return;
   }
 
-  // Step 3 — fetch transactions (all rows first; paginate in JS to keep
-  // the query simple — ledger rows per student are bounded in practice)
-  const allRows = await db
+  const offset = (page - 1) * limit;
+
+  const [countRow] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(creditTransactionsTable)
+    .where(inArray(creditTransactionsTable.packageOrderId, scopedIds));
+
+  const total = Number(countRow?.total ?? 0);
+
+  // Step 3 — fetch only the current page. Enrichment below intentionally works
+  // on this page only so historical ledger size does not affect response cost.
+  const data = await db
     .select()
     .from(creditTransactionsTable)
     .where(inArray(creditTransactionsTable.packageOrderId, scopedIds))
-    .orderBy(desc(creditTransactionsTable.createdAt));
-
-  const total = allRows.length;
-  const data = allRows.slice((page - 1) * limit, page * limit);
+    .orderBy(desc(creditTransactionsTable.createdAt))
+    .limit(limit)
+    .offset(offset);
 
   // Resolve a human-friendly class name for each row so the app shows the class
   // instead of a raw note like "QR check-in for booking #29" (legacy). We resolve
@@ -230,8 +238,16 @@ router.get("/my/attendance", async (req, res): Promise<void> => {
   const query = MyAttendanceQueryParams.safeParse(req.query);
   const page = (query.success && query.data.page) ? query.data.page : 1;
   const limit = (query.success && query.data.limit) ? query.data.limit : 20;
+  const offset = (page - 1) * limit;
 
-  const allRows = await db
+  const [countRow] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(attendanceTable)
+    .where(eq(attendanceTable.studentEmail, req.studentEmail!));
+
+  const total = Number(countRow?.total ?? 0);
+
+  const data = await db
     .select({
       id: attendanceTable.id,
       studentEmail: attendanceTable.studentEmail,
@@ -251,10 +267,9 @@ router.get("/my/attendance", async (req, res): Promise<void> => {
     .leftJoin(classesTable, eq(attendanceTable.classId, classesTable.id))
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
     .where(eq(attendanceTable.studentEmail, req.studentEmail!))
-    .orderBy(desc(attendanceTable.checkedInAt));
-
-  const total = allRows.length;
-  const data = allRows.slice((page - 1) * limit, page * limit);
+    .orderBy(desc(attendanceTable.checkedInAt))
+    .limit(limit)
+    .offset(offset);
 
   res.json({ data, total, page, limit });
 });
