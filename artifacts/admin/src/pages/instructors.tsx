@@ -8,6 +8,7 @@ import {
   useUpdateInstructor,
   useDeleteInstructor,
   getListInstructorsQueryKey,
+  extractGoogleDriveFileId,
   normalizeMediaUrl,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -74,9 +75,17 @@ type Instructor = {
   professionalExperience?: string[];
 };
 
+function getInstructorPhotoPreviewUrl(url?: string | null): string | undefined {
+  const driveId = extractGoogleDriveFileId(url);
+  if (driveId) {
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w256`;
+  }
+  return normalizeMediaUrl(url, "image");
+}
+
 function InstructorPhoto({ url, name, preview = false }: { url?: string | null; name: string; preview?: boolean }) {
   const [failed, setFailed] = useState(false);
-  const normalizedUrl = normalizeMediaUrl(url, "image");
+  const normalizedUrl = getInstructorPhotoPreviewUrl(url);
 
   useEffect(() => setFailed(false), [normalizedUrl]);
 
