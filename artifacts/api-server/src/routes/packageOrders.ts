@@ -1,6 +1,6 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -73,16 +73,49 @@ const PurchasePackageBody = z.object({
   paymentMode: z.enum(["pay_at_studio", "online_payment"]).optional(),
 }).passthrough();
 
+// Membership Engine (Phase 3): studentId/studentEmail are read directly off
+// req.query (not through ListPackageOrdersQueryParams) so this stays a
+// read-side-only addition without touching the generated api-zod schema.
 router.get(
   "/package-orders",
   requireAdminAuth,
   requireAdminPermission("packageOrders", "view"),
   async (req, res): Promise<void> => {
   const query = ListPackageOrdersQueryParams.safeParse(req.query);
-  let rows = await db.select().from(packageOrdersTable).orderBy(desc(packageOrdersTable.createdAt));
+  const rawStudentId = req.query.studentId;
+  const studentId = typeof rawStudentId === "string" && /^\d+$/.test(rawStudentId) ? Number(rawStudentId) : undefined;
+  const studentEmail = typeof req.query.studentEmail === "string" ? req.query.studentEmail : undefined;
+
+  const conditions = [];
   if (query.success && query.data.status) {
-    rows = rows.filter((r) => r.status === query.data.status);
+    conditions.push(eq(packageOrdersTable.status, query.data.status));
   }
+  if (studentId != null && studentEmail) {
+    // Both given — match either, so a stale/legacy email still resolves.
+    conditions.push(sql`(${packageOrdersTable.studentId} = ${studentId} OR lower(trim(${packageOrdersTable.studentEmail})) = ${normalizeEmail(studentEmail)})`);
+  } else if (studentId != null) {
+    // studentId alone — same identity strategy as every other membership
+    // lookup: resolve the account's normalized email first, then match
+    // studentId = ? OR normalized(studentEmail) = ?, so pre-backfill legacy
+    // rows (student_id still null) keep showing up via the email side.
+    const [resolvedStudent] = await db
+      .select({ email: studentsTable.email })
+      .from(studentsTable)
+      .where(eq(studentsTable.id, studentId))
+      .limit(1);
+    conditions.push(
+      resolvedStudent
+        ? sql`(${packageOrdersTable.studentId} = ${studentId} OR lower(trim(${packageOrdersTable.studentEmail})) = ${normalizeEmail(resolvedStudent.email)})`
+        : eq(packageOrdersTable.studentId, studentId),
+    );
+  } else if (studentEmail) {
+    conditions.push(sql`lower(trim(${packageOrdersTable.studentEmail})) = ${normalizeEmail(studentEmail)}`);
+  }
+
+  const rows = conditions.length > 0
+    ? await db.select().from(packageOrdersTable).where(and(...conditions)).orderBy(desc(packageOrdersTable.createdAt))
+    : await db.select().from(packageOrdersTable).orderBy(desc(packageOrdersTable.createdAt));
+
   res.json(ListPackageOrdersResponse.parse(rows));
   },
 );
@@ -161,6 +194,9 @@ router.post(
         studentName: student.name,
         studentEmail: normalizeEmail(student.email),
         studentPhone: student.phone,
+        // Membership Engine (Phase 3): populate the owner FK at creation
+        // time so new orders never need backfilling.
+        studentId: student.id,
         packageId: packageDefinition.id,
         packageName: packageDefinition.name,
         totalCredits,

@@ -105,6 +105,7 @@ interface OverviewBooking {
   id: number;
   bookingNumber: string;
   classTitle: string | null;
+  participantType: "self" | "child";
   participantName: string;
   occurrenceDate: string | null;
   scheduleStartTime: string | null;
@@ -159,9 +160,12 @@ interface OverviewPermissions {
   canViewFeedback: boolean;
   canViewFeedbackComments: boolean;
 }
+type MembershipStatus = "Active" | "Inactive" | "Needs Profile" | "No Active Package" | "New" | "At Risk";
+
 interface StudentOverview {
   user: OverviewUser;
   completion: OverviewCompletion;
+  membershipStatus: MembershipStatus;
   stats: OverviewStats;
   children: OverviewChild[];
   packages: { active: OverviewStats["activePackage"]; recent: OverviewPackage[] };
@@ -202,6 +206,15 @@ function providerLabel(provider: string | null): string {
   if (!provider) return "Manual";
   return { local: "Manual", google: "Google", apple: "Apple", facebook: "Facebook" }[provider] ?? provider;
 }
+
+const MEMBERSHIP_STATUS_STYLE: Record<MembershipStatus, string> = {
+  Active: "border-transparent bg-emerald-500/15 text-emerald-400",
+  New: "border-transparent bg-cyan-500/15 text-cyan-400",
+  "No Active Package": "border-transparent bg-amber-500/15 text-amber-400",
+  "Needs Profile": "border-transparent bg-amber-500/15 text-amber-400",
+  "At Risk": "border-transparent bg-red-500/15 text-red-400",
+  Inactive: "text-muted-foreground",
+};
 
 function DetailRow({ label, value, notCollected }: { label: string; value: React.ReactNode; notCollected?: boolean }) {
   return (
@@ -299,6 +312,7 @@ export default function StudentDetailPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-lg font-semibold text-white">{d.user.name}</span>
                 <Badge variant="secondary" className="capitalize">{d.user.accountType ?? "student"}</Badge>
+                <Badge variant="outline" className={MEMBERSHIP_STATUS_STYLE[d.membershipStatus]}>{d.membershipStatus}</Badge>
                 {d.completion.verificationBadge ? (
                   <Badge className="gap-1 border-transparent bg-emerald-500/15 text-emerald-400">
                     <BadgeCheck className="h-3 w-3" /> Verified
@@ -440,7 +454,7 @@ export default function StudentDetailPage() {
                       <div>
                         <div className="text-sm font-medium text-white">{b.bookingNumber} · {b.classTitle ?? "Class"}</div>
                         <div className="text-xs text-muted-foreground">
-                          {b.participantName} · {formatDate(b.occurrenceDate)}
+                          {b.participantType === "child" ? `Child: ${b.participantName}` : `Self: ${b.participantName}`} · {formatDate(b.occurrenceDate)}
                           {b.scheduleStartTime ? ` · ${b.scheduleStartTime}${b.scheduleEndTime ? `–${b.scheduleEndTime}` : ""}` : ""}
                         </div>
                       </div>

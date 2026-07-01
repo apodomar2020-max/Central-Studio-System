@@ -28,6 +28,8 @@ import {
   hasRolePermission,
 } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { resolveMemberIdentity } from "../lib/membershipIdentity";
+import * as zod from "zod";
 
 const router: IRouter = Router();
 
@@ -104,6 +106,49 @@ router.get("/students/by-token/:token", requireAdminAuth, requireAdminPermission
     joinedAt: student.joinedAt,
     activePackages,
   });
+});
+
+// ---------------------------------------------------------------------------
+// GET /students/resolve-identity
+//
+// Membership Engine utility endpoint — thin wrapper around
+// resolveMemberIdentity() for admin tooling ("who does this booking/
+// attendance/child belong to?"). Read-only. Accepts exactly the same input
+// shape as the shared helper; at least one identifier is required.
+//
+// Must be registered BEFORE /students/:id (same reason as by-token above) —
+// otherwise Express would try to coerce "resolve-identity" as a numeric id.
+// ---------------------------------------------------------------------------
+const ResolveIdentityQuery = zod.object({
+  studentId: zod.coerce.number().int().positive().optional(),
+  studentEmail: zod.string().email().optional(),
+  bookingId: zod.coerce.number().int().positive().optional(),
+  attendanceId: zod.coerce.number().int().positive().optional(),
+  childId: zod.coerce.number().int().positive().optional(),
+});
+
+router.get("/students/resolve-identity", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+  const query = ResolveIdentityQuery.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  const { studentId, studentEmail, bookingId, attendanceId, childId } = query.data;
+  if (studentId == null && studentEmail == null && bookingId == null && attendanceId == null && childId == null) {
+    res.status(400).json({ error: "Provide at least one of studentId, studentEmail, bookingId, attendanceId, childId." });
+    return;
+  }
+
+  if (!adminCan(req, "users", "view") && !adminCan(req, "students", "view") && !adminCan(req, "parents", "view")) {
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: { anyOf: ["users.view", "students.view", "parents.view"] },
+    });
+    return;
+  }
+
+  const identity = await resolveMemberIdentity({ studentId, studentEmail, bookingId, attendanceId, childId });
+  res.json(identity);
 });
 
 router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
@@ -306,6 +351,49 @@ const CREDIT_TX_LABELS: Record<string, string> = {
   package_refund: "Credit refunded",
 };
 
+export type MembershipStatus = "Active" | "Inactive" | "Needs Profile" | "No Active Package" | "New" | "At Risk";
+
+const NEW_ACCOUNT_DAYS = 14;
+const ACTIVE_RECENT_DAYS = 30;
+const INACTIVE_DAYS = 60;
+const AT_RISK_MIN_BOOKINGS = 3;
+const AT_RISK_MAX_RATE = 0.5;
+
+function daysSince(isoDate: string): number {
+  return (Date.now() - new Date(isoDate).getTime()) / 86_400_000;
+}
+
+/**
+ * Membership Engine (Phase 3) — simple, explainable status rules. Priority
+ * order matters: the first rule that matches wins, since these conditions
+ * are not mutually exclusive (e.g. a brand-new account also has no active
+ * package). Deliberately not more elaborate than this for Phase 3.
+ */
+function computeMembershipStatus(input: {
+  profileCompleted: boolean;
+  joinedAt: string;
+  totalBookings: number;
+  totalAttendance: number;
+  attendanceRate: number | null;
+  hasActivePackage: boolean;
+  lastActivity: string | null;
+}): MembershipStatus {
+  if (!input.profileCompleted) return "Needs Profile";
+  if (input.totalBookings === 0 && daysSince(input.joinedAt) <= NEW_ACCOUNT_DAYS) return "New";
+  if (
+    input.totalBookings >= AT_RISK_MIN_BOOKINGS &&
+    input.attendanceRate != null &&
+    input.attendanceRate < AT_RISK_MAX_RATE
+  ) {
+    return "At Risk";
+  }
+  const recentActivity = input.lastActivity != null && daysSince(input.lastActivity) <= ACTIVE_RECENT_DAYS;
+  if (input.hasActivePackage || recentActivity) return "Active";
+  if (input.totalBookings > 0 || input.totalAttendance > 0) return "No Active Package";
+  if (input.lastActivity == null || daysSince(input.lastActivity) > INACTIVE_DAYS) return "Inactive";
+  return "Inactive";
+}
+
 router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
   const params = GetStudentParams.safeParse(req.params);
   if (!params.success) {
@@ -328,8 +416,13 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     return;
   }
 
-  const email = normalizeEmail(row.email);
+  // Membership Engine — resolve the canonical identity once via the shared
+  // resolver rather than re-deriving normalization inline. Single query, not
+  // per-row, so this doesn't reintroduce N+1 in the sections below.
+  const identity = await resolveMemberIdentity({ studentId: row.id });
+  const email = identity.normalizedEmail ?? normalizeEmail(row.email);
   const ownerCondition = sql`(${bookingsTable.accountOwnerStudentId} = ${row.id} OR lower(trim(${bookingsTable.studentEmail})) = ${email})`;
+  const packageOwnerCondition = sql`(${packageOrdersTable.studentId} = ${row.id} OR lower(trim(${packageOrdersTable.studentEmail})) = ${email})`;
 
   const permissions = {
     canViewChildren: adminCan(req, "children", "view"),
@@ -417,18 +510,20 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     : Promise.resolve([]);
 
   // ---------------------------------------------------------------------
-  // Packages — active package + recent 5. No integer FK exists from
-  // package_orders to students, only studentEmail (see schema comment on
-  // packageOrdersTable.packageId re: legacy FK) — so we cannot reliably
-  // join to a price. Amount-paid is intentionally omitted rather than
-  // guessed from a possibly-stale packageId.
+  // Packages — active package + recent 5. package_orders.student_id (Phase
+  // 3, migration 0034) is nullable and only backfilled where an explicit
+  // backfill has been run — so match on `studentId = X OR normalized email`
+  // (packageOwnerCondition above), never studentId alone, or pre-backfill
+  // rows would silently disappear. Amount-paid is intentionally omitted:
+  // package_orders has no reliable price field (packageId is a legacy FK
+  // that may not match a current price_packages row).
   // ---------------------------------------------------------------------
   const activePackagePromise = permissions.canViewPackages
     ? db
         .select()
         .from(packageOrdersTable)
         .where(and(
-          eq(packageOrdersTable.studentEmail, row.email),
+          packageOwnerCondition,
           eq(packageOrdersTable.status, "active"),
           sql`${packageOrdersTable.remainingCredits} > 0`,
         ))
@@ -441,7 +536,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     ? db
         .select()
         .from(packageOrdersTable)
-        .where(eq(packageOrdersTable.studentEmail, row.email))
+        .where(packageOwnerCondition)
         .orderBy(desc(packageOrdersTable.createdAt))
         .limit(5)
     : Promise.resolve([]);
@@ -455,7 +550,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     ? db
         .select({ id: packageOrdersTable.id })
         .from(packageOrdersTable)
-        .where(eq(packageOrdersTable.studentEmail, row.email))
+        .where(packageOwnerCondition)
         .then((orders) => {
           const orderIds = orders.map((o) => o.id);
           if (orderIds.length === 0) return [];
@@ -531,6 +626,9 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     id: b.id,
     bookingNumber: `#${b.id}`,
     classTitle: b.classTitle ?? null,
+    // Membership Engine (Phase 3) — explicit self/child clarity, not just an
+    // inferred name (matches resolveMemberIdentity's participantType shape).
+    participantType: (b.participantChildName ? "child" : "self") as "self" | "child",
     participantName: b.participantChildName ?? b.studentName,
     occurrenceDate: b.occurrenceDate ?? null,
     scheduleStartTime: b.scheduleStartTime ?? null,
@@ -617,6 +715,19 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     note: "Interim definition based on 3 currently-tracked fields (name, phone, account type). The full Profile Completion Engine (gender, birthday, city, nationality, how-did-you-know-us, dance interests) is a separate, not-yet-implemented phase.",
     fieldsNotYetCollected: ["gender", "dateOfBirth", "city", "nationality", "howDidYouKnowUs", "danceInterests"],
   };
+
+  // ---------------------------------------------------------------------
+  // Membership status — see computeMembershipStatus() for the rule order.
+  // ---------------------------------------------------------------------
+  const membershipStatus = computeMembershipStatus({
+    profileCompleted: row.profileCompleted,
+    joinedAt: row.joinedAt,
+    totalBookings: stats.totalBookings,
+    totalAttendance: stats.totalAttendance,
+    attendanceRate: stats.attendanceRate,
+    hasActivePackage: stats.activePackage != null,
+    lastActivity: stats.lastActivity,
+  });
 
   // ---------------------------------------------------------------------
   // Timeline — synthesized entirely from data already fetched above. No
@@ -734,6 +845,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
       howDidYouKnowUs: null,
     },
     completion,
+    membershipStatus,
     stats,
     children: permissions.canViewChildren
       ? children.map((c) => ({

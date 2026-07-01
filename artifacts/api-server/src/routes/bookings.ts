@@ -490,7 +490,17 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
       sql`(${bookingsTable.accountOwnerStudentId} = ${req.studentId!} OR lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(req.studentEmail!)})`
     );
   } else {
-    if (query.data.studentEmail) {
+    // Membership Engine (Phase 3): accept studentId alongside the existing
+    // studentEmail filter, matched on the indexed account_owner_student_id
+    // column (read directly off req.query — not part of the generated
+    // ListBookingsQueryParams schema).
+    const rawStudentId = req.query.studentId;
+    const studentId = typeof rawStudentId === "string" && /^\d+$/.test(rawStudentId) ? Number(rawStudentId) : undefined;
+    if (studentId != null && query.data.studentEmail) {
+      conditions.push(sql`(${bookingsTable.accountOwnerStudentId} = ${studentId} OR lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(query.data.studentEmail)})`);
+    } else if (studentId != null) {
+      conditions.push(eq(bookingsTable.accountOwnerStudentId, studentId));
+    } else if (query.data.studentEmail) {
       conditions.push(sql`lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(query.data.studentEmail)}`);
     }
   }

@@ -12,6 +12,7 @@ import {
   feedbackTable,
   instructorsTable,
   schedulesTable,
+  studentsTable,
 } from "@workspace/db";
 import { hasRolePermission } from "@workspace/api-zod";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
@@ -373,7 +374,26 @@ router.get("/feedback", blockStudentJwt, requireAdminAuth, requireAdminPermissio
   const conditions = [];
   if (query.data.rating != null) conditions.push(eq(feedbackTable.rating, query.data.rating));
   if (query.data.reviewStatus) conditions.push(eq(feedbackTable.reviewStatus, query.data.reviewStatus));
-  if (query.data.studentEmail) conditions.push(sql`lower(trim(${feedbackTable.studentEmailSnapshot})) = ${normalizeEmail(query.data.studentEmail)}`);
+  if (query.data.studentEmail) {
+    const normalizedEmail = normalizeEmail(query.data.studentEmail);
+    // Membership Engine (Phase 3): resolve email → studentId first so this
+    // hits the indexed feedback_student_id_received_at_idx path for current
+    // accounts, falling back to the (unindexed) email-snapshot match only
+    // for legacy rows that predate feedback.studentId being populated.
+    const [matchedStudent] = await db
+      .select({ id: studentsTable.id })
+      .from(studentsTable)
+      .where(sql`lower(trim(${studentsTable.email})) = ${normalizedEmail}`)
+      .limit(1);
+    conditions.push(
+      matchedStudent
+        ? or(
+            eq(feedbackTable.studentId, matchedStudent.id),
+            sql`lower(trim(${feedbackTable.studentEmailSnapshot})) = ${normalizedEmail}`,
+          )
+        : sql`lower(trim(${feedbackTable.studentEmailSnapshot})) = ${normalizedEmail}`,
+    );
+  }
   if (query.data.search) {
     const pattern = `%${query.data.search.toLowerCase()}%`;
     conditions.push(sql`(

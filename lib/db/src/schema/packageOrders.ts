@@ -1,12 +1,18 @@
 import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { studentsTable } from "./students";
 
 export const packageOrdersTable = pgTable("package_orders", {
   id: serial("id").primaryKey(),
   studentName: text("student_name").notNull(),
   studentEmail: text("student_email").notNull(),
   studentPhone: text("student_phone"),
+  // Membership Engine (Phase 3): the account-owner FK. Nullable — legacy rows
+  // and any row created before this column existed only have studentEmail.
+  // Read paths should match on `studentId = X OR normalized(studentEmail) = Y`
+  // (see resolveMemberIdentity / membershipIdentity.ts), never studentId alone.
+  studentId: integer("student_id").references(() => studentsTable.id, { onDelete: "set null" }),
   packageId: integer("package_id"),
   packageName: text("package_name").notNull(),
   totalCredits: integer("total_credits").notNull(),

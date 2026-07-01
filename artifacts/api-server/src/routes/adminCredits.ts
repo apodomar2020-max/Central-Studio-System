@@ -4,11 +4,11 @@
  * All routes require requireAdminAuth.
  *
  *   GET /api/admin/credits/ledger  — paginated list of credit_transactions
- *     query params: packageOrderId?, studentEmail?, page?, limit?
+ *     query params: packageOrderId?, studentEmail?, studentId?, page?, limit?
  */
 
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import * as zod from "zod";
 import { db, creditTransactionsTable, packageOrdersTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
@@ -29,6 +29,10 @@ router.get(
     }
 
     const { packageOrderId, studentEmail, page = 1, limit = 50 } = query.data;
+    // Membership Engine (Phase 3): read directly off req.query rather than
+    // extending the generated ListCreditTransactionsQueryParams schema.
+    const rawStudentId = req.query.studentId;
+    const studentId = typeof rawStudentId === "string" && /^\d+$/.test(rawStudentId) ? Number(rawStudentId) : undefined;
 
     // -----------------------------------------------------------------------
     // Resolve filter conditions
@@ -39,19 +43,34 @@ router.get(
       conditions.push(eq(creditTransactionsTable.packageOrderId, packageOrderId));
     }
 
-    // Resolve student email → matching package order IDs
-    if (studentEmail) {
+    // Resolve student id/email → matching package order IDs. Matching on
+    // package_orders.student_id (Phase 3, migration 0034) as well as email
+    // means this keeps working for rows created before that column existed
+    // (student_id null → falls through to the email match) and for rows
+    // backfilled since.
+    if (studentId != null || studentEmail) {
+      const orderConditions = [];
+      if (studentId != null) orderConditions.push(eq(packageOrdersTable.studentId, studentId));
+      if (studentEmail) orderConditions.push(sql`lower(trim(${packageOrdersTable.studentEmail})) = ${studentEmail.trim().toLowerCase()}`);
+
       const matchingOrders = await db
         .select({ id: packageOrdersTable.id })
         .from(packageOrdersTable)
-        .where(eq(packageOrdersTable.studentEmail, studentEmail));
+        .where(or(...orderConditions));
 
       const orderIds = matchingOrders.map((o) => o.id);
-      if (orderIds.length === 0) {
+      const ledgerConditions = [];
+      if (orderIds.length > 0) ledgerConditions.push(inArray(creditTransactionsTable.packageOrderId, orderIds));
+      // Some ledger rows (e.g. attendance deductions) already carry their
+      // own studentId directly — catch those too even if, for some reason,
+      // their package order didn't match above.
+      if (studentId != null) ledgerConditions.push(eq(creditTransactionsTable.studentId, studentId));
+
+      if (ledgerConditions.length === 0) {
         res.json({ data: [], total: 0, page, limit });
         return;
       }
-      conditions.push(inArray(creditTransactionsTable.packageOrderId, orderIds));
+      conditions.push(or(...ledgerConditions));
     }
 
     const offset = (page - 1) * limit;
