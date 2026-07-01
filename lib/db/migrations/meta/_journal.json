@@ -8,293 +8,264 @@
       "when": 1780894693548,
       "tag": "0000_dusty_aqueduct",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 1,
       "version": "7",
       "when": 1749455400000,
       "tag": "0001_add_student_password",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 2,
       "version": "7",
       "when": 1749628800000,
       "tag": "0002_package_updates",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 3,
       "version": "7",
       "when": 1749715200000,
       "tag": "0003_hero_items",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 4,
       "version": "7",
       "when": 1749801600000,
       "tag": "0004_instructor_extras",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 5,
       "version": "7",
       "when": 1749888000000,
       "tag": "0005_ensure_hero_items",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 6,
       "version": "7",
       "when": 1749974400000,
       "tag": "0006_email_otp",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 7,
       "version": "7",
       "when": 1750060800000,
       "tag": "0007_admin_role_access",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 8,
       "version": "7",
       "when": 1750147200000,
       "tag": "0008_qr_attendance",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 9,
       "version": "7",
       "when": 1750233600000,
       "tag": "0009_ballet_children",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 10,
       "version": "7",
       "when": 1750320000000,
       "tag": "0010_age_group",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 11,
       "version": "7",
       "when": 1750406400000,
       "tag": "0011_dance_types",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 12,
       "version": "7",
       "when": 1781697600000,
       "tag": "0012_class_pricing_settings",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 13,
       "version": "7",
       "when": 1781784000000,
       "tag": "0013_credit_ledger",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 14,
       "version": "7",
       "when": 1781870400000,
       "tag": "0014_app_content_pages",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 15,
       "version": "7",
       "when": 1781956800000,
       "tag": "0015_help_support_faq_contacts",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 16,
       "version": "7",
       "when": 1782043200000,
       "tag": "0016_schedule_package_eligibility",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 17,
       "version": "7",
       "when": 1782129600000,
       "tag": "0017_auth_providers",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 18,
       "version": "7",
       "when": 1782216000000,
       "tag": "0018_student_avatars",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 19,
       "version": "7",
       "when": 1782302400000,
       "tag": "0019_booking_payment_status_split",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 20,
       "version": "7",
       "when": 1782388800000,
       "tag": "0020_instagram_token",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 21,
       "version": "7",
       "when": 1782475200000,
       "tag": "0021_profile_completion",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 22,
       "version": "7",
       "when": 1782561600000,
       "tag": "0022_typed_notifications",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 23,
       "version": "7",
       "when": 1782648000000,
       "tag": "0023_booking_ownership_foundation",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 24,
       "version": "7",
       "when": 1782734400000,
       "tag": "0024_class_video_url",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 25,
       "version": "7",
       "when": 1782820800000,
       "tag": "0025_dance_styles_cms",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 26,
       "version": "7",
       "when": 1782907200000,
       "tag": "0026_hero_image_only",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 27,
       "version": "7",
       "when": 1782993600000,
       "tag": "0027_package_features",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 28,
       "version": "7",
       "when": 1783080000000,
       "tag": "0028_instructor_cms",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 29,
       "version": "7",
       "when": 1783166400000,
       "tag": "0029_schedule_status",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 30,
       "version": "7",
       "when": 1783252800000,
       "tag": "0030_booking_occurrence",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 31,
       "version": "7",
       "when": 1783339200000,
       "tag": "0031_backfill_package_expiry",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 32,
       "version": "7",
       "when": 1783425600000,
       "tag": "0032_performance_indexes",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 33,
       "version": "7",
       "when": 1783512000000,
       "tag": "0033_feedback_foundation",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 34,
       "version": "7",
       "when": 1783598400000,
       "tag": "0034_package_order_ownership",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 35,
       "version": "7",
       "when": 1783684800000,
       "tag": "0035_profile_completion_fields",
       "breakpoints": true
-    }
-  ,
+    },
     {
       "idx": 36,
       "version": "7",
       "when": 1783771200000,
       "tag": "0036_marketing_center_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1782915758903,
+      "tag": "0037_meta_template_sync",
       "breakpoints": true
     }
   ]

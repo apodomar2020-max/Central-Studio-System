@@ -3,12 +3,14 @@ import { customFetch } from "@workspace/api-client-react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Copy,
   Edit,
   Link as LinkIcon,
   Loader2,
   Megaphone,
   MessageSquare,
   PlugZap,
+  RefreshCw,
   Search,
   Send,
   Trash2,
@@ -27,11 +29,21 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 type MarketingTemplate = {
   id: number;
   name: string;
-  category: "utility" | "marketing";
+  category: string;
   language: string;
   body: string;
-  status: "draft" | "approved" | "archived";
+  status: string;
   variables?: string[] | null;
+  metaTemplateId?: string | null;
+  headerType?: string | null;
+  headerText?: string | null;
+  footer?: string | null;
+  buttons?: any[] | null;
+  rejectedReason?: string | null;
+  lastSyncedAt?: string | null;
+  archivedAt?: string | null;
+  rawMetaPayload?: any;
+  source?: "meta_cache" | "legacy_local";
   createdAt: string;
 };
 
@@ -142,8 +154,9 @@ type TemplateForm = {
   name: string;
   category: "utility" | "marketing";
   language: string;
-  status: "draft" | "approved" | "archived";
   body: string;
+  headerText: string;
+  footerText: string;
 };
 
 const STUDIO_CYAN = "#00B6D7";
@@ -165,9 +178,10 @@ const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 const emptyTemplateForm: TemplateForm = {
   name: "",
   category: "marketing",
-  language: "en",
-  status: "draft",
+  language: "en_US",
   body: "",
+  headerText: "",
+  footerText: "",
 };
 
 const emptyCampaignForm = {
@@ -229,6 +243,32 @@ function parseTemplateParameters(value: string): string[] {
     .filter(Boolean);
 }
 
+function getStatusBadge(status: string) {
+  const s = (status || "").toLowerCase();
+  if (s === "approved") {
+    return <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-medium">Approved</Badge>;
+  }
+  if (s === "pending") {
+    return <Badge className="bg-amber-500 hover:bg-amber-600 text-white font-medium">Pending Review</Badge>;
+  }
+  if (s === "rejected") {
+    return <Badge className="bg-destructive hover:bg-destructive text-white font-medium">Rejected</Badge>;
+  }
+  if (s === "paused") {
+    return <Badge className="bg-orange-400 hover:bg-orange-500 text-white font-medium">Paused</Badge>;
+  }
+  if (s === "disabled") {
+    return <Badge className="bg-rose-500 hover:bg-rose-600 text-white font-medium">Disabled</Badge>;
+  }
+  if (s === "archived") {
+    return <Badge variant="secondary" className="font-medium">Archived</Badge>;
+  }
+  if (s === "legacy_local_template") {
+    return <Badge variant="destructive" className="bg-amber-600 text-white font-medium">Legacy Unsynced</Badge>;
+  }
+  return <Badge variant="outline">{status}</Badge>;
+}
+
 export default function Marketing() {
   const { can } = useAdminAuth();
   const canCreate = can("marketing", "create");
@@ -257,6 +297,8 @@ export default function Marketing() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isRefreshingTemplateId, setIsRefreshingTemplateId] = useState<number | null>(null);
+  const [isSyncingMeta, setIsSyncingMeta] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isSendingCampaignId, setIsSendingCampaignId] = useState<number | null>(null);
   const [isRecipientsDialogOpen, setIsRecipientsDialogOpen] = useState(false);
@@ -291,6 +333,16 @@ export default function Marketing() {
     () => templates.find((template) => String(template.id) === campaignForm.templateId),
     [campaignForm.templateId, templates],
   );
+
+  const parsedVars = useMemo(() => {
+    const regex = /\{\{(\d+)\}\}/g;
+    const matches = new Set<string>();
+    let match;
+    while ((match = regex.exec(templateForm.body)) !== null) {
+      matches.add(`{{${match[1]}}}`);
+    }
+    return Array.from(matches).sort((a, b) => Number(a.replace(/[{}]/g, "")) - Number(b.replace(/[{}]/g, "")));
+  }, [templateForm.body]);
 
   const filteredRecipients = useMemo(() => {
     return recipients.filter((recipient) => {
@@ -563,12 +615,15 @@ export default function Marketing() {
   const saveTemplate = async () => {
     setIsSavingTemplate(true);
     try {
-      const body = { ...templateForm, variables: templateVariables(templateForm.body) };
-      if (editingTemplate) {
-        await customFetch(`/api/marketing/templates/${editingTemplate.id}`, { method: "PATCH", body: JSON.stringify(body) });
-      } else {
-        await customFetch("/api/marketing/templates", { method: "POST", body: JSON.stringify(body) });
-      }
+      const body = {
+        name: templateForm.name,
+        category: templateForm.category,
+        language: templateForm.language,
+        body: templateForm.body,
+        headerText: templateForm.headerText || null,
+        footerText: templateForm.footerText || null,
+      };
+      await customFetch("/api/marketing/templates", { method: "POST", body: JSON.stringify(body) });
       setTemplateOpen(false);
       setEditingTemplate(null);
       setTemplateForm(emptyTemplateForm);
@@ -582,9 +637,17 @@ export default function Marketing() {
   };
 
   const deleteTemplate = async (id: number) => {
-    if (!canDelete || !confirm("Are you sure you want to delete this template?")) return;
+    if (!canDelete || !confirm("Are you sure you want to delete this template? This will delete it from Meta (or archive it if in use).")) return;
     try {
-      await customFetch(`/api/marketing/templates/${id}`, { method: "DELETE" });
+      const response = await customFetch<{ success?: boolean; message?: string }>(`/api/marketing/templates/${id}`, { method: "DELETE" }).catch(async (e) => {
+        if (e.message?.includes("Unexpected end of JSON") || e.status === 204) {
+          return { success: true } as { success?: boolean; message?: string };
+        }
+        throw e;
+      });
+      if (response && response.message) {
+        alert(response.message);
+      }
       await loadData();
     } catch (err) {
       const error = err as Error & { data?: { error?: string } };
@@ -592,16 +655,44 @@ export default function Marketing() {
     }
   };
 
-  const openTemplateEdit = (template: MarketingTemplate) => {
-    setEditingTemplate(template);
+  const cloneTemplate = (template: MarketingTemplate) => {
+    setEditingTemplate(null);
     setTemplateForm({
-      name: template.name,
-      category: template.category,
+      name: `${template.name}_copy`,
+      category: template.category === "utility" || template.category === "marketing" ? template.category : "marketing",
       language: template.language,
-      status: template.status,
       body: template.body,
+      headerText: template.headerText ?? "",
+      footerText: template.footer ?? "",
     });
     setTemplateOpen(true);
+  };
+
+  const refreshTemplate = async (id: number) => {
+    setIsRefreshingTemplateId(id);
+    try {
+      await customFetch(`/api/marketing/templates/${id}/status`, { method: "GET" });
+      await loadData();
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      alert(error.data?.error ?? error.message ?? "Failed to refresh template status.");
+    } finally {
+      setIsRefreshingTemplateId(null);
+    }
+  };
+
+  const syncMetaTemplates = async () => {
+    setIsSyncingMeta(true);
+    try {
+      const result = await customFetch<{ added: number; updated: number; archived: number }>("/api/marketing/templates/sync", { method: "POST" });
+      alert(`Sync completed! Added: ${result.added}, Updated: ${result.updated}, Legacy/Deactivated: ${result.archived}`);
+      await loadData();
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      alert(error.data?.error ?? error.message ?? "Failed to sync templates from Meta.");
+    } finally {
+      setIsSyncingMeta(false);
+    }
   };
 
   const saveGroup = async () => {
@@ -807,34 +898,115 @@ export default function Marketing() {
           ))}
         </div>
       ) : activeTab === "templates" ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {templates.length === 0 ? (
-            <div className="md:col-span-2 xl:col-span-3"><EmptyState title="No templates yet" text="Add approved WhatsApp templates before preparing campaigns." /></div>
-          ) : templates.map((template) => (
-            <div key={template.id} className="rounded-xl border border-border bg-card p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-foreground">{template.name}</p>
-                  <p className="text-xs text-muted-foreground">{template.language} · {template.category}</p>
-                </div>
-                <Badge variant={template.status === "approved" ? "default" : "secondary"}>{template.status}</Badge>
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4">{template.body}</p>
-              <div className="flex gap-2 mt-4 items-center">
-                {canEdit && (
-                  <Button variant="outline" size="sm" onClick={() => openTemplateEdit(template)}>
-                    <Edit className="mr-2 h-3.5 w-3.5" />
-                    Edit Template
-                  </Button>
-                )}
-                {canDelete && (
-                  <Button variant="ghost" size="icon" onClick={() => deleteTemplate(template.id)} className="text-destructive hover:bg-destructive/10">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-border">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Template Library</h2>
+              <p className="text-xs text-muted-foreground">Manage templates synchronized with your Meta WhatsApp Business account.</p>
             </div>
-          ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={syncMetaTemplates}
+              disabled={isSyncingMeta}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isSyncingMeta ? "animate-spin" : ""}`} />
+              {isSyncingMeta ? "Syncing..." : "Sync From Meta"}
+            </Button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {templates.length === 0 ? (
+              <div className="md:col-span-2 xl:col-span-3">
+                <EmptyState title="No templates found" text="Click 'Sync From Meta' to pull templates, or create a new template to register it on Meta." />
+              </div>
+            ) : templates.map((template) => {
+              const statusLower = (template.status || "").toLowerCase();
+              const isApproved = statusLower === "approved";
+              const isRejected = statusLower === "rejected";
+              const isLegacy = statusLower === "legacy_local_template";
+
+              return (
+                <div key={template.id} className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground truncate" title={template.name}>{template.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{template.language} · {template.category}</p>
+                      </div>
+                      {getStatusBadge(template.status)}
+                    </div>
+
+                    {template.headerText && (
+                      <div className="mt-3 bg-muted/40 rounded p-2 border border-border/40 text-xs">
+                        <span className="font-semibold text-foreground block text-[10px] uppercase tracking-wider mb-0.5">Header (Text)</span>
+                        <p className="text-muted-foreground line-clamp-1">{template.headerText}</p>
+                      </div>
+                    )}
+
+                    <div className="mt-3 bg-muted/60 rounded-lg p-3 border border-border">
+                      <span className="font-semibold text-foreground block text-[10px] uppercase tracking-wider mb-1">Body Text</span>
+                      <p className="text-sm text-foreground whitespace-pre-wrap line-clamp-4">{template.body}</p>
+                    </div>
+
+                    {template.footer && (
+                      <div className="mt-2 text-xs text-muted-foreground italic px-1">
+                        {template.footer}
+                      </div>
+                    )}
+
+                    {isRejected && template.rejectedReason && (
+                      <div className="mt-3 rounded bg-destructive/10 p-2.5 border border-destructive/20 text-xs text-destructive flex gap-2">
+                        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-semibold block">Meta Rejection Reason</span>
+                          <p>{template.rejectedReason}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {isLegacy && (
+                      <div className="mt-3 rounded bg-amber-500/10 p-2.5 border border-amber-500/20 text-xs text-amber-600 flex gap-2">
+                        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-semibold block">Legacy Local Template</span>
+                          <p>Cannot be sent. Please create/clone this template to sync it to Meta.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 mt-4 items-center justify-between border-t pt-3 border-border/50">
+                    <div className="flex gap-2">
+                      {(isApproved || isRejected || isLegacy) && (
+                        <Button variant="outline" size="sm" onClick={() => cloneTemplate(template)}>
+                          <Copy className="mr-2 h-3.5 w-3.5" />
+                          Clone Template
+                        </Button>
+                      )}
+                      {!isApproved && !isRejected && !isLegacy && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isRefreshingTemplateId === template.id}
+                          onClick={() => refreshTemplate(template.id)}
+                        >
+                          <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isRefreshingTemplateId === template.id ? "animate-spin" : ""}`} />
+                          Refresh Status
+                        </Button>
+                      )}
+                    </div>
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" onClick={() => deleteTemplate(template.id)} className="text-destructive hover:bg-destructive/10">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : activeTab === "groups" ? (
         <div className="space-y-3">
@@ -994,14 +1166,51 @@ export default function Marketing() {
                   <SelectTrigger><SelectValue placeholder="Choose template" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No template selected</SelectItem>
-                    {templates.map((template) => (
-                      <SelectItem key={template.id} value={String(template.id)}>{template.name} · {template.status}</SelectItem>
-                    ))}
+                    {templates.map((template) => {
+                      const isSelectable = template.status === "approved" && !!template.metaTemplateId;
+                      return (
+                        <SelectItem key={template.id} value={String(template.id)} disabled={!isSelectable}>
+                          {template.name} ({template.language}) {!isSelectable ? `· [${template.status}]` : ""}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
+                {selectedTemplate && (selectedTemplate.status !== "approved" || !selectedTemplate.metaTemplateId) && (
+                  <div className="mt-2 rounded-lg bg-destructive/15 border border-destructive/20 p-2.5 text-xs text-destructive flex gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">Unapproved Template Selected</p>
+                      <p>This template is not approved on Meta or is a legacy template. You cannot send campaigns using this template.</p>
+                    </div>
+                  </div>
+                )}
+                {selectedTemplate && selectedTemplate.status === "approved" && (
+                  <div className="mt-1.5 flex flex-col gap-1 text-[11px] text-muted-foreground bg-muted/40 p-2 rounded border border-border/40">
+                    <p><span className="font-semibold">Meta Template ID:</span> {selectedTemplate.metaTemplateId}</p>
+                    <p><span className="font-semibold">Language:</span> {selectedTemplate.language} · <span className="font-semibold">Category:</span> {selectedTemplate.category}</p>
+                    {selectedTemplate.variables && selectedTemplate.variables.length > 0 && (
+                      <p>
+                        <span className="font-semibold">Variables required:</span>{" "}
+                        {selectedTemplate.variables.map((v) => `{{${v}}}`).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                )}
               </Field>
               <Field label="Message Body">
-                <Textarea rows={6} value={campaignForm.message} onChange={(e) => setCampaignForm((form) => ({ ...form, message: e.target.value }))} placeholder="Template body with {{name}} variables" />
+                <Textarea
+                  rows={6}
+                  value={campaignForm.message}
+                  onChange={(e) => setCampaignForm((form) => ({ ...form, message: e.target.value }))}
+                  disabled={!!campaignForm.templateId}
+                  placeholder="Template body text will be prefilled automatically"
+                />
+                {campaignForm.templateId && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Message body is loaded from the approved Meta template and cannot be edited.
+                  </p>
+                )}
               </Field>
               <Field label="Audience">
                 <Select value={campaignForm.audienceType} onValueChange={(value) => setCampaignForm((form) => ({ ...form, audienceType: value as AudienceType }))}>
@@ -1156,11 +1365,28 @@ export default function Marketing() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCampaignOpen(false)}>Close</Button>
-            <Button onClick={saveCampaign} disabled={isSavingCampaign || !campaignForm.title || !campaignForm.message}>
+            <Button
+              onClick={saveCampaign}
+              disabled={
+                isSavingCampaign ||
+                !campaignForm.title ||
+                !campaignForm.message ||
+                (selectedTemplate && (selectedTemplate.status !== "approved" || !selectedTemplate.metaTemplateId))
+              }
+            >
               {isSavingCampaign ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Save Draft
             </Button>
-            <Button onClick={prepareCampaign} disabled={!canSend || isPreparing || !editingCampaign || !preview}>
+            <Button
+              onClick={prepareCampaign}
+              disabled={
+                !canSend ||
+                isPreparing ||
+                !editingCampaign ||
+                !preview ||
+                (selectedTemplate && (selectedTemplate.status !== "approved" || !selectedTemplate.metaTemplateId))
+              }
+            >
               {isPreparing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
               Prepare Campaign
             </Button>
@@ -1174,37 +1400,82 @@ export default function Marketing() {
 
       <Dialog open={templateOpen} onOpenChange={setTemplateOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{editingTemplate ? "Edit Template" : "New WhatsApp Template"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Submit Template to Meta</DialogTitle>
+          </DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Template Name">
-              <Input value={templateForm.name} onChange={(e) => setTemplateForm((form) => ({ ...form, name: e.target.value }))} />
-              <span className="text-[10px] text-muted-foreground block mt-0.5">Must exactly match an approved Meta template name.</span>
+              <Input
+                value={templateForm.name}
+                placeholder="e.g. summer_session_invite"
+                onChange={(e) => setTemplateForm((form) => ({ ...form, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "") }))}
+              />
+              <span className="text-[10px] text-muted-foreground block mt-0.5">
+                Lowercase alphanumeric and underscores only.
+              </span>
             </Field>
             <Field label="Language">
-              <Input value={templateForm.language} onChange={(e) => setTemplateForm((form) => ({ ...form, language: e.target.value }))} />
-              <span className="text-[10px] text-muted-foreground block mt-0.5">Must exactly match approved Meta language code (e.g. 'en_US' or 'ar').</span>
+              <Select value={templateForm.language} onValueChange={(value) => setTemplateForm((form) => ({ ...form, language: value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en_US">English (US) · en_US</SelectItem>
+                  <SelectItem value="ar">Arabic · ar</SelectItem>
+                  <SelectItem value="es">Spanish · es</SelectItem>
+                  <SelectItem value="fr">French · fr</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-[10px] text-muted-foreground block mt-0.5">
+                Choose the template translation language.
+              </span>
             </Field>
             <Field label="Category">
               <Select value={templateForm.category} onValueChange={(value) => setTemplateForm((form) => ({ ...form, category: value as "utility" | "marketing" }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="utility">Utility</SelectItem><SelectItem value="marketing">Marketing</SelectItem></SelectContent>
+                <SelectContent>
+                  <SelectItem value="marketing">Marketing</SelectItem>
+                  <SelectItem value="utility">Utility</SelectItem>
+                </SelectContent>
               </Select>
             </Field>
-            <Field label="Status">
-              <Select value={templateForm.status} onValueChange={(value) => setTemplateForm((form) => ({ ...form, status: value as "draft" | "approved" | "archived" }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent>
-              </Select>
+            <Field label="Header Text (Optional)">
+              <Input
+                value={templateForm.headerText}
+                placeholder="e.g. Central Studio"
+                onChange={(e) => setTemplateForm((form) => ({ ...form, headerText: e.target.value }))}
+              />
             </Field>
           </div>
-          <Field label="Body">
-            <Textarea rows={7} value={templateForm.body} onChange={(e) => setTemplateForm((form) => ({ ...form, body: e.target.value }))} placeholder="Hi {{name}}, your class starts soon..." />
+          <Field label="Body Text (Required)">
+            <Textarea
+              rows={5}
+              value={templateForm.body}
+              onChange={(e) => setTemplateForm((form) => ({ ...form, body: e.target.value }))}
+              placeholder="e.g. Hi {{1}}, your booking for {{2}} is confirmed!"
+            />
+            {parsedVars.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5 items-center">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Detected Variables:</span>
+                {parsedVars.map((v) => (
+                  <Badge key={v} variant="outline" className="text-[10px] py-0 px-1.5 font-mono bg-muted">{v}</Badge>
+                ))}
+              </div>
+            )}
+            <span className="text-[10px] text-muted-foreground block mt-1">
+              Use numbered variables like <code>{"{{1}}"}</code>, <code>{"{{2}}"}</code>. Text templates must match Meta formatting rules.
+            </span>
+          </Field>
+          <Field label="Footer Text (Optional)">
+            <Input
+              value={templateForm.footerText}
+              placeholder="e.g. Reply STOP to opt out"
+              onChange={(e) => setTemplateForm((form) => ({ ...form, footerText: e.target.value }))}
+            />
           </Field>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTemplateOpen(false)}>Cancel</Button>
             <Button onClick={saveTemplate} disabled={isSavingTemplate || !templateForm.name || !templateForm.body}>
               {isSavingTemplate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Save Template
+              Submit to Meta
             </Button>
           </DialogFooter>
         </DialogContent>

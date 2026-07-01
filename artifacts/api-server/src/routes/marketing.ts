@@ -25,6 +25,13 @@ import {
   type WhatsAppTemplateParameter,
 } from "../lib/whatsappCloud";
 import {
+  syncMetaTemplatesToLocal,
+  createMetaTemplate,
+  refreshTemplateStatus,
+  normalizeStatus,
+  getMetaTemplatesConfig
+} from "../lib/whatsappTemplates";
+import {
   DeleteCampaignParams,
   GetCampaignParams,
   SendCampaignResponse,
@@ -57,13 +64,14 @@ const CampaignBody = z.object({
 
 const UpdateCampaignBody = CampaignBody.partial();
 
-const TemplateBody = z.object({
+const CreateTemplateBody = z.object({
   name: z.string().min(1),
   category: z.enum(["utility", "marketing"]).default("marketing"),
   language: z.string().min(2).default("en"),
   body: z.string().min(1),
-  status: z.enum(["draft", "approved", "archived"]).default("draft"),
-  variables: z.array(z.string()).nullish(),
+  headerText: z.string().nullish(),
+  footerText: z.string().nullish(),
+  buttons: z.array(z.any()).nullish(),
 });
 
 const ClassGroupBody = z.object({
@@ -334,17 +342,33 @@ router.post("/marketing/whatsapp/test-send", requireAdminAuth, requireAdminPermi
 
 router.get("/marketing/templates", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
   const rows = await db.select().from(marketingTemplatesTable).orderBy(desc(marketingTemplatesTable.createdAt));
-  res.json(rows);
+  const result = rows.map((row) => ({
+    ...row,
+    source: row.metaTemplateId ? "meta_cache" : "legacy_local",
+  }));
+  res.json(result);
+});
+
+router.post("/marketing/templates/sync", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
+  try {
+    const summary = await syncMetaTemplatesToLocal();
+    res.json(summary);
+  } catch (err) {
+    console.error("Sync templates error:", err);
+    res.status(err instanceof Error && "statusCode" in err ? (err as any).statusCode : 500).json({
+      error: err instanceof Error ? err.message : "Failed to sync templates from Meta.",
+    });
+  }
 });
 
 router.post("/marketing/templates", requireAdminAuth, requireAdminPermission("marketing", "create"), async (req, res): Promise<void> => {
-  const parsed = TemplateBody.safeParse(req.body);
+  const parsed = CreateTemplateBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  // Duplicate guard: check if a template with the same name and language code already exists
+  // Duplicate check
   const existing = await db
     .select()
     .from(marketingTemplatesTable)
@@ -359,23 +383,73 @@ router.post("/marketing/templates", requireAdminAuth, requireAdminPermission("ma
     return;
   }
 
-  const [row] = await db.insert(marketingTemplatesTable).values(parsed.data).returning();
-  res.status(201).json(row);
+  try {
+    // 1. Submit template to Meta first
+    const metaResponse = await createMetaTemplate({
+      name: parsed.data.name,
+      language: parsed.data.language,
+      category: parsed.data.category,
+      bodyText: parsed.data.body,
+      headerText: parsed.data.headerText ?? undefined,
+      footerText: parsed.data.footerText ?? undefined,
+      buttons: parsed.data.buttons ?? undefined,
+    });
+
+    // 2. Normalize and insert locally
+    const status = normalizeStatus(metaResponse.status);
+    // Extract variables
+    const regex = /\{\{(\d+)\}\}/g;
+    const matches = new Set<string>();
+    let match;
+    while ((match = regex.exec(parsed.data.body)) !== null) {
+      matches.add(match[1]);
+    }
+    const variables = Array.from(matches).sort((a, b) => Number(a) - Number(b));
+
+    const [row] = await db.insert(marketingTemplatesTable).values({
+      metaTemplateId: metaResponse.id,
+      name: parsed.data.name.trim().toLowerCase(),
+      category: parsed.data.category,
+      language: parsed.data.language,
+      body: parsed.data.body,
+      status,
+      headerType: parsed.data.headerText ? "TEXT" : "NONE",
+      headerText: parsed.data.headerText ?? null,
+      footer: parsed.data.footerText ?? null,
+      buttons: parsed.data.buttons ?? null,
+      variables,
+      rawMetaPayload: metaResponse,
+    }).returning();
+
+    res.status(201).json(row);
+  } catch (err) {
+    console.error("Create template error:", err);
+    res.status(err instanceof Error && "statusCode" in err ? (err as any).statusCode : 500).json({
+      error: err instanceof Error ? err.message : "Failed to create template on Meta.",
+    });
+  }
 });
 
-router.patch("/marketing/templates/:id", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
+router.get("/marketing/templates/:id/status", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
   const id = Number(req.params.id);
-  const parsed = TemplateBody.partial().safeParse(req.body);
-  if (!Number.isFinite(id) || !parsed.success) {
-    res.status(400).json({ error: !parsed.success ? parsed.error.message : "Invalid template id" });
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid template id" });
     return;
   }
-  const [row] = await db.update(marketingTemplatesTable).set(parsed.data).where(eq(marketingTemplatesTable.id, id)).returning();
-  if (!row) {
-    res.status(404).json({ error: "Template not found" });
-    return;
+
+  try {
+    await refreshTemplateStatus(id);
+    const [updated] = await db
+      .select()
+      .from(marketingTemplatesTable)
+      .where(eq(marketingTemplatesTable.id, id));
+    res.json(updated);
+  } catch (err) {
+    console.error("Refresh template status error:", err);
+    res.status(err instanceof Error && "statusCode" in err ? (err as any).statusCode : 500).json({
+      error: err instanceof Error ? err.message : "Failed to refresh template status.",
+    });
   }
-  res.json(row);
 });
 
 router.get("/marketing/audience/search", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
@@ -673,8 +747,8 @@ router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermi
     return;
   }
 
-  if (template.status !== "approved") {
-    res.status(400).json({ error: "Campaign template must be approved to send." });
+  if (template.status !== "approved" || !template.metaTemplateId) {
+    res.status(400).json({ error: "Campaign template must be synced and approved on Meta to send." });
     return;
   }
 
