@@ -496,14 +496,17 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
       : Promise.resolve([]);
 
   // ---------------------------------------------------------------------
-  // Bookings — total count (excluding cancelled/rejected, matching the
-  // Students list page's own totalBookings definition) + recent 10
+  // Bookings — historical account total + recent 10.
+  //
+  // User 360 should reflect the same booking universe the mobile app shows:
+  // every booking record owned by the account, including cancelled/rejected
+  // rows that remain part of the user's booking history.
   // ---------------------------------------------------------------------
   const totalBookingsPromise = permissions.canViewBookings
     ? db
         .select({ total: sql<number>`count(*)::int` })
         .from(bookingsTable)
-        .where(sql`${ownerCondition} AND lower(trim(${bookingsTable.bookingStatus})) not in ('cancelled', 'rejected')`)
+        .where(ownerCondition)
         .then((r) => Number(r[0]?.total ?? 0))
     : Promise.resolve(0);
 
