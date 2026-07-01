@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit } from "lucide-react";
+import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
@@ -172,13 +173,13 @@ export default function Students() {
               students.map((student) => (
                 <TableRow key={student.id} data-testid={`row-student-${student.id}`}>
                   <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
+                    <Link href={`/students/${student.id}`} className="hover:underline flex items-center gap-2">
                       <Avatar className="h-7 w-7">
                         {student.avatarUrl ? <AvatarImage src={student.avatarUrl} alt={student.name} /> : null}
                         <AvatarFallback>{student.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <span>{student.name}</span>
-                    </div>
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <div>{student.email}</div>

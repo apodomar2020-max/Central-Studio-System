@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListAttendance,
@@ -79,6 +80,18 @@ export default function AttendancePage() {
   const [period, setPeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
   const [successMsg, setSuccessMsg] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const urlSearch = useSearch();
+
+  // Deep-link support: /attendance?studentEmail=x@y.com pre-fills the search
+  // (used by the "View Attendance History" link on the admin 360 profile page).
+  useEffect(() => {
+    const email = new URLSearchParams(urlSearch).get("studentEmail");
+    if (email) {
+      setEmailInput(email);
+      setSearchEmail(email.trim().toLowerCase());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const attendanceParams = {
     ...(searchEmail ? { studentEmail: searchEmail } : {}),

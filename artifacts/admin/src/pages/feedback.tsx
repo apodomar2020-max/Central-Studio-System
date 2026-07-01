@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { Eye, MessageSquareText, Search, Star } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,14 +77,24 @@ export default function FeedbackPage() {
   const [search, setSearch] = useState("");
   const [rating, setRating] = useState("all");
   const [reviewStatus, setReviewStatus] = useState("all");
+  const urlSearch = useSearch();
+  // Deep-link support: /feedback?studentEmail=x@y.com pre-filters to one
+  // student (used by the "View all feedback" link on the admin 360 profile page).
+  const [studentEmailFilter, setStudentEmailFilter] = useState<string | null>(null);
+  useEffect(() => {
+    const email = new URLSearchParams(urlSearch).get("studentEmail");
+    if (email) setStudentEmailFilter(email);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const query = useQuery({
-    queryKey: ["feedback", page, search, rating, reviewStatus],
+    queryKey: ["feedback", page, search, rating, reviewStatus, studentEmailFilter],
     queryFn: async (): Promise<FeedbackListResponse> => {
       const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
       if (search.trim()) params.set("search", search.trim());
       if (rating !== "all") params.set("rating", rating);
       if (reviewStatus !== "all") params.set("reviewStatus", reviewStatus);
+      if (studentEmailFilter) params.set("studentEmail", studentEmailFilter);
 
       const res = await fetch(`${API_BASE}/api/feedback?${params.toString()}`, {
         headers: makeHeaders(token),
@@ -107,6 +117,14 @@ export default function FeedbackPage() {
         description="Internal class feedback for Central Studio quality review."
         mode="studio"
       />
+
+      {studentEmailFilter && (
+        <div className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm">
+          <span className="text-muted-foreground">Filtered to</span>
+          <Badge variant="secondary">{studentEmailFilter}</Badge>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setStudentEmailFilter(null)}>Clear</Button>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-4">

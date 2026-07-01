@@ -19,7 +19,7 @@ import Packages from "@/pages/packages";
 import Bookings from "@/pages/bookings";
 import Students from "@/pages/students";
 import ParentsPage from "@/pages/parents";
-import ParentDetailPage from "@/pages/parent-detail";
+import StudentDetailPage from "@/pages/student-detail";
 import ChildDetailPage from "@/pages/child-detail";
 import Offers from "@/pages/offers";
 import Notifications from "@/pages/notifications";
@@ -80,6 +80,11 @@ const ROUTE_PERMS = {
   bookings: [["bookings", "view"]],
   students: [["students", "view"]],
   parents: [["parents", "view"]],
+  // Shared guard for the 360 profile page — reachable from either the
+  // Students or Parents list, so any one of these permissions is enough
+  // (the backend overview endpoint enforces the same users/students/parents
+  // "any of" check per-record).
+  studentDetail: [["students", "view"], ["parents", "view"], ["users", "view"]],
   childDetails: [["children", "view"], ["parents", "view"]],
   offers: [["offers", "view"]],
   notifications: [["notifications", "view"]],
@@ -118,8 +123,9 @@ function ProtectedRouter() {
         <Route path="/packages">{guarded(ROUTE_PERMS.packages, <Packages />)}</Route>
         <Route path="/bookings">{guarded(ROUTE_PERMS.bookings, <Bookings />)}</Route>
         <Route path="/students">{guarded(ROUTE_PERMS.students, <Students />)}</Route>
+        <Route path="/students/:id">{guarded(ROUTE_PERMS.studentDetail, <StudentDetailPage />)}</Route>
         <Route path="/parents">{guarded(ROUTE_PERMS.parents, <ParentsPage />)}</Route>
-        <Route path="/parents/:id">{guarded(ROUTE_PERMS.parents, <ParentDetailPage />)}</Route>
+        <Route path="/parents/:id">{guarded(ROUTE_PERMS.studentDetail, <StudentDetailPage />)}</Route>
         <Route path="/parents/:parentId/children/:childId">{guarded(ROUTE_PERMS.childDetails, <ChildDetailPage />, "all")}</Route>
         <Route path="/offers">{guarded(ROUTE_PERMS.offers, <Offers />)}</Route>
         <Route path="/notifications">{guarded(ROUTE_PERMS.notifications, <Notifications />)}</Route>

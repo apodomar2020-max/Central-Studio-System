@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CalendarDays, Check, Clock3, CreditCard, Edit, PersonStanding, UserRound, X } from "lucide-react";
 import { Link } from "wouter";
@@ -139,12 +141,22 @@ export default function Bookings() {
   const [scopeFilter, setScopeFilter] = useState<(typeof SCOPE_FILTERS)[number]>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const urlSearch = useSearch();
+  // Deep-link support: /bookings?studentEmail=x@y.com pre-filters to one
+  // student (used by the "View all bookings" link on the admin 360 profile page).
+  const [studentEmailFilter, setStudentEmailFilter] = useState<string | null>(null);
+  useEffect(() => {
+    const email = new URLSearchParams(urlSearch).get("studentEmail");
+    if (email) setStudentEmailFilter(email);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const listParams = {
     page,
     pageSize: PAGE_SIZE,
     ...(activeFilter !== "all" ? { bookingStatus: activeFilter } : {}),
     ...(scopeFilter !== "all" ? { scope: scopeFilter } : {}),
     ...(search.trim() ? { search: search.trim() } : {}),
+    ...(studentEmailFilter ? { studentEmail: studentEmailFilter } : {}),
   };
   const { data: bookingsResponse, isLoading } = useListBookings(listParams);
   const bookings = (bookingsResponse?.bookings ?? []) as Booking[];
@@ -245,6 +257,14 @@ export default function Bookings() {
   return (
     <div className="space-y-6">
       <PageHeader title="Bookings" description="Manage class bookings" mode="studio" addLabel="Add Booking" addTestId="button-add-booking" onAdd={canCreate ? openCreate : undefined} />
+
+      {studentEmailFilter && (
+        <div className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm">
+          <span className="text-muted-foreground">Filtered to</span>
+          <Badge variant="secondary">{studentEmailFilter}</Badge>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setStudentEmailFilter(null)}>Clear</Button>
+        </div>
+      )}
 
       <div className="space-y-3">
         <Input
