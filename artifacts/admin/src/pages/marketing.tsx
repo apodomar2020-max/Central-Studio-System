@@ -147,13 +147,13 @@ export default function Marketing() {
           { label: "Sent", value: sentCampaigns.length, color: "#22C55E", icon: CheckCircle2 },
           { label: "Total Reach", value: totalReach.toLocaleString(), color: STUDIO_CYAN, icon: Users },
         ].map((s) => (
-          <div key={s.label} className="rounded-xl border p-4 flex items-center gap-3" style={{ background: "hsl(196 28% 8%)", borderColor: "hsl(203 30% 14%)" }}>
+          <div key={s.label} className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0" style={{ background: `${s.color}18` }}>
               <s.icon className="h-4 w-4" style={{ color: s.color }} />
             </div>
             <div>
-              <p className="text-xl font-bold text-white">{s.value}</p>
-              <p className="text-xs" style={{ color: "#8A9AB0" }}>{s.label}</p>
+              <p className="text-xl font-bold text-foreground">{s.value}</p>
+              <p className="text-xs text-muted-foreground">{s.label}</p>
             </div>
           </div>
         ))}
@@ -163,14 +163,14 @@ export default function Marketing() {
       {isLoading ? (
         <div className="space-y-3">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="rounded-xl border p-4 h-20 animate-pulse" style={{ background: "hsl(196 28% 8%)", borderColor: "hsl(203 30% 14%)" }} />
+            <div key={i} className="rounded-xl border border-border bg-card p-4 h-20 animate-pulse" />
           ))}
         </div>
       ) : campaigns?.length === 0 ? (
-        <div className="rounded-xl border p-12 text-center" style={{ background: "hsl(196 28% 8%)", borderColor: "hsl(203 30% 14%)" }}>
+        <div className="rounded-xl border border-border bg-card p-12 text-center">
           <Megaphone className="h-10 w-10 mx-auto mb-3 opacity-20" style={{ color: STUDIO_CYAN }} />
-          <p className="text-sm font-medium text-white">No campaigns yet</p>
-          <p className="text-xs mt-1" style={{ color: "#8A9AB0" }}>Create your first WhatsApp or email campaign</p>
+          <p className="text-sm font-medium text-foreground">No campaigns yet</p>
+          <p className="text-xs mt-1 text-muted-foreground">Create your first WhatsApp or email campaign</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -180,8 +180,7 @@ export default function Marketing() {
               <div
                 key={campaign.id}
                 data-testid={`card-campaign-${campaign.id}`}
-                className="rounded-xl border p-4 flex items-start gap-4 group transition-all"
-                style={{ background: "hsl(196 28% 8%)", borderColor: "hsl(203 30% 14%)" }}
+                className="rounded-xl border border-border bg-card p-4 flex items-start gap-4 group transition-all"
               >
                 {/* Type icon */}
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg flex-shrink-0" style={{ background: `${tb.color}18` }}>
@@ -192,9 +191,9 @@ export default function Marketing() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-semibold text-white truncate">{campaign.title}</p>
-                      {campaign.subject && <p className="text-xs mt-0.5 truncate" style={{ color: "#8A9AB0" }}>{campaign.subject}</p>}
-                      <p className="text-xs mt-1 line-clamp-2" style={{ color: "#4E6070" }}>{campaign.message}</p>
+                      <p className="font-semibold text-foreground truncate">{campaign.title}</p>
+                      {campaign.subject && <p className="text-xs mt-0.5 truncate text-muted-foreground">{campaign.subject}</p>}
+                      <p className="text-xs mt-1 line-clamp-2 text-muted-foreground/70">{campaign.message}</p>
                     </div>
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
                       <Badge variant={campaign.status === "sent" ? "default" : "secondary"} className="text-[10px]">
@@ -204,16 +203,16 @@ export default function Marketing() {
                   </div>
 
                   <div className="flex items-center gap-4 mt-2">
-                    <div className="flex items-center gap-1 text-xs" style={{ color: "#8A9AB0" }}>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Users className="h-3 w-3" />
                       <span>{audienceLabel[campaign.targetAudience] ?? campaign.targetAudience}</span>
                     </div>
                     {campaign.status === "sent" ? (
                       <span className="text-xs" style={{ color: "#22C55E" }}>✓ Sent to {campaign.sentCount} recipients</span>
                     ) : (
-                      <span className="text-xs" style={{ color: "#8A9AB0" }}>{campaign.recipientCount} recipients</span>
+                      <span className="text-xs text-muted-foreground">{campaign.recipientCount} recipients</span>
                     )}
-                    <span className="text-xs" style={{ color: "#344A5A" }}>{tb.label}</span>
+                    <span className="text-xs text-muted-foreground/60">{tb.label}</span>
                   </div>
                 </div>
 
@@ -340,22 +339,22 @@ export default function Marketing() {
           </DialogHeader>
           {previewCampaign && (
             <div className="space-y-4">
-              <div className="rounded-lg border p-4 space-y-2" style={{ background: "hsl(196 28% 8%)", borderColor: "hsl(203 30% 14%)" }}>
+              <div className="rounded-lg border border-border bg-card p-4 space-y-2">
                 {previewCampaign.type === "email" ? (
                   <div className="flex items-center gap-2 mb-3">
                     <Mail className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
-                    <span className="text-sm font-medium text-white">Email Preview</span>
+                    <span className="text-sm font-medium text-foreground">Email Preview</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 mb-3">
                     <MessageSquare className="h-4 w-4" style={{ color: "#25D366" }} />
-                    <span className="text-sm font-medium text-white">WhatsApp Preview</span>
+                    <span className="text-sm font-medium text-foreground">WhatsApp Preview</span>
                   </div>
                 )}
                 {previewCampaign.subject && (
-                  <p className="text-xs font-semibold" style={{ color: "#8A9AB0" }}>Subject: {previewCampaign.subject}</p>
+                  <p className="text-xs font-semibold text-muted-foreground">Subject: {previewCampaign.subject}</p>
                 )}
-                <p className="text-sm text-white whitespace-pre-wrap">{previewCampaign.message}</p>
+                <p className="text-sm text-foreground whitespace-pre-wrap">{previewCampaign.message}</p>
               </div>
 
               <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "#22C55E18", border: "1px solid #22C55E30" }}>

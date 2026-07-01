@@ -46,8 +46,8 @@ export function PageHeader({
             </span>
           </div>
         )}
-        <h1 className="text-2xl font-bold tracking-tight text-white">{title}</h1>
-        <p className="mt-0.5 text-sm" style={{ color: "#8A9AB0" }}>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">
           {description}
         </p>
       </div>

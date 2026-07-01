@@ -33,11 +33,11 @@ const TX_TYPE_LABELS: Record<string, { label: string; color: string }> = {
 
 const STUDIO_CYAN = "#00B6D7";
 const AMBER = "#F59E0B";
-const BG_CARD = "hsl(203 28% 10%)";
-const BG_ROW = "hsl(203 30% 12%)";
-const BORDER = "hsl(203 30% 16%)";
-const MUTED = "#8A9AB0";
-const MUTED_DARK = "#4E6070";
+const BG_CARD = "hsl(var(--card))";
+const BG_ROW = "hsl(var(--muted))";
+const BORDER = "hsl(var(--border))";
+const MUTED = "hsl(var(--muted-foreground))";
+const MUTED_DARK = "hsl(var(--muted-foreground) / 0.68)";
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
 
@@ -136,7 +136,7 @@ function AdjustCreditsDialog({
             <Coins className="h-5 w-5" style={{ color: STUDIO_CYAN }} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">Adjust Credits</h2>
+            <h2 className="text-lg font-bold text-foreground">Adjust Credits</h2>
             <p className="text-xs" style={{ color: MUTED }}>{order.studentName} · {order.packageName}</p>
           </div>
         </div>
@@ -190,14 +190,14 @@ function AdjustCreditsDialog({
                 className="flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0"
                 style={{ background: BG_ROW, border: `1px solid ${BORDER}` }}
               >
-                <Minus className="h-3.5 w-3.5 text-white" />
+                <Minus className="h-3.5 w-3.5 text-foreground" />
               </button>
               <input
                 type="number"
                 value={rawDelta}
                 onChange={(e) => setRawDelta(e.target.value)}
                 placeholder="e.g. +5 or -2"
-                className="flex-1 rounded-xl px-3 py-2 text-sm text-center text-white"
+                className="flex-1 rounded-xl px-3 py-2 text-sm text-center text-foreground"
                 style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
               />
               <button
@@ -205,7 +205,7 @@ function AdjustCreditsDialog({
                 className="flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0"
                 style={{ background: BG_ROW, border: `1px solid ${BORDER}` }}
               >
-                <Plus className="h-3.5 w-3.5 text-white" />
+                <Plus className="h-3.5 w-3.5 text-foreground" />
               </button>
             </div>
             {isValidDelta && !balanceSafe && (
@@ -223,7 +223,7 @@ function AdjustCreditsDialog({
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Reason for adjustment..."
               rows={2}
-              className="w-full rounded-xl px-3 py-2.5 text-sm text-white resize-none"
+              className="w-full rounded-xl px-3 py-2.5 text-sm text-foreground resize-none"
               style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
             />
           </div>
@@ -241,7 +241,7 @@ function AdjustCreditsDialog({
             onClick={handleSubmit}
             disabled={isPending || !isValidDelta || !balanceSafe}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-40"
-            style={{ background: STUDIO_CYAN, color: "#000" }}
+            style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
           >
             {isPending ? "Applying…" : "Apply"}
           </button>
@@ -262,7 +262,7 @@ function LedgerPanel({ orderId }: { orderId: number }) {
       <tr style={{ borderTop: `1px solid ${BORDER}` }}>
         <td colSpan={7} className="px-6 py-3">
           <div className="space-y-2">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-4 w-full" style={{ background: BG_ROW }} />)}
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-4 w-full" />)}
           </div>
         </td>
       </tr>
@@ -285,7 +285,7 @@ function LedgerPanel({ orderId }: { orderId: number }) {
             <div className="px-4 py-6 text-center text-sm" style={{ color: MUTED_DARK }}>No transactions yet</div>
           ) : (
             <table className="w-full text-xs">
-              <thead style={{ background: "hsl(203 30% 9%)" }}>
+              <thead style={{ background: BG_ROW }}>
                 <tr>
                   {["Type", "Delta", "Balance", "Notes", "By", "Date"].map((h) => (
                     <th key={h} className="text-left px-3 py-2 uppercase tracking-wider font-semibold" style={{ color: MUTED_DARK }}>{h}</th>
@@ -395,7 +395,7 @@ export default function PackageOrders() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Package Orders</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Package Orders</h1>
           <p className="mt-1 text-sm" style={{ color: MUTED }}>Manage student package requests and activations</p>
         </div>
         <span className="text-xs font-semibold" style={{ color: AMBER }}>
@@ -410,7 +410,7 @@ export default function PackageOrders() {
             key={f}
             onClick={() => setStatusFilter(f)}
             className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-            style={statusFilter === f ? { backgroundColor: STUDIO_CYAN, color: "#000" } : { backgroundColor: BG_ROW, color: MUTED }}
+            style={statusFilter === f ? { backgroundColor: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" } : { backgroundColor: BG_ROW, color: MUTED }}
           >
             {f === "all" ? "All" : STATUS_CONFIG[f]?.label ?? f}
           </button>
@@ -420,7 +420,7 @@ export default function PackageOrders() {
       {/* Table */}
       <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
         <table className="w-full text-sm">
-          <thead style={{ background: "hsl(203 30% 10%)" }}>
+          <thead style={{ background: BG_ROW }}>
             <tr>
               {["Student", "Package", "Credits", "Status", "Requested", "Ledger", "Actions"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: MUTED_DARK }}>{h}</th>
@@ -430,10 +430,10 @@ export default function PackageOrders() {
           <tbody>
             {isLoading
               ? Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} style={{ borderTop: `1px solid hsl(203 30% 12%)` }}>
+                  <tr key={i} style={{ borderTop: `1px solid ${BORDER}` }}>
                     {Array.from({ length: 7 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
-                        <Skeleton className="h-4 w-full" style={{ background: BG_ROW }} />
+                        <Skeleton className="h-4 w-full" />
                       </td>
                     ))}
                   </tr>
@@ -449,16 +449,16 @@ export default function PackageOrders() {
                   const rows = [
                     <tr
                       key={`order-${order.id}`}
-                      className="transition-colors hover:bg-white/[0.02]"
-                      style={{ borderTop: `1px solid hsl(203 30% 12%)` }}
+                      className="transition-colors hover:bg-muted/40"
+                      style={{ borderTop: `1px solid ${BORDER}` }}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-white">{order.studentName}</div>
+                        <div className="font-medium text-foreground">{order.studentName}</div>
                         <div className="text-xs mt-0.5" style={{ color: MUTED }}>{order.studentEmail}</div>
                         {order.studentPhone && <div className="text-xs" style={{ color: MUTED_DARK }}>{order.studentPhone}</div>}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-white">{order.packageName}</div>
+                        <div className="font-medium text-foreground">{order.packageName}</div>
                         {order.expiresAt && (
                           <div className="text-xs mt-0.5" style={{ color: MUTED }}>
                             Expires {new Date(order.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
@@ -577,7 +577,7 @@ export default function PackageOrders() {
                 <User2 className="h-5 w-5" style={{ color: STUDIO_CYAN }} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-white">{editingOrder.studentName}</h2>
+                <h2 className="text-lg font-bold text-foreground">{editingOrder.studentName}</h2>
                 <p className="text-sm" style={{ color: MUTED }}>{editingOrder.packageName}</p>
               </div>
             </div>
@@ -585,7 +585,7 @@ export default function PackageOrders() {
               <div>
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: MUTED }}>Notes</label>
                 <textarea
-                  className="w-full rounded-xl px-3 py-2.5 text-sm text-white resize-none"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm text-foreground resize-none"
                   style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
                   rows={3}
                   value={editNotes}
@@ -597,8 +597,8 @@ export default function PackageOrders() {
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: MUTED }}>Expiry Date</label>
                 <input
                   type="date"
-                  className="w-full rounded-xl px-3 py-2.5 text-sm text-white"
-                  style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none", colorScheme: "dark" }}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm text-foreground"
+                  style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
                   value={editExpiry}
                   onChange={(e) => setEditExpiry(e.target.value)}
                 />
@@ -616,7 +616,7 @@ export default function PackageOrders() {
                 onClick={handleEditSave}
                 disabled={isUpdating}
                 className="flex-1 py-2.5 rounded-xl text-sm font-bold"
-                style={{ background: STUDIO_CYAN, color: "#000" }}
+                style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
               >
                 {isUpdating ? "Saving…" : "Save Changes"}
               </button>

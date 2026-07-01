@@ -17,12 +17,12 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 const STUDIO_CYAN = "#00B6D7";
 const AMBER = "#F59E0B";
 const GREEN = "#22C55E";
-const BG_CARD = "hsl(203 28% 10%)";
-const BG_ROW = "hsl(203 30% 14%)";
-const BORDER = "hsl(203 30% 20%)";
-const BORDER_SUBTLE = "hsl(203 30% 12%)";
-const MUTED = "#8A9AB0";
-const MUTED_DARK = "#4E6070";
+const BG_CARD = "hsl(var(--card))";
+const BG_ROW = "hsl(var(--muted))";
+const BORDER = "hsl(var(--border))";
+const BORDER_SUBTLE = "hsl(var(--border) / 0.72)";
+const MUTED = "hsl(var(--muted-foreground))";
+const MUTED_DARK = "hsl(var(--muted-foreground) / 0.68)";
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
@@ -158,7 +158,7 @@ export default function AttendancePage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Attendance & Check-In</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Attendance & Check-In</h1>
           <p className="mt-1 text-sm" style={{ color: MUTED }}>
             Check in students by QR scan or manual email lookup.
           </p>
@@ -167,7 +167,7 @@ export default function AttendancePage() {
           <button
             onClick={() => setScanOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0"
-            style={{ background: STUDIO_CYAN, color: "#000" }}
+            style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
           >
             <QrCode className="h-4 w-4" />
             Scan QR
@@ -193,7 +193,7 @@ export default function AttendancePage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${STUDIO_CYAN}20` }}>
                 <QrCode className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
               </div>
-              <h2 className="text-sm font-semibold text-white">Student Check-In</h2>
+              <h2 className="text-sm font-semibold text-foreground">Student Check-In</h2>
             </div>
 
             {successMsg && (
@@ -211,13 +211,13 @@ export default function AttendancePage() {
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="flex-1 rounded-xl px-3 py-2.5 text-sm text-white"
+                className="flex-1 rounded-xl px-3 py-2.5 text-sm text-foreground"
                 style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
               />
               <button
                 onClick={handleSearch}
                 className="px-3 py-2.5 rounded-xl"
-                style={{ background: STUDIO_CYAN, color: "#000" }}
+                style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
                 title="Look up student"
               >
                 <Search className="h-4 w-4" />
@@ -272,7 +272,7 @@ export default function AttendancePage() {
                       >
                         <div className="flex items-center gap-2">
                           <CreditCard className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
-                          <span className="font-medium text-white">{order.packageName}</span>
+                          <span className="font-medium text-foreground">{order.packageName}</span>
                         </div>
                         <span className="text-xs font-semibold" style={{ color: STUDIO_CYAN }}>
                           {order.remainingCredits} left
@@ -291,7 +291,7 @@ export default function AttendancePage() {
                     placeholder="e.g. Hip Hop Adults"
                     value={classTitle}
                     onChange={(e) => setClassTitle(e.target.value)}
-                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-foreground"
                     style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
                   />
                 </div>
@@ -312,7 +312,7 @@ export default function AttendancePage() {
                   onClick={handleCheckIn}
                   disabled={isCheckingIn}
                   className="w-full py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
-                  style={{ background: STUDIO_CYAN, color: "#000" }}
+                  style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
                 >
                   {isCheckingIn
                     ? "Recording…"
@@ -330,7 +330,7 @@ export default function AttendancePage() {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${STUDIO_CYAN}20` }}>
                   <BarChart3 className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
                 </div>
-                <h2 className="text-sm font-semibold text-white">Attendance Stats</h2>
+                <h2 className="text-sm font-semibold text-foreground">Attendance Stats</h2>
               </div>
               <div className="flex gap-1">
                 {(["daily", "monthly", "yearly"] as const).map((p) => (
@@ -338,7 +338,7 @@ export default function AttendancePage() {
                     key={p}
                     onClick={() => setPeriod(p)}
                     className="px-2.5 py-1 rounded-lg text-xs font-medium capitalize transition-all"
-                    style={period === p ? { background: STUDIO_CYAN, color: "#000" } : { background: BG_ROW, color: MUTED }}
+                    style={period === p ? { background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" } : { background: BG_ROW, color: MUTED }}
                   >
                     {p === "daily" ? "7 Days" : p === "monthly" ? "6 Mo" : "3 Yr"}
                   </button>
@@ -363,7 +363,7 @@ export default function AttendancePage() {
                             style={{ width: `${(d.count / max) * 100}%`, background: STUDIO_CYAN }}
                           />
                         </div>
-                        <span className="text-xs font-semibold w-6 text-right text-white">{d.count}</span>
+                        <span className="text-xs font-semibold w-6 text-right text-foreground">{d.count}</span>
                       </div>
                     );
                   })}
@@ -375,10 +375,10 @@ export default function AttendancePage() {
 
         {/* ── Recent attendance table ── */}
         <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
-          <div className="px-4 py-3 flex items-center justify-between gap-2" style={{ background: "hsl(203 30% 10%)" }}>
+          <div className="px-4 py-3 flex items-center justify-between gap-2" style={{ background: BG_CARD }}>
             <div className="flex items-center gap-2">
               <User2 className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
-              <h2 className="text-sm font-semibold text-white">
+              <h2 className="text-sm font-semibold text-foreground">
                 {searchEmail ? `Attendance — ${searchEmail}` : "Recent Check-Ins"}
               </h2>
             </div>
@@ -391,7 +391,7 @@ export default function AttendancePage() {
                   className="px-2 py-0.5 rounded-md text-xs font-medium transition-all"
                   style={
                     statusFilter === f
-                      ? { background: STUDIO_CYAN, color: "#000" }
+                      ? { background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }
                       : { background: BG_ROW, color: MUTED }
                   }
                 >
@@ -403,7 +403,7 @@ export default function AttendancePage() {
 
           <div className="overflow-auto max-h-[520px]">
             <table className="w-full text-sm">
-              <thead className="sticky top-0" style={{ background: "hsl(203 30% 9%)" }}>
+              <thead className="sticky top-0" style={{ background: BG_ROW }}>
                 <tr>
                   {["Student", "Class", "Status", "Credit", "Date"].map((h) => (
                     <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider" style={{ color: MUTED_DARK }}>{h}</th>
@@ -416,7 +416,7 @@ export default function AttendancePage() {
                       <tr key={i} style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}>
                         {Array.from({ length: 5 }).map((_, j) => (
                           <td key={j} className="px-4 py-3">
-                            <Skeleton className="h-3.5 w-full" style={{ background: BG_ROW }} />
+                        <Skeleton className="h-3.5 w-full" />
                           </td>
                         ))}
                       </tr>
@@ -431,11 +431,11 @@ export default function AttendancePage() {
                     filteredAttendance.slice(0, 50).map((record) => (
                       <tr
                         key={record.id}
-                        className="transition-colors hover:bg-white/[0.02]"
+                        className="transition-colors hover:bg-muted/40"
                         style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}
                       >
                         <td className="px-4 py-2.5">
-                          <div className="font-medium text-white text-xs">{record.studentName}</div>
+                          <div className="font-medium text-foreground text-xs">{record.studentName}</div>
                           <div className="text-xs" style={{ color: MUTED_DARK }}>{record.studentEmail}</div>
                         </td>
                         <td className="px-4 py-2.5 text-xs max-w-[120px] truncate" style={{ color: "#9CA3AF" }}>

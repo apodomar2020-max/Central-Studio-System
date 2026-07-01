@@ -49,14 +49,17 @@ const AMBER = "#F59E0B";
 const RED   = "#EF4444";
 const GRAY  = "#6B7280";
 
-const CARD_BG     = "hsl(196 28% 8%)";
-const CARD_BORDER = "hsl(203 30% 14%)";
+const CARD_BG     = "hsl(var(--card))";
+const CARD_BORDER = "hsl(var(--border))";
+const MUTED_TEXT  = "hsl(var(--muted-foreground))";
+const SUBTLE_TEXT = "hsl(var(--muted-foreground) / 0.68)";
+const CHART_CURSOR = "hsl(var(--accent) / 0.55)";
 
 const TOOLTIP_STYLE = {
-  background: "hsl(196 28% 10%)",
+  background: "hsl(var(--popover))",
   border: `1px solid ${CARD_BORDER}`,
   borderRadius: "8px",
-  color: "#fff",
+  color: "hsl(var(--popover-foreground))",
   fontSize: "12px",
 };
 
@@ -194,13 +197,13 @@ function StatCard({
   return (
     <div className="relative overflow-hidden rounded-xl border p-5 flex flex-col gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium" style={{ color: "#8A9AB0" }}>{title}</p>
+        <p className="text-sm font-medium" style={{ color: MUTED_TEXT }}>{title}</p>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${accent}18` }}>
           <Icon className="h-4 w-4" style={{ color: accent }} />
         </div>
       </div>
       <div className="flex items-baseline gap-2">
-        <span className="text-3xl font-bold tracking-tight text-white">
+        <span className="text-3xl font-bold tracking-tight text-foreground">
           {typeof value === "number" ? value.toLocaleString() : value}
         </span>
         {sub && <span className="text-xs" style={{ color: accent }}>{sub}</span>}
@@ -211,19 +214,19 @@ function StatCard({
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border p-5" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
-      <p className="text-sm font-semibold text-white mb-4">{title}</p>
+      <p className="text-sm font-semibold text-foreground mb-4">{title}</p>
       {children}
     </div>
   );
 }
 function EmptyState({ message }: { message: string }) {
-  return <p className="text-center text-sm py-8" style={{ color: "#4E6070" }}>{message}</p>;
+  return <p className="text-center text-sm py-8" style={{ color: SUBTLE_TEXT }}>{message}</p>;
 }
 function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   return (
     <div>
-      <h2 className="text-lg font-semibold text-white">{title}</h2>
-      {sub && <p className="text-sm mt-1" style={{ color: "#8A9AB0" }}>{sub}</p>}
+      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+      {sub && <p className="text-sm mt-1" style={{ color: MUTED_TEXT }}>{sub}</p>}
     </div>
   );
 }
@@ -416,8 +419,8 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Reports</h1>
-          <p className="text-sm mt-1" style={{ color: "#8A9AB0" }}>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Reports</h1>
+          <p className="text-sm mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
             Date-ranged analytics and data exports across the studio.
           </p>
         </div>
@@ -430,7 +433,7 @@ export default function ReportsPage() {
       <div className="rounded-xl border p-4 flex flex-wrap items-center gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
         <div className="flex items-center gap-2">
           <CalendarRange className="h-4 w-4" style={{ color: CYAN }} />
-          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>Date Range</span>
+          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>Date Range</span>
         </div>
         <div className="flex items-center gap-1.5">
           {PRESETS.map((p) => (
@@ -441,7 +444,7 @@ export default function ReportsPage() {
               style={
                 preset === p.value
                   ? { background: `${CYAN}20`, color: CYAN, border: `1px solid ${CYAN}40` }
-                  : { background: "transparent", color: "#8A9AB0", border: "1px solid hsl(203 25% 16%)" }
+                  : { background: "transparent", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
               }
             >
               {p.label}
@@ -451,7 +454,7 @@ export default function ReportsPage() {
         {preset === "custom" && (
           <div className="flex items-center gap-2">
             <Input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} className="h-8 w-[150px]" />
-            <span className="text-xs" style={{ color: "#4E6070" }}>to</span>
+            <span className="text-xs" style={{ color: "hsl(var(--muted-foreground) / 0.68)" }}>to</span>
             <Input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} className="h-8 w-[150px]" />
           </div>
         )}
@@ -467,7 +470,7 @@ export default function ReportsPage() {
         {/* ───────────── OVERVIEW ───────────── */}
         <TabsContent value="overview" className="space-y-8">
           {analyticsQuery.isLoading ? (
-            <div className="rounded-xl border p-8 text-center text-sm" style={{ background: CARD_BG, borderColor: CARD_BORDER, color: "#8A9AB0" }}>
+            <div className="rounded-xl border p-8 text-center text-sm" style={{ background: CARD_BG, borderColor: CARD_BORDER, color: "hsl(var(--muted-foreground))" }}>
               Loading analytics...
             </div>
           ) : analyticsQuery.isError ? (
@@ -502,12 +505,12 @@ export default function ReportsPage() {
                           <div key={`top-${row.classId}-${row.className}`} className="rounded-lg border px-3 py-2" style={{ borderColor: CARD_BORDER }}>
                             <div className="flex items-center justify-between gap-3">
                               <div>
-                                <p className="text-sm font-semibold text-white">{row.className}</p>
-                                <p className="text-xs" style={{ color: "#8A9AB0" }}>{row.instructor}</p>
+                                <p className="text-sm font-semibold text-foreground">{row.className}</p>
+                                <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>{row.instructor}</p>
                               </div>
                               <span className="text-sm font-semibold" style={{ color: GREEN }}>{formatPercent(row.attendanceRate)}</span>
                             </div>
-                            <p className="text-xs mt-1" style={{ color: "#8A9AB0" }}>
+                            <p className="text-xs mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
                               {row.totalAttendance} attended / {row.totalBookings} bookings
                             </p>
                           </div>
@@ -525,12 +528,12 @@ export default function ReportsPage() {
                           <div key={`low-${row.classId}-${row.className}`} className="rounded-lg border px-3 py-2" style={{ borderColor: CARD_BORDER }}>
                             <div className="flex items-center justify-between gap-3">
                               <div>
-                                <p className="text-sm font-semibold text-white">{row.className}</p>
-                                <p className="text-xs" style={{ color: "#8A9AB0" }}>{row.instructor}</p>
+                                <p className="text-sm font-semibold text-foreground">{row.className}</p>
+                                <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>{row.instructor}</p>
                               </div>
                               <span className="text-sm font-semibold" style={{ color: AMBER }}>{formatPercent(row.attendanceRate)}</span>
                             </div>
-                            <p className="text-xs mt-1" style={{ color: "#8A9AB0" }}>
+                            <p className="text-xs mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
                               {row.noShowCount} no-show / {row.cancellationCount} cancelled
                             </p>
                           </div>
@@ -559,7 +562,7 @@ export default function ReportsPage() {
                       ) : (
                         analytics.classPerformance.rows.slice(0, 12).map((row) => (
                           <TableRow key={`class-${row.classId}-${row.className}`}>
-                            <TableCell className="font-medium text-white">{row.className}</TableCell>
+                            <TableCell className="font-medium text-foreground">{row.className}</TableCell>
                             <TableCell>{row.instructor}</TableCell>
                             <TableCell>{row.totalBookings}</TableCell>
                             <TableCell>{row.totalAttendance}</TableCell>
@@ -583,9 +586,9 @@ export default function ReportsPage() {
                     ) : (
                       <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={analytics.attendance.trend} barCategoryGap="30%">
-                          <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
-                          <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                          <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
                           <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -598,9 +601,9 @@ export default function ReportsPage() {
                     ) : (
                       <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={attendanceBreakdownData} barCategoryGap="40%">
-                          <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
-                          <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                          <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
                           <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                             {attendanceBreakdownData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
                           </Bar>
@@ -620,9 +623,9 @@ export default function ReportsPage() {
                     ) : (
                       <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={analytics.bookings.trend} barCategoryGap="30%">
-                          <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
-                          <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                          <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
                           <Bar dataKey="count" fill={AMBER} radius={[4, 4, 0, 0]} opacity={0.85} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -639,7 +642,7 @@ export default function ReportsPage() {
                             {bookingStatusData.filter((d) => d.count > 0).map((entry, idx) => <Cell key={idx} fill={entry.fill} opacity={0.9} />)}
                           </Pie>
                           <Tooltip contentStyle={TOOLTIP_STYLE} />
-                          <Legend formatter={(value) => <span style={{ color: "#8A9AB0", fontSize: "11px" }}>{value}</span>} />
+                          <Legend formatter={(value) => <span style={{ color: "hsl(var(--muted-foreground))", fontSize: "11px" }}>{value}</span>} />
                         </PieChart>
                       </ResponsiveContainer>
                     )}
@@ -660,9 +663,9 @@ export default function ReportsPage() {
                   ) : (
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart data={analytics.growth.trend} barCategoryGap="30%">
-                        <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
-                        <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                        <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                        <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
                         <Bar dataKey="count" fill={GREEN} radius={[4, 4, 0, 0]} opacity={0.85} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -685,9 +688,9 @@ export default function ReportsPage() {
                   ) : (
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart data={analytics.packages.trend} barCategoryGap="30%">
-                        <XAxis dataKey="name" tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
-                        <YAxis tick={{ fill: "#8A9AB0", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                        <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
+                        <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
                         <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -716,7 +719,7 @@ export default function ReportsPage() {
           {/* Controls */}
           <div className="rounded-xl border p-4 flex flex-wrap items-end gap-4" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>Report</label>
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>Report</label>
               <Select value={entity} onValueChange={handleEntityChange}>
                 <SelectTrigger className="w-[200px] h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -726,7 +729,7 @@ export default function ReportsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>Status</label>
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>Status</label>
               <Select value={statusFilter} onValueChange={setStatusFilter} disabled={STATUS_OPTIONS[entity].length <= 1}>
                 <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -775,7 +778,7 @@ export default function ReportsPage() {
             </div>
           )}
 
-          <p className="text-xs" style={{ color: "#8A9AB0" }}>
+          <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
             Preview, Excel &amp; PDF exports are all served by the secure admin reports API with the date range &amp; status above — every format matches exactly what you see here.
           </p>
 
@@ -784,8 +787,8 @@ export default function ReportsPage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               {summaryEntries.map(([key, val]) => (
                 <div key={key} className="rounded-lg border px-3 py-2.5" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
-                  <p className="text-[11px] uppercase tracking-wider" style={{ color: "#8A9AB0" }}>{humanize(key)}</p>
-                  <p className="text-xl font-bold text-white">{typeof val === "number" ? val.toLocaleString() : String(val)}</p>
+                  <p className="text-[11px] uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>{humanize(key)}</p>
+                  <p className="text-xl font-bold text-foreground">{typeof val === "number" ? val.toLocaleString() : String(val)}</p>
                 </div>
               ))}
             </div>
@@ -794,8 +797,8 @@ export default function ReportsPage() {
           {/* Preview table (backend columns + rows) */}
           <div className="rounded-xl border overflow-hidden" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
             <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: CARD_BORDER }}>
-              <span className="text-sm font-semibold text-white">Preview</span>
-              <span className="text-xs" style={{ color: "#8A9AB0" }}>
+              <span className="text-sm font-semibold text-foreground">Preview</span>
+              <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
                 {report ? `${report.rows.length} row${report.rows.length !== 1 ? "s" : ""}` : ""}
               </span>
             </div>
@@ -829,7 +832,7 @@ export default function ReportsPage() {
             )}
 
             {report && typeof report.summary.total === "number" && report.summary.total > report.rows.length && (
-              <div className="px-4 py-2 text-xs border-t" style={{ color: "#8A9AB0", borderColor: CARD_BORDER }}>
+              <div className="px-4 py-2 text-xs border-t" style={{ color: "hsl(var(--muted-foreground))", borderColor: CARD_BORDER }}>
                 Showing first {report.rows.length} of {report.summary.total}. Excel export uses the same rows and filters shown in this preview.
               </div>
             )}

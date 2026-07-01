@@ -394,7 +394,7 @@ export default function AppContentPage() {
           <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
             <section className="rounded-md border">
               <div className="border-b px-4 py-3">
-                <h2 className="text-sm font-semibold text-white">Pages</h2>
+                <h2 className="text-sm font-semibold text-foreground">Pages</h2>
                 <p className="text-xs text-muted-foreground">Mobile app content source of truth</p>
               </div>
               <div className="p-2">
@@ -407,10 +407,10 @@ export default function AppContentPage() {
                     <button
                       key={page.slug}
                       onClick={() => setSelectedSlug(page.slug)}
-                      className="mb-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-white/5"
+                      className="mb-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
                       style={{
-                        background: selectedPage?.slug === page.slug ? "rgba(0, 182, 214, 0.10)" : undefined,
-                        color: selectedPage?.slug === page.slug ? "#FFFFFF" : "#8A9AB0",
+                        background: selectedPage?.slug === page.slug ? "hsl(var(--accent))" : undefined,
+                        color: selectedPage?.slug === page.slug ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
                       }}
                     >
                       <span className="flex items-center gap-2">
@@ -429,7 +429,7 @@ export default function AppContentPage() {
                 <div className="space-y-4 rounded-md border p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <h2 className="text-lg font-semibold text-white">{selectedPage.title}</h2>
+                      <h2 className="text-lg font-semibold text-foreground">{selectedPage.title}</h2>
                       <p className="font-mono text-xs text-muted-foreground">{selectedPage.slug}</p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -494,17 +494,17 @@ export default function AppContentPage() {
 
                 <aside className="rounded-md border p-4">
                   <div className="mb-4">
-                    <h3 className="text-sm font-semibold text-white">Mobile Preview</h3>
+                    <h3 className="text-sm font-semibold text-foreground">Mobile Preview</h3>
                     <p className="text-xs text-muted-foreground">Approximate plaintext rendering</p>
                   </div>
-                  <div className="rounded-2xl border border-[#1E2E38] bg-[#050B0E] p-4">
-                    <div className="mb-4 rounded-xl border border-[#00B6D733] bg-[#00B6D715] p-3">
-                      <p className="text-base font-bold text-white">{pageForm.title || "Untitled"}</p>
+                  <div className="rounded-2xl border border-border bg-card p-4">
+                    <div className="mb-4 rounded-xl border border-primary/25 bg-primary/10 p-3">
+                      <p className="text-base font-bold text-foreground">{pageForm.title || "Untitled"}</p>
                       {pageForm.subtitle.trim() && (
-                        <p className="mt-1 text-xs text-[#8A9AB0]">{pageForm.subtitle}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{pageForm.subtitle}</p>
                       )}
                     </div>
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-[#9CA3AF]">
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
                       {pageForm.content || "No content yet."}
                     </p>
                   </div>
@@ -523,7 +523,7 @@ export default function AppContentPage() {
           <section className="space-y-3 rounded-md border p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">FAQ</h2>
+                <h2 className="text-lg font-semibold text-foreground">FAQ</h2>
                 <p className="text-sm text-muted-foreground">Questions shown on mobile Help & Support.</p>
               </div>
               {canCreate && (
@@ -577,7 +577,7 @@ export default function AppContentPage() {
           <section className="space-y-3 rounded-md border p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">Contact Links</h2>
+                <h2 className="text-lg font-semibold text-foreground">Contact Links</h2>
                 <p className="text-sm text-muted-foreground">Buttons shown on mobile Help & Support.</p>
               </div>
               {canCreate && (
