@@ -165,7 +165,7 @@ export default function BalletSettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Ballet Pricing &amp; Settings</h1>
+          <h1 className="text-2xl font-bold text-foreground">Ballet Pricing &amp; Settings</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Configure pricing, monthly hours, and assessment instructions.
           </p>
@@ -204,7 +204,7 @@ export default function BalletSettingsPage() {
         <fieldset disabled={!canEdit} className="space-y-8">
           {/* Pricing */}
           <div className="rounded-lg border border-border bg-card p-6 space-y-5">
-            <h2 className="text-base font-semibold text-white">Pricing</h2>
+            <h2 className="text-base font-semibold text-foreground">Pricing</h2>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -214,7 +214,7 @@ export default function BalletSettingsPage() {
                   min={1}
                   value={form.preBalletPriceEgp}
                   onChange={(e) => update("preBalletPriceEgp", e.target.value)}
-                  className="bg-[#1A2535] border-border text-white"
+                  className="bg-background text-foreground"
                 />
               </div>
               <div className="space-y-1.5">
@@ -224,7 +224,7 @@ export default function BalletSettingsPage() {
                   min={1}
                   value={form.preBalletHoursMonthly}
                   onChange={(e) => update("preBalletHoursMonthly", e.target.value)}
-                  className="bg-[#1A2535] border-border text-white"
+                  className="bg-background text-foreground"
                 />
               </div>
               <div className="space-y-1.5">
@@ -234,7 +234,7 @@ export default function BalletSettingsPage() {
                   min={1}
                   value={form.levelsPriceEgp}
                   onChange={(e) => update("levelsPriceEgp", e.target.value)}
-                  className="bg-[#1A2535] border-border text-white"
+                  className="bg-background text-foreground"
                 />
               </div>
               <div className="space-y-1.5">
@@ -244,7 +244,7 @@ export default function BalletSettingsPage() {
                   min={1}
                   value={form.levelsHoursMonthly}
                   onChange={(e) => update("levelsHoursMonthly", e.target.value)}
-                  className="bg-[#1A2535] border-border text-white"
+                  className="bg-background text-foreground"
                 />
               </div>
             </div>
@@ -252,7 +252,7 @@ export default function BalletSettingsPage() {
 
           {/* Slot availability */}
           <div className="rounded-lg border border-border bg-card p-6 space-y-4">
-            <h2 className="text-base font-semibold text-white">Slot Availability</h2>
+            <h2 className="text-base font-semibold text-foreground">Slot Availability</h2>
             <div className="space-y-1.5 max-w-xs">
               <Label className="text-muted-foreground text-xs uppercase tracking-wide">
                 "Few Seats" Threshold
@@ -263,7 +263,7 @@ export default function BalletSettingsPage() {
                 max={20}
                 value={form.fewSeatsThreshold}
                 onChange={(e) => update("fewSeatsThreshold", e.target.value)}
-                className="bg-[#1A2535] border-border text-white"
+                className="bg-background text-foreground"
               />
               <p className="text-xs text-muted-foreground">
                 Slots with ≤ this many available seats show an amber "few seats" warning on mobile.
@@ -273,7 +273,7 @@ export default function BalletSettingsPage() {
 
           {/* Assessment content */}
           <div className="rounded-lg border border-border bg-card p-6 space-y-5">
-            <h2 className="text-base font-semibold text-white">Assessment Content</h2>
+            <h2 className="text-base font-semibold text-foreground">Assessment Content</h2>
 
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs uppercase tracking-wide">Assessment Instructions</Label>
@@ -282,7 +282,7 @@ export default function BalletSettingsPage() {
                 onChange={(e) => update("assessmentInstructions", e.target.value)}
                 placeholder="Instructions shown to parents before they book an assessment slot…"
                 rows={4}
-                className="bg-[#1A2535] border-border text-white resize-none"
+                className="bg-background text-foreground resize-none"
               />
             </div>
 
@@ -293,7 +293,7 @@ export default function BalletSettingsPage() {
                 onChange={(e) => update("requirements", e.target.value)}
                 placeholder="Age range, health requirements, attire, etc…"
                 rows={3}
-                className="bg-[#1A2535] border-border text-white resize-none"
+                className="bg-background text-foreground resize-none"
               />
             </div>
 
@@ -304,7 +304,7 @@ export default function BalletSettingsPage() {
                 onChange={(e) => update("acceptanceMessageTemplate", e.target.value)}
                 placeholder="Message sent to parents when their child is accepted…"
                 rows={4}
-                className="bg-[#1A2535] border-border text-white resize-none"
+                className="bg-background text-foreground resize-none"
               />
             </div>
           </div>
