@@ -17,6 +17,14 @@ import {
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import {
+  assertValidE164Phone,
+  getWhatsAppCloudStatus,
+  isWhatsAppCloudEnabled,
+  sendTemplateMessage,
+  WhatsAppCloudError,
+  type WhatsAppTemplateParameter,
+} from "../lib/whatsappCloud";
+import {
   DeleteCampaignParams,
   GetCampaignParams,
   SendCampaignResponse,
@@ -69,6 +77,20 @@ const ClassGroupBody = z.object({
 const PreviewBody = z.object({
   audienceType: z.enum(audienceTypeValues).optional(),
   audienceConfig: z.record(z.string(), z.unknown()).nullish(),
+});
+
+const WhatsAppTestSendBody = z.object({
+  to: z.string().min(1),
+  templateName: z.string().min(1),
+  languageCode: z.string().min(1).default("en_US"),
+  parameters: z.array(z.union([
+    z.string(),
+    z.number(),
+    z.object({
+      type: z.literal("text"),
+      text: z.string(),
+    }),
+  ])).default([]),
 });
 
 type AudienceType = (typeof audienceTypeValues)[number];
@@ -265,6 +287,50 @@ async function resolveRecipients(audienceType: AudienceType, audienceConfig: Aud
     recipients: eligible,
   };
 }
+
+router.get("/marketing/whatsapp/status", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
+  res.json(getWhatsAppCloudStatus());
+});
+
+router.post("/marketing/whatsapp/test-send", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req, res): Promise<void> => {
+  if (!isWhatsAppCloudEnabled()) {
+    res.status(503).json({ error: "WhatsApp Cloud API is disabled. Set WHATSAPP_ENABLED=true to allow test sends." });
+    return;
+  }
+
+  const parsed = WhatsAppTestSendBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  try {
+    const result = await sendTemplateMessage({
+      to: assertValidE164Phone(parsed.data.to),
+      templateName: parsed.data.templateName,
+      languageCode: parsed.data.languageCode,
+      parameters: parsed.data.parameters as WhatsAppTemplateParameter[],
+    });
+    res.json({
+      success: true,
+      provider: "whatsapp_cloud",
+      messageId: result.providerMessageId,
+      providerMessageId: result.providerMessageId,
+      rawStatus: result.raw.messages?.[0]?.message_status ?? "accepted",
+      raw: result.raw,
+    });
+  } catch (err) {
+    if (err instanceof WhatsAppCloudError) {
+      res.status(err.statusCode).json({
+        error: err.message,
+        providerStatus: err.providerStatus,
+        providerCode: err.providerCode,
+      });
+      return;
+    }
+    res.status(500).json({ error: "WhatsApp test send failed." });
+  }
+});
 
 router.get("/marketing/templates", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
   const rows = await db.select().from(marketingTemplatesTable).orderBy(desc(marketingTemplatesTable.createdAt));

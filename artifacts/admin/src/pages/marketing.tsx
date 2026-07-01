@@ -8,6 +8,7 @@ import {
   Loader2,
   Megaphone,
   MessageSquare,
+  PlugZap,
   Search,
   Send,
   Trash2,
@@ -117,6 +118,24 @@ type ClassGroup = {
   scheduleStartTime?: string | null;
 };
 
+type WhatsAppStatus = {
+  enabled: boolean;
+  configured: boolean;
+  graphApiVersion: string;
+  phoneNumberIdMasked: string | null;
+  businessAccountIdMasked: string | null;
+  testRecipientRestricted: boolean;
+};
+
+type WhatsAppTestResult = {
+  success: boolean;
+  provider?: string;
+  providerMessageId?: string | null;
+  messageId?: string | null;
+  rawStatus?: string | null;
+  error?: string;
+};
+
 type TemplateForm = {
   name: string;
   category: "utility" | "marketing";
@@ -170,6 +189,13 @@ const emptyGroupForm = {
   isActive: true,
 };
 
+const emptyWhatsAppTestForm = {
+  to: "",
+  templateName: "hello_world",
+  languageCode: "en_US",
+  parameters: "",
+};
+
 function scheduleLabel(schedule: ScheduleRow | ClassGroup): string {
   if ("groupUrl" in schedule) {
     const day = typeof schedule.scheduleDayOfWeek === "number" ? dayNames[schedule.scheduleDayOfWeek] : schedule.scheduleDate;
@@ -194,6 +220,13 @@ function templateVariables(body: string): string[] {
   return [...new Set(Array.from(body.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)).map((match) => match[1]))];
 }
 
+function parseTemplateParameters(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export default function Marketing() {
   const { can } = useAdminAuth();
   const canCreate = can("marketing", "create");
@@ -201,12 +234,13 @@ export default function Marketing() {
   const canSend = can("marketing", "send");
   const canDelete = can("marketing", "delete");
 
-  const [activeTab, setActiveTab] = useState<"campaigns" | "templates" | "groups">("campaigns");
+  const [activeTab, setActiveTab] = useState<"campaigns" | "templates" | "groups" | "whatsapp">("campaigns");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [templates, setTemplates] = useState<MarketingTemplate[]>([]);
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
   const [groups, setGroups] = useState<ClassGroup[]>([]);
+  const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -228,6 +262,9 @@ export default function Marketing() {
 
   const [studentSearch, setStudentSearch] = useState("");
   const [studentResults, setStudentResults] = useState<SearchStudent[]>([]);
+  const [whatsAppTestForm, setWhatsAppTestForm] = useState(emptyWhatsAppTestForm);
+  const [isSendingWhatsAppTest, setIsSendingWhatsAppTest] = useState(false);
+  const [whatsAppTestResult, setWhatsAppTestResult] = useState<WhatsAppTestResult | null>(null);
 
   const approvedTemplates = useMemo(() => templates.filter((template) => template.status === "approved"), [templates]);
   const selectedTemplate = useMemo(
@@ -239,18 +276,20 @@ export default function Marketing() {
     setIsLoading(true);
     setError(null);
     try {
-      const [campaignRows, templateRows, classRows, scheduleRows, groupRows] = await Promise.all([
+      const [campaignRows, templateRows, classRows, scheduleRows, groupRows, statusRow] = await Promise.all([
         customFetch<Campaign[]>("/api/marketing/campaigns"),
         customFetch<MarketingTemplate[]>("/api/marketing/templates"),
         customFetch<ClassRow[]>("/api/classes"),
         customFetch<ScheduleRow[]>("/api/schedules"),
         customFetch<ClassGroup[]>("/api/marketing/class-groups"),
+        customFetch<WhatsAppStatus>("/api/marketing/whatsapp/status"),
       ]);
       setCampaigns(campaignRows);
       setTemplates(templateRows);
       setClasses(classRows);
       setSchedules(scheduleRows);
       setGroups(groupRows);
+      setWhatsAppStatus(statusRow);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load Marketing Center.");
     } finally {
@@ -440,6 +479,37 @@ export default function Marketing() {
     await loadData();
   };
 
+  const sendWhatsAppTest = async () => {
+    setIsSendingWhatsAppTest(true);
+    setWhatsAppTestResult(null);
+    try {
+      const response = await customFetch<WhatsAppTestResult>("/api/marketing/whatsapp/test-send", {
+        method: "POST",
+        body: JSON.stringify({
+          to: whatsAppTestForm.to,
+          templateName: whatsAppTestForm.templateName,
+          languageCode: whatsAppTestForm.languageCode,
+          parameters: parseTemplateParameters(whatsAppTestForm.parameters),
+        }),
+      });
+      setWhatsAppTestResult({
+        success: true,
+        provider: response.provider ?? "whatsapp_cloud",
+        providerMessageId: response.providerMessageId ?? response.messageId ?? null,
+        rawStatus: response.rawStatus ?? null,
+      });
+      await loadData();
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string }; response?: Response };
+      setWhatsAppTestResult({
+        success: false,
+        error: error.data?.error ?? error.message ?? "WhatsApp test send failed.",
+      });
+    } finally {
+      setIsSendingWhatsAppTest(false);
+    }
+  };
+
   const manualSelected = campaignForm.manualStudentIds
     .map((id) => studentResults.find((student) => student.id === id))
     .filter(Boolean) as SearchStudent[];
@@ -450,8 +520,8 @@ export default function Marketing() {
         title="Marketing Center"
         description="Build WhatsApp-ready campaigns, preview recipients, and prepare sends."
         mode="general"
-        addLabel={activeTab === "templates" ? "New Template" : activeTab === "groups" ? "Add Group Link" : "New Campaign"}
-        onAdd={canCreate ? activeTab === "templates" ? () => setTemplateOpen(true) : activeTab === "groups" ? () => setGroupOpen(true) : openCampaignCreate : undefined}
+        addLabel={activeTab === "templates" ? "New Template" : activeTab === "groups" ? "Add Group Link" : activeTab === "campaigns" ? "New Campaign" : undefined}
+        onAdd={canCreate ? activeTab === "templates" ? () => setTemplateOpen(true) : activeTab === "groups" ? () => setGroupOpen(true) : activeTab === "campaigns" ? openCampaignCreate : undefined : undefined}
       />
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -478,6 +548,7 @@ export default function Marketing() {
           ["campaigns", "Campaigns"],
           ["templates", "Templates"],
           ["groups", "Class WhatsApp Groups"],
+          ["whatsapp", "WhatsApp Test"],
         ].map(([value, label]) => (
           <Button key={value} variant={activeTab === value ? "default" : "outline"} size="sm" onClick={() => setActiveTab(value as typeof activeTab)}>
             {label}
@@ -562,7 +633,7 @@ export default function Marketing() {
             </div>
           ))}
         </div>
-      ) : (
+      ) : activeTab === "groups" ? (
         <div className="space-y-3">
           {groups.length === 0 ? (
             <EmptyState title="No class group links yet" text="Save optional WhatsApp group URLs for future class community features." />
@@ -582,6 +653,123 @@ export default function Marketing() {
               </div>
             </div>
           ))}
+        </div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[.9fr_1.1fr]">
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: `${WHATSAPP_GREEN}18` }}>
+                <PlugZap className="h-5 w-5" style={{ color: WHATSAPP_GREEN }} />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">Connection Status</p>
+                <p className="text-xs text-muted-foreground">Server-side WhatsApp Cloud API configuration</p>
+              </div>
+            </div>
+            {whatsAppStatus ? (
+              <div className="space-y-3 text-sm">
+                <StatusRow label="WhatsApp enabled" value={whatsAppStatus.enabled ? "true" : "false"} ok={whatsAppStatus.enabled} />
+                <StatusRow label="Configured" value={whatsAppStatus.configured ? "true" : "false"} ok={whatsAppStatus.configured} />
+                <StatusRow label="Phone Number ID" value={whatsAppStatus.phoneNumberIdMasked ?? "Not configured"} />
+                <StatusRow label="Business Account ID" value={whatsAppStatus.businessAccountIdMasked ?? "Not configured"} />
+                <StatusRow label="Graph API version" value={whatsAppStatus.graphApiVersion} />
+                <StatusRow label="Test recipient restriction" value={whatsAppStatus.testRecipientRestricted ? "Enabled" : "Not configured"} ok={whatsAppStatus.testRecipientRestricted} />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Status unavailable.</p>
+            )}
+            {!whatsAppStatus?.enabled && (
+              <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-600">
+                WhatsApp sending is disabled in environment variables.
+              </div>
+            )}
+            <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+              Access tokens are never shown in the Admin UI. This panel only displays masked identifiers and safe status flags.
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-foreground">Send Test Message</p>
+                <p className="text-xs text-muted-foreground">Send one approved template to one test recipient only.</p>
+              </div>
+              <Badge variant="secondary">No bulk sending</Badge>
+            </div>
+
+            {!canSend && (
+              <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                You do not have permission to send WhatsApp test messages.
+              </div>
+            )}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Recipient phone number">
+                <Input
+                  value={whatsAppTestForm.to}
+                  onChange={(e) => setWhatsAppTestForm((form) => ({ ...form, to: e.target.value }))}
+                  placeholder="+20110614656"
+                  disabled={!canSend}
+                />
+              </Field>
+              <Field label="Template name">
+                <Input
+                  value={whatsAppTestForm.templateName}
+                  onChange={(e) => setWhatsAppTestForm((form) => ({ ...form, templateName: e.target.value }))}
+                  placeholder="hello_world"
+                  disabled={!canSend}
+                />
+              </Field>
+              <Field label="Language code">
+                <Input
+                  value={whatsAppTestForm.languageCode}
+                  onChange={(e) => setWhatsAppTestForm((form) => ({ ...form, languageCode: e.target.value }))}
+                  placeholder="en_US"
+                  disabled={!canSend}
+                />
+              </Field>
+              <Field label="Template parameters">
+                <Textarea
+                  value={whatsAppTestForm.parameters}
+                  onChange={(e) => setWhatsAppTestForm((form) => ({ ...form, parameters: e.target.value }))}
+                  placeholder="Optional: one value per line"
+                  rows={3}
+                  disabled={!canSend}
+                />
+              </Field>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button
+                onClick={sendWhatsAppTest}
+                disabled={!canSend || !whatsAppStatus?.enabled || !whatsAppStatus?.configured || isSendingWhatsAppTest || !whatsAppTestForm.to || !whatsAppTestForm.templateName}
+              >
+                {isSendingWhatsAppTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Send Test WhatsApp
+              </Button>
+              {whatsAppStatus?.testRecipientRestricted && (
+                <span className="text-xs text-muted-foreground">Restricted to the server-configured test recipient.</span>
+              )}
+            </div>
+
+            {whatsAppTestResult && (
+              <div className={`mt-4 rounded-lg border p-3 text-sm ${
+                whatsAppTestResult.success
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                  : "border-destructive/30 bg-destructive/10 text-destructive"
+              }`}
+              >
+                {whatsAppTestResult.success ? (
+                  <div>
+                    <p className="font-semibold">Test message accepted by WhatsApp Cloud.</p>
+                    <p className="mt-1">Provider message ID: {whatsAppTestResult.providerMessageId ?? "Not returned"}</p>
+                  </div>
+                ) : (
+                  <p>{whatsAppTestResult.error ?? "WhatsApp test send failed."}</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -842,6 +1030,17 @@ function Metric({ label, value, tone }: { label: string; value: number; tone?: "
     <div className="rounded-lg border border-border bg-muted/20 p-3">
       <p className="text-lg font-bold" style={{ color: tone === "success" ? WHATSAPP_GREEN : undefined }}>{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function StatusRow({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/20 px-3 py-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={ok === undefined ? "font-medium text-foreground" : ok ? "font-medium text-emerald-600" : "font-medium text-amber-600"}>
+        {value}
+      </span>
     </div>
   );
 }
