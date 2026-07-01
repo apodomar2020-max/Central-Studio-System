@@ -343,6 +343,22 @@ router.post("/marketing/templates", requireAdminAuth, requireAdminPermission("ma
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  // Duplicate guard: check if a template with the same name and language code already exists
+  const existing = await db
+    .select()
+    .from(marketingTemplatesTable)
+    .where(and(
+      eq(marketingTemplatesTable.name, parsed.data.name),
+      eq(marketingTemplatesTable.language, parsed.data.language)
+    ))
+    .limit(1);
+
+  if (existing.length > 0) {
+    res.status(400).json({ error: "A template with the same name and language already exists." });
+    return;
+  }
+
   const [row] = await db.insert(marketingTemplatesTable).values(parsed.data).returning();
   res.status(201).json(row);
 });
@@ -867,9 +883,9 @@ router.post("/marketing/campaigns/:id/retry-failed", requireAdminAuth, requireAd
       .from(marketingCampaignRecipientsTable)
       .where(eq(marketingCampaignRecipientsTable.campaignId, campaign.id));
 
-    // Determine new status
-    const hasSent = (counts.sent ?? 0) > 0;
-    const newStatus = hasSent ? "sending" : "prepared";
+    // Determine new status: if campaign already attempted sending (was sent/sending or has sent messages), it should stay in 'sending' status.
+    const alreadyAttempted = campaign.status === "sending" || campaign.status === "sent" || (counts.sent ?? 0) > 0;
+    const newStatus = alreadyAttempted ? "sending" : "prepared";
 
     await tx.update(marketingCampaignsTable).set({
       status: newStatus,
@@ -878,6 +894,69 @@ router.post("/marketing/campaigns/:id/retry-failed", requireAdminAuth, requireAd
   });
 
   res.json({ success: true });
+});
+
+router.delete("/marketing/templates/:id", requireAdminAuth, requireAdminPermission("marketing", "delete"), async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid template id" });
+    return;
+  }
+
+  // Check if template is used by prepared/sending/sent campaigns
+  const used = await db
+    .select()
+    .from(marketingCampaignsTable)
+    .where(and(
+      eq(marketingCampaignsTable.templateId, id),
+      inArray(marketingCampaignsTable.status, ["prepared", "sending", "sent"])
+    ))
+    .limit(1);
+
+  if (used.length > 0) {
+    res.status(400).json({ error: "Template is used by existing campaigns." });
+    return;
+  }
+
+  const [row] = await db.delete(marketingTemplatesTable).where(eq(marketingTemplatesTable.id, id)).returning();
+  if (!row) {
+    res.status(404).json({ error: "Template not found" });
+    return;
+  }
+  res.sendStatus(204);
+});
+
+router.get("/marketing/campaigns/:id/logs", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
+  const params = GetCampaignParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      id: marketingDeliveryLogsTable.id,
+      campaignId: marketingDeliveryLogsTable.campaignId,
+      recipientId: marketingDeliveryLogsTable.recipientId,
+      provider: marketingDeliveryLogsTable.provider,
+      providerMessageId: marketingDeliveryLogsTable.providerMessageId,
+      eventType: marketingDeliveryLogsTable.eventType,
+      status: marketingDeliveryLogsTable.status,
+      errorCode: marketingDeliveryLogsTable.errorCode,
+      errorMessage: marketingDeliveryLogsTable.errorMessage,
+      createdAt: marketingDeliveryLogsTable.createdAt,
+      recipientName: marketingCampaignRecipientsTable.name,
+      recipientPhone: marketingCampaignRecipientsTable.phone,
+    })
+    .from(marketingDeliveryLogsTable)
+    .leftJoin(
+      marketingCampaignRecipientsTable,
+      eq(marketingDeliveryLogsTable.recipientId, marketingCampaignRecipientsTable.id)
+    )
+    .where(eq(marketingDeliveryLogsTable.campaignId, params.data.id))
+    .orderBy(desc(marketingDeliveryLogsTable.createdAt));
+
+  res.json(rows);
 });
 
 export default router;

@@ -256,6 +256,7 @@ export default function Marketing() {
   const [preview, setPreview] = useState<RecipientPreview | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isSendingCampaignId, setIsSendingCampaignId] = useState<number | null>(null);
   const [isRecipientsDialogOpen, setIsRecipientsDialogOpen] = useState(false);
@@ -270,6 +271,10 @@ export default function Marketing() {
   const [recipientSearch, setRecipientSearch] = useState("");
   const [recipientStatusFilter, setRecipientStatusFilter] = useState<"all" | "prepared" | "sent" | "failed">("all");
   const [isRetryingFailed, setIsRetryingFailed] = useState(false);
+  const [activeRecipientTab, setActiveRecipientTab] = useState<"list" | "logs">("list");
+  const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
 
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupForm, setGroupForm] = useState(emptyGroupForm);
@@ -514,9 +519,12 @@ export default function Marketing() {
       if (response.success) {
         alert("Failed recipients reset successfully. They are now prepared for sending.");
         if (isRecipientsDialogOpen && selectedCampaignForRecipients?.id === campaign.id) {
-          // Reload local recipients list
-          const data = await customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`);
-          setRecipients(data);
+          const [recipientsData, logsData] = await Promise.all([
+            customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`),
+            customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/logs`).catch(() => [])
+          ]);
+          setRecipients(recipientsData);
+          setDeliveryLogs(logsData);
         }
         await loadData();
       }
@@ -532,12 +540,18 @@ export default function Marketing() {
     setSelectedCampaignForRecipients(campaign);
     setRecipientSearch("");
     setRecipientStatusFilter("all");
+    setActiveRecipientTab("list");
+    setDeliveryLogs([]);
     setIsRecipientsDialogOpen(true);
     setIsLoadingRecipients(true);
     setRecipientsError(null);
     try {
-      const data = await customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`);
-      setRecipients(data);
+      const [recipientsData, logsData] = await Promise.all([
+        customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`),
+        customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/logs`).catch(() => [])
+      ]);
+      setRecipients(recipientsData);
+      setDeliveryLogs(logsData);
     } catch (err) {
       const error = err as Error & { data?: { error?: string } };
       setRecipientsError(error.data?.error ?? error.message ?? "Failed to load recipients list.");
@@ -547,16 +561,35 @@ export default function Marketing() {
   };
 
   const saveTemplate = async () => {
-    const body = { ...templateForm, variables: templateVariables(templateForm.body) };
-    if (editingTemplate) {
-      await customFetch(`/api/marketing/templates/${editingTemplate.id}`, { method: "PATCH", body: JSON.stringify(body) });
-    } else {
-      await customFetch("/api/marketing/templates", { method: "POST", body: JSON.stringify(body) });
+    setIsSavingTemplate(true);
+    try {
+      const body = { ...templateForm, variables: templateVariables(templateForm.body) };
+      if (editingTemplate) {
+        await customFetch(`/api/marketing/templates/${editingTemplate.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        await customFetch("/api/marketing/templates", { method: "POST", body: JSON.stringify(body) });
+      }
+      setTemplateOpen(false);
+      setEditingTemplate(null);
+      setTemplateForm(emptyTemplateForm);
+      await loadData();
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      alert(error.data?.error ?? error.message ?? "Failed to save template.");
+    } finally {
+      setIsSavingTemplate(false);
     }
-    setTemplateOpen(false);
-    setEditingTemplate(null);
-    setTemplateForm(emptyTemplateForm);
-    await loadData();
+  };
+
+  const deleteTemplate = async (id: number) => {
+    if (!canDelete || !confirm("Are you sure you want to delete this template?")) return;
+    try {
+      await customFetch(`/api/marketing/templates/${id}`, { method: "DELETE" });
+      await loadData();
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      alert(error.data?.error ?? error.message ?? "Failed to delete template.");
+    }
   };
 
   const openTemplateEdit = (template: MarketingTemplate) => {
@@ -735,7 +768,7 @@ export default function Marketing() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  {canEdit && campaign.status === "draft" && (
+                  {canEdit && (campaign.status === "draft" || campaign.status === "prepared") && (
                     <Button variant="outline" size="sm" onClick={() => openCampaignEdit(campaign)}>
                       <Edit className="mr-2 h-3.5 w-3.5" />
                       Edit / Preview
@@ -787,12 +820,19 @@ export default function Marketing() {
                 <Badge variant={template.status === "approved" ? "default" : "secondary"}>{template.status}</Badge>
               </div>
               <p className="mt-3 text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4">{template.body}</p>
-              {canEdit && (
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => openTemplateEdit(template)}>
-                  <Edit className="mr-2 h-3.5 w-3.5" />
-                  Edit Template
-                </Button>
-              )}
+              <div className="flex gap-2 mt-4 items-center">
+                {canEdit && (
+                  <Button variant="outline" size="sm" onClick={() => openTemplateEdit(template)}>
+                    <Edit className="mr-2 h-3.5 w-3.5" />
+                    Edit Template
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button variant="ghost" size="icon" onClick={() => deleteTemplate(template.id)} className="text-destructive hover:bg-destructive/10">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -1136,8 +1176,14 @@ export default function Marketing() {
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>{editingTemplate ? "Edit Template" : "New WhatsApp Template"}</DialogTitle></DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Template Name"><Input value={templateForm.name} onChange={(e) => setTemplateForm((form) => ({ ...form, name: e.target.value }))} /></Field>
-            <Field label="Language"><Input value={templateForm.language} onChange={(e) => setTemplateForm((form) => ({ ...form, language: e.target.value }))} /></Field>
+            <Field label="Template Name">
+              <Input value={templateForm.name} onChange={(e) => setTemplateForm((form) => ({ ...form, name: e.target.value }))} />
+              <span className="text-[10px] text-muted-foreground block mt-0.5">Must exactly match an approved Meta template name.</span>
+            </Field>
+            <Field label="Language">
+              <Input value={templateForm.language} onChange={(e) => setTemplateForm((form) => ({ ...form, language: e.target.value }))} />
+              <span className="text-[10px] text-muted-foreground block mt-0.5">Must exactly match approved Meta language code (e.g. 'en_US' or 'ar').</span>
+            </Field>
             <Field label="Category">
               <Select value={templateForm.category} onValueChange={(value) => setTemplateForm((form) => ({ ...form, category: value as "utility" | "marketing" }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1156,7 +1202,10 @@ export default function Marketing() {
           </Field>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTemplateOpen(false)}>Cancel</Button>
-            <Button onClick={saveTemplate} disabled={!templateForm.name || !templateForm.body}>Save Template</Button>
+            <Button onClick={saveTemplate} disabled={isSavingTemplate || !templateForm.name || !templateForm.body}>
+              {isSavingTemplate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save Template
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1193,6 +1242,31 @@ export default function Marketing() {
           <DialogHeader>
             <DialogTitle>Campaign Recipients & Status</DialogTitle>
           </DialogHeader>
+
+          {/* Sub-tabs header */}
+          <div className="flex border-b mb-4 text-sm font-medium">
+            <button
+              onClick={() => setActiveRecipientTab("list")}
+              className={`py-2 px-4 border-b-2 transition-all ${
+                activeRecipientTab === "list"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Recipients ({recipients.length})
+            </button>
+            <button
+              onClick={() => setActiveRecipientTab("logs")}
+              className={`py-2 px-4 border-b-2 transition-all ${
+                activeRecipientTab === "logs"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Delivery Logs ({deliveryLogs.length})
+            </button>
+          </div>
+
           {isLoadingRecipients ? (
             <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin mb-2" />
@@ -1200,7 +1274,7 @@ export default function Marketing() {
             </div>
           ) : recipientsError ? (
             <div className="text-destructive text-sm p-4">{recipientsError}</div>
-          ) : (
+          ) : activeRecipientTab === "list" ? (
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               {/* Timeline Snapshot */}
               {selectedCampaignForRecipients && (
@@ -1293,31 +1367,103 @@ export default function Marketing() {
               </div>
 
               <div className="space-y-2">
-                {filteredRecipients.map((recipient) => (
-                  <div key={recipient.id} className="flex items-center justify-between border rounded-lg p-3 text-sm bg-card hover:bg-muted/5">
-                    <div className="space-y-1">
-                      <p className="font-medium text-foreground">{recipient.name}</p>
-                      <p className="text-xs text-muted-foreground">{recipient.normalizedPhone || "No Phone"} · {recipient.email || "No Email"}</p>
-                      {recipient.errorMessage && (
-                        <p className="text-xs text-destructive font-mono bg-destructive/5 px-2 py-1 rounded border border-destructive/10 max-w-lg mt-1 whitespace-pre-wrap">
-                          Reason: {recipient.errorMessage}
-                        </p>
-                      )}
-                      {recipient.updatedAt && (
-                        <p className="text-[10px] text-muted-foreground">Last updated: {new Date(recipient.updatedAt).toLocaleString()}</p>
-                      )}
+                {filteredRecipients.map((recipient) => {
+                  const isMetaTranslationError = recipient.errorMessage && (
+                    recipient.errorMessage.includes("132001") ||
+                    recipient.errorMessage.toLowerCase().includes("template name does not exist")
+                  );
+                  return (
+                    <div key={recipient.id} className="flex items-center justify-between border rounded-lg p-3 text-sm bg-card hover:bg-muted/5">
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">{recipient.name}</p>
+                        <p className="text-xs text-muted-foreground">{recipient.normalizedPhone || "No Phone"} · {recipient.email || "No Email"}</p>
+                        {recipient.errorMessage && (
+                          <div className="space-y-1.5 mt-1">
+                            <p className="text-xs text-destructive font-mono bg-destructive/5 px-2 py-1 rounded border border-destructive/10 max-w-lg whitespace-pre-wrap">
+                              Reason: {recipient.errorMessage}
+                            </p>
+                            {isMetaTranslationError && (
+                              <div className="bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded px-2.5 py-1.5 text-[11px] leading-relaxed max-w-lg">
+                                <strong className="font-bold">Meta Translation Tip:</strong> This error (#132001) occurs because the template name or language code does not exactly match an approved WhatsApp template in your Meta Business Suite. Please verify that the template is fully approved for this language code.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {recipient.updatedAt && (
+                          <p className="text-[10px] text-muted-foreground">Last updated: {new Date(recipient.updatedAt).toLocaleString()}</p>
+                        )}
+                      </div>
+                      <Badge variant={recipient.status === "sent" ? "default" : recipient.status === "failed" ? "destructive" : "secondary"}>
+                        {recipient.status}
+                      </Badge>
                     </div>
-                    <Badge variant={recipient.status === "sent" ? "default" : recipient.status === "failed" ? "destructive" : "secondary"}>
-                      {recipient.status}
-                    </Badge>
-                  </div>
-                ))}
+                  );
+                })}
                 {filteredRecipients.length === 0 && (
                   <p className="text-center text-sm text-muted-foreground p-8 bg-muted/10 rounded-lg border border-dashed">
                     No recipients match the active search or status filter.
                   </p>
                 )}
               </div>
+            </div>
+          ) : (
+            /* Delivery Logs view */
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {isLoadingLogs ? (
+                <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
+                  <Loader2 className="h-6 w-6 animate-spin mb-2" />
+                  Loading delivery logs...
+                </div>
+              ) : logsError ? (
+                <div className="text-destructive text-sm p-4">{logsError}</div>
+              ) : (
+                <div className="space-y-3">
+                  {deliveryLogs.map((log) => {
+                    const isMetaTranslationError = log.errorMessage && (
+                      log.errorMessage.includes("132001") ||
+                      log.errorMessage.toLowerCase().includes("template name does not exist")
+                    );
+                    return (
+                      <div key={log.id} className="border rounded-lg p-3 text-xs bg-card hover:bg-muted/5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-foreground">
+                            {log.recipientName ? `${log.recipientName} (${log.recipientPhone || "No Phone"})` : "System / Campaign Event"}
+                          </p>
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(log.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={log.status === "sent" ? "default" : log.status === "failed" ? "destructive" : "secondary"} className="text-[10px] py-0 px-1.5 font-normal capitalize">
+                            {log.eventType} · {log.status}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">Provider: {log.provider}</span>
+                          {log.providerMessageId && (
+                            <span className="text-[10px] text-muted-foreground font-mono">Msg ID: {log.providerMessageId}</span>
+                          )}
+                        </div>
+                        {log.errorMessage && (
+                          <div className="space-y-1">
+                            <p className="text-destructive font-mono bg-destructive/5 px-2 py-1 rounded border border-destructive/10">
+                              Error: {log.errorMessage} {log.errorCode ? `(Code: ${log.errorCode})` : ""}
+                            </p>
+                            {isMetaTranslationError && (
+                              <div className="bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded px-2.5 py-1.5 text-[11px] leading-relaxed">
+                                <strong className="font-bold">Meta Translation Tip:</strong> This error (#132001) occurs because the template name or language code does not exactly match an approved WhatsApp template in your Meta Business Suite. Please verify that the template is fully approved for this language code.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {deliveryLogs.length === 0 && (
+                    <p className="text-center text-sm text-muted-foreground p-8 bg-muted/10 rounded-lg border border-dashed">
+                      No delivery log events recorded for this campaign.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <DialogFooter className="mt-4 border-t pt-3 flex gap-2">
