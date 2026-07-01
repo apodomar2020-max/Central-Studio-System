@@ -48,6 +48,8 @@ type Campaign = {
   audienceConfig?: AudienceConfig | null;
   recipientCount: number;
   sentCount: number;
+  failedCount?: number;
+  preparedCount?: number;
   preparedAt?: string | null;
   sentAt?: string | null;
   createdAt: string;
@@ -255,6 +257,19 @@ export default function Marketing() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
+  const [isSendingCampaignId, setIsSendingCampaignId] = useState<number | null>(null);
+  const [isRecipientsDialogOpen, setIsRecipientsDialogOpen] = useState(false);
+  const [selectedCampaignForRecipients, setSelectedCampaignForRecipients] = useState<Campaign | null>(null);
+  const [recipients, setRecipients] = useState<any[]>([]);
+  const [isLoadingRecipients, setIsLoadingRecipients] = useState(false);
+  const [recipientsError, setRecipientsError] = useState<string | null>(null);
+  const [confirmSendCampaign, setConfirmSendCampaign] = useState<Campaign | null>(null);
+  const [confirmData, setConfirmData] = useState<{ total: number; prepared: number; sent: number; failed: number } | null>(null);
+  const [isLoadingConfirmData, setIsLoadingConfirmData] = useState(false);
+  const [batchResult, setBatchResult] = useState<{ campaignTitle: string; sentInBatch: number; total: number; prepared: number; sent: number; failed: number; newStatus: string; campaign: Campaign } | null>(null);
+  const [recipientSearch, setRecipientSearch] = useState("");
+  const [recipientStatusFilter, setRecipientStatusFilter] = useState<"all" | "prepared" | "sent" | "failed">("all");
+  const [isRetryingFailed, setIsRetryingFailed] = useState(false);
 
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupForm, setGroupForm] = useState(emptyGroupForm);
@@ -271,6 +286,19 @@ export default function Marketing() {
     () => templates.find((template) => String(template.id) === campaignForm.templateId),
     [campaignForm.templateId, templates],
   );
+
+  const filteredRecipients = useMemo(() => {
+    return recipients.filter((recipient) => {
+      const searchLower = recipientSearch.toLowerCase();
+      const matchesSearch =
+        recipient.name.toLowerCase().includes(searchLower) ||
+        (recipient.email && recipient.email.toLowerCase().includes(searchLower)) ||
+        (recipient.normalizedPhone && recipient.normalizedPhone.includes(searchLower));
+      const matchesStatus =
+        recipientStatusFilter === "all" || recipient.status === recipientStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [recipients, recipientSearch, recipientStatusFilter]);
 
   async function loadData() {
     setIsLoading(true);
@@ -414,6 +442,107 @@ export default function Marketing() {
       resetCampaignDialog();
     } finally {
       setIsPreparing(false);
+    }
+  };
+
+  const handleOpenSendConfirmation = async (campaign: Campaign) => {
+    setConfirmSendCampaign(campaign);
+    setIsLoadingConfirmData(true);
+    setConfirmData(null);
+    try {
+      const data = await customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`);
+      const total = data.length;
+      const prepared = data.filter((r) => r.status === "prepared").length;
+      const sent = data.filter((r) => r.status === "sent").length;
+      const failed = data.filter((r) => r.status === "failed").length;
+      setConfirmData({ total, prepared, sent, failed });
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      setError(error.data?.error ?? error.message ?? "Failed to load campaign confirmation data.");
+      setConfirmSendCampaign(null);
+    } finally {
+      setIsLoadingConfirmData(false);
+    }
+  };
+
+  const sendCampaign = async (campaign: Campaign) => {
+    setIsSendingCampaignId(campaign.id);
+    setConfirmSendCampaign(null);
+    setError(null);
+    try {
+      const response = await customFetch<{ success: boolean; sentCount: number; sentAt: string | null }>(
+        `/api/marketing/campaigns/${campaign.id}/send`,
+        { method: "POST" }
+      );
+      if (response.success) {
+        const freshRecipients = await customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`);
+        const total = freshRecipients.length;
+        const prepared = freshRecipients.filter((r) => r.status === "prepared").length;
+        const sent = freshRecipients.filter((r) => r.status === "sent").length;
+        const failed = freshRecipients.filter((r) => r.status === "failed").length;
+        const newStatus = prepared === 0 ? "sent" : "sending";
+
+        setBatchResult({
+          campaignTitle: campaign.title,
+          sentInBatch: response.sentCount,
+          total,
+          prepared,
+          sent,
+          failed,
+          newStatus,
+          campaign,
+        });
+        await loadData();
+      }
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      setError(error.data?.error ?? error.message ?? "Failed to send campaign batch.");
+    } finally {
+      setIsSendingCampaignId(null);
+    }
+  };
+
+  const retryFailedRecipients = async (campaign: Campaign) => {
+    if (!confirm("Are you sure you want to retry failed recipients? This resets their status to prepared.")) return;
+    setIsRetryingFailed(true);
+    setError(null);
+    try {
+      const response = await customFetch<{ success: boolean }>(
+        `/api/marketing/campaigns/${campaign.id}/retry-failed`,
+        { method: "POST" }
+      );
+      if (response.success) {
+        alert("Failed recipients reset successfully. They are now prepared for sending.");
+        if (isRecipientsDialogOpen && selectedCampaignForRecipients?.id === campaign.id) {
+          // Reload local recipients list
+          const data = await customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`);
+          setRecipients(data);
+        }
+        await loadData();
+      }
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      setError(error.data?.error ?? error.message ?? "Failed to retry failed recipients.");
+    } finally {
+      setIsRetryingFailed(false);
+    }
+  };
+
+  const openRecipientStatusDialog = async (campaign: Campaign) => {
+    setSelectedCampaignForRecipients(campaign);
+    setRecipientSearch("");
+    setRecipientStatusFilter("all");
+    setIsRecipientsDialogOpen(true);
+    setIsLoadingRecipients(true);
+    setRecipientsError(null);
+    try {
+      const data = await customFetch<any[]>(`/api/marketing/campaigns/${campaign.id}/recipients`);
+      setRecipients(data);
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string } };
+      setRecipientsError(error.data?.error ?? error.message ?? "Failed to load recipients list.");
+    } finally {
+      setIsLoadingRecipients(false);
     }
   };
 
@@ -579,27 +708,61 @@ export default function Marketing() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold text-foreground">{campaign.title}</p>
-                      <Badge variant={campaign.status === "prepared" ? "default" : "secondary"}>{campaign.status}</Badge>
+                      <Badge variant={campaign.status === "prepared" ? "default" : campaign.status === "sending" ? "outline" : campaign.status === "sent" ? "secondary" : "secondary"}>
+                        {campaign.status}
+                      </Badge>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{campaign.message}</p>
                     <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                       <span>{audienceOptions.find((item) => item.value === (campaign.audienceType ?? campaign.targetAudience))?.label ?? campaign.targetAudience}</span>
                       <span>{campaign.recipientCount} eligible recipients</span>
-                      <span>WhatsApp API delivery: coming soon</span>
                     </div>
+                    {campaign.status !== "draft" && (
+                      <div className="mt-3 space-y-1.5">
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground items-center">
+                          <span className="font-semibold text-foreground">{campaign.sentCount} / {campaign.recipientCount} sent</span>
+                          <span>·</span>
+                          <span className="font-semibold text-destructive">{campaign.failedCount || 0} failed</span>
+                          <span>·</span>
+                          <span className="font-semibold text-amber-600">{campaign.preparedCount || 0} remaining</span>
+                          <span className="ml-auto font-medium text-foreground">{Math.round((campaign.sentCount / campaign.recipientCount) * 100 || 0)}%</span>
+                        </div>
+                        <div className="w-full max-w-md rounded-full bg-muted h-1.5 overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${(campaign.sentCount / campaign.recipientCount) * 100 || 0}%`, backgroundColor: WHATSAPP_GREEN }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {canEdit && (
+                <div className="flex flex-wrap gap-2 text-sm">
+                  {canEdit && campaign.status === "draft" && (
                     <Button variant="outline" size="sm" onClick={() => openCampaignEdit(campaign)}>
                       <Edit className="mr-2 h-3.5 w-3.5" />
                       Edit / Preview
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" disabled title="WhatsApp Cloud API integration is not enabled yet">
-                    <Send className="mr-2 h-3.5 w-3.5" />
-                    Send via WhatsApp · Coming Soon
-                  </Button>
+                  {(campaign.status === "prepared" || campaign.status === "sending" || campaign.status === "sent") && (
+                    <Button variant="outline" size="sm" onClick={() => openRecipientStatusDialog(campaign)}>
+                      <Users className="mr-2 h-3.5 w-3.5" />
+                      Recipients ({campaign.sentCount}/{campaign.recipientCount})
+                    </Button>
+                  )}
+                  {canSend && (campaign.status === "prepared" || campaign.status === "sending") && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => handleOpenSendConfirmation(campaign)}
+                      disabled={isSendingCampaignId === campaign.id || !whatsAppStatus?.enabled || !whatsAppStatus?.configured}
+                      style={whatsAppStatus?.enabled && whatsAppStatus?.configured ? { backgroundColor: WHATSAPP_GREEN, borderColor: WHATSAPP_GREEN, color: "#fff" } : undefined}
+                    >
+                      {isSendingCampaignId === campaign.id ? (
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="mr-2 h-3.5 w-3.5" />
+                      )}
+                      {campaign.status === "sending" ? "Send Next Batch" : "Send Campaign"}
+                    </Button>
+                  )}
                   {canDelete && (
                     <Button variant="ghost" size="icon" onClick={() => deleteCampaign(campaign)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -930,10 +1093,22 @@ export default function Marketing() {
 
               <div className="rounded-xl border border-border bg-card p-4">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-500" />
+                  {whatsAppStatus?.enabled && whatsAppStatus?.configured ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-green-500" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-500" />
+                  )}
                   <div>
-                    <p className="text-sm font-semibold text-foreground">WhatsApp delivery is disabled</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Phase 1 prepares campaigns and recipient snapshots only. Cloud API sending, queues, and webhooks come later.</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {whatsAppStatus?.enabled && whatsAppStatus?.configured
+                        ? "WhatsApp delivery is active"
+                        : "WhatsApp delivery is disabled"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {whatsAppStatus?.enabled && whatsAppStatus?.configured
+                        ? "Campaigns will be sent via the configured WhatsApp Cloud API."
+                        : "WhatsApp is not configured. Set WHATSAPP_ENABLED=true and configure API settings to enable sending."}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1010,6 +1185,268 @@ export default function Marketing() {
             <Button variant="outline" onClick={() => setGroupOpen(false)}>Cancel</Button>
             <Button onClick={saveGroup} disabled={!groupForm.classId || !groupForm.groupUrl}>Save Group Link</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isRecipientsDialogOpen} onOpenChange={setIsRecipientsDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6">
+          <DialogHeader>
+            <DialogTitle>Campaign Recipients & Status</DialogTitle>
+          </DialogHeader>
+          {isLoadingRecipients ? (
+            <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin mb-2" />
+              Loading recipients list...
+            </div>
+          ) : recipientsError ? (
+            <div className="text-destructive text-sm p-4">{recipientsError}</div>
+          ) : (
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* Timeline Snapshot */}
+              {selectedCampaignForRecipients && (
+                <div className="rounded-xl border bg-muted/20 p-4 text-xs space-y-2">
+                  <p className="font-semibold text-foreground">Campaign Activity Timeline</p>
+                  <ul className="space-y-1 pl-4 list-disc text-muted-foreground">
+                    <li>
+                      Prepared on <span className="font-medium text-foreground">{selectedCampaignForRecipients.preparedAt ? new Date(selectedCampaignForRecipients.preparedAt).toLocaleString() : "Unknown"}</span> with <span className="font-medium text-foreground">{selectedCampaignForRecipients.recipientCount}</span> candidates.
+                    </li>
+                    {recipients.filter(r => r.status === "sent").length > 0 && (
+                      <li>
+                        Dispatched <span className="font-semibold text-emerald-600">{recipients.filter(r => r.status === "sent").length}</span> messages successfully.
+                      </li>
+                    )}
+                    {recipients.filter(r => r.status === "failed").length > 0 && (
+                      <li>
+                        Failed to send <span className="font-semibold text-destructive">{recipients.filter(r => r.status === "failed").length}</span> messages.
+                      </li>
+                    )}
+                    {selectedCampaignForRecipients.status === "sent" && (
+                      <li className="text-emerald-600 font-medium">
+                        Campaign finished sending on {selectedCampaignForRecipients.sentAt ? new Date(selectedCampaignForRecipients.sentAt).toLocaleString() : "Unknown"}.
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between text-sm border-b pb-4">
+                <div>
+                  <p className="font-semibold text-foreground">
+                    {selectedCampaignForRecipients?.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Status: <span className="font-semibold capitalize text-foreground">{selectedCampaignForRecipients?.status}</span>
+                  </p>
+                </div>
+                <div className="flex gap-4">
+                  <div className="text-right">
+                    <span className="font-bold text-foreground">
+                      {recipients.filter(r => r.status === "sent").length}
+                    </span>
+                    <p className="text-xs text-muted-foreground">Sent</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-amber-600">
+                      {recipients.filter(r => r.status === "prepared").length}
+                    </span>
+                    <p className="text-xs text-muted-foreground">Prepared</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-destructive">
+                      {recipients.filter(r => r.status === "failed").length}
+                    </span>
+                    <p className="text-xs text-muted-foreground">Failed</p>
+                  </div>
+                  <div className="text-right border-l pl-4">
+                    <span className="font-bold text-foreground">
+                      {recipients.length}
+                    </span>
+                    <p className="text-xs text-muted-foreground">Total</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Search & Filter Section */}
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9 h-9"
+                    placeholder="Search name, phone, email..."
+                    value={recipientSearch}
+                    onChange={(e) => setRecipientSearch(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-1 border rounded-lg p-1 bg-muted/20">
+                  {(["all", "prepared", "sent", "failed"] as const).map((filter) => (
+                    <Button
+                      key={filter}
+                      variant={recipientStatusFilter === filter ? "secondary" : "ghost"}
+                      size="sm"
+                      className="h-7 capitalize text-xs px-2.5"
+                      onClick={() => setRecipientStatusFilter(filter)}
+                    >
+                      {filter}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {filteredRecipients.map((recipient) => (
+                  <div key={recipient.id} className="flex items-center justify-between border rounded-lg p-3 text-sm bg-card hover:bg-muted/5">
+                    <div className="space-y-1">
+                      <p className="font-medium text-foreground">{recipient.name}</p>
+                      <p className="text-xs text-muted-foreground">{recipient.normalizedPhone || "No Phone"} · {recipient.email || "No Email"}</p>
+                      {recipient.errorMessage && (
+                        <p className="text-xs text-destructive font-mono bg-destructive/5 px-2 py-1 rounded border border-destructive/10 max-w-lg mt-1 whitespace-pre-wrap">
+                          Reason: {recipient.errorMessage}
+                        </p>
+                      )}
+                      {recipient.updatedAt && (
+                        <p className="text-[10px] text-muted-foreground">Last updated: {new Date(recipient.updatedAt).toLocaleString()}</p>
+                      )}
+                    </div>
+                    <Badge variant={recipient.status === "sent" ? "default" : recipient.status === "failed" ? "destructive" : "secondary"}>
+                      {recipient.status}
+                    </Badge>
+                  </div>
+                ))}
+                {filteredRecipients.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground p-8 bg-muted/10 rounded-lg border border-dashed">
+                    No recipients match the active search or status filter.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter className="mt-4 border-t pt-3 flex gap-2">
+            {selectedCampaignForRecipients && recipients.some(r => r.status === "failed") && (
+              <Button
+                variant="outline"
+                onClick={() => retryFailedRecipients(selectedCampaignForRecipients)}
+                disabled={isRetryingFailed}
+                className="mr-auto text-destructive border-destructive hover:bg-destructive/10 h-9 text-xs"
+              >
+                {isRetryingFailed ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <AlertTriangle className="mr-2 h-4 w-4" />}
+                Retry Failed ({recipients.filter(r => r.status === "failed").length})
+              </Button>
+            )}
+            <Button variant="outline" className="h-9 text-xs" onClick={() => setIsRecipientsDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog Before Sending */}
+      <Dialog open={confirmSendCampaign !== null} onOpenChange={(open) => !open && setConfirmSendCampaign(null)}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle>Send WhatsApp Campaign?</DialogTitle>
+          </DialogHeader>
+          {confirmSendCampaign && (
+            <div className="space-y-4 text-sm mt-3">
+              <div className="space-y-2 border-b pb-3">
+                <p className="font-semibold text-base text-foreground">{confirmSendCampaign.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  Template: <span className="font-medium text-foreground">{confirmSendCampaign.templateId ? templates.find(t => t.id === confirmSendCampaign.templateId)?.name : "None"}</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Status: <span className="font-medium text-foreground capitalize">{confirmSendCampaign.status}</span>
+                </p>
+              </div>
+              {isLoadingConfirmData ? (
+                <div className="flex flex-col items-center justify-center p-6 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin mb-2" />
+                  Calculating campaign statistics...
+                </div>
+              ) : confirmData ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-muted/20 p-3 rounded-lg">
+                    <div>Total Candidates: <span className="font-bold text-foreground">{confirmData.total}</span></div>
+                    <div>Already Sent: <span className="font-bold text-foreground">{confirmData.sent}</span></div>
+                    <div>Failed: <span className="font-bold text-destructive">{confirmData.failed}</span></div>
+                    <div>Prepared Remaining: <span className="font-bold text-amber-600">{confirmData.prepared}</span></div>
+                  </div>
+                  <div className="border-t pt-3 space-y-2">
+                    <div className="flex justify-between font-medium">
+                      <span>Batch limit:</span>
+                      <span>5 recipients</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-emerald-600">
+                      <span>Will send now:</span>
+                      <span>{Math.min(confirmData.prepared, 5)} messages</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Remaining after this batch:</span>
+                      <span>{Math.max(0, confirmData.prepared - 5)} recipients</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-destructive">Failed to calculate campaign data.</p>
+              )}
+              <DialogFooter className="pt-3 border-t">
+                <Button variant="outline" onClick={() => setConfirmSendCampaign(null)}>Cancel</Button>
+                <Button
+                  onClick={() => confirmSendCampaign && sendCampaign(confirmSendCampaign)}
+                  disabled={isLoadingConfirmData || !confirmData || confirmData.prepared === 0}
+                  style={whatsAppStatus?.enabled && whatsAppStatus?.configured ? { backgroundColor: WHATSAPP_GREEN, borderColor: WHATSAPP_GREEN, color: "#fff" } : undefined}
+                >
+                  Send Now
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch Result Summary */}
+      <Dialog open={batchResult !== null} onOpenChange={(open) => !open && setBatchResult(null)}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-emerald-600 flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5" />
+              Batch Sending Completed
+            </DialogTitle>
+          </DialogHeader>
+          {batchResult && (
+            <div className="space-y-4 text-sm mt-3">
+              <p className="font-medium text-foreground">Summary for "{batchResult.campaignTitle}":</p>
+              <div className="space-y-2 bg-muted/20 p-3 rounded-lg border">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Sent in this batch:</span>
+                  <span className="font-bold text-emerald-600">{batchResult.sentInBatch} successfully</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Failed (total):</span>
+                  <span className="font-bold text-destructive">{batchResult.failed} failed</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Remaining:</span>
+                  <span className="font-bold text-amber-600">{batchResult.prepared} prepared</span>
+                </div>
+                <div className="flex justify-between border-t pt-2 mt-2">
+                  <span className="text-muted-foreground">Campaign status:</span>
+                  <span className="font-bold text-foreground capitalize">{batchResult.newStatus}</span>
+                </div>
+              </div>
+              <DialogFooter className="pt-3 border-t flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    const c = batchResult.campaign;
+                    setBatchResult(null);
+                    void openRecipientStatusDialog(c);
+                  }}
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  View Recipients
+                </Button>
+                <Button variant="secondary" className="flex-1" onClick={() => setBatchResult(null)}>Close</Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
