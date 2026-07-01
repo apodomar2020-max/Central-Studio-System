@@ -32,6 +32,7 @@ import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./a
 import { resolveMemberIdentity } from "../lib/membershipIdentity";
 import { buildProfileCompletion } from "../lib/studentProfileResponse";
 import { computeProfileCompletion } from "../lib/profileCompletion";
+import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./studentProfilePdf";
 import * as zod from "zod";
 
 const router: IRouter = Router();
@@ -408,6 +409,17 @@ const ACTIVE_RECENT_DAYS = 30;
 const INACTIVE_DAYS = 60;
 const AT_RISK_MIN_BOOKINGS = 3;
 const AT_RISK_MAX_RATE = 0.5;
+const DEFAULT_OVERVIEW_LIMITS = { bookings: 10, attendance: 10, packages: 5, credits: 10, feedback: 10 };
+const EXPORT_OVERVIEW_LIMITS = { bookings: 100, attendance: 100, packages: 100, credits: 100, feedback: 100 };
+
+class StudentOverviewHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: Record<string, unknown>,
+  ) {
+    super(String(body["error"] ?? "Student overview failed"));
+  }
+}
 
 function daysSince(isoDate: string): number {
   return (Date.now() - new Date(isoDate).getTime()) / 86_400_000;
@@ -444,26 +456,22 @@ function computeMembershipStatus(input: {
   return "Inactive";
 }
 
-router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
-  const params = GetStudentParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-
-  const [row] = await db.select().from(studentsTable).where(eq(studentsTable.id, params.data.id));
+async function buildStudentOverviewData(
+  req: AdminRequest,
+  studentId: number,
+  limits = DEFAULT_OVERVIEW_LIMITS,
+) {
+  const [row] = await db.select().from(studentsTable).where(eq(studentsTable.id, studentId));
   if (!row) {
-    res.status(404).json({ error: "Student not found" });
-    return;
+    throw new StudentOverviewHttpError(404, { error: "Student not found" });
   }
 
   const targetModule = accountModule(row.accountType);
   if (!adminCan(req, "users", "view") && !adminCan(req, targetModule, "view")) {
-    res.status(403).json({
+    throw new StudentOverviewHttpError(403, {
       error: "Permission denied",
       requiredPermission: { anyOf: [`users.view`, `${targetModule}.view`] },
     });
-    return;
   }
 
   // Membership Engine — resolve the canonical identity once via the shared
@@ -531,7 +539,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
         .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
         .where(ownerCondition)
         .orderBy(desc(bookingsTable.createdAt))
-        .limit(10)
+        .limit(limits.bookings)
     : Promise.resolve([]);
 
   // ---------------------------------------------------------------------
@@ -562,7 +570,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
         .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
         .where(attendanceOwnerCondition)
         .orderBy(desc(attendanceTable.checkedInAt))
-        .limit(10)
+        .limit(limits.attendance)
     : Promise.resolve([]);
 
   // ---------------------------------------------------------------------
@@ -594,7 +602,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
         .from(packageOrdersTable)
         .where(packageOwnerCondition)
         .orderBy(desc(packageOrdersTable.createdAt))
-        .limit(5)
+        .limit(limits.packages)
     : Promise.resolve([]);
 
   // ---------------------------------------------------------------------
@@ -615,7 +623,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
             .from(creditTransactionsTable)
             .where(inArray(creditTransactionsTable.packageOrderId, orderIds))
             .orderBy(desc(creditTransactionsTable.createdAt))
-            .limit(10);
+            .limit(limits.credits);
         })
     : Promise.resolve([]);
 
@@ -651,7 +659,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
         .from(feedbackTable)
         .where(feedbackOwnerCondition)
         .orderBy(desc(feedbackTable.receivedAt))
-        .limit(10)
+        .limit(limits.feedback)
     : Promise.resolve([]);
 
   // Profile Completion Engine (Phase 4) — "Your Vibe" selections, gated the
@@ -887,7 +895,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
   }
   timeline.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
 
-  res.json({
+  return {
     user: {
       id: row.id,
       name: row.name,
@@ -948,7 +956,51 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     creditTransactions: permissions.canViewCredits ? creditTransactions : [],
     timeline: timeline.slice(0, 30),
     permissions,
-  });
+  };
+}
+
+function handleStudentOverviewError(res: { status: (code: number) => { json: (body: unknown) => void } }, err: unknown): void {
+  if (err instanceof StudentOverviewHttpError) {
+    res.status(err.status).json(err.body);
+    return;
+  }
+  console.error("[students] overview failed:", err);
+  res.status(500).json({ error: "Failed to load student overview" });
+}
+
+router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+  const params = GetStudentParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  try {
+    res.json(await buildStudentOverviewData(req, params.data.id));
+  } catch (err) {
+    handleStudentOverviewError(res, err);
+  }
+});
+
+router.get("/students/:id/overview.pdf", requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+  const params = GetStudentParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  try {
+    const overview = await buildStudentOverviewData(req, params.data.id, EXPORT_OVERVIEW_LIMITS);
+    const buf = await buildStudentProfilePdfBuffer({
+      overview,
+      generatedBy: req.adminUser?.username ?? "Admin",
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${studentProfilePdfFilename(overview.user.id, overview.user.name)}"`);
+    res.send(buf);
+  } catch (err) {
+    handleStudentOverviewError(res, err);
+  }
 });
 
 router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {

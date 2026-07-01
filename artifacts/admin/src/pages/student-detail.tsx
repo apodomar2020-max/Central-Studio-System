@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
 import {
@@ -7,6 +8,8 @@ import {
   CalendarClock,
   CheckCircle2,
   CreditCard,
+  Download,
+  Loader2,
   Mail,
   Package,
   Phone,
@@ -260,7 +263,9 @@ function EmptyState({ text }: { text: string }) {
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const studentId = Number(id);
-  const { token, can } = useAdminAuth();
+  const { token } = useAdminAuth();
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [exportPdfError, setExportPdfError] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ["student-overview", studentId],
@@ -296,6 +301,34 @@ export default function StudentDetailPage() {
   const bookingsHref = `/bookings?studentEmail=${encodeURIComponent(d.user.email)}`;
   const attendanceHref = `/attendance?studentEmail=${encodeURIComponent(d.user.email)}`;
   const feedbackHref = `/feedback?studentEmail=${encodeURIComponent(d.user.email)}`;
+  const fallbackPdfName = `central-studio-user-${d.user.id}-${d.user.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "user"}.pdf`;
+
+  async function handleExportPdf() {
+    setIsExportingPdf(true);
+    setExportPdfError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/students/${studentId}/overview.pdf`, { headers: makeHeaders(token) });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Failed to export PDF");
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackPdfName;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportPdfError((err as Error)?.message ?? "Failed to export PDF");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -307,7 +340,13 @@ export default function StudentDetailPage() {
         title={d.user.name}
         description={isParent ? "Parent Profile · 360° View" : "Student Profile · 360° View"}
         mode="studio"
-      />
+      >
+        <Button variant="outline" className="gap-2" onClick={handleExportPdf} disabled={isExportingPdf}>
+          {isExportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {isExportingPdf ? "Exporting..." : "Export PDF"}
+        </Button>
+      </PageHeader>
+      {exportPdfError && <div className="text-sm text-destructive">{exportPdfError}</div>}
 
       {/* ---------------------------------------------------------------- */}
       {/* Header card                                                      */}
