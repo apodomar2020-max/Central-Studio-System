@@ -162,7 +162,7 @@ const permissionCatalog = [
     label: "Marketing",
     description: "Existing marketing campaigns and sends.",
     group: "Content & Engagement",
-    actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
+    actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["send", "Send"], ["delete", "Delete"]),
   },
   {
     key: "appContent",

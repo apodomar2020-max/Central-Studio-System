@@ -289,5 +289,13 @@
       "tag": "0035_profile_completion_fields",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1783771200000,
+      "tag": "0036_marketing_center_foundation",
+      "breakpoints": true
+    }
   ]
 }
