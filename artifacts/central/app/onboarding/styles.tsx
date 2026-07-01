@@ -1,8 +1,10 @@
 /**
- * Pick Styles — design `PickStyles` (signup-views2.jsx). Step 3 of 4.
+ * Pick Styles ("Your Vibe") — Profile Completion Engine (Phase 4).
  * The visual shell is replicated from the design; the style list + icons are
  * sourced from the CMS Dance Types (useListDanceTypes + CategoryIcon), not the
- * design's hardcoded sprite list.
+ * design's hardcoded sprite list. Selections are persisted to the backend
+ * (student_dance_interests) via PUT /api/auth/dance-interests — no more
+ * AsyncStorage-only storage.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
@@ -11,12 +13,18 @@ import React, { useMemo, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useListDanceTypes } from "@workspace/api-client-react";
+import { customFetch, useListDanceTypes } from "@workspace/api-client-react";
 import CategoryIcon from "@/components/CategoryIcon";
 import ProgressDots from "@/components/ProgressDots";
 import { STORAGE_KEYS } from "@/constants/danceStyles";
+import { useAppContext, type User } from "@/contexts/AppContext";
+import { mapStudentToUser, nextStepRoute, type AuthStudent } from "@/services/authProfile";
 import { BackBtn, CS, Eyebrow, Icon, PrimaryCTA, ScreenTitle } from "@/components/signup/SignupKit";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
+
+interface DanceInterestsResponse {
+  student: AuthStudent;
+}
 
 const VibeGlow = React.memo(function VibeGlow() {
   return (
@@ -45,8 +53,10 @@ function hexToRgb(hex?: string | null): string {
 
 export default function StylesPickerScreen() {
   const insets = useSafeAreaInsets();
+  const { setUser } = useAppContext();
   const { data: danceTypesRaw } = useListDanceTypes();
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [saving, setSaving] = useState(false);
   const topPad = (Platform.OS === "web" ? 40 : insets.top) + 14;
 
   const styles_ = useMemo(
@@ -63,14 +73,25 @@ export default function StylesPickerScreen() {
   }
 
   async function persistAndContinue() {
-    const chosen = styles_.filter((dt) => selected.has(dt.id)).map((dt) => dt.slug);
-    await AsyncStorage.setItem(STORAGE_KEYS.danceStyles, JSON.stringify(chosen));
-    // NOTE: saving to backend not yet supported — no student_dance_styles table exists.
-    // This is documented as temporary local storage.
-    // TODO: create student_dance_styles join table and PATCH /api/auth/profile endpoint
-    // to accept selectedStyleIds, then migrate AsyncStorage data to server.
-    // Vibe is the last data-entry step — go straight to the Thanks page.
-    router.push("/onboarding/success" as never);
+    setSaving(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const data = await customFetch<DanceInterestsResponse>("/api/auth/dance-interests", {
+        method: "PUT",
+        body: JSON.stringify({ danceTypeIds: Array.from(selected) }),
+      });
+      const updated: User = mapStudentToUser(data.student);
+      await setUser(updated);
+      // Backend (student_dance_interests) is the real persistence — this is
+      // just a local cache so the Thanks page can show "N styles loaded"
+      // without a round trip.
+      const chosenSlugs = styles_.filter((dt) => selected.has(dt.id)).map((dt) => dt.slug);
+      await AsyncStorage.setItem(STORAGE_KEYS.danceStyles, JSON.stringify(chosenSlugs));
+      const nextStep = updated.profileCompletion?.nextStep ?? "done";
+      router.push(nextStepRoute(nextStep) as never);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const count = selected.size;
@@ -119,6 +140,7 @@ export default function StylesPickerScreen() {
           label={`Continue with ${count} style${count !== 1 ? "s" : ""}`}
           icon="arrow"
           onPress={persistAndContinue}
+          loading={saving}
           disabled={count === 0}
         />
       </View>

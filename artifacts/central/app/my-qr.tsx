@@ -19,6 +19,7 @@ import QRCode from "react-native-qrcode-svg";
 import { useAppContext } from "@/contexts/AppContext";
 import SBI from "@/components/SbIcon";
 import { formatApiDate, parseApiDate } from "@/utils/dateTime";
+import { nextStepRoute } from "@/services/authProfile";
 
 const CYAN = "#00B6D7";
 const CYAN_400 = "#2DCDEC";
@@ -45,6 +46,32 @@ export default function MyQRScreen() {
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Not signed in</Text>
           <Text style={styles.emptyDesc}>Sign in to view your studio pass</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Guard: profile must be complete (Profile Completion Engine, Phase 4) —
+  // no QR membership until the account is fully set up.
+  if (user.profileCompletion && !user.profileCompletion.isComplete) {
+    return (
+      <View style={styles.container}>
+        <View style={{ paddingTop: topPad, paddingHorizontal: 20, paddingBottom: 16 }}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtnStatic} activeOpacity={0.85}>
+            <SBI name="back" size={16} stroke={2.2} color="#B6BDC6" />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>Complete your profile first</Text>
+          <Text style={styles.emptyDesc}>Finish setting up your profile to receive your QR membership.</Text>
+          <TouchableOpacity
+            onPress={() => router.push(nextStepRoute(user.profileCompletion!.nextStep) as never)}
+            style={[styles.backBtnStatic, { marginTop: 16 }]}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.backText}>Complete Profile</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );

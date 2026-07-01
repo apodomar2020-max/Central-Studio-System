@@ -21,7 +21,7 @@ import { BackBtn, CS, Eyebrow, PrimaryCTA, Icon, ScreenTitle } from "@/component
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import ProgressDots from "@/components/ProgressDots";
 
-import { enterApp, fetchCurrentUser } from "@/services/authProfile";
+import { enterApp, fetchCurrentUser, nextStepRoute } from "@/services/authProfile";
 import { clearSignupDrafts } from "./auth/register";
 
 const VerifyGlow = React.memo(function VerifyGlow() {
@@ -60,12 +60,13 @@ export default function VerifyEmailScreen() {
 
   useEffect(() => {
     if (!user?.emailVerified) return;
-    if (!user.profileCompleted) {
-      router.replace("/auth/complete-profile" as never);
+    const nextStep = user.profileCompletion?.nextStep ?? "done";
+    if (nextStep === "done") {
+      void enterApp();
       return;
     }
-    void enterApp();
-  }, [user?.emailVerified, user?.profileCompleted]);
+    router.replace(nextStepRoute(nextStep) as never);
+  }, [user?.emailVerified, user?.profileCompletion?.nextStep]);
 
   // Auto-send OTP as soon as the screen opens (if not already verified)
   useEffect(() => {
@@ -121,14 +122,15 @@ export default function VerifyEmailScreen() {
       const refreshed = await fetchCurrentUser();
       await setUser(refreshed.user);
       clearSignupDrafts();
+      const nextStep = refreshed.user.profileCompletion?.nextStep ?? "done";
       Alert.alert("Email Verified!", "Your email has been verified successfully.", [
         {
           text: "Continue",
           onPress: () => {
-            if (!refreshed.user.profileCompleted) {
-              router.push("/auth/complete-profile" as never);
-            } else {
+            if (nextStep === "done") {
               void enterApp();
+            } else {
+              router.push(nextStepRoute(nextStep) as never);
             }
           },
         },

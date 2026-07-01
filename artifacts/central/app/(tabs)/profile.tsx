@@ -718,7 +718,10 @@ export default function ProfileScreen() {
                   <Text style={[styles.avatarInitials, { color: colors.studio.primary }]}>{initials}</Text>
                 </View>
               )}
-              {user.emailVerified && (
+              {/* Profile Completion Engine (Phase 4): verified badge requires
+                  BOTH email verification AND a 100%-complete profile — not
+                  just emailVerified alone. */}
+              {user.emailVerified && user.profileCompletion?.isComplete && (
                 <View style={styles.avatarVerifiedBadge}>
                   <PIcon name="check" size={14} stroke={3} color="#0A0B0D" />
                 </View>

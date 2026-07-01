@@ -54,6 +54,8 @@ import { formatCairoDateKey, getCairoTomorrowDateKey } from "@/utils/cairoDate";
 import colors from "@/constants/colors";
 import PackagePurchaseModal from "@/components/PackagePurchaseModal";
 import NewStudentBanner from "@/components/NewStudentBanner";
+import ProfileCompletionBanner from "@/components/ProfileCompletionBanner";
+import { nextStepRoute } from "@/services/authProfile";
 import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
@@ -800,6 +802,11 @@ export default function StudioHomeScreen() {
 
   const showNewStudentBanner = false;
 
+  // Profile Completion Engine (Phase 4): session-only dismiss (component
+  // state, not persisted) — reappears next time the app is opened.
+  const [completionBannerDismissed, setCompletionBannerDismissed] = useState(false);
+  const showCompletionBanner = !!user?.profileCompletion && !user.profileCompletion.isComplete && !completionBannerDismissed;
+
   const userInitials = React.useMemo(() => {
     if (!user?.fullName) return "";
     return user.fullName.split(/\s+/).filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
@@ -946,6 +953,13 @@ export default function StudioHomeScreen() {
         }
       >
         {showNewStudentBanner && <NewStudentBanner onDismiss={dismissNewStudentBanner} />}
+        {showCompletionBanner && user?.profileCompletion && (
+          <ProfileCompletionBanner
+            completion={user.profileCompletion}
+            onContinue={() => router.push(nextStepRoute(user.profileCompletion!.nextStep) as never)}
+            onDismiss={() => setCompletionBannerDismissed(true)}
+          />
+        )}
 
         {/* Hero */}
         <HeroCarousel

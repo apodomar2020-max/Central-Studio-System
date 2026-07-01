@@ -22,9 +22,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
-import { Trash2, Edit } from "lucide-react";
+import { Trash2, Edit, BadgeCheck } from "lucide-react";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
+import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const formSchema = z.object({
@@ -36,6 +37,27 @@ const formSchema = z.object({
 
 type FormValues = z.input<typeof formSchema>;
 type Student = { id: number; name: string; email: string; phone?: string | null; notes?: string | null; avatarUrl?: string | null; totalBookings: number; joinedAt: string };
+/**
+ * Profile Completion Engine (Phase 4) fields — GET /students now returns
+ * these (see routes/students.ts), but the generated api-client-react types
+ * don't know about them since the response is no longer parsed through the
+ * generated ListStudentsResponse schema. Widened locally instead of
+ * regenerating/editing the generated client.
+ */
+type StudentRow = Student & {
+  accountType?: string | null;
+  authProvider?: string | null;
+  howDidYouHearAboutUs?: string | null;
+  childCount?: number;
+  danceInterestCount?: number;
+  verificationBadge?: boolean;
+  profileCompletion?: {
+    percent: number;
+    isComplete: boolean;
+    nextStep: string;
+    missing: string[];
+  } | null;
+};
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -74,7 +96,7 @@ export default function Students() {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
   const { data: studentsResponse, isLoading } = useListStudents(listParams);
-  const students = studentsResponse?.students ?? [];
+  const students = (studentsResponse?.students ?? []) as StudentRow[];
   const total = studentsResponse?.total ?? 0;
   const currentPage = studentsResponse?.page ?? page;
   const totalPages = studentsResponse?.totalPages ?? 0;
@@ -160,15 +182,18 @@ export default function Students() {
               <TableHead>Name</TableHead>
               <TableHead>Contact</TableHead>
               <TableHead>Total Bookings</TableHead>
+              <TableHead>Profile</TableHead>
+              <TableHead>Signup</TableHead>
+              <TableHead>Interests</TableHead>
               <TableHead>Joined</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : students.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No students yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No students yet.</TableCell></TableRow>
             ) : (
               students.map((student) => (
                 <TableRow key={student.id} data-testid={`row-student-${student.id}`}>
@@ -186,6 +211,36 @@ export default function Students() {
                     <div className="text-xs text-muted-foreground">{student.phone}</div>
                   </TableCell>
                   <TableCell>{student.totalBookings}</TableCell>
+                  <TableCell>
+                    {student.profileCompletion ? (
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant={student.profileCompletion.isComplete ? "default" : "outline"}>
+                          {student.profileCompletion.percent}%
+                        </Badge>
+                        {student.verificationBadge && (
+                          <BadgeCheck className="h-4 w-4 text-emerald-400" aria-label="Verified" />
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="capitalize text-sm">{student.authProvider ?? "manual"}</div>
+                    {student.howDidYouHearAboutUs && (
+                      <div className="text-xs text-muted-foreground">{student.howDidYouHearAboutUs}</div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      {student.danceInterestCount != null && (
+                        <Badge variant="secondary">{student.danceInterestCount} style{student.danceInterestCount === 1 ? "" : "s"}</Badge>
+                      )}
+                      {student.childCount != null && student.accountType === "parent" && (
+                        <Badge variant="secondary">{student.childCount} child{student.childCount === 1 ? "" : "ren"}</Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>{new Date(student.joinedAt).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right">
                     {canEdit && (

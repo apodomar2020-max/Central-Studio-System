@@ -59,16 +59,25 @@ interface OverviewUser {
   dateOfBirth: string | null;
   city: string | null;
   nationality: string | null;
-  howDidYouKnowUs: string | null;
+  howDidYouHearAboutUs: string | null;
+  policiesAcceptedAt: string | null;
 }
+/** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
 interface OverviewCompletion {
   emailVerified: boolean;
-  profileCompleted: boolean;
   profileCompletedAt: string | null;
-  profileCompletionPercent: number;
+  lastCompletionStep: string | null;
+  percent: number;
+  isComplete: boolean;
+  nextStep: string;
+  missing: string[];
+  completed: string[];
   verificationBadge: boolean;
-  note: string;
-  fieldsNotYetCollected: string[];
+}
+interface OverviewDanceInterest {
+  id: number;
+  name: string;
+  slug: string;
 }
 interface OverviewStats {
   totalBookings: number;
@@ -159,12 +168,13 @@ interface OverviewPermissions {
   canViewCredits: boolean;
   canViewFeedback: boolean;
   canViewFeedbackComments: boolean;
+  canViewProfileCompletion: boolean;
 }
 type MembershipStatus = "Active" | "Inactive" | "Needs Profile" | "No Active Package" | "New" | "At Risk";
 
 interface StudentOverview {
   user: OverviewUser;
-  completion: OverviewCompletion;
+  completion: OverviewCompletion | null;
   membershipStatus: MembershipStatus;
   stats: OverviewStats;
   children: OverviewChild[];
@@ -173,6 +183,7 @@ interface StudentOverview {
   attendance: OverviewAttendance[];
   feedback: OverviewFeedback[];
   creditTransactions: OverviewCreditTx[];
+  danceInterests: OverviewDanceInterest[];
   timeline: OverviewTimelineItem[];
   permissions: OverviewPermissions;
 }
@@ -313,14 +324,14 @@ export default function StudentDetailPage() {
                 <span className="text-lg font-semibold text-white">{d.user.name}</span>
                 <Badge variant="secondary" className="capitalize">{d.user.accountType ?? "student"}</Badge>
                 <Badge variant="outline" className={MEMBERSHIP_STATUS_STYLE[d.membershipStatus]}>{d.membershipStatus}</Badge>
-                {d.completion.verificationBadge ? (
+                {d.completion?.verificationBadge ? (
                   <Badge className="gap-1 border-transparent bg-emerald-500/15 text-emerald-400">
                     <BadgeCheck className="h-3 w-3" /> Verified
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="text-muted-foreground">Not verified</Badge>
                 )}
-                <Badge variant="outline">{d.completion.profileCompletionPercent}% profile complete</Badge>
+                {d.completion && <Badge variant="outline">{d.completion.percent}% profile complete</Badge>}
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> {d.user.email}</span>
@@ -387,13 +398,43 @@ export default function StudentDetailPage() {
               <DetailRow label="Nationality" value={d.user.nationality} notCollected={!d.user.nationality} />
               <DetailRow label="Account Type" value={<span className="capitalize">{d.user.accountType ?? "student"}</span>} />
               <DetailRow label="Signup Provider" value={providerLabel(d.user.authProvider)} />
-              <DetailRow label="How Did You Know Us" value={d.user.howDidYouKnowUs} notCollected={!d.user.howDidYouKnowUs} />
+              <DetailRow label="How Did You Hear About Us" value={d.user.howDidYouHearAboutUs} notCollected={!d.user.howDidYouHearAboutUs} />
               <DetailRow label="Email Verified" value={d.user.emailVerified ? `Yes (${formatDate(d.user.emailVerifiedAt)})` : "No"} />
-              <DetailRow label="Profile Completed" value={d.completion.profileCompleted ? "Yes" : "No"} />
-              <DetailRow label="Profile Completed Date" value={formatDate(d.completion.profileCompletedAt)} />
+              <DetailRow label="Policies Accepted" value={d.user.policiesAcceptedAt ? `Yes (${formatDate(d.user.policiesAcceptedAt)})` : "No"} />
+              {d.completion && (
+                <>
+                  <DetailRow label="Profile Completion" value={`${d.completion.percent}% · ${d.completion.isComplete ? "Complete" : `Next: ${d.completion.nextStep}`}`} />
+                  <DetailRow label="Last Completion Step" value={d.completion.lastCompletionStep} />
+                </>
+              )}
             </CardContent>
-            <CardContent className="pt-0">
-              <p className="text-xs text-muted-foreground">{d.completion.note}</p>
+            {!d.permissions.canViewProfileCompletion && (
+              <CardContent className="pt-0">
+                <NoPermission what="profile completion details (requires users.view)" />
+              </CardContent>
+            )}
+            {d.completion && d.completion.missing.length > 0 && (
+              <CardContent className="pt-0">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Missing</div>
+                <div className="flex flex-wrap gap-2">
+                  {d.completion.missing.map((m) => <Badge key={m} variant="outline" className="text-amber-400">{m}</Badge>)}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
+          <Card className="mt-6">
+            <CardHeader><CardTitle>Dance Interests</CardTitle></CardHeader>
+            <CardContent>
+              {!d.permissions.canViewProfileCompletion ? (
+                <NoPermission what="dance interests" />
+              ) : d.danceInterests.length === 0 ? (
+                <EmptyState text="No dance interests selected yet." />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {d.danceInterests.map((di) => <Badge key={di.id} variant="secondary">{di.name}</Badge>)}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

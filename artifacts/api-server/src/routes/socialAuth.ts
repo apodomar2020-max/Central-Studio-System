@@ -22,6 +22,7 @@ import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { signStudentToken, issueOtp, OtpRateLimitError } from "../lib/authHelpers";
+import { publicStudent } from "../lib/studentProfileResponse";
 import {
   verifyProviderToken,
   ProviderNotConfiguredError,
@@ -56,31 +57,6 @@ async function findByProviderId(provider: ProviderName, providerId: string): Pro
 async function findByEmail(email: string): Promise<StudentRow | null> {
   const [row] = await db.select().from(studentsTable).where(eq(studentsTable.email, email.toLowerCase().trim()));
   return row ?? null;
-}
-
-function publicStudent(s: StudentRow) {
-  const profileMissingFields = [
-    !s.name?.trim() ? "name" : null,
-    !s.phone?.trim() ? "phone" : null,
-    s.accountType !== "student" && s.accountType !== "parent" ? "accountType" : null,
-  ].filter(Boolean) as string[];
-
-  return {
-    id: s.id,
-    name: s.name,
-    email: s.email,
-    phone: s.phone,
-    accountType: s.accountType,
-    emailVerified: s.emailVerified,
-    authProvider: s.authProvider,
-    avatarUrl: s.avatarUrl ?? null,
-    providerAvatarUrl: s.providerAvatarUrl ?? null,
-    providerDisplayName: s.providerDisplayName ?? null,
-    profileCompleted: profileMissingFields.length === 0,
-    profileMissingFields,
-    joinedAt: s.joinedAt,
-    qrToken: s.qrToken,
-  };
 }
 
 /**
@@ -260,7 +236,7 @@ function makeHandler(provider: ProviderName) {
     }
 
     logger.info({ studentId: student.id, provider, verified }, "Social login");
-    res.json({ student: publicStudent(student), accessToken, requiresOtp: !verified });
+    res.json({ student: await publicStudent(student), accessToken, requiresOtp: !verified });
   };
 }
 

@@ -5,6 +5,16 @@ import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/utils/bookingStatus";
 
+/** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
+export type ProfileCompletionStep = "email" | "profile" | "children" | "medical" | "styles";
+export interface ProfileCompletion {
+  percent: number;
+  isComplete: boolean;
+  nextStep: ProfileCompletionStep | "done";
+  missing: string[];
+  completed: string[];
+}
+
 export interface User {
   id: string;
   fullName: string;
@@ -16,8 +26,19 @@ export interface User {
   accountType?: "student" | "parent";
   authProvider?: string | null;
   providerDisplayName?: string | null;
+  /** @deprecated Old 3-field (name/phone/accountType) definition. Use profileCompletion.isComplete instead. */
   profileCompleted?: boolean;
+  /** @deprecated Old 3-field definition. Use profileCompletion.missing instead. */
   profileMissingFields?: string[];
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  city?: string | null;
+  nationality?: string | null;
+  howDidYouHearAboutUs?: string | null;
+  policiesAcceptedAt?: string | null;
+  /** Backend-driven Profile Completion Engine — the single source of truth
+   *  for what's done, what's missing, and where to route next. */
+  profileCompletion?: ProfileCompletion;
   /** Opaque UUID used to generate the secure QR code. Never logged or displayed as text. */
   qrToken?: string;
   /** Effective avatar image URL (Google-synced or manual upload); undefined → show initials. */
@@ -520,7 +541,13 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         birthday: child.birthday || null,
         age: child.age,
         gender: child.gender,
-        medicalNotes: child.medicalNotes || null,
+        // Profile Completion Engine (Phase 4): use ?? not || — the Medical
+        // Information onboarding step needs to be able to explicitly submit
+        // an empty string ("reviewed, nothing to report"), which the backend
+        // distinguishes from null ("never asked"). Behavior for the existing
+        // Profile-tab child form is unchanged (it only ever passes undefined
+        // or a trimmed non-empty string, never "").
+        medicalNotes: child.medicalNotes ?? null,
         emergencyName: child.emergencyContactName || null,
         emergencyPhone: child.emergencyContactPhone || null,
       };
@@ -561,7 +588,13 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         birthday: child.birthday || null,
         age: child.age,
         gender: child.gender,
-        medicalNotes: child.medicalNotes || null,
+        // Profile Completion Engine (Phase 4): use ?? not || — the Medical
+        // Information onboarding step needs to be able to explicitly submit
+        // an empty string ("reviewed, nothing to report"), which the backend
+        // distinguishes from null ("never asked"). Behavior for the existing
+        // Profile-tab child form is unchanged (it only ever passes undefined
+        // or a trimmed non-empty string, never "").
+        medicalNotes: child.medicalNotes ?? null,
         emergencyName: child.emergencyContactName || null,
         emergencyPhone: child.emergencyContactPhone || null,
       };

@@ -91,6 +91,8 @@ function RootLayoutNav() {
           name="auth/reset-password"
           options={{ presentation: "modal", animation: "slide_from_bottom" }}
         />
+        <Stack.Screen name="onboarding/children" options={{ animation: "slide_from_right", gestureEnabled: false }} />
+        <Stack.Screen name="onboarding/medical" options={{ animation: "slide_from_right", gestureEnabled: false }} />
         <Stack.Screen name="onboarding/styles" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="onboarding/success" options={{ animation: "fade", gestureEnabled: false }} />
         <Stack.Screen name="class/[id]" options={{ animation: "slide_from_right" }} />

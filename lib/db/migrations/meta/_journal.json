@@ -281,5 +281,13 @@
       "tag": "0034_package_order_ownership",
       "breakpoints": true
     }
+  ,
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783684800000,
+      "tag": "0035_profile_completion_fields",
+      "breakpoints": true
+    }
   ]
 }

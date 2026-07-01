@@ -8,8 +8,25 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { BadgeCheck } from "lucide-react";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+
+/** Profile Completion Engine (Phase 4) fields — see the matching type in students.tsx. */
+type ParentRow = {
+  id: number;
+  name: string;
+  email: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  joinedAt: string;
+  childCount?: number;
+  authProvider?: string | null;
+  howDidYouHearAboutUs?: string | null;
+  danceInterestCount?: number;
+  verificationBadge?: boolean;
+  profileCompletion?: { percent: number; isComplete: boolean } | null;
+};
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -44,7 +61,7 @@ export default function ParentsPage() {
   };
   const { data: parentsResponse, isLoading } = useListStudents(listParams);
 
-  const parents = parentsResponse?.students ?? [];
+  const parents = (parentsResponse?.students ?? []) as ParentRow[];
   const total = parentsResponse?.total ?? 0;
   const currentPage = parentsResponse?.page ?? page;
   const totalPages = parentsResponse?.totalPages ?? 0;
@@ -91,14 +108,16 @@ export default function ParentsPage() {
               <TableHead>Name</TableHead>
               <TableHead>Contact</TableHead>
               <TableHead>Children Count</TableHead>
+              <TableHead>Profile</TableHead>
+              <TableHead>Signup</TableHead>
               <TableHead>Joined</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={4} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : parents.length === 0 ? (
-              <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No parent accounts found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No parent accounts found.</TableCell></TableRow>
             ) : (
               parents.map((parent) => (
                 <TableRow key={parent.id} data-testid={`row-parent-${parent.id}`}>
@@ -119,6 +138,22 @@ export default function ParentsPage() {
                     <Badge variant="secondary">
                       {parent.childCount ?? 0} {parent.childCount === 1 ? "Child" : "Children"}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {parent.profileCompletion ? (
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant={parent.profileCompletion.isComplete ? "default" : "outline"}>
+                          {parent.profileCompletion.percent}%
+                        </Badge>
+                        {parent.verificationBadge && <BadgeCheck className="h-4 w-4 text-emerald-400" aria-label="Verified" />}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="capitalize text-sm">{parent.authProvider ?? "manual"}</div>
+                    {parent.howDidYouHearAboutUs && <div className="text-xs text-muted-foreground">{parent.howDidYouHearAboutUs}</div>}
                   </TableCell>
                   <TableCell>{new Date(parent.joinedAt).toLocaleDateString()}</TableCell>
                 </TableRow>

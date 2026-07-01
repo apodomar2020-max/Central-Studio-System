@@ -13,6 +13,8 @@ import {
   classesTable,
   schedulesTable,
   instructorsTable,
+  studentDanceInterestsTable,
+  danceTypesTable,
 } from "@workspace/db";
 import {
   CreateStudentBody,
@@ -23,12 +25,13 @@ import {
   UpdateStudentResponse,
   DeleteStudentParams,
   ListStudentsQueryParams,
-  ListStudentsResponse,
   GetStudentByTokenParams,
   hasRolePermission,
 } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { resolveMemberIdentity } from "../lib/membershipIdentity";
+import { buildProfileCompletion } from "../lib/studentProfileResponse";
+import { computeProfileCompletion } from "../lib/profileCompletion";
 import * as zod from "zod";
 
 const router: IRouter = Router();
@@ -240,33 +243,80 @@ router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promis
   }
 
   const childCounts = new Map<number, number>();
+  const childMissingMedicalCounts = new Map<number, number>();
   const parentIds = rows
     .filter((student) => student.accountType === "parent")
     .map((student) => student.id);
   if (canViewChildren && parentIds.length > 0) {
     const childrenRows = await db
-      .select({ parentId: childrenTable.parentId, total: sql<number>`count(*)::int` })
+      .select({
+        parentId: childrenTable.parentId,
+        total: sql<number>`count(*)::int`,
+        missingMedical: sql<number>`count(*) filter (where ${childrenTable.medicalNotes} is null)::int`,
+      })
       .from(childrenTable)
       .where(inArray(childrenTable.parentId, parentIds))
       .groupBy(childrenTable.parentId);
     for (const child of childrenRows) {
       childCounts.set(child.parentId, Number(child.total ?? 0));
+      childMissingMedicalCounts.set(child.parentId, Number(child.missingMedical ?? 0));
     }
   }
 
-  res.json(ListStudentsResponse.parse(
-    {
-      students: rows.map((student) => ({
+  // Profile Completion Engine (Phase 4) — gated behind users.view specifically,
+  // same rule as the /students/:id/overview endpoint. Computed in-memory from
+  // columns/counts already fetched above — no per-row query (avoids N+1).
+  const canViewProfileCompletion = canViewAll;
+  const danceInterestCounts = new Map<number, number>();
+  if (canViewProfileCompletion && rows.length > 0) {
+    const interestRows = await db
+      .select({ studentId: studentDanceInterestsTable.studentId, total: sql<number>`count(*)::int` })
+      .from(studentDanceInterestsTable)
+      .where(inArray(studentDanceInterestsTable.studentId, rows.map((s) => s.id)))
+      .groupBy(studentDanceInterestsTable.studentId);
+    for (const r of interestRows) {
+      danceInterestCounts.set(r.studentId, Number(r.total ?? 0));
+    }
+  }
+
+  res.json({
+    students: rows.map((student) => {
+      const danceInterestCount = danceInterestCounts.get(student.id) ?? 0;
+      const profileCompletion = canViewProfileCompletion
+        ? computeProfileCompletion({
+            emailVerified: student.emailVerified,
+            accountType: student.accountType as "student" | "parent" | null,
+            name: student.name,
+            phone: student.phone,
+            gender: student.gender,
+            dateOfBirth: student.dateOfBirth,
+            city: student.city,
+            nationality: student.nationality,
+            howDidYouHearAboutUs: student.howDidYouHearAboutUs,
+            policiesAcceptedAt: student.policiesAcceptedAt,
+            childrenCount: childCounts.get(student.id) ?? 0,
+            childrenMissingMedicalCount: childMissingMedicalCounts.get(student.id) ?? 0,
+            danceInterestCount,
+          })
+        : null;
+      return {
         ...student,
         totalBookings: bookingCounts.get(normalizeEmail(student.email)) ?? 0,
         ...(canViewChildren ? { childCount: childCounts.get(student.id) ?? 0 } : {}),
-      })),
-      total,
-      page,
-      pageSize,
-      totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
-    },
-  ));
+        ...(canViewProfileCompletion
+          ? {
+              danceInterestCount,
+              profileCompletion,
+              verificationBadge: student.emailVerified && (profileCompletion?.isComplete ?? false),
+            }
+          : {}),
+      };
+    }),
+    total,
+    page,
+    pageSize,
+    totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
+  });
 });
 
 router.post("/students", blockStudentJwt, requireAdminAuth, requireAdminPermission("users", "create"), async (req, res): Promise<void> => {
@@ -432,6 +482,9 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     canViewCredits: adminCan(req, "credits", "history"),
     canViewFeedback: adminCan(req, "feedback", "view"),
     canViewFeedbackComments: adminCan(req, "feedback", "viewComments"),
+    // Profile Completion Engine (Phase 4) — explicitly narrower than the
+    // other sections: only users.view, not the broader students/parents.view.
+    canViewProfileCompletion: adminCan(req, "users", "view"),
   };
 
   // ---------------------------------------------------------------------
@@ -598,6 +651,16 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
         .limit(10)
     : Promise.resolve([]);
 
+  // Profile Completion Engine (Phase 4) — "Your Vibe" selections, gated the
+  // same as the completion block itself (users.view).
+  const danceInterestsPromise = adminCan(req, "users", "view")
+    ? db
+        .select({ id: danceTypesTable.id, name: danceTypesTable.name, slug: danceTypesTable.slug })
+        .from(studentDanceInterestsTable)
+        .innerJoin(danceTypesTable, eq(studentDanceInterestsTable.danceTypeId, danceTypesTable.id))
+        .where(eq(studentDanceInterestsTable.studentId, row.id))
+    : Promise.resolve([]);
+
   const [
     children,
     totalBookings,
@@ -609,6 +672,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     creditTransactions,
     feedbackAgg,
     recentFeedbackRaw,
+    danceInterests,
   ] = await Promise.all([
     childrenPromise,
     totalBookingsPromise,
@@ -620,6 +684,7 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
     creditTransactionsPromise,
     feedbackAggPromise,
     recentFeedbackPromise,
+    danceInterestsPromise,
   ]);
 
   const recentBookings = recentBookingsRaw.map((b) => ({
@@ -694,26 +759,26 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
   };
 
   // ---------------------------------------------------------------------
-  // Profile completion — current (Phase-1-pending) definition only checks
-  // name/phone/accountType, exactly matching profileMissingFields() in
-  // routes/auth.ts. Gender/DOB/city/nationality/how-did-you-know-us/dance
-  // interests are NOT yet collected anywhere in the system — surfaced as
-  // null so the UI can render "Not collected yet" rather than fake a value.
+  // Profile completion — Profile Completion Engine (Phase 4). Same shared
+  // engine the mobile app's /auth/me uses (lib/profileCompletion.ts via
+  // lib/studentProfileResponse.ts), so admin and mobile always agree.
+  // Gated specifically behind users.view, per Phase 4's permission rule —
+  // narrower than the students/parents.view base gate on the rest of this
+  // endpoint.
   // ---------------------------------------------------------------------
-  const trackedFields = [row.name, row.phone, row.accountType].filter((v) => v != null && v !== "");
-  const profileCompletionPercent = row.profileCompleted
-    ? 100
-    : Math.round((trackedFields.length / 3) * 100);
-  const verificationBadge = row.emailVerified && row.profileCompleted;
+  const profileCompletion = await buildProfileCompletion(row);
+  const verificationBadge = row.emailVerified && profileCompletion.isComplete;
 
   const completion = {
     emailVerified: row.emailVerified,
-    profileCompleted: row.profileCompleted,
     profileCompletedAt: row.profileCompletedAt ?? null,
-    profileCompletionPercent,
+    lastCompletionStep: row.lastCompletionStep ?? null,
+    percent: profileCompletion.percent,
+    isComplete: profileCompletion.isComplete,
+    nextStep: profileCompletion.nextStep,
+    missing: profileCompletion.missing,
+    completed: profileCompletion.completed,
     verificationBadge,
-    note: "Interim definition based on 3 currently-tracked fields (name, phone, account type). The full Profile Completion Engine (gender, birthday, city, nationality, how-did-you-know-us, dance interests) is a separate, not-yet-implemented phase.",
-    fieldsNotYetCollected: ["gender", "dateOfBirth", "city", "nationality", "howDidYouKnowUs", "danceInterests"],
   };
 
   // ---------------------------------------------------------------------
@@ -836,17 +901,17 @@ router.get("/students/:id/overview", requireAdminAuth, async (req: AdminRequest,
       createdAt: row.createdAt,
       qrToken: row.qrToken,
       notes: row.notes ?? null,
-      // Not yet collected anywhere in the system (Phase 1 — Profile Completion
-      // Engine — not implemented). Always null until that phase ships.
-      gender: null,
-      dateOfBirth: null,
-      city: null,
-      nationality: null,
-      howDidYouKnowUs: null,
+      gender: row.gender ?? null,
+      dateOfBirth: row.dateOfBirth ?? null,
+      city: row.city ?? null,
+      nationality: row.nationality ?? null,
+      howDidYouHearAboutUs: row.howDidYouHearAboutUs ?? null,
+      policiesAcceptedAt: row.policiesAcceptedAt ?? null,
     },
-    completion,
+    completion: permissions.canViewProfileCompletion ? completion : null,
     membershipStatus,
     stats,
+    danceInterests: permissions.canViewProfileCompletion ? danceInterests : [],
     children: permissions.canViewChildren
       ? children.map((c) => ({
           id: c.id,

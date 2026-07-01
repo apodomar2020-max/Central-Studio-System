@@ -25,17 +25,13 @@ export const DANCE_STYLES: DanceStyle[] = [
   { id: "house", name: "House Dance", icon: "home" },
 ];
 
-/** AsyncStorage keys for the personalization onboarding sequence. */
+/**
+ * AsyncStorage keys for the onboarding sequence. `danceStyles` is a local
+ * cache only (backend student_dance_interests is the real persistence — see
+ * app/onboarding/styles.tsx). gender/dateOfBirth/city/nationality/
+ * howDidYouHearAboutUs/policiesAccepted are all backend-persisted now
+ * (Profile Completion Engine, Phase 4) — no AsyncStorage equivalents.
+ */
 export const STORAGE_KEYS = {
   danceStyles: "cs_dance_styles",
-  phoneVerified: "cs_phone_verified",
-  /**
-   * TEMPORARY — stored locally until the backend adds these columns to the
-   * students table:  date_of_birth (text/date), city (text), nationality (text).
-   * Once the columns and PATCH /api/auth/profile support them, migrate these
-   * values to the server and remove these keys.
-   */
-  profileDob: "cs_profile_dob",
-  profileCity: "cs_profile_city",
-  profileNationality: "cs_profile_nationality",
 } as const;

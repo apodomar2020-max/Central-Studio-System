@@ -1,25 +1,15 @@
 /**
- * Complete Client Profile — Step 2 of 5 in the new signup flow.
+ * Complete Profile — Profile Completion Engine (Phase 4).
  * Visual style: design system from signup-views.jsx (dark screen, Archivo/Anton fonts,
  * CS color tokens, BackBtn, ProgressDots, PrimaryCTA from SignupKit).
  *
- * Fields collected and backend support:
- *   • Phone Number   → PATCH /api/auth/profile  (students.phone)        ✅ backend
- *   • Account Type   → PATCH /api/auth/profile  (students.account_type) ✅ backend
- *   • Date of Birth  → AsyncStorage only (cs_profile_dob)               ⚠️ TEMP — backend missing:
- *                      needs students.date_of_birth column + PATCH support
- *   • City           → AsyncStorage only (cs_profile_city)              ⚠️ TEMP — backend missing:
- *                      needs students.city column + PATCH support
- *   • Nationality    → AsyncStorage only (cs_profile_nationality)       ⚠️ TEMP — backend missing:
- *                      needs students.nationality column + PATCH support
- *
- * After saving, routes to /onboarding/styles (Step 3 of 5).
+ * Every field here is backend-persisted via PATCH /api/auth/profile — no
+ * AsyncStorage-only fields remain. After saving, routing is driven entirely
+ * by the response's profileCompletion.nextStep (never a hardcoded route).
  */
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { KeyboardAvoidingView, Modal } from "react-native";
-import { useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
 import {
@@ -36,8 +26,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import ProgressDots from "@/components/ProgressDots";
 import { useAppContext, type User } from "@/contexts/AppContext";
-import { mapStudentToUser, type AccountType, type AuthStudent } from "@/services/authProfile";
-import { STORAGE_KEYS } from "@/constants/danceStyles";
+import { mapStudentToUser, nextStepRoute, type AccountType, type AuthStudent } from "@/services/authProfile";
 import {
   BackBtn,
   CS,
@@ -54,6 +43,22 @@ interface ProfileResponse {
 const ACCOUNT_TYPES: { value: AccountType; label: string }[] = [
   { value: "student", label: "I am a student" },
   { value: "parent", label: "I am a parent / booking for my child" },
+];
+
+type Gender = "male" | "female" | "other";
+const GENDERS: { value: Gender; label: string }[] = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "other", label: "Other" },
+];
+
+const HEAR_ABOUT_US_OPTIONS = [
+  "Instagram",
+  "Facebook",
+  "Google Search",
+  "Friend / Family",
+  "Walk-in",
+  "Other",
 ];
 
 /** Same freeze-safe flat input design as register.tsx */
@@ -111,42 +116,39 @@ export default function CompleteProfileScreen() {
   const insets = useSafeAreaInsets();
   const topPad = (Platform.OS === "web" ? 40 : insets.top) + 24;
 
-
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [accountType, setAccountType] = useState<AccountType | null>(user?.accountType ?? null);
-  const [dob, setDob] = useState("");
-  const [city, setCity] = useState("");
-  const [nationality, setNationality] = useState("");
+  const [gender, setGender] = useState<Gender | null>((user?.gender as Gender) ?? null);
+  const [dob, setDob] = useState(user?.dateOfBirth ?? "");
+  const [city, setCity] = useState(user?.city ?? "");
+  const [nationality, setNationality] = useState(user?.nationality ?? "");
+  const [hearAboutUs, setHearAboutUs] = useState(user?.howDidYouHearAboutUs ?? "");
+  const [policiesAccepted, setPoliciesAccepted] = useState(!!user?.policiesAcceptedAt);
   const [showDobModal, setShowDobModal] = useState(false);
   const [dobD, setDobD] = useState("");
   const [dobM, setDobM] = useState("");
   const [dobY, setDobY] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const d = await AsyncStorage.getItem(STORAGE_KEYS.profileDob);
-        const c = await AsyncStorage.getItem(STORAGE_KEYS.profileCity);
-        const n = await AsyncStorage.getItem(STORAGE_KEYS.profileNationality);
-        if (d) setDob(d);
-        if (c) setCity(c);
-        if (n) setNationality(n);
-      } catch {}
-    })();
-  }, []);
-
   function saveDobModal() {
     if (dobD && dobM && dobY) {
-      setDob(`${dobY}-${dobM.padStart(2,"0")}-${dobD.padStart(2,"0")}`);
+      setDob(`${dobY}-${dobM.padStart(2, "0")}-${dobD.padStart(2, "0")}`);
     }
     setShowDobModal(false);
   }
 
-
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
 
-  const canSubmit = !!(phone.trim() && accountType);
+  const canSubmit = !!(
+    phone.trim() &&
+    accountType &&
+    gender &&
+    dob &&
+    city.trim() &&
+    nationality.trim() &&
+    hearAboutUs &&
+    policiesAccepted
+  );
 
   async function submit() {
     if (!phone.trim()) { setApiError("Phone number is required."); return; }
@@ -155,29 +157,37 @@ export default function CompleteProfileScreen() {
     if (phone.trim().length !== 11) { setApiError("Phone number must be exactly 11 digits."); return; }
     if (!/^01[0125][0-9]{8}$/.test(phone.trim())) { setApiError("Please enter a valid Egyptian mobile number."); return; }
     if (!accountType) { setApiError("Please choose your account type."); return; }
+    if (!gender) { setApiError("Please select your gender."); return; }
+    if (!dob) { setApiError("Please select your date of birth."); return; }
+    if (!city.trim()) { setApiError("City is required."); return; }
+    if (!nationality.trim()) { setApiError("Nationality is required."); return; }
+    if (!hearAboutUs) { setApiError("Please tell us how you heard about us."); return; }
+    if (!policiesAccepted) { setApiError("Please accept our policies to continue."); return; }
     setApiError("");
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      // Save supported fields to backend
       const data = await customFetch<ProfileResponse>("/api/auth/profile", {
         method: "PATCH",
-        body: JSON.stringify({ phone: phone.trim(), accountType }),
+        body: JSON.stringify({
+          phone: phone.trim(),
+          accountType,
+          gender,
+          dateOfBirth: dob,
+          city: city.trim(),
+          nationality: nationality.trim(),
+          howDidYouHearAboutUs: hearAboutUs,
+          policiesAccepted: true,
+        }),
       });
       const updated: User = mapStudentToUser(data.student);
       await setUser(updated);
 
-      // Save temporarily-local fields (backend columns not yet available)
-      // TODO: once students.date_of_birth, students.city, students.nationality
-      // columns exist and PATCH /api/auth/profile accepts them, move these
-      // saves into the PATCH call above and remove these AsyncStorage writes.
-      const writes: Promise<void>[] = [];
-      if (dob.trim()) writes.push(AsyncStorage.setItem(STORAGE_KEYS.profileDob, dob.trim()));
-      if (city.trim()) writes.push(AsyncStorage.setItem(STORAGE_KEYS.profileCity, city.trim()));
-      if (nationality.trim()) writes.push(AsyncStorage.setItem(STORAGE_KEYS.profileNationality, nationality.trim()));
-      await Promise.all(writes);
-
-      router.push("/onboarding/styles" as never);
+      // Trust the backend's fresh nextStep — it already knows whether this
+      // account needs Children/Medical (parent) or can skip straight to
+      // Your Vibe (student).
+      const nextStep = updated.profileCompletion?.nextStep ?? "styles";
+      router.push(nextStepRoute(nextStep) as never);
     } catch (err) {
       setApiError(err instanceof Error ? err.message : "Could not save your profile.");
     } finally {
@@ -245,17 +255,33 @@ export default function CompleteProfileScreen() {
               </View>
             </View>
 
-            {/* Date of Birth — TEMPORARY: stored locally */}
-
-            <View>
-              <TouchableOpacity onPress={() => setShowDobModal(true)} activeOpacity={0.8} style={styles.fieldBox}>
-                <Icon name="lock" size={18} stroke={2} color="rgba(255,255,255,0.32)" />
-                <Text style={[styles.fieldInput, { color: dob ? "#FFFFFF" : "rgba(255,255,255,0.38)", marginTop: Platform.OS === 'ios' ? 4 : 0 }]}>
-                  {dob ? new Date(dob).toLocaleDateString() : "Date of Birth (Select)"}
-                </Text>
-              </TouchableOpacity>
-              <Text style={styles.tempNote}>⚠️ Stored locally — backend field pending</Text>
+            {/* Gender selector */}
+            <View style={styles.typeSection}>
+              <Text style={styles.typeLabel}>Gender</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {GENDERS.map((g) => {
+                  const on = gender === g.value;
+                  return (
+                    <TouchableOpacity
+                      key={g.value}
+                      onPress={() => setGender(g.value)}
+                      activeOpacity={0.8}
+                      style={[styles.chip, on && styles.chipOn, { flex: 1 }]}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{g.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
+
+            {/* Date of Birth */}
+            <TouchableOpacity onPress={() => setShowDobModal(true)} activeOpacity={0.8} style={styles.fieldBox}>
+              <Icon name="lock" size={18} stroke={2} color="rgba(255,255,255,0.32)" />
+              <Text style={[styles.fieldInput, { color: dob ? "#FFFFFF" : "rgba(255,255,255,0.38)", marginTop: Platform.OS === "ios" ? 4 : 0 }]}>
+                {dob ? new Date(dob).toLocaleDateString() : "Date of Birth (Select)"}
+              </Text>
+            </TouchableOpacity>
 
             {/* DOB Modal */}
             <Modal visible={showDobModal} transparent animationType="fade">
@@ -264,10 +290,10 @@ export default function CompleteProfileScreen() {
                   <Text style={styles.modalTitle}>Enter Date of Birth</Text>
                   <View style={styles.modalRow}>
                     <TextInput placeholder="DD" value={dobD} onChangeText={setDobD} keyboardType="number-pad" maxLength={2} style={styles.modalInput} placeholderTextColor="rgba(255,255,255,0.38)" />
-                    <Text style={{color:"rgba(255,255,255,0.3)"}}>/</Text>
+                    <Text style={{ color: "rgba(255,255,255,0.3)" }}>/</Text>
                     <TextInput placeholder="MM" value={dobM} onChangeText={setDobM} keyboardType="number-pad" maxLength={2} style={styles.modalInput} placeholderTextColor="rgba(255,255,255,0.38)" />
-                    <Text style={{color:"rgba(255,255,255,0.3)"}}>/</Text>
-                    <TextInput placeholder="YYYY" value={dobY} onChangeText={setDobY} keyboardType="number-pad" maxLength={4} style={[styles.modalInput, {width: 80}]} placeholderTextColor="rgba(255,255,255,0.38)" />
+                    <Text style={{ color: "rgba(255,255,255,0.3)" }}>/</Text>
+                    <TextInput placeholder="YYYY" value={dobY} onChangeText={setDobY} keyboardType="number-pad" maxLength={4} style={[styles.modalInput, { width: 80 }]} placeholderTextColor="rgba(255,255,255,0.38)" />
                   </View>
                   <View style={styles.modalFooter}>
                     <TouchableOpacity onPress={() => setShowDobModal(false)} style={styles.modalBtn}>
@@ -281,7 +307,6 @@ export default function CompleteProfileScreen() {
               </KeyboardAvoidingView>
             </Modal>
 
-
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <SignupTextInput
@@ -291,7 +316,6 @@ export default function CompleteProfileScreen() {
                   icon="lock"
                   autoCapitalize="words"
                 />
-                <Text style={styles.tempNote}>⚠️ Stored locally</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <SignupTextInput
@@ -301,9 +325,46 @@ export default function CompleteProfileScreen() {
                   icon="user"
                   autoCapitalize="words"
                 />
-                <Text style={styles.tempNote}>⚠️ Stored locally</Text>
               </View>
             </View>
+
+            {/* How did you hear about us — required */}
+            <View style={styles.typeSection}>
+              <Text style={styles.typeLabel}>How Did You Hear About Us?</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {HEAR_ABOUT_US_OPTIONS.map((option) => {
+                  const on = hearAboutUs === option;
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      onPress={() => setHearAboutUs(option)}
+                      activeOpacity={0.8}
+                      style={[styles.chip, on && styles.chipOn]}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{option}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Policies acceptance — required */}
+            <TouchableOpacity
+              onPress={() => setPoliciesAccepted((v) => !v)}
+              activeOpacity={0.8}
+              style={styles.policiesRow}
+            >
+              {policiesAccepted ? (
+                <View style={styles.typeCheck}>
+                  <Icon name="check" size={12} stroke={3} color={CS.ink900} />
+                </View>
+              ) : (
+                <View style={styles.typeUncheck} />
+              )}
+              <Text style={styles.policiesText}>
+                I agree to Central Studio's Terms and Privacy Policy.
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
 
@@ -351,7 +412,16 @@ const styles = StyleSheet.create({
   typeUncheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: "rgba(255,255,255,0.2)" },
   typeBtnText: { flex: 1, fontSize: 15, fontFamily: "Archivo_500Medium", color: "rgba(255,255,255,0.55)" },
   typeBtnTextOn: { color: "#FFFFFF", fontFamily: "Archivo_700Bold" },
-  tempNote: { fontSize: 11, fontFamily: "Archivo_400Regular", color: "rgba(255,176,46,0.65)", marginTop: 4, paddingLeft: 4 },
+  chip: {
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 100, borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.12)", backgroundColor: "rgba(255,255,255,0.04)",
+    alignItems: "center",
+  },
+  chipOn: { borderColor: CS.cyan500, backgroundColor: "rgba(0,182,215,0.13)" },
+  chipText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: "rgba(255,255,255,0.55)" },
+  chipTextOn: { color: "#FFFFFF" },
+  policiesRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingTop: 4 },
+  policiesText: { flex: 1, fontSize: 12.5, fontFamily: "Archivo_400Regular", color: "rgba(255,255,255,0.55)", lineHeight: 18 },
   footer: { paddingHorizontal: 24, paddingTop: 12, gap: 8 },
   skipBtn: { alignItems: "center", paddingVertical: 6 },
   skipText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "rgba(255,255,255,0.28)" },

@@ -18,6 +18,7 @@ import {
 import { useGetClass, useGetInstructor, useCreateBooking, useListSchedules } from "@workspace/api-client-react";
 
 import { useAppContext, type Booking } from "@/contexts/AppContext";
+import { nextStepRoute } from "@/services/authProfile";
 import { compareSchedulesByNextOccurrence, getScheduleLabel, isBookableScheduleStatus, isMobileVisibleSchedule, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
@@ -146,6 +147,21 @@ export default function BookingFlowScreen() {
         <Text style={styles.centeredTitle}>Sign in required</Text>
         <Text style={styles.centeredDesc}>Please sign in to book a class</Text>
         <AppButton title="Sign In" onPress={() => router.replace("/auth/login")} />
+      </View>
+    );
+  }
+
+  // ── Guard: profile must be complete (Profile Completion Engine, Phase 4) ──
+  if (user.profileCompletion && !user.profileCompletion.isComplete) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Ionicons name="person-circle-outline" size={48} color="#6B747F" />
+        <Text style={styles.centeredTitle}>Complete your profile first</Text>
+        <Text style={styles.centeredDesc}>Finish setting up your profile to book classes.</Text>
+        <AppButton
+          title="Complete Profile"
+          onPress={() => router.push(nextStepRoute(user.profileCompletion!.nextStep) as never)}
+        />
       </View>
     );
   }

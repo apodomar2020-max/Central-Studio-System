@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, serial, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, date, integer, pgTable, serial, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -10,6 +10,21 @@ export const studentsTable = pgTable("students", {
   accountType: text("account_type"),
   profileCompleted: boolean("profile_completed").notNull().default(false),
   profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true, mode: "string" }),
+  // Profile Completion Engine (Phase 4). All nullable — every account
+  // (including pre-existing ones) starts without these until filled in.
+  gender: text("gender"),
+  dateOfBirth: date("date_of_birth", { mode: "string" }),
+  city: text("city"),
+  nationality: text("nationality"),
+  howDidYouHearAboutUs: text("how_did_you_hear_about_us"),
+  policiesAcceptedAt: timestamp("policies_accepted_at", { withTimezone: true, mode: "string" }),
+  // Resume-support only — NOT the source of truth for completion state.
+  // completion percent/isComplete/nextStep/missing/completed are always
+  // derived fresh from the actual saved fields (see lib/profileCompletion.ts);
+  // this column just remembers which step the user last finished so a
+  // fresh app open on another device can jump back to the right place
+  // without waiting on a full re-derivation round trip.
+  lastCompletionStep: text("last_completion_step"),
   notes: text("notes"),
   passwordHash: text("password_hash"),
   emailVerified: boolean("email_verified").notNull().default(false),

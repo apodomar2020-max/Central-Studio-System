@@ -119,10 +119,6 @@ export function clearSignupDrafts() {
   draftPassword = "";
   void AsyncStorage.multiRemove([
     STORAGE_KEYS.danceStyles,
-    STORAGE_KEYS.phoneVerified,
-    STORAGE_KEYS.profileDob,
-    STORAGE_KEYS.profileCity,
-    STORAGE_KEYS.profileNationality,
   ]);
 }
 export default function RegisterScreen() {
@@ -170,7 +166,7 @@ export default function RegisterScreen() {
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
             body: JSON.stringify({ name }),
           });
-          await continueAfterAuth(undefined, setUser);
+          await continueAfterAuth(undefined, setUser, { guidedOnboarding: true });
           setLoading(false);
         } catch {
           setApiError("Network error. Please check your connection.");
@@ -231,7 +227,7 @@ export default function RegisterScreen() {
         setLoading(false);
         return;
       }
-      await continueAfterAuth(data.accessToken, setUser);
+      await continueAfterAuth(data.accessToken, setUser, { guidedOnboarding: true });
       setLoading(false);
     } catch {
       setApiError("Network error. Please check your connection.");

@@ -23,10 +23,21 @@
 import { Router, type IRouter } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
-import { db, childrenTable } from "@workspace/db";
+import { db, childrenTable, studentsTable } from "@workspace/db";
 import { insertChildSchema, updateChildSchema } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
+
+/**
+ * Profile Completion Engine (Phase 4) — best-effort resume hint only; never
+ * read by the completion calculation itself (see lib/profileCompletion.ts).
+ */
+async function stampLastCompletionStep(studentId: number, step: "children" | "medical"): Promise<void> {
+  await db
+    .update(studentsTable)
+    .set({ lastCompletionStep: step, updatedAt: new Date().toISOString() })
+    .where(eq(studentsTable.id, studentId));
+}
 
 const router: IRouter = Router();
 
@@ -77,6 +88,7 @@ router.post("/children", async (req, res): Promise<void> => {
   }
 
   logger.info({ childId: row.id, parentId: studentId }, "Child created");
+  await stampLastCompletionStep(studentId, "children");
 
   const { qrToken: _qt, ...safe } = row;
   res.status(201).json({ child: safe });
@@ -125,6 +137,9 @@ router.patch("/children/:id", async (req, res): Promise<void> => {
   }
 
   logger.info({ childId, parentId: studentId }, "Child updated");
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "medicalNotes")) {
+    await stampLastCompletionStep(studentId, "medical");
+  }
 
   const { qrToken: _qt, ...safe } = row;
   res.json({ child: safe });

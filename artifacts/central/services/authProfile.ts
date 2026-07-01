@@ -2,35 +2,48 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { customFetch } from "@workspace/api-client-react";
 
-import type { User } from "@/contexts/AppContext";
+import type { ProfileCompletion, ProfileCompletionStep, User } from "@/contexts/AppContext";
 
 /**
- * Onboarding flow (post-registration):
+ * Profile Completion Engine (Phase 4) — registration flow:
  *   1. /auth/register         → Create Account
  *   2. /verify-email          → Email verification (manual signups only;
  *                                Google/Facebook skip straight to step 3)
- *   3. /auth/complete-profile → Complete Client Profile (phone, accountType, DOB*, city*, nationality*)
- *   4. /onboarding/styles     → Your Vibe / Dance Styles
- *   5. /onboarding/success    → Thanks page — the funnel's terminal screen
+ *   3. /auth/complete-profile → Complete Profile (phone, accountType, gender,
+ *                                DOB, city, nationality, how did you hear, policies)
+ *   4. /onboarding/children    → Children (parent accounts only)
+ *   5. /onboarding/medical     → Medical Information (parent accounts only)
+ *   6. /onboarding/styles      → Your Vibe / Dance Styles
+ *   7. /onboarding/success     → Thanks page — the funnel's terminal screen
  *
- * Registration screens route through the onboarding steps explicitly. Login
- * routing is based on the server-authenticated user's verification/profile state.
- *
- * * = Stored locally in AsyncStorage only — backend columns pending:
- *       students.date_of_birth, students.city, students.nationality
+ * The backend is the single source of truth for what's next — see
+ * `nextStepRoute()`. Nothing in the mobile app should hardcode
+ * "if profileCompleted" style branching anymore; every routing decision
+ * reads `user.profileCompletion.nextStep` instead.
  */
+
+/**
+ * Maps a backend-reported step to its screen. The ONLY place this mapping
+ * exists — index.tsx, continueAfterAuth(), and verify-email.tsx all call
+ * this instead of each hardcoding their own copy.
+ */
+export function nextStepRoute(nextStep: ProfileCompletionStep | "done"): string {
+  switch (nextStep) {
+    case "email": return "/verify-email";
+    case "profile": return "/auth/complete-profile";
+    case "children": return "/onboarding/children";
+    case "medical": return "/onboarding/medical";
+    case "styles": return "/onboarding/styles";
+    case "done": return "/(tabs)";
+  }
+}
+
 /**
  * Single shared exit point out of auth/onboarding. Every screen that finishes
  * its job (login, OTP verify, the Thanks page, ...) calls this instead of
  * hardcoding a destination — it just hands control back to the root index
  * redirect (app/index.tsx), which is the one place that decides where the
  * user actually goes based on their server-authenticated state.
- *
- * This is intentionally a dumb redirect today. It is the designated handoff
- * point for the upcoming backend-driven Profile Completion Engine: when that
- * lands, only this function and/or index.tsx's redirect logic need to change
- * (e.g. to route through remaining required steps) — no call site here needs
- * to be touched.
  */
 export async function enterApp() {
   router.replace("/" as never);
@@ -48,8 +61,17 @@ export interface AuthStudent {
   authProvider?: string | null;
   avatarUrl?: string | null;
   providerDisplayName?: string | null;
+  /** @deprecated old 3-field definition — see profileCompletion instead. */
   profileCompleted?: boolean;
+  /** @deprecated old 3-field definition — see profileCompletion instead. */
   profileMissingFields?: string[];
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  city?: string | null;
+  nationality?: string | null;
+  howDidYouHearAboutUs?: string | null;
+  policiesAcceptedAt?: string | null;
+  profileCompletion?: ProfileCompletion;
   qrToken?: string | null;
 }
 
@@ -72,6 +94,13 @@ export function mapStudentToUser(student: AuthStudent): User {
     providerDisplayName: student.providerDisplayName ?? null,
     profileCompleted: student.profileCompleted ?? false,
     profileMissingFields: student.profileMissingFields ?? [],
+    gender: student.gender ?? null,
+    dateOfBirth: student.dateOfBirth ?? null,
+    city: student.city ?? null,
+    nationality: student.nationality ?? null,
+    howDidYouHearAboutUs: student.howDidYouHearAboutUs ?? null,
+    policiesAcceptedAt: student.policiesAcceptedAt ?? null,
+    profileCompletion: student.profileCompletion,
     qrToken: student.qrToken ?? undefined,
     avatarUrl: student.avatarUrl ?? undefined,
   };
@@ -88,25 +117,28 @@ export async function fetchCurrentUser(): Promise<{ user: User; requiresOtp: boo
 export async function continueAfterAuth(
   accessToken: string | undefined,
   setUser: (user: User | null) => Promise<void>,
+  options?: { guidedOnboarding?: boolean },
 ) {
   if (accessToken) {
     await AsyncStorage.setItem("studentToken", accessToken);
   }
 
-  const { user, requiresOtp } = await fetchCurrentUser();
+  const { user } = await fetchCurrentUser();
   await setUser(user);
 
-  if (requiresOtp || !user.emailVerified) {
-    router.push("/verify-email" as never);
+  if (!options?.guidedOnboarding) {
+    if (!user.emailVerified) {
+      router.push("/verify-email" as never);
+      return;
+    }
+    await enterApp();
     return;
   }
 
-  if (!user.profileCompleted) {
-    // Route to Step 2 of the new flow (complete-profile).
-    // After saving phone + accountType, complete-profile routes to /onboarding/styles.
-    router.push("/auth/complete-profile" as never);
+  const nextStep = user.profileCompletion?.nextStep ?? "email";
+  if (nextStep === "done") {
+    await enterApp();
     return;
   }
-
-  await enterApp();
+  router.push(nextStepRoute(nextStep) as never);
 }

@@ -14,12 +14,13 @@
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { db, studentsTable, emailOtpsTable } from "@workspace/db";
+import { db, studentsTable, emailOtpsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { requireStudentAuth } from "../middlewares/studentAuth";
+import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { signStudentToken, generateOtp, sendOtpEmail, OTP_TTL_SECONDS } from "../lib/authHelpers";
+import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfileResponse";
 
 const router: IRouter = Router();
 
@@ -37,51 +38,20 @@ const LoginBody = z.object({
 });
 
 const AccountType = z.enum(["student", "parent"]);
+const GENDERS = ["male", "female", "other"] as const;
 const ProfileBody = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").optional(),
   phone: z.string().min(1, "Phone number is required").optional(),
   accountType: AccountType.optional(),
   useProviderName: z.boolean().optional(),
+  // Profile Completion Engine (Phase 4)
+  gender: z.enum(GENDERS).optional(),
+  dateOfBirth: z.string().min(1).optional(),
+  city: z.string().min(1).optional(),
+  nationality: z.string().min(1).optional(),
+  howDidYouHearAboutUs: z.string().min(1).optional(),
+  policiesAccepted: z.boolean().optional(),
 });
-
-type StudentRow = typeof studentsTable.$inferSelect;
-
-function profileMissingFields(student: Pick<StudentRow, "name" | "phone" | "accountType">): string[] {
-  const missing: string[] = [];
-  if (!student.name?.trim()) missing.push("name");
-  if (!student.phone?.trim()) missing.push("phone");
-  if (student.accountType !== "student" && student.accountType !== "parent") missing.push("accountType");
-  return missing;
-}
-
-function profileCompletionPatch(student: Pick<StudentRow, "name" | "phone" | "accountType">) {
-  const complete = profileMissingFields(student).length === 0;
-  return {
-    profileCompleted: complete,
-    profileCompletedAt: complete ? new Date().toISOString() : null,
-  };
-}
-
-function publicStudent(student: StudentRow) {
-  const missing = profileMissingFields(student);
-  return {
-    id: student.id,
-    name: student.name,
-    email: student.email,
-    phone: student.phone,
-    accountType: student.accountType,
-    emailVerified: student.emailVerified,
-    emailVerifiedAt: student.emailVerifiedAt,
-    authProvider: student.authProvider,
-    avatarUrl: student.avatarUrl ?? null,
-    providerAvatarUrl: student.providerAvatarUrl ?? null,
-    providerDisplayName: student.providerDisplayName ?? null,
-    profileCompleted: missing.length === 0,
-    profileMissingFields: missing,
-    joinedAt: student.joinedAt,
-    qrToken: student.qrToken,
-  };
-}
 
 // POST /api/auth/register
 router.post("/auth/register", async (req, res): Promise<void> => {
@@ -111,7 +81,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     phone: phone?.trim() || null,
     accountType: accountType ?? null,
   };
-  const completion = profileCompletionPatch(profileInput);
+  const completion = legacyProfileCompletionPatch(profileInput);
 
   const [student] = await db
     .insert(studentsTable)
@@ -126,28 +96,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       // emailVerified defaults to false — the account must pass OTP before
       // it can reach any verified-only route.
     })
-    .returning({
-      id: studentsTable.id,
-      name: studentsTable.name,
-      email: studentsTable.email,
-      phone: studentsTable.phone,
-      accountType: studentsTable.accountType,
-      profileCompleted: studentsTable.profileCompleted,
-      profileCompletedAt: studentsTable.profileCompletedAt,
-      emailVerified: studentsTable.emailVerified,
-      authProvider: studentsTable.authProvider,
-      avatarUrl: studentsTable.avatarUrl,
-      providerDisplayName: studentsTable.providerDisplayName,
-      joinedAt: studentsTable.joinedAt,
-      qrToken: studentsTable.qrToken,
-    });
+    .returning();
 
   // Limited token (emailVerified=false): unlocks OTP + /auth/me only.
   const accessToken = signStudentToken(student.id, student.email, false);
 
   logger.info({ studentId: student.id }, "New student registered (pending verification)");
 
-  res.status(201).json({ student, accessToken, requiresOtp: true });
+  res.status(201).json({ student: await publicStudent(student), accessToken, requiresOtp: true });
 });
 
 // POST /api/auth/login
@@ -196,21 +152,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   logger.info({ studentId: student.id, emailVerified: student.emailVerified }, "Student logged in");
 
   res.json({
-    student: {
-      id: student.id,
-      name: student.name,
-      email: student.email,
-      phone: student.phone,
-      accountType: student.accountType,
-      emailVerified: student.emailVerified,
-      authProvider: student.authProvider,
-      avatarUrl: student.avatarUrl ?? null,
-      providerDisplayName: student.providerDisplayName ?? null,
-      profileCompleted: profileMissingFields(student).length === 0,
-      profileMissingFields: profileMissingFields(student),
-      joinedAt: student.joinedAt,
-      qrToken: student.qrToken,
-    },
+    student: await publicStudent(student),
     accessToken,
     requiresOtp: !student.emailVerified,
   });
@@ -228,7 +170,7 @@ router.get("/auth/me", requireStudentAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({ student: publicStudent(student), requiresOtp: !student.emailVerified });
+  res.json({ student: await publicStudent(student), requiresOtp: !student.emailVerified });
 });
 
 // ─── PATCH /api/auth/profile ─────────────────────────────────────────────────
@@ -252,23 +194,28 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
     : parsed.data.name?.trim() ?? existing.name;
   const nextPhone = parsed.data.phone?.trim() ?? existing.phone;
   const nextAccountType = parsed.data.accountType ?? existing.accountType;
-  const completion = profileCompletionPatch({
+  const nextGender = parsed.data.gender ?? existing.gender;
+  const nextDateOfBirth = parsed.data.dateOfBirth?.trim() ?? existing.dateOfBirth;
+  const nextCity = parsed.data.city?.trim() ?? existing.city;
+  const nextNationality = parsed.data.nationality?.trim() ?? existing.nationality;
+  const nextHowDidYouHearAboutUs = parsed.data.howDidYouHearAboutUs?.trim() ?? existing.howDidYouHearAboutUs;
+  const nextPoliciesAcceptedAt = parsed.data.policiesAccepted === true
+    ? existing.policiesAcceptedAt ?? new Date().toISOString()
+    : parsed.data.policiesAccepted === false
+      ? null
+      : existing.policiesAcceptedAt;
+
+  // Profile Completion Engine (Phase 4): this endpoint now ALWAYS saves
+  // whatever subset of fields is given and reports current completion
+  // status — it never rejects a partial/incomplete submission. Each
+  // onboarding step (Complete Profile, Children, Medical, Your Vibe) saves
+  // independently; the client uses profileCompletion.nextStep to know what
+  // to ask for next, not a 400 from this endpoint.
+  const legacyCompletion = legacyProfileCompletionPatch({
     name: nextName,
     phone: nextPhone,
     accountType: nextAccountType,
   });
-
-  if (profileMissingFields({ name: nextName, phone: nextPhone, accountType: nextAccountType }).length > 0) {
-    res.status(400).json({
-      error: "Profile is incomplete",
-      profileMissingFields: profileMissingFields({
-        name: nextName,
-        phone: nextPhone,
-        accountType: nextAccountType,
-      }),
-    });
-    return;
-  }
 
   const [student] = await db
     .update(studentsTable)
@@ -276,13 +223,72 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
       name: nextName,
       phone: nextPhone,
       accountType: nextAccountType,
-      ...completion,
+      gender: nextGender,
+      dateOfBirth: nextDateOfBirth,
+      city: nextCity,
+      nationality: nextNationality,
+      howDidYouHearAboutUs: nextHowDidYouHearAboutUs,
+      policiesAcceptedAt: nextPoliciesAcceptedAt,
+      ...legacyCompletion,
+      lastCompletionStep: "profile",
       updatedAt: new Date().toISOString(),
     })
     .where(eq(studentsTable.id, req.studentId!))
     .returning();
 
-  res.json({ student: publicStudent(student!), requiresOtp: !student!.emailVerified });
+  res.json({ student: await publicStudent(student!), requiresOtp: !student!.emailVerified });
+});
+
+// ─── PUT /api/auth/dance-interests ───────────────────────────────────────────
+// Profile Completion Engine (Phase 4) — "Your Vibe". Replaces the student's
+// full set of dance interests with exactly the given list (backend-persisted;
+// no more AsyncStorage-only selection). Requires email verification since it
+// sits after Verify Email in the registration flow.
+const DanceInterestsBody = z.object({
+  danceTypeIds: z.array(z.coerce.number().int().positive()).default([]),
+});
+
+router.put("/auth/dance-interests", requireStudentAuth, requireVerifiedStudent, async (req, res): Promise<void> => {
+  const parsed = DanceInterestsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+
+  const studentId = req.studentId!;
+  const danceTypeIds = [...new Set(parsed.data.danceTypeIds)];
+
+  const student = await db.transaction(async (tx) => {
+    await tx.delete(studentDanceInterestsTable).where(eq(studentDanceInterestsTable.studentId, studentId));
+    if (danceTypeIds.length > 0) {
+      // Only insert ids that correspond to a real dance type — silently
+      // drop anything else rather than failing the whole request on stale
+      // client-side data.
+      const validTypes = await tx
+        .select({ id: danceTypesTable.id })
+        .from(danceTypesTable)
+        .where(inArray(danceTypesTable.id, danceTypeIds));
+      const validIds = validTypes.map((t) => t.id);
+      if (validIds.length > 0) {
+        await tx.insert(studentDanceInterestsTable).values(
+          validIds.map((danceTypeId) => ({ studentId, danceTypeId })),
+        );
+      }
+    }
+    const [updated] = await tx
+      .update(studentsTable)
+      .set({ lastCompletionStep: "styles", updatedAt: new Date().toISOString() })
+      .where(eq(studentsTable.id, studentId))
+      .returning();
+    return updated;
+  });
+
+  if (!student) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  res.json({ student: await publicStudent(student), requiresOtp: !student.emailVerified });
 });
 
 // ─── POST /api/auth/forgot-password ──────────────────────────────────────────

@@ -25,6 +25,7 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { showProfileIncompletePrompt } from "@/utils/profileCompletionRequired";
 
 function PackageCard({
   pkg,
@@ -146,6 +147,10 @@ export default function PackagesScreen() {
   function handleBuy(pkg: PricePackage) {
     if (!user) {
       showAuthRequiredPrompt();
+      return;
+    }
+    if (user.profileCompletion && !user.profileCompletion.isComplete) {
+      showProfileIncompletePrompt(user.profileCompletion.nextStep);
       return;
     }
     setConfirmPkg(pkg);
