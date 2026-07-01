@@ -1,17 +1,23 @@
 /**
- * Success — design `Success` (signup-views2.jsx). Final enter-app state.
- * "You're in!" with the dancer's name + loaded-styles count. Marks onboarding
- * complete, clears the personalization flag, and enters the app.
+ * Success — design `Success` (signup-views2.jsx). Final onboarding screen
+ * ("Thanks Page"). "You're in!" with the dancer's name + loaded-styles count.
+ *
+ * This screen is the single handoff point out of onboarding: its CTA calls
+ * the shared `enterApp()` (services/authProfile.ts), which defers to the
+ * root index redirect rather than hardcoding a destination here. That keeps
+ * this screen forward-compatible with the upcoming backend-driven Profile
+ * Completion Engine — the engine can change where `enterApp()`/index.tsx
+ * send the user without this screen needing to change.
  */
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { STORAGE_KEYS } from "@/constants/danceStyles";
 import { useAppContext } from "@/contexts/AppContext";
+import { enterApp } from "@/services/authProfile";
 import { CS, Eyebrow, Icon, PrimaryCTA, StageVideo } from "@/components/signup/SignupKit";
 
 const CONFETTI_COLORS = [CS.cyan400, "#FF2E7E", CS.amber, "#B6E80A"];
@@ -84,10 +90,11 @@ export default function OnboardingSuccessScreen() {
     })();
   }, [pop]);
 
-  async function enterApp() {
-    await AsyncStorage.removeItem(STORAGE_KEYS.needsPersonalization);
+  async function handleEnterApp() {
     await setIsOnboarded(true);
-    router.replace("/(tabs)");
+    // Future Profile Completion Engine handoff point — see enterApp() in
+    // services/authProfile.ts. Do not hardcode a route here.
+    await enterApp();
   }
 
   return (
@@ -111,7 +118,7 @@ export default function OnboardingSuccessScreen() {
       </View>
 
       <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>
-        <PrimaryCTA label="Start Dancing" icon="arrow" onPress={enterApp} />
+        <PrimaryCTA label="Start Dancing" icon="arrow" onPress={handleEnterApp} />
       </View>
     </View>
   );

@@ -69,7 +69,8 @@ export default function StylesPickerScreen() {
     // This is documented as temporary local storage.
     // TODO: create student_dance_styles join table and PATCH /api/auth/profile endpoint
     // to accept selectedStyleIds, then migrate AsyncStorage data to server.
-    router.push("/verify-email" as never);
+    // Vibe is the last data-entry step — go straight to the Thanks page.
+    router.push("/onboarding/success" as never);
   }
 
   const count = selected.size;

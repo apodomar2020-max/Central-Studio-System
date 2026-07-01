@@ -52,7 +52,10 @@ export default function VerifyEmailScreen() {
   const refs = useRef<(TextInput | null)[]>([]);
 
   function handleSafeBack() {
-    router.replace("/onboarding/styles" as never);
+    // Verify Email is now reached right after registration/login, before
+    // Complete Profile and Your Vibe — those steps may not have run yet, so
+    // "back" must not point into the middle of onboarding.
+    router.replace("/onboarding/welcome" as never);
   }
 
   useEffect(() => {

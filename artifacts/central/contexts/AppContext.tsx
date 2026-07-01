@@ -4,7 +4,6 @@ import { Alert } from "react-native";
 import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/utils/bookingStatus";
-import { STORAGE_KEYS } from "@/constants/danceStyles";
 
 export interface User {
   id: string;
@@ -260,7 +259,6 @@ const AUTH_SCOPED_STORAGE_KEYS = [
   "notifications",
   "referralCode",
   "referralCredits",
-  STORAGE_KEYS.needsPersonalization,
 ];
 
 async function clearAuthScopedStorage() {

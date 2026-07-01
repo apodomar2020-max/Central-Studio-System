@@ -118,7 +118,6 @@ export function clearSignupDrafts() {
   draftEmail = "";
   draftPassword = "";
   void AsyncStorage.multiRemove([
-    STORAGE_KEYS.needsPersonalization,
     STORAGE_KEYS.danceStyles,
     STORAGE_KEYS.phoneVerified,
     STORAGE_KEYS.profileDob,
@@ -171,7 +170,6 @@ export default function RegisterScreen() {
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
             body: JSON.stringify({ name }),
           });
-          await AsyncStorage.setItem(STORAGE_KEYS.needsPersonalization, "1");
           await continueAfterAuth(undefined, setUser);
           setLoading(false);
         } catch {
@@ -233,7 +231,6 @@ export default function RegisterScreen() {
         setLoading(false);
         return;
       }
-      await AsyncStorage.setItem(STORAGE_KEYS.needsPersonalization, "1");
       await continueAfterAuth(data.accessToken, setUser);
       setLoading(false);
     } catch {

@@ -5,18 +5,32 @@ import { customFetch } from "@workspace/api-client-react";
 import type { User } from "@/contexts/AppContext";
 
 /**
- * New 5-step onboarding flow (post-registration):
+ * Onboarding flow (post-registration):
  *   1. /auth/register         → Create Account
- *   2. /auth/complete-profile → Complete Client Profile (phone, accountType, DOB*, city*, nationality*)
- *   3. /onboarding/styles     → Your Vibe / Dance Styles
- *   4. /auth/verify-phone     → Verification (email-based, SMS not yet active)
- *   5. /onboarding/success    → You're in!
+ *   2. /verify-email          → Email verification (manual signups only;
+ *                                Google/Facebook skip straight to step 3)
+ *   3. /auth/complete-profile → Complete Client Profile (phone, accountType, DOB*, city*, nationality*)
+ *   4. /onboarding/styles     → Your Vibe / Dance Styles
+ *   5. /onboarding/success    → Thanks page — the funnel's terminal screen
  *
  * Registration screens route through the onboarding steps explicitly. Login
  * routing is based on the server-authenticated user's verification/profile state.
  *
  * * = Stored locally in AsyncStorage only — backend columns pending:
  *       students.date_of_birth, students.city, students.nationality
+ */
+/**
+ * Single shared exit point out of auth/onboarding. Every screen that finishes
+ * its job (login, OTP verify, the Thanks page, ...) calls this instead of
+ * hardcoding a destination — it just hands control back to the root index
+ * redirect (app/index.tsx), which is the one place that decides where the
+ * user actually goes based on their server-authenticated state.
+ *
+ * This is intentionally a dumb redirect today. It is the designated handoff
+ * point for the upcoming backend-driven Profile Completion Engine: when that
+ * lands, only this function and/or index.tsx's redirect logic need to change
+ * (e.g. to route through remaining required steps) — no call site here needs
+ * to be touched.
  */
 export async function enterApp() {
   router.replace("/" as never);

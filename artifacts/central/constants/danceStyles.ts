@@ -27,7 +27,6 @@ export const DANCE_STYLES: DanceStyle[] = [
 
 /** AsyncStorage keys for the personalization onboarding sequence. */
 export const STORAGE_KEYS = {
-  needsPersonalization: "cs_needs_personalization",
   danceStyles: "cs_dance_styles",
   phoneVerified: "cs_phone_verified",
   /**
