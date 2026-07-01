@@ -14,7 +14,7 @@ type PageHeaderProps = {
 
 const modeColors = {
   studio: { dot: "#00B6D7", label: "STUDIO", labelColor: "#00B6D755" },
-  stage: { dot: "#8A5CFF", label: "STAGE", labelColor: "#8A5CFF55" },
+  stage: { dot: "#00B6D7", label: "STUDIO", labelColor: "#00B6D755" },
   general: { dot: "#9CA3AF", label: undefined, labelColor: "#9CA3AF55" },
 };
 
