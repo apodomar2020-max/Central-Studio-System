@@ -3,7 +3,6 @@ import { router } from "expo-router";
 import { customFetch } from "@workspace/api-client-react";
 
 import type { User } from "@/contexts/AppContext";
-import { STORAGE_KEYS } from "@/constants/danceStyles";
 
 /**
  * New 5-step onboarding flow (post-registration):
@@ -13,20 +12,13 @@ import { STORAGE_KEYS } from "@/constants/danceStyles";
  *   4. /auth/verify-phone     → Verification (email-based, SMS not yet active)
  *   5. /onboarding/success    → You're in!
  *
- * The `needsPersonalization` flag is set during register and cleared in success.tsx.
- * Once set, the user is routed through the full 5-step flow after profile completion.
+ * Registration screens route through the onboarding steps explicitly. Login
+ * routing is based on the server-authenticated user's verification/profile state.
  *
  * * = Stored locally in AsyncStorage only — backend columns pending:
  *       students.date_of_birth, students.city, students.nationality
  */
 export async function enterApp() {
-  const needsPersonalization = await AsyncStorage.getItem(STORAGE_KEYS.needsPersonalization);
-  if (needsPersonalization === "1") {
-    // New registration: route to Step 4 (verification) — they've already done
-    // styles in Step 3 and are now continuing to the end of the funnel.
-    router.push("/verify-email" as never);
-    return;
-  }
   router.replace("/" as never);
 }
 
@@ -89,16 +81,6 @@ export async function continueAfterAuth(
 
   const { user, requiresOtp } = await fetchCurrentUser();
   await setUser(user);
-
-  const needsPersonalization = await AsyncStorage.getItem(STORAGE_KEYS.needsPersonalization);
-  if (needsPersonalization === "1") {
-    if (!user.profileCompleted) {
-      router.push("/auth/complete-profile" as never);
-      return;
-    }
-    router.push("/onboarding/styles" as never);
-    return;
-  }
 
   if (requiresOtp || !user.emailVerified) {
     router.push("/verify-email" as never);

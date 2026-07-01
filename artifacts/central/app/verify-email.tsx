@@ -1,4 +1,3 @@
-import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -18,11 +17,10 @@ import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 
-import { BackBtn, CS, Eyebrow, PrimaryCTA, SignupIconName, Icon, ScreenTitle } from "@/components/signup/SignupKit";
+import { BackBtn, CS, Eyebrow, PrimaryCTA, Icon, ScreenTitle } from "@/components/signup/SignupKit";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import ProgressDots from "@/components/ProgressDots";
 
-import AppButton from "@/components/AppButton";
 import { enterApp, fetchCurrentUser } from "@/services/authProfile";
 import { clearSignupDrafts } from "./auth/register";
 
@@ -57,6 +55,15 @@ export default function VerifyEmailScreen() {
     router.replace("/onboarding/styles" as never);
   }
 
+  useEffect(() => {
+    if (!user?.emailVerified) return;
+    if (!user.profileCompleted) {
+      router.replace("/auth/complete-profile" as never);
+      return;
+    }
+    void enterApp();
+  }, [user?.emailVerified, user?.profileCompleted]);
+
   // Auto-send OTP as soon as the screen opens (if not already verified)
   useEffect(() => {
     if (!user?.id || user.emailVerified || sent) return;
@@ -75,32 +82,7 @@ export default function VerifyEmailScreen() {
   }, [resendCountdown]);
 
   if (user?.emailVerified) {
-    return (
-
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 40 : insets.top + 24 }]}>
-        <VerifyGlow />
-        <View style={styles.topRow} pointerEvents="box-none">
-          <BackBtn onPress={handleSafeBack} />
-          <ProgressDots total={5} current={3} />
-          <View style={{ width: 42 }} />
-        </View>
-        <View style={styles.centeredWrap}>
-          <View style={[styles.iconWrap, { backgroundColor: "rgba(0,182,215,0.13)" }]}>
-            <Icon name="check" size={32} stroke={2} color={CS.cyan400} />
-          </View>
-          <Text style={styles.successTitle}>Already Verified!</Text>
-          <Text style={styles.successDesc}>Your email address is verified. You have full access to all features.</Text>
-          <View style={[styles.emailBox, { borderColor: "rgba(0,182,215,0.30)", backgroundColor: "rgba(0,182,215,0.10)" }]}>
-            <Icon name="mail" size={16} stroke={2} color={CS.cyan400} />
-            <Text style={[styles.emailText, { color: CS.cyan400 }]}>{user.email}</Text>
-          </View>
-        </View>
-        <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>
-          <PrimaryCTA label="Back to Profile" onPress={handleSafeBack} />
-        </View>
-      </View>
-
-    );
+    return <View style={styles.container} />;
   }
 
   function handleDigit(val: string, i: number) {
@@ -263,15 +245,6 @@ const styles = StyleSheet.create({
   title: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, textTransform: "uppercase", color: CS.cyan500, marginBottom: 10, includeFontPadding: false, paddingTop: 6 },
   lead: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, marginBottom: 24, fontFamily: "Archivo_400Regular" },
   pageDescEmail: { fontFamily: "Archivo_700Bold" },
-  centeredWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 16 },
-  iconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  successTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", textAlign: "center" },
-  successDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "rgba(255,255,255,0.42)", textAlign: "center", lineHeight: 22 },
-  emailBox: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, width: "100%",
-  },
-  emailText: { fontSize: 14, fontFamily: "Archivo_600SemiBold", flex: 1 },
   codeRow: { flexDirection: "row", gap: 10, marginVertical: 8, justifyContent: "space-between" },
   codeInput: {
     flex: 1, height: 56, borderRadius: 12, borderWidth: 1.5,

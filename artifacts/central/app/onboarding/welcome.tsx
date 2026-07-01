@@ -31,6 +31,10 @@ export default function WelcomeScreen() {
     router.replace("/(tabs)" as never);
   }
 
+  function goToSignIn() {
+    router.push("/auth/login" as never);
+  }
+
   return (
     <View style={styles.screen}>
       <StageVideo />
@@ -70,12 +74,12 @@ export default function WelcomeScreen() {
           />
           <GhostBtn
             label="Sign In"
-            onPress={() => router.push("/auth/login")}
+            onPress={goToSignIn}
           />
         </View>
 
         <Divider label="Already a member?" />
-        <TouchableOpacity onPress={() => router.push("/auth/login")} style={styles.signIn}>
+        <TouchableOpacity onPress={goToSignIn} style={styles.signIn}>
           <Text style={styles.signInText}>Sign In →</Text>
         </TouchableOpacity>
       </View>

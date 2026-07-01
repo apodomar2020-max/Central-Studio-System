@@ -117,6 +117,14 @@ export function clearSignupDrafts() {
   draftLastName = "";
   draftEmail = "";
   draftPassword = "";
+  void AsyncStorage.multiRemove([
+    STORAGE_KEYS.needsPersonalization,
+    STORAGE_KEYS.danceStyles,
+    STORAGE_KEYS.phoneVerified,
+    STORAGE_KEYS.profileDob,
+    STORAGE_KEYS.profileCity,
+    STORAGE_KEYS.profileNationality,
+  ]);
 }
 export default function RegisterScreen() {
   const { setUser, user } = useAppContext();
