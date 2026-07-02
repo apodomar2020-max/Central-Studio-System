@@ -26,7 +26,7 @@ import {
   ListBookingsResponse,
 } from "@workspace/api-zod";
 import { currentOccurrenceDate, checkInWindowState } from "../lib/occurrence";
-import { DUPLICATE_BLOCKING_STATUSES } from "../lib/bookingStatus";
+import { DUPLICATE_BLOCKING_STATUSES, isSeatReservedBooking } from "../lib/bookingStatus";
 
 const router: IRouter = Router();
 
@@ -837,7 +837,51 @@ router.post(
     return;
   }
 
-  const row = await db.transaction(async (tx) => {
+  const createResult = await db.transaction(async (tx) => {
+    if (normalized.scheduleId != null) {
+      const [lockedSchedule] = await tx
+        .select({
+          id: schedulesTable.id,
+          status: schedulesTable.status,
+          packageEligible: schedulesTable.packageEligible,
+          type: schedulesTable.type,
+          date: schedulesTable.date,
+          dayOfWeek: schedulesTable.dayOfWeek,
+          startTime: schedulesTable.startTime,
+          capacity: classesTable.capacity,
+        })
+        .from(schedulesTable)
+        .innerJoin(classesTable, eq(classesTable.id, schedulesTable.classId))
+        .where(eq(schedulesTable.id, normalized.scheduleId))
+        .for("update");
+
+      if (!lockedSchedule) {
+        return { kind: "schedule_not_found" as const };
+      }
+
+      if (lockedSchedule.status !== "active") {
+        return { kind: "schedule_unavailable" as const, status: lockedSchedule.status };
+      }
+
+      if (normalized.packageOrderId != null && lockedSchedule.packageEligible === false) {
+        return { kind: "package_not_eligible" as const };
+      }
+
+      if (isSeatReservedBooking({ bookingStatus: String(normalized.bookingStatus) })) {
+        const [reservedSeats] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(bookingsTable)
+          .where(and(
+            eq(bookingsTable.scheduleId, lockedSchedule.id),
+            inArray(bookingsTable.bookingStatus, ["confirmed", "attended"]),
+          ));
+
+        if ((reservedSeats?.count ?? 0) >= lockedSchedule.capacity) {
+          return { kind: "schedule_unavailable" as const, status: "completed" as const };
+        }
+      }
+    }
+
     const [inserted] = await tx
       .insert(bookingsTable)
       .values({
@@ -884,6 +928,38 @@ router.post(
 
     return inserted;
   });
+
+  if ("kind" in createResult) {
+    if (createResult.kind === "schedule_not_found") {
+      res.status(400).json({
+        error: "schedule_not_found",
+        message: "The selected schedule is no longer available.",
+      });
+      return;
+    }
+
+    if (createResult.kind === "schedule_unavailable") {
+      res.status(409).json({
+        error: "schedule_unavailable",
+        message: createResult.status === "cancelled"
+          ? "This class schedule has been cancelled."
+          : createResult.status === "completed"
+            ? "This class schedule is full."
+            : "This class schedule has expired.",
+      });
+      return;
+    }
+
+    if (createResult.kind === "package_not_eligible") {
+      res.status(400).json({
+        error: "package_not_eligible",
+        message: "This schedule is not eligible for package credits.",
+      });
+      return;
+    }
+  }
+
+  const row = createResult;
 
   res.status(201).json(GetBookingResponse.parse(row));
 });

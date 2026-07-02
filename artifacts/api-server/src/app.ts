@@ -1,11 +1,33 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
+import compression from "compression";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { requireAuth } from "./middlewares/auth";
 
 const app: Express = express();
+
+function positiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+app.set("trust proxy", positiveIntegerEnv("TRUST_PROXY_HOPS", 1));
+
+const authRateLimitWindowMs = positiveIntegerEnv("AUTH_RATE_LIMIT_WINDOW_MS", 15 * 60 * 1000);
+const authRateLimitMax = positiveIntegerEnv("AUTH_RATE_LIMIT_MAX", 50);
+const authRateLimiter = rateLimit({
+  windowMs: authRateLimitWindowMs,
+  limit: authRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many authentication attempts. Please try again later." },
+});
 
 app.use(
   pinoHttp({
@@ -26,6 +48,8 @@ app.use(
     },
   }),
 );
+app.use(helmet());
+app.use(compression());
 // CORS — restrict to known origins in production.
 // Set ALLOWED_ORIGINS as a comma-separated list of allowed origins, e.g.:
 //   ALLOWED_ORIGINS=https://admin.centralstudio.app,https://centralstudio.app
@@ -48,8 +72,10 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use("/api/auth", authRateLimiter);
+app.use("/api/admin/auth", authRateLimiter);
+app.use(express.json({ limit: process.env["API_JSON_BODY_LIMIT"] ?? "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: process.env["API_URLENCODED_BODY_LIMIT"] ?? "1mb" }));
 
 // Authenticate all /api routes (healthz is explicitly exempted inside the middleware)
 app.use("/api", requireAuth);

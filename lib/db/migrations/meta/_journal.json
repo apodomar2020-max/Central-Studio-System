@@ -267,6 +267,13 @@
       "when": 1782915758903,
       "tag": "0037_meta_template_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1782922400000,
+      "tag": "0039_infrastructure_hardening_indexes",
+      "breakpoints": true
     }
   ]
 }
