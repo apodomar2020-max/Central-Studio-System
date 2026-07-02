@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { initErrorMonitoring, captureError } from "./lib/errorMonitoring";
 import { runMigrations } from "./lib/migrate";
 
-initErrorMonitoring();
+await initErrorMonitoring();
 
 const rawPort = process.env["PORT"];
 

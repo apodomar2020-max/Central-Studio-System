@@ -12,7 +12,7 @@ import {
 import { processWhatsAppCampaignBatch } from "./lib/marketingCampaignSender";
 import { processReportJob } from "./lib/reportJobs";
 
-initErrorMonitoring();
+await initErrorMonitoring();
 
 if (!workerEnabled()) {
   logger.warn("Queue worker disabled. Set QUEUE_WORKER_ENABLED=true and REDIS_URL to process background jobs.");
