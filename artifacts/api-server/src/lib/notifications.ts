@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, notificationsTable, studentsTable } from "@workspace/db";
+import { sendBroadcastPushNotification, sendPushNotification } from "./pushNotifications";
 
 type NotificationClient = Pick<typeof db, "select" | "insert">;
 
@@ -83,6 +84,29 @@ async function insertNotification(
       sentAt: new Date().toISOString(),
     })
     .returning();
+
+  const studentTargetMatch = /^student:(\d+)$/.exec(target);
+  if (studentTargetMatch) {
+    const studentId = Number(studentTargetMatch[1]);
+    setTimeout(() => {
+      void sendPushNotification({
+        studentId,
+        title,
+        body,
+        data: { type: input.type ?? "notification" },
+        notificationId: row.id,
+      });
+    }, 0);
+  } else if (target === "all") {
+    setTimeout(() => {
+      void sendBroadcastPushNotification({
+        title,
+        body,
+        data: { type: input.type ?? "notification" },
+        notificationId: row.id,
+      });
+    }, 0);
+  }
 
   return row;
 }

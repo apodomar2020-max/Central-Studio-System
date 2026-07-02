@@ -3,7 +3,6 @@ import { VideoView, useVideoPlayer } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -92,9 +91,6 @@ const HERO_H    = 196;
 const HERO_W    = SW - 40; // 20px gutter each side — matches design calc(100% - 40px)
 const HERO_GAP  = 14;      // matches design gap: 14
 const HERO_SNAP = HERO_W + HERO_GAP;
-
-// AsyncStorage key shared with notifications.tsx for read API notification IDs
-const API_NOTIF_READ_KEY = "api_notif_read_ids";
 
 // ─── Presentation helpers ──────────────────────────────────────────────────────
 /** Derive compact style label: "Hip Hop & Afro Instructor" → "Hip Hop & Afro" */
@@ -818,13 +814,9 @@ export default function StudioHomeScreen() {
     let active = true;
     (async () => {
       try {
-        const [notifs, raw] = await Promise.all([
-          customFetch<ApiNotification[]>("/api/notifications/my"),
-          AsyncStorage.getItem(API_NOTIF_READ_KEY),
-        ]);
+        const notifs = await customFetch<Array<ApiNotification & { isRead?: boolean }>>("/api/notifications/my?limit=100&offset=0");
         if (!active) return;
-        const read = raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
-        setApiUnread(notifs.filter((n) => !n.isDraft && !read.has(`api-${n.id}`)).length);
+        setApiUnread(notifs.filter((n) => !n.isDraft && !n.isRead).length);
       } catch { /* silently ignore */ }
     })();
     return () => { active = false; };

@@ -8,6 +8,7 @@ import {
   useUpdateNotification,
   useDeleteNotification,
   getListNotificationsQueryKey,
+  customFetch,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -23,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Trash2, Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +39,25 @@ const formSchema = z.object({
 });
 
 type FormValues = z.input<typeof formSchema>;
-type Notification = { id: number; title: string; body: string; target: string; sentAt?: string | null; isDraft: boolean; createdAt: string };
+type Notification = {
+  id: number;
+  title: string;
+  body: string;
+  target: string;
+  sentAt?: string | null;
+  isDraft: boolean;
+  createdAt: string;
+  readCount?: number;
+  pushStatus?: "in_app" | "sent" | "failed";
+  pushSentCount?: number;
+  pushFailedCount?: number;
+};
+type PushStatus = {
+  enabled: boolean;
+  provider: string;
+  broadcastLimit: number;
+  accessTokenConfigured: boolean;
+};
 
 export default function Notifications() {
   const { can } = useAdminAuth();
@@ -45,6 +65,10 @@ export default function Notifications() {
   const canSend = can("notifications", "send");
   const canDelete = can("notifications", "delete");
   const { data: notifications, isLoading } = useListNotifications();
+  const { data: pushStatus } = useQuery({
+    queryKey: ["notifications", "push-status"],
+    queryFn: () => customFetch<PushStatus>("/api/notifications/push/status"),
+  });
   const createNotification = useCreateNotification();
   const updateNotification = useUpdateNotification();
   const deleteNotification = useDeleteNotification();
@@ -90,6 +114,20 @@ export default function Notifications() {
     <div className="space-y-6">
       <PageHeader title="Notifications" description="Broadcast messages to your community" mode="general" addLabel="Create Notification" addTestId="button-add-notification" onAdd={canCreate ? openCreate : undefined} />
 
+      <div className="rounded-md border bg-card p-4 text-sm text-card-foreground">
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge variant={pushStatus?.enabled ? "default" : "secondary"}>
+            Push {pushStatus?.enabled ? "Enabled" : "Disabled"}
+          </Badge>
+          <span className="text-muted-foreground">
+            Provider: {pushStatus?.provider ?? "expo"} · Broadcast limit: {pushStatus?.broadcastLimit ?? 25}
+          </span>
+          {!pushStatus?.enabled && (
+            <span className="text-muted-foreground">In-app notifications continue normally.</span>
+          )}
+        </div>
+      </div>
+
       <div className="border rounded-md">
         <Table>
           <TableHeader>
@@ -97,17 +135,19 @@ export default function Notifications() {
               <TableHead>Title</TableHead>
               <TableHead>Target</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Reads</TableHead>
+              <TableHead>Push</TableHead>
               <TableHead>Sent At</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : notifications?.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No notifications yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No notifications yet.</TableCell></TableRow>
             ) : (
-              notifications?.map((n) => (
+              (notifications as Notification[] | undefined)?.map((n) => (
                 <TableRow key={n.id} data-testid={`row-notification-${n.id}`}>
                   <TableCell>
                     <div className="font-medium">{n.title}</div>
@@ -116,6 +156,16 @@ export default function Notifications() {
                   <TableCell><Badge variant="outline">{n.target}</Badge></TableCell>
                   <TableCell>
                     <Badge variant={n.isDraft ? "secondary" : "default"}>{n.isDraft ? "Draft" : "Sent"}</Badge>
+                  </TableCell>
+                  <TableCell>{n.readCount ?? 0}</TableCell>
+                  <TableCell>
+                    <Badge variant={n.pushStatus === "failed" ? "destructive" : "outline"}>
+                      {n.pushStatus === "sent"
+                        ? `Push sent${n.pushSentCount ? ` (${n.pushSentCount})` : ""}`
+                        : n.pushStatus === "failed"
+                          ? `Push failed${n.pushFailedCount ? ` (${n.pushFailedCount})` : ""}`
+                          : "In-app"}
+                    </Badge>
                   </TableCell>
                   <TableCell>{n.sentAt ? new Date(n.sentAt).toLocaleDateString() : "—"}</TableCell>
                   <TableCell className="text-right">

@@ -274,6 +274,13 @@
       "when": 1782922400000,
       "tag": "0039_infrastructure_hardening_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1783008800000,
+      "tag": "0040_notifications_platform_phase1",
+      "breakpoints": true
     }
   ]
 }

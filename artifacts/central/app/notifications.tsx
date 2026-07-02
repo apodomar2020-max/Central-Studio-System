@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
@@ -71,6 +70,8 @@ type TypeConfig = {
 type TypedApiNotification = ApiNotification & {
   type?: string | null;
   metadata?: Record<string, unknown> | null;
+  isRead?: boolean;
+  readAt?: string | null;
   sent_at?: string | null;
   created_at?: string | null;
 };
@@ -170,8 +171,6 @@ function metadataRows(metadata?: Record<string, unknown> | null): Array<{ label:
   return rows;
 }
 
-const READ_KEY = "api_notif_read_ids";
-
 // ─── Icon/colour maps ─────────────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<NotifType, TypeConfig> = {
@@ -255,48 +254,50 @@ export default function NotificationsScreen() {
   const [apiNotifs, setApiNotifs] = useState<TypedApiNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefetching, setIsRefetching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [apiHasMore, setApiHasMore] = useState(false);
   const [isApiError, setIsApiError] = useState(false);
   const [apiError, setApiError] = useState<unknown>(null);
 
-  const loadApiNotifs = useCallback(async (refreshing = false) => {
-    if (refreshing) setIsRefetching(true); else setIsLoading(true);
+  const loadApiNotifs = useCallback(async (refreshing = false, append = false) => {
+    if (append) setIsLoadingMore(true);
+    else if (refreshing) setIsRefetching(true);
+    else setIsLoading(true);
     setIsApiError(false);
     try {
-      const data = await customFetch<TypedApiNotification[]>("/api/notifications/my");
-      setApiNotifs(data);
+      const offset = append ? apiNotifs.length : 0;
+      const data = await customFetch<TypedApiNotification[]>(`/api/notifications/my?limit=50&offset=${offset}`);
+      setApiHasMore(data.length === 50);
+      setApiNotifs((prev) => append ? [...prev, ...data] : data);
     } catch (e) {
       setIsApiError(true);
       setApiError(e);
     } finally {
       setIsLoading(false);
       setIsRefetching(false);
+      setIsLoadingMore(false);
     }
-  }, []);
+  }, [apiNotifs.length]);
 
   useEffect(() => { loadApiNotifs(); }, [loadApiNotifs]);
 
   const refetch = useCallback(() => loadApiNotifs(true), [loadApiNotifs]);
   const onRefresh = refetch;
 
-  // Locally-persisted set of read API notification IDs
-  const [apiReadIds, setApiReadIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    AsyncStorage.getItem(READ_KEY).then((raw) => {
-      if (raw) {
-        try { setApiReadIds(new Set(JSON.parse(raw))); } catch {}
-      }
-    });
-  }, []);
-
   const markApiRead = useCallback(async (id: string) => {
-    setApiReadIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      AsyncStorage.setItem(READ_KEY, JSON.stringify([...next]));
-      return next;
-    });
-  }, []);
+    const rawId = Number(id.replace(/^api-/, ""));
+    if (!Number.isFinite(rawId)) return;
+    setApiNotifs((prev) => prev.map((n) => n.id === rawId ? {
+      ...n,
+      isRead: true,
+      readAt: n.readAt ?? new Date().toISOString(),
+    } : n));
+    try {
+      await customFetch(`/api/notifications/${rawId}/read`, { method: "POST" });
+    } catch {
+      void loadApiNotifs(true);
+    }
+  }, [loadApiNotifs]);
 
   // Build merged, sorted notification list
 	  const all: DisplayNotif[] = React.useMemo(() => {
@@ -307,10 +308,10 @@ export default function NotificationsScreen() {
 		        const createdAt = n.sentAt ?? n.createdAt ?? n.sent_at ?? n.created_at ?? null;
 		        return {
 		          id: `api-${n.id}`,
-		          title: n.title,
+	          title: n.title,
 	          body: n.body,
 	          type: inferType(n),
-	          isRead: apiReadIds.has(`api-${n.id}`),
+	          isRead: Boolean(n.isRead),
 		          createdAt,
 		          timestamp,
 		          metadata: asMetadata(n.metadata),
@@ -337,7 +338,7 @@ export default function NotificationsScreen() {
 	    return [...apiItems, ...localItems].sort(
 		      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
 	    );
-	  }, [apiNotifs, apiReadIds, localNotifs]);
+	  }, [apiNotifs, localNotifs]);
 
 	  const grouped = React.useMemo(() => {
 	    const sortGroup = (items: DisplayNotif[]) => [...items].sort((a, b) => {
@@ -438,6 +439,16 @@ export default function NotificationsScreen() {
 	                  ))}
 	                </View>
               )}
+              {apiHasMore && (
+                <TouchableOpacity
+                  style={styles.loadMoreButton}
+                  activeOpacity={0.8}
+                  disabled={isLoadingMore}
+                  onPress={() => loadApiNotifs(false, true)}
+                >
+                  <Text style={styles.loadMoreText}>{isLoadingMore ? "Loading..." : "Load more"}</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </ScrollView>
@@ -526,5 +537,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Archivo_500Medium",
     color: "#FFFFFF",
+  },
+  loadMoreButton: {
+    alignSelf: "center",
+    marginTop: 4,
+    marginBottom: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(0,182,215,0.35)",
+    backgroundColor: "rgba(0,182,215,0.1)",
+  },
+  loadMoreText: {
+    fontSize: 13,
+    fontFamily: "Archivo_700Bold",
+    color: colors.studio.primary,
   },
 });

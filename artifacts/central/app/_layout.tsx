@@ -29,6 +29,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import FeedbackGate from "@/components/feedback/FeedbackGate";
+import PushRegistrationGate from "@/components/PushRegistrationGate";
 import { AppContextProvider } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
 
@@ -154,6 +155,7 @@ export default function RootLayout() {
             <GestureHandlerRootView>
               <KeyboardProvider>
                 <FeedbackGate />
+                <PushRegistrationGate />
                 <RootLayoutNav />
               </KeyboardProvider>
             </GestureHandlerRootView>

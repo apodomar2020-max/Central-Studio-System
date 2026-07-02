@@ -63,6 +63,7 @@
     "expo-auth-session": "~7.0.11",
     "expo-clipboard": "^8.0.8",
     "expo-crypto": "~15.0.9",
+    "expo-notifications": "^57.0.2",
     "expo-updates": "~29.0.18",
     "react-native-fbsdk-next": "^13.4.3",
     "react-native-qrcode-svg": "^6.3.21"
