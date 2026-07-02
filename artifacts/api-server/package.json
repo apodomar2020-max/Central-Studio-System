@@ -11,6 +11,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.8.0",
+    "@opentelemetry/instrumentation": "^0.214.0",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
     "@sentry/node": "^10.63.0",
     "@swc/helpers": "^0.5.23",
     "@workspace/api-zod": "workspace:*",
