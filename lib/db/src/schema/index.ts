@@ -5,6 +5,7 @@ export * from "./pricePackages";
 export * from "./bookings";
 export * from "./students";
 export * from "./offers";
+export * from "./promotions";
 export * from "./notifications";
 export * from "./marketingCampaigns";
 export * from "./packageOrders";

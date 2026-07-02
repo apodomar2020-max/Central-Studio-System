@@ -665,7 +665,7 @@ function PackagesSection() {
     setConfirmPkg(pkg);
   }, [user]);
 
-  const confirmPurchase = useCallback(async () => {
+  const confirmPurchase = useCallback(async (promoCode?: string | null) => {
     if (!confirmPkg) return;
     setPurchasing(true);
     try {
@@ -674,6 +674,7 @@ function PackagesSection() {
         name: confirmPkg.name,
         sessions: confirmPkg.sessions ?? 1,
         validityMonths: 0,
+        promoCode,
       });
       const packageName = confirmPkg.name;
       setConfirmPkg(null);

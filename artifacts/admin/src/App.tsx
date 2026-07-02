@@ -22,6 +22,7 @@ import ParentsPage from "@/pages/parents";
 import StudentDetailPage from "@/pages/student-detail";
 import ChildDetailPage from "@/pages/child-detail";
 import Offers from "@/pages/offers";
+import PromotionsPage from "@/pages/promotions";
 import Notifications from "@/pages/notifications";
 import Marketing from "@/pages/marketing";
 import PackageOrders from "@/pages/package-orders";
@@ -87,6 +88,7 @@ const ROUTE_PERMS = {
   studentDetail: [["students", "view"], ["parents", "view"], ["users", "view"]],
   childDetails: [["children", "view"], ["parents", "view"]],
   offers: [["offers", "view"]],
+  promotions: [["offers", "view"]],
   notifications: [["notifications", "view"]],
   marketing: [["marketing", "view"]],
   packageOrders: [["packageOrders", "view"]],
@@ -128,6 +130,7 @@ function ProtectedRouter() {
         <Route path="/parents/:id">{guarded(ROUTE_PERMS.studentDetail, <StudentDetailPage />)}</Route>
         <Route path="/parents/:parentId/children/:childId">{guarded(ROUTE_PERMS.childDetails, <ChildDetailPage />, "all")}</Route>
         <Route path="/offers">{guarded(ROUTE_PERMS.offers, <Offers />)}</Route>
+        <Route path="/promotions">{guarded(ROUTE_PERMS.promotions, <PromotionsPage />)}</Route>
         <Route path="/notifications">{guarded(ROUTE_PERMS.notifications, <Notifications />)}</Route>
         <Route path="/marketing">{guarded(ROUTE_PERMS.marketing, <Marketing />)}</Route>
         <Route path="/package-orders">{guarded(ROUTE_PERMS.packageOrders, <PackageOrders />)}</Route>

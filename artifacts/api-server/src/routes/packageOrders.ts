@@ -10,6 +10,7 @@ import {
   studentsTable,
 } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
+import { createPromotionRedemptions, validatePackagePromotion } from "../lib/promotionService";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import {
@@ -71,6 +72,7 @@ function normalizeEmail(email: string): string {
 const PurchasePackageBody = z.object({
   packageId: z.coerce.number().int().positive(),
   paymentMode: z.enum(["pay_at_studio", "online_payment"]).optional(),
+  promoCode: z.string().trim().optional().nullable(),
 }).passthrough();
 
 // Membership Engine (Phase 3): studentId/studentEmail are read directly off
@@ -150,6 +152,7 @@ router.post(
         name: studentsTable.name,
         email: studentsTable.email,
         phone: studentsTable.phone,
+        emailVerified: studentsTable.emailVerified,
       })
       .from(studentsTable)
       .where(eq(studentsTable.id, req.studentId!))
@@ -187,6 +190,26 @@ router.post(
     return;
   }
 
+  const promotionResult = await validatePackagePromotion({
+    student: { id: student.id, emailVerified: student.emailVerified },
+    package: {
+      id: packageDefinition.id,
+      name: packageDefinition.name,
+      priceEgp: packageDefinition.priceEgp,
+      isActive: packageDefinition.isActive,
+    },
+    basket: { items: [{ type: "package", id: packageDefinition.id, amount: packageDefinition.priceEgp }] },
+    subtotal: packageDefinition.priceEgp,
+    verified: student.emailVerified,
+  }, parsed.data.promoCode);
+  if (parsed.data.promoCode && !promotionResult.eligible) {
+    res.status(409).json({
+      error: promotionResult.reason ?? "Promo code is not eligible.",
+      code: "promotion_not_eligible",
+    });
+    return;
+  }
+
   const row = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(packageOrdersTable)
@@ -217,8 +240,18 @@ router.post(
       metadata: {
         packageName: inserted.packageName,
         remainingCredits: inserted.remainingCredits,
-      },
-    });
+        },
+      });
+      await createPromotionRedemptions(tx, promotionResult, {
+        studentId: student.id,
+        packageOrderId: inserted.id,
+        metadata: {
+          packageId: packageDefinition.id,
+          packageName: packageDefinition.name,
+          promoCode: promotionResult.promotionCode,
+          source: "package_checkout",
+        },
+      });
     return inserted;
   });
   res.status(201).json(GetPackageOrderResponse.parse(row));

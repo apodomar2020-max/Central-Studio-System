@@ -48,6 +48,7 @@ const studioNavTop: NavEntry[] = [
 
 const studioNavBottom: NavEntry[] = [
   { name: "Offers", href: "/offers", icon: Tag, perm: [["offers", "view"]] },
+  { name: "Promotions", href: "/promotions", icon: Tag, perm: [["offers", "view"]] },
   { name: "Hero Slides", href: "/hero-items", icon: ImagePlay, perm: [["heroSlides", "view"]] },
 ];
 

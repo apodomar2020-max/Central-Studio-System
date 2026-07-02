@@ -174,7 +174,7 @@ interface AppContextType {
   refreshBookings: () => Promise<void>;
   userPackages: UserPackage[];
   packageUsageHistory: PackageUsage[];
-  purchasePackage: (pkg: { id: number; name: string; sessions: number | null; validityMonths: number }) => Promise<void>;
+  purchasePackage: (pkg: { id: number; name: string; sessions: number | null; validityMonths: number; promoCode?: string | null }) => Promise<void>;
   cancelPackage: (userPackageId: string) => Promise<void>;
   refreshUserPackages: () => Promise<void>;
   usePackageCredit: (userPackageId: string, bookingId: string, className: string) => boolean;
@@ -677,7 +677,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   }, []);
 
   const purchasePackage = useCallback(
-    async (pkg: { id: number; name: string; sessions: number | null; validityMonths: number }): Promise<void> => {
+    async (pkg: { id: number; name: string; sessions: number | null; validityMonths: number; promoCode?: string | null }): Promise<void> => {
       const usr = userRef.current;
       if (!usr) return;
       await customFetch("/api/package-orders", {
@@ -690,6 +690,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           packageName: pkg.name,
           totalCredits: pkg.sessions ?? 1,
           remainingCredits: pkg.sessions ?? 1,
+          promoCode: pkg.promoCode ?? null,
         }),
       });
       // Refresh the list so the new pending order shows up immediately

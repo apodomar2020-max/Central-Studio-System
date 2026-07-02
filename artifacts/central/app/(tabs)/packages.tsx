@@ -169,7 +169,7 @@ export default function PackagesScreen() {
     }
   }, [purchaseId, packages]);
 
-  async function confirmPurchase() {
+  async function confirmPurchase(promoCode?: string | null) {
     if (!confirmPkg) return;
     setPurchasing(true);
     try {
@@ -178,6 +178,7 @@ export default function PackagesScreen() {
         name: confirmPkg.name,
         sessions: confirmPkg.sessions ?? 1,
         validityMonths: 0,
+        promoCode,
       });
       setConfirmPkg(null);
       router.push("/package-center");
