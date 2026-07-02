@@ -6,6 +6,7 @@ import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } fro
 import { currentOccurrenceDate } from "../lib/occurrence";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
 import { createStudentNotification } from "../lib/notifications";
+import { DbClient } from "../lib/dbTypes";
 import {
   ListSchedulesQueryParams,
   CreateScheduleBody,
@@ -211,7 +212,7 @@ function didScheduleChange(
 }
 
 async function notifyScheduleBookings(
-  client: typeof db,
+  client: DbClient,
   scheduleId: number,
   title: string,
   body: string,

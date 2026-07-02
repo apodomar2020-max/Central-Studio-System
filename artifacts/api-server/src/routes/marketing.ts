@@ -15,7 +15,7 @@ import {
   schedulesTable,
   studentsTable,
 } from "@workspace/db";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import {
   assertValidE164Phone,
   getWhatsAppCloudStatus,
@@ -362,7 +362,7 @@ router.post("/marketing/templates/sync", requireAdminAuth, requireAdminPermissio
   }
 });
 
-router.post("/marketing/templates", requireAdminAuth, requireAdminPermission("marketing", "create"), async (req, res): Promise<void> => {
+router.post("/marketing/templates", requireAdminAuth, requireAdminPermission("marketing", "create"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateTemplateBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -553,7 +553,7 @@ router.get("/marketing/campaigns", requireAdminAuth, requireAdminPermission("mar
   res.json(rows);
 });
 
-router.post("/marketing/campaigns", requireAdminAuth, requireAdminPermission("marketing", "create"), async (req, res): Promise<void> => {
+router.post("/marketing/campaigns", requireAdminAuth, requireAdminPermission("marketing", "create"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = CampaignBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -586,7 +586,7 @@ router.get("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission(
   res.json(row);
 });
 
-router.patch("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
+router.patch("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const params = GetCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -617,7 +617,7 @@ router.patch("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermissio
   res.json(row);
 });
 
-router.delete("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission("marketing", "delete"), async (req, res): Promise<void> => {
+router.delete("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermission("marketing", "delete"), async (req: AdminRequest, res): Promise<void> => {
   const params = DeleteCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -631,11 +631,15 @@ router.delete("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermissi
   res.sendStatus(204);
 });
 
-router.post("/marketing/campaigns/:id/preview-recipients", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
+router.post("/marketing/campaigns/:id/preview-recipients", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req: AdminRequest, res): Promise<void> => {
   const params = GetCampaignParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
   const body = PreviewBody.safeParse(req.body ?? {});
-  if (!params.success || !body.success) {
-    res.status(400).json({ error: !params.success ? params.error.message : body.error.message });
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
     return;
   }
   const [campaign] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, params.data.id));
@@ -656,7 +660,7 @@ router.post("/marketing/campaigns/:id/preview-recipients", requireAdminAuth, req
   });
 });
 
-router.post("/marketing/campaigns/:id/prepare", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req, res): Promise<void> => {
+router.post("/marketing/campaigns/:id/prepare", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req: AdminRequest, res): Promise<void> => {
   const params = GetCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -714,7 +718,7 @@ router.get("/marketing/campaigns/:id/recipients", requireAdminAuth, requireAdmin
   res.json(rows);
 });
 
-router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req, res): Promise<void> => {
+router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req: AdminRequest, res): Promise<void> => {
   if (!isWhatsAppCloudEnabled()) {
     res.status(503).json({ error: "WhatsApp Cloud API is disabled. Set WHATSAPP_ENABLED=true to allow sends." });
     return;
@@ -831,7 +835,7 @@ router.post("/marketing/campaigns/:id/retry-failed", requireAdminAuth, requireAd
   res.json({ success: true });
 });
 
-router.delete("/marketing/templates/:id", requireAdminAuth, requireAdminPermission("marketing", "delete"), async (req, res): Promise<void> => {
+router.delete("/marketing/templates/:id", requireAdminAuth, requireAdminPermission("marketing", "delete"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: "Invalid template id" });

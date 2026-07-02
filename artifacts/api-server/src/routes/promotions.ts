@@ -21,25 +21,54 @@ import {
 
 const router: IRouter = Router();
 
-const PromotionBody = insertPromotionSchema.extend({
-  rulesConfig: promotionRulesConfigSchema.default({}),
-  code: z.string().trim().min(3).optional().or(z.literal("")),
+const PromotionBodySchema = z.object({
+  name: z.string().trim().min(1),
+  description: z.string().trim().nullable().optional(),
+  type: z.enum(["automatic", "manual"]).default("automatic"),
+  discountType: z.enum(["percentage", "fixed_amount"]).default("percentage"),
+  discountValue: z.coerce.number().nonnegative().default(0),
+  priority: z.coerce.number().int().default(0),
+  isExclusive: z.boolean().default(false),
+  isStackable: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  rulesConfig: z.object({
+    verifiedStudentOnly: z.boolean().optional(),
+    firstPackagePurchaseOnly: z.boolean().optional(),
+    minimumBasketAmount: z.number().nonnegative().optional(),
+    packageIds: z.array(z.number().int().positive()).optional(),
+    branches: z.array(z.string().trim().min(1)).optional(),
+    maxGlobalUses: z.number().int().positive().optional(),
+    maxUsesPerUser: z.number().int().positive().optional(),
+  }).strict().default({}),
+  code: z.string().trim().optional(),
   maxUses: z.coerce.number().int().positive().nullable().optional(),
   usesPerUser: z.coerce.number().int().positive().nullable().optional(),
-}).superRefine((value, ctx) => {
-  if (!["automatic", "manual"].includes(value.type)) {
-    ctx.addIssue({ code: "custom", path: ["type"], message: "Promotion type must be automatic or manual." });
-  }
-  if (!["percentage", "fixed_amount"].includes(value.discountType)) {
-    ctx.addIssue({ code: "custom", path: ["discountType"], message: "Discount type must be percentage or fixed_amount." });
-  }
-  if (value.discountType === "percentage" && value.discountValue > 100) {
-    ctx.addIssue({ code: "custom", path: ["discountValue"], message: "Percentage discounts cannot exceed 100." });
-  }
-  if (value.type === "manual" && !value.code?.trim()) {
-    ctx.addIssue({ code: "custom", path: ["code"], message: "Manual promotions require a promo code." });
-  }
 });
+
+function validatePromotionData(value: z.infer<typeof PromotionBodySchema>): string | null {
+  const type = value.type ?? "automatic";
+  const discountType = value.discountType ?? "percentage";
+  const discountValue = value.discountValue ?? 0;
+
+  if (!["automatic", "manual"].includes(type)) {
+    return "Promotion type must be automatic or manual.";
+  }
+  if (!["percentage", "fixed_amount"].includes(discountType)) {
+    return "Discount type must be percentage or fixed_amount.";
+  }
+  if (discountType === "percentage" && discountValue > 100) {
+    return "Percentage discounts cannot exceed 100.";
+  }
+  if (type === "manual" && (!value.code || !value.code.trim())) {
+    return "Manual promotions require a promo code.";
+  }
+  if (type === "manual" && value.code && value.code.trim().length < 3) {
+    return "Promo code must be at least 3 characters.";
+  }
+  return null;
+}
 
 const PromotionParams = z.object({ id: z.coerce.number().int().positive() });
 const ValidatePromotionBody = z.object({
@@ -74,18 +103,24 @@ router.get("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermiss
 });
 
 router.post("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "create"), async (req: AdminRequest, res): Promise<void> => {
-  const parsed = PromotionBody.safeParse(req.body);
+  const parsed = PromotionBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const validationError = validatePromotionData(parsed.data);
+  if (validationError) {
+    res.status(400).json({ error: validationError });
     return;
   }
   const { code, maxUses, usesPerUser, ...promotionData } = parsed.data;
   const row = await db.transaction(async (tx) => {
     const [promotion] = await tx.insert(promotionsTable).values(promotionData).returning();
     if (promotion.type === "manual" && code) {
+      const codeStr = code;
       await tx.insert(promotionCodesTable).values({
         promotionId: promotion.id,
-        code: normalizeCode(code),
+        code: normalizeCode(codeStr),
         maxUses: maxUses ?? null,
         usesPerUser: usesPerUser ?? null,
       });
@@ -107,7 +142,7 @@ router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminP
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const parsed = PromotionBody.partial().safeParse(req.body);
+  const parsed = PromotionBodySchema.partial().safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -127,12 +162,13 @@ router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminP
         .where(eq(promotionsTable.id, params.data.id))
         .limit(1);
     if (!updated) return null;
-    if (code?.trim()) {
+    if (code && code.trim()) {
+      const codeStr = code;
       await tx
         .insert(promotionCodesTable)
         .values({
           promotionId: updated.id,
-          code: normalizeCode(code),
+          code: normalizeCode(codeStr),
           maxUses: maxUses ?? null,
           usesPerUser: usesPerUser ?? null,
         })

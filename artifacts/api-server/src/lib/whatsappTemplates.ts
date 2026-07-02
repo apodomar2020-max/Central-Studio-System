@@ -10,7 +10,7 @@ export interface MetaTemplateComponent {
   buttons?: any[];
 }
 
-export interface MetaTemplateResponse {
+export interface MetaTemplateResponse extends Record<string, unknown> {
   id: string;
   name: string;
   language: string;
@@ -91,12 +91,12 @@ export async function fetchMetaTemplates(): Promise<MetaTemplateResponse[]> {
     },
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const payload = (await response.json().catch(() => ({}))) as { data?: MetaTemplateResponse[] };
   if (!response.ok) {
     const errorMsg = typeof payload === "object" && payload && "error" in payload
-      ? (payload as any).error?.message
+      ? (payload as { error?: { message?: string } }).error?.message
       : "Failed to fetch templates from Meta.";
-    throw new WhatsAppTemplatesError(errorMsg, 502);
+    throw new WhatsAppTemplatesError(errorMsg ?? "Failed to fetch templates from Meta.", 502);
   }
 
   return (payload.data || []) as MetaTemplateResponse[];

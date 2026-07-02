@@ -26,8 +26,10 @@ const requireClassMediaPermission = (req: Request, res: Response, next: NextFunc
   requireAdminPermission("classes", "mediaManage")(req, res, next);
 };
 
+import { DbClient } from "../lib/dbTypes";
+
 async function notifyClassBookings(
-  client: typeof db,
+  client: DbClient,
   classId: number,
   classTitle: string,
 ) {

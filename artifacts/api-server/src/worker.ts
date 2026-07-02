@@ -61,7 +61,8 @@ logger.info("Queue worker started");
 
 async function shutdown() {
   logger.info("Queue worker shutting down");
-  await Promise.all([whatsappWorker.close(), reportsWorker.close(), connection.quit()]);
+  const connectionQuit = connection ? connection.quit() : Promise.resolve();
+  await Promise.all([whatsappWorker.close(), reportsWorker.close(), connectionQuit]);
   process.exit(0);
 }
 

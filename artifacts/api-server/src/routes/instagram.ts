@@ -81,7 +81,7 @@ async function refreshTokenIfNeeded(): Promise<void> {
       `https://graph.instagram.com/refresh_access_token` +
       `?grant_type=ig_refresh_token&access_token=${tokenInMemory}`
     );
-    const data = await res.json();
+    const data = (await res.json()) as { access_token?: string; expires_in?: number; error?: any };
     if (data.access_token) {
       await saveToken(data.access_token);
       const validDays = Math.round((data.expires_in ?? 5184000) / 86400);
@@ -116,7 +116,7 @@ router.get("/instagram/reels", async (req, res) => {
       `&access_token=${token}`;
 
     const igRes  = await fetch(url);
-    const igData = await igRes.json();
+    const igData = (await igRes.json()) as { data?: InstagramReel[]; error?: any };
 
     if (!igRes.ok || igData.error) {
       console.error("[instagram] API error:", igData.error ?? igRes.status);

@@ -14,7 +14,7 @@ import {
   type PromotionRulesConfig,
 } from "@workspace/db";
 
-type DbClient = typeof db;
+import { DbClient } from "./dbTypes";
 
 type StudentForPromotion = Pick<typeof studentsTable.$inferSelect, "id" | "emailVerified">;
 type PackageForPromotion = Pick<typeof pricePackagesTable.$inferSelect, "id" | "name" | "priceEgp" | "isActive">;
