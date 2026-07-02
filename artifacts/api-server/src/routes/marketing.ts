@@ -31,6 +31,7 @@ import {
   normalizeStatus,
   getMetaTemplatesConfig
 } from "../lib/whatsappTemplates";
+import { enqueueJob, QUEUE_NAMES, queuesAvailable, type WhatsAppCampaignSendJob } from "../lib/queue";
 import {
   DeleteCampaignParams,
   GetCampaignParams,
@@ -725,204 +726,64 @@ router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermi
     return;
   }
 
-  const [campaign] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, params.data.id));
+  if (!queuesAvailable()) {
+    res.status(503).json({ error: "Queue backend is not configured. Set REDIS_URL to send campaigns asynchronously." });
+    return;
+  }
+
+  const [campaign] = await db
+    .select()
+    .from(marketingCampaignsTable)
+    .where(eq(marketingCampaignsTable.id, params.data.id));
+
   if (!campaign) {
     res.status(404).json({ error: "Campaign not found" });
     return;
   }
 
-  if (campaign.status !== "prepared" && campaign.status !== "sending") {
-    res.status(400).json({ error: "Campaign must be in 'prepared' or 'sending' status to send." });
+  if (campaign.status !== "prepared") {
+    res.status(400).json({ error: "Campaign must be prepared before sending." });
     return;
   }
 
   if (!campaign.templateId) {
-    res.status(400).json({ error: "Campaign must have an approved template to be sent." });
+    res.status(400).json({ error: "Campaign must use an approved WhatsApp template before sending." });
     return;
   }
 
-  const [template] = await db.select().from(marketingTemplatesTable).where(eq(marketingTemplatesTable.id, campaign.templateId));
-  if (!template) {
-    res.status(400).json({ error: "Associated campaign template not found." });
-    return;
-  }
-
-  if (template.status !== "approved" || !template.metaTemplateId) {
-    res.status(400).json({ error: "Campaign template must be synced and approved on Meta to send." });
-    return;
-  }
-
-  const maxSend = process.env["WHATSAPP_MAX_CAMPAIGN_SEND"] ? Number(process.env["WHATSAPP_MAX_CAMPAIGN_SEND"]) : 5;
-
-  // Fetch next batch of prepared recipients
-  const recipients = await db
+  const [template] = await db
     .select()
-    .from(marketingCampaignRecipientsTable)
-    .where(and(
-      eq(marketingCampaignRecipientsTable.campaignId, campaign.id),
-      eq(marketingCampaignRecipientsTable.status, "prepared")
-    ))
-    .orderBy(marketingCampaignRecipientsTable.id)
-    .limit(maxSend);
+    .from(marketingTemplatesTable)
+    .where(eq(marketingTemplatesTable.id, campaign.templateId));
 
-  if (recipients.length === 0) {
-    // Transition status to sent if no prepared recipients are left
-    const now = new Date().toISOString();
-    await db.update(marketingCampaignsTable).set({
-      status: "sent",
-      sentAt: now,
-    }).where(eq(marketingCampaignsTable.id, campaign.id));
-
-    res.json(SendCampaignResponse.parse({
-      success: true,
-      sentCount: 0,
-      sentAt: now,
-    }));
+  if (!template || template.status !== "approved" || !template.metaTemplateId) {
+    res.status(400).json({ error: "Campaign template is not approved in WhatsApp Manager yet." });
     return;
   }
 
-  // Check opted-out recipients in this batch
-  const normalizedPhones = recipients.map((r) => r.normalizedPhone).filter((phone): phone is string => Boolean(phone));
-  const optOutRows = normalizedPhones.length > 0
-    ? await db.select().from(marketingOptInsTable).where(and(
-      inArray(marketingOptInsTable.normalizedPhone, [...new Set(normalizedPhones)]),
-      eq(marketingOptInsTable.channel, "whatsapp"),
-      or(eq(marketingOptInsTable.status, "opted_out"), isNotNull(marketingOptInsTable.optedOutAt)),
-    ))
-    : [];
-  const optedOutPhones = new Set(optOutRows.map((row) => row.normalizedPhone));
+  const job = await enqueueJob<WhatsAppCampaignSendJob>(
+    QUEUE_NAMES.whatsappCampaigns,
+    "send-campaign-batch",
+    {
+      campaignId: params.data.id,
+      actorEmail: req.adminUser?.email ?? null,
+      ipAddress: req.ip ?? null,
+    },
+  );
 
-  let batchSentCount = 0;
-
-  // Process recipients sequentially to avoid holding DB connections open during HTTP calls
-  for (const recipient of recipients) {
-    if (!recipient.normalizedPhone) {
-      await db.update(marketingCampaignRecipientsTable)
-        .set({ status: "failed", errorMessage: "Missing normalized phone number.", updatedAt: new Date().toISOString() })
-        .where(eq(marketingCampaignRecipientsTable.id, recipient.id));
-
-      await db.insert(marketingDeliveryLogsTable).values({
-        campaignId: campaign.id,
-        recipientId: recipient.id,
-        provider: "whatsapp_cloud",
-        eventType: "failed",
-        status: "failed",
-        errorMessage: "Missing normalized phone number.",
-        payload: { status: "missing_phone" }
-      });
-      continue;
-    }
-
-    if (optedOutPhones.has(recipient.normalizedPhone)) {
-      await db.update(marketingCampaignRecipientsTable)
-        .set({ status: "failed", errorMessage: "Recipient has opted out of WhatsApp messages.", updatedAt: new Date().toISOString() })
-        .where(eq(marketingCampaignRecipientsTable.id, recipient.id));
-
-      await db.insert(marketingDeliveryLogsTable).values({
-        campaignId: campaign.id,
-        recipientId: recipient.id,
-        provider: "whatsapp_cloud",
-        eventType: "failed",
-        status: "failed",
-        errorMessage: "Recipient has opted out of WhatsApp messages.",
-        payload: { status: "opted_out" }
-      });
-      continue;
-    }
-
-    // Convert normalized phone to E.164 with a leading + before Meta call
-    const toPhone = `+${recipient.normalizedPhone}`;
-    const templateVars = template.variables ?? [];
-
-    const parameters = templateVars.map((v) => {
-      const varName = v.toLowerCase().trim();
-      if (varName === "student_name" || varName === "name" || varName === "1") {
-        return recipient.name;
-      }
-      if (varName === "first_name") {
-        return recipient.name.split(" ")[0] || recipient.name;
-      }
-      if (varName === "student_email" || varName === "email" || varName === "2") {
-        return recipient.email || "";
-      }
-      if (varName === "student_phone" || varName === "phone" || varName === "3") {
-        return recipient.phone || "";
-      }
-      return "";
-    });
-
-    try {
-      const result = await sendTemplateMessage({
-        to: toPhone,
-        templateName: template.name,
-        languageCode: template.language,
-        parameters,
-      });
-
-      await db.update(marketingCampaignRecipientsTable)
-        .set({ status: "sent", updatedAt: new Date().toISOString() })
-        .where(eq(marketingCampaignRecipientsTable.id, recipient.id));
-
-      await db.insert(marketingDeliveryLogsTable).values({
-        campaignId: campaign.id,
-        recipientId: recipient.id,
-        provider: "whatsapp_cloud",
-        providerMessageId: result.providerMessageId,
-        eventType: "sent",
-        status: "sent",
-        payload: result.raw,
-      });
-
-      batchSentCount++;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "WhatsApp Cloud API request failed.";
-      let errorCode = undefined;
-      let providerStatus = undefined;
-      if (err instanceof WhatsAppCloudError) {
-        errorCode = err.providerCode?.toString();
-        providerStatus = err.providerStatus;
-      }
-
-      await db.update(marketingCampaignRecipientsTable)
-        .set({ status: "failed", errorMessage: errorMsg, updatedAt: new Date().toISOString() })
-        .where(eq(marketingCampaignRecipientsTable.id, recipient.id));
-
-      await db.insert(marketingDeliveryLogsTable).values({
-        campaignId: campaign.id,
-        recipientId: recipient.id,
-        provider: "whatsapp_cloud",
-        eventType: "failed",
-        status: "failed",
-        errorCode,
-        errorMessage: errorMsg,
-        payload: { error: err instanceof Error ? err.stack : err, providerStatus },
-      });
-    }
+  if (!job) {
+    res.status(503).json({ error: "Queue backend is not available." });
+    return;
   }
-
-  // Recount current stats to update campaign state
-  const [counts] = await db
-    .select({
-      sent: sql<number>`count(case when status = 'sent' then 1 end)::int`,
-      prepared: sql<number>`count(case when status = 'prepared' then 1 end)::int`,
-    })
-    .from(marketingCampaignRecipientsTable)
-    .where(eq(marketingCampaignRecipientsTable.campaignId, campaign.id));
-
-  const campaignFinished = (counts.prepared ?? 0) === 0;
-  const newCampaignStatus = campaignFinished ? "sent" : "sending";
-  const campaignSentAt = campaignFinished ? new Date().toISOString() : null;
 
   await db.update(marketingCampaignsTable).set({
-    status: newCampaignStatus,
-    sentCount: counts.sent ?? 0,
-    sentAt: campaignSentAt,
-  }).where(eq(marketingCampaignsTable.id, campaign.id));
+    status: "sending",
+  }).where(eq(marketingCampaignsTable.id, params.data.id));
 
   res.json(SendCampaignResponse.parse({
     success: true,
-    sentCount: batchSentCount,
-    sentAt: campaignSentAt,
+    sentCount: 0,
+    sentAt: null,
   }));
 });
 

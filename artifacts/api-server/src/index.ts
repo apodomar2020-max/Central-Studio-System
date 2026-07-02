@@ -1,6 +1,9 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { initErrorMonitoring, captureError } from "./lib/errorMonitoring";
 import { runMigrations } from "./lib/migrate";
+
+initErrorMonitoring();
 
 const rawPort = process.env["PORT"];
 
@@ -22,12 +25,14 @@ try {
   await runMigrations();
   logger.info("Database migrations up to date");
 } catch (err) {
+  captureError(err, { task: "startup_migrations" });
   logger.error({ err }, "Migration failed — aborting startup");
   process.exit(1);
 }
 
 app.listen(port, (err) => {
   if (err) {
+    captureError(err, { task: "server_listen" });
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }

@@ -7,6 +7,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { requireAuth } from "./middlewares/auth";
+import { captureError } from "./lib/errorMonitoring";
 
 const app: Express = express();
 
@@ -90,6 +91,7 @@ app.use((_req: Request, res: Response) => {
 // recognises it as an error-handling middleware (even if `next` is unused).
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  captureError(err, { method: _req.method, path: _req.path });
   logger.error(err, "Unhandled error");
   const status = typeof err === "object" && err !== null && "status" in err
     ? Number((err as { status: unknown }).status)
