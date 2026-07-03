@@ -1,13 +1,13 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  useListPackageOrders,
   useUpdatePackageOrder,
   useDeletePackageOrder,
   useListCreditTransactions,
   getListPackageOrdersQueryKey,
   getListCreditTransactionsQueryKey,
 } from "@workspace/api-client-react";
+import { TablePagination } from "@/components/shared/table-pagination";
 import type { AdjustCreditsBody } from "@workspace/api-client-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -321,8 +321,10 @@ function LedgerPanel({ orderId }: { orderId: number }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 25;
+
 export default function PackageOrders() {
-  const { can } = useAdminAuth();
+  const { can, token } = useAdminAuth();
   const canApprove = can("packageOrders", "approve");
   const canCancel = can("packageOrders", "cancel");
   const canDelete = can("packageOrders", "delete");
@@ -330,15 +332,63 @@ export default function PackageOrders() {
   const canViewCreditHistory = can("credits", "history") || can("credits", "view");
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
   const [editingOrder, setEditingOrder] = useState<PackageOrder | null>(null);
   const [editNotes, setEditNotes] = useState("");
   const [editExpiry, setEditExpiry] = useState("");
   const [adjustingOrder, setAdjustingOrder] = useState<PackageOrder | null>(null);
   const [expandedLedger, setExpandedLedger] = useState<number | null>(null);
 
-  const { data: orders = [], isLoading } = useListPackageOrders(
-    statusFilter !== "all" ? { status: statusFilter } : undefined
-  );
+  // Changing the status tab resets pagination.
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter]);
+
+  // Phase 4B: paginated list. Raw fetch (same pattern as the credits call
+  // below) because pagination metadata travels in response headers, which the
+  // generated hook cannot expose. The query key shares the generated key's
+  // root ("/api/package-orders"), so every existing
+  // invalidateQueries(getListPackageOrdersQueryKey()) still refreshes this
+  // list. The response BODY is unchanged (plain array) — the Attendance
+  // page's un-paginated useListPackageOrders(undefined) keeps working as-is.
+  const listQuery = useQuery({
+    queryKey: [...getListPackageOrdersQueryKey(), { statusFilter, page, pageSize: PAGE_SIZE, paginated: true }],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+      });
+      const res = await fetch(`${API_BASE}/api/package-orders?${params}`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load package orders");
+      const body = await res.json() as PackageOrder[];
+      return {
+        orders: body,
+        total: Number(res.headers.get("X-Total-Count") ?? body.length),
+        totalPages: Number(res.headers.get("X-Total-Pages") ?? 1),
+      };
+    },
+  });
+  const orders = listQuery.data?.orders ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const totalPages = listQuery.data?.totalPages ?? 0;
+  const isLoading = listQuery.isLoading;
+
+  // Global pending count for the header badge (header-only query — the badge
+  // previously counted the fully loaded list, which pagination would break).
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: [...getListPackageOrdersQueryKey(), { pendingCountOnly: true }],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/package-orders?status=pendingPayment&page=1&pageSize=1`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) return 0;
+      await res.json();
+      return Number(res.headers.get("X-Total-Count") ?? 0);
+    },
+  });
 
   const { mutate: updateOrder, isPending: isUpdating } = useUpdatePackageOrder({
     mutation: {
@@ -399,7 +449,7 @@ export default function PackageOrders() {
           <p className="mt-1 text-sm" style={{ color: MUTED }}>Manage student package requests and activations</p>
         </div>
         <span className="text-xs font-semibold" style={{ color: AMBER }}>
-          {(orders as PackageOrder[]).filter((o) => o.status === "pendingPayment").length} pending
+          {pendingCount} pending
         </span>
       </div>
 
@@ -563,6 +613,19 @@ export default function PackageOrders() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination (Phase 4B) */}
+      {total > 0 && (
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={PAGE_SIZE}
+          isLoading={isLoading}
+          itemLabel="orders"
+          onPageChange={setPage}
+        />
+      )}
 
       {/* Edit modal */}
       {canApprove && editingOrder && (

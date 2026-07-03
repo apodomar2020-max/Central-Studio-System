@@ -114,10 +114,50 @@ router.get(
     conditions.push(sql`lower(trim(${packageOrdersTable.studentEmail})) = ${normalizeEmail(studentEmail)}`);
   }
 
-  const rows = conditions.length > 0
-    ? await db.select().from(packageOrdersTable).where(and(...conditions)).orderBy(desc(packageOrdersTable.createdAt))
-    : await db.select().from(packageOrdersTable).orderBy(desc(packageOrdersTable.createdAt));
+  // ── Pagination (Phase 4B) ──────────────────────────────────────────────
+  // page/pageSize are read directly off req.query (same pattern as
+  // studentId/studentEmail above) so the generated api-zod schema and every
+  // existing consumer stay untouched. Without pagination params the endpoint
+  // behaves exactly as before: the FULL list is returned as an array (the
+  // admin Attendance check-in flow depends on this). With params, the body
+  // is STILL a plain array — only sliced — and pagination metadata travels
+  // in response headers (same convention as GET /attendance).
+  const rawPage = req.query.page;
+  const rawPageSize = req.query.pageSize;
+  const page = typeof rawPage === "string" && /^\d+$/.test(rawPage) ? Math.max(1, Number(rawPage)) : undefined;
+  const pageSize = typeof rawPageSize === "string" && /^\d+$/.test(rawPageSize)
+    ? Math.min(200, Math.max(1, Number(rawPageSize)))
+    : undefined;
+  const paginated = page != null || pageSize != null;
 
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  if (!paginated) {
+    const rows = whereClause
+      ? await db.select().from(packageOrdersTable).where(whereClause).orderBy(desc(packageOrdersTable.createdAt))
+      : await db.select().from(packageOrdersTable).orderBy(desc(packageOrdersTable.createdAt));
+    res.setHeader("X-Total-Count", String(rows.length));
+    res.json(ListPackageOrdersResponse.parse(rows));
+    return;
+  }
+
+  const effectivePage = page ?? 1;
+  const effectivePageSize = pageSize ?? 25;
+  const offset = (effectivePage - 1) * effectivePageSize;
+
+  const [countRow] = whereClause
+    ? await db.select({ total: sql<number>`count(*)::int` }).from(packageOrdersTable).where(whereClause)
+    : await db.select({ total: sql<number>`count(*)::int` }).from(packageOrdersTable);
+  const total = Number(countRow?.total ?? 0);
+
+  const rows = whereClause
+    ? await db.select().from(packageOrdersTable).where(whereClause).orderBy(desc(packageOrdersTable.createdAt)).limit(effectivePageSize).offset(offset)
+    : await db.select().from(packageOrdersTable).orderBy(desc(packageOrdersTable.createdAt)).limit(effectivePageSize).offset(offset);
+
+  res.setHeader("X-Total-Count", String(total));
+  res.setHeader("X-Page", String(effectivePage));
+  res.setHeader("X-Page-Size", String(effectivePageSize));
+  res.setHeader("X-Total-Pages", String(total === 0 ? 0 : Math.ceil(total / effectivePageSize)));
   res.json(ListPackageOrdersResponse.parse(rows));
   },
 );

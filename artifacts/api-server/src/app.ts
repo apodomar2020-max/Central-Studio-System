@@ -71,6 +71,9 @@ app.use(
       callback(new Error(`CORS: origin '${origin}' is not allowed`));
     },
     credentials: true,
+    // Pagination metadata headers (GET /attendance, GET /package-orders) —
+    // without this the browser cannot read them cross-origin.
+    exposedHeaders: ["X-Total-Count", "X-Page", "X-Page-Size", "X-Total-Pages"],
   }),
 );
 app.use("/api/auth", authRateLimiter);
