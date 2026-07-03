@@ -102,7 +102,7 @@ const ROUTE_PERMS = {
   studentDetail: [["students", "view"], ["parents", "view"], ["users", "view"]],
   childDetails: [["children", "view"], ["parents", "view"]],
   offers: [["offers", "view"]],
-  promotions: [["offers", "view"]],
+  promotions: [["promotions", "view"]],
   notifications: [["notifications", "view"]],
   marketing: [["marketing", "view"]],
   packageOrders: [["packageOrders", "view"]],

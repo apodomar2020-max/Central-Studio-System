@@ -108,7 +108,7 @@ export const NAV_TREE: NavNode[] = [
   ]),
 
   group("Marketing", Megaphone, [
-    link("Promotions", "/promotions", [["offers", "view"]], Tag),
+    link("Promotions", "/promotions", [["promotions", "view"]], Tag),
     link("Notifications", "/notifications", [["notifications", "view"]], Bell),
     link("WhatsApp Campaigns", "/marketing", [["marketing", "view"]], Send),
     link("Feedback", "/feedback", [["feedback", "view"]], MessageSquareText),

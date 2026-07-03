@@ -136,6 +136,19 @@ const permissionCatalog = [
     actions: actions(["view", "View"], ["adjust", "Adjust"], ["history", "History"]),
   },
   {
+    // Phase 6B: dedicated Promotions module. Promotions historically piggybacked
+    // on the `offers` key, so `offers` is declared as a legacy alias — roles that
+    // only hold offers.* grants keep Promotions access until migration 0043
+    // materializes explicit promotions.* grants. The `offers` module below stays
+    // untouched until the Offers feature is fully removed (Phase 6D/6E).
+    key: "promotions",
+    label: "Promotions",
+    description: "Promotions, promo codes, campaign offers, and package purchase promotions.",
+    group: "Content & Engagement",
+    legacyAliases: ["offers"],
+    actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
+  },
+  {
     key: "offers",
     label: "Offers",
     description: "Mobile offers and promotional content.",

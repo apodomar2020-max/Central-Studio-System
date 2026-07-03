@@ -295,6 +295,13 @@
       "when": 1784203200000,
       "tag": "0042_infrastructure_phase_b_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784289600000,
+      "tag": "0043_promotions_permission_module",
+      "breakpoints": true
     }
   ]
 }

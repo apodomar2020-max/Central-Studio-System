@@ -96,13 +96,17 @@ async function promotionResponse(row: typeof promotionsTable.$inferSelect) {
   return { ...row, codes: codesWithUsage };
 }
 
-router.get("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "view"), async (_req, res): Promise<void> => {
+// Phase 6B: Promotions endpoints use the dedicated `promotions` permission
+// module. Roles holding only legacy offers.* grants keep access via the
+// module's `offers` legacy alias (see @workspace/api-zod permissions catalog)
+// and migration 0043 which materializes promotions.* grants.
+router.get("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermission("promotions", "view"), async (_req, res): Promise<void> => {
   const rows = await db.select().from(promotionsTable).orderBy(desc(promotionsTable.createdAt));
   const withCodes = await Promise.all(rows.map((row) => promotionResponse(row)));
   res.json(withCodes);
 });
 
-router.post("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "create"), async (req: AdminRequest, res): Promise<void> => {
+router.post("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermission("promotions", "create"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = PromotionBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -136,7 +140,7 @@ router.post("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermis
   res.status(201).json(await promotionResponse(row));
 });
 
-router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "edit"), async (req: AdminRequest, res): Promise<void> => {
+router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("promotions", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const params = PromotionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -196,7 +200,7 @@ router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminP
   res.json(await promotionResponse(row));
 });
 
-router.delete("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "delete"), async (req: AdminRequest, res): Promise<void> => {
+router.delete("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("promotions", "delete"), async (req: AdminRequest, res): Promise<void> => {
   const params = PromotionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

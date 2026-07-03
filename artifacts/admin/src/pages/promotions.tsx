@@ -106,9 +106,10 @@ function promotionToForm(row: Promotion): FormState {
 
 export default function PromotionsPage() {
   const { can } = useAdminAuth();
-  const canCreate = can("offers", "create");
-  const canEdit = can("offers", "edit");
-  const canDelete = can("offers", "delete");
+  // Phase 6B: Promotions has its own permission module (legacy alias: offers).
+  const canCreate = can("promotions", "create");
+  const canEdit = can("promotions", "edit");
+  const canDelete = can("promotions", "delete");
   const [rows, setRows] = useState<Promotion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
