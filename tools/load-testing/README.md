@@ -71,7 +71,7 @@ Only put real staging secrets in your shell or secret manager. Do not commit cre
 
 `k6/smoke.js`: Checks that staging is reachable with `GET /api/healthz`, falling back to `GET /api/classes` if health is unavailable. Default load is 1 VU for 30 seconds; set `VUS=5` for a slightly higher smoke.
 
-`k6/public-browsing.js`: Anonymous GET-only browsing across classes, schedules, instructors, price packages, hero items, and offers. Ramps to 50 VUs, holds for 5 minutes, then ramps down.
+`k6/public-browsing.js`: Anonymous GET-only browsing across classes, schedules, instructors, price packages, and hero items. Ramps to 50 VUs, holds for 5 minutes, then ramps down.
 
 `k6/student-flow.js`: Logs in as a verified staging student, then reads bookings, packages, credits, attendance, notifications, and basic public app data. It does not create bookings.
 

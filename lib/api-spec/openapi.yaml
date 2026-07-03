@@ -15,7 +15,6 @@ tags:
   - name: pricePackages
   - name: bookings
   - name: students
-  - name: offers
   - name: heroItems
   - name: notifications
   - name: marketing
@@ -590,94 +589,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /offers:
-    get:
-      operationId: listOffers
-      tags: [offers]
-      responses:
-        "200":
-          description: List of offers
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Offer"
-    post:
-      operationId: createOffer
-      tags: [offers]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateOfferBody"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Offer"
-
-  /offers/{id}:
-    get:
-      operationId: getOffer
-      tags: [offers]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        "200":
-          description: Offer
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Offer"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    patch:
-      operationId: updateOffer
-      tags: [offers]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateOfferBody"
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Offer"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    delete:
-      operationId: deleteOffer
-      tags: [offers]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        "204":
-          description: Deleted
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
   /hero-items:
     get:
       operationId: listHeroItems
@@ -1143,7 +1054,7 @@ components:
 
     DashboardSummary:
       type: object
-      required: [totalStudents, totalBookings, todayBookings, activeClasses, totalRevenue, pendingBookings, activeInstructors, totalOffers]
+      required: [totalStudents, totalBookings, todayBookings, activeClasses, totalRevenue, pendingBookings, activeInstructors]
       properties:
         totalStudents: { type: integer }
         totalBookings: { type: integer }
@@ -1152,7 +1063,6 @@ components:
         activeInstructors: { type: integer }
         totalRevenue: { type: number }
         pendingBookings: { type: integer }
-        totalOffers: { type: integer }
 
     Instructor:
       type: object
@@ -1433,40 +1343,6 @@ components:
         phone: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         totalBookings: { type: integer }
-
-    Offer:
-      type: object
-      required: [id, title, discountPercent, isActive, createdAt]
-      properties:
-        id: { type: integer }
-        title: { type: string }
-        description: { type: ["string", "null"] }
-        discountPercent: { type: integer }
-        validUntil: { type: ["string", "null"] }
-        isActive: { type: boolean }
-        classIds: { type: array, items: { type: integer } }
-        createdAt: { type: string }
-
-    CreateOfferBody:
-      type: object
-      required: [title, discountPercent]
-      properties:
-        title: { type: string }
-        description: { type: ["string", "null"] }
-        discountPercent: { type: integer }
-        validUntil: { type: ["string", "null"] }
-        isActive: { type: boolean }
-        classIds: { type: array, items: { type: integer } }
-
-    UpdateOfferBody:
-      type: object
-      properties:
-        title: { type: string }
-        description: { type: ["string", "null"] }
-        discountPercent: { type: integer }
-        validUntil: { type: ["string", "null"] }
-        isActive: { type: boolean }
-        classIds: { type: array, items: { type: integer } }
 
     HeroItem:
       type: object

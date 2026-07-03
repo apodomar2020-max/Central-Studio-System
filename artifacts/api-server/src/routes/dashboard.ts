@@ -6,7 +6,6 @@ import {
   bookingsTable,
   classesTable,
   instructorsTable,
-  offersTable,
   packageOrdersTable,
   pricePackagesTable,
   schedulesTable,
@@ -54,7 +53,6 @@ router.get("/dashboard", async (_req, res): Promise<void> => {
     [instructorStats],
     [attendanceStats],
     [packageStats],
-    [{ totalOffers }],
     scheduleRows,
     paidBookingRows,
     paidPackageRows,
@@ -86,7 +84,6 @@ router.get("/dashboard", async (_req, res): Promise<void> => {
       activePackages: sql<number>`count(*) filter (where ${packageOrdersTable.status} = 'active')`,
       pendingPackageOrders: sql<number>`count(*) filter (where ${packageOrdersTable.status} = 'pendingPayment')`,
     }).from(packageOrdersTable),
-    db.select({ totalOffers: count() }).from(offersTable),
     db.select({
       type: schedulesTable.type,
       date: schedulesTable.date,
@@ -166,7 +163,6 @@ router.get("/dashboard", async (_req, res): Promise<void> => {
     missedAttendance: Number(attendanceStats.missedAttendance),
     todayClasses,
     upcomingClasses,
-    totalOffers: Number(totalOffers),
   }));
 });
 

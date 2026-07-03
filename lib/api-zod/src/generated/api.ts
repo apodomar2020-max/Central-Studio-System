@@ -40,7 +40,6 @@ export const GetDashboardResponse = zod.object({
   missedAttendance: zod.number(),
   todayClasses: zod.number(),
   upcomingClasses: zod.number(),
-  totalOffers: zod.number(),
 });
 
 /**

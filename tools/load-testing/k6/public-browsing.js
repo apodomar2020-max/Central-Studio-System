@@ -20,7 +20,6 @@ const endpoints = [
   "/api/instructors",
   "/api/price-packages",
   "/api/hero-items",
-  "/api/offers",
 ];
 
 export default function () {

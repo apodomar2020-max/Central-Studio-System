@@ -36,7 +36,6 @@ export interface DashboardSummary {
   missedAttendance: number;
   todayClasses: number;
   upcomingClasses: number;
-  totalOffers: number;
 }
 
 export interface Instructor {
