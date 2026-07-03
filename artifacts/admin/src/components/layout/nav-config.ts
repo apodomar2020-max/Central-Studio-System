@@ -127,8 +127,8 @@ export const NAV_TREE: NavNode[] = [
     link("Roles", "/system-users", [["adminUsers", "view"], ["roles", "view"]], ShieldCheck, {
       pageTitle: "System Users",
     }),
-    // Phase 7 feature — no route/page exists yet, rendered as "Coming Soon".
-    link("Logs", "/logs", [["auditLogs", "view"]], FileClock, { comingSoon: true }),
+    // Phase 7B: Admin Activity Logs — live route, gated by auditLogs.view.
+    link("Logs", "/logs", [["auditLogs", "view"]], FileClock),
   ]),
 
   group("App", Smartphone, [

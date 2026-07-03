@@ -34,3 +34,5 @@ export * from "./creditTransactions";
 export * from "./instagramToken";
 // Profile Completion Engine — "Your Vibe" dance interests (Phase 4, migration 0035)
 export * from "./studentDanceInterests";
+// Admin Activity Logs — unified admin audit trail (Phase 7B, migration 0045)
+export * from "./adminActivityLogs";

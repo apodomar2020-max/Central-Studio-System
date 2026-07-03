@@ -245,11 +245,11 @@ const permissionCatalog = [
     actions: actions(["view", "View"], ["revenueView", "Revenue"], ["cashFlowView", "Cash Flow"], ["branchRevenueView", "Branch Revenue"], ["instructorRevenueView", "Instructor Revenue"], ["refundsView", "Refunds"], ["exports", "Exports"]),
   },
   {
+    // Phase 7B: activated (previously reserved) — backs the System → Logs page.
     key: "auditLogs",
     label: "Audit Logs",
-    description: "Reserved for future audit history and export.",
-    group: "Future / Reserved",
-    reserved: true,
+    description: "Admin activity history: who changed what, when, and from where.",
+    group: "Insights & System",
     actions: actions(["view", "View"], ["export", "Export"]),
   },
 ] as const satisfies readonly PermissionModuleDefinition[];

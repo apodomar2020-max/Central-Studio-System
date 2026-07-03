@@ -32,8 +32,9 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, systemUsersTable, rolesTable } from "@workspace/db";
 import type { RolePermissions } from "@workspace/db";
-import { hasRolePermission, PERMISSION_CATALOG } from "@workspace/api-zod";
+import { countCatalogPermissions, hasRolePermission, PERMISSION_CATALOG } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
+import { logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
 
@@ -432,6 +433,22 @@ router.post("/admin/users", requireAdminAuth, requireAdminPermission("adminUsers
     });
 
   logger.info({ newUserId: newUser.id, by: req.adminUser?.sub }, "System user created");
+  // Phase 7B pilot: unified activity log (safe fields only — never password data).
+  await logActivity(req, {
+    action: "create",
+    module: "adminUsers",
+    entityType: "system_user",
+    entityId: newUser.id,
+    entityLabel: newUser.username,
+    after: {
+      username: newUser.username,
+      email: newUser.email,
+      fullName: newUser.fullName,
+      roleId: newUser.roleId,
+      isActive: newUser.isActive,
+    },
+    summary: `Created admin user ${newUser.username}`,
+  });
   res.status(201).json(newUser);
 });
 
@@ -472,6 +489,9 @@ router.patch("/admin/users/:id", requireAdminAuth, async (req: AdminRequest, res
     return;
   }
 
+  // Phase 7B pilot: snapshot of safe before-values for the activity log.
+  let beforeSnapshot: { fullName: string; email: string; roleId: number | null; isActive: boolean } | null = null;
+
   try {
     const updated = await db.transaction(async (tx) => {
       const [target] = await tx
@@ -488,6 +508,7 @@ router.patch("/admin/users/:id", requireAdminAuth, async (req: AdminRequest, res
         .limit(1);
 
       if (!target) throw new AdminMutationError(404, "User not found");
+      beforeSnapshot = { fullName: target.fullName, email: target.email, roleId: target.roleId, isActive: target.isActive };
       const actor = req.adminUser!;
 
       if (!actor.isSuperAdmin && target.isSuperAdmin) {
@@ -555,6 +576,35 @@ router.patch("/admin/users/:id", requireAdminAuth, async (req: AdminRequest, res
     });
 
     logger.info({ targetUserId: id, by: req.adminUser?.sub }, "System user updated");
+
+    // Phase 7B pilot: unified activity log. Only fields present in the patch
+    // are recorded; a password change is logged as a boolean flag — never the
+    // password or hash. Activation/deactivation get their own action names.
+    const snapshot = beforeSnapshot as { fullName: string; email: string; roleId: number | null; isActive: boolean } | null;
+    const safeBefore: Record<string, unknown> = {};
+    const safeAfter: Record<string, unknown> = {};
+    if (parsed.data.fullName !== undefined) { safeBefore["fullName"] = snapshot?.fullName; safeAfter["fullName"] = parsed.data.fullName; }
+    if (parsed.data.email !== undefined) { safeBefore["email"] = snapshot?.email; safeAfter["email"] = parsed.data.email; }
+    if (parsed.data.roleId !== undefined) { safeBefore["roleId"] = snapshot?.roleId; safeAfter["roleId"] = parsed.data.roleId; }
+    if (parsed.data.isActive !== undefined) { safeBefore["isActive"] = snapshot?.isActive; safeAfter["isActive"] = parsed.data.isActive; }
+    if (parsed.data.password !== undefined) { safeAfter["passwordChanged"] = true; }
+    const isDeactivation = parsed.data.isActive === false && snapshot?.isActive === true;
+    const isActivation = parsed.data.isActive === true && snapshot?.isActive === false;
+    await logActivity(req, {
+      action: isDeactivation ? "deactivate" : isActivation ? "activate" : "update",
+      module: "adminUsers",
+      entityType: "system_user",
+      entityId: id,
+      entityLabel: updated.username,
+      before: Object.keys(safeBefore).length > 0 ? safeBefore : null,
+      after: Object.keys(safeAfter).length > 0 ? safeAfter : null,
+      summary: isDeactivation
+        ? `Deactivated admin user ${updated.username}`
+        : isActivation
+          ? `Activated admin user ${updated.username}`
+          : `Updated admin user ${updated.username}`,
+    });
+
     res.json(updated);
   } catch (error) {
     if (error instanceof AdminMutationError) {
@@ -600,6 +650,22 @@ router.post("/admin/roles", requireAdminAuth, requireAdminPermission("roles", "c
     })
     .returning();
 
+  // Phase 7B pilot: unified activity log. Full permission maps are never
+  // stored — only the enabled-action count.
+  await logActivity(req, {
+    action: "create",
+    module: "roles",
+    entityType: "role",
+    entityId: role.id,
+    entityLabel: role.name,
+    after: {
+      name: role.name,
+      description: role.description,
+      permissionCount: countCatalogPermissions(role.permissions as RolePermissions),
+    },
+    summary: `Created role ${role.name}`,
+  });
+
   res.status(201).json(role);
 });
 
@@ -640,6 +706,14 @@ router.patch("/admin/roles/:id", requireAdminAuth, requireAdminPermission("roles
     return;
   }
 
+  // Phase 7B pilot: safe before-snapshot for the activity log (read-only;
+  // summary-level permission count only, never the full permission map).
+  const [existingRole] = await db
+    .select({ name: rolesTable.name, description: rolesTable.description, permissions: rolesTable.permissions })
+    .from(rolesTable)
+    .where(eq(rolesTable.id, id))
+    .limit(1);
+
   const [updated] = await db
     .update(rolesTable)
     .set(updates)
@@ -647,6 +721,28 @@ router.patch("/admin/roles/:id", requireAdminAuth, requireAdminPermission("roles
     .returning();
 
   if (!updated) { res.status(404).json({ error: "Role not found" }); return; }
+
+  await logActivity(req, {
+    action: "update",
+    module: "roles",
+    entityType: "role",
+    entityId: updated.id,
+    entityLabel: updated.name,
+    before: existingRole
+      ? {
+        name: existingRole.name,
+        description: existingRole.description,
+        permissionCount: countCatalogPermissions(existingRole.permissions as RolePermissions),
+      }
+      : null,
+    after: {
+      name: updated.name,
+      description: updated.description,
+      permissionCount: countCatalogPermissions(updated.permissions as RolePermissions),
+    },
+    summary: `Updated role ${updated.name}`,
+  });
+
   res.json(updated);
 });
 

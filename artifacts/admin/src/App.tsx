@@ -41,6 +41,7 @@ import BalletSettingsPage from "@/pages/ballet/BalletSettingsPage";
 import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
 import DesignLabPage from "@/pages/DesignLabPage";
 import SettingsPage from "@/pages/settings";
+import LogsPage from "@/pages/logs";
 
 // Wire the API client to the backend.
 if (import.meta.env.VITE_API_URL) {
@@ -117,6 +118,7 @@ const ROUTE_PERMS = {
   balletSettings: [["ballet.pricing", "view"]],
   balletLevels: [["ballet.levels", "view"]],
   settings: [["settings", "view"]],
+  logs: [["auditLogs", "view"]],
 } satisfies Record<string, PermRequirement>;
 
 /** Wrap a page element in a permission guard for use as Route children. */
@@ -160,6 +162,7 @@ function ProtectedRouter() {
         <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsPage />)}</Route>
         <Route path="/ballet/levels">{guarded(ROUTE_PERMS.balletLevels, <BalletLevelsPage />)}</Route>
         <Route path="/settings">{guarded(ROUTE_PERMS.settings, <SettingsPage />)}</Route>
+        <Route path="/logs">{guarded(ROUTE_PERMS.logs, <LogsPage />)}</Route>
         {/* DEV-ONLY: component preview — not in sidebar */}
         <Route path="/design-lab" component={DesignLabPage} />
         <Route component={NotFound} />

@@ -309,6 +309,13 @@
       "when": 1784376000000,
       "tag": "0044_drop_legacy_offers_table",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784462400000,
+      "tag": "0045_admin_activity_logs",
+      "breakpoints": true
     }
   ]
 }
