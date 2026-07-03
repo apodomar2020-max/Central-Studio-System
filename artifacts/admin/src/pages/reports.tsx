@@ -435,7 +435,7 @@ export default function ReportsPage() {
           <CalendarRange className="h-4 w-4" style={{ color: CYAN }} />
           <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>Date Range</span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {PRESETS.map((p) => (
             <button
               key={p.value}
@@ -452,7 +452,7 @@ export default function ReportsPage() {
           ))}
         </div>
         {preset === "custom" && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} className="h-8 w-[150px]" />
             <span className="text-xs" style={{ color: "hsl(var(--muted-foreground) / 0.68)" }}>to</span>
             <Input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} className="h-8 w-[150px]" />

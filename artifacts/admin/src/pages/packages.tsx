@@ -178,7 +178,7 @@ export default function Packages() {
                   <FormMessage />
                 </FormItem>
               )} />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FormField control={form.control} name="type" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Type</FormLabel>
@@ -236,7 +236,7 @@ export default function Packages() {
                   )} />
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FormField control={form.control} name="validityMonths" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Validity (months)</FormLabel>

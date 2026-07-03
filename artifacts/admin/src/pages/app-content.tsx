@@ -521,7 +521,7 @@ export default function AppContentPage() {
 
         <TabsContent value="faq">
           <section className="space-y-3 rounded-md border p-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">FAQ</h2>
                 <p className="text-sm text-muted-foreground">Questions shown on mobile Help & Support.</p>
@@ -575,7 +575,7 @@ export default function AppContentPage() {
 
         <TabsContent value="contacts">
           <section className="space-y-3 rounded-md border p-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">Contact Links</h2>
                 <p className="text-sm text-muted-foreground">Buttons shown on mobile Help & Support.</p>

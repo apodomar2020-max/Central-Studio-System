@@ -163,8 +163,8 @@ export default function BalletSettingsPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-foreground">Ballet Pricing &amp; Settings</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Configure pricing, monthly hours, and assessment instructions.
@@ -206,7 +206,7 @@ export default function BalletSettingsPage() {
           <div className="rounded-lg border border-border bg-card p-6 space-y-5">
             <h2 className="text-base font-semibold text-foreground">Pricing</h2>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-muted-foreground text-xs uppercase tracking-wide">Pre-Ballet — Price (EGP)</Label>
                 <Input

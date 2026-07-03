@@ -318,7 +318,7 @@ function RoleDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Role Name</Label>
               <Input
@@ -405,7 +405,7 @@ function CreateUserDialog({ open, onClose, roles }: { open: boolean; onClose: ()
       <DialogContent>
         <DialogHeader><DialogTitle>Create Admin User</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Username</Label>
               <Input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="e.g. john_doe" />
@@ -607,9 +607,9 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
             return (
               <div
                 key={role.id}
-                className="flex items-center justify-between rounded-lg border px-4 py-3"
+                className="flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium text-sm">{role.name}</p>
                   {role.description && (
                     <p className="text-xs text-muted-foreground mt-0.5">{role.description}</p>
@@ -625,7 +625,7 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
                     )}
                   </div>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setEditRole(role)}>
+                <Button size="sm" variant="outline" className="self-start shrink-0 sm:self-auto" onClick={() => setEditRole(role)}>
                   <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                 </Button>
               </div>

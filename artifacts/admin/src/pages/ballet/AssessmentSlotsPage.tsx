@@ -269,15 +269,15 @@ export default function AssessmentSlotsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-white">Assessment Dates</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Manage available ballet assessment dates and appointment slots.
           </p>
         </div>
         {canCreate && (
-          <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-black gap-2">
+          <Button onClick={openCreate} className="bg-[#00B6D6] hover:bg-[#0097B2] text-black gap-2 self-start shrink-0 sm:self-auto">
             <Plus className="h-4 w-4" />
             New Assessment Date
           </Button>
@@ -311,7 +311,7 @@ export default function AssessmentSlotsPage() {
 
       {/* Dates table */}
       {!isLoading && slots.length > 0 && (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-lg border border-border overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/30">
               <tr>
