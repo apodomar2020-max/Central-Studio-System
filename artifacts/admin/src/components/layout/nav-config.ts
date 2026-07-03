@@ -1,54 +1,170 @@
 /**
- * nav-config — single source of truth for admin routes and page titles.
+ * nav-config — single source of truth for admin navigation and page titles.
  *
- * Phase 1 (Layout Foundation): consumed by the TopBar to resolve the current
- * page title from the wouter location.
- * Phase 2 (Navigation Restructure) will reuse the same entries to build the
- * modular sidebar, which is why each entry already carries its permission
- * requirement — identical to the pairs used in App.tsx ROUTE_PERMS and the
- * current sidebar arrays.
+ * Phase 1: flat route→title lookup for the TopBar (resolvePageTitle).
+ * Phase 2: full nested navigation tree (NAV_TREE) consumed by the modular
+ * sidebar — groups, nested children, icons, permission requirements and
+ * "coming soon" placeholders.
  *
- * Title resolution rule: longest matching href prefix wins, so dynamic
- * children resolve to their parent title (e.g. /students/42 → "Students",
- * /ballet/applications/7 → "Ballet Applications"). "/" matches exactly.
+ * The TopBar keeps working unchanged: NAV_ROUTES is now derived by
+ * flattening NAV_TREE (links only), and resolvePageTitle keeps the same
+ * longest-prefix-match behavior so dynamic children resolve to their parent
+ * title (/students/42 → "Students", /ballet/applications/7 → "Applications").
+ *
+ * Permission pairs mirror App.tsx ROUTE_PERMS exactly — this file never
+ * loosens access; the sidebar additionally filters with allows(can, perm).
  */
+import type { ElementType } from "react";
+import {
+  LayoutDashboard,
+  ScanLine,
+  Warehouse,
+  Users,
+  CalendarDays,
+  CalendarRange,
+  CreditCard,
+  Music2,
+  ClipboardList,
+  Settings2,
+  Trophy,
+  Megaphone,
+  Tag,
+  Bell,
+  Send,
+  MessageSquareText,
+  Ticket,
+  UserSquare2,
+  ShoppingBag,
+  BarChart3,
+  ShieldCheck,
+  FileClock,
+  Smartphone,
+  ImagePlay,
+  FileText,
+} from "lucide-react";
 import type { PermRequirement } from "@/lib/permissions";
 
-export interface NavRouteEntry {
-  /** Human title shown in the TopBar (and later in the sidebar). */
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface NavLink {
+  kind: "link";
   title: string;
-  /** Route path as registered in App.tsx (without dynamic segments). */
   href: string;
-  /** Permission requirement (any one pair grants access) — Phase 2 use. */
+  icon?: ElementType;
+  /** Permission requirement (any one pair grants access). */
+  perm: PermRequirement;
+  /**
+   * TopBar title when it should differ from the sidebar label
+   * (e.g. sidebar "Roles" → page title "System Users").
+   */
+  pageTitle?: string;
+  /** Route/page does not exist yet — rendered disabled, never a real link. */
+  comingSoon?: boolean;
+}
+
+export interface NavGroup {
+  kind: "group";
+  title: string;
+  icon?: ElementType;
+  children: NavNode[];
+}
+
+export type NavNode = NavLink | NavGroup;
+
+const link = (
+  title: string,
+  href: string,
+  perm: PermRequirement,
+  icon?: ElementType,
+  extra?: Partial<Pick<NavLink, "pageTitle" | "comingSoon">>,
+): NavLink => ({ kind: "link", title, href, perm, icon, ...extra });
+
+const group = (title: string, icon: ElementType, children: NavNode[]): NavGroup => ({
+  kind: "group",
+  title,
+  icon,
+  children,
+});
+
+// ─── Navigation tree (Phase 2 structure) ─────────────────────────────────────
+
+export const NAV_TREE: NavNode[] = [
+  link("Dashboard", "/", [["dashboard", "view"]], LayoutDashboard),
+  link("Attendance", "/attendance", [["attendance", "view"]], ScanLine),
+
+  group("Studio", Warehouse, [
+    link("Instructors", "/instructors", [["instructors", "view"]], Users),
+    link("Classes", "/classes", [["classes", "view"]], CalendarDays),
+    link("Schedules", "/schedules", [["schedules", "view"]], CalendarRange),
+    link("Packages", "/packages", [["packages", "view"]], CreditCard),
+    group("Ballet", Music2, [
+      link("Applications", "/ballet/applications", [["ballet.applications", "view"]], ClipboardList, {
+        pageTitle: "Ballet Applications",
+      }),
+      link("Assessment Dates", "/ballet/slots", [["ballet.assessmentDates", "view"]], CalendarDays),
+      link("Pricing & Settings", "/ballet/settings", [["ballet.pricing", "view"]], Settings2),
+      link("Levels", "/ballet/levels", [["ballet.levels", "view"]], Trophy, { pageTitle: "Ballet Levels" }),
+    ]),
+  ]),
+
+  group("Marketing", Megaphone, [
+    link("Promotions", "/promotions", [["offers", "view"]], Tag),
+    link("Notifications", "/notifications", [["notifications", "view"]], Bell),
+    link("WhatsApp Campaigns", "/marketing", [["marketing", "view"]], Send),
+    link("Feedback", "/feedback", [["feedback", "view"]], MessageSquareText),
+  ]),
+
+  group("System", ShieldCheck, [
+    link("Bookings", "/bookings", [["bookings", "view"]], Ticket),
+    group("Users", UserSquare2, [
+      link("Students", "/students", [["students", "view"]]),
+      link("Parents", "/parents", [["parents", "view"]]),
+    ]),
+    link("Package Order", "/package-orders", [["packageOrders", "view"]], ShoppingBag, {
+      pageTitle: "Package Orders",
+    }),
+    link("Reports", "/reports", [["reports", "view"]], BarChart3),
+    link("Roles", "/system-users", [["adminUsers", "view"], ["roles", "view"]], ShieldCheck, {
+      pageTitle: "System Users",
+    }),
+    // Phase 7 feature — no route/page exists yet, rendered as "Coming Soon".
+    link("Logs", "/logs", [["auditLogs", "view"]], FileClock, { comingSoon: true }),
+  ]),
+
+  group("App", Smartphone, [
+    link("Hero Slides", "/hero-items", [["heroSlides", "view"]], ImagePlay),
+    link("App Content", "/app-content", [["appContent", "view"]], FileText),
+  ]),
+
+  link("Settings", "/settings", [["settings", "view"]], Settings2),
+];
+
+// ─── Flat route list (TopBar title lookup) ────────────────────────────────────
+
+export interface NavRouteEntry {
+  title: string;
+  href: string;
   perm: PermRequirement;
 }
 
-export const NAV_ROUTES: NavRouteEntry[] = [
-  { title: "Dashboard",            href: "/",                    perm: [["dashboard", "view"]] },
-  { title: "Instructors",          href: "/instructors",         perm: [["instructors", "view"]] },
-  { title: "Classes",              href: "/classes",             perm: [["classes", "view"]] },
-  { title: "Schedules",            href: "/schedules",           perm: [["schedules", "view"]] },
-  { title: "Packages",             href: "/packages",            perm: [["packages", "view"]] },
-  { title: "Bookings",             href: "/bookings",            perm: [["bookings", "view"]] },
-  { title: "Students",             href: "/students",            perm: [["students", "view"]] },
-  { title: "Parents",              href: "/parents",             perm: [["parents", "view"]] },
-  { title: "Offers",               href: "/offers",              perm: [["offers", "view"]] },
-  { title: "Promotions",           href: "/promotions",          perm: [["offers", "view"]] },
-  { title: "Notifications",        href: "/notifications",       perm: [["notifications", "view"]] },
-  { title: "Marketing",            href: "/marketing",           perm: [["marketing", "view"]] },
-  { title: "Package Orders",       href: "/package-orders",      perm: [["packageOrders", "view"]] },
-  { title: "Attendance",           href: "/attendance",          perm: [["attendance", "view"]] },
-  { title: "Feedback",             href: "/feedback",            perm: [["feedback", "view"]] },
-  { title: "Reports",              href: "/reports",             perm: [["reports", "view"]] },
-  { title: "Hero Slides",          href: "/hero-items",          perm: [["heroSlides", "view"]] },
-  { title: "App Content",          href: "/app-content",         perm: [["appContent", "view"]] },
-  { title: "System Users",         href: "/system-users",        perm: [["adminUsers", "view"], ["roles", "view"]] },
-  { title: "Ballet Applications",  href: "/ballet/applications", perm: [["ballet.applications", "view"]] },
-  { title: "Assessment Dates",     href: "/ballet/slots",        perm: [["ballet.assessmentDates", "view"]] },
-  { title: "Pricing & Settings",   href: "/ballet/settings",     perm: [["ballet.pricing", "view"]] },
-  { title: "Ballet Levels",        href: "/ballet/levels",       perm: [["ballet.levels", "view"]] },
-  { title: "Settings",             href: "/settings",            perm: [["settings", "view"]] },
-];
+function flattenLinks(nodes: NavNode[]): NavRouteEntry[] {
+  return nodes.flatMap((node) =>
+    node.kind === "group"
+      ? flattenLinks(node.children)
+      : node.comingSoon
+        ? []
+        : [{ title: node.pageTitle ?? node.title, href: node.href, perm: node.perm }],
+  );
+}
+
+export const NAV_ROUTES: NavRouteEntry[] = flattenLinks(NAV_TREE);
+
+// ─── Title + active-route helpers ─────────────────────────────────────────────
+
+/** Exact match for "/", prefix match for everything else (same as before). */
+export function isRouteActive(href: string, location: string): boolean {
+  return href === "/" ? location === "/" : location === href || location.startsWith(href + "/");
+}
 
 /**
  * Resolve the page title for the current wouter location.
