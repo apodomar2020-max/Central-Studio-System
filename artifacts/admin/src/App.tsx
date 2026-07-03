@@ -23,7 +23,6 @@ import Students from "@/pages/students";
 import ParentsPage from "@/pages/parents";
 import StudentDetailPage from "@/pages/student-detail";
 import ChildDetailPage from "@/pages/child-detail";
-import Offers from "@/pages/offers";
 import PromotionsPage from "@/pages/promotions";
 import Notifications from "@/pages/notifications";
 import Marketing from "@/pages/marketing";
@@ -101,7 +100,8 @@ const ROUTE_PERMS = {
   // "any of" check per-record).
   studentDetail: [["students", "view"], ["parents", "view"], ["users", "view"]],
   childDetails: [["children", "view"], ["parents", "view"]],
-  offers: [["offers", "view"]],
+  // Phase 6C: the admin /offers route was removed (backend Offers API and the
+  // offers permission module remain until Phases 6D/6E).
   promotions: [["promotions", "view"]],
   notifications: [["notifications", "view"]],
   marketing: [["marketing", "view"]],
@@ -143,7 +143,6 @@ function ProtectedRouter() {
         <Route path="/parents">{guarded(ROUTE_PERMS.parents, <ParentsPage />)}</Route>
         <Route path="/parents/:id">{guarded(ROUTE_PERMS.studentDetail, <StudentDetailPage />)}</Route>
         <Route path="/parents/:parentId/children/:childId">{guarded(ROUTE_PERMS.childDetails, <ChildDetailPage />, "all")}</Route>
-        <Route path="/offers">{guarded(ROUTE_PERMS.offers, <Offers />)}</Route>
         <Route path="/promotions">{guarded(ROUTE_PERMS.promotions, <PromotionsPage />)}</Route>
         <Route path="/notifications">{guarded(ROUTE_PERMS.notifications, <Notifications />)}</Route>
         <Route path="/marketing">{guarded(ROUTE_PERMS.marketing, <Marketing />)}</Route>
