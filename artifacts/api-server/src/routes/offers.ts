@@ -1,51 +1,36 @@
-import { blockStudentJwt } from "../middlewares/auth";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+/**
+ * Offers — Phase 6D deprecation state.
+ *
+ * The admin Offers UI was removed in Phase 6C, so the admin mutation
+ * endpoints (POST/PATCH/DELETE) are deprecated here and return 410 Gone.
+ * This also guarantees no new `offer_published` notification broadcasts can
+ * be produced. The public GET endpoints stay intact for backward
+ * compatibility with the published API contract until Phase 6E removes the
+ * feature end-to-end (routes, dashboard totalOffers, OpenAPI, DB table).
+ */
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, offersTable } from "@workspace/db";
-import { createBroadcastNotification } from "../lib/notifications";
 import {
-  CreateOfferBody,
   GetOfferParams,
   GetOfferResponse,
-  UpdateOfferParams,
-  UpdateOfferBody,
-  UpdateOfferResponse,
-  DeleteOfferParams,
   ListOffersResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+const OFFERS_ADMIN_DEPRECATED = {
+  error: "Offers admin management has been deprecated. Use Promotions instead.",
+} as const;
 
 router.get("/offers", async (req, res): Promise<void> => {
   const rows = await db.select().from(offersTable).orderBy(offersTable.createdAt);
   res.json(ListOffersResponse.parse(rows));
 });
 
-router.post("/offers", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "create"), async (req, res): Promise<void> => {
-  const parsed = CreateOfferBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const row = await db.transaction(async (tx) => {
-    const [inserted] = await tx.insert(offersTable).values(parsed.data).returning();
-    if (inserted.isActive) {
-      await createBroadcastNotification(tx, {
-        title: "New offer",
-        body: `${inserted.title}${inserted.discountPercent > 0 ? `: ${inserted.discountPercent}% off` : ""}`,
-        type: "offer_published",
-        relatedEntityType: "offer",
-        relatedEntityId: inserted.id,
-        metadata: {
-          amount: inserted.discountPercent,
-          currency: "percent",
-        },
-      });
-    }
-    return inserted;
-  });
-  res.status(201).json(GetOfferResponse.parse(row));
+// Phase 6D: admin create deprecated — no inserts, no offer_published broadcasts.
+router.post("/offers", (_req, res): void => {
+  res.status(410).json(OFFERS_ADMIN_DEPRECATED);
 });
 
 router.get("/offers/:id", async (req, res): Promise<void> => {
@@ -62,56 +47,14 @@ router.get("/offers/:id", async (req, res): Promise<void> => {
   res.json(GetOfferResponse.parse(row));
 });
 
-router.patch("/offers/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "edit"), async (req, res): Promise<void> => {
-  const params = UpdateOfferParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const parsed = UpdateOfferBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const row = await db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(offersTable).where(eq(offersTable.id, params.data.id));
-    if (!existing) return null;
-
-    const [updated] = await tx.update(offersTable).set(parsed.data).where(eq(offersTable.id, params.data.id)).returning();
-    if (updated.isActive && !existing.isActive) {
-      await createBroadcastNotification(tx, {
-        title: "New offer",
-        body: `${updated.title}${updated.discountPercent > 0 ? `: ${updated.discountPercent}% off` : ""}`,
-        type: "offer_published",
-        relatedEntityType: "offer",
-        relatedEntityId: updated.id,
-        metadata: {
-          amount: updated.discountPercent,
-          currency: "percent",
-        },
-      });
-    }
-    return updated;
-  });
-  if (!row) {
-    res.status(404).json({ error: "Offer not found" });
-    return;
-  }
-  res.json(UpdateOfferResponse.parse(row));
+// Phase 6D: admin update deprecated — no updates, no offer_published broadcasts.
+router.patch("/offers/:id", (_req, res): void => {
+  res.status(410).json(OFFERS_ADMIN_DEPRECATED);
 });
 
-router.delete("/offers/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("offers", "delete"), async (req, res): Promise<void> => {
-  const params = DeleteOfferParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const [row] = await db.delete(offersTable).where(eq(offersTable.id, params.data.id)).returning();
-  if (!row) {
-    res.status(404).json({ error: "Offer not found" });
-    return;
-  }
-  res.sendStatus(204);
+// Phase 6D: admin delete deprecated.
+router.delete("/offers/:id", (_req, res): void => {
+  res.status(410).json(OFFERS_ADMIN_DEPRECATED);
 });
 
 export default router;
