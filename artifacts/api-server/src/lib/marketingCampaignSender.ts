@@ -96,13 +96,12 @@ export async function processWhatsAppCampaignBatch(input: SendCampaignBatchInput
 
   let batchSentCount = 0;
 
+  // NOTE: an `attempt` counter used to be computed here and passed to the
+  // delivery-log inserts, but marketing_delivery_logs has no `attempt` column
+  // (see migration 0036) — drizzle silently dropped the field at runtime and
+  // it broke typecheck. Removed until a schema migration actually adds the
+  // column (planned in the stashed marketing/audit WIP).
   for (const recipient of recipients) {
-    const [existingLogs] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(marketingDeliveryLogsTable)
-      .where(eq(marketingDeliveryLogsTable.recipientId, recipient.id));
-    const attempt = (existingLogs?.count ?? 0) + 1;
-
     if (!recipient.normalizedPhone) {
       await db.update(marketingCampaignRecipientsTable)
         .set({ status: "failed", errorMessage: "Missing normalized phone number.", updatedAt: new Date().toISOString() })
@@ -115,7 +114,6 @@ export async function processWhatsAppCampaignBatch(input: SendCampaignBatchInput
         eventType: "failed",
         status: "failed",
         errorMessage: "Missing normalized phone number.",
-        attempt,
         payload: { status: "missing_phone" },
       });
       continue;
@@ -133,7 +131,6 @@ export async function processWhatsAppCampaignBatch(input: SendCampaignBatchInput
         eventType: "failed",
         status: "failed",
         errorMessage: "Recipient has opted out of WhatsApp messages.",
-        attempt,
         payload: { status: "opted_out" },
       });
       continue;
@@ -169,7 +166,6 @@ export async function processWhatsAppCampaignBatch(input: SendCampaignBatchInput
         providerMessageId: result.providerMessageId,
         eventType: "sent",
         status: "sent",
-        attempt,
         payload: result.raw,
       });
 
@@ -195,7 +191,6 @@ export async function processWhatsAppCampaignBatch(input: SendCampaignBatchInput
         status: "failed",
         errorCode,
         errorMessage: errorMsg,
-        attempt,
         payload: { error: err instanceof Error ? err.stack : err, providerStatus },
       });
     }
