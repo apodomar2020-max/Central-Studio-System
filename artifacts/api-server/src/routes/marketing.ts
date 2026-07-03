@@ -597,7 +597,16 @@ router.patch("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermissio
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const updateData = { ...parsed.data };
+  // Type the patch as a drizzle update shape for this table so recipientCount
+  // (not part of the request body) can be set below. targetAudience is a
+  // NOT NULL column, so it is only copied in when the client actually sent a
+  // string — an explicit null is treated like "not provided" (previously it
+  // would have failed the NOT NULL constraint at the DB level anyway).
+  const { targetAudience: bodyTargetAudience, ...restPatch } = parsed.data;
+  const updateData: Partial<typeof marketingCampaignsTable.$inferInsert> = { ...restPatch };
+  if (bodyTargetAudience != null) {
+    updateData.targetAudience = bodyTargetAudience;
+  }
   if (parsed.data.audienceType || parsed.data.audienceConfig) {
     const [existing] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, params.data.id));
     if (!existing) {
