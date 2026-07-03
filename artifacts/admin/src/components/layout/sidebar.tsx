@@ -14,10 +14,11 @@
  *  - "Coming Soon" entries (e.g. Logs before Phase 7) render disabled —
  *    never a real link.
  *
- * Mobile drawer readiness: the inner content is exported as <SidebarNav />
- * with an optional onNavigate callback, so Phase 5 can mount the exact same
- * nav inside a Sheet/drawer and close it after navigation. This file adds no
- * responsive behavior itself.
+ * Mobile drawer (Phase 5A): <MobileSidebarDrawer /> mounts the exact same
+ * <SidebarNav /> inside a left Sheet for small screens; navigating closes the
+ * drawer via onNavigate. The desktop <Sidebar /> accepts an optional className
+ * so the Layout can hide it below the lg breakpoint without changing anything
+ * about its own desktop behavior (collapse mode, persistence, footer).
  */
 import { Link, useLocation } from "wouter";
 import { useEffect, useState } from "react";
@@ -27,6 +28,7 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { allows } from "@/lib/permissions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import {
   NAV_TREE,
   isRouteActive,
@@ -390,7 +392,7 @@ function findGroupByPath(nodes: NavNode[], path: string): NavGroup | null {
 
 // ─── Sidebar shell ────────────────────────────────────────────────────────────
 
-export function Sidebar() {
+export function Sidebar({ className }: { className?: string } = {}) {
   const [location] = useLocation();
   const { user, logout, can } = useAdminAuth();
   const [collapsed, setCollapsed] = useState(
@@ -410,6 +412,7 @@ export function Sidebar() {
       className={cn(
         "flex h-full flex-col border-r border-sidebar-border bg-sidebar shadow-[8px_0_28px_rgba(0,0,0,.06)] transition-[width] duration-200",
         collapsed ? "w-16" : "w-60",
+        className,
       )}
       data-testid="sidebar"
       data-collapsed={collapsed ? "true" : "false"}
@@ -494,6 +497,67 @@ export function Sidebar() {
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Mobile drawer (Phase 5A) ─────────────────────────────────────────────────
+
+/**
+ * MobileSidebarDrawer — the same SidebarNav mounted inside a left Sheet for
+ * small screens (< lg, where the Layout hides the desktop sidebar). Controlled
+ * by the Layout; the TopBar hamburger opens it and any navigation closes it.
+ * Permission filtering, active-route highlighting, and group expand/collapse
+ * are identical to desktop because the nav component is shared.
+ */
+export function MobileSidebarDrawer({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { user, logout } = useAdminAuth();
+  const close = () => onOpenChange(false);
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="left"
+        className="flex w-72 max-w-[85vw] flex-col gap-0 border-r border-sidebar-border bg-sidebar p-0 lg:hidden"
+        data-testid="mobile-sidebar-drawer"
+      >
+        {/* Radix a11y: dialog needs a title/description (visually hidden). */}
+        <SheetTitle className="sr-only">Navigation</SheetTitle>
+        <SheetDescription className="sr-only">Admin navigation menu</SheetDescription>
+
+        {/* Logo — same brand block as the desktop sidebar */}
+        <div className="flex h-20 shrink-0 items-center border-b border-sidebar-border px-4">
+          <img
+            src={`${import.meta.env.BASE_URL}logo-central-white.png`}
+            alt="Central Studio"
+            className="h-14 w-auto rounded-md bg-[#071014] px-2"
+          />
+        </div>
+
+        {/* Nav — shared SidebarNav; navigating closes the drawer */}
+        <div className="flex-1 overflow-y-auto py-3">
+          <SidebarNav onNavigate={close} />
+        </div>
+
+        {/* Footer — same identity block as the desktop sidebar */}
+        <div className="shrink-0 border-t border-sidebar-border px-4 py-3">
+          <p className="truncate text-[11px] text-muted-foreground">{user?.fullName ?? "Admin"}</p>
+          <p className="truncate text-[10px] text-muted-foreground/60">{user?.username}</p>
+          <button
+            onClick={logout}
+            className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+          >
+            <LogOut className="h-3 w-3" />
+            Sign out
+          </button>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

@@ -17,7 +17,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { Moon, RefreshCw, Settings2, Sun, LogOut, ChevronDown } from "lucide-react";
+import { Menu, Moon, RefreshCw, Settings2, Sun, LogOut, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -42,7 +42,7 @@ function initials(name: string | undefined): string {
     .join("") || "AD";
 }
 
-export function TopBar() {
+export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {}) {
   const [location] = useLocation();
   const { user, logout, can } = useAdminAuth();
   const { theme, toggleTheme } = useAdminTheme();
@@ -71,22 +71,39 @@ export function TopBar() {
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 transition-colors duration-200 sm:px-6">
-      {/* Brand mark + page title */}
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 transition-colors duration-200 sm:px-6">
+      {/* Mobile nav trigger (Phase 5A) — only below lg, where the Layout
+          hides the desktop sidebar. Opens the sidebar drawer. */}
+      {onOpenMobileNav && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onOpenMobileNav}
+          title="Open navigation menu"
+          aria-label="Open navigation menu"
+          data-testid="topbar-mobile-menu"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+      )}
+
+      {/* Brand mark + page title — min-w-0 lets the title truncate instead of
+          overflowing into the right-side actions on small screens. */}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <img
           src={`${import.meta.env.BASE_URL}logo-central-white.png`}
           alt="Central Studio"
           className="h-7 w-auto shrink-0 rounded bg-[#071014] px-1.5"
         />
-        <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+        <div className="hidden h-5 w-px shrink-0 bg-border sm:block" aria-hidden="true" />
         <h1 className="truncate text-sm font-semibold tracking-tight text-foreground" data-testid="topbar-title">
           {title}
         </h1>
       </div>
 
       {/* Right cluster */}
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
         {canRefresh && (
           <Button
             variant="ghost"
