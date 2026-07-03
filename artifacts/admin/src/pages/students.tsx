@@ -6,7 +6,6 @@ import {
   useListStudents,
   useCreateStudent,
   useUpdateStudent,
-  useDeleteStudent,
   getListStudentsQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
-import { Trash2, Edit, BadgeCheck } from "lucide-react";
+import { Edit, BadgeCheck } from "lucide-react";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -84,7 +83,8 @@ export default function Students() {
   const { can } = useAdminAuth();
   const canCreate = can("users", "create");
   const canEdit = can("students", "edit");
-  const canDelete = can("students", "delete");
+  // Student deletion removed from the admin UI (Phase 3). The backend
+  // DELETE /students/:id endpoint is intentionally untouched.
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(50);
@@ -106,7 +106,6 @@ export default function Students() {
   const paginationPages = paginationRange(currentPage, totalPages);
   const createStudent = useCreateStudent();
   const updateStudent = useUpdateStudent();
-  const deleteStudent = useDeleteStudent();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
@@ -139,12 +138,6 @@ export default function Students() {
       updateStudent.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
     } else {
       createStudent.mutate({ data: parsed }, { onSuccess: invalidate });
-    }
-  };
-
-  const handleDelete = (id: number) => {
-    if (confirm("Delete this student?")) {
-      deleteStudent.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey() }) });
     }
   };
 
@@ -246,11 +239,6 @@ export default function Students() {
                     {canEdit && (
                       <Button variant="ghost" size="icon" data-testid={`button-edit-student-${student.id}`} onClick={() => openEdit(student)}>
                         <Edit className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button variant="ghost" size="icon" data-testid={`button-delete-student-${student.id}`} onClick={() => handleDelete(student.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     )}
                   </TableCell>

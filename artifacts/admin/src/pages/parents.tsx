@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { useListStudents } from "@workspace/api-client-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useQueryClient } from "@tanstack/react-query";
+import { useListStudents, useUpdateStudent, getListStudentsQueryKey } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/layout/page-header";
@@ -7,8 +11,32 @@ import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BadgeCheck } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+} from "@/components/ui/form";
+import { BadgeCheck, Edit } from "lucide-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { useToast } from "@/hooks/use-toast";
+
+/**
+ * Parent edit (Phase 3) — Parents live in the same table/endpoints as
+ * Students; PATCH /students/:id already authorizes `parents.edit` (or
+ * `users.edit`) for parent accounts, so this reuses useUpdateStudent as-is.
+ * Same safe fields as the Students edit dialog.
+ */
+const editFormSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Valid email required"),
+  phone: z.string().nullish(),
+  notes: z.string().nullish(),
+});
+
+type EditFormValues = z.input<typeof editFormSchema>;
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
@@ -18,6 +46,7 @@ type ParentRow = {
   name: string;
   email: string;
   phone?: string | null;
+  notes?: string | null;
   avatarUrl?: string | null;
   joinedAt: string;
   childCount?: number;
@@ -49,6 +78,12 @@ function paginationRange(currentPage: number, totalPages: number): number[] {
 }
 
 export default function ParentsPage() {
+  const { can } = useAdminAuth();
+  const canEdit = can("parents", "edit");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const updateParent = useUpdateStudent();
+  const [editing, setEditing] = useState<ParentRow | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(50);
@@ -73,6 +108,44 @@ export default function ParentsPage() {
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, pageSize]);
+
+  const form = useForm<EditFormValues>({
+    resolver: zodResolver(editFormSchema),
+    defaultValues: { name: "", email: "" },
+  });
+
+  const openEdit = (parent: ParentRow) => {
+    setEditing(parent);
+    form.reset({
+      name: parent.name,
+      email: parent.email,
+      phone: parent.phone ?? "",
+      notes: parent.notes ?? "",
+    });
+  };
+
+  const onSubmit = (values: EditFormValues) => {
+    if (!editing) return;
+    const parsed = editFormSchema.parse(values);
+    updateParent.mutate(
+      { id: editing.id, data: parsed },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey() });
+          setEditing(null);
+          toast({ title: "Parent updated" });
+        },
+        onError: (error: unknown) => {
+          const err = error as { data?: { error?: string }; message?: string };
+          toast({
+            title: "Failed to update parent",
+            description: err?.data?.error ?? err?.message ?? "Something went wrong",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -111,13 +184,14 @@ export default function ParentsPage() {
               <TableHead>Profile</TableHead>
               <TableHead>Signup</TableHead>
               <TableHead>Joined</TableHead>
+              {canEdit && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={canEdit ? 7 : 6} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : parents.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No parent accounts found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={canEdit ? 7 : 6} className="text-center py-8 text-muted-foreground">No parent accounts found.</TableCell></TableRow>
             ) : (
               parents.map((parent) => (
                 <TableRow key={parent.id} data-testid={`row-parent-${parent.id}`}>
@@ -156,6 +230,18 @@ export default function ParentsPage() {
                     {parent.howDidYouHearAboutUs && <div className="text-xs text-muted-foreground">{parent.howDidYouHearAboutUs}</div>}
                   </TableCell>
                   <TableCell>{new Date(parent.joinedAt).toLocaleDateString()}</TableCell>
+                  {canEdit && (
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-edit-parent-${parent.id}`}
+                        onClick={() => openEdit(parent)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -210,6 +296,53 @@ export default function ParentsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Parent edit dialog — same fields/pattern as the Students edit dialog */}
+      <Dialog open={editing != null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Parent</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormControl><Input data-testid="input-parent-name" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl><Input type="email" data-testid="input-parent-email" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="phone" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phone</FormLabel>
+                  <FormControl><Input data-testid="input-parent-phone" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="notes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Notes</FormLabel>
+                  <FormControl><Textarea data-testid="input-parent-notes" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+                <Button type="submit" data-testid="button-submit-parent" disabled={updateParent.isPending}>
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
