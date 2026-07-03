@@ -213,11 +213,11 @@ export default function Dashboard() {
   const chartGrid = theme === "night" ? "#E2E8F0" : "rgba(138,154,176,.12)";
 
   return (
-    <div className="dashboard-canvas space-y-12 pb-12">
+    <div className="dashboard-canvas space-y-8 pb-12 sm:space-y-12">
       <header className="flex flex-col gap-5 border-b border-border/70 pb-7 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-semibold text-foreground">Operations Dashboard</h1>
+            <h1 className="text-2xl font-semibold text-foreground sm:text-3xl">Operations Dashboard</h1>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-500">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live
@@ -233,7 +233,7 @@ export default function Dashboard() {
       <section className="space-y-5">
         <SectionHeader title="Live Today" description="Cairo-day activity and recorded operational revenue." />
         <div className="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
-          <article className="revenue-hero relative min-h-60 overflow-hidden rounded-lg border p-7 sm:p-8">
+          <article className="revenue-hero relative min-h-60 overflow-hidden rounded-lg border p-5 sm:p-8">
             <div className="revenue-grid absolute inset-0 opacity-60" />
             <div className="absolute -right-12 -top-14 h-52 w-52 rounded-full bg-primary/20 blur-3xl" />
             <div className="absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-[#8A5CFF]/20 blur-3xl" />
@@ -254,7 +254,7 @@ export default function Dashboard() {
               </div>
               <div>
                 {isLoading ? <Skeleton className="h-12 w-56" /> : (
-                  <p className="text-4xl font-semibold text-foreground sm:text-5xl">
+                  <p className="text-3xl font-semibold text-foreground sm:text-5xl">
                     {dashboard?.revenueTrackingComplete ? <><span className="mr-2 text-primary">EGP</span>{(dashboard.totalRevenue ?? 0).toLocaleString()}</> : "Not configured"}
                   </p>
                 )}

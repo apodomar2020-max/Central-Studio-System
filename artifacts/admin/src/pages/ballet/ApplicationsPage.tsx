@@ -200,7 +200,7 @@ export default function ApplicationsPage() {
         </div>
 
         {/* Level filter + search */}
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <form onSubmit={handleSearch} className="flex w-full flex-wrap gap-2 sm:w-auto">
           {canFilterByLevel && levels.length > 0 && (
             <Select value={levelId || "all"} onValueChange={handleLevelChange}>
               <SelectTrigger className="h-8 w-36 text-sm" data-testid="select-level-filter">
@@ -216,10 +216,10 @@ export default function ApplicationsPage() {
               </SelectContent>
             </Select>
           )}
-          <div className="relative">
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              className="pl-8 w-56 h-8 text-sm"
+              className="pl-8 w-full h-8 text-sm sm:w-56"
               placeholder="Name, phone, email, level…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -306,7 +306,7 @@ export default function ApplicationsPage() {
 
       {/* Pagination */}
       {data && data.totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <span>
             Showing {((page - 1) * LIMIT) + 1}–{Math.min(page * LIMIT, data.total)} of {data.total}
           </span>

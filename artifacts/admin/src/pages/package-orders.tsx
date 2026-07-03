@@ -125,9 +125,9 @@ function AdjustCreditsDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-2xl p-6 space-y-5"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-6 space-y-5"
         style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -443,12 +443,12 @@ export default function PackageOrders() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Package Orders</h1>
           <p className="mt-1 text-sm" style={{ color: MUTED }}>Manage student package requests and activations</p>
         </div>
-        <span className="text-xs font-semibold" style={{ color: AMBER }}>
+        <span className="shrink-0 whitespace-nowrap text-xs font-semibold" style={{ color: AMBER }}>
           {pendingCount} pending
         </span>
       </div>
@@ -467,8 +467,9 @@ export default function PackageOrders() {
         ))}
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+      {/* Table — overflow-x-auto (Phase 5B) so the 7-column table scrolls
+          horizontally on mobile instead of breaking the viewport. */}
+      <div className="rounded-xl overflow-x-auto" style={{ border: `1px solid ${BORDER}` }}>
         <table className="w-full text-sm">
           <thead style={{ background: BG_ROW }}>
             <tr>
@@ -629,9 +630,9 @@ export default function PackageOrders() {
 
       {/* Edit modal */}
       {canApprove && editingOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setEditingOrder(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingOrder(null)}>
           <div
-            className="w-full max-w-md rounded-2xl p-6 space-y-5"
+            className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-6 space-y-5"
             style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}
             onClick={(e) => e.stopPropagation()}
           >

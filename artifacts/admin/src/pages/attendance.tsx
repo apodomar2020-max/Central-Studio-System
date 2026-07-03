@@ -199,7 +199,7 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Attendance & Check-In</h1>
           <p className="mt-1 text-sm" style={{ color: MUTED }}>
@@ -209,7 +209,7 @@ export default function AttendancePage() {
         {canScan && (
           <button
             onClick={() => setScanOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0 self-start"
             style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
           >
             <QrCode className="h-4 w-4" />
@@ -368,7 +368,7 @@ export default function AttendancePage() {
 
           {/* Stats panel */}
           <div className="rounded-xl p-5 space-y-4" style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${STUDIO_CYAN}20` }}>
                   <BarChart3 className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
@@ -418,15 +418,15 @@ export default function AttendancePage() {
 
         {/* ── Recent attendance table ── */}
         <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
-          <div className="px-4 py-3 flex items-center justify-between gap-2" style={{ background: BG_CARD }}>
-            <div className="flex items-center gap-2">
-              <User2 className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
-              <h2 className="text-sm font-semibold text-foreground">
+          <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2" style={{ background: BG_CARD }}>
+            <div className="flex min-w-0 items-center gap-2">
+              <User2 className="h-4 w-4 shrink-0" style={{ color: STUDIO_CYAN }} />
+              <h2 className="truncate text-sm font-semibold text-foreground">
                 {searchEmail ? `Attendance — ${searchEmail}` : "Recent Check-Ins"}
               </h2>
             </div>
             {/* Status filter chips */}
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               {["all", "checked_in", "late", "absent"].map((f) => (
                 <button
                   key={f}

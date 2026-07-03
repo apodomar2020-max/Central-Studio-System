@@ -543,7 +543,7 @@ export default function Bookings() {
         <div className="text-[11px] text-muted-foreground">
           Showing {startItem}–{endItem} of {total.toLocaleString()} bookings
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -553,7 +553,7 @@ export default function Bookings() {
           >
             Previous
           </Button>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {paginationPages.map((p, index) => {
               const previous = paginationPages[index - 1];
               return (
@@ -594,7 +594,7 @@ export default function Bookings() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <FormField control={form.control} name="studentName" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Participant Name</FormLabel>
@@ -610,7 +610,7 @@ export default function Bookings() {
                   </FormItem>
                 )} />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <FormField control={form.control} name="studentPhone" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Phone</FormLabel>

@@ -253,7 +253,7 @@ export default function Students() {
         <div className="text-sm text-muted-foreground">
           Showing {startItem}–{endItem} of {total.toLocaleString()} students
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -263,7 +263,7 @@ export default function Students() {
           >
             Previous
           </Button>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {paginationPages.map((p, index) => {
               const previous = paginationPages[index - 1];
               return (

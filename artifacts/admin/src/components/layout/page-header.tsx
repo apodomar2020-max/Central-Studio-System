@@ -30,8 +30,10 @@ export function PageHeader({
   const { dot, label, labelColor } = modeColors[mode];
 
   return (
-    <div className="flex items-start justify-between mb-6">
-      <div>
+    // Phase 5B: stacks vertically on mobile so long titles/descriptions don't
+    // collide with the action button; identical side-by-side layout at sm+.
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
         {label && (
           <div className="flex items-center gap-1.5 mb-1">
             <span
@@ -56,7 +58,7 @@ export function PageHeader({
         <Button
           data-testid={addTestId}
           onClick={onAdd}
-          className={cn("gap-2")}
+          className={cn("gap-2 self-start shrink-0")}
           style={
             mode === "stage"
               ? {

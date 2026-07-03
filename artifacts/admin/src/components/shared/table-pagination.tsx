@@ -44,7 +44,7 @@ export function TablePagination({
       <div className="text-sm text-muted-foreground" data-testid="pagination-summary">
         Showing {startItem}–{endItem} of {total.toLocaleString()} {itemLabel}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
           variant="outline"
@@ -55,7 +55,7 @@ export function TablePagination({
         >
           Previous
         </Button>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {pages.map((p, index) => {
             const previous = pages[index - 1];
             return (
