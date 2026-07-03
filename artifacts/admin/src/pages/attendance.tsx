@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearch } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  useListAttendance,
   useListPackageOrders,
   useCheckIn,
   useGetAttendanceStats,
@@ -13,6 +12,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { QrCode, Search, CheckCircle2, CreditCard, User2, BarChart3, Clock, XCircle, Ban } from "lucide-react";
 import { ScanCheckInDialog } from "@/components/scan-check-in-dialog";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { TablePagination } from "@/components/shared/table-pagination";
+
+const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
+
+function makeHeaders(token?: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+    ...(token ? { "x-admin-token": token } : {}),
+  };
+}
 
 const STUDIO_CYAN = "#00B6D7";
 const AMBER = "#F59E0B";
@@ -61,10 +72,12 @@ type PackageOrder = {
 const CHECK_IN_STATUSES = ["checked_in", "late", "absent"] as const;
 type CheckInStatus = typeof CHECK_IN_STATUSES[number];
 
+const ATTENDANCE_PAGE_SIZE = 25;
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AttendancePage() {
-  const { can } = useAdminAuth();
+  const { can, token } = useAdminAuth();
   const canScan = can("qr", "scan");
   const canQrCheckIn = can("qr", "checkIn");
   const canManualCheckIn = can("attendance", "checkIn");
@@ -93,18 +106,48 @@ export default function AttendancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const attendanceParams = {
-    ...(searchEmail ? { studentEmail: searchEmail } : {}),
-    ...(statusFilter !== "all" ? { status: statusFilter } : {}),
-    page: 1,
-    pageSize: 50,
-  } as Parameters<typeof useListAttendance>[0] & {
-    status?: string;
-    page?: number;
-    pageSize?: number;
-  };
+  // ── Recently Check-ins pagination (Phase 4C) ────────────────────────────
+  // The backend GET /attendance already supports page/pageSize and returns
+  // X-Total-Count / X-Total-Pages headers; the UI previously hardcoded
+  // page 1 / pageSize 50. Raw header-aware fetch (same pattern as Package
+  // Orders) because the generated hook cannot expose response headers. The
+  // query key extends getListAttendanceQueryKey(), so the existing check-in
+  // success invalidation keeps refreshing this list unchanged.
+  const [attendancePage, setAttendancePage] = useState(1);
 
-  const { data: allAttendance = [], isLoading: attendanceLoading } = useListAttendance(attendanceParams);
+  // Any filter that affects the list resets pagination to page 1.
+  useEffect(() => {
+    setAttendancePage(1);
+  }, [searchEmail, statusFilter]);
+
+  const attendanceQuery = useQuery({
+    queryKey: [
+      ...getListAttendanceQueryKey(),
+      { searchEmail, statusFilter, page: attendancePage, pageSize: ATTENDANCE_PAGE_SIZE, paginated: true },
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: String(attendancePage),
+        pageSize: String(ATTENDANCE_PAGE_SIZE),
+        ...(searchEmail ? { studentEmail: searchEmail } : {}),
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+      });
+      const res = await fetch(`${API_BASE}/api/attendance?${params}`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load attendance");
+      const records = await res.json() as Attendance[];
+      return {
+        records,
+        total: Number(res.headers.get("X-Total-Count") ?? records.length),
+        totalPages: Number(res.headers.get("X-Total-Pages") ?? 1),
+      };
+    },
+  });
+  const allAttendance = attendanceQuery.data?.records ?? [];
+  const attendanceTotal = attendanceQuery.data?.total ?? 0;
+  const attendanceTotalPages = attendanceQuery.data?.totalPages ?? 0;
+  const attendanceLoading = attendanceQuery.isLoading;
   const { data: packageOrders = [] } = useListPackageOrders(undefined);
   const { data: stats } = useGetAttendanceStats({ period });
 
@@ -428,7 +471,7 @@ export default function AttendancePage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredAttendance.slice(0, 50).map((record) => (
+                    filteredAttendance.map((record) => (
                       <tr
                         key={record.id}
                         className="transition-colors hover:bg-muted/40"
@@ -464,6 +507,19 @@ export default function AttendancePage() {
             </table>
           </div>
         </div>
+
+        {/* Recently Check-ins pagination (Phase 4C) */}
+        {attendanceTotal > 0 && (
+          <TablePagination
+            page={attendancePage}
+            totalPages={attendanceTotalPages}
+            total={attendanceTotal}
+            pageSize={ATTENDANCE_PAGE_SIZE}
+            isLoading={attendanceLoading}
+            itemLabel="check-ins"
+            onPageChange={setAttendancePage}
+          />
+        )}
       </div>
     </div>
   );
