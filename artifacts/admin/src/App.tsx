@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import { Sidebar } from "@/components/layout/sidebar";
+import { TopBar } from "@/components/layout/top-bar";
 import { ADMIN_TOKEN_STORAGE_KEY, AdminAuthProvider, useAdminAuth } from "@/contexts/AdminAuthContext";
 import { AdminThemeProvider } from "@/contexts/AdminThemeContext";
 import { RouteGuard, type PermRequirement, type PermRequirementMode } from "@/lib/permissions";
@@ -58,11 +59,16 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="admin-shell flex h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-200">
       <Sidebar />
-      <main className="relative flex-1 overflow-y-auto bg-[radial-gradient(circle_at_24%_0%,rgba(0,182,215,.08),transparent_44%),radial-gradient(circle_at_82%_10%,rgba(138,92,255,.06),transparent_38%)] bg-no-repeat">
-        <div className="relative mx-auto max-w-[1540px] p-5 sm:p-8 lg:p-10">
-          {children}
-        </div>
-      </main>
+      {/* Right column: shrink-0 TopBar above the scrollable main — the header
+          is part of the flex flow (not fixed), so it can never overlap content. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar />
+        <main className="relative flex-1 overflow-y-auto bg-[radial-gradient(circle_at_24%_0%,rgba(0,182,215,.08),transparent_44%),radial-gradient(circle_at_82%_10%,rgba(138,92,255,.06),transparent_38%)] bg-no-repeat">
+          <div className="relative mx-auto max-w-[1540px] p-5 sm:p-8 lg:p-10">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

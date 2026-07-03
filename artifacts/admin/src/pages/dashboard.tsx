@@ -4,10 +4,8 @@ import {
   useGetAnalytics,
   useGetAttendanceStats,
 } from "@workspace/api-client-react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
-import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Users,
   Ticket,
@@ -17,9 +15,6 @@ import {
   TrendingUp,
   ScanLine,
   ShoppingBag,
-  RefreshCw,
-  Moon,
-  Sun,
   CheckCircle2,
   XCircle,
   CircleDollarSign,
@@ -154,13 +149,8 @@ function formatRefreshTime(date: Date): string {
 }
 
 export default function Dashboard() {
-  const { theme, toggleTheme } = useAdminTheme();
-  const { can } = useAdminAuth();
-  const canRefresh = can("dashboard", "refresh");
-  const canThemeToggle = can("dashboard", "themeToggle");
+  const { theme } = useAdminTheme();
   const [attendancePeriod, setAttendancePeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
 
   const dashboardQuery = useGetDashboard();
   const analyticsQuery = useGetAnalytics();
@@ -171,19 +161,10 @@ export default function Dashboard() {
   const attendanceStats = attendanceQuery.data;
   const isLoading = dashboardQuery.isLoading;
 
-  async function refreshDashboard() {
-    setIsRefreshing(true);
-    try {
-      await Promise.all([
-        dashboardQuery.refetch(),
-        analyticsQuery.refetch(),
-        attendanceQuery.refetch(),
-      ]);
-      setLastRefreshed(new Date());
-    } finally {
-      setIsRefreshing(false);
-    }
-  }
+  // Theme toggle + refresh moved to the global TopBar (Phase 1).
+  // "Last refreshed" now tracks the query cache, so the TopBar refresh
+  // (refetchQueries type:"active") keeps this label accurate too.
+  const lastRefreshed = new Date(dashboardQuery.dataUpdatedAt || Date.now());
 
   const bookingChartData = (analytics?.bookingsByStatus ?? []).map((item) => ({
     name: item.status.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase()),
@@ -246,20 +227,6 @@ export default function Dashboard() {
           <p key={lastRefreshed.getTime()} className="refresh-time mt-1.5 text-xs text-muted-foreground">
             Last refreshed {formatRefreshTime(lastRefreshed)} Cairo
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canThemeToggle && (
-            <Button variant="outline" size="sm" onClick={toggleTheme} className="premium-action gap-2" title={`Switch to ${theme === "dark" ? "Night" : "Dark"} mode`}>
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              {theme === "dark" ? "Night" : "Dark"}
-            </Button>
-          )}
-          {canRefresh && (
-            <Button variant="outline" size="sm" onClick={refreshDashboard} disabled={isRefreshing} className="premium-action gap-2">
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : "transition-transform duration-300 group-hover:rotate-45"}`} />
-              {isRefreshing ? "Refreshing..." : "Refresh"}
-            </Button>
-          )}
         </div>
       </header>
 
