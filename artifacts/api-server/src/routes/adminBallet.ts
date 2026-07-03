@@ -13,7 +13,7 @@
  */
 
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, ilike, not, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, not, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -108,19 +108,23 @@ function getStatusNotification(
 // ─── GET /api/admin/ballet/applications ───────────────────────────────────────
 //
 // Query params:
-//   page   (default 1)
-//   limit  (default 20, max 100)
-//   status (one of the valid statuses, or omit for all)
-//   search (searches parent_name, parent_phone, parent_email, child_name)
+//   page    (default 1)
+//   limit   (default 20, max 100)
+//   status  (one of the valid statuses, or omit for all)
+//   search  (searches parent_name, parent_phone, parent_email, child_name,
+//            and assigned ballet level name)
+//   levelId (Phase 4A: filter by assigned ballet level)
 //
 // Returns: { data: BalletApplication[], total, page, limit, totalPages }
+// Each row also carries `levelName` (assigned level name, or null).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ListQuerySchema = z.object({
-  page:   z.coerce.number().int().min(1).default(1),
-  limit:  z.coerce.number().int().min(1).max(100).default(20),
-  status: z.string().optional(),
-  search: z.string().optional(),
+  page:    z.coerce.number().int().min(1).default(1),
+  limit:   z.coerce.number().int().min(1).max(100).default(20),
+  status:  z.string().optional(),
+  search:  z.string().optional(),
+  levelId: z.coerce.number().int().positive().optional(),
 });
 
 router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
@@ -130,7 +134,7 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
     return;
   }
 
-  const { page, limit, status, search } = parsed.data;
+  const { page, limit, status, search, levelId } = parsed.data;
   const offset = (page - 1) * limit;
 
   // Build WHERE conditions
@@ -144,16 +148,33 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
     conditions.push(eq(balletApplicationsTable.status, status));
   }
 
+  if (levelId != null) {
+    conditions.push(eq(balletApplicationsTable.assignedLevelId, levelId));
+  }
+
   if (search && search.trim().length > 0) {
     const pattern = `%${search.trim()}%`;
-    conditions.push(
-      or(
-        ilike(balletApplicationsTable.parentName, pattern),
-        ilike(balletApplicationsTable.parentPhone, pattern),
-        ilike(balletApplicationsTable.parentEmail, pattern),
-        ilike(balletApplicationsTable.childName, pattern),
-      ),
-    );
+    // Level-name search: resolve matching level ids first so the main query
+    // shape (no join) stays identical — levels are a tiny table.
+    const matchingLevels = await db
+      .select({ id: balletLevelsTable.id })
+      .from(balletLevelsTable)
+      .where(ilike(balletLevelsTable.name, pattern));
+    const searchClauses = [
+      ilike(balletApplicationsTable.parentName, pattern),
+      ilike(balletApplicationsTable.parentPhone, pattern),
+      ilike(balletApplicationsTable.parentEmail, pattern),
+      ilike(balletApplicationsTable.childName, pattern),
+    ];
+    if (matchingLevels.length > 0) {
+      searchClauses.push(
+        inArray(
+          balletApplicationsTable.assignedLevelId,
+          matchingLevels.map((level) => level.id),
+        ),
+      );
+    }
+    conditions.push(or(...searchClauses));
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -185,8 +206,23 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
       .where(where),
   ]);
 
+  // Enrich rows with the assigned level name (one small lookup, no join —
+  // keeps the paginated query untouched).
+  const levelIds = [...new Set(rows.map((r) => r.assignedLevelId).filter((id): id is number => id != null))];
+  const levelNameById = new Map<number, string>();
+  if (levelIds.length > 0) {
+    const levels = await db
+      .select({ id: balletLevelsTable.id, name: balletLevelsTable.name })
+      .from(balletLevelsTable)
+      .where(inArray(balletLevelsTable.id, levelIds));
+    for (const level of levels) levelNameById.set(level.id, level.name);
+  }
+
   res.json({
-    data: rows,
+    data: rows.map((row) => ({
+      ...row,
+      levelName: row.assignedLevelId != null ? levelNameById.get(row.assignedLevelId) ?? null : null,
+    })),
     total: Number(total),
     page,
     limit,

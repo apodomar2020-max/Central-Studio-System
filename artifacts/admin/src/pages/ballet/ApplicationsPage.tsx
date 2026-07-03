@@ -3,7 +3,8 @@
  *
  * Displays all submitted ballet assessment applications with:
  *  - Status filter tabs (All / submitted / pendingAssessment / accepted / rejected / needsFollowUp)
- *  - Search (parent name, phone, email, child name)
+ *  - Search (parent name, phone, email, child name, assigned level name)
+ *  - Level filter dropdown (Phase 4A — visible with ballet.levels view perm)
  *  - Server-side pagination
  *  - Click a row to open the detail page
  */
@@ -19,6 +20,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -40,6 +44,13 @@ interface ApplicationRow {
   slotLabel: string | null;
   status: string;
   createdAt: string;
+  levelName?: string | null;
+}
+
+interface BalletLevel {
+  id: number;
+  name: string;
+  isActive: boolean;
 }
 
 interface ListResponse {
@@ -100,22 +111,28 @@ function makeHeaders(token: string | null): HeadersInit {
 const LIMIT = 20;
 
 export default function ApplicationsPage() {
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
   const [, navigate] = useLocation();
 
   const [activeStatus, setActiveStatus] = useState("");
   const [search, setSearch]             = useState("");
   const [searchInput, setSearchInput]   = useState("");
+  const [levelId, setLevelId]           = useState("");
   const [page, setPage]                 = useState(1);
 
+  // The levels list endpoint requires ballet.levels view — hide the filter
+  // (not the page) for admins without it.
+  const canFilterByLevel = can("ballet.levels", "view");
+
   const { data, isLoading, isError } = useQuery<ListResponse>({
-    queryKey: ["ballet-applications", page, activeStatus, search],
+    queryKey: ["ballet-applications", page, activeStatus, search, levelId],
     queryFn: async () => {
       const params = new URLSearchParams({
         page:  String(page),
         limit: String(LIMIT),
         ...(activeStatus ? { status: activeStatus } : {}),
         ...(search ? { search } : {}),
+        ...(levelId ? { levelId } : {}),
       });
       const res = await fetch(`${API_BASE}/api/admin/ballet/applications?${params}`, {
         headers: makeHeaders(token),
@@ -125,6 +142,19 @@ export default function ApplicationsPage() {
     },
   });
 
+  const { data: levelsData } = useQuery<{ levels: BalletLevel[] }>({
+    queryKey: ["ballet-levels"],
+    enabled: canFilterByLevel,
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/levels`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load levels");
+      return res.json();
+    },
+  });
+  const levels = levelsData?.levels ?? [];
+
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setSearch(searchInput.trim());
@@ -133,6 +163,11 @@ export default function ApplicationsPage() {
 
   function handleTabChange(value: string) {
     setActiveStatus(value);
+    setPage(1);
+  }
+
+  function handleLevelChange(value: string) {
+    setLevelId(value === "all" ? "" : value);
     setPage(1);
   }
 
@@ -164,13 +199,28 @@ export default function ApplicationsPage() {
           ))}
         </div>
 
-        {/* Search */}
+        {/* Level filter + search */}
         <form onSubmit={handleSearch} className="flex gap-2">
+          {canFilterByLevel && levels.length > 0 && (
+            <Select value={levelId || "all"} onValueChange={handleLevelChange}>
+              <SelectTrigger className="h-8 w-36 text-sm" data-testid="select-level-filter">
+                <SelectValue placeholder="All levels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All levels</SelectItem>
+                {levels.map((level) => (
+                  <SelectItem key={level.id} value={String(level.id)}>
+                    {level.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               className="pl-8 w-56 h-8 text-sm"
-              placeholder="Name, phone, email…"
+              placeholder="Name, phone, email, level…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
@@ -200,6 +250,7 @@ export default function ApplicationsPage() {
               <TableHead>Parent</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Selected Slot</TableHead>
+              <TableHead>Level</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Submitted</TableHead>
             </TableRow>
@@ -207,20 +258,22 @@ export default function ApplicationsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center">
+                <TableCell colSpan={8} className="py-10 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-destructive text-sm">
+                <TableCell colSpan={8} className="py-10 text-center text-destructive text-sm">
                   Failed to load applications.
                 </TableCell>
               </TableRow>
             ) : data?.data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground text-sm">
-                  No applications found.
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground text-sm">
+                  {search || levelId || activeStatus
+                    ? "No applications match the current search/filters."
+                    : "No applications found."}
                 </TableCell>
               </TableRow>
             ) : (
@@ -236,6 +289,9 @@ export default function ApplicationsPage() {
                   <TableCell className="text-muted-foreground text-sm">{app.parentPhone}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {app.slotLabel ?? <span className="italic">—</span>}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {app.levelName ?? <span className="italic">—</span>}
                   </TableCell>
                   <TableCell><StatusBadge status={app.status} /></TableCell>
                   <TableCell className="text-sm text-muted-foreground">
