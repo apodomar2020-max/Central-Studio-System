@@ -1,11 +1,21 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
 
 const DEVICE_ID_KEY = "notificationDeviceId";
+
+type ExpoNotificationsModule = typeof import("expo-notifications");
+
+export function isExpoGo(): boolean {
+  return Constants.appOwnership === "expo";
+}
+
+async function loadNotifications(): Promise<ExpoNotificationsModule | null> {
+  if (isExpoGo()) return null;
+  return import("expo-notifications");
+}
 
 function getProjectId(): string | undefined {
   const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
@@ -28,6 +38,10 @@ function permissionGranted(value: unknown): boolean {
 
 export async function registerPushNotificationsForCurrentUser(): Promise<void> {
   if (Platform.OS === "web") return;
+  if (isExpoGo()) return;
+
+  const Notifications = await loadNotifications();
+  if (!Notifications) return;
 
   const current = await Notifications.getPermissionsAsync();
   const finalPermission = permissionGranted(current)

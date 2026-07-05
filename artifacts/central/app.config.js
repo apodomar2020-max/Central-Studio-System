@@ -23,6 +23,7 @@ module.exports = ({ config }) => {
     ...base,
     plugins: [
       ...(base.plugins ?? []),
+      "expo-video",
       [
         "react-native-fbsdk-next",
         {
