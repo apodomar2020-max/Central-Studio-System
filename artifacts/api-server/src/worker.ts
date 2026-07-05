@@ -3,7 +3,10 @@ import { logger } from "./lib/logger";
 import { runMigrations } from "./lib/migrate";
 import { captureError, initErrorMonitoring } from "./lib/errorMonitoring";
 import {
+  defaultJobOptions,
+  getQueue,
   getQueueConnection,
+  NOTIFICATION_AUTOMATION_SCHEDULES,
   QUEUE_NAMES,
   type NotificationAutomationJob,
   workerEnabled,
@@ -80,6 +83,52 @@ for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorke
     captureError(err, { component: "queue-worker", queue: worker.name, jobId: job?.id });
   });
 }
+
+// ── Production scheduling (Option B) ─────────────────────────────────────────
+// Register BullMQ Job Schedulers for notification automation at startup. This
+// only runs here because reaching this point already guarantees the required
+// preconditions: workerEnabled() (QUEUE_WORKER_ENABLED=true + REDIS_URL) passed
+// above, and `connection` is non-null. upsertJobScheduler is keyed by a stable
+// schedulerId, so restarting the worker — or running multiple worker replicas —
+// upserts the same scheduler instead of creating duplicates. Duplicate
+// notifications are additionally guarded by the existing per-run dedupe inside
+// each automation runner.
+async function registerNotificationAutomationSchedulers(): Promise<void> {
+  const queue = getQueue(QUEUE_NAMES.notificationAutomation);
+  if (!queue) {
+    logger.warn("Notification automation queue unavailable; skipping scheduler registration");
+    return;
+  }
+  for (const schedule of NOTIFICATION_AUTOMATION_SCHEDULES) {
+    try {
+      await queue.upsertJobScheduler(
+        schedule.schedulerId,
+        { pattern: schedule.pattern },
+        {
+          name: schedule.type,
+          data: { type: schedule.type, source: "scheduler" } satisfies NotificationAutomationJob,
+          opts: defaultJobOptions(),
+        },
+      );
+      logger.info(
+        { schedulerId: schedule.schedulerId, type: schedule.type, pattern: schedule.pattern },
+        "Registered notification automation scheduler",
+      );
+    } catch (err) {
+      captureError(err, {
+        component: "queue-worker",
+        phase: "scheduler-registration",
+        schedulerId: schedule.schedulerId,
+      });
+      logger.error(
+        { err, schedulerId: schedule.schedulerId, type: schedule.type, pattern: schedule.pattern },
+        "Failed to register notification automation scheduler",
+      );
+    }
+  }
+}
+
+await registerNotificationAutomationSchedulers();
 
 logger.info("Queue worker started");
 

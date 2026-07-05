@@ -26,7 +26,50 @@ export type ReportJob = {
 export type NotificationAutomationJob = {
   type: "class_reminders" | "post_class_reminders" | "package_reminders";
   triggeredBy?: "admin" | "system";
+  /**
+   * Where the job originated. Optional so existing enqueue paths (which set
+   * `triggeredBy`) stay backward-compatible; the startup schedulers set
+   * `source: "scheduler"` so logs/audit can distinguish automated runs from
+   * manual admin runs. The worker only switches on `type`, so this is purely
+   * informational.
+   */
+  source?: "admin" | "scheduler" | "system";
 };
+
+/**
+ * Production scheduling for notification automation (Option B — BullMQ Job
+ * Schedulers registered by the worker at startup). Each entry has a STABLE
+ * schedulerId: BullMQ keys a repeatable job by this id, so re-registering on
+ * every worker restart (or from multiple worker replicas) upserts the same
+ * scheduler instead of creating duplicates. Cron patterns are evaluated in UTC;
+ * the cadence is timezone-agnostic (hourly / 6-hourly) and the actual
+ * time-window logic lives inside each automation runner, not here.
+ */
+export type NotificationAutomationSchedule = {
+  schedulerId: string;
+  type: NotificationAutomationJob["type"];
+  pattern: string;
+};
+
+export const NOTIFICATION_AUTOMATION_SCHEDULES: readonly NotificationAutomationSchedule[] = [
+  { schedulerId: "notification-automation:class-reminders", type: "class_reminders", pattern: "0 * * * *" },
+  { schedulerId: "notification-automation:post-class-reminders", type: "post_class_reminders", pattern: "20 * * * *" },
+  { schedulerId: "notification-automation:package-reminders", type: "package_reminders", pattern: "0 */6 * * *" },
+] as const;
+
+/**
+ * Default retry/cleanup options for enqueued jobs. Shared so both the ad-hoc
+ * `enqueueJob` path and the startup schedulers register jobs with identical
+ * resilience settings.
+ */
+export function defaultJobOptions(): JobsOptions {
+  return {
+    attempts: Number.parseInt(process.env["QUEUE_JOB_ATTEMPTS"] ?? "3", 10),
+    backoff: { type: "exponential", delay: Number.parseInt(process.env["QUEUE_JOB_BACKOFF_MS"] ?? "5000", 10) },
+    removeOnComplete: 100,
+    removeOnFail: 500,
+  };
+}
 
 let sharedConnection: IORedis | null = null;
 const queues = new Map<QueueName, Queue>();
@@ -83,10 +126,7 @@ export async function enqueueJob<T extends Record<string, unknown>>(
   const queue = getQueue(queueName);
   if (!queue) return null;
   return queue.add(jobName, data, {
-    attempts: Number.parseInt(process.env["QUEUE_JOB_ATTEMPTS"] ?? "3", 10),
-    backoff: { type: "exponential", delay: Number.parseInt(process.env["QUEUE_JOB_BACKOFF_MS"] ?? "5000", 10) },
-    removeOnComplete: 100,
-    removeOnFail: 500,
+    ...defaultJobOptions(),
     ...options,
   });
 }
