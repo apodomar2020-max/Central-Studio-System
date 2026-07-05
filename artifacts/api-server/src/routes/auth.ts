@@ -24,6 +24,7 @@ import {
   issueOtp,
   OtpRateLimitError,
   PasswordSchema,
+  sendSecurityNotificationEmail,
   signStudentToken,
   verifyOtpCode,
 } from "../lib/authHelpers";
@@ -73,6 +74,14 @@ function passwordResetFailure(res: import("express").Response, message = "Invali
 
 function logPasswordSecurityEvent(studentId: number, event: "password_reset" | "password_changed"): void {
   logger.info({ studentId, event }, "Student password security event");
+}
+
+async function notifyPasswordSecurityEvent(email: string, event: "password_reset" | "password_changed"): Promise<void> {
+  try {
+    await sendSecurityNotificationEmail(email, event);
+  } catch (err) {
+    logger.warn({ err, event }, "Password security notification email failed");
+  }
 }
 
 const AccountType = z.enum(["student", "parent"]);
@@ -422,6 +431,7 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 
   await invalidateOtpCodes(normalizedEmail, "reset");
   logPasswordSecurityEvent(student.id, "password_reset");
+  void notifyPasswordSecurityEvent(student.email, "password_reset");
 
   res.json({ ok: true });
 });
@@ -470,6 +480,7 @@ router.post("/auth/change-password", requireStudentAuth, async (req, res): Promi
     .where(eq(studentsTable.id, student.id));
 
   logPasswordSecurityEvent(student.id, "password_changed");
+  void notifyPasswordSecurityEvent(student.email, "password_changed");
 
   res.json({ ok: true });
 });

@@ -61,31 +61,130 @@ export function generateOtp(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
-/**
- * Deliver an OTP. In development the code is logged to console.
- * In production this MUST be wired to a real email provider — if no provider
- * is configured the function throws so the caller returns a 500 instead of
- * silently succeeding (which would leave the user stuck, unable to verify).
- *
- * To wire an email provider, set RESEND_API_KEY (or similar) and implement
- * the send call below. See https://resend.com/docs for a minimal example.
- */
-export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose): Promise<void> {
-  if (process.env["NODE_ENV"] !== "production") {
-    logger.info({ to, purpose }, "DEV MODE — OTP generated (not sent via email)");
-    return;
+export class EmailProviderConfigurationError extends Error {
+  constructor(message = "Email provider is not configured.") {
+    super(message);
+    this.name = "EmailProviderConfigurationError";
   }
-  // TODO: integrate a real email provider. Example (Resend):
-  //   const { Resend } = await import("resend");
-  //   const resend = new Resend(process.env["RESEND_API_KEY"]);
-  //   await resend.emails.send({ from: "noreply@centralstudio.app", to, subject: "Your code", text: `Your code is ${code}` });
-  //
-  // Until an email provider is configured, throw so callers surface the error
-  // rather than returning a fake success to the user.
-  throw new Error(
-    "Email provider not configured. Set RESEND_API_KEY (or equivalent) and " +
-    "wire it in sendOtpEmail() in src/lib/authHelpers.ts before deploying."
-  );
+}
+
+export class EmailDeliveryError extends Error {
+  constructor(message = "Email delivery failed.") {
+    super(message);
+    this.name = "EmailDeliveryError";
+  }
+}
+
+type EmailPayload = {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+};
+
+function getEmailConfig(): { apiKey: string; from: string; replyTo?: string } | null {
+  const apiKey = process.env["RESEND_API_KEY"]?.trim();
+  const from = process.env["EMAIL_FROM"]?.trim() || process.env["MAIL_FROM"]?.trim();
+  const replyTo = process.env["EMAIL_REPLY_TO"]?.trim();
+  if (!apiKey || !from) return null;
+  return { apiKey, from, replyTo: replyTo || undefined };
+}
+
+export function isEmailProviderConfigured(): boolean {
+  return getEmailConfig() !== null;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function otpEmailContent(code: string, purpose: OtpPurpose): Omit<EmailPayload, "to"> {
+  const escapedCode = escapeHtml(code);
+  const isReset = purpose === "reset";
+  const title = isReset ? "Reset your Central Studio password" : "Verify your Central Studio email";
+  const intro = isReset
+    ? "Use this code to reset your Central Studio password."
+    : "Use this code to verify your Central Studio account.";
+  const safety = isReset
+    ? "If you did not request a password reset, you can ignore this email."
+    : "If you did not create a Central Studio account, you can ignore this email.";
+
+  return {
+    subject: title,
+    text: `${intro}\n\nCode: ${code}\n\nThis code expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes.\n\n${safety}`,
+    html: [
+      `<p>${escapeHtml(intro)}</p>`,
+      `<p style="font-size:24px;font-weight:700;letter-spacing:4px">${escapedCode}</p>`,
+      `<p>This code expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes.</p>`,
+      `<p>${escapeHtml(safety)}</p>`,
+    ].join("\n"),
+  };
+}
+
+function securityEmailContent(event: "password_reset" | "password_changed"): Omit<EmailPayload, "to"> {
+  const isReset = event === "password_reset";
+  const title = isReset ? "Your Central Studio password was reset" : "Your Central Studio password was changed";
+  const message = isReset
+    ? "Your Central Studio password was reset successfully."
+    : "Your Central Studio password was changed successfully.";
+  const safety = "If this was not you, contact Central Studio support immediately.";
+
+  return {
+    subject: title,
+    text: `${message}\n\n${safety}`,
+    html: `<p>${escapeHtml(message)}</p>\n<p>${escapeHtml(safety)}</p>`,
+  };
+}
+
+async function sendEmail(payload: EmailPayload): Promise<void> {
+  const config = getEmailConfig();
+  if (!config) {
+    if (process.env["NODE_ENV"] !== "production") {
+      logger.info({ to: payload.to, subject: payload.subject }, "DEV MODE — email not sent; provider not configured");
+      return;
+    }
+    throw new EmailProviderConfigurationError("Email provider not configured. Set RESEND_API_KEY and EMAIL_FROM.");
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: config.from,
+      to: [payload.to],
+      subject: payload.subject,
+      text: payload.text,
+      html: payload.html,
+      ...(config.replyTo ? { reply_to: config.replyTo } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    logger.error({ status: response.status, body }, "Resend email delivery failed");
+    throw new EmailDeliveryError("Email provider rejected the message.");
+  }
+}
+
+export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose): Promise<void> {
+  await sendEmail({ to, ...otpEmailContent(code, purpose) });
+  logger.info({ to, purpose }, "OTP email sent");
+}
+
+export async function sendSecurityNotificationEmail(
+  to: string,
+  event: "password_reset" | "password_changed",
+): Promise<void> {
+  await sendEmail({ to, ...securityEmailContent(event) });
+  logger.info({ to, event }, "Password security notification email sent");
 }
 
 export class OtpRateLimitError extends Error {

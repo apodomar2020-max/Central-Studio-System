@@ -24,6 +24,9 @@ import {
   issueOtp,
   verifyOtpCode,
   signStudentToken,
+  EmailDeliveryError,
+  EmailProviderConfigurationError,
+  isEmailProviderConfigured,
   OtpRateLimitError,
 } from "../lib/authHelpers";
 
@@ -69,6 +72,28 @@ function respondVerifyFailure(res: import("express").Response, result: Exclude<A
   }
 }
 
+function respondEmailDeliveryFailure(
+  res: import("express").Response,
+  err: unknown,
+  context: Record<string, unknown>,
+): boolean {
+  if (err instanceof EmailProviderConfigurationError || err instanceof EmailDeliveryError) {
+    logger.error({ err, ...context }, "OTP email delivery failed");
+    res.status(503).json({ error: "Email delivery is temporarily unavailable. Please try again later." });
+    return true;
+  }
+  return false;
+}
+
+function respondMissingEmailProvider(res: import("express").Response): boolean {
+  if (process.env["NODE_ENV"] === "production" && !isEmailProviderConfigured()) {
+    logger.error("OTP email provider missing in production");
+    res.status(503).json({ error: "Email delivery is temporarily unavailable. Please try again later." });
+    return true;
+  }
+  return false;
+}
+
 // ─── POST /api/auth/send-otp  &  /api/auth/resend-otp ────────────────────────
 const SendOtpBody = z.object({ email: z.string().email("Invalid email address") });
 
@@ -79,6 +104,7 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
     return;
   }
   const email = parsed.data.email.toLowerCase().trim();
+  if (respondMissingEmailProvider(res)) return;
 
   const [student] = await db
     .select({ id: studentsTable.id, emailVerified: studentsTable.emailVerified })
@@ -102,6 +128,7 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
       res.status(429).json({ error: "Please wait before requesting another code.", retryAfter: err.retryAfterSeconds });
       return;
     }
+    if (respondEmailDeliveryFailure(res, err, { email })) return;
     throw err;
   }
 }
@@ -151,6 +178,7 @@ router.post("/auth/send-email-otp", async (req, res): Promise<void> => {
     return;
   }
   const { studentId } = parsed.data;
+  if (respondMissingEmailProvider(res)) return;
 
   const [student] = await db
     .select({ id: studentsTable.id, email: studentsTable.email, emailVerified: studentsTable.emailVerified })
@@ -174,6 +202,7 @@ router.post("/auth/send-email-otp", async (req, res): Promise<void> => {
       res.status(429).json({ error: "Please wait before requesting another code.", retryAfter: err.retryAfterSeconds });
       return;
     }
+    if (respondEmailDeliveryFailure(res, err, { studentId: student.id })) return;
     throw err;
   }
 });
