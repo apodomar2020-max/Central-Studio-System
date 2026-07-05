@@ -247,27 +247,26 @@ router.post(
     return;
   }
 
-  const promotionResult = await validatePackagePromotion({
-    student: { id: student.id, emailVerified: student.emailVerified },
-    package: {
-      id: packageDefinition.id,
-      name: packageDefinition.name,
-      priceEgp: packageDefinition.priceEgp,
-      isActive: packageDefinition.isActive,
-    },
-    basket: { items: [{ type: "package", id: packageDefinition.id, amount: packageDefinition.priceEgp }] },
-    subtotal: packageDefinition.priceEgp,
-    verified: student.emailVerified,
-  }, parsed.data.promoCode);
-  if (parsed.data.promoCode && !promotionResult.eligible) {
-    res.status(409).json({
-      error: promotionResult.reason ?? "Promo code is not eligible.",
-      code: "promotion_not_eligible",
-    });
-    return;
-  }
+  const result = await db.transaction(async (tx) => {
+    const promotionResult = await validatePackagePromotion({
+      student: { id: student.id, emailVerified: student.emailVerified },
+      package: {
+        id: packageDefinition.id,
+        name: packageDefinition.name,
+        priceEgp: packageDefinition.priceEgp,
+        isActive: packageDefinition.isActive,
+      },
+      basket: { items: [{ type: "package", id: packageDefinition.id, amount: packageDefinition.priceEgp }] },
+      subtotal: packageDefinition.priceEgp,
+      verified: student.emailVerified,
+    }, parsed.data.promoCode, tx, { lockRedemptionScope: true });
+    if (parsed.data.promoCode && !promotionResult.eligible) {
+      return {
+        kind: "promotion_not_eligible" as const,
+        reason: promotionResult.reason ?? "Promo code is not eligible.",
+      };
+    }
 
-  const row = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(packageOrdersTable)
       .values({
@@ -311,7 +310,14 @@ router.post(
       });
     return inserted;
   });
-  res.status(201).json(GetPackageOrderResponse.parse(row));
+  if ("kind" in result && result.kind === "promotion_not_eligible") {
+    res.status(409).json({
+      error: result.reason,
+      code: "promotion_not_eligible",
+    });
+    return;
+  }
+  res.status(201).json(GetPackageOrderResponse.parse(result));
   },
 );
 

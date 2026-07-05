@@ -54,6 +54,10 @@ type InternalValidationResult = PromotionValidationResult & {
   candidates: Candidate[];
 };
 
+type ValidationOptions = {
+  lockRedemptionScope?: boolean;
+};
+
 function normalizePromoCode(code?: string | null): string | null {
   const trimmed = code?.trim();
   return trimmed ? trimmed.toUpperCase() : null;
@@ -180,6 +184,24 @@ async function evaluateCandidate(
   };
 }
 
+async function lockPromotionRedemptionScope(
+  client: DbClient,
+  context: CheckoutContext,
+  promotions: Promotion[],
+  code?: PromotionCode | null,
+): Promise<void> {
+  const promotionIds = [...new Set(promotions.map((promotion) => promotion.id))].sort((a, b) => a - b);
+  const codeIds = code ? [code.id] : [];
+
+  for (const promotionId of promotionIds) {
+    await client.execute(sql`select pg_advisory_xact_lock(918201, ${promotionId})`);
+  }
+  for (const codeId of codeIds) {
+    await client.execute(sql`select pg_advisory_xact_lock(918202, ${codeId})`);
+  }
+  await client.execute(sql`select pg_advisory_xact_lock(918203, ${context.student.id})`);
+}
+
 function combineCandidates(context: CheckoutContext, candidates: Candidate[]): InternalValidationResult {
   if (candidates.length === 0) {
     return {
@@ -242,6 +264,7 @@ export async function validateCheckoutPromotion(
   context: CheckoutContext,
   promoCode?: string | null,
   client: DbClient = db,
+  options: ValidationOptions = {},
 ): Promise<InternalValidationResult> {
   const normalizedCode = normalizePromoCode(promoCode);
   const automaticRows = await client
@@ -272,6 +295,15 @@ export async function validateCheckoutPromotion(
       };
     }
     manualPair = row;
+  }
+
+  if (options.lockRedemptionScope) {
+    await lockPromotionRedemptionScope(
+      client,
+      context,
+      manualPair ? [...automaticRows, manualPair.promotion] : automaticRows,
+      manualPair?.code ?? null,
+    );
   }
 
   const candidates: Candidate[] = [];
@@ -316,6 +348,16 @@ export async function createPromotionRedemptions(
     const proportional = evaluation.discountAmount === candidate.discountAmount
       ? candidate.discountAmount
       : roundMoney(Math.min(candidate.discountAmount, evaluation.discountAmount));
+    if (input.packageOrderId != null) {
+      const [existing] = await client
+        .select({ total: count() })
+        .from(promotionRedemptionsTable)
+        .where(and(
+          eq(promotionRedemptionsTable.promotionId, candidate.promotion.id),
+          eq(promotionRedemptionsTable.packageOrderId, input.packageOrderId),
+        ));
+      if ((existing?.total ?? 0) > 0) continue;
+    }
     await client.insert(promotionRedemptionsTable).values({
       promotionId: candidate.promotion.id,
       promotionCodeId: candidate.code?.id ?? null,
