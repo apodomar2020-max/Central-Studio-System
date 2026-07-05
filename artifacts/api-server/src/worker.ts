@@ -5,12 +5,18 @@ import { captureError, initErrorMonitoring } from "./lib/errorMonitoring";
 import {
   getQueueConnection,
   QUEUE_NAMES,
+  type NotificationAutomationJob,
   workerEnabled,
   type ReportJob,
   type WhatsAppCampaignSendJob,
 } from "./lib/queue";
 import { processWhatsAppCampaignBatch } from "./lib/marketingCampaignSender";
 import { processReportJob } from "./lib/reportJobs";
+import {
+  runClassReminderAutomation,
+  runPackageReminderAutomation,
+  runPostClassReminderAutomation,
+} from "./lib/notificationReminders";
 
 await initErrorMonitoring();
 
@@ -51,7 +57,25 @@ const reportsWorker = new Worker<ReportJob>(
   { connection, concurrency: Number.parseInt(process.env["REPORT_QUEUE_CONCURRENCY"] ?? "1", 10) },
 );
 
-for (const worker of [whatsappWorker, reportsWorker]) {
+const notificationAutomationWorker = new Worker<NotificationAutomationJob>(
+  QUEUE_NAMES.notificationAutomation,
+  async (job) => {
+    logger.info({ jobId: job.id, type: job.data.type }, "Processing notification automation job");
+    switch (job.data.type) {
+      case "class_reminders":
+        return runClassReminderAutomation();
+      case "post_class_reminders":
+        return runPostClassReminderAutomation();
+      case "package_reminders":
+        return runPackageReminderAutomation();
+      default:
+        throw new Error(`Unsupported notification automation job type: ${(job.data as { type?: string }).type}`);
+    }
+  },
+  { connection, concurrency: Number.parseInt(process.env["NOTIFICATION_AUTOMATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
+);
+
+for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker]) {
   worker.on("failed", (job, err) => {
     captureError(err, { component: "queue-worker", queue: worker.name, jobId: job?.id });
   });
@@ -62,7 +86,7 @@ logger.info("Queue worker started");
 async function shutdown() {
   logger.info("Queue worker shutting down");
   const connectionQuit = connection ? connection.quit() : Promise.resolve();
-  await Promise.all([whatsappWorker.close(), reportsWorker.close(), connectionQuit]);
+  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), connectionQuit]);
   process.exit(0);
 }
 

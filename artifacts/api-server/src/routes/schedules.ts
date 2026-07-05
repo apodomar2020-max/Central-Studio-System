@@ -223,9 +223,6 @@ async function notifyScheduleBookings(
     .select({
       bookingId: bookingsTable.id,
       studentEmail: bookingsTable.studentEmail,
-      participantName: bookingsTable.studentName,
-      participantChildId: bookingsTable.participantChildId,
-      bookingScope: bookingsTable.bookingScope,
       className: classesTable.title,
       instructorName: instructorsTable.name,
       branch: schedulesTable.location,
@@ -236,7 +233,7 @@ async function notifyScheduleBookings(
     .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
     .where(and(
       eq(bookingsTable.scheduleId, scheduleId),
-      inArray(bookingsTable.bookingStatus, ["pending", "confirmed"]),
+      eq(bookingsTable.bookingStatus, "confirmed"),
     ));
 
   for (const booking of rows) {
@@ -254,9 +251,6 @@ async function notifyScheduleBookings(
         branch: booking.branch,
         scheduleId,
         scheduleLabel: body,
-        participantName: booking.participantName,
-        participantChildId: booking.participantChildId,
-        bookingScope: booking.bookingScope ?? (booking.participantChildId != null ? "child" : "self"),
       },
     });
   }
@@ -442,7 +436,14 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
     const [updated] = await tx.update(schedulesTable).set(normalized).where(eq(schedulesTable.id, params.data.id)).returning();
     if (!updated) return null;
 
-    if (didScheduleChange(existing, updated)) {
+    if (existing.status !== "cancelled" && updated.status === "cancelled") {
+      await notifyScheduleBookings(
+        tx,
+        updated.id,
+        "Class cancelled",
+        "A booked class schedule was cancelled.",
+      );
+    } else if (didScheduleChange(existing, updated)) {
       await notifyScheduleBookings(
         tx,
         updated.id,

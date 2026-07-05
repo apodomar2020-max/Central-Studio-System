@@ -14,6 +14,7 @@ type StudentNotificationInput = {
   relatedEntityId?: number | null;
   metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
+  dispatchPush?: boolean;
 };
 
 type BroadcastNotificationInput = {
@@ -24,6 +25,7 @@ type BroadcastNotificationInput = {
   relatedEntityId?: number | null;
   metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
+  dispatchPush?: boolean;
 };
 
 function normalizeEmail(email: string): string {
@@ -52,7 +54,7 @@ async function insertNotification(
   target: string,
   title: string,
   body: string,
-  input: Pick<StudentNotificationInput, "type" | "relatedEntityType" | "relatedEntityId" | "metadata"> = {},
+  input: Pick<StudentNotificationInput, "type" | "relatedEntityType" | "relatedEntityId" | "metadata" | "dispatchPush"> = {},
   dedupe = true,
 ) {
   if (dedupe) {
@@ -85,27 +87,29 @@ async function insertNotification(
     })
     .returning();
 
-  const studentTargetMatch = /^student:(\d+)$/.exec(target);
-  if (studentTargetMatch) {
-    const studentId = Number(studentTargetMatch[1]);
-    setTimeout(() => {
-      void sendPushNotification({
-        studentId,
-        title,
-        body,
-        data: { type: input.type ?? "notification" },
-        notificationId: row.id,
-      });
-    }, 0);
-  } else if (target === "all") {
-    setTimeout(() => {
-      void sendBroadcastPushNotification({
-        title,
-        body,
-        data: { type: input.type ?? "notification" },
-        notificationId: row.id,
-      });
-    }, 0);
+  if (input.dispatchPush !== false) {
+    const studentTargetMatch = /^student:(\d+)$/.exec(target);
+    if (studentTargetMatch) {
+      const studentId = Number(studentTargetMatch[1]);
+      setTimeout(() => {
+        void sendPushNotification({
+          studentId,
+          title,
+          body,
+          data: { type: input.type ?? "notification" },
+          notificationId: row.id,
+        });
+      }, 0);
+    } else if (target === "all") {
+      setTimeout(() => {
+        void sendBroadcastPushNotification({
+          title,
+          body,
+          data: { type: input.type ?? "notification" },
+          notificationId: row.id,
+        });
+      }, 0);
+    }
   }
 
   return row;

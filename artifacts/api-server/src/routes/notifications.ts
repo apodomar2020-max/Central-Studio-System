@@ -12,8 +12,17 @@ import {
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { getPushStatus, sendBroadcastPushNotification, sendPushNotification } from "../lib/pushNotifications";
-import { runClassReminder24h } from "../lib/notificationReminders";
+import {
+  runClassReminderAutomation,
+  runClassReminder24h,
+  runNotificationAutomation,
+  runPackageReminderAutomation,
+  runPostClassReminderAutomation,
+  type AutomationRunSummary,
+  type AutomationSummary,
+} from "../lib/notificationReminders";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { enqueueJob, QUEUE_NAMES, type NotificationAutomationJob } from "../lib/queue";
 import {
   CreateNotificationBody,
   GetNotificationParams,
@@ -45,6 +54,43 @@ const DeviceUnregisterBody = z.object({
 }).refine((value) => Boolean(value.pushToken || value.deviceId), {
   message: "pushToken or deviceId is required",
 });
+
+const AutomationType = z.enum(["all", "class_reminders", "post_class_reminders", "package_reminders"]);
+const AutomationRunBody = z.object({
+  mode: z.enum(["run", "enqueue"]).default("run"),
+  type: AutomationType.default("all"),
+});
+
+type AutomationTypeValue = z.infer<typeof AutomationType>;
+
+async function runAutomationByType(type: AutomationTypeValue): Promise<AutomationRunSummary | AutomationSummary> {
+  switch (type) {
+    case "all":
+      return runNotificationAutomation();
+    case "class_reminders":
+      return runClassReminderAutomation();
+    case "post_class_reminders":
+      return runPostClassReminderAutomation();
+    case "package_reminders":
+      return runPackageReminderAutomation();
+  }
+}
+
+function isAutomationRunSummary(result: AutomationRunSummary | AutomationSummary): result is AutomationRunSummary {
+  return "total" in result;
+}
+
+function automationAuditSummary(type: string, result: AutomationRunSummary | AutomationSummary): Record<string, unknown> {
+  const total = isAutomationRunSummary(result) ? result.total : result;
+  return {
+    automationType: type,
+    created: total.created,
+    pushed: total.pushed,
+    skipped: total.skipped,
+    failed: total.failed,
+    pushDisabled: total.pushDisabled,
+  };
+}
 
 function isNotificationVisibleToStudent(row: { target: string; isDraft: boolean }, studentId: number): boolean {
   return !row.isDraft && (row.target === "all" || row.target === `student:${studentId}`);
@@ -172,6 +218,62 @@ router.get(
 );
 
 router.post(
+  "/notifications/automation/run",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("notifications", "send"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const parsed = AutomationRunBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+
+    const { mode, type } = parsed.data;
+    if (mode === "enqueue") {
+      const jobTypes: NotificationAutomationJob["type"][] = type === "all"
+        ? ["class_reminders", "post_class_reminders", "package_reminders"]
+        : [type];
+      const jobs = [];
+      for (const jobType of jobTypes) {
+        const job = await enqueueJob<NotificationAutomationJob>(
+          QUEUE_NAMES.notificationAutomation,
+          jobType,
+          { type: jobType, triggeredBy: "admin" },
+          { jobId: `notification-automation:${jobType}:${new Date().toISOString().slice(0, 13)}` },
+        );
+        if (!job) {
+          res.status(503).json({ error: "Notification automation queue is unavailable. Configure REDIS_URL to enqueue jobs." });
+          return;
+        }
+        jobs.push({ id: job.id, name: job.name, type: jobType });
+      }
+      await logActivity(req, {
+        action: "enqueue",
+        module: "notifications",
+        entityType: "notification_automation",
+        entityLabel: type,
+        after: { automationType: type, queuedJobs: jobs.length },
+        summary: `Enqueued notification automation ${type}`,
+      });
+      res.status(202).json({ mode, type, queued: jobs });
+      return;
+    }
+
+    const result = await runAutomationByType(type);
+    await logActivity(req, {
+      action: "send",
+      module: "notifications",
+      entityType: "notification_automation",
+      entityLabel: type,
+      after: automationAuditSummary(type, result),
+      summary: `Ran notification automation ${type}`,
+    });
+    res.json({ mode, type, result });
+  },
+);
+
+router.post(
   "/notifications/automation/class-reminders/run",
   blockStudentJwt,
   requireAdminAuth,
@@ -183,7 +285,7 @@ router.post(
       module: "notifications",
       entityType: "notification_automation",
       entityLabel: "24h class reminders",
-      after: result as Record<string, unknown>,
+      after: automationAuditSummary("class_reminders", result),
       summary: "Ran 24h class reminder automation",
     });
     res.json(result);

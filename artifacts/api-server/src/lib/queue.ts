@@ -5,6 +5,7 @@ import { logger } from "./logger";
 export const QUEUE_NAMES = {
   whatsappCampaigns: "whatsapp-campaigns",
   reports: "reports",
+  notificationAutomation: "notification-automation",
 } as const;
 
 export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];
@@ -20,6 +21,11 @@ export type ReportJob = {
   entity: string;
   filters?: Record<string, unknown>;
   format?: "json" | "xlsx" | "pdf";
+};
+
+export type NotificationAutomationJob = {
+  type: "class_reminders" | "post_class_reminders" | "package_reminders";
+  triggeredBy?: "admin" | "system";
 };
 
 let sharedConnection: IORedis | null = null;
