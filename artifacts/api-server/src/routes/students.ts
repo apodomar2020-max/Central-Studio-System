@@ -33,6 +33,7 @@ import { resolveMemberIdentity } from "../lib/membershipIdentity";
 import { buildProfileCompletion } from "../lib/studentProfileResponse";
 import { computeProfileCompletion } from "../lib/profileCompletion";
 import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./studentProfilePdf";
+import { diffFields, logActivity } from "../lib/activityLog";
 import * as zod from "zod";
 
 const router: IRouter = Router();
@@ -48,6 +49,24 @@ function adminCan(req: AdminRequest, moduleKey: string, actionKey: string): bool
 
 function accountModule(accountType: string | null): "parents" | "students" {
   return accountType === "parent" ? "parents" : "students";
+}
+
+const STUDENT_ACTIVITY_FIELDS = ["name", "email", "phone", "notes", "totalBookings"] as const;
+
+function studentActivitySnapshot(row: {
+  name: string;
+  email: string;
+  phone: string | null;
+  notes: string | null;
+  totalBookings: number;
+}): Record<string, unknown> {
+  return {
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    notes: row.notes,
+    totalBookings: row.totalBookings,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1010,7 +1029,15 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
     return;
   }
   const [existing] = await db
-    .select({ id: studentsTable.id, accountType: studentsTable.accountType })
+    .select({
+      id: studentsTable.id,
+      name: studentsTable.name,
+      email: studentsTable.email,
+      phone: studentsTable.phone,
+      notes: studentsTable.notes,
+      totalBookings: studentsTable.totalBookings,
+      accountType: studentsTable.accountType,
+    })
     .from(studentsTable)
     .where(eq(studentsTable.id, params.data.id))
     .limit(1);
@@ -1040,6 +1067,25 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
   if (!row) {
     res.status(404).json({ error: "Student not found" });
     return;
+  }
+  const { before, after } = diffFields(
+    studentActivitySnapshot(existing),
+    studentActivitySnapshot(row),
+    STUDENT_ACTIVITY_FIELDS,
+  );
+  const changedKeys = Object.keys(after);
+  if (changedKeys.length > 0) {
+    const moduleKey = accountModule(row.accountType);
+    await logActivity(req, {
+      action: "update",
+      module: moduleKey,
+      entityType: moduleKey === "parents" ? "parent" : "student",
+      entityId: row.id,
+      entityLabel: row.name,
+      before,
+      after,
+      summary: `Updated ${moduleKey === "parents" ? "parent" : "student"} ${row.name}: ${changedKeys.join(", ")}`,
+    });
   }
   res.json(UpdateStudentResponse.parse(row));
 });

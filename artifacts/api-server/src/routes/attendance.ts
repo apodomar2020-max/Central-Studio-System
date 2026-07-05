@@ -4,8 +4,9 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import * as zod from "zod";
 import { db, attendanceTable, bookingsTable, studentsTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
+import { logActivity } from "../lib/activityLog";
 import {
   ListAttendanceResponse,
   GetAttendanceStatsQueryParams,
@@ -102,7 +103,7 @@ router.post(
   requireAdminAuth,
   requireAdminPermission("attendance", "checkIn"),
   requirePackageDeductForManualCheckIn,
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
   const parsed = CheckInBodyExtended.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -176,6 +177,26 @@ router.post(
           packageOrderId: resolvedPaymentMode === "package_credit" ? packageOrderId : null,
           performedBy,
         });
+      });
+
+      await logActivity(req, {
+        action: "checkIn",
+        module: "attendance",
+        entityType: "attendance",
+        entityId: result.attendanceId,
+        entityLabel: result.studentName,
+        after: {
+          studentId: studentId ?? null,
+          studentEmail: result.studentEmail,
+          studentName: result.studentName,
+          bookingId,
+          packageOrderId: packageOrderId ?? null,
+          classTitle: result.classTitle,
+          creditDeducted: result.creditDeducted,
+          remainingCredits: result.remainingCredits,
+          checkedInAt: result.checkedInAt,
+        },
+        summary: `Checked in ${result.studentName}${result.classTitle ? ` for ${result.classTitle}` : ""}`,
       });
 
       res.status(201).json(result);
@@ -321,6 +342,27 @@ router.post(
       }
 
       return inserted;
+    });
+
+    await logActivity(req, {
+      action: "checkIn",
+      module: "attendance",
+      entityType: "attendance",
+      entityId: row.id,
+      entityLabel: row.studentName,
+      after: {
+        studentId: row.studentId,
+        studentEmail: row.studentEmail,
+        studentName: row.studentName,
+        packageOrderId: row.packageOrderId,
+        classId: row.classId,
+        scheduleId: row.scheduleId,
+        classTitle: row.classTitle,
+        creditDeducted: row.creditDeducted,
+        status: row.status,
+        checkedInAt: row.checkedInAt,
+      },
+      summary: `Checked in ${row.studentName}${row.classTitle ? ` for ${row.classTitle}` : ""}`,
     });
 
     res.status(201).json(row);

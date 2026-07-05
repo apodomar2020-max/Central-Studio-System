@@ -11,8 +11,9 @@ import {
 } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import { createPromotionRedemptions, validatePackagePromotion } from "../lib/promotionService";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
+import { diffFields, logActivity } from "../lib/activityLog";
 import {
   ListPackageOrdersQueryParams,
   ListPackageOrdersResponse,
@@ -67,6 +68,22 @@ function requirePackageOrderReadAccess(req: Request, res: Response, next: NextFu
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+const PACKAGE_ORDER_ACTIVITY_FIELDS = ["status", "notes", "activatedAt", "expiresAt", "remainingCredits"] as const;
+
+function packageOrderActivitySnapshot(row: typeof packageOrdersTable.$inferSelect): Record<string, unknown> {
+  return {
+    status: row.status,
+    notes: row.notes,
+    activatedAt: row.activatedAt,
+    expiresAt: row.expiresAt,
+    remainingCredits: row.remainingCredits,
+  };
+}
+
+function packageOrderLabel(row: typeof packageOrdersTable.$inferSelect): string {
+  return `${row.studentName} - ${row.packageName}`;
 }
 
 const PurchasePackageBody = z.object({
@@ -324,7 +341,7 @@ router.patch(
   blockStudentJwt,
   requireAdminAuth,
   requirePackageOrderAction,
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
   const params = UpdatePackageOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -345,6 +362,7 @@ router.patch(
   const isActivating = parsed.data.status === "active";
 
   let row: typeof packageOrdersTable.$inferSelect | undefined;
+  let beforeOrder: typeof packageOrdersTable.$inferSelect | undefined;
 
   if (isActivating) {
     const result = await db.transaction(async (tx) => {
@@ -354,6 +372,7 @@ router.patch(
         .from(packageOrdersTable)
         .where(eq(packageOrdersTable.id, params.data.id));
       if (!current) return undefined;
+      beforeOrder = current;
 
       // Bind the Expiration Date: when activating, default expiresAt to
       // activatedAt + the package's validity window (from price_packages), unless
@@ -407,14 +426,15 @@ router.patch(
         });
       }
 
-      return updated;
+      return { before: current, updated };
     });
 
     if (!result) {
       res.status(404).json({ error: "Package order not found" });
       return;
     }
-    row = result;
+    beforeOrder = result.before;
+    row = result.updated;
   } else {
     const result = await db.transaction(async (tx) => {
       const [current] = await tx
@@ -423,6 +443,7 @@ router.patch(
         .where(eq(packageOrdersTable.id, params.data.id));
 
       if (!current) return undefined;
+      beforeOrder = current;
 
       const [updated] = await tx
         .update(packageOrdersTable)
@@ -445,15 +466,46 @@ router.patch(
         });
       }
 
-      return updated;
+      return { before: current, updated };
     });
 
-    const updated = result;
-    if (!updated) {
+    if (!result) {
       res.status(404).json({ error: "Package order not found" });
       return;
     }
-    row = updated;
+    beforeOrder = result.before;
+    row = result.updated;
+  }
+
+  if (row && beforeOrder) {
+    const { before, after } = diffFields(
+      packageOrderActivitySnapshot(beforeOrder),
+      packageOrderActivitySnapshot(row),
+      PACKAGE_ORDER_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      const statusChanged = beforeOrder.status !== row.status;
+      const action = statusChanged
+        ? row.status === "active"
+          ? "activate"
+          : row.status === "cancelled"
+            ? "cancel"
+            : "statusChange"
+        : "update";
+      await logActivity(req, {
+        action,
+        module: "packageOrders",
+        entityType: "package_order",
+        entityId: row.id,
+        entityLabel: packageOrderLabel(row),
+        before,
+        after,
+        summary: statusChanged
+          ? `${row.status === "active" ? "Activated" : row.status === "cancelled" ? "Cancelled" : "Changed status for"} package order ${row.id} (${packageOrderLabel(row)})`
+          : `Updated package order ${row.id} (${packageOrderLabel(row)}): ${changedKeys.join(", ")}`,
+      });
+    }
   }
 
   res.json(UpdatePackageOrderResponse.parse(row));

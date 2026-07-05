@@ -18,6 +18,7 @@ import {
   validatePackagePromotion,
   writePromotionAuditLog,
 } from "../lib/promotionService";
+import { diffFields, logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
 
@@ -81,6 +82,48 @@ function normalizeCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
+const PROMOTION_ACTIVITY_FIELDS = [
+  "name",
+  "description",
+  "type",
+  "discountType",
+  "discountValue",
+  "priority",
+  "isExclusive",
+  "isStackable",
+  "isActive",
+  "startDate",
+  "endDate",
+  "rulesConfig",
+] as const;
+
+const PROMOTION_CODE_ACTIVITY_FIELDS = ["promotionId", "maxUses", "usesPerUser"] as const;
+
+function promotionActivitySnapshot(row: typeof promotionsTable.$inferSelect): Record<string, unknown> {
+  return {
+    name: row.name,
+    description: row.description,
+    type: row.type,
+    discountType: row.discountType,
+    discountValue: row.discountValue,
+    priority: row.priority,
+    isExclusive: row.isExclusive,
+    isStackable: row.isStackable,
+    isActive: row.isActive,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    rulesConfig: row.rulesConfig,
+  };
+}
+
+function promotionCodeActivitySnapshot(row: Pick<typeof promotionCodesTable.$inferSelect, "promotionId" | "maxUses" | "usesPerUser">): Record<string, unknown> {
+  return {
+    promotionId: row.promotionId,
+    maxUses: row.maxUses,
+    usesPerUser: row.usesPerUser,
+  };
+}
+
 async function promotionResponse(row: typeof promotionsTable.$inferSelect) {
   const codes = await db
     .select()
@@ -118,25 +161,48 @@ router.post("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermis
     return;
   }
   const { code, maxUses, usesPerUser, ...promotionData } = parsed.data;
-  const row = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [promotion] = await tx.insert(promotionsTable).values(promotionData).returning();
+    let promotionCode: typeof promotionCodesTable.$inferSelect | null = null;
     if (promotion.type === "manual" && code) {
       const codeStr = code;
-      await tx.insert(promotionCodesTable).values({
+      const [insertedCode] = await tx.insert(promotionCodesTable).values({
         promotionId: promotion.id,
         code: normalizeCode(codeStr),
         maxUses: maxUses ?? null,
         usesPerUser: usesPerUser ?? null,
-      });
+      }).returning();
+      promotionCode = insertedCode ?? null;
     }
-    return promotion;
+    return { promotion, promotionCode };
   });
+  const row = result.promotion;
   await writePromotionAuditLog({
     promotionId: row.id,
     actorAdminId: req.adminUser?.id ?? null,
     action: "promotion.created",
     metadata: { name: row.name, type: row.type },
   });
+  await logActivity(req, {
+    action: "create",
+    module: "promotions",
+    entityType: "promotion",
+    entityId: row.id,
+    entityLabel: row.name,
+    after: promotionActivitySnapshot(row),
+    summary: `Created promotion ${row.name}`,
+  });
+  if (result.promotionCode) {
+    await logActivity(req, {
+      action: "create",
+      module: "promotions",
+      entityType: "promotion_code",
+      entityId: result.promotionCode.id,
+      entityLabel: row.name,
+      after: promotionCodeActivitySnapshot(result.promotionCode),
+      summary: `Created promo code for promotion ${row.name}`,
+    });
+  }
   res.status(201).json(await promotionResponse(row));
 });
 
@@ -153,7 +219,14 @@ router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminP
   }
 
   const { code, maxUses, usesPerUser, ...promotionData } = parsed.data;
-  const row = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
+    const [beforePromotion] = await tx
+      .select()
+      .from(promotionsTable)
+      .where(eq(promotionsTable.id, params.data.id))
+      .limit(1);
+    if (!beforePromotion) return null;
+
     const [updated] = Object.keys(promotionData).length > 0
       ? await tx
         .update(promotionsTable)
@@ -166,13 +239,21 @@ router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminP
         .where(eq(promotionsTable.id, params.data.id))
         .limit(1);
     if (!updated) return null;
+    let beforeCode: typeof promotionCodesTable.$inferSelect | null = null;
+    let afterCode: typeof promotionCodesTable.$inferSelect | null = null;
     if (code && code.trim()) {
       const codeStr = code;
-      await tx
+      const normalizedCode = normalizeCode(codeStr);
+      [beforeCode] = await tx
+        .select()
+        .from(promotionCodesTable)
+        .where(eq(promotionCodesTable.code, normalizedCode))
+        .limit(1);
+      const [upsertedCode] = await tx
         .insert(promotionCodesTable)
         .values({
           promotionId: updated.id,
-          code: normalizeCode(codeStr),
+          code: normalizedCode,
           maxUses: maxUses ?? null,
           usesPerUser: usesPerUser ?? null,
         })
@@ -183,20 +264,69 @@ router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminP
             maxUses: maxUses ?? null,
             usesPerUser: usesPerUser ?? null,
           },
-        });
+        })
+        .returning();
+      afterCode = upsertedCode ?? null;
     }
-    return updated;
+    return { beforePromotion, updated, beforeCode, afterCode };
   });
-  if (!row) {
+  if (!result) {
     res.status(404).json({ error: "Promotion not found" });
     return;
   }
+  const row = result.updated;
   await writePromotionAuditLog({
     promotionId: row.id,
     actorAdminId: req.adminUser?.id ?? null,
     action: "promotion.updated",
     metadata: { fields: Object.keys(req.body ?? {}) },
   });
+  const promotionDiff = diffFields(
+    promotionActivitySnapshot(result.beforePromotion),
+    promotionActivitySnapshot(row),
+    PROMOTION_ACTIVITY_FIELDS,
+  );
+  const promotionChangedKeys = Object.keys(promotionDiff.after);
+  if (promotionChangedKeys.length > 0) {
+    const deactivated = result.beforePromotion.isActive === true && row.isActive === false;
+    const activated = result.beforePromotion.isActive === false && row.isActive === true;
+    await logActivity(req, {
+      action: deactivated ? "deactivate" : activated ? "activate" : "update",
+      module: "promotions",
+      entityType: "promotion",
+      entityId: row.id,
+      entityLabel: row.name,
+      before: promotionDiff.before,
+      after: promotionDiff.after,
+      summary: deactivated
+        ? `Deactivated promotion ${row.name}`
+        : activated
+          ? `Activated promotion ${row.name}`
+          : `Updated promotion ${row.name}: ${promotionChangedKeys.join(", ")}`,
+    });
+  }
+  if (result.afterCode) {
+    const codeAction = result.beforeCode ? "update" : "create";
+    const codeDiff = result.beforeCode
+      ? diffFields(
+        promotionCodeActivitySnapshot(result.beforeCode),
+        promotionCodeActivitySnapshot(result.afterCode),
+        PROMOTION_CODE_ACTIVITY_FIELDS,
+      )
+      : { before: {}, after: promotionCodeActivitySnapshot(result.afterCode) };
+    if (Object.keys(codeDiff.after).length > 0) {
+      await logActivity(req, {
+        action: codeAction,
+        module: "promotions",
+        entityType: "promotion_code",
+        entityId: result.afterCode.id,
+        entityLabel: row.name,
+        before: Object.keys(codeDiff.before).length > 0 ? codeDiff.before : null,
+        after: codeDiff.after,
+        summary: `${codeAction === "create" ? "Created" : "Updated"} promo code for promotion ${row.name}`,
+      });
+    }
+  }
   res.json(await promotionResponse(row));
 });
 
@@ -206,21 +336,34 @@ router.delete("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdmin
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const [existing] = await db.select().from(promotionsTable).where(eq(promotionsTable.id, params.data.id)).limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Promotion not found" });
+    return;
+  }
   const [row] = await db
     .update(promotionsTable)
     .set({ isActive: false })
     .where(eq(promotionsTable.id, params.data.id))
     .returning();
-  if (!row) {
-    res.status(404).json({ error: "Promotion not found" });
-    return;
-  }
   await writePromotionAuditLog({
     promotionId: row.id,
     actorAdminId: req.adminUser?.id ?? null,
     action: "promotion.deactivated",
     metadata: { name: row.name },
   });
+  if (existing.isActive !== row.isActive) {
+    await logActivity(req, {
+      action: "deactivate",
+      module: "promotions",
+      entityType: "promotion",
+      entityId: row.id,
+      entityLabel: row.name,
+      before: { isActive: existing.isActive },
+      after: { isActive: row.isActive },
+      summary: `Deactivated promotion ${row.name}`,
+    });
+  }
   res.sendStatus(204);
 });
 

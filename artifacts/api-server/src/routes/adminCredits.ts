@@ -14,6 +14,7 @@ import { db, creditTransactionsTable, packageOrdersTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { ListCreditTransactionsQueryParams } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
+import { logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
 
@@ -229,7 +230,34 @@ router.post(
           });
         }
 
-        return { order: updated, transaction };
+        return {
+          order: updated,
+          transaction,
+          before: {
+            remainingCredits: order.remainingCredits,
+            status: order.status,
+          },
+        };
+      });
+
+      await logActivity(req, {
+        action: "creditAdjust",
+        module: "packageOrders",
+        entityType: "package_order",
+        entityId: result.order.id,
+        entityLabel: `${result.order.studentName} - ${result.order.packageName}`,
+        before: {
+          remainingCredits: result.before.remainingCredits,
+          status: result.before.status,
+        },
+        after: {
+          remainingCredits: result.transaction.balanceAfter,
+          status: result.order.status,
+          delta: result.transaction.delta,
+          type: result.transaction.type,
+          transactionId: result.transaction.id,
+        },
+        summary: `Adjusted credits for package order ${result.order.id} (${result.order.studentName} - ${result.order.packageName}): ${delta > 0 ? "+" : ""}${delta}`,
       });
 
       res.status(201).json(result);
