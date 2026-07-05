@@ -21,6 +21,7 @@ import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import {
+  invalidateOtpCodes,
   issueOtp,
   verifyOtpCode,
   signStudentToken,
@@ -28,9 +29,11 @@ import {
   EmailProviderConfigurationError,
   isEmailProviderConfigured,
   OtpRateLimitError,
+  OTP_TTL_SECONDS,
 } from "../lib/authHelpers";
 
 const router: IRouter = Router();
+const GENERIC_SEND_RESPONSE = { ok: true, expiresIn: OTP_TTL_SECONDS };
 
 // Marks a student verified and returns the refreshed row (or null if missing).
 async function markVerified(email: string) {
@@ -111,12 +114,9 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
     .from(studentsTable)
     .where(eq(studentsTable.email, email));
 
-  if (!student) {
-    res.status(404).json({ error: "No account found for this email." });
-    return;
-  }
-  if (student.emailVerified) {
-    res.status(400).json({ error: "Email is already verified." });
+  if (!student || student.emailVerified) {
+    logger.info({ email }, "Email verification OTP requested for unavailable email-keyed account");
+    res.json(GENERIC_SEND_RESPONSE);
     return;
   }
 
@@ -125,9 +125,10 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
     res.json({ ok: true, expiresIn });
   } catch (err) {
     if (err instanceof OtpRateLimitError) {
-      res.status(429).json({ error: "Please wait before requesting another code.", retryAfter: err.retryAfterSeconds });
+      res.json(GENERIC_SEND_RESPONSE);
       return;
     }
+    await invalidateOtpCodes(email, "verify");
     if (respondEmailDeliveryFailure(res, err, { email })) return;
     throw err;
   }
@@ -158,7 +159,7 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
 
   const student = await markVerified(email);
   if (!student) {
-    res.status(404).json({ error: "Student not found" });
+    res.status(400).json({ error: "Invalid or expired verification code", requiresResend: true });
     return;
   }
 
@@ -202,6 +203,7 @@ router.post("/auth/send-email-otp", async (req, res): Promise<void> => {
       res.status(429).json({ error: "Please wait before requesting another code.", retryAfter: err.retryAfterSeconds });
       return;
     }
+    await invalidateOtpCodes(student.email, "verify");
     if (respondEmailDeliveryFailure(res, err, { studentId: student.id })) return;
     throw err;
   }
@@ -239,7 +241,7 @@ router.post("/auth/verify-email-otp", async (req, res): Promise<void> => {
 
   const verifiedStudent = await markVerified(student.email);
   if (!verifiedStudent) {
-    res.status(404).json({ error: "Student not found" });
+    res.status(400).json({ error: "Invalid or expired verification code" });
     return;
   }
   const accessToken = signStudentToken(verifiedStudent.id, verifiedStudent.email, true);
