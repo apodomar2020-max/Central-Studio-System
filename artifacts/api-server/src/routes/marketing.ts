@@ -16,6 +16,7 @@ import {
   studentsTable,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { diffFields, logActivity } from "../lib/activityLog";
 import {
   assertValidE164Phone,
   getWhatsAppCloudStatus,
@@ -39,6 +40,21 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const CAMPAIGN_ACTIVITY_FIELDS = ["title", "type", "status", "templateId", "subject", "message", "targetAudience", "audienceType", "audienceConfig", "recipientCount", "sentCount", "scheduledAt", "preparedAt", "sentAt"] as const;
+const TEMPLATE_ACTIVITY_FIELDS = ["name", "category", "language", "body", "status", "variables", "metaTemplateId", "headerType", "headerText", "footer", "buttons", "rejectedReason", "lastSyncedAt", "archivedAt"] as const;
+const CLASS_GROUP_ACTIVITY_FIELDS = ["classId", "scheduleId", "title", "isActive"] as const;
+
+function campaignSnapshot(row: typeof marketingCampaignsTable.$inferSelect): Record<string, unknown> {
+  return Object.fromEntries(CAMPAIGN_ACTIVITY_FIELDS.map((key) => [key, row[key]]));
+}
+
+function templateSnapshot(row: typeof marketingTemplatesTable.$inferSelect): Record<string, unknown> {
+  return Object.fromEntries(TEMPLATE_ACTIVITY_FIELDS.map((key) => [key, row[key]]));
+}
+
+function classGroupSnapshot(row: typeof classWhatsappGroupsTable.$inferSelect): Record<string, unknown> {
+  return Object.fromEntries(CLASS_GROUP_ACTIVITY_FIELDS.map((key) => [key, row[key]]));
+}
 
 const audienceTypeValues = [
   "all",
@@ -301,7 +317,7 @@ router.get("/marketing/whatsapp/status", requireAdminAuth, requireAdminPermissio
   res.json(getWhatsAppCloudStatus());
 });
 
-router.post("/marketing/whatsapp/test-send", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req, res): Promise<void> => {
+router.post("/marketing/whatsapp/test-send", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req: AdminRequest, res): Promise<void> => {
   if (!isWhatsAppCloudEnabled()) {
     res.status(503).json({ error: "WhatsApp Cloud API is disabled. Set WHATSAPP_ENABLED=true to allow test sends." });
     return;
@@ -319,6 +335,19 @@ router.post("/marketing/whatsapp/test-send", requireAdminAuth, requireAdminPermi
       templateName: parsed.data.templateName,
       languageCode: parsed.data.languageCode,
       parameters: parsed.data.parameters as WhatsAppTemplateParameter[],
+    });
+    await logActivity(req, {
+      action: "send",
+      module: "marketing",
+      entityType: "whatsapp_test_send",
+      entityLabel: parsed.data.templateName,
+      after: {
+        templateName: parsed.data.templateName,
+        languageCode: parsed.data.languageCode,
+        parameterCount: parsed.data.parameters?.length ?? 0,
+        providerMessageId: result.providerMessageId,
+      },
+      summary: `Sent WhatsApp test template ${parsed.data.templateName}`,
     });
     res.json({
       success: true,
@@ -350,9 +379,17 @@ router.get("/marketing/templates", requireAdminAuth, requireAdminPermission("mar
   res.json(result);
 });
 
-router.post("/marketing/templates/sync", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
+router.post("/marketing/templates/sync", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req: AdminRequest, res): Promise<void> => {
   try {
     const summary = await syncMetaTemplatesToLocal();
+    await logActivity(req, {
+      action: "sync",
+      module: "marketing",
+      entityType: "whatsapp_template_sync",
+      entityLabel: "WhatsApp templates",
+      after: summary as Record<string, unknown>,
+      summary: "Synced WhatsApp templates from Meta",
+    });
     res.json(summary);
   } catch (err) {
     console.error("Sync templates error:", err);
@@ -422,6 +459,15 @@ router.post("/marketing/templates", requireAdminAuth, requireAdminPermission("ma
       rawMetaPayload: metaResponse,
     }).returning();
 
+    await logActivity(req, {
+      action: "create",
+      module: "marketing",
+      entityType: "whatsapp_template",
+      entityId: row.id,
+      entityLabel: row.name,
+      after: templateSnapshot(row),
+      summary: `Created WhatsApp template ${row.name}`,
+    });
     res.status(201).json(row);
   } catch (err) {
     console.error("Create template error:", err);
@@ -431,7 +477,7 @@ router.post("/marketing/templates", requireAdminAuth, requireAdminPermission("ma
   }
 });
 
-router.get("/marketing/templates/:id/status", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req, res): Promise<void> => {
+router.get("/marketing/templates/:id/status", requireAdminAuth, requireAdminPermission("marketing", "view"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: "Invalid template id" });
@@ -439,11 +485,25 @@ router.get("/marketing/templates/:id/status", requireAdminAuth, requireAdminPerm
   }
 
   try {
+    const [beforeTemplate] = await db.select().from(marketingTemplatesTable).where(eq(marketingTemplatesTable.id, id)).limit(1);
     await refreshTemplateStatus(id);
     const [updated] = await db
       .select()
       .from(marketingTemplatesTable)
       .where(eq(marketingTemplatesTable.id, id));
+    if (beforeTemplate && updated) {
+      const { before, after } = diffFields(templateSnapshot(beforeTemplate), templateSnapshot(updated), TEMPLATE_ACTIVITY_FIELDS);
+      await logActivity(req, {
+        action: "statusRefresh",
+        module: "marketing",
+        entityType: "whatsapp_template",
+        entityId: updated.id,
+        entityLabel: updated.name,
+        before: Object.keys(before).length > 0 ? before : null,
+        after: Object.keys(after).length > 0 ? after : { status: updated.status, refreshed: true },
+        summary: `Refreshed WhatsApp template status for ${updated.name}`,
+      });
+    }
     res.json(updated);
   } catch (err) {
     console.error("Refresh template status error:", err);
@@ -500,27 +560,55 @@ router.get("/marketing/class-groups", requireAdminAuth, requireAdminPermission("
   res.json(rows);
 });
 
-router.post("/marketing/class-groups", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
+router.post("/marketing/class-groups", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = ClassGroupBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
   const [row] = await db.insert(classWhatsappGroupsTable).values(parsed.data).returning();
+  await logActivity(req, {
+    action: "create",
+    module: "marketing",
+    entityType: "whatsapp_class_group",
+    entityId: row.id,
+    entityLabel: row.title ?? `Class group ${row.id}`,
+    after: classGroupSnapshot(row),
+    summary: `Created WhatsApp class group ${row.title ?? row.id}`,
+  });
   res.status(201).json(row);
 });
 
-router.patch("/marketing/class-groups/:id", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req, res): Promise<void> => {
+router.patch("/marketing/class-groups/:id", requireAdminAuth, requireAdminPermission("marketing", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params.id);
   const parsed = ClassGroupBody.partial().safeParse(req.body);
   if (!Number.isFinite(id) || !parsed.success) {
     res.status(400).json({ error: !parsed.success ? parsed.error.message : "Invalid group id" });
     return;
   }
+  const [existing] = await db.select().from(classWhatsappGroupsTable).where(eq(classWhatsappGroupsTable.id, id)).limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Group link not found" });
+    return;
+  }
   const [row] = await db.update(classWhatsappGroupsTable).set(parsed.data).where(eq(classWhatsappGroupsTable.id, id)).returning();
   if (!row) {
     res.status(404).json({ error: "Group link not found" });
     return;
+  }
+  const { before, after } = diffFields(classGroupSnapshot(existing), classGroupSnapshot(row), CLASS_GROUP_ACTIVITY_FIELDS);
+  const changedKeys = Object.keys(after);
+  if (changedKeys.length > 0) {
+    await logActivity(req, {
+      action: existing.isActive !== row.isActive ? row.isActive ? "activate" : "deactivate" : "update",
+      module: "marketing",
+      entityType: "whatsapp_class_group",
+      entityId: row.id,
+      entityLabel: row.title ?? `Class group ${row.id}`,
+      before,
+      after,
+      summary: `Updated WhatsApp class group ${row.title ?? row.id}: ${changedKeys.join(", ")}`,
+    });
   }
   res.json(row);
 });
@@ -569,6 +657,15 @@ router.post("/marketing/campaigns", requireAdminAuth, requireAdminPermission("ma
     recipientCount,
     status: "draft",
   }).returning();
+  await logActivity(req, {
+    action: "create",
+    module: "marketing",
+    entityType: "marketing_campaign",
+    entityId: row.id,
+    entityLabel: row.title,
+    after: campaignSnapshot(row),
+    summary: `Created marketing campaign ${row.title}`,
+  });
   res.status(201).json(row);
 });
 
@@ -618,10 +715,29 @@ router.patch("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermissio
     updateData.targetAudience = parsed.data.targetAudience ?? mapAudienceToLegacyTarget(audienceType);
     updateData.recipientCount = await countAudience(audienceType, audienceConfig);
   }
+  const [existingCampaign] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, params.data.id)).limit(1);
+  if (!existingCampaign) {
+    res.status(404).json({ error: "Campaign not found" });
+    return;
+  }
   const [row] = await db.update(marketingCampaignsTable).set(updateData).where(eq(marketingCampaignsTable.id, params.data.id)).returning();
   if (!row) {
     res.status(404).json({ error: "Campaign not found" });
     return;
+  }
+  const { before, after } = diffFields(campaignSnapshot(existingCampaign), campaignSnapshot(row), CAMPAIGN_ACTIVITY_FIELDS);
+  const changedKeys = Object.keys(after);
+  if (changedKeys.length > 0) {
+    await logActivity(req, {
+      action: existingCampaign.status !== row.status ? "statusChange" : "update",
+      module: "marketing",
+      entityType: "marketing_campaign",
+      entityId: row.id,
+      entityLabel: row.title,
+      before,
+      after,
+      summary: `Updated marketing campaign ${row.title}: ${changedKeys.join(", ")}`,
+    });
   }
   res.json(row);
 });
@@ -637,6 +753,15 @@ router.delete("/marketing/campaigns/:id", requireAdminAuth, requireAdminPermissi
     res.status(404).json({ error: "Campaign not found" });
     return;
   }
+  await logActivity(req, {
+    action: "delete",
+    module: "marketing",
+    entityType: "marketing_campaign",
+    entityId: row.id,
+    entityLabel: row.title,
+    before: campaignSnapshot(row),
+    summary: `Deleted marketing campaign ${row.title}`,
+  });
   res.sendStatus(204);
 });
 
@@ -709,6 +834,16 @@ router.post("/marketing/campaigns/:id/prepare", requireAdminAuth, requireAdminPe
       recipientCount: preview.eligibleCount,
       sentCount: 0,
     }).where(eq(marketingCampaignsTable.id, campaign.id));
+  });
+  await logActivity(req, {
+    action: "prepare",
+    module: "marketing",
+    entityType: "marketing_campaign",
+    entityId: campaign.id,
+    entityLabel: campaign.title,
+    before: { status: campaign.status, recipientCount: campaign.recipientCount, preparedAt: campaign.preparedAt },
+    after: { status: "prepared", recipientCount: preview.eligibleCount, preparedAt, excluded: preview.excluded },
+    summary: `Prepared marketing campaign ${campaign.title} for ${preview.eligibleCount} recipients`,
   });
   res.json({ success: true, preparedAt, recipientCount: preview.eligibleCount, excluded: preview.excluded });
 });
@@ -793,6 +928,17 @@ router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermi
     status: "sending",
   }).where(eq(marketingCampaignsTable.id, params.data.id));
 
+  await logActivity(req, {
+    action: "enqueueSend",
+    module: "marketing",
+    entityType: "marketing_campaign",
+    entityId: campaign.id,
+    entityLabel: campaign.title,
+    before: { status: campaign.status },
+    after: { status: "sending", jobId: String(job.id ?? "") },
+    summary: `Enqueued marketing campaign ${campaign.title} for sending`,
+  });
+
   res.json(SendCampaignResponse.parse({
     success: true,
     sentCount: 0,
@@ -800,7 +946,7 @@ router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermi
   }));
 });
 
-router.post("/marketing/campaigns/:id/retry-failed", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req, res): Promise<void> => {
+router.post("/marketing/campaigns/:id/retry-failed", requireAdminAuth, requireAdminPermission("marketing", "send"), async (req: AdminRequest, res): Promise<void> => {
   const params = GetCampaignParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -813,6 +959,7 @@ router.post("/marketing/campaigns/:id/retry-failed", requireAdminAuth, requireAd
     return;
   }
 
+  let retryCounts: { sent: number; prepared: number; newStatus: string } = { sent: 0, prepared: 0, newStatus: campaign.status };
   await db.transaction(async (tx) => {
     // Reset failed recipients back to prepared
     await tx.update(marketingCampaignRecipientsTable)
@@ -834,11 +981,23 @@ router.post("/marketing/campaigns/:id/retry-failed", requireAdminAuth, requireAd
     // Determine new status: if campaign already attempted sending (was sent/sending or has sent messages), it should stay in 'sending' status.
     const alreadyAttempted = campaign.status === "sending" || campaign.status === "sent" || (counts.sent ?? 0) > 0;
     const newStatus = alreadyAttempted ? "sending" : "prepared";
+    retryCounts = { sent: Number(counts.sent ?? 0), prepared: Number(counts.prepared ?? 0), newStatus };
 
     await tx.update(marketingCampaignsTable).set({
       status: newStatus,
       sentAt: null,
     }).where(eq(marketingCampaignsTable.id, campaign.id));
+  });
+
+  await logActivity(req, {
+    action: "retryFailed",
+    module: "marketing",
+    entityType: "marketing_campaign",
+    entityId: campaign.id,
+    entityLabel: campaign.title,
+    before: { status: campaign.status },
+    after: { status: retryCounts.newStatus, sentCount: retryCounts.sent, preparedCount: retryCounts.prepared },
+    summary: `Retried failed recipients for marketing campaign ${campaign.title}`,
   });
 
   res.json({ success: true });
@@ -871,6 +1030,15 @@ router.delete("/marketing/templates/:id", requireAdminAuth, requireAdminPermissi
     res.status(404).json({ error: "Template not found" });
     return;
   }
+  await logActivity(req, {
+    action: "delete",
+    module: "marketing",
+    entityType: "whatsapp_template",
+    entityId: row.id,
+    entityLabel: row.name,
+    before: templateSnapshot(row),
+    summary: `Deleted WhatsApp template ${row.name}`,
+  });
   res.sendStatus(204);
 });
 

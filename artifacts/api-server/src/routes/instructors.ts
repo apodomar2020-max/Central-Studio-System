@@ -2,7 +2,8 @@ import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db, instructorsTable, bookingsTable, classesTable } from "@workspace/db";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { diffFields, logActivity } from "../lib/activityLog";
 import {
   CreateInstructorBody,
   GetInstructorParams,
@@ -15,6 +16,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const INSTRUCTOR_ACTIVITY_FIELDS = ["name", "bio", "photoUrl", "specialties", "experienceYears", "rating", "isActive", "instagramUrl", "tiktokUrl", "youtubeUrl", "teachingLevel", "achievements", "teachingPhilosophy", "professionalExperience"] as const;
 
 const requireInstructorMediaPermission = (req: Request, res: Response, next: NextFunction): void => {
   if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, "photoUrl")) {
@@ -29,13 +31,22 @@ router.get("/instructors", async (req, res): Promise<void> => {
   res.json(ListInstructorsResponse.parse(rows));
 });
 
-router.post("/instructors", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "create"), requireInstructorMediaPermission, async (req, res): Promise<void> => {
+router.post("/instructors", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "create"), requireInstructorMediaPermission, async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateInstructorBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
   const [row] = await db.insert(instructorsTable).values(parsed.data).returning();
+  await logActivity(req, {
+    action: "create",
+    module: "instructors",
+    entityType: "instructor",
+    entityId: row.id,
+    entityLabel: row.name,
+    after: Object.fromEntries(INSTRUCTOR_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    summary: `Created instructor ${row.name}`,
+  });
   res.status(201).json(GetInstructorResponse.parse(row));
 });
 
@@ -83,7 +94,7 @@ router.get("/instructors/:id/student-count", async (req, res): Promise<void> => 
   res.json({ studentCount: Number(row?.count ?? 0) });
 });
 
-router.patch("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "edit"), requireInstructorMediaPermission, async (req, res): Promise<void> => {
+router.patch("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "edit"), requireInstructorMediaPermission, async (req: AdminRequest, res): Promise<void> => {
   const params = UpdateInstructorParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -94,15 +105,43 @@ router.patch("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdmin
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const [existing] = await db.select().from(instructorsTable).where(eq(instructorsTable.id, params.data.id)).limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Instructor not found" });
+    return;
+  }
   const [row] = await db.update(instructorsTable).set(parsed.data).where(eq(instructorsTable.id, params.data.id)).returning();
   if (!row) {
     res.status(404).json({ error: "Instructor not found" });
     return;
   }
+  const { before, after } = diffFields(
+    Object.fromEntries(INSTRUCTOR_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+    Object.fromEntries(INSTRUCTOR_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    INSTRUCTOR_ACTIVITY_FIELDS,
+  );
+  const changedKeys = Object.keys(after);
+  if (changedKeys.length > 0) {
+    const action = existing.isActive !== row.isActive ? row.isActive ? "activate" : "deactivate" : "update";
+    await logActivity(req, {
+      action,
+      module: "instructors",
+      entityType: "instructor",
+      entityId: row.id,
+      entityLabel: row.name,
+      before,
+      after,
+      summary: action === "activate"
+        ? `Activated instructor ${row.name}`
+        : action === "deactivate"
+          ? `Deactivated instructor ${row.name}`
+          : `Updated instructor ${row.name}: ${changedKeys.join(", ")}`,
+    });
+  }
   res.json(UpdateInstructorResponse.parse(row));
 });
 
-router.delete("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "delete"), async (req, res): Promise<void> => {
+router.delete("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("instructors", "delete"), async (req: AdminRequest, res): Promise<void> => {
   const params = DeleteInstructorParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -113,6 +152,15 @@ router.delete("/instructors/:id", blockStudentJwt, requireAdminAuth, requireAdmi
     res.status(404).json({ error: "Instructor not found" });
     return;
   }
+  await logActivity(req, {
+    action: "delete",
+    module: "instructors",
+    entityType: "instructor",
+    entityId: row.id,
+    entityLabel: row.name,
+    before: Object.fromEntries(INSTRUCTOR_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    summary: `Deleted instructor ${row.name}`,
+  });
   res.sendStatus(204);
 });
 

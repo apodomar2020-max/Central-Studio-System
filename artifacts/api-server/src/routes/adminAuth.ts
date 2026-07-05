@@ -289,6 +289,17 @@ router.post("/admin/auth/login", async (req, res): Promise<void> => {
     .where(eq(systemUsersTable.username, username.trim().toLowerCase()));
 
   if (!user || !user.isActive) {
+    await logActivity(req as AdminRequest, {
+      action: "loginFailed",
+      module: "auth",
+      entityType: "admin_session",
+      entityLabel: username.trim().toLowerCase(),
+      after: {
+        username: username.trim().toLowerCase(),
+        reason: user ? "inactive" : "not_found",
+      },
+      summary: `Failed admin login for ${username.trim().toLowerCase()}`,
+    });
     res.status(401).json({ error: "Invalid credentials or account is inactive" });
     return;
   }
@@ -296,6 +307,18 @@ router.post("/admin/auth/login", async (req, res): Promise<void> => {
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
     logger.warn({ username }, "Failed admin login attempt");
+    await logActivity(req as AdminRequest, {
+      action: "loginFailed",
+      module: "auth",
+      entityType: "admin_session",
+      entityId: user.id,
+      entityLabel: user.username,
+      after: {
+        username: user.username,
+        reason: "invalid_password",
+      },
+      summary: `Failed admin login for ${user.username}`,
+    });
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
@@ -315,6 +338,21 @@ router.post("/admin/auth/login", async (req, res): Promise<void> => {
   }
 
   logger.info({ userId: user.id, username: user.username }, "Admin logged in");
+  await logActivity(req as AdminRequest, {
+    action: "login",
+    module: "auth",
+    entityType: "admin_session",
+    entityId: user.id,
+    entityLabel: user.username,
+    after: {
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      roleId: user.roleId,
+      isSuperAdmin: user.isSuperAdmin,
+    },
+    summary: `Admin ${user.username} logged in`,
+  });
 
   res.json({
     token,

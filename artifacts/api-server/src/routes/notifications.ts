@@ -10,9 +10,10 @@ import {
   notificationsTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { getPushStatus, sendBroadcastPushNotification, sendPushNotification } from "../lib/pushNotifications";
 import { runClassReminder24h } from "../lib/notificationReminders";
+import { diffFields, logActivity } from "../lib/activityLog";
 import {
   CreateNotificationBody,
   GetNotificationParams,
@@ -24,6 +25,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const NOTIFICATION_ACTIVITY_FIELDS = ["title", "body", "target", "type", "relatedEntityType", "relatedEntityId", "metadata", "sentAt", "isDraft"] as const;
 
 const MyNotificationsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -134,7 +136,7 @@ router.get("/notifications", requireAdminAuth, requireAdminPermission("notificat
   })));
 });
 
-router.post("/notifications", blockStudentJwt, requireAdminAuth, requireAdminPermission("notifications", "create"), requireSendWhenPublishing, async (req, res): Promise<void> => {
+router.post("/notifications", blockStudentJwt, requireAdminAuth, requireAdminPermission("notifications", "create"), requireSendWhenPublishing, async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateNotificationBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -148,6 +150,15 @@ router.post("/notifications", blockStudentJwt, requireAdminAuth, requireAdminPer
     })
     .returning();
   dispatchPushForNotification(row);
+  await logActivity(req, {
+    action: row.isDraft ? "create" : "send",
+    module: "notifications",
+    entityType: "notification",
+    entityId: row.id,
+    entityLabel: row.title,
+    after: Object.fromEntries(NOTIFICATION_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    summary: row.isDraft ? `Created notification draft ${row.title}` : `Created and sent notification ${row.title}`,
+  });
   res.status(201).json(GetNotificationResponse.parse(row));
 });
 
@@ -165,8 +176,16 @@ router.post(
   blockStudentJwt,
   requireAdminAuth,
   requireAdminPermission("notifications", "send"),
-  async (_req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const result = await runClassReminder24h();
+    await logActivity(req, {
+      action: "send",
+      module: "notifications",
+      entityType: "notification_automation",
+      entityLabel: "24h class reminders",
+      after: result as Record<string, unknown>,
+      summary: "Ran 24h class reminder automation",
+    });
     res.json(result);
   },
 );
@@ -356,7 +375,7 @@ router.get("/notifications/:id", requireAdminAuth, requireAdminPermission("notif
   res.json(GetNotificationResponse.parse(row));
 });
 
-router.patch("/notifications/:id", blockStudentJwt, requireAdminAuth, requireNotificationUpdatePermission, async (req, res): Promise<void> => {
+router.patch("/notifications/:id", blockStudentJwt, requireAdminAuth, requireNotificationUpdatePermission, async (req: AdminRequest, res): Promise<void> => {
   const params = UpdateNotificationParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -368,7 +387,7 @@ router.patch("/notifications/:id", blockStudentJwt, requireAdminAuth, requireNot
     return;
   }
   const [before] = await db
-    .select({ isDraft: notificationsTable.isDraft })
+    .select()
     .from(notificationsTable)
     .where(eq(notificationsTable.id, params.data.id))
     .limit(1);
@@ -387,10 +406,33 @@ router.patch("/notifications/:id", blockStudentJwt, requireAdminAuth, requireNot
   if (before?.isDraft && row.isDraft === false) {
     dispatchPushForNotification(row);
   }
+  if (before) {
+    const { before: beforeDiff, after } = diffFields(
+      Object.fromEntries(NOTIFICATION_ACTIVITY_FIELDS.map((key) => [key, before[key]])),
+      Object.fromEntries(NOTIFICATION_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+      NOTIFICATION_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      const action = before.isDraft && row.isDraft === false ? "send" : "update";
+      await logActivity(req, {
+        action,
+        module: "notifications",
+        entityType: "notification",
+        entityId: row.id,
+        entityLabel: row.title,
+        before: beforeDiff,
+        after,
+        summary: action === "send"
+          ? `Published notification ${row.title}`
+          : `Updated notification ${row.title}: ${changedKeys.join(", ")}`,
+      });
+    }
+  }
   res.json(UpdateNotificationResponse.parse(row));
 });
 
-router.delete("/notifications/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("notifications", "delete"), async (req, res): Promise<void> => {
+router.delete("/notifications/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("notifications", "delete"), async (req: AdminRequest, res): Promise<void> => {
   const params = DeleteNotificationParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -401,6 +443,15 @@ router.delete("/notifications/:id", blockStudentJwt, requireAdminAuth, requireAd
     res.status(404).json({ error: "Notification not found" });
     return;
   }
+  await logActivity(req, {
+    action: "delete",
+    module: "notifications",
+    entityType: "notification",
+    entityId: row.id,
+    entityLabel: row.title,
+    before: Object.fromEntries(NOTIFICATION_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    summary: `Deleted notification ${row.title}`,
+  });
   res.sendStatus(204);
 });
 

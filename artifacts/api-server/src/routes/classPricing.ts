@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, classPricingSettingsTable } from "@workspace/db";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { diffFields, logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
 
@@ -38,13 +39,14 @@ router.get("/admin/settings/class-pricing", requireAdminAuth, requireAdminPermis
   res.json(settings);
 });
 
-router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPermission("settings", "edit"), async (req, res): Promise<void> => {
+router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPermission("settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = UpdateClassPricingBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid class pricing" });
     return;
   }
 
+  const beforeSettings = await getOrCreateClassPricingSettings();
   const [settings] = await db
     .insert(classPricingSettingsTable)
     .values({ id: 1, singleClassPriceEgp: parsed.data.singleClassPriceEgp })
@@ -56,6 +58,24 @@ router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPerm
       },
     })
     .returning();
+
+  const { before, after } = diffFields(
+    { singleClassPriceEgp: beforeSettings.singleClassPriceEgp },
+    { singleClassPriceEgp: settings.singleClassPriceEgp },
+    ["singleClassPriceEgp"],
+  );
+  if (Object.keys(after).length > 0) {
+    await logActivity(req, {
+      action: "update",
+      module: "settings",
+      entityType: "class_pricing_settings",
+      entityId: settings.id,
+      entityLabel: "Class pricing",
+      before,
+      after,
+      summary: "Updated class pricing settings",
+    });
+  }
 
   res.json(settings);
 });

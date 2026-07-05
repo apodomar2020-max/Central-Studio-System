@@ -30,8 +30,12 @@ import {
 import type { BalletApplicationStatus } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
+import { diffFields, logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
+const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive"] as const;
+const BALLET_SLOT_ACTIVITY_FIELDS = ["date", "startTime", "endTime", "capacity", "notes", "isActive"] as const;
+const BALLET_SETTINGS_ACTIVITY_FIELDS = ["preBalletPriceEgp", "preBalletHoursMonthly", "levelsPriceEgp", "levelsHoursMonthly", "fewSeatsThreshold", "assessmentInstructions", "requirements", "acceptanceMessageTemplate"] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -368,6 +372,18 @@ router.patch(
     }
 
     logger.info({ applicationId: id, fromStatus, toStatus: status, adminId }, "Ballet application status updated");
+    if (fromStatus !== status) {
+      await logActivity(req, {
+        action: "statusChange",
+        module: "ballet.applications",
+        entityType: "ballet_application",
+        entityId: id,
+        entityLabel: app.childName,
+        before: { status: fromStatus },
+        after: { status, note: note ?? null },
+        summary: `Changed ballet application status for ${app.childName} from ${fromStatus} to ${status}`,
+      });
+    }
 
     res.json({ success: true, status });
   },
@@ -464,6 +480,21 @@ router.post(
     });
 
     logger.info({ applicationId: id, levelId, levelName: level.name, adminId }, "Ballet level assigned");
+    await logActivity(req, {
+      action: "assignLevel",
+      module: "ballet.applications",
+      entityType: "ballet_application",
+      entityId: id,
+      entityLabel: level.name,
+      before: { status: fromStatus },
+      after: {
+        status: "assignedToLevel",
+        assignedLevelId: levelId,
+        levelName: level.name,
+        assignmentId: assignment.id,
+      },
+      summary: `Assigned ballet application ${id} to ${level.name}`,
+    });
 
     res.status(201).json({ success: true, assignmentId: assignment.id, levelName: level.name });
   },
@@ -498,7 +529,7 @@ const CreateLevelBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req, res): Promise<void> => {
+router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateLevelBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -510,6 +541,15 @@ router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ba
       .insert(balletLevelsTable)
       .values({ name: name.trim(), sortOrder: sortOrder ?? 0, isActive: isActive ?? true })
       .returning();
+    await logActivity(req, {
+      action: "create",
+      module: "ballet.levels",
+      entityType: "ballet_level",
+      entityId: level.id,
+      entityLabel: level.name,
+      after: Object.fromEntries(BALLET_LEVEL_ACTIVITY_FIELDS.map((key) => [key, level[key]])),
+      summary: `Created ballet level ${level.name}`,
+    });
     res.status(201).json({ level });
   } catch (err: any) {
     if (err?.code === "23505") {
@@ -529,7 +569,7 @@ const UpdateLevelBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req, res): Promise<void> => {
+router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid level ID" }); return; }
 
@@ -550,6 +590,8 @@ router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermissio
   }
 
   try {
+    const [existing] = await db.select().from(balletLevelsTable).where(eq(balletLevelsTable.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Level not found" }); return; }
     const [level] = await db
       .update(balletLevelsTable)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -557,6 +599,29 @@ router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermissio
       .where(eq(balletLevelsTable.id, id))
       .returning();
     if (!level) { res.status(404).json({ error: "Level not found" }); return; }
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_LEVEL_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(BALLET_LEVEL_ACTIVITY_FIELDS.map((key) => [key, level[key]])),
+      BALLET_LEVEL_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      const action = existing.isActive !== level.isActive ? level.isActive ? "activate" : "deactivate" : "update";
+      await logActivity(req, {
+        action,
+        module: "ballet.levels",
+        entityType: "ballet_level",
+        entityId: level.id,
+        entityLabel: level.name,
+        before,
+        after,
+        summary: action === "activate"
+          ? `Activated ballet level ${level.name}`
+          : action === "deactivate"
+            ? `Deactivated ballet level ${level.name}`
+            : `Updated ballet level ${level.name}: ${changedKeys.join(", ")}`,
+      });
+    }
     res.json({ level });
   } catch (err: any) {
     if (err?.code === "23505") {
@@ -617,7 +682,7 @@ const CreateSlotBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.post("/admin/ballet/slots", requireAdminAuth, requireAdminPermission("ballet.assessmentDates", "create"), async (req, res): Promise<void> => {
+router.post("/admin/ballet/slots", requireAdminAuth, requireAdminPermission("ballet.assessmentDates", "create"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateSlotBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -635,6 +700,15 @@ router.post("/admin/ballet/slots", requireAdminAuth, requireAdminPermission("bal
         isActive:  parsed.data.isActive ?? true,
       })
       .returning();
+    await logActivity(req, {
+      action: "create",
+      module: "ballet.assessmentDates",
+      entityType: "ballet_assessment_slot",
+      entityId: slot.id,
+      entityLabel: `${slot.date} ${slot.startTime}`,
+      after: Object.fromEntries(BALLET_SLOT_ACTIVITY_FIELDS.map((key) => [key, slot[key]])),
+      summary: `Created ballet assessment date ${slot.date} ${slot.startTime}`,
+    });
     res.status(201).json({ slot });
   } catch (err) {
     logger.error({ err }, "POST /admin/ballet/slots failed");
@@ -653,7 +727,7 @@ const UpdateSlotBody = z.object({
   isActive:  z.boolean().optional(),
 });
 
-router.patch("/admin/ballet/slots/:id", requireAdminAuth, requireAssessmentSlotUpdatePermission, async (req, res): Promise<void> => {
+router.patch("/admin/ballet/slots/:id", requireAdminAuth, requireAssessmentSlotUpdatePermission, async (req: AdminRequest, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid slot ID" }); return; }
 
@@ -680,6 +754,8 @@ router.patch("/admin/ballet/slots/:id", requireAdminAuth, requireAssessmentSlotU
   updates["updatedAt"] = new Date().toISOString();
 
   try {
+    const [existing] = await db.select().from(balletAssessmentSlotsTable).where(eq(balletAssessmentSlotsTable.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Slot not found" }); return; }
     const [slot] = await db
       .update(balletAssessmentSlotsTable)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -687,6 +763,29 @@ router.patch("/admin/ballet/slots/:id", requireAdminAuth, requireAssessmentSlotU
       .where(eq(balletAssessmentSlotsTable.id, id))
       .returning();
     if (!slot) { res.status(404).json({ error: "Slot not found" }); return; }
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_SLOT_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(BALLET_SLOT_ACTIVITY_FIELDS.map((key) => [key, slot[key]])),
+      BALLET_SLOT_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      const action = existing.isActive !== slot.isActive ? slot.isActive ? "activate" : "delete" : "update";
+      await logActivity(req, {
+        action,
+        module: "ballet.assessmentDates",
+        entityType: "ballet_assessment_slot",
+        entityId: slot.id,
+        entityLabel: `${slot.date} ${slot.startTime}`,
+        before,
+        after,
+        summary: action === "delete"
+          ? `Deactivated ballet assessment date ${slot.date} ${slot.startTime}`
+          : action === "activate"
+            ? `Activated ballet assessment date ${slot.date} ${slot.startTime}`
+            : `Updated ballet assessment date ${slot.date} ${slot.startTime}: ${changedKeys.join(", ")}`,
+      });
+    }
     res.json({ slot });
   } catch (err) {
     logger.error({ err }, "PATCH /admin/ballet/slots/:id failed");
@@ -720,7 +819,7 @@ const UpdateSettingsBody = z.object({
   acceptanceMessageTemplate: z.string().nullable().optional(),
 });
 
-router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.pricing", "edit"), async (req, res): Promise<void> => {
+router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.pricing", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = UpdateSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -734,6 +833,8 @@ router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission(
   updates["updatedAt"] = new Date().toISOString();
 
   try {
+    const [existing] = await db.select().from(balletSettingsTable).where(eq(balletSettingsTable.id, 1)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Settings not found" }); return; }
     const [row] = await db
       .update(balletSettingsTable)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -741,6 +842,24 @@ router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission(
       .where(eq(balletSettingsTable.id, 1))
       .returning();
     if (!row) { res.status(404).json({ error: "Settings not found" }); return; }
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_SETTINGS_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(BALLET_SETTINGS_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+      BALLET_SETTINGS_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      await logActivity(req, {
+        action: "update",
+        module: "ballet.pricing",
+        entityType: "ballet_settings",
+        entityId: row.id,
+        entityLabel: "Ballet pricing and settings",
+        before,
+        after,
+        summary: `Updated ballet pricing/settings: ${changedKeys.join(", ")}`,
+      });
+    }
     res.json({ settings: row });
   } catch (err) {
     logger.error({ err }, "PATCH /admin/ballet/settings failed");

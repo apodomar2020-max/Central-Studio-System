@@ -8,8 +8,12 @@ import {
   appFaqItemsTable,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { diffFields, logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
+const CONTENT_PAGE_ACTIVITY_FIELDS = ["title", "subtitle", "content", "isActive"] as const;
+const FAQ_ACTIVITY_FIELDS = ["question", "answer", "sortOrder", "isActive"] as const;
+const CONTACT_LINK_ACTIVITY_FIELDS = ["type", "label", "value", "icon", "sortOrder", "isActive"] as const;
 
 const SlugParams = z.object({
   slug: z.string().min(1),
@@ -170,6 +174,12 @@ router.patch(
       return;
     }
 
+    const [existing] = await db.select().from(appContentPagesTable).where(eq(appContentPagesTable.slug, params.data.slug)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Content page not found" });
+      return;
+    }
+
     const [updated] = await db
       .update(appContentPagesTable)
       .set({
@@ -183,9 +193,22 @@ router.patch(
       .where(eq(appContentPagesTable.slug, params.data.slug))
       .returning();
 
-    if (!updated) {
-      res.status(404).json({ error: "Content page not found" });
-      return;
+    const { before, after } = diffFields(
+      Object.fromEntries(CONTENT_PAGE_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(CONTENT_PAGE_ACTIVITY_FIELDS.map((key) => [key, updated[key]])),
+      CONTENT_PAGE_ACTIVITY_FIELDS,
+    );
+    if (Object.keys(after).length > 0) {
+      await logActivity(req, {
+        action: "update",
+        module: "appContent",
+        entityType: "content_page",
+        entityId: updated.slug,
+        entityLabel: updated.title,
+        before,
+        after,
+        summary: `Updated content page ${updated.title}`,
+      });
     }
 
     res.json(updated);
@@ -209,7 +232,7 @@ router.post(
   "/admin/content/faqs",
   requireAdminAuth,
   requireAdminPermission("appContent", "create"),
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const parsed = UpsertFaqBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid FAQ item" });
@@ -221,6 +244,15 @@ router.post(
       .values(parsed.data)
       .returning();
 
+    await logActivity(req, {
+      action: "create",
+      module: "appContent",
+      entityType: "faq_item",
+      entityId: created.id,
+      entityLabel: created.question,
+      after: Object.fromEntries(FAQ_ACTIVITY_FIELDS.map((key) => [key, created[key]])),
+      summary: `Created FAQ item ${created.question}`,
+    });
     res.status(201).json(created);
   },
 );
@@ -229,7 +261,7 @@ router.patch(
   "/admin/content/faqs/:id",
   requireAdminAuth,
   requireAdminPermission("appContent", "edit"),
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
@@ -242,15 +274,33 @@ router.patch(
       return;
     }
 
+    const [existing] = await db.select().from(appFaqItemsTable).where(eq(appFaqItemsTable.id, params.data.id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "FAQ item not found" });
+      return;
+    }
     const [updated] = await db
       .update(appFaqItemsTable)
       .set({ ...parsed.data, updatedAt: new Date().toISOString() })
       .where(eq(appFaqItemsTable.id, params.data.id))
       .returning();
 
-    if (!updated) {
-      res.status(404).json({ error: "FAQ item not found" });
-      return;
+    const { before, after } = diffFields(
+      Object.fromEntries(FAQ_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(FAQ_ACTIVITY_FIELDS.map((key) => [key, updated[key]])),
+      FAQ_ACTIVITY_FIELDS,
+    );
+    if (Object.keys(after).length > 0) {
+      await logActivity(req, {
+        action: existing.isActive !== updated.isActive ? updated.isActive ? "activate" : "deactivate" : "update",
+        module: "appContent",
+        entityType: "faq_item",
+        entityId: updated.id,
+        entityLabel: updated.question,
+        before,
+        after,
+        summary: `Updated FAQ item ${updated.question}`,
+      });
     }
 
     res.json(updated);
@@ -261,22 +311,35 @@ router.delete(
   "/admin/content/faqs/:id",
   requireAdminAuth,
   requireAdminPermission("appContent", "delete"),
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
     }
 
+    const [existing] = await db.select().from(appFaqItemsTable).where(eq(appFaqItemsTable.id, params.data.id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "FAQ item not found" });
+      return;
+    }
     const [updated] = await db
       .update(appFaqItemsTable)
       .set({ isActive: false, updatedAt: new Date().toISOString() })
       .where(eq(appFaqItemsTable.id, params.data.id))
       .returning();
 
-    if (!updated) {
-      res.status(404).json({ error: "FAQ item not found" });
-      return;
+    if (existing.isActive !== updated.isActive) {
+      await logActivity(req, {
+        action: "deactivate",
+        module: "appContent",
+        entityType: "faq_item",
+        entityId: updated.id,
+        entityLabel: updated.question,
+        before: { isActive: existing.isActive },
+        after: { isActive: updated.isActive },
+        summary: `Deactivated FAQ item ${updated.question}`,
+      });
     }
 
     res.json({ success: true });
@@ -300,7 +363,7 @@ router.post(
   "/admin/content/contact-links",
   requireAdminAuth,
   requireAdminPermission("appContent", "create"),
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const parsed = UpsertContactLinkBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid contact link" });
@@ -315,6 +378,15 @@ router.post(
       })
       .returning();
 
+    await logActivity(req, {
+      action: "create",
+      module: "appContent",
+      entityType: "contact_link",
+      entityId: created.id,
+      entityLabel: created.label,
+      after: Object.fromEntries(CONTACT_LINK_ACTIVITY_FIELDS.map((key) => [key, created[key]])),
+      summary: `Created contact link ${created.label}`,
+    });
     res.status(201).json(created);
   },
 );
@@ -323,7 +395,7 @@ router.patch(
   "/admin/content/contact-links/:id",
   requireAdminAuth,
   requireAdminPermission("appContent", "edit"),
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
@@ -336,6 +408,11 @@ router.patch(
       return;
     }
 
+    const [existing] = await db.select().from(appContactLinksTable).where(eq(appContactLinksTable.id, params.data.id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Contact link not found" });
+      return;
+    }
     const [updated] = await db
       .update(appContactLinksTable)
       .set({
@@ -346,9 +423,22 @@ router.patch(
       .where(eq(appContactLinksTable.id, params.data.id))
       .returning();
 
-    if (!updated) {
-      res.status(404).json({ error: "Contact link not found" });
-      return;
+    const { before, after } = diffFields(
+      Object.fromEntries(CONTACT_LINK_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(CONTACT_LINK_ACTIVITY_FIELDS.map((key) => [key, updated[key]])),
+      CONTACT_LINK_ACTIVITY_FIELDS,
+    );
+    if (Object.keys(after).length > 0) {
+      await logActivity(req, {
+        action: existing.isActive !== updated.isActive ? updated.isActive ? "activate" : "deactivate" : "update",
+        module: "appContent",
+        entityType: "contact_link",
+        entityId: updated.id,
+        entityLabel: updated.label,
+        before,
+        after,
+        summary: `Updated contact link ${updated.label}`,
+      });
     }
 
     res.json(updated);
@@ -359,22 +449,35 @@ router.delete(
   "/admin/content/contact-links/:id",
   requireAdminAuth,
   requireAdminPermission("appContent", "delete"),
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
     }
 
+    const [existing] = await db.select().from(appContactLinksTable).where(eq(appContactLinksTable.id, params.data.id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Contact link not found" });
+      return;
+    }
     const [updated] = await db
       .update(appContactLinksTable)
       .set({ isActive: false, updatedAt: new Date().toISOString() })
       .where(eq(appContactLinksTable.id, params.data.id))
       .returning();
 
-    if (!updated) {
-      res.status(404).json({ error: "Contact link not found" });
-      return;
+    if (existing.isActive !== updated.isActive) {
+      await logActivity(req, {
+        action: "deactivate",
+        module: "appContent",
+        entityType: "contact_link",
+        entityId: updated.id,
+        entityLabel: updated.label,
+        before: { isActive: existing.isActive },
+        after: { isActive: updated.isActive },
+        summary: `Deactivated contact link ${updated.label}`,
+      });
     }
 
     res.json({ success: true });

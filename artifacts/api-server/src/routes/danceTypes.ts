@@ -17,8 +17,10 @@ import { z } from "zod";
 import { db, danceTypesTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { sanitizeSvg } from "../lib/sanitizeSvg";
+import { diffFields, logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
+const DANCE_TYPE_ACTIVITY_FIELDS = ["name", "slug", "description", "iconUrl", "coverImageUrl", "color", "isActive", "sortOrder", "hasIconSvg"] as const;
 
 /**
  * Shape a DB row for clients. Keeps the sanitized `iconSvg` inline so mobile can
@@ -30,6 +32,20 @@ function shapeDanceType(row: typeof danceTypesTable.$inferSelect) {
     ...row,
     hasIconSvg: !!row.iconSvg,
     iconSvgUrl: row.iconSvg ? `/api/dance-types/${row.id}/icon.svg` : null,
+  };
+}
+
+function danceTypeActivitySnapshot(row: typeof danceTypesTable.$inferSelect): Record<string, unknown> {
+  return {
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    iconUrl: row.iconUrl,
+    coverImageUrl: row.coverImageUrl,
+    color: row.color,
+    isActive: row.isActive,
+    sortOrder: row.sortOrder,
+    hasIconSvg: !!row.iconSvg,
   };
 }
 
@@ -121,6 +137,15 @@ router.post(
           sortOrder: sortOrder ?? 0,
         })
         .returning();
+      await logActivity(req, {
+        action: "create",
+        module: "settings",
+        entityType: "dance_type",
+        entityId: created.id,
+        entityLabel: created.name,
+        after: danceTypeActivitySnapshot(created),
+        summary: `Created dance type ${created.name}`,
+      });
       res.status(201).json(shapeDanceType(created));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -172,6 +197,11 @@ router.patch(
       return;
     }
     try {
+      const [existing] = await db.select().from(danceTypesTable).where(eq(danceTypesTable.id, id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Dance type not found" });
+        return;
+      }
       const [updated] = await db
         .update(danceTypesTable)
         .set(updates)
@@ -180,6 +210,29 @@ router.patch(
       if (!updated) {
         res.status(404).json({ error: "Dance type not found" });
         return;
+      }
+      const { before, after } = diffFields(
+        danceTypeActivitySnapshot(existing),
+        danceTypeActivitySnapshot(updated),
+        DANCE_TYPE_ACTIVITY_FIELDS,
+      );
+      const changedKeys = Object.keys(after);
+      if (changedKeys.length > 0) {
+        const action = existing.isActive !== updated.isActive ? updated.isActive ? "activate" : "deactivate" : "update";
+        await logActivity(req, {
+          action,
+          module: "settings",
+          entityType: "dance_type",
+          entityId: updated.id,
+          entityLabel: updated.name,
+          before,
+          after,
+          summary: action === "activate"
+            ? `Activated dance type ${updated.name}`
+            : action === "deactivate"
+              ? `Deactivated dance type ${updated.name}`
+              : `Updated dance type ${updated.name}: ${changedKeys.join(", ")}`,
+        });
       }
       res.json(shapeDanceType(updated));
     } catch (err: unknown) {
@@ -207,6 +260,11 @@ router.delete(
       return;
     }
     try {
+      const [existing] = await db.select().from(danceTypesTable).where(eq(danceTypesTable.id, id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Dance type not found" });
+        return;
+      }
       const [updated] = await db
         .update(danceTypesTable)
         .set({ isActive: false })
@@ -215,6 +273,18 @@ router.delete(
       if (!updated) {
         res.status(404).json({ error: "Dance type not found" });
         return;
+      }
+      if (existing.isActive !== updated.isActive) {
+        await logActivity(req, {
+          action: "deactivate",
+          module: "settings",
+          entityType: "dance_type",
+          entityId: updated.id,
+          entityLabel: updated.name,
+          before: { isActive: existing.isActive },
+          after: { isActive: updated.isActive },
+          summary: `Deactivated dance type ${updated.name}`,
+        });
       }
       res.json({ success: true });
     } catch (err) {
@@ -249,6 +319,11 @@ router.post(
       return;
     }
     try {
+      const [existing] = await db.select().from(danceTypesTable).where(eq(danceTypesTable.id, id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Dance type not found" });
+        return;
+      }
       const [updated] = await db
         .update(danceTypesTable)
         .set({ iconSvg: result.svg, iconMime: "image/svg+xml" })
@@ -257,6 +332,18 @@ router.post(
       if (!updated) {
         res.status(404).json({ error: "Dance type not found" });
         return;
+      }
+      if (updated.iconSvg) {
+        await logActivity(req, {
+          action: "update",
+          module: "settings",
+          entityType: "dance_type",
+          entityId: updated.id,
+          entityLabel: updated.name,
+          before: { hasIconSvg: !!existing.iconSvg },
+          after: { hasIconSvg: true, iconUpdated: true },
+          summary: `Updated icon for dance type ${updated.name}`,
+        });
       }
       res.json(shapeDanceType(updated));
     } catch (err) {
@@ -278,6 +365,11 @@ router.delete(
       return;
     }
     try {
+      const [existing] = await db.select().from(danceTypesTable).where(eq(danceTypesTable.id, id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Dance type not found" });
+        return;
+      }
       const [updated] = await db
         .update(danceTypesTable)
         .set({ iconSvg: null, iconMime: null })
@@ -286,6 +378,18 @@ router.delete(
       if (!updated) {
         res.status(404).json({ error: "Dance type not found" });
         return;
+      }
+      if (existing.iconSvg !== updated.iconSvg) {
+        await logActivity(req, {
+          action: "update",
+          module: "settings",
+          entityType: "dance_type",
+          entityId: updated.id,
+          entityLabel: updated.name,
+          before: { hasIconSvg: !!existing.iconSvg },
+          after: { hasIconSvg: !!updated.iconSvg },
+          summary: `Cleared icon for dance type ${updated.name}`,
+        });
       }
       res.json(shapeDanceType(updated));
     } catch (err) {

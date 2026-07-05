@@ -1,5 +1,5 @@
 import { blockStudentJwt } from "../middlewares/auth";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { Router, type IRouter } from "express";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
@@ -7,6 +7,7 @@ import { currentOccurrenceDate } from "../lib/occurrence";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
 import { createStudentNotification } from "../lib/notifications";
 import { DbClient } from "../lib/dbTypes";
+import { diffFields, logActivity } from "../lib/activityLog";
 import {
   ListSchedulesQueryParams,
   CreateScheduleBody,
@@ -20,6 +21,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const SCHEDULE_ACTIVITY_FIELDS = ["classId", "type", "status", "dayOfWeek", "date", "startTime", "endTime", "priceEgp", "packageEligible", "location", "isRecurring", "effectiveFrom", "effectiveUntil"] as const;
 
 const SCHEDULE_TYPES = ["weekly", "one_time"] as const;
 const SCHEDULE_STATUSES = ["active", "completed", "expired", "cancelled"] as const;
@@ -356,7 +358,7 @@ router.get("/schedules", async (req, res): Promise<void> => {
   res.json(ListSchedulesResponse.parse(enriched));
 });
 
-router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "create"), async (req, res): Promise<void> => {
+router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "create"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateScheduleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -382,6 +384,15 @@ router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermiss
     .insert(schedulesTable)
     .values(normalized as typeof schedulesTable.$inferInsert)
     .returning();
+  await logActivity(req, {
+    action: "create",
+    module: "schedules",
+    entityType: "schedule",
+    entityId: row.id,
+    entityLabel: scheduleDisplay(row),
+    after: Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    summary: `Created schedule ${scheduleDisplay(row)}`,
+  });
   res.status(201).json(GetScheduleResponse.parse(row));
 });
 
@@ -400,7 +411,7 @@ router.get("/schedules/:id", async (req, res): Promise<void> => {
   res.json(GetScheduleResponse.parse(row));
 });
 
-router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "edit"), async (req, res): Promise<void> => {
+router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const params = UpdateScheduleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -446,10 +457,38 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
     res.status(404).json({ error: "Schedule not found" });
     return;
   }
+  const { before, after } = diffFields(
+    Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+    Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    SCHEDULE_ACTIVITY_FIELDS,
+  );
+  const changedKeys = Object.keys(after);
+  if (changedKeys.length > 0) {
+    const statusChanged = existing.status !== row.status;
+    const action = statusChanged
+      ? row.status === "cancelled"
+        ? "cancel"
+        : row.status === "completed"
+          ? "complete"
+          : "statusChange"
+      : "update";
+    await logActivity(req, {
+      action,
+      module: "schedules",
+      entityType: "schedule",
+      entityId: row.id,
+      entityLabel: scheduleDisplay(row),
+      before,
+      after,
+      summary: statusChanged
+        ? `${action === "cancel" ? "Cancelled" : action === "complete" ? "Completed" : "Changed status for"} schedule ${scheduleDisplay(row)}`
+        : `Updated schedule ${scheduleDisplay(row)}: ${changedKeys.join(", ")}`,
+    });
+  }
   res.json(UpdateScheduleResponse.parse(row));
 });
 
-router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req, res): Promise<void> => {
+router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req: AdminRequest, res): Promise<void> => {
   const params = DeleteScheduleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -473,6 +512,15 @@ router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminP
     res.status(404).json({ error: "Schedule not found" });
     return;
   }
+  await logActivity(req, {
+    action: "delete",
+    module: "schedules",
+    entityType: "schedule",
+    entityId: row.id,
+    entityLabel: scheduleDisplay(row),
+    before: Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
+    summary: `Deleted schedule ${scheduleDisplay(row)}`,
+  });
   res.sendStatus(204);
 });
 

@@ -39,6 +39,7 @@ import {
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { buildPdfBuffer } from "./pdfReport";
+import { logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
 
@@ -890,6 +891,15 @@ router.get("/reports/:entity", requireAdminAuth, requireReportFormatPermission, 
   if (format === "xlsx") {
     try {
       const buf = await buildXlsxBuffer(entity, result, { from, to, status });
+      await logActivity(req as AdminRequest, {
+        action: "exportExcel",
+        module: "reports",
+        entityType: "report_export",
+        entityId: entity,
+        entityLabel: ENTITY_LABELS[entity],
+        after: { entity, format: "xlsx", from: from ?? null, to: to ?? null, status: status ?? null, rowCount: result.rows.length },
+        summary: `Exported ${ENTITY_LABELS[entity]} report as Excel`,
+      });
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", `attachment; filename="${entity}-report-${stamp}.xlsx"`);
       res.send(buf);
@@ -910,6 +920,15 @@ router.get("/reports/:entity", requireAdminAuth, requireReportFormatPermission, 
         summary: result.summary,
         filters: { from, to, status },
         generatedBy: (req as AdminRequest).adminUser?.username ?? "Admin",
+      });
+      await logActivity(req as AdminRequest, {
+        action: "exportPdf",
+        module: "reports",
+        entityType: "report_export",
+        entityId: entity,
+        entityLabel: ENTITY_LABELS[entity],
+        after: { entity, format: "pdf", from: from ?? null, to: to ?? null, status: status ?? null, rowCount: result.rows.length },
+        summary: `Exported ${ENTITY_LABELS[entity]} report as PDF`,
       });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${entity}-report-${stamp}.pdf"`);
