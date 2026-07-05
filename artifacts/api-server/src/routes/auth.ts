@@ -14,12 +14,19 @@
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, studentsTable, emailOtpsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
+import { db, studentsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
-import { signStudentToken, generateOtp, sendOtpEmail, OTP_TTL_SECONDS } from "../lib/authHelpers";
+import {
+  invalidateOtpCodes,
+  issueOtp,
+  OtpRateLimitError,
+  PasswordSchema,
+  signStudentToken,
+  verifyOtpCode,
+} from "../lib/authHelpers";
 import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfileResponse";
 
 const router: IRouter = Router();
@@ -29,13 +36,44 @@ const RegisterBody = z.object({
   email: z.string().email("Invalid email address"),
   phone: z.string().optional(),
   accountType: z.enum(["student", "parent"]).optional(),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: PasswordSchema,
 });
 
 const LoginBody = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
 });
+
+const GENERIC_RESET_RESPONSE = {
+  ok: true,
+  message: "If an account exists for this email, a reset code will be sent.",
+};
+
+const forgotPasswordAttempts = new Map<string, number>();
+
+function normalizeEmail(email: string): string {
+  return email.toLowerCase().trim();
+}
+
+function throttleKey(email: string, ip: string | undefined): string {
+  return `${email}:${ip ?? "unknown"}`;
+}
+
+function isForgotPasswordThrottled(email: string, ip: string | undefined): boolean {
+  const key = throttleKey(email, ip);
+  const now = Date.now();
+  const last = forgotPasswordAttempts.get(key);
+  forgotPasswordAttempts.set(key, now);
+  return last != null && now - last < 60_000;
+}
+
+function passwordResetFailure(res: import("express").Response, message = "Invalid or expired code. Please request a new one."): void {
+  res.status(400).json({ error: message });
+}
+
+function logPasswordSecurityEvent(studentId: number, event: "password_reset" | "password_changed"): void {
+  logger.info({ studentId, event }, "Student password security event");
+}
 
 const AccountType = z.enum(["student", "parent"]);
 const GENDERS = ["male", "female", "other"] as const;
@@ -67,7 +105,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const [existing] = await db
     .select({ id: studentsTable.id })
     .from(studentsTable)
-    .where(eq(studentsTable.email, email.toLowerCase().trim()));
+    .where(eq(studentsTable.email, normalizeEmail(email)));
 
   if (existing) {
     res.status(409).json({ error: "An account with this email already exists" });
@@ -87,7 +125,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     .insert(studentsTable)
     .values({
       name: profileInput.name,
-      email: email.toLowerCase().trim(),
+      email: normalizeEmail(email),
       phone: profileInput.phone,
       accountType: profileInput.accountType,
       ...completion,
@@ -119,7 +157,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const [student] = await db
     .select()
     .from(studentsTable)
-    .where(eq(studentsTable.email, email.toLowerCase().trim()));
+    .where(eq(studentsTable.email, normalizeEmail(email)));
 
   if (!student) {
     // Return a generic message to avoid leaking whether the email exists
@@ -304,44 +342,45 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
   }
 
   const { email } = parsed.data;
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
 
   const [student] = await db
     .select({ id: studentsTable.id, email: studentsTable.email })
     .from(studentsTable)
     .where(eq(studentsTable.email, normalizedEmail));
 
-  // Always respond success to avoid leaking whether an email exists
-  if (!student) {
-    res.json({ ok: true });
+  if (isForgotPasswordThrottled(normalizedEmail, req.ip)) {
+    logger.warn({ email: normalizedEmail, ip: req.ip }, "Forgot password throttled");
+    res.json(GENERIC_RESET_RESPONSE);
     return;
   }
 
-  const code = generateOtp();
-  const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
+  // Always respond success to avoid leaking whether an email exists.
+  if (!student) {
+    res.json(GENERIC_RESET_RESPONSE);
+    return;
+  }
 
-  await db.insert(emailOtpsTable).values({
-    studentId: student.id,
-    email: normalizedEmail,
-    code,
-    purpose: "reset",
-    expiresAt,
-  });
+  try {
+    await issueOtp(normalizedEmail, { studentId: student.id, purpose: "reset" });
+    logger.info({ studentId: student.id }, "Password reset OTP generated");
+  } catch (err) {
+    if (err instanceof OtpRateLimitError) {
+      logger.warn({ studentId: student.id }, "Password reset OTP request rate-limited");
+    } else {
+      await invalidateOtpCodes(normalizedEmail, "reset");
+      logger.error({ err, studentId: student.id }, "Password reset OTP delivery failed");
+    }
+  }
 
-  // Reuse the shared OTP mailer (dev: logs the code).
-  await sendOtpEmail(normalizedEmail, code, "reset");
-
-  logger.info({ studentId: student.id }, "Password reset OTP generated");
-
-  // Return studentId so the client can submit the reset form
-  res.json({ ok: true, studentId: student.id });
+  res.json(GENERIC_RESET_RESPONSE);
 });
 
 // ─── POST /api/auth/reset-password ───────────────────────────────────────────
 const ResetPasswordBody = z.object({
-  studentId: z.coerce.number().int().positive(),
+  email: z.string().email("Invalid email address"),
   code: z.string().length(6, "Code must be exactly 6 digits"),
-  newPassword: z.string().min(6, "Password must be at least 6 characters"),
+  newPassword: PasswordSchema,
 });
 
 router.post("/auth/reset-password", async (req, res): Promise<void> => {
@@ -351,38 +390,86 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
     return;
   }
 
-  const { studentId, code, newPassword } = parsed.data;
+  const { email, code, newPassword } = parsed.data;
+  const normalizedEmail = normalizeEmail(email);
   const now = new Date().toISOString();
 
-  // Find latest valid (unused, unexpired) OTP for this student
-  const [otp] = await db
+  const [student] = await db
     .select()
-    .from(emailOtpsTable)
-    .where(
-      and(
-        eq(emailOtpsTable.studentId, studentId),
-        eq(emailOtpsTable.code, code),
-        eq(emailOtpsTable.purpose, "reset"),
-        isNull(emailOtpsTable.usedAt),
-        gt(emailOtpsTable.expiresAt, now),
-      )
-    )
-    .limit(1);
+    .from(studentsTable)
+    .where(eq(studentsTable.email, normalizedEmail));
+  if (!student) {
+    passwordResetFailure(res);
+    return;
+  }
 
-  if (!otp) {
-    res.status(400).json({ error: "Invalid or expired code. Please request a new one." });
+  const result = await verifyOtpCode(normalizedEmail, code, "reset");
+  if (result.status !== "ok") {
+    if (result.status === "locked") {
+      res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
+      return;
+    }
+    passwordResetFailure(res);
     return;
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
 
-  // Mark OTP as used
-  await db.update(emailOtpsTable).set({ usedAt: now }).where(eq(emailOtpsTable.id, otp.id));
+  await db
+    .update(studentsTable)
+    .set({ passwordHash, authProvider: student.authProvider ?? "local", updatedAt: now })
+    .where(eq(studentsTable.id, student.id));
 
-  // Update password
-  await db.update(studentsTable).set({ passwordHash }).where(eq(studentsTable.id, studentId));
+  await invalidateOtpCodes(normalizedEmail, "reset");
+  logPasswordSecurityEvent(student.id, "password_reset");
 
-  logger.info({ studentId }, "Password reset successfully");
+  res.json({ ok: true });
+});
+
+const ChangePasswordBody = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: PasswordSchema,
+});
+
+router.post("/auth/change-password", requireStudentAuth, async (req, res): Promise<void> => {
+  const parsed = ChangePasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+
+  const [student] = await db
+    .select()
+    .from(studentsTable)
+    .where(eq(studentsTable.id, req.studentId!));
+  if (!student) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+  if (!student.passwordHash) {
+    res.status(400).json({ error: "This account does not have a password set." });
+    return;
+  }
+
+  const currentValid = await bcrypt.compare(parsed.data.currentPassword, student.passwordHash);
+  if (!currentValid) {
+    logger.warn({ studentId: student.id }, "Student change-password current password mismatch");
+    res.status(400).json({ error: "Current password is incorrect." });
+    return;
+  }
+  const samePassword = await bcrypt.compare(parsed.data.newPassword, student.passwordHash);
+  if (samePassword) {
+    res.status(400).json({ error: "New password must be different from your current password." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
+  await db
+    .update(studentsTable)
+    .set({ passwordHash, authProvider: student.authProvider ?? "local", updatedAt: new Date().toISOString() })
+    .where(eq(studentsTable.id, student.id));
+
+  logPasswordSecurityEvent(student.id, "password_changed");
 
   res.json({ ok: true });
 });

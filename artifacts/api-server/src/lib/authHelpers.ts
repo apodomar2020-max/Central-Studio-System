@@ -8,6 +8,7 @@
 import jwt from "jsonwebtoken";
 import { randomInt } from "crypto";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { z } from "zod";
 import { db, emailOtpsTable } from "@workspace/db";
 import { STUDENT_JWT_SECRET, type StudentTokenPayload } from "../middlewares/auth";
 import { logger } from "./logger";
@@ -36,9 +37,20 @@ export function signStudentToken(studentId: number, email: string, emailVerified
 
 // ─── OTP ────────────────────────────────────────────────────────────────────
 
-export const OTP_TTL_SECONDS = 600;            // codes valid for 10 minutes
-export const OTP_RESEND_COOLDOWN_SECONDS = 60; // min gap between (re)sends per email+purpose
-export const OTP_MAX_ATTEMPTS = 5;             // wrong guesses before a code is locked
+function positiveIntEnv(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export const OTP_TTL_SECONDS = positiveIntEnv("OTP_TTL_SECONDS", 600);
+export const OTP_RESEND_COOLDOWN_SECONDS = positiveIntEnv("OTP_RESEND_COOLDOWN_SECONDS", 60);
+export const OTP_MAX_ATTEMPTS = positiveIntEnv("OTP_MAX_ATTEMPTS", 5);
+export const PASSWORD_MIN_LENGTH = positiveIntEnv("PASSWORD_MIN_LENGTH", 8);
+
+export const PasswordSchema = z.string()
+  .min(PASSWORD_MIN_LENGTH, `Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
+  .regex(/[A-Za-z]/, "Password must include at least one letter")
+  .regex(/[0-9]/, "Password must include at least one number");
 
 export type OtpPurpose = "verify" | "reset";
 
@@ -60,7 +72,7 @@ export function generateOtp(): string {
  */
 export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose): Promise<void> {
   if (process.env["NODE_ENV"] !== "production") {
-    logger.info({ to, code, purpose }, "DEV MODE — OTP code (not sent via email)");
+    logger.info({ to, purpose }, "DEV MODE — OTP generated (not sent via email)");
     return;
   }
   // TODO: integrate a real email provider. Example (Resend):
@@ -83,6 +95,18 @@ export class OtpRateLimitError extends Error {
     this.name = "OtpRateLimitError";
     this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+export async function invalidateOtpCodes(email: string, purpose: OtpPurpose): Promise<void> {
+  const now = new Date().toISOString();
+  await db
+    .update(emailOtpsTable)
+    .set({ usedAt: now })
+    .where(and(
+      eq(emailOtpsTable.email, email.toLowerCase().trim()),
+      eq(emailOtpsTable.purpose, purpose),
+      isNull(emailOtpsTable.usedAt),
+    ));
 }
 
 /**
@@ -117,6 +141,8 @@ export async function issueOtp(
       throw new OtpRateLimitError(Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - ageSeconds));
     }
   }
+
+  await invalidateOtpCodes(normalizedEmail, purpose);
 
   const code = generateOtp();
   const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
