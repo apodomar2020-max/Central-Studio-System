@@ -44,9 +44,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //   ../../../ → /app  (workspace root)
 const migrationsFolder = path.resolve(__dirname, "../../../lib/db/migrations");
 
-const { pool } = await import("@workspace/db");
+// Imported dynamically so failures load-time checks in @workspace/db (missing
+// DATABASE_URL, the local-vs-Railway safety guard in lib/db/src/guard.ts) are
+// caught here and reported cleanly instead of as an unhandled rejection.
+let pool: (typeof import("@workspace/db"))["pool"] | undefined;
 
 try {
+  ({ pool } = await import("@workspace/db"));
   console.log(`[migrate] Applying pending migrations from ${migrationsFolder}`);
   await migrate(drizzle(pool), { migrationsFolder });
   console.log("[migrate] Migrations complete.");
@@ -54,6 +58,6 @@ try {
   process.exit(0);
 } catch (err) {
   console.error("[migrate] Migration failed:", err);
-  await pool.end().catch(() => {});
+  await pool?.end().catch(() => {});
   process.exit(1);
 }

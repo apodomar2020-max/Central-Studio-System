@@ -64,6 +64,14 @@ You'll see new files in `lib/db/migrations/`. Commit them to git.
 
 ## Step 4 — Create environment files
 
+> **Use a LOCAL database locally.** Never put Railway's `DATABASE_PUBLIC_URL`
+> (host ending in `proxy.rlwy.net`) in your local `.env` — that is the
+> **production** database. A safety guard in `@workspace/db` refuses to start
+> the API, run migrations, or open Drizzle Studio against a Railway host from
+> a local machine. For a deliberate emergency operation against the remote DB
+> (e.g. a one-off manual migration), set `ALLOW_REMOTE_DATABASE_LOCAL=true`
+> for that single command — it is dangerous and every query hits production.
+
 ### API server — `artifacts/api-server/.env`
 ```
 PORT=3000
@@ -260,6 +268,7 @@ pnpm run typecheck
 | Problem | Fix |
 |---------|-----|
 | `DATABASE_URL must be set` | Check `.env` exists in `artifacts/api-server/` |
+| `Refusing to use remote Railway database` | Your `DATABASE_URL` points at the production Railway DB (`…proxy.rlwy.net`). Switch to a local Postgres URL (Step 1). Only for deliberate emergency operations: `ALLOW_REMOTE_DATABASE_LOCAL=true` |
 | Mobile app shows "Couldn't reach server" | Check `EXPO_PUBLIC_API_URL` is set to your machine's IP, not localhost, when on a physical device |
 | Admin shows blank / no data | API server must be running on :3000; check CORS if you changed the port |
 | `pnpm install` fails | Make sure you're in the repo root (`Central-Studio-System-main/`), not inside an artifact folder |
