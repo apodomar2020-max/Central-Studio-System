@@ -201,7 +201,13 @@ function makeHandler(provider: ProviderName) {
       identity = await verifyProviderToken(provider, providerToken);
     } catch (err) {
       if (err instanceof ProviderNotConfiguredError) {
-        res.status(501).json({ error: err.message, requiredEnv: err.requiredEnv });
+        // Configuration details (missing env var names) are logged server-side
+        // only — never advertised to unauthenticated clients (Security G-03).
+        logger.error(
+          { provider, requiredEnv: err.requiredEnv, err },
+          "Social sign-in provider is not configured",
+        );
+        res.status(501).json({ error: "This sign-in method is not available." });
         return;
       }
       if (err instanceof ProviderTokenInvalidError) {

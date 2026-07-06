@@ -8,6 +8,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { requireAuth } from "./middlewares/auth";
 import { captureError } from "./lib/errorMonitoring";
+import { ExposableHttpError } from "./lib/httpError";
 
 const app: Express = express();
 
@@ -96,14 +97,23 @@ app.use((_req: Request, res: Response) => {
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   captureError(err, { method: _req.method, path: _req.path });
   logger.error(err, "Unhandled error");
-  const status = typeof err === "object" && err !== null && "status" in err
+  const rawStatus = typeof err === "object" && err !== null && "status" in err
     ? Number((err as { status: unknown }).status)
     : 500;
-  const message =
+  const status = rawStatus >= 400 && rawStatus < 600 ? rawStatus : 500;
+  const rawMessage =
     typeof err === "object" && err !== null && "message" in err
       ? String((err as { message: unknown }).message)
-      : "Internal server error";
-  res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
+      : null;
+  // Only client-safe messages leave the server: 4xx errors carry deliberate
+  // messages (body-parser, business rules, ExposableHttpError), but 5xx
+  // messages can contain SQL/driver internals (e.g. DrizzleQueryError's
+  // "Failed query: …") and are replaced with a fixed response (Security G-01).
+  const exposable = err instanceof ExposableHttpError || status < 500;
+  const message = exposable
+    ? rawMessage ?? "Request failed"
+    : "Internal server error";
+  res.status(status).json({ error: message });
 });
 
 export default app;

@@ -14,6 +14,7 @@ import { db, creditTransactionsTable, packageOrdersTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { ListCreditTransactionsQueryParams } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
+import { ExposableHttpError } from "../lib/httpError";
 import { logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
@@ -157,16 +158,13 @@ router.post(
           .for("update");
 
         if (!order) {
-          throw { status: 404, message: "Package order not found" };
+          throw new ExposableHttpError(404, "Package order not found");
         }
 
         const newRemaining = order.remainingCredits + delta;
 
         if (newRemaining < 0) {
-          throw {
-            status: 400,
-            message: `Cannot remove ${Math.abs(delta)} credits — only ${order.remainingCredits} remaining`,
-          };
+          throw new ExposableHttpError(400, `Cannot remove ${Math.abs(delta)} credits — only ${order.remainingCredits} remaining`);
         }
 
         // Step 2 — Determine new status
@@ -262,9 +260,10 @@ router.post(
 
       res.status(201).json(result);
     } catch (err: unknown) {
-      const e = err as { status?: number; message?: string };
-      if (e.status && e.message) {
-        res.status(e.status).json({ error: e.message });
+      // Only our own deliberately-thrown errors carry client-safe messages; a
+      // duck-typed { status, message } check could forward library internals.
+      if (err instanceof ExposableHttpError) {
+        res.status(err.status).json({ error: err.message });
         return;
       }
       throw err;

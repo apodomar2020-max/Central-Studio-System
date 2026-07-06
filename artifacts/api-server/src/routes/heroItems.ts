@@ -4,6 +4,8 @@ import { Router, type IRouter } from "express";
 import { asc, eq } from "drizzle-orm";
 import { db, heroItemsTable } from "@workspace/db";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { logger } from "../lib/logger";
+import { captureError } from "../lib/errorMonitoring";
 import {
   CreateHeroItemBody,
   GetHeroItemParams,
@@ -45,9 +47,11 @@ router.post("/hero-items", blockStudentJwt, requireAdminAuth, requireAdminPermis
     });
     res.status(201).json(GetHeroItemResponse.parse(row));
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined;
-    res.status(500).json({ error: cause ? `${msg} | ${cause}` : msg });
+    // Raw DB/driver messages (SQL text, constraint names) must never reach
+    // the client — log server-side and return a fixed message (Security G-02).
+    captureError(err, { route: "POST /hero-items" });
+    logger.error({ err }, "Hero item creation failed");
+    res.status(500).json({ error: "Failed to create hero item" });
   }
 });
 

@@ -16,6 +16,7 @@ import {
 } from "@workspace/db";
 import { hasRolePermission } from "@workspace/api-zod";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
+import { ExposableHttpError } from "../lib/httpError";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 
 const router: IRouter = Router();
@@ -225,7 +226,7 @@ router.post("/my/feedback", requireStudentAuth, requireVerifiedStudent, async (r
         .limit(1);
       if (existingForAttendance) {
         if (!feedbackBelongsToStudent(existingForAttendance, studentId, studentEmail)) {
-          throw Object.assign(new Error("Feedback submission does not belong to this student."), { status: 403 });
+          throw new ExposableHttpError(403, "Feedback submission does not belong to this student.");
         }
         return existingForAttendance;
       }
@@ -242,14 +243,14 @@ router.post("/my/feedback", requireStudentAuth, requireVerifiedStudent, async (r
         .for("update");
 
       if (!lockedAttendance) {
-        throw Object.assign(new Error("Attendance not found."), { status: 404 });
+        throw new ExposableHttpError(404, "Attendance not found.");
       }
       if (!FEEDBACK_ELIGIBLE_ATTENDANCE_STATUSES.includes(lockedAttendance.status as typeof FEEDBACK_ELIGIBLE_ATTENDANCE_STATUSES[number])) {
-        throw Object.assign(new Error("Feedback is not available for this attendance status."), { status: 400 });
+        throw new ExposableHttpError(400, "Feedback is not available for this attendance status.");
       }
       const dueAt = parseDbTimestamp(lockedAttendance.checkedInAt);
       if (!dueAt || dueAt.getTime() + 3 * 60 * 60 * 1000 > Date.now()) {
-        throw Object.assign(new Error("Feedback is not due yet."), { status: 400 });
+        throw new ExposableHttpError(400, "Feedback is not due yet.");
       }
 
       const [row] = await tx
@@ -288,7 +289,7 @@ router.post("/my/feedback", requireStudentAuth, requireVerifiedStudent, async (r
         .limit(1);
 
       if (!row) {
-        throw Object.assign(new Error("Attendance not found."), { status: 404 });
+        throw new ExposableHttpError(404, "Attendance not found.");
       }
 
       const [created] = await tx
@@ -331,9 +332,10 @@ router.post("/my/feedback", requireStudentAuth, requireVerifiedStudent, async (r
 
     res.status(inserted.clientSubmissionId === clientSubmissionId ? 201 : 200).json(publicFeedback(inserted));
   } catch (error: unknown) {
-    const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status: unknown }).status) : 500;
-    if (status >= 400 && status < 500) {
-      res.status(status).json({ error: error instanceof Error ? error.message : "Feedback submission failed." });
+    // Only our own deliberately-thrown errors carry client-safe messages; a
+    // duck-typed { status } check could forward a library error's internals.
+    if (error instanceof ExposableHttpError) {
+      res.status(error.status).json({ error: error.message });
       return;
     }
     const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code: unknown }).code) : "";
