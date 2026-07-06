@@ -1,7 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initErrorMonitoring, captureError } from "./lib/errorMonitoring";
-import { runMigrations } from "./lib/migrate";
 
 await initErrorMonitoring();
 
@@ -19,17 +18,9 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-// Run pending DB migrations before accepting traffic.
-// This is safe to run on every startup — Drizzle only applies new migrations.
-try {
-  await runMigrations();
-  logger.info("Database migrations up to date");
-} catch (err) {
-  captureError(err, { task: "startup_migrations" });
-  logger.error({ err }, "Migration failed — aborting startup");
-  process.exit(1);
-}
-
+// Migrations are NOT run here. They are an explicit deployment step:
+// Railway runs `node artifacts/api-server/dist/migrate.mjs` as a
+// preDeployCommand before this process starts (see railway.toml).
 app.listen(port, (err) => {
   if (err) {
     captureError(err, { task: "server_listen" });

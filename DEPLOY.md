@@ -74,14 +74,19 @@ Copy the output — you'll use the same value in Vercel and EAS.
 
 Click **Deploy** (or push to main — Railway auto-deploys on every push).
 
-Watch the build logs. You should see:
+Watch the build and deploy logs. You should see:
 
 ```
 ✓ pnpm install
 ✓ pnpm --filter @workspace/api-server run build
-✓ Database migrations up to date
+✓ [pre-deploy] [migrate] Migrations complete.
 ✓ Server listening on port ...
 ```
+
+Migrations run as a **pre-deploy step** (`preDeployCommand` in `railway.toml`),
+not inside the API server. If a migration fails, the deploy is aborted and the
+previous deployment keeps serving traffic — the API and worker never touch the
+database schema at startup.
 
 ### 1.5 — Verify
 
@@ -272,7 +277,57 @@ same value.
 | API server code | `git push` — Railway auto-redeploys |
 | Admin dashboard code | `git push` — Vercel auto-redeploys |
 | Mobile app code | `eas build --profile preview --platform android` again |
-| Database schema | Run `pnpm --filter @workspace/db run generate` locally, commit the new migration file, then `git push` — migrations run automatically on Railway startup |
+| Database schema | See **Database schema changes** below |
+
+---
+
+## Database schema changes
+
+Migrations never run automatically at API or worker startup. They are an
+explicit deployment step, owned by Railway's `preDeployCommand`.
+
+### Workflow
+
+1. Edit the schema in `lib/db/src/schema/`
+2. Generate the migration SQL and review the diff before committing:
+   ```bash
+   DATABASE_URL="..." pnpm --filter @workspace/db run generate
+   ```
+3. Commit the new file in `lib/db/migrations/` and `git push`
+4. Railway builds, then runs the pre-deploy step:
+   ```
+   node artifacts/api-server/dist/migrate.mjs
+   ```
+   - **Success** → the new deployment starts serving
+   - **Failure** → the deploy is aborted; the previous deployment keeps
+     serving with the old schema. Fix the migration and push again.
+5. Verify: deploy logs show `[migrate] Migrations complete.` and
+   `/api/healthz` responds
+
+The worker service shares `railway.toml`, but the migrate script exits
+immediately when `QUEUE_WORKER_ENABLED=true` — only the API service applies
+migrations, so two services never race on the same schema change.
+
+Manual/emergency run (applies only migrations not yet recorded in
+`__drizzle_migrations`, so it is always safe to re-run):
+
+```bash
+DATABASE_URL="..." pnpm --filter @workspace/db run migrate
+```
+
+### Expand/contract rule for destructive changes
+
+Because the previous deployment keeps serving while (and after) migrations
+run, every migration must keep the **currently deployed code** working:
+
+- **Expand first (safe):** add tables, add nullable columns, add indexes,
+  backfill data. Deploy code that uses the new shape only after the
+  migration has been applied.
+- **Contract later (destructive):** drop or rename a column/table only in a
+  *separate, later* deploy — after no deployed code (API **and** worker)
+  references the old shape anymore.
+- Never combine a rename with code that requires the new name in the same
+  deploy: split it into add-new → migrate code → drop-old.
 
 ---
 

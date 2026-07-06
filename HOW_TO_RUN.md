@@ -112,7 +112,17 @@ pnpm run dev
 ```
 
 The server starts on **http://localhost:3000**.
-It automatically applies any pending migrations on startup.
+
+> **Migrations:** the API server does **not** apply migrations at startup.
+> `pnpm run dev` applies them for you (it runs `dist/migrate.mjs` between
+> build and start). If you start the server another way (e.g. `pnpm run start`),
+> apply migrations first:
+>
+> ```bash
+> pnpm run migrate                                     # from artifacts/api-server
+> # or, from the repo root:
+> DATABASE_URL="..." pnpm --filter @workspace/db run migrate
+> ```
 
 Verify it's alive:
 ```bash
@@ -237,6 +247,11 @@ DATABASE_URL="..." pnpm --filter @workspace/db run migrate    # apply it
 # TypeCheck everything
 pnpm run typecheck
 ```
+
+> Migrations never run automatically at API or worker startup — they are always
+> an explicit step. Locally, `pnpm run dev` (api-server) applies them before
+> starting; in production, Railway applies them as a pre-deploy step
+> (see DEPLOY.md).
 
 ---
 

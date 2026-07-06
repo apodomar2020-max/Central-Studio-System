@@ -1,6 +1,5 @@
 import { Worker } from "bullmq";
 import { logger } from "./lib/logger";
-import { runMigrations } from "./lib/migrate";
 import { captureError, initErrorMonitoring } from "./lib/errorMonitoring";
 import {
   defaultJobOptions,
@@ -28,14 +27,8 @@ if (!workerEnabled()) {
   process.exit(0);
 }
 
-try {
-  await runMigrations();
-  logger.info("Worker database migrations up to date");
-} catch (err) {
-  captureError(err, { component: "queue-worker", phase: "migrate" });
-  process.exit(1);
-}
-
+// Migrations are NOT run here. The worker never mutates the schema; the API
+// service applies migrations via Railway's preDeployCommand (see railway.toml).
 const connection = getQueueConnection();
 if (!connection) {
   logger.warn("Queue worker disabled because REDIS_URL is not configured.");

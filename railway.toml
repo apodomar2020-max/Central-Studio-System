@@ -6,6 +6,12 @@
 buildCommand = "pnpm install --no-frozen-lockfile && pnpm --filter @workspace/api-server run build"
 
 [deploy]
+# Explicit migration step: runs after build, before the new deployment starts
+# serving. If it fails, the deploy is aborted and the previous deployment keeps
+# serving traffic. This file is shared by the API and worker services; the
+# migrate script exits 0 immediately when QUEUE_WORKER_ENABLED=true, so only
+# the API service actually applies migrations.
+preDeployCommand = "node artifacts/api-server/dist/migrate.mjs"
 startCommand = "node artifacts/api-server/scripts/railway-start.mjs"
 healthcheckPath = "/api/healthz"
 healthcheckTimeout = 30
