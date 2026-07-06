@@ -18,25 +18,45 @@ module.exports = ({ config }) => {
 
   const FACEBOOK_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID ?? "891752636548494";
   const FACEBOOK_CLIENT_TOKEN = process.env.FACEBOOK_CLIENT_TOKEN ?? "";
+  const SENTRY_DSN = process.env.SENTRY_DSN ?? process.env.EXPO_PUBLIC_SENTRY_DSN ?? "";
+  const SENTRY_ORG = process.env.SENTRY_ORG ?? "";
+  const SENTRY_PROJECT = process.env.SENTRY_PROJECT ?? "";
+
+  const plugins = [
+    ...(base.plugins ?? []),
+    "expo-video",
+    [
+      "react-native-fbsdk-next",
+      {
+        appID: FACEBOOK_APP_ID,
+        clientToken: FACEBOOK_CLIENT_TOKEN,
+        displayName: "Central Studio",
+        scheme: `fb${FACEBOOK_APP_ID}`,
+        // Keep tracking/analytics off by default; the app only needs login.
+        isAutoInitEnabled: true,
+        autoLogAppEventsEnabled: false,
+        advertiserIDCollectionEnabled: false,
+      },
+    ],
+  ];
+
+  if (SENTRY_ORG && SENTRY_PROJECT) {
+    plugins.push([
+      "@sentry/react-native/expo",
+      {
+        url: "https://sentry.io/",
+        organization: SENTRY_ORG,
+        project: SENTRY_PROJECT,
+      },
+    ]);
+  }
 
   return {
     ...base,
-    plugins: [
-      ...(base.plugins ?? []),
-      "expo-video",
-      [
-        "react-native-fbsdk-next",
-        {
-          appID: FACEBOOK_APP_ID,
-          clientToken: FACEBOOK_CLIENT_TOKEN,
-          displayName: "Central Studio",
-          scheme: `fb${FACEBOOK_APP_ID}`,
-          // Keep tracking/analytics off by default; the app only needs login.
-          isAutoInitEnabled: true,
-          autoLogAppEventsEnabled: false,
-          advertiserIDCollectionEnabled: false,
-        },
-      ],
-    ],
+    extra: {
+      ...(base.extra ?? {}),
+      sentryDsn: SENTRY_DSN || undefined,
+    },
+    plugins,
   };
 };

@@ -60,6 +60,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@sentry/react-native": "^8.17.2",
     "expo-auth-session": "~7.0.11",
     "expo-clipboard": "^8.0.8",
     "expo-crypto": "~15.0.9",

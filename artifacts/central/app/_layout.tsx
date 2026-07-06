@@ -18,8 +18,11 @@ import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/spac
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { Stack, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as Sentry from "@sentry/react-native";
+import * as Updates from "expo-updates";
 import * as WebBrowser from "expo-web-browser";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -32,6 +35,49 @@ import FeedbackGate from "@/components/feedback/FeedbackGate";
 import PushRegistrationGate from "@/components/PushRegistrationGate";
 import { AppContextProvider } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
+
+type ExpoManifestWithUpdateMetadata = {
+  extra?: {
+    expoClient?: {
+      owner?: string;
+      slug?: string;
+    };
+  };
+  metadata?: {
+    updateGroup?: string;
+  };
+};
+
+const sentryDsn = (Constants.expoConfig?.extra as { sentryDsn?: string } | undefined)?.sentryDsn;
+const updatesManifest = Updates.manifest as ExpoManifestWithUpdateMetadata | null;
+const updateGroup = updatesManifest?.metadata?.updateGroup;
+const expoOwner = updatesManifest?.extra?.expoClient?.owner ?? Constants.expoConfig?.owner;
+const expoSlug = updatesManifest?.extra?.expoClient?.slug ?? Constants.expoConfig?.slug;
+
+Sentry.init({
+  dsn: sentryDsn,
+  enabled: Boolean(sentryDsn),
+  tracesSampleRate: 0,
+  sendDefaultPii: false,
+});
+
+Sentry.setTag("expo-update-id", Updates.updateId ?? "embedded");
+Sentry.setTag("expo-is-embedded-update", String(Updates.isEmbeddedLaunch));
+
+if (typeof updateGroup === "string") {
+  Sentry.setTag("expo-update-group-id", updateGroup);
+  if (expoOwner && expoSlug) {
+    Sentry.setTag("expo-update-debug-url", `https://expo.dev/accounts/${expoOwner}/projects/${expoSlug}/updates/${updateGroup}`);
+  }
+} else if (Updates.isEmbeddedLaunch) {
+  Sentry.setTag("expo-update-debug-url", "not applicable for embedded updates");
+}
+
+if (__DEV__) {
+  (globalThis as typeof globalThis & { __centralTestSentry?: () => void }).__centralTestSentry = () => {
+    Sentry.captureException(new Error("Central Studio Sentry test error"));
+  };
+}
 
 SplashScreen.preventAutoHideAsync();
 
@@ -121,7 +167,7 @@ function RootLayoutNav() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -165,3 +211,5 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);
