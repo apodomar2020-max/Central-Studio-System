@@ -13,6 +13,7 @@ import ProgressDots from "@/components/ProgressDots";
 import { useAppContext } from "@/contexts/AppContext";
 import { fetchCurrentUser, nextStepRoute } from "@/services/authProfile";
 import { BackBtn, CS, Eyebrow, Icon, PrimaryCTA, ScreenTitle } from "@/components/signup/SignupKit";
+import { iosTextInputStyle } from "@/utils/iosTypography";
 
 type Gender = "male" | "female";
 
@@ -69,7 +70,7 @@ export default function OnboardingChildrenScreen() {
       const { user } = await fetchCurrentUser();
       await setUser(user);
       const nextStep = user.profileCompletion?.nextStep ?? "medical";
-      router.push(nextStepRoute(nextStep) as never);
+      router.replace(nextStepRoute(nextStep) as never);
     } finally {
       setContinuing(false);
     }
@@ -78,7 +79,7 @@ export default function OnboardingChildrenScreen() {
   return (
     <View style={styles.screen}>
       <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
-        <BackBtn onPress={() => router.push("/auth/complete-profile" as never)} />
+        <BackBtn onPress={() => router.replace("/auth/complete-profile" as never)} />
         <ProgressDots total={5} current={2} />
         <View style={{ width: 42 }} />
       </View>
@@ -172,9 +173,9 @@ const styles = StyleSheet.create({
     height: 56, borderRadius: 12, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(255,255,255,0.04)", paddingHorizontal: 14,
   },
-  fieldInput: { flex: 1, paddingVertical: 0, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
+  fieldInput: { flex: 1, paddingVertical: 0, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF", ...iosTextInputStyle(15, 18) },
   dobRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  dobInput: { flex: 1, height: 56, borderRadius: 12, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)", backgroundColor: "rgba(255,255,255,0.04)", color: "#FFF", fontFamily: "Archivo_600SemiBold", fontSize: 15, textAlign: "center" },
+  dobInput: { flex: 1, height: 56, borderRadius: 12, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)", backgroundColor: "rgba(255,255,255,0.04)", color: "#FFF", fontFamily: "Archivo_600SemiBold", fontSize: 15, ...iosTextInputStyle(15, 18), textAlign: "center" },
   dobSep: { color: "rgba(255,255,255,0.3)" },
   chip: {
     paddingVertical: 12, borderRadius: 100, borderWidth: 1.5,

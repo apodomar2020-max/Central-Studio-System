@@ -23,6 +23,7 @@ import ProgressDots from "@/components/ProgressDots";
 
 import { enterApp, fetchCurrentUser, nextStepRoute } from "@/services/authProfile";
 import { clearSignupDrafts } from "./auth/register";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 const VerifyGlow = React.memo(function VerifyGlow() {
   return (
@@ -130,7 +131,7 @@ export default function VerifyEmailScreen() {
             if (nextStep === "done") {
               void enterApp();
             } else {
-              router.push(nextStepRoute(nextStep) as never);
+              router.replace(nextStepRoute(nextStep) as never);
             }
           },
         },
@@ -247,13 +248,18 @@ const styles = StyleSheet.create({
     zIndex: 50, elevation: 10,
   },
   body: { flex: 1, paddingHorizontal: 24, paddingTop: 28 },
-  title: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, textTransform: "uppercase", color: CS.cyan500, marginBottom: 10, includeFontPadding: false, paddingTop: 6 },
+  title: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, textTransform: "uppercase", color: CS.cyan500, marginBottom: 10 - iosCapGuard(85, 78), includeFontPadding: false, paddingTop: 6, ...iosDisplayTextStyle(85, 78) },
   lead: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, marginBottom: 24, fontFamily: "Archivo_400Regular" },
   pageDescEmail: { fontFamily: "Archivo_700Bold" },
   codeRow: { flexDirection: "row", gap: 10, marginVertical: 8, justifyContent: "space-between" },
   codeInput: {
     flex: 1, height: 56, borderRadius: 12, borderWidth: 1.5,
-    textAlign: "center", fontSize: 26, fontFamily: "Anton_400Regular",
+    textAlign: "center", fontSize: 26, fontFamily: "Anton_400Regular", ...iosTextInputStyle(26, 31, "anton"),
+    ...(Platform.OS === 'ios' ? {
+      lineHeight: undefined,
+      paddingTop: 3,
+      paddingBottom: 0,
+    } : { paddingTop: 0 }),
   },
   resendBtn: { paddingVertical: 12, alignSelf: "flex-start" },
   resendText: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "rgba(255,255,255,0.42)" },

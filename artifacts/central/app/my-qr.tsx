@@ -20,6 +20,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import SBI from "@/components/SbIcon";
 import { formatApiDate, parseApiDate } from "@/utils/dateTime";
 import { nextStepRoute } from "@/services/authProfile";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 const CYAN = "#00B6D7";
 const CYAN_400 = "#2DCDEC";
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
   },
   avatarImg: { width: 90, height: 90, borderRadius: 45, backgroundColor: INK_800 },
   avatarCircle: { width: 90, height: 90, borderRadius: 45, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,182,215,0.20)" },
-  avatarInitials: { fontFamily: "Anton_400Regular", fontSize: 30, color: CYAN },
+  avatarInitials: { fontFamily: "Anton_400Regular", fontSize: 30, ...iosDisplayTextStyle(30, 34), color: CYAN, marginTop: -iosCapGuard(30, 34) },
   name: { fontFamily: "Archivo_800ExtraBold", fontSize: 24, color: "#FFFFFF", marginTop: 14 },
   memberId: { fontFamily: "SpaceMono_400Regular", fontSize: 12.5, color: INK_400, marginTop: 4, letterSpacing: 1 },
   activePill: {
@@ -256,7 +257,7 @@ const styles = StyleSheet.create({
   // stats
   statsRow: { flexDirection: "row", gap: 10, width: "100%", marginBottom: 8 },
   statCard: { flex: 1, alignItems: "center", paddingVertical: 14, paddingHorizontal: 10, backgroundColor: INK_800, borderWidth: 1, borderColor: BORDER, borderRadius: 12 },
-  statVal: { fontFamily: "Anton_400Regular", fontSize: 26, lineHeight: 24 },
+  statVal: { fontFamily: "Anton_400Regular", fontSize: 26, lineHeight: 24, ...iosDisplayTextStyle(26, 24), marginTop: Platform.OS === 'ios' ? 3 : 0, marginBottom: Platform.OS === 'ios' ? -10 : 0 },
   statLabel: { fontFamily: "Archivo_400Regular", fontSize: 11, color: INK_400, marginTop: 6, textAlign: "center" },
   // empty
   emptyState: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, padding: 32 },

@@ -25,6 +25,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useAppContext } from "@/contexts/AppContext";
 import { Booking } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import BookingCard from "@/components/BookingCard";
 import SBI from "@/components/SbIcon";
 import EmptyState from "@/components/EmptyState";
@@ -240,7 +241,7 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
             </View>
           </View>
 
-          <Text style={{ fontFamily: "Anton_400Regular", fontSize: 36, lineHeight: 36, textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6 }}>{title}</Text>
+          <Text style={[{ fontFamily: "Anton_400Regular", fontSize: 36, lineHeight: 36, textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6 }, iosDisplayTextStyle(36, 36)]}>{title}</Text>
           <Text style={{ fontFamily: "SpaceMono_400Regular", fontSize: 12.5, color: "#4C545E" }}>Booking #{ref}</Text>
         </LinearGradient>
 
@@ -683,12 +684,16 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 20 },
   heroRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18 },
   heroEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "#00B6D7", marginBottom: 6 },
-  heroTitle: { fontFamily: "Anton_400Regular", fontSize: 52, lineHeight: 46, textTransform: "uppercase", color: "#FFFFFF" },
+  // marginBottom cancels the iOS cap-guard inset from the block footprint so the
+  // hero row stays bottom-aligned with the "+ New" button as on Android. No-op on Android.
+  heroTitle: { fontFamily: "Anton_400Regular", fontSize: 52, lineHeight: 46, ...iosDisplayTextStyle(52, 46), marginBottom: -iosCapGuard(52, 46), textTransform: "uppercase", color: "#FFFFFF" },
   newBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 20, backgroundColor: "#00B6D7", width: 134, marginBottom: 6 },
   newBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 13, color: "#0A0B0D" },
   searchWrap: { position: "relative", flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.10)", borderRadius: 24, marginBottom: 14 },
   searchIcon: { position: "absolute", left: 14 },
-  searchInput: { flex: 1, paddingVertical: 12, paddingLeft: 42, paddingRight: 42, fontSize: 14.5, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
+  // paddingTop/Bottom come AFTER the input-style spread so they override its
+  // paddingTop:0/paddingBottom:0 on iOS and keep the field's original height.
+  searchInput: { flex: 1, paddingLeft: 42, paddingRight: 42, fontSize: 14.5, fontFamily: "Archivo_400Regular", color: "#FFFFFF", ...iosTextInputStyle(14.5, 18), paddingTop: 12, paddingBottom: 12 },
   clearSearch: { position: "absolute", right: 10, width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
   tabContainer: { flexDirection: "row", padding: 4, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: 24, marginBottom: 14 },
   tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 10, borderRadius: 20 },

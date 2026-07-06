@@ -23,6 +23,7 @@ import { useGetMyPackages } from "@workspace/api-client-react";
 import type { PackageOrder } from "@workspace/api-client-react";
 import SBI from "@/components/SbIcon";
 import { formatApiDate, isApiDatePast } from "@/utils/dateTime";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 const CYAN = "#00B6D7";
 const CYAN_400 = "#2DCDEC";
@@ -346,7 +347,7 @@ const styles = StyleSheet.create({
   heroEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 1.6, textTransform: "uppercase", color: CYAN_400, marginBottom: 5 },
   heroName: { fontFamily: "Archivo_800ExtraBold", fontSize: 20, color: "#FFFFFF" },
   heroSub: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_300, marginTop: 2 },
-  heroCredits: { fontFamily: "Anton_400Regular", fontSize: 44, lineHeight: 40, color: "#FFFFFF" },
+  heroCredits: { fontFamily: "Anton_400Regular", fontSize: 44, lineHeight: 40, ...iosDisplayTextStyle(44, 40), color: "#FFFFFF", marginBottom: -iosCapGuard(44, 40) },
   heroCreditsLabel: { fontFamily: "Archivo_700Bold", fontSize: 11.5, color: CYAN_400, marginTop: 4 },
   heroBarTrack: { height: 7, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.08)", overflow: "hidden", marginBottom: 8 },
   heroMetaRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },

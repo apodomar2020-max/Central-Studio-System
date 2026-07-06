@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CS, Divider, Eyebrow, GhostBtn, PrimaryCTA, StageVideo } from "@/components/signup/SignupKit";
 import { useAppContext } from "@/contexts/AppContext";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
@@ -32,7 +33,7 @@ export default function WelcomeScreen() {
   }
 
   function goToSignIn() {
-    router.push("/auth/login" as never);
+    router.replace("/auth/login" as never);
   }
 
   return (
@@ -70,7 +71,7 @@ export default function WelcomeScreen() {
         <View style={styles.socialRow}>
           <GhostBtn
             label="Sign Up"
-            onPress={() => router.push("/auth/register")}
+            onPress={() => router.replace("/auth/register")}
           />
           <GhostBtn
             label="Sign In"
@@ -92,7 +93,7 @@ const styles = StyleSheet.create({
   logoWrap: { paddingHorizontal: 26 },
   logo: { width: 128, height: 88 },
   headline: { paddingHorizontal: 26, marginBottom: 8 },
-  title: { fontFamily: "Anton_400Regular", fontSize: 60, lineHeight: 54, textTransform: "uppercase", letterSpacing: -0.6, color: "#FFFFFF", marginBottom: 10 },
+  title: { fontFamily: "Anton_400Regular", fontSize: 60, lineHeight: 54, ...iosDisplayTextStyle(60, 54), textTransform: "uppercase", letterSpacing: -0.6, color: "#FFFFFF", marginBottom: 10 - iosCapGuard(60, 54) },
   sub: { fontFamily: "Archivo_400Regular", fontSize: 14, color: "rgba(255,255,255,0.50)", lineHeight: 22, maxWidth: 270 },
   footer: { paddingHorizontal: 24, paddingTop: 12, gap: 10 },
   socialRow: { flexDirection: "row", gap: 10 },

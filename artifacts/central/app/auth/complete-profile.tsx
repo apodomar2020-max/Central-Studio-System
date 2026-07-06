@@ -35,6 +35,7 @@ import {
   PrimaryCTA, ScreenTitle,
   type SignupIconName,
 } from "@/components/signup/SignupKit";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 interface ProfileResponse {
   student: AuthStudent;
@@ -187,7 +188,7 @@ export default function CompleteProfileScreen() {
       // account needs Children/Medical (parent) or can skip straight to
       // Your Vibe (student).
       const nextStep = updated.profileCompletion?.nextStep ?? "styles";
-      router.push(nextStepRoute(nextStep) as never);
+      router.replace(nextStepRoute(nextStep) as never);
     } catch (err) {
       setApiError(err instanceof Error ? err.message : "Could not save your profile.");
     } finally {
@@ -200,7 +201,7 @@ export default function CompleteProfileScreen() {
       <ProfileGlow />
 
       <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
-        <BackBtn onPress={() => router.push("/auth/register" as never)} />
+        <BackBtn onPress={() => router.replace("/auth/register" as never)} />
         <ProgressDots total={5} current={1} />
         <View style={{ width: 42 }} />
       </View>
@@ -387,7 +388,10 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78,
     includeFontPadding: false, paddingTop: 6,
-    textTransform: "uppercase", color: CS.cyan500, marginBottom: 6,
+    textTransform: "uppercase", color: CS.cyan500, marginBottom: 6 - iosCapGuard(85, 78),
+    // iOS: keep the tight lineHeight; helper supplies the cap-clip inset (must
+    // come after paddingTop so it wins on iOS while Android keeps its 6).
+    ...iosDisplayTextStyle(85, 78),
   },
   sub: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, marginBottom: 24, fontFamily: "Archivo_400Regular" },
   apiError: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: CS.danger, marginBottom: 12 },
@@ -396,7 +400,7 @@ const styles = StyleSheet.create({
     height: 56, borderRadius: 12, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(255,255,255,0.04)", paddingHorizontal: 14,
   },
-  fieldInput: { flex: 1, paddingVertical: 0, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
+  fieldInput: { flex: 1, paddingVertical: 0, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF", ...iosTextInputStyle(15, 18) },
   typeSection: { gap: 10 },
   typeLabel: { fontSize: 11, fontFamily: "Archivo_700Bold", color: "#9CA3AF", letterSpacing: 0.66, textTransform: "uppercase" },
   typeRow: { gap: 10 },
@@ -429,7 +433,7 @@ const styles = StyleSheet.create({
   modalCard: { backgroundColor: "#111418", borderRadius: 20, padding: 24, width: "85%", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
   modalTitle: { fontFamily: "Archivo_700Bold", fontSize: 16, color: "#FFF", marginBottom: 20, textAlign: "center" },
   modalRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 24 },
-  modalInput: { width: 60, height: 50, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", color: "#FFF", fontFamily: "Anton_400Regular", fontSize: 20, textAlign: "center" },
+  modalInput: { width: 60, height: 50, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", color: "#FFF", fontFamily: "Anton_400Regular", fontSize: 20, ...iosTextInputStyle(20, 24, "anton"), textAlign: "center" },
   modalFooter: { flexDirection: "row", justifyContent: "flex-end", gap: 20 },
   modalBtn: { padding: 8 },
   modalBtnText: { fontFamily: "Archivo_700Bold", fontSize: 15, color: "#9CA3AF" },

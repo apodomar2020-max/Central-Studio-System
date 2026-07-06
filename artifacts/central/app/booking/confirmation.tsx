@@ -25,6 +25,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 
 import { useAppContext } from "@/contexts/AppContext";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 // Design tokens (Claude Design CSS variables)
 const CYAN = "#00B6D7"; // --cs-cyan-500
@@ -188,8 +189,9 @@ const styles = StyleSheet.create({
   // Title (design: font-display 44 / lineHeight 0.88 / uppercase / white)
   title: {
     fontFamily: "Anton_400Regular", fontSize: 40, lineHeight: 38,
+    ...iosDisplayTextStyle(40, 38),
     textTransform: "uppercase", color: "#FFFFFF", textAlign: "center", letterSpacing: 0.5,
-    marginBottom: 12,
+    marginBottom: 12 - iosCapGuard(40, 38),
   },
   message: {
     fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 21,

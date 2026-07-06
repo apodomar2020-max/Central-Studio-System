@@ -21,6 +21,7 @@ import {
   ViewStyle,
 } from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 // ── Tokens (from the design's color/typography CSS variables) ────────────────
 export const CS = {
@@ -346,7 +347,7 @@ const kit = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.18)",
     zIndex: 50, elevation: 10,
   },
-  screenTitle: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, includeFontPadding: false, paddingTop: 6, textTransform: "uppercase", color: CS.cyan500, marginBottom: 6 },
+  screenTitle: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, includeFontPadding: false, paddingTop: 6, textTransform: "uppercase", color: CS.cyan500, marginBottom: 6 - iosCapGuard(85, 78), ...iosDisplayTextStyle(85, 78) },
   eyebrow: { fontFamily: "Archivo_800ExtraBold", fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 8 },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 6 },
   dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.10)" },
@@ -357,7 +358,7 @@ const kit = StyleSheet.create({
   fiLabel: { position: "absolute", fontFamily: "Archivo_700Bold" },
   fiLabelRest: { fontSize: 15, fontFamily: "Archivo_400Regular" },
   fiLabelRaised: { top: 8, fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase" },
-  fiInput: { paddingTop: 22, paddingBottom: 10, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
+  fiInput: { paddingTop: 22, paddingBottom: 10, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF", ...iosTextInputStyle(15, 18) },
   fiRight: { position: "absolute", right: 12 },
   fiError: { marginTop: 4, marginLeft: 4, fontSize: 12, color: CS.danger, fontFamily: "Archivo_600SemiBold" },
 });

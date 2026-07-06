@@ -14,6 +14,7 @@ import ProgressDots from "@/components/ProgressDots";
 import { useAppContext } from "@/contexts/AppContext";
 import { fetchCurrentUser, nextStepRoute } from "@/services/authProfile";
 import { BackBtn, CS, Eyebrow, PrimaryCTA, ScreenTitle } from "@/components/signup/SignupKit";
+import { iosTextInputStyle } from "@/utils/iosTypography";
 
 export default function OnboardingMedicalScreen() {
   const insets = useSafeAreaInsets();
@@ -35,7 +36,7 @@ export default function OnboardingMedicalScreen() {
       const { user } = await fetchCurrentUser();
       await setUser(user);
       const nextStep = user.profileCompletion?.nextStep ?? "styles";
-      router.push(nextStepRoute(nextStep) as never);
+      router.replace(nextStepRoute(nextStep) as never);
     } finally {
       setSaving(false);
     }
@@ -44,7 +45,7 @@ export default function OnboardingMedicalScreen() {
   return (
     <View style={styles.screen}>
       <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
-        <BackBtn onPress={() => router.push("/onboarding/children" as never)} />
+        <BackBtn onPress={() => router.replace("/onboarding/children" as never)} />
         <ProgressDots total={5} current={3} />
         <View style={{ width: 42 }} />
       </View>
@@ -88,7 +89,7 @@ const styles = StyleSheet.create({
   notesInput: {
     minHeight: 88, borderRadius: 12, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(255,255,255,0.04)", paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, fontFamily: "Archivo_400Regular", color: "#FFFFFF", textAlignVertical: "top",
+    fontSize: 14, fontFamily: "Archivo_400Regular", color: "#FFFFFF", ...iosTextInputStyle(14, 20), textAlignVertical: "top",
   },
   footer: { paddingHorizontal: 24, paddingTop: 12, gap: 8 },
 });

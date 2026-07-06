@@ -46,7 +46,11 @@ export function nextStepRoute(nextStep: ProfileCompletionStep | "done"): string 
  * user actually goes based on their server-authenticated state.
  */
 export async function enterApp() {
-  router.replace("/" as never);
+  if (router.canDismiss()) {
+    router.dismiss();
+  } else {
+    router.replace("/" as never);
+  }
 }
 
 export type AccountType = "student" | "parent";
@@ -128,7 +132,7 @@ export async function continueAfterAuth(
 
   if (!options?.guidedOnboarding) {
     if (!user.emailVerified) {
-      router.push("/verify-email" as never);
+      router.replace("/verify-email" as never);
       return;
     }
     await enterApp();
@@ -140,5 +144,5 @@ export async function continueAfterAuth(
     await enterApp();
     return;
   }
-  router.push(nextStepRoute(nextStep) as never);
+  router.replace(nextStepRoute(nextStep) as never);
 }

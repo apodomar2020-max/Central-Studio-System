@@ -29,6 +29,7 @@ import {
 import { mapApiClassToMobile } from "@/data/apiAdapters";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 // Base/card/border values taken from the explicit task spec (override the
@@ -380,7 +381,8 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     color: "#fff",
     lineHeight: 52,
-    marginBottom: 12,
+    ...iosDisplayTextStyle(52, 52),
+    marginBottom: 12 - iosCapGuard(52, 52),
   },
   heroDesc: {
     fontSize: 15,
@@ -409,6 +411,8 @@ const s = StyleSheet.create({
     fontFamily: "Anton_400Regular",
     color: "#fff",
     lineHeight: 27,
+    ...iosDisplayTextStyle(30, 27),
+    marginTop: -iosCapGuard(30, 27),
   },
   statLabel: {
     fontSize: 11,

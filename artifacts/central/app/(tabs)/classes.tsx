@@ -27,6 +27,7 @@ import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-s
 
 import XI from "@/components/XiIcon";
 import CategoryIcon from "@/components/CategoryIcon";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes, getListSchedulesQueryKey } from "@workspace/api-client-react";
 import {
   fetchMyApplications,
@@ -1057,7 +1058,11 @@ const s = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 68, fontFamily: "Anton_400Regular", textTransform: "uppercase",
-    color: "#fff", lineHeight: 60, letterSpacing: -1,
+    color: "#fff", lineHeight: 60, ...iosDisplayTextStyle(68, 60), letterSpacing: -1,
+    // Cancel the iOS cap-guard inset from the block's footprint so the gap to the
+    // subtitle matches Android (the inset only needs to protect the caps, not add
+    // height below the baseline). No-op on Android.
+    marginBottom: -iosCapGuard(68, 60),
   },
   heroDesc: {
     fontSize: 14, fontFamily: "Archivo_400Regular", color: INK_300,
@@ -1085,8 +1090,11 @@ const s = StyleSheet.create({
   },
   searchIcon: { position: "absolute", left: 16 },
   searchInput: {
-    flex: 1, paddingHorizontal: 46, paddingVertical: 14,
-    fontSize: 15, fontFamily: "Archivo_400Regular", color: "#fff",
+    flex: 1, paddingHorizontal: 46,
+    fontSize: 15, fontFamily: "Archivo_400Regular", color: "#fff", ...iosTextInputStyle(15, 18),
+    // after the spread so they override its paddingTop:0/paddingBottom:0 on iOS
+    // and preserve the field's original height.
+    paddingTop: 14, paddingBottom: 14,
   },
   searchClear: {
     position: "absolute", right: 12, width: 28, height: 28, borderRadius: 14,
@@ -1145,7 +1153,7 @@ const s = StyleSheet.create({
   featProgBottom: { position: "absolute", left: 16, right: 16, bottom: 14 },
   featProgName: {
     fontSize: 26, fontFamily: "Anton_400Regular", color: "#fff",
-    lineHeight: 24, textTransform: "uppercase", marginBottom: 6,
+    lineHeight: 24, ...iosDisplayTextStyle(26, 24), textTransform: "uppercase", marginBottom: 6,
   },
   featProgSub: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, marginBottom: 12 },
   featProgBtnPrimary: {
@@ -1193,7 +1201,7 @@ const s = StyleSheet.create({
   trendingBadgeText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
   featCardBottom: { position: "absolute", left: 12, right: 12, bottom: 12 },
   featCardTitle: { fontSize: 15, fontFamily: "Archivo_800ExtraBold", color: "#fff", lineHeight: 18, marginBottom: 5 },
-  featCardPrice: { fontSize: 18, fontFamily: "Anton_400Regular", color: CYAN },
+  featCardPrice: { fontSize: 18, fontFamily: "Anton_400Regular", color: CYAN, ...iosDisplayTextStyle(18, 18) },
 
   /* categories */
   catsSection: { paddingHorizontal: 20, marginBottom: 24 },
@@ -1243,7 +1251,7 @@ const s = StyleSheet.create({
   instAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: INK_700 },
   instName: { fontSize: 13.5, fontFamily: "Archivo_700Bold", color: "#fff" },
   instSpec: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: INK_400 },
-  classCardPrice: { fontSize: 20, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 18 },
+  classCardPrice: { fontSize: 20, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 18, ...iosDisplayTextStyle(20, 18) },
   classCardPriceSub: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400, marginTop: 2, textAlign: "right" },
   divider: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginBottom: 11 },
   capacitySection: { marginBottom: 10 },

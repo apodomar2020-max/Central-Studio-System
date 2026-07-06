@@ -19,6 +19,7 @@ import { STORAGE_KEYS } from "@/constants/danceStyles";
 import { useAppContext } from "@/contexts/AppContext";
 import { enterApp } from "@/services/authProfile";
 import { CS, Eyebrow, Icon, PrimaryCTA, StageVideo } from "@/components/signup/SignupKit";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 
 const CONFETTI_COLORS = [CS.cyan400, "#FF2E7E", CS.amber, "#B6E80A"];
 
@@ -131,7 +132,7 @@ const styles = StyleSheet.create({
     width: 76, height: 76, borderRadius: 38, alignItems: "center", justifyContent: "center", backgroundColor: CS.cyan500, marginBottom: 24,
     shadowColor: CS.cyan500, shadowOpacity: 0.4, shadowRadius: 24, shadowOffset: { width: 0, height: 0 }, elevation: 10,
   },
-  title: { fontFamily: "Anton_400Regular", fontSize: 64, lineHeight: 58, textTransform: "uppercase", color: "#FFFFFF", marginTop: 4 },
+  title: { fontFamily: "Anton_400Regular", fontSize: 64, lineHeight: 58, ...iosDisplayTextStyle(64, 58), textTransform: "uppercase", color: "#FFFFFF", marginTop: 4 },
   lead: { fontFamily: "Archivo_400Regular", fontSize: 16, color: "rgba(255,255,255,0.60)", marginTop: 14, lineHeight: 24 },
   name: { fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
   sub: { fontFamily: "Archivo_400Regular", fontSize: 14, color: "rgba(255,255,255,0.38)", marginTop: 6 },

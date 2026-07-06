@@ -30,6 +30,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { STORAGE_KEYS } from "@/constants/danceStyles";
 import { continueAfterAuth } from "@/services/authProfile";
 import ProgressDots from "@/components/ProgressDots";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import {
   BackBtn, CS, Divider, Eyebrow, FacebookLogo, GhostBtn, GoogleLogo, Icon, PrimaryCTA, ScreenTitle,
   type SignupIconName,
@@ -243,7 +244,14 @@ export default function RegisterScreen() {
       <RegisterGlow />
 
       <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
-        <BackBtn onPress={() => { draftPassword = ""; router.replace("/onboarding/welcome"); }} />
+        <BackBtn onPress={() => {
+          draftPassword = "";
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace("/onboarding/welcome");
+          }
+        }} />
         <ProgressDots total={5} current={0} />
         <View style={{ width: 42 }} />
       </View>
@@ -329,7 +337,10 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78,
     includeFontPadding: false, paddingTop: 6,
-    textTransform: "uppercase", color: CS.cyan500, marginBottom: 6,
+    textTransform: "uppercase", color: CS.cyan500, marginBottom: 6 - iosCapGuard(85, 78),
+    // iOS: keep the tight lineHeight; helper supplies the cap-clip inset (must
+    // come after paddingTop so it wins on iOS while Android keeps its 6).
+    ...iosDisplayTextStyle(85, 78),
   },
   sub: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, marginBottom: 24, fontFamily: "Archivo_400Regular" },
   apiError: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: CS.danger, marginBottom: 12 },
@@ -339,7 +350,7 @@ const styles = StyleSheet.create({
     height: 56, borderRadius: 12, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(255,255,255,0.04)", paddingHorizontal: 14,
   },
-  fieldInput: { flex: 1, paddingVertical: 0, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF" },
+  fieldInput: { flex: 1, paddingVertical: 0, fontSize: 15, fontFamily: "Archivo_400Regular", color: "#FFFFFF", ...iosTextInputStyle(15, 18) },
   terms: { fontSize: 12, color: "rgba(255,255,255,0.28)", lineHeight: 18, textAlign: "center", marginTop: 4, paddingBottom: 8, fontFamily: "Archivo_400Regular" },
   termsLink: { color: CS.cyan400, fontFamily: "Archivo_600SemiBold" },
   footer: { paddingHorizontal: 24, paddingTop: 12, borderTopWidth: 0 },

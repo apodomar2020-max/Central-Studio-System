@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
+import { iosTextInputStyle } from "@/utils/iosTypography";
 
 const INK = { bg: "#0A0B0D", card: "#15171B", border: "rgba(255,255,255,0.08)", text3: "#8E97A2", text4: "#6B747F" };
 const OTP_LEN = 6;
@@ -194,6 +195,7 @@ const styles = StyleSheet.create({
   otpRow: { flexDirection: "row", gap: 8, justifyContent: "center" },
   otpBox: {
     width: 44, height: 52, textAlign: "center", fontSize: 20, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF",
+    ...iosTextInputStyle(20, 24, "archivo"),
     backgroundColor: "rgba(255,255,255,0.07)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.15)", borderRadius: 10,
   },
   otpBoxFilled: { borderColor: colors.cyan, backgroundColor: "rgba(0,182,215,0.10)" },

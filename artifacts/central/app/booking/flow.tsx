@@ -23,6 +23,7 @@ import { compareSchedulesByNextOccurrence, getScheduleLabel, isBookableScheduleS
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
+import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import ParticipantAvatar from "@/components/ParticipantAvatar";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
@@ -783,7 +784,7 @@ const styles = StyleSheet.create({
   resultScreen: { alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 18 },
   resultIconRing: { width: 110, height: 110, borderRadius: 55, alignItems: "center", justifyContent: "center" },
   resultIconCircle: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
-  resultTitle: { fontSize: 40, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", textAlign: "center", letterSpacing: 0.5 },
+  resultTitle: { fontSize: 40, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", textAlign: "center", letterSpacing: 0.5, ...iosDisplayTextStyle(40, 47) },
   resultSub: { fontSize: 14, fontFamily: "Archivo_400Regular", color: INK.text3, textAlign: "center", lineHeight: 21, maxWidth: 300 },
   resultButtons: { width: "100%", gap: 10, marginTop: 8 },
   participantCard: {
@@ -835,7 +836,7 @@ const styles = StyleSheet.create({
   recommendedText: { fontSize: 9, fontFamily: "Archivo_700Bold", color: "#000", letterSpacing: 0.8 },
   paymentTitle: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
   paymentDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#8E97A2", lineHeight: 18 },
-  paymentAmount: { fontSize: 22, fontFamily: "Archivo_700Bold" },
+  paymentAmount: { fontSize: 22, fontFamily: "Archivo_700Bold", ...iosDisplayTextStyle(22, 26, "archivo") },
   warningBanner: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: "flex-start" },
   warningText: { fontSize: 13, fontFamily: "Archivo_500Medium", flex: 1, lineHeight: 18 },
   refCodeSection: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 10 },
@@ -844,6 +845,7 @@ const styles = StyleSheet.create({
   refCodeInput: {
     flex: 1, height: 44, borderRadius: 10, borderWidth: 1,
     paddingHorizontal: 12, fontFamily: "Archivo_600SemiBold", fontSize: 14, letterSpacing: 1,
+    ...iosTextInputStyle(14, 18),
   },
   refCodeBtn: { height: 44, paddingHorizontal: 16, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   refCodeBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold" },

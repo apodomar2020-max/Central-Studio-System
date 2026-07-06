@@ -74,11 +74,11 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="auth/login"
-          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
         />
         <Stack.Screen
           name="auth/register"
-          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
         />
         <Stack.Screen
           name="auth/complete-profile"
@@ -86,15 +86,15 @@ function RootLayoutNav() {
         />
         <Stack.Screen
           name="auth/forgot-password"
-          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
         />
         <Stack.Screen
           name="auth/reset-password"
-          options={{ presentation: "modal", animation: "slide_from_bottom" }}
+          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
         />
         <Stack.Screen name="onboarding/children" options={{ animation: "slide_from_right", gestureEnabled: false }} />
         <Stack.Screen name="onboarding/medical" options={{ animation: "slide_from_right", gestureEnabled: false }} />
-        <Stack.Screen name="onboarding/styles" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="onboarding/styles" options={{ animation: "slide_from_right", gestureEnabled: false }} />
         <Stack.Screen name="onboarding/success" options={{ animation: "fade", gestureEnabled: false }} />
         <Stack.Screen name="class/[id]" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="instructor/[id]" options={{ animation: "slide_from_right" }} />
@@ -111,7 +111,7 @@ function RootLayoutNav() {
         <Stack.Screen name="notifications" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="edit-profile" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="change-password" options={{ animation: "slide_from_right" }} />
-        <Stack.Screen name="verify-email" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="verify-email" options={{ animation: "slide_from_right", gestureEnabled: false }} />
         <Stack.Screen name="privacy-policy" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="help-support" options={{ animation: "slide_from_right" }} />
         {/* DEV-ONLY: design lab — not linked from any production navigation */}

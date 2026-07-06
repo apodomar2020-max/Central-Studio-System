@@ -16,6 +16,7 @@ import {
 
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
@@ -186,7 +187,7 @@ export default function ForgotPasswordScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0A0B0D" },
   centeredMsg: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 12 },
-  msgTitle: { fontSize: 32, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase" },
+  msgTitle: { fontSize: 32, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", ...iosDisplayTextStyle(32, 38) },
   msgBody: { fontSize: 15, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 22 },
   backToLogin: { marginTop: 24, paddingVertical: 12 },
   backToLoginText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold" },
@@ -210,7 +211,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 8,
   },
-  title: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", lineHeight: 40 },
+  title: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", lineHeight: 40, ...iosDisplayTextStyle(36, 40), marginBottom: -iosCapGuard(36, 40) },
   subtitle: {
     fontSize: 14,
     fontFamily: "Archivo_400Regular",
@@ -254,6 +255,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontFamily: "Archivo_400Regular",
     fontSize: 15,
+    ...iosTextInputStyle(15, 18),
   },
   backBtn: {
     flexDirection: "row",

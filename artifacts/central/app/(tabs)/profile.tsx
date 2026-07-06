@@ -25,6 +25,7 @@ import { useAppContext, ChildProfile } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 /**
  * PIcon — exact replica of the design's `PIcon` (home-profile.jsx) rendered
@@ -443,7 +444,7 @@ function AddChildModal({
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
             <View>
               <Text style={styles.fieldLabel}>Full Name *</Text>
-              <TextInput value={fullName} onChangeText={setFullName} style={styles.input} placeholderTextColor="#4B5563" placeholder="Child's full name" />
+              <TextInput value={fullName} onChangeText={setFullName} style={[styles.input, styles.inputText]} placeholderTextColor="#4B5563" placeholder="Child's full name" />
             </View>
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
@@ -487,15 +488,15 @@ function AddChildModal({
             </View>
             <View>
               <Text style={styles.fieldLabel}>Medical Notes</Text>
-              <TextInput value={medicalNotes} onChangeText={setMedicalNotes} style={[styles.input, { minHeight: 60 }]} placeholderTextColor="#4B5563" placeholder="Any allergies, conditions, or medical info..." multiline />
+              <TextInput value={medicalNotes} onChangeText={setMedicalNotes} style={[styles.input, styles.inputText, { minHeight: 60 }]} placeholderTextColor="#4B5563" placeholder="Any allergies, conditions, or medical info..." multiline />
             </View>
             <View>
               <Text style={styles.fieldLabel}>Emergency Contact Name</Text>
-              <TextInput value={emergencyName} onChangeText={setEmergencyName} style={styles.input} placeholderTextColor="#4B5563" placeholder="Full name" />
+              <TextInput value={emergencyName} onChangeText={setEmergencyName} style={[styles.input, styles.inputText]} placeholderTextColor="#4B5563" placeholder="Full name" />
             </View>
             <View>
               <Text style={styles.fieldLabel}>Emergency Contact Phone</Text>
-              <TextInput value={emergencyPhone} onChangeText={setEmergencyPhone} style={styles.input} placeholderTextColor="#4B5563" placeholder="+20 1XX XXX XXXX" keyboardType="phone-pad" />
+              <TextInput value={emergencyPhone} onChangeText={setEmergencyPhone} style={[styles.input, styles.inputText]} placeholderTextColor="#4B5563" placeholder="+20 1XX XXX XXXX" keyboardType="phone-pad" />
             </View>
           </ScrollView>
 
@@ -600,6 +601,7 @@ const dpStyles = StyleSheet.create({
 export default function ProfileScreen() {
   const { user, setUser, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications } = useAppContext();
   const insets = useSafeAreaInsets();
+  const navigatingRef = React.useRef(false);
   const [addChildVisible, setAddChildVisible] = useState(false);
   const [editingChild, setEditingChild] = useState<ChildProfile | undefined>(undefined);
   const [serverAttendedCount, setServerAttendedCount] = useState<number | null>(null);
@@ -607,6 +609,7 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      navigatingRef.current = false;
       if (!user) return undefined;
       let active = true;
 
@@ -781,7 +784,12 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.qrCard}
           activeOpacity={0.85}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/my-qr"); }}
+          onPress={() => {
+            if (navigatingRef.current) return;
+            navigatingRef.current = true;
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/my-qr");
+          }}
         >
           <LinearGradient
             colors={["rgba(0,182,215,0.16)", "rgba(0,182,215,0.12)"]}
@@ -1033,7 +1041,7 @@ const styles = StyleSheet.create({
   guestTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
   guestSubtitle: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
 
-  profileCard: { alignItems: "center", paddingTop: 8, paddingBottom: 22, gap: 14 },
+  profileCard: { alignItems: "center", paddingTop: Platform.OS === "ios" ? 4 : 8, paddingBottom: Platform.OS === "ios" ? 10 : 22, gap: Platform.OS === "ios" ? 6 : 14 },
   // avatar: 92×92 image (design) with a 3px cyan ring outside (→98 wrap) + soft cyan glow (design boxShadow 0 0 28px rgba(0,182,215,0.4))
   avatarWrap: {
     position: "relative", width: 98, height: 98, borderRadius: 49, alignItems: "center", justifyContent: "center",
@@ -1043,10 +1051,12 @@ const styles = StyleSheet.create({
   avatarGlowWrap: { position: "relative", alignItems: "center", justifyContent: "center" },
   avatarCircle: { width: 92, height: 92, borderRadius: 46, alignItems: "center", justifyContent: "center" },
   avatarImage: { width: 92, height: 92, borderRadius: 46, backgroundColor: "#1E1E26" },
-  avatarInitials: { fontSize: 28, fontFamily: "Anton_400Regular" },
+  avatarInitials: { fontSize: 28, fontFamily: "Anton_400Regular", ...iosDisplayTextStyle(28, 30), marginTop: -iosCapGuard(28, 30) },
   avatarVerifiedBadge: { position: "absolute", bottom: 2, right: 2, width: 26, height: 26, borderRadius: 13, backgroundColor: "#00B6D7", alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#0A0B0D" },
-  fullName: { fontSize: 28, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF", letterSpacing: -0.3 },
-  contactBlock: { alignItems: "center", gap: 5 },
+  // Display/title face (Anton, uppercase) like the main page titles, sized for the
+  // profile header. lineHeight 32 keeps the iOS cap-guard tiny so it never clips.
+  fullName: { fontSize: 28, fontFamily: "Anton_400Regular", textTransform: "uppercase", color: "#FFFFFF", letterSpacing: 0, ...iosDisplayTextStyle(28, 32, "anton"), marginTop: Platform.OS === "ios" ? 2 : 0, marginBottom: Platform.OS === "ios" ? 2 : 0 },
+  contactBlock: { alignItems: "center", gap: Platform.OS === "ios" ? 3 : 5 },
   contactRow: { flexDirection: "row", alignItems: "center", gap: 7 },
   contactText: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#8E97A2" },
   accountTypePill: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.06)" },
@@ -1057,7 +1067,7 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   statCard: { flex: 1, paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12, alignItems: "center", backgroundColor: "#15171B", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
   statIconWrap: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 8, backgroundColor: "rgba(255,255,255,0.06)" },
-  statValue: { fontSize: 26, lineHeight: 24, fontFamily: "Anton_400Regular", color: "#FFFFFF" },
+  statValue: { fontSize: 26, lineHeight: 24, ...iosDisplayTextStyle(26, 24), fontFamily: "Anton_400Regular", color: "#FFFFFF", marginTop: Platform.OS === "ios" ? -2 : 0, marginBottom: Platform.OS === "ios" ? -5 : 0 },
   statLabel: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: "#6B747F", marginTop: 3 },
 
   sectionEyebrow: { fontSize: 12, fontFamily: "SpaceMono_700Bold", color: "#6B747F", letterSpacing: 1.9, marginBottom: 10, textTransform: "uppercase", marginLeft: 4 },
@@ -1117,7 +1127,8 @@ const styles = StyleSheet.create({
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#2A2A35", alignSelf: "center" },
   modalTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   fieldLabel: { fontSize: 12, fontFamily: "Inter_500Medium", color: "#9CA3AF", marginBottom: 6 },
-  input: { backgroundColor: "#1E1E26", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: "#FFFFFF", fontFamily: "Inter_400Regular", fontSize: 14, borderWidth: 1, borderColor: "#2A2A35" },
+  input: { backgroundColor: "#1E1E26", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: "#2A2A35" },
+  inputText: { color: "#FFFFFF", fontFamily: "Inter_400Regular", fontSize: 14, ...iosTextInputStyle(14, 18, "inter") },
   rowFields: { flexDirection: "row", gap: 10 },
   genderRow: { flexDirection: "row", gap: 8 },
   genderBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: "#2A2A35", backgroundColor: "#1E1E26" },

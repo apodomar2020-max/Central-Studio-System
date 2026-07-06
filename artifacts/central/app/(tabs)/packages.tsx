@@ -26,6 +26,7 @@ import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import { showProfileIncompletePrompt } from "@/utils/profileCompletionRequired";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 
 function PackageCard({
   pkg,
@@ -270,7 +271,7 @@ export default function PackagesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.studio.background },
   header: { paddingHorizontal: 20, paddingBottom: 12, gap: 14 },
-  title: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+  title: { fontSize: 28, fontFamily: "Inter_700Bold", color: "#FFFFFF", ...iosDisplayTextStyle(28, 32, "inter") },
   centerShortcut: {
     alignSelf: "flex-start",
     flexDirection: "row",
@@ -332,7 +333,7 @@ const styles = StyleSheet.create({
     gap: 0,
     flexShrink: 0,
   },
-  pkgCreditsNum: { fontSize: 22, fontFamily: "Inter_700Bold", lineHeight: 26 },
+  pkgCreditsNum: { fontSize: 22, fontFamily: "Inter_700Bold", lineHeight: 26, ...iosDisplayTextStyle(22, 26, "inter") },
   pkgCreditsLabel: { fontSize: 10, fontFamily: "Inter_500Medium", lineHeight: 12 },
   pkgInfo: { flex: 1, gap: 6 },
   pkgTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
@@ -342,7 +343,7 @@ const styles = StyleSheet.create({
   pkgTagText: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
   pkgFooter: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   pkgPriceLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  pkgPrice: { fontSize: 22, fontFamily: "Inter_700Bold" },
+  pkgPrice: { fontSize: 22, fontFamily: "Inter_700Bold", ...iosDisplayTextStyle(22, 26, "inter") },
   pkgPerClass: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
   pkgFeatures: { gap: 7, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.06)" },
   pkgFeatureRow: { flexDirection: "row", alignItems: "center", gap: 8 },

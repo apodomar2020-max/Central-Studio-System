@@ -26,6 +26,7 @@ import {
 } from "@workspace/api-client-react";
 
 import XI from "@/components/XiIcon";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import {
   classCapacityDisplay,
   compareSchedulesByNextOccurrence,
@@ -474,7 +475,7 @@ const styles = StyleSheet.create({
   heroChips: { flexDirection: "row", gap: 7, marginBottom: 8 },
   chipDark: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: R_PILL, backgroundColor: "rgba(0,0,0,0.52)" },
   chipDarkText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff", textTransform: "uppercase", letterSpacing: 0.8 },
-  title: { fontSize: 42, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 38, textTransform: "uppercase" },
+  title: { fontSize: 42, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 38, ...iosDisplayTextStyle(42, 38), textTransform: "uppercase" },
   body: { padding: 20, paddingBottom: 0 },
   topRow: {
     flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16,
@@ -526,7 +527,7 @@ const styles = StyleSheet.create({
   capBarFill: { height: "100%", borderRadius: 4 },
   footer: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingTop: 14 },
   footerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  footerPrice: { fontSize: 28, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 25 },
+  footerPrice: { fontSize: 28, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 25, ...iosDisplayTextStyle(28, 25) },
   footerCredits: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: CYAN, marginTop: 4 },
   footerStatusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: R_PILL },
   footerStatusText: { fontSize: 12, fontFamily: "Archivo_700Bold" },

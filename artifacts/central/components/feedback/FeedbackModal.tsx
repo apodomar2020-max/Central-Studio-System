@@ -19,6 +19,7 @@ import {
 import colors from "@/constants/colors";
 import type { RequiredFeedbackItem } from "@/services/feedbackService";
 import { formatApiDate, formatApiTime } from "@/utils/dateTime";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 const RATING_LABELS: Record<number, string> = {
   0: "Tap a star to rate",
@@ -404,10 +405,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.ink[300],
   },
-  heroTitle: { fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 34, textTransform: "uppercase", color: "#fff", marginBottom: 6 },
+  heroTitle: { fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 34, ...iosDisplayTextStyle(34, 34), textTransform: "uppercase", color: "#fff", marginBottom: 6 - iosCapGuard(34, 34) },
   subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, color: colors.ink[400], marginBottom: 18 },
   classCard: { padding: 15, borderRadius: 16, backgroundColor: colors.ink[800], borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
-  classTitle: { fontFamily: "Anton_400Regular", fontSize: 26, lineHeight: 27, textTransform: "uppercase", color: "#fff" },
+  classTitle: { fontFamily: "Anton_400Regular", fontSize: 26, lineHeight: 27, ...iosDisplayTextStyle(26, 27), textTransform: "uppercase", color: "#fff", marginBottom: -iosCapGuard(26, 27) },
   classMeta: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 },
   avatar: { width: 34, height: 34, borderRadius: 17 },
   avatarFallback: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: colors.ink[700] },
@@ -436,7 +437,7 @@ const styles = StyleSheet.create({
   recap: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 18 },
   miniStars: { flexDirection: "row", gap: 3 },
   recapLabel: { fontFamily: "Archivo_800ExtraBold", fontSize: 14 },
-  commentTitle: { fontFamily: "Anton_400Regular", fontSize: 28, lineHeight: 29, textTransform: "uppercase", color: "#fff", marginBottom: 8 },
+  commentTitle: { fontFamily: "Anton_400Regular", fontSize: 28, lineHeight: 29, ...iosDisplayTextStyle(28, 29), textTransform: "uppercase", color: "#fff", marginBottom: 8 - iosCapGuard(28, 29) },
   commentSubtitle: { fontFamily: "Inter_400Regular", fontSize: 13, color: colors.ink[300], marginBottom: 16 },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
   tag: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)", backgroundColor: "rgba(255,255,255,0.04)" },
@@ -455,11 +456,12 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 14,
     lineHeight: 20,
+    ...iosTextInputStyle(14, 20, "inter"),
   },
   requiredTextarea: { minHeight: 110, backgroundColor: "rgba(255,176,46,0.06)", borderColor: "rgba(255,176,46,0.40)" },
   requiredHint: { marginTop: 8, fontFamily: "Inter_500Medium", fontSize: 12, color: colors.amber },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, paddingVertical: 30 },
-  stateTitle: { marginTop: 24, fontFamily: "Anton_400Regular", fontSize: 46, lineHeight: 48, textTransform: "uppercase", color: "#fff", textAlign: "center" },
+  stateTitle: { marginTop: 24, fontFamily: "Anton_400Regular", fontSize: 46, lineHeight: 48, ...iosDisplayTextStyle(46, 48), textTransform: "uppercase", color: "#fff", textAlign: "center", marginBottom: -iosCapGuard(46, 48) },
   stateBody: { marginTop: 12, maxWidth: 280, fontFamily: "Inter_400Regular", fontSize: 14.5, lineHeight: 22, color: colors.ink[300], textAlign: "center" },
   stateBodyScroll: { maxHeight: 220, width: "100%", marginTop: 12 },
   stateBodyScrollContent: { alignItems: "center", paddingBottom: 4 },

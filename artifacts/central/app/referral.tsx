@@ -18,6 +18,7 @@ import {
 
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 
 const HOW_IT_WORKS = [
   {
@@ -258,7 +259,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
-  statValue: { fontSize: 26, fontFamily: "Inter_700Bold" },
+  statValue: { fontSize: 26, fontFamily: "Inter_700Bold", ...iosDisplayTextStyle(26, 30, "inter") },
   statLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF", textAlign: "center" },
   section: { gap: 12 },
   sectionTitle: {
@@ -279,6 +280,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: "Inter_700Bold",
     letterSpacing: 4,
+    ...iosDisplayTextStyle(28, 32, "inter"),
   },
   copyBtn: {
     flexDirection: "row",
@@ -316,7 +318,7 @@ const styles = StyleSheet.create({
   },
   creditsText: { flex: 1, gap: 2 },
   creditsTitle: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
-  creditsAmount: { fontSize: 22, fontFamily: "Inter_700Bold" },
+  creditsAmount: { fontSize: 22, fontFamily: "Inter_700Bold", ...iosDisplayTextStyle(22, 26, "inter") },
   creditsHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#6B7280" },
   stepsContainer: { gap: 0 },
   stepRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },

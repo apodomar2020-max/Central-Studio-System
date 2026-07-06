@@ -22,6 +22,7 @@ import {
 import { useGetMyCredits, useGetMyPackages } from "@workspace/api-client-react";
 import type { CreditTransaction, PackageOrder } from "@workspace/api-client-react";
 import { formatApiDate, parseApiDate } from "@/utils/dateTime";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 // Design tokens
 const CYAN = "#00B6D7";
@@ -242,7 +243,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(0,182,215,0.35)",
   },
   heroEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 1.6, textTransform: "uppercase", color: CYAN_400, marginBottom: 6 },
-  heroNumber: { fontFamily: "Anton_400Regular", fontSize: 56, lineHeight: 52, color: "#FFFFFF" },
+  heroNumber: { fontFamily: "Anton_400Regular", fontSize: 56, lineHeight: 52, ...iosDisplayTextStyle(56, 52), color: "#FFFFFF", marginBottom: -iosCapGuard(56, 52) },
   heroSub: { fontFamily: "Archivo_400Regular", fontSize: 13, color: INK_300, marginTop: 8, textAlign: "center" },
 
   // Filter chips

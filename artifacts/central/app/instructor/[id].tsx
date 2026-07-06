@@ -26,6 +26,7 @@ import colors from "@/constants/colors";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import { isOfflineError } from "@/services/connectivity";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -416,8 +417,8 @@ const styles = StyleSheet.create({
     textTransform: "uppercase", color: "#0B0B12",
   },
   nameText: {
-    fontFamily: "Anton_400Regular", fontSize: 44, lineHeight: 46,
-    textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6,
+    fontFamily: "Anton_400Regular", fontSize: 44, lineHeight: 46, ...iosDisplayTextStyle(44, 46),
+    textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6 - iosCapGuard(44, 46),
   },
   titleText: { fontFamily: "Archivo_600SemiBold", fontSize: 14 },
 
@@ -428,7 +429,7 @@ const styles = StyleSheet.create({
   },
   statBox: { flex: 1, alignItems: "center", paddingVertical: 14, paddingHorizontal: 4 },
   statBoxBorder: { borderRightWidth: 1, borderRightColor: "rgba(255,255,255,0.07)" },
-  statValue: { fontFamily: "Anton_400Regular", fontSize: 22, lineHeight: 24 },
+  statValue: { fontFamily: "Anton_400Regular", fontSize: 22, lineHeight: 24, ...iosDisplayTextStyle(22, 24), marginTop: -iosCapGuard(22, 24) },
   statLabel: {
     fontFamily: "Archivo_400Regular", fontSize: 10.5, color: "#9CA3AF",
     marginTop: 5, textTransform: "uppercase", letterSpacing: 0.5,

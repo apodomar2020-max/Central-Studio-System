@@ -5,6 +5,7 @@ import type { PricePackage } from "@workspace/api-client-react";
 import { customFetch } from "@workspace/api-client-react";
 import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
+import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 type PackagePurchaseModalProps = {
   pkg: PricePackage | null;
@@ -170,7 +171,7 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#2A2A35", alignSelf: "center" },
-  modalTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: "#FFFFFF", textAlign: "center" },
+  modalTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: "#FFFFFF", textAlign: "center", ...iosDisplayTextStyle(20, 24, "inter") },
   modalPackageSummary: {
     borderRadius: 14,
     borderWidth: 1,
@@ -182,7 +183,7 @@ const styles = StyleSheet.create({
   modalPkgName: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
   modalPkgCredits: { fontSize: 14, fontFamily: "Inter_500Medium", color: "#9CA3AF" },
   modalPkgValidity: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", textAlign: "center" },
-  modalPkgPrice: { fontSize: 28, fontFamily: "Inter_700Bold", marginTop: 4 },
+  modalPkgPrice: { fontSize: 28, fontFamily: "Inter_700Bold", marginTop: 4, ...iosDisplayTextStyle(28, 32, "inter") },
   discountBox: { marginTop: 10, alignItems: "center", gap: 4 },
   discountText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#22C55E", textAlign: "center" },
   promoBox: { gap: 8 },
@@ -196,6 +197,7 @@ const styles = StyleSheet.create({
     borderColor: "#2A2A35",
     backgroundColor: colors.studio.background,
     color: "#FFFFFF",
+    ...iosTextInputStyle(14, 18, "inter"),
     paddingHorizontal: 12,
     fontFamily: "Inter_500Medium",
   },

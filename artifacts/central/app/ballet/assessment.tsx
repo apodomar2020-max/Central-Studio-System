@@ -28,6 +28,7 @@ import {
   ACTIVE_APPLICATION_STATUSES,
   isOfflineError,
 } from "@/services/balletAssessmentService";
+import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { probeConnectivity } from "@/services/connectivity";
 
 // NOTE: This screen is only navigated to when the ballet gate (app/ballet/index.tsx)
@@ -115,7 +116,7 @@ function Field({
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor="#4B5563"
-        style={[styles.input, multiline && { minHeight: 72 }]}
+        style={[styles.input, styles.inputText, multiline && { minHeight: 72 }]}
         keyboardType={keyboardType ?? "default"}
         multiline={multiline}
         autoCapitalize={keyboardType === "email-address" ? "none" : "words"}
@@ -372,6 +373,7 @@ const dpStyles = StyleSheet.create({
     fontSize: 30,
     fontFamily: "Anton_400Regular",
     color: "#FFFFFF",
+    ...iosDisplayTextStyle(30, 35),
     minWidth: 60,
     textAlign: "center",
   },
@@ -1247,7 +1249,7 @@ const styles = StyleSheet.create({
   stepDesc: { fontSize: 13.5, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 20 },
   introHeader: { alignItems: "center", paddingVertical: 20 },
   introIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: "rgba(0,182,215,0.12)", alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  introTitle: { fontSize: 44, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", textAlign: "center", lineHeight: 40, marginBottom: 12 },
+  introTitle: { fontSize: 44, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", textAlign: "center", lineHeight: 40, ...iosDisplayTextStyle(44, 40), marginBottom: 12 - iosCapGuard(44, 40) },
   introLead: { fontSize: 15, fontFamily: "Archivo_400Regular", color: "#B6BDC6", textAlign: "center", lineHeight: 23, maxWidth: 300 },
   introCard: { flexDirection: "row", gap: 13, padding: 13, marginBottom: 12, borderRadius: 14, backgroundColor: "rgba(0,182,215,0.07)", borderWidth: 1, borderColor: "rgba(0,182,215,0.16)" },
   introCardIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: "rgba(0,182,215,0.12)", alignItems: "center", justifyContent: "center" },
@@ -1263,11 +1265,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 13,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  inputText: {
     color: "#FFFFFF",
     fontFamily: "Archivo_400Regular",
     fontSize: 15,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.10)",
+    ...iosTextInputStyle(15, 18),
   },
   genderRow: { flexDirection: "row", gap: 10 },
   genderBtn: {
@@ -1395,7 +1400,7 @@ const styles = StyleSheet.create({
   pricingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   pricingLevel: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
   pricingHours: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
-  pricingAmount: { fontSize: 19, fontFamily: "Anton_400Regular" },
+  pricingAmount: { fontSize: 19, fontFamily: "Anton_400Regular", ...iosDisplayTextStyle(19, 22) },
   footer: {
     flexDirection: "row",
     gap: 10,

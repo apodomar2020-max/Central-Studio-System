@@ -17,6 +17,7 @@ import {
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import { iosTextInputStyle } from "@/utils/iosTypography";
 
 export default function ChangePasswordScreen() {
   const { user } = useAppContext();
@@ -211,7 +212,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 12, borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.10)", paddingHorizontal: 14, height: 50,
   },
-  input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15 },
+  input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15, ...iosTextInputStyle(15, 18) },
   divider: { height: 1, backgroundColor: "rgba(255,255,255,0.06)", marginVertical: 4 },
   strengthRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   strengthBar: { flex: 1, height: 4, borderRadius: 2 },

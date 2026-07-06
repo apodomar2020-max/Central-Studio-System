@@ -13,6 +13,7 @@ import React from "react";
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BalletPageShell, BAL } from "@/components/ballet/BalletPageShell";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 const PHONE = "+201123456789";
 const EMAIL = "ballet@centralstudio.eg";
@@ -88,7 +89,8 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     textAlign: "center",
     lineHeight: 34,
-    marginBottom: 8,
+    ...iosDisplayTextStyle(36, 34),
+    marginBottom: 8 - iosCapGuard(36, 34),
   },
   heroSub: {
     fontSize: 13,

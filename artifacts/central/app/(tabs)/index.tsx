@@ -27,6 +27,7 @@ import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-s
 
 import { useAppContext } from "@/contexts/AppContext";
 import { isSafeAppRoute, safePush } from "@/utils/navigation";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import CsIcon from "@/components/CsIcon";
 import { DanceClass, Instructor } from "@/data/mockData";
 import {
@@ -1130,7 +1131,7 @@ const s = StyleSheet.create({
   // Design: role-eyebrow — Fix Pack 2: fontSize 9→12, letterSpacing 1.8→1.92
   heroEyebrow: { fontSize: 12, fontFamily: "SpaceMono_700Bold", color: CYAN, letterSpacing: 1.92, textTransform: "uppercase", marginBottom: 7 },
   // Design: font-display, fontSize: 36 — Fix Pack 2: lineHeight 32→33 (36×0.9=32.4 → round up)
-  heroTitle: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 33, textTransform: "uppercase", letterSpacing: 0 },
+  heroTitle: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 33, ...iosDisplayTextStyle(36, 33), textTransform: "uppercase", letterSpacing: 0, marginBottom: -iosCapGuard(36, 33) },
   // Design: marginTop: 12, justifyContent: space-between (sub text left, CTA right)
   heroCTARow: { flexDirection: "row", alignItems: "center", marginTop: 12 },
   // Design: height: 28, padding: 0 10px, gap: 15, fontSize: 10
@@ -1196,7 +1197,7 @@ const s = StyleSheet.create({
   // Fix Pack 2: classTitle fontSize 18→20; classDesc fontSize 13→14, lineHeight 19→22
   classTitle: { fontSize: 20, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 22, marginBottom: 3 },
   classDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 22 },
-  classPrice: { fontSize: 20, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 22, flexShrink: 0 },
+  classPrice: { fontSize: 20, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 22, ...iosDisplayTextStyle(20, 22), flexShrink: 0 },
   classMeta: { flexDirection: "row", alignItems: "center", gap: 5 },
   classMetaText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
   classMetaSep: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: INK_400 },
@@ -1265,7 +1266,7 @@ const s = StyleSheet.create({
   },
   pkgName: { fontSize: 19, fontFamily: "Archivo_700Bold", color: "#fff" },
   pkgPriceRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 6, marginBottom: 8 },
-  pkgPrice: { fontSize: 38, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 34 },
+  pkgPrice: { fontSize: 38, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 34, ...iosDisplayTextStyle(38, 34) },
   pkgUnit: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400 },
   // Description + feature bullets (design parity).
   pkgDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 19, marginBottom: 14 },

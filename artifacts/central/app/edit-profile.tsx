@@ -18,6 +18,7 @@ import { customFetch } from "@workspace/api-client-react";
 import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
 import { useAppContext, type User } from "@/contexts/AppContext";
+import { iosTextInputStyle } from "@/utils/iosTypography";
 import { mapStudentToUser, type AccountType, type AuthStudent } from "@/services/authProfile";
 
 const ACCOUNT_TYPES: { value: AccountType; label: string; icon: React.ComponentProps<typeof Ionicons>["name"] }[] = [
@@ -332,7 +333,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.10)",
     backgroundColor: "rgba(255,255,255,0.06)",
   },
-  input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15 },
+  input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15, ...iosTextInputStyle(15, 18) },
   suggestionBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 9 },
   suggestionText: { flex: 1, fontSize: 12, fontFamily: "Archivo_500Medium", color: colors.studio.primary },
   accountTypeRow: { flexDirection: "row", gap: 8 },

@@ -20,6 +20,7 @@ import { STORAGE_KEYS } from "@/constants/danceStyles";
 import { useAppContext, type User } from "@/contexts/AppContext";
 import { mapStudentToUser, nextStepRoute, type AuthStudent } from "@/services/authProfile";
 import { BackBtn, CS, Eyebrow, Icon, PrimaryCTA, ScreenTitle } from "@/components/signup/SignupKit";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 interface DanceInterestsResponse {
@@ -53,7 +54,7 @@ function hexToRgb(hex?: string | null): string {
 
 export default function StylesPickerScreen() {
   const insets = useSafeAreaInsets();
-  const { setUser } = useAppContext();
+  const { setUser, user } = useAppContext();
   const { data: danceTypesRaw } = useListDanceTypes();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -88,7 +89,7 @@ export default function StylesPickerScreen() {
       const chosenSlugs = styles_.filter((dt) => selected.has(dt.id)).map((dt) => dt.slug);
       await AsyncStorage.setItem(STORAGE_KEYS.danceStyles, JSON.stringify(chosenSlugs));
       const nextStep = updated.profileCompletion?.nextStep ?? "done";
-      router.push(nextStepRoute(nextStep) as never);
+      router.replace(nextStepRoute(nextStep) as never);
     } finally {
       setSaving(false);
     }
@@ -101,7 +102,10 @@ export default function StylesPickerScreen() {
       <VibeGlow />
 
       <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
-        <BackBtn onPress={() => router.push("/auth/complete-profile")} />
+        <BackBtn onPress={() => {
+          const prevStep = user?.accountType === "parent" ? "/onboarding/medical" : "/auth/complete-profile";
+          router.replace(prevStep as never);
+        }} />
         <ProgressDots total={5} current={2} />
         <View style={{ width: 42 }} />
       </View>
@@ -155,7 +159,7 @@ const styles = StyleSheet.create({
     zIndex: 50, elevation: 10,
   },
   intro: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 10 },
-  title: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6, includeFontPadding: false, paddingTop: 6 },
+  title: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, textTransform: "uppercase", color: "#FFFFFF", marginBottom: 6, includeFontPadding: false, paddingTop: 6, ...iosDisplayTextStyle(85, 78) },
   lead: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, fontFamily: "Archivo_400Regular" },
   gridScroll: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 8 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
