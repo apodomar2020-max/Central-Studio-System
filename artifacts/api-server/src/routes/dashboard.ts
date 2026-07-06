@@ -13,6 +13,7 @@ import {
   classPricingSettingsTable,
 } from "@workspace/db";
 import { GetDashboardResponse } from "@workspace/api-zod";
+import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 
 const router: IRouter = Router();
 
@@ -45,7 +46,10 @@ function occursOn(schedule: ScheduleRow, day: { key: string; dayOfWeek: number }
   return true;
 }
 
-router.get("/dashboard", async (_req, res): Promise<void> => {
+// Admin-only: aggregates revenue, user counts, and operational stats. The
+// shared API key is an app identifier, not authentication — it must never be
+// enough to read financial data (Security Assessment H-01).
+router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "view"), async (_req, res): Promise<void> => {
   const [
     [userStats],
     [bookingStats],

@@ -33,7 +33,10 @@ const ListAttendanceQueryParams = zod.object({
   pageSize: zod.coerce.number().int().min(1).max(500).optional(),
 });
 
-router.get("/attendance", async (req, res): Promise<void> => {
+// Admin-only: lists attendance records across all students (queryable by
+// student email). Students read their own history via GET /my/attendance
+// (Security Assessment H-01).
+router.get("/attendance", requireAdminAuth, requireAdminPermission("attendance", "view"), async (req, res): Promise<void> => {
   const query = ListAttendanceQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
@@ -381,7 +384,8 @@ router.post(
 // ---------------------------------------------------------------------------
 // GET /attendance/stats
 // ---------------------------------------------------------------------------
-router.get("/attendance/stats", async (req, res): Promise<void> => {
+// Admin-only: studio-wide attendance aggregates (Security Assessment H-01).
+router.get("/attendance/stats", requireAdminAuth, requireAdminPermission("attendance", "view"), async (req, res): Promise<void> => {
   const query = GetAttendanceStatsQueryParams.safeParse(req.query);
   const period =
     query.success && query.data.period ? query.data.period : "monthly";
