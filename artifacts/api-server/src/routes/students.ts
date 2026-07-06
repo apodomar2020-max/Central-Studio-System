@@ -30,6 +30,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { resolveMemberIdentity } from "../lib/membershipIdentity";
+import { sanitizeStudentRow } from "../lib/studentSanitizer";
 import { buildProfileCompletion } from "../lib/studentProfileResponse";
 import { computeProfileCompletion } from "../lib/profileCompletion";
 import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./studentProfilePdf";
@@ -320,7 +321,9 @@ router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promis
           })
         : null;
       return {
-        ...student,
+        // Sensitive credential fields (passwordHash, qrToken, provider ids)
+        // must never reach the client, even for admins (Security Phase F).
+        ...sanitizeStudentRow(student),
         totalBookings: bookingCounts.get(normalizeEmail(student.email)) ?? 0,
         ...(canViewChildren ? { childCount: childCounts.get(student.id) ?? 0 } : {}),
         ...(canViewProfileCompletion
