@@ -38,6 +38,7 @@ import {
   creditTransactionsTable,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { sanitizeCellText } from "../lib/exportSanitizer";
 import { buildPdfBuffer } from "./pdfReport";
 import { logActivity } from "../lib/activityLog";
 
@@ -805,10 +806,13 @@ async function buildXlsxBuffer(
   ws.addRow([]);
 
   // ── Summary block ──
+  // (The meta lines above are safe without sanitizing: each interpolates
+  // user input only after a fixed "Label: " prefix, and formulas only
+  // trigger on a cell's FIRST character.)
   const summaryHeader = ws.addRow(["Summary"]);
   summaryHeader.font = { bold: true };
   for (const [key, val] of Object.entries(result.summary)) {
-    ws.addRow([humanizeKey(key), val as string | number]);
+    ws.addRow([humanizeKey(key), typeof val === "string" ? sanitizeCellText(val) : (val as number)]);
   }
 
   ws.addRow([]);
@@ -819,12 +823,15 @@ async function buildXlsxBuffer(
   ws.views = [{ state: "frozen", ySplit: headerRow.number }];
 
   // ── Table rows: keep numbers numeric, blanks for null/undefined ──
+  // Every text cell goes through sanitizeCellText — rows contain
+  // attacker-controlled values (student names, emails, phones), and all
+  // spreadsheet exports must neutralize formula prefixes (Security Phase H).
   for (const row of result.rows) {
     ws.addRow(
       result.columns.map((c) => {
         const v = row[c.key];
         if (v == null) return "";
-        return typeof v === "number" || typeof v === "boolean" ? v : String(v);
+        return typeof v === "number" || typeof v === "boolean" ? v : sanitizeCellText(String(v));
       }),
     );
   }
