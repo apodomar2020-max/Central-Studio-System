@@ -411,8 +411,19 @@ router.post("/notifications/read-all", requireStudentAuth, requireVerifiedStuden
 });
 
 router.post("/notifications/devices/register", requireStudentAuth, requireVerifiedStudent, async (req: any, res): Promise<void> => {
+  logger.info({
+    studentId: req.studentId ?? null,
+    platform: typeof req.body?.platform === "string" ? req.body.platform : null,
+    provider: typeof req.body?.provider === "string" ? req.body.provider : null,
+    tokenPrefix: typeof req.body?.pushToken === "string" ? tokenPrefix(req.body.pushToken) : null,
+  }, "[PUSH_DIAG] notification device register endpoint reached");
+
   const parsed = DeviceRegisterBody.safeParse(req.body);
   if (!parsed.success) {
+    logger.warn({
+      studentId: req.studentId ?? null,
+      issues: parsed.error.issues.map((issue) => issue.path.join(".")),
+    }, "[PUSH_DIAG] notification device register rejected");
     res.status(400).json({ error: parsed.error.message });
     return;
   }
@@ -424,6 +435,13 @@ router.post("/notifications/devices/register", requireStudentAuth, requireVerifi
     .from(notificationDevicesTable)
     .where(eq(notificationDevicesTable.pushToken, parsed.data.pushToken))
     .limit(1);
+  logger.info({
+    studentId,
+    platform: parsed.data.platform,
+    provider: parsed.data.provider,
+    tokenPrefix: tokenPrefix(parsed.data.pushToken),
+    action: existingDevice ? "update" : "create",
+  }, "[PUSH_DIAG] notification device db write start");
   const [device] = await db
     .insert(notificationDevicesTable)
     .values({

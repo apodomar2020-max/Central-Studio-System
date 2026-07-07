@@ -9,9 +9,7 @@ const DEVICE_ID_KEY = "notificationDeviceId";
 type ExpoNotificationsModule = typeof import("expo-notifications");
 
 function pushDiag(message: string, data?: Record<string, unknown>): void {
-  if (__DEV__) {
-    console.log(`[PUSH_DIAG] ${message}`, data ?? {});
-  }
+  console.log(`[PUSH_DIAG] ${message}`, data ?? {});
 }
 
 function tokenPrefix(token: string): string {
@@ -62,7 +60,16 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
     return;
   }
 
-  const Notifications = await loadNotifications();
+  let Notifications: ExpoNotificationsModule | null = null;
+  try {
+    Notifications = await loadNotifications();
+  } catch (error) {
+    pushDiag("register skipped", {
+      reason: "notifications_module_error",
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    throw error;
+  }
   if (!Notifications) {
     pushDiag("register skipped", { reason: "notifications_module_unavailable" });
     return;
@@ -87,7 +94,17 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
 
   const projectId = getProjectId();
   pushDiag("project id", { exists: Boolean(projectId) });
-  const tokenResponse = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+  pushDiag("getExpoPushTokenAsync entered", { projectIdExists: Boolean(projectId) });
+  let tokenResponse: Awaited<ReturnType<ExpoNotificationsModule["getExpoPushTokenAsync"]>>;
+  try {
+    tokenResponse = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+  } catch (error) {
+    pushDiag("token request failed", {
+      projectIdExists: Boolean(projectId),
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    throw error;
+  }
   const pushToken = tokenResponse.data;
   pushDiag("token received", {
     received: Boolean(pushToken),
@@ -99,16 +116,29 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
   }
 
   try {
-    await customFetch("/api/notifications/devices/register", {
-      method: "POST",
-      body: JSON.stringify({
-        pushToken,
-        provider: "expo",
-        platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "unknown",
-        deviceId: await getDeviceId(),
-      }),
+    pushDiag("register API request", {
+      tokenPrefix: tokenPrefix(pushToken),
+      platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "unknown",
     });
-    pushDiag("register API success", { tokenPrefix: tokenPrefix(pushToken) });
+    const response = await customFetch<{ ok?: boolean; id?: number; isActive?: boolean; lastSeenAt?: string }>(
+      "/api/notifications/devices/register",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          pushToken,
+          provider: "expo",
+          platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "unknown",
+          deviceId: await getDeviceId(),
+        }),
+      },
+    );
+    pushDiag("register API response", {
+      ok: response?.ok === true,
+      id: response?.id ?? null,
+      isActive: response?.isActive ?? null,
+      tokenPrefix: tokenPrefix(pushToken),
+    });
+    pushDiag("register final success", { tokenPrefix: tokenPrefix(pushToken) });
   } catch (error) {
     pushDiag("register API failure", {
       tokenPrefix: tokenPrefix(pushToken),
