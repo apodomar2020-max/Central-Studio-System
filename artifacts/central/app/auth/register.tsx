@@ -28,7 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useAppContext } from "@/contexts/AppContext";
 import { STORAGE_KEYS } from "@/constants/danceStyles";
-import { continueAfterAuth } from "@/services/authProfile";
+import { continueAfterAuth, postAuthDestination } from "@/services/authProfile";
 import ProgressDots from "@/components/ProgressDots";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import {
@@ -125,8 +125,8 @@ export function clearSignupDrafts() {
 export default function RegisterScreen() {
   const { setUser, user } = useAppContext();
   const insets = useSafeAreaInsets();
-  const google = useGoogleSignIn();
-  const facebook = useFacebookSignIn();
+  const google = useGoogleSignIn("social-signup");
+  const facebook = useFacebookSignIn("social-signup");
 
   // Plain controlled state (same proven pattern as the Sign In screen).
   const [firstName, setFirstName] = useState(draftFirstName);
@@ -140,6 +140,11 @@ export default function RegisterScreen() {
     draftEmail = email;
     draftPassword = password;
   }, [firstName, lastName, email, password]);
+
+  useEffect(() => {
+    if (!user) return;
+    router.replace(postAuthDestination(user) as never);
+  }, [user]);
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
@@ -167,7 +172,7 @@ export default function RegisterScreen() {
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
             body: JSON.stringify({ name }),
           });
-          await continueAfterAuth(undefined, setUser, { guidedOnboarding: true });
+          await continueAfterAuth(undefined, setUser, { guidedOnboarding: true, source: "email-signup" });
           setLoading(false);
         } catch {
           setApiError("Network error. Please check your connection.");
@@ -228,7 +233,7 @@ export default function RegisterScreen() {
         setLoading(false);
         return;
       }
-      await continueAfterAuth(data.accessToken, setUser, { guidedOnboarding: true });
+      await continueAfterAuth(data.accessToken, setUser, { guidedOnboarding: true, source: "email-signup" });
       setLoading(false);
     } catch {
       setApiError("Network error. Please check your connection.");
@@ -306,8 +311,8 @@ export default function RegisterScreen() {
 
             <Divider label="or sign up with" />
             <View style={{ flexDirection: "row", gap: 10 }}>
-              <GhostBtn label="Facebook" icon={FACEBOOK_ICON} onPress={() => facebook.signIn()} />
-              <GhostBtn label="Google" icon={GOOGLE_ICON} onPress={() => google.signIn()} />
+              <GhostBtn label="Facebook" icon={FACEBOOK_ICON} onPress={() => facebook.signIn()} disabled={facebook.loading} />
+              <GhostBtn label="Google" icon={GOOGLE_ICON} onPress={() => google.signIn()} disabled={google.loading} />
             </View>
             <Text style={styles.terms}>
               By continuing you agree to our <Text style={styles.termsLink}>Terms</Text> and <Text style={styles.termsLink}>Privacy Policy</Text>

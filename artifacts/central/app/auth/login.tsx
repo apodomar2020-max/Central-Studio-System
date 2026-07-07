@@ -5,7 +5,7 @@ import { router } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Image,
   Platform,
@@ -25,20 +25,25 @@ import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 import AppleSignInButton from "@/components/AppleSignInButton";
 import { BackBtn, GhostBtn, FacebookLogo, GoogleLogo } from "@/components/signup/SignupKit";
-import { continueAfterAuth } from "@/services/authProfile";
+import { continueAfterAuth, postAuthDestination } from "@/services/authProfile";
 import { clearSignupDrafts } from "./register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
 export default function LoginScreen() {
-  const { setUser } = useAppContext();
+  const { setUser, user } = useAppContext();
   const insets = useSafeAreaInsets();
-  const google = useGoogleSignIn();
-  const facebook = useFacebookSignIn();
+  const google = useGoogleSignIn("social-login");
+  const facebook = useFacebookSignIn("social-login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!user) return;
+    router.replace(postAuthDestination(user) as never);
+  }, [user]);
 
   async function continueAsGuest() {
     await setUser(null);
@@ -84,7 +89,7 @@ export default function LoginScreen() {
       }
 
       clearSignupDrafts();
-      await continueAfterAuth(data.accessToken, setUser);
+      await continueAfterAuth(data.accessToken, setUser, { source: "email-login" });
       setLoading(false);
     } catch {
       setError("Network error. Please check your connection.");
@@ -190,8 +195,8 @@ export default function LoginScreen() {
 
           <AppleSignInButton />
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <GhostBtn label="Google" icon={<GoogleLogo />} onPress={google.signIn} />
-            <GhostBtn label="Facebook" icon={<FacebookLogo />} onPress={facebook.signIn} />
+            <GhostBtn label="Google" icon={<GoogleLogo />} onPress={google.signIn} disabled={google.loading} />
+            <GhostBtn label="Facebook" icon={<FacebookLogo />} onPress={facebook.signIn} disabled={facebook.loading} />
           </View>
         </View>
 

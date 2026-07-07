@@ -15,16 +15,17 @@ import * as Google from "expo-auth-session/providers/google";
 
 import { useAppContext } from "@/contexts/AppContext";
 import { GOOGLE_CLIENT_IDS } from "@/constants/google";
-import { continueAfterAuth } from "@/services/authProfile";
+import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
 const GOOGLE_NATIVE_REDIRECT_URI = "com.centralstudio.app:/oauthredirect";
 
-export function useGoogleSignIn() {
+export function useGoogleSignIn(source: AuthSource = "social-login") {
   const { setUser } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const authInFlightRef = useRef(false);
   const exchangingRef = useRef(false);
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
@@ -38,21 +39,40 @@ export function useGoogleSignIn() {
   useEffect(() => {
     if (!response) return;
 
+    if (__DEV__) {
+      console.log("[AUTH_NAV] google response", { type: response.type, source });
+    }
+
     if (response.type === "success") {
       const idToken =
         response.params?.id_token ?? response.authentication?.idToken ?? null;
       if (idToken) {
         void exchange(idToken);
       } else {
+        if (__DEV__) {
+          console.log("[AUTH_NAV] google response missing id token", { source });
+        }
         setError("Google did not return an ID token. Please try again.");
         setLoading(false);
+        authInFlightRef.current = false;
       }
     } else if (response.type === "error") {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] google response error", { source });
+      }
       setError(response.error?.message ?? "Google sign-in failed. Please try again.");
       setLoading(false);
+      authInFlightRef.current = false;
     } else if (response.type === "cancel" || response.type === "dismiss") {
       // User backed out — not an error.
       setLoading(false);
+      authInFlightRef.current = false;
+    } else if (response.type === "locked") {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] google response locked", { source });
+      }
+      setLoading(false);
+      authInFlightRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
@@ -61,6 +81,9 @@ export function useGoogleSignIn() {
     if (exchangingRef.current) return;
     exchangingRef.current = true;
     try {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] google exchange start", { source });
+      }
       const res = await fetch(`${API_URL}/api/auth/google`, {
         method: "POST",
         headers: {
@@ -72,29 +95,51 @@ export function useGoogleSignIn() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (__DEV__) {
+          console.log("[AUTH_NAV] google exchange failure", { source, status: res.status });
+        }
         setError(data?.error ?? "Google sign-in failed. Please try again.");
         return;
       }
 
-      await continueAfterAuth(data.accessToken, setUser);
+      if (__DEV__) {
+        console.log("[AUTH_NAV] google exchange success", { source });
+        console.log("[AUTH_NAV] google continueAfterAuth", { source });
+      }
+      await continueAfterAuth(data.accessToken, setUser, { source });
     } catch {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] google exchange exception", { source });
+      }
       setError("Network error. Please check your connection and try again.");
     } finally {
       setLoading(false);
+      authInFlightRef.current = false;
       exchangingRef.current = false;
     }
   }
 
   async function signIn() {
+    if (authInFlightRef.current || loading) {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] google auth ignored in-flight", { source });
+      }
+      return;
+    }
+    authInFlightRef.current = true;
+    if (__DEV__) {
+      console.log("[AUTH_NAV] google auth start", { source, ready: !!request });
+    }
     setError("");
     setLoading(true);
     try {
       await promptAsync();
     } catch {
+      authInFlightRef.current = false;
       setError("Could not start Google sign-in. Please try again.");
       setLoading(false);
     }
   }
 
-  return { signIn, loading, error, ready: !!request };
+  return { signIn, loading: loading || authInFlightRef.current, error, ready: !!request };
 }

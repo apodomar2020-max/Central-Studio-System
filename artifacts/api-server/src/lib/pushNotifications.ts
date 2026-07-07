@@ -24,6 +24,12 @@ type SendBroadcastInput = {
   limit?: number;
 };
 
+type PushDevice = {
+  id: number;
+  pushToken: string;
+  platform: string;
+};
+
 function pushEnabled(): boolean {
   return process.env["PUSH_NOTIFICATIONS_ENABLED"] === "true";
 }
@@ -55,7 +61,15 @@ function compactData(data: PushData | undefined, notificationId: number | null |
   };
 }
 
-async function sendToDevices(args: SendPushInput, devices: Array<{ id: number; pushToken: string }>) {
+function platformCounts(devices: PushDevice[]): Record<string, number> {
+  return devices.reduce<Record<string, number>>((counts, device) => {
+    const platform = device.platform || "unknown";
+    counts[platform] = (counts[platform] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+async function sendToDevices(args: SendPushInput, devices: PushDevice[]) {
   if (devices.length === 0) return { sent: 0, failed: 0 };
 
   const messages = devices.map((device) => ({
@@ -74,6 +88,13 @@ async function sendToDevices(args: SendPushInput, devices: Array<{ id: number; p
     });
     const payload = await response.json().catch(() => null) as { data?: Array<Record<string, unknown>> } | null;
     const receipts = Array.isArray(payload?.data) ? payload.data : [];
+    logger.info({
+      notificationId: args.notificationId ?? null,
+      studentId: args.studentId,
+      expoHttpStatus: response.status,
+      ticketCount: receipts.length,
+      deviceCount: devices.length,
+    }, "[PUSH_DIAG] Expo push response received");
     let sent = 0;
     let failed = 0;
 
@@ -81,6 +102,18 @@ async function sendToDevices(args: SendPushInput, devices: Array<{ id: number; p
       const receipt = receipts[index] ?? {};
       const ok = response.ok && receipt.status !== "error";
       if (ok) sent += 1; else failed += 1;
+      logger.info({
+        notificationId: args.notificationId ?? null,
+        studentId: args.studentId,
+        deviceId: device.id,
+        platform: device.platform,
+        ticketStatus: typeof receipt.status === "string" ? receipt.status : null,
+        ticketId: typeof receipt.id === "string" ? receipt.id : null,
+        ticketErrorCode: typeof receipt.details === "object" && receipt.details
+          ? String((receipt.details as Record<string, unknown>).error ?? "")
+          : null,
+        ticketErrorMessage: typeof receipt.message === "string" ? receipt.message : null,
+      }, "[PUSH_DIAG] Expo push ticket processed");
       await db.insert(notificationDeliveryLogsTable).values({
         notificationId: args.notificationId ?? null,
         studentId: args.studentId,
@@ -115,19 +148,34 @@ async function sendToDevices(args: SendPushInput, devices: Array<{ id: number; p
 }
 
 export async function sendPushNotification(input: SendPushInput): Promise<{ sent: number; failed: number; skipped: boolean }> {
+  logger.info({
+    notificationId: input.notificationId ?? null,
+    studentId: input.studentId,
+    pushNotificationsEnabled: process.env["PUSH_NOTIFICATIONS_ENABLED"] ?? null,
+  }, "[PUSH_DIAG] sendPushNotification start");
   if (!pushEnabled()) {
     logger.info({ studentId: input.studentId, notificationId: input.notificationId ?? null }, "Push notification skipped: push disabled");
     return { sent: 0, failed: 0, skipped: true };
   }
   try {
     const devices = await db
-      .select({ id: notificationDevicesTable.id, pushToken: notificationDevicesTable.pushToken })
+      .select({
+        id: notificationDevicesTable.id,
+        pushToken: notificationDevicesTable.pushToken,
+        platform: notificationDevicesTable.platform,
+      })
       .from(notificationDevicesTable)
       .where(and(
         eq(notificationDevicesTable.studentId, input.studentId),
         eq(notificationDevicesTable.provider, "expo"),
         eq(notificationDevicesTable.isActive, true),
       ));
+    logger.info({
+      notificationId: input.notificationId ?? null,
+      studentId: input.studentId,
+      activeDeviceCount: devices.length,
+      platformCounts: platformCounts(devices),
+    }, "[PUSH_DIAG] active push devices loaded");
     if (devices.length === 0) {
       logger.info({ studentId: input.studentId, notificationId: input.notificationId ?? null }, "Push notification skipped: no active devices");
     }
@@ -151,6 +199,7 @@ export async function sendBroadcastPushNotification(input: SendBroadcastInput): 
       id: notificationDevicesTable.id,
       studentId: notificationDevicesTable.studentId,
       pushToken: notificationDevicesTable.pushToken,
+      platform: notificationDevicesTable.platform,
     })
     .from(notificationDevicesTable)
     .where(and(
@@ -159,10 +208,10 @@ export async function sendBroadcastPushNotification(input: SendBroadcastInput): 
     ))
     .limit(limit);
 
-  const byStudent = new Map<number, Array<{ id: number; pushToken: string }>>();
+  const byStudent = new Map<number, PushDevice[]>();
   for (const device of devices) {
     const list = byStudent.get(device.studentId) ?? [];
-    list.push({ id: device.id, pushToken: device.pushToken });
+    list.push({ id: device.id, pushToken: device.pushToken, platform: device.platform });
     byStudent.set(device.studentId, list);
   }
   if (byStudent.size === 0) {

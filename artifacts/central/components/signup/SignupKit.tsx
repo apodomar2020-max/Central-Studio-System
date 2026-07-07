@@ -180,12 +180,28 @@ export const PrimaryCTA = React.memo(function PrimaryCTA({
 });
 
 // ── GhostBtn (social / secondary) ────────────────────────────────────────────
-export const GhostBtn = React.memo(function GhostBtn({ label, icon, onPress }: { label: string; icon?: React.ReactNode; onPress?: () => void }) {
+export const GhostBtn = React.memo(function GhostBtn({
+  label,
+  icon,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  onPress?: () => void;
+  disabled?: boolean;
+}) {
   const scale = useRef(new Animated.Value(1)).current;
   const to = (v: number) => Animated.timing(scale, { toValue: v, duration: 120, useNativeDriver: true }).start();
   return (
     <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
-      <Pressable onPress={onPress} onPressIn={() => to(0.975)} onPressOut={() => to(1)} style={kit.ghost}>
+      <Pressable
+        disabled={disabled}
+        onPress={disabled ? undefined : onPress}
+        onPressIn={() => { if (!disabled) to(0.975); }}
+        onPressOut={() => { if (!disabled) to(1); }}
+        style={kit.ghost}
+      >
         {icon}
         <Text style={kit.ghostText}>{label}</Text>
       </Pressable>

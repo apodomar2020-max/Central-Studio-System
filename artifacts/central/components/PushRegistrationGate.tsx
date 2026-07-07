@@ -6,6 +6,13 @@ export default function PushRegistrationGate() {
   const { user } = useAppContext();
 
   useEffect(() => {
+    if (__DEV__) {
+      console.log("[PUSH_DIAG] gate mounted", {
+        userExists: Boolean(user?.id),
+        emailVerified: Boolean(user?.emailVerified),
+        isExpoGo: isExpoGo(),
+      });
+    }
     if (isExpoGo()) return;
     if (!user?.id || !user.emailVerified) return;
     registerPushNotificationsForCurrentUser().catch(() => {

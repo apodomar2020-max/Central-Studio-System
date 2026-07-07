@@ -651,9 +651,24 @@ export default function ProfileScreen() {
 
   async function handleLogout() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (__DEV__) {
+      console.log("[AUTH_NAV] signOut pressed", { destination: "/onboarding/welcome" });
+    }
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: () => setUser(null) },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            await setUser(null);
+            if (__DEV__) {
+              console.log("[AUTH_NAV] signOut auth cleared", { destination: "/onboarding/welcome" });
+            }
+            router.replace("/onboarding/welcome" as never);
+          })();
+        },
+      },
     ]);
   }
 

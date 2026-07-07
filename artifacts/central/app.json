@@ -5,11 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": [
-      "central",
-      "com.centralstudio.app",
-      "fb891752636548494"
-    ],
+    "scheme": "com.centralstudio.app",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {

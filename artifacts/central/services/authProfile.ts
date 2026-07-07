@@ -38,6 +38,36 @@ export function nextStepRoute(nextStep: ProfileCompletionStep | "done"): string 
   }
 }
 
+export type AuthSource = "email-login" | "email-signup" | "social-login" | "social-signup" | "session";
+
+export function postAuthDestination(user: User): string {
+  if (!user.emailVerified) {
+    return "/verify-email";
+  }
+
+  const nextStep = user.profileCompletion?.nextStep;
+  if (nextStep && nextStep !== "done") {
+    return nextStepRoute(nextStep);
+  }
+
+  return "/";
+}
+
+export function routeAfterAuth(user: User) {
+  const destination = postAuthDestination(user);
+  if (__DEV__) {
+    console.log("[AUTH_NAV] routeAfterAuth", {
+      userId: user.id,
+      email: user.email,
+      authProvider: user.authProvider,
+      emailVerified: user.emailVerified,
+      nextStep: user.profileCompletion?.nextStep ?? null,
+      destination,
+    });
+  }
+  router.replace(destination as never);
+}
+
 /**
  * Single shared exit point out of auth/onboarding. Every screen that finishes
  * its job (login, OTP verify, the Thanks page, ...) calls this instead of
@@ -46,11 +76,10 @@ export function nextStepRoute(nextStep: ProfileCompletionStep | "done"): string 
  * user actually goes based on their server-authenticated state.
  */
 export async function enterApp() {
-  if (router.canDismiss()) {
-    router.dismiss();
-  } else {
-    router.replace("/" as never);
+  if (__DEV__) {
+    console.log("[AUTH_NAV] enterApp", { destination: "/" });
   }
+  router.replace("/" as never);
 }
 
 export type AccountType = "student" | "parent";
@@ -121,28 +150,32 @@ export async function fetchCurrentUser(): Promise<{ user: User; requiresOtp: boo
 export async function continueAfterAuth(
   accessToken: string | undefined,
   setUser: (user: User | null) => Promise<void>,
-  options?: { guidedOnboarding?: boolean },
+  options?: { guidedOnboarding?: boolean; source?: AuthSource },
 ) {
+  if (__DEV__) {
+    console.log("[AUTH_NAV] continueAfterAuth start", {
+      source: options?.source ?? "unspecified",
+      guidedOnboarding: !!options?.guidedOnboarding,
+      hasAccessToken: !!accessToken,
+    });
+  }
+
   if (accessToken) {
     await AsyncStorage.setItem("studentToken", accessToken);
   }
 
   const { user } = await fetchCurrentUser();
+  if (__DEV__) {
+    console.log("[AUTH_NAV] continueAfterAuth fetchedUser", {
+      userId: user.id,
+      email: user.email,
+      authProvider: user.authProvider,
+      emailVerified: user.emailVerified,
+      nextStep: user.profileCompletion?.nextStep ?? null,
+      destination: postAuthDestination(user),
+    });
+  }
   await setUser(user);
 
-  if (!options?.guidedOnboarding) {
-    if (!user.emailVerified) {
-      router.replace("/verify-email" as never);
-      return;
-    }
-    await enterApp();
-    return;
-  }
-
-  const nextStep = user.profileCompletion?.nextStep ?? "email";
-  if (nextStep === "done") {
-    await enterApp();
-    return;
-  }
-  router.replace(nextStepRoute(nextStep) as never);
+  routeAfterAuth(user);
 }

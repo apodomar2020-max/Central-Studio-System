@@ -24,15 +24,16 @@ import { LoginManager, AccessToken } from "react-native-fbsdk-next";
 
 import { useAppContext } from "@/contexts/AppContext";
 import { FACEBOOK_APP_ID } from "@/constants/facebook";
-import { continueAfterAuth } from "@/services/authProfile";
+import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
 
-export function useFacebookSignIn() {
+export function useFacebookSignIn(source: AuthSource = "social-login") {
   const { setUser } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const authInFlightRef = useRef(false);
   const exchangingRef = useRef(false);
 
   // Send the Facebook access token to the backend, which validates it and
@@ -41,6 +42,9 @@ export function useFacebookSignIn() {
     if (exchangingRef.current) return;
     exchangingRef.current = true;
     try {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] facebook exchange start", { source });
+      }
       const res = await fetch(`${API_URL}/api/auth/facebook`, {
         method: "POST",
         headers: {
@@ -52,12 +56,18 @@ export function useFacebookSignIn() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (__DEV__) {
+          console.log("[AUTH_NAV] facebook exchange failure", { source, status: res.status });
+        }
         setError(data?.error ?? "Facebook sign-in failed. Please try again.");
         return;
       }
 
       // Facebook withheld the email — the account can't be activated without one.
       if (data.requiresEmail) {
+        if (__DEV__) {
+          console.log("[AUTH_NAV] facebook exchange requires email", { source });
+        }
         setError(
           "Facebook didn't share an email. Please sign up with your email address instead.",
         );
@@ -67,43 +77,73 @@ export function useFacebookSignIn() {
       // Persist the JWT, load the canonical profile from /auth/me, set auth
       // state, and route (verify-email → complete-profile → home). Shared with
       // Google and email/password login so all providers behave identically.
-      await continueAfterAuth(data.accessToken, setUser);
+      if (__DEV__) {
+        console.log("[AUTH_NAV] facebook exchange success", { source });
+        console.log("[AUTH_NAV] facebook continueAfterAuth", { source });
+      }
+      await continueAfterAuth(data.accessToken, setUser, { source });
     } catch {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] facebook exchange exception", { source });
+      }
       setError("Network error. Please check your connection and try again.");
     } finally {
       setLoading(false);
+      authInFlightRef.current = false;
       exchangingRef.current = false;
     }
   }
 
   async function signIn() {
+    if (authInFlightRef.current || loading) {
+      if (__DEV__) {
+        console.log("[AUTH_NAV] facebook auth ignored in-flight", { source });
+      }
+      return;
+    }
     if (!FACEBOOK_APP_ID) {
       // Fail loud: the button stays pressable so a misconfigured build surfaces
       // this message instead of looking like a dead, unresponsive control.
       setError("Facebook login is not configured for this build.");
       return;
     }
+    authInFlightRef.current = true;
+    if (__DEV__) {
+      console.log("[AUTH_NAV] facebook auth start", { source });
+    }
     setError("");
     setLoading(true);
     try {
       // Native Facebook login (FB app if installed, else in-app browser).
       const result = await LoginManager.logInWithPermissions(["public_profile", "email"]);
+      if (__DEV__) {
+        console.log("[AUTH_NAV] facebook response", {
+          source,
+          type: result.isCancelled ? "cancel" : "success",
+        });
+      }
 
       if (result.isCancelled) {
         // User backed out — not an error.
         setLoading(false);
+        authInFlightRef.current = false;
         return;
       }
 
       const tokenData = await AccessToken.getCurrentAccessToken();
       if (!tokenData?.accessToken) {
+        if (__DEV__) {
+          console.log("[AUTH_NAV] facebook response missing access token", { source });
+        }
         setError("Facebook did not return an access token. Please try again.");
         setLoading(false);
+        authInFlightRef.current = false;
         return;
       }
 
       await exchange(tokenData.accessToken);
     } catch {
+      authInFlightRef.current = false;
       setError("Could not start Facebook sign-in. Please try again.");
       setLoading(false);
     }
@@ -111,5 +151,5 @@ export function useFacebookSignIn() {
 
   // No async request to prepare anymore — the button is ready as long as the
   // App ID is configured for this build.
-  return { signIn, loading, error, ready: !!FACEBOOK_APP_ID };
+  return { signIn, loading: loading || authInFlightRef.current, error, ready: !!FACEBOOK_APP_ID };
 }

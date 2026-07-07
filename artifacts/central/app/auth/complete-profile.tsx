@@ -26,7 +26,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import ProgressDots from "@/components/ProgressDots";
 import { useAppContext, type User } from "@/contexts/AppContext";
-import { mapStudentToUser, nextStepRoute, type AccountType, type AuthStudent } from "@/services/authProfile";
+import { mapStudentToUser, postAuthDestination, type AccountType, type AuthStudent } from "@/services/authProfile";
 import {
   BackBtn,
   CS,
@@ -151,6 +151,18 @@ export default function CompleteProfileScreen() {
     policiesAccepted
   );
 
+  function handleBack() {
+    const destination = user ? "/" : "/onboarding/welcome";
+    if (__DEV__) {
+      console.log("[AUTH_NAV] completeProfile backToApp", {
+        hasUser: !!user,
+        authProvider: user?.authProvider ?? null,
+        destination,
+      });
+    }
+    router.replace(destination as never);
+  }
+
   async function submit() {
     if (!phone.trim()) { setApiError("Phone number is required."); return; }
     if (!/^\d+$/.test(phone.trim())) { setApiError("Phone number must contain digits only."); return; }
@@ -184,11 +196,16 @@ export default function CompleteProfileScreen() {
       const updated: User = mapStudentToUser(data.student);
       await setUser(updated);
 
-      // Trust the backend's fresh nextStep — it already knows whether this
-      // account needs Children/Medical (parent) or can skip straight to
-      // Your Vibe (student).
-      const nextStep = updated.profileCompletion?.nextStep ?? "styles";
-      router.replace(nextStepRoute(nextStep) as never);
+      const destination = postAuthDestination(updated);
+      if (__DEV__) {
+        console.log("[AUTH_NAV] completeProfile submit success", {
+          userId: updated.id,
+          authProvider: updated.authProvider,
+          nextStep: updated.profileCompletion?.nextStep ?? null,
+          destination,
+        });
+      }
+      router.replace(destination as never);
     } catch (err) {
       setApiError(err instanceof Error ? err.message : "Could not save your profile.");
     } finally {
@@ -201,7 +218,7 @@ export default function CompleteProfileScreen() {
       <ProfileGlow />
 
       <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
-        <BackBtn onPress={() => router.replace("/auth/register" as never)} />
+        <BackBtn onPress={handleBack} />
         <ProgressDots total={5} current={1} />
         <View style={{ width: 42 }} />
       </View>

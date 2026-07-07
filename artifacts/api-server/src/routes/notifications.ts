@@ -12,6 +12,7 @@ import {
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { getPushStatus, sendBroadcastPushNotification, sendPushNotification } from "../lib/pushNotifications";
+import { logger } from "../lib/logger";
 import {
   runClassReminderAutomation,
   runClassReminder24h,
@@ -62,6 +63,10 @@ const AutomationRunBody = z.object({
 });
 
 type AutomationTypeValue = z.infer<typeof AutomationType>;
+
+function tokenPrefix(token: string): string {
+  return token.slice(0, 12);
+}
 
 async function runAutomationByType(type: AutomationTypeValue): Promise<AutomationRunSummary | AutomationSummary> {
   switch (type) {
@@ -414,6 +419,11 @@ router.post("/notifications/devices/register", requireStudentAuth, requireVerifi
 
   const studentId: number = req.studentId;
   const now = new Date().toISOString();
+  const [existingDevice] = await db
+    .select({ id: notificationDevicesTable.id })
+    .from(notificationDevicesTable)
+    .where(eq(notificationDevicesTable.pushToken, parsed.data.pushToken))
+    .limit(1);
   const [device] = await db
     .insert(notificationDevicesTable)
     .values({
@@ -439,6 +449,16 @@ router.post("/notifications/devices/register", requireStudentAuth, requireVerifi
       },
     })
     .returning();
+
+  logger.info({
+    studentId,
+    platform: parsed.data.platform,
+    provider: parsed.data.provider,
+    tokenPrefix: tokenPrefix(parsed.data.pushToken),
+    action: existingDevice ? "updated" : "created",
+    isActive: device.isActive,
+    deviceId: device.id,
+  }, "[PUSH_DIAG] notification device registered");
 
   res.json({ ok: true, id: device.id, isActive: device.isActive, lastSeenAt: device.lastSeenAt });
 });

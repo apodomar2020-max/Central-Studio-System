@@ -19,5 +19,8 @@
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
   },
-  "packageManager": "pnpm@9.15.9"
+  "packageManager": "pnpm@9.15.9",
+  "dependencies": {
+    "@sentry/react-native": "^8.17.2"
+  }
 }
