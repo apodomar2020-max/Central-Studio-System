@@ -115,7 +115,10 @@ async function sendToDevices(args: SendPushInput, devices: Array<{ id: number; p
 }
 
 export async function sendPushNotification(input: SendPushInput): Promise<{ sent: number; failed: number; skipped: boolean }> {
-  if (!pushEnabled()) return { sent: 0, failed: 0, skipped: true };
+  if (!pushEnabled()) {
+    logger.info({ studentId: input.studentId, notificationId: input.notificationId ?? null }, "Push notification skipped: push disabled");
+    return { sent: 0, failed: 0, skipped: true };
+  }
   try {
     const devices = await db
       .select({ id: notificationDevicesTable.id, pushToken: notificationDevicesTable.pushToken })
@@ -125,6 +128,9 @@ export async function sendPushNotification(input: SendPushInput): Promise<{ sent
         eq(notificationDevicesTable.provider, "expo"),
         eq(notificationDevicesTable.isActive, true),
       ));
+    if (devices.length === 0) {
+      logger.info({ studentId: input.studentId, notificationId: input.notificationId ?? null }, "Push notification skipped: no active devices");
+    }
     const result = await sendToDevices(input, devices);
     return { ...result, skipped: false };
   } catch (error) {
@@ -134,7 +140,10 @@ export async function sendPushNotification(input: SendPushInput): Promise<{ sent
 }
 
 export async function sendBroadcastPushNotification(input: SendBroadcastInput): Promise<{ attemptedStudents: number }> {
-  if (!pushEnabled()) return { attemptedStudents: 0 };
+  if (!pushEnabled()) {
+    logger.info({ notificationId: input.notificationId ?? null }, "Broadcast push skipped: push disabled");
+    return { attemptedStudents: 0 };
+  }
 
   const limit = input.limit ?? getPushStatus().broadcastLimit;
   const devices = await db
@@ -155,6 +164,9 @@ export async function sendBroadcastPushNotification(input: SendBroadcastInput): 
     const list = byStudent.get(device.studentId) ?? [];
     list.push({ id: device.id, pushToken: device.pushToken });
     byStudent.set(device.studentId, list);
+  }
+  if (byStudent.size === 0) {
+    logger.info({ notificationId: input.notificationId ?? null }, "Broadcast push skipped: no active devices");
   }
 
   for (const [studentId, studentDevices] of byStudent) {

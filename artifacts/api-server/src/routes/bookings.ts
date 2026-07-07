@@ -899,6 +899,7 @@ router.post(
 
     const notification = await bookingCreatedNotification(tx, inserted);
     await createStudentNotification(tx, {
+      studentId: inserted.accountOwnerStudentId,
       studentEmail: inserted.studentEmail,
       ...notification,
     });
@@ -1043,7 +1044,11 @@ router.patch(
       }
       const notification = await bookingStatusNotification(tx, updated, "cancelled");
       if (notification) {
-        await createStudentNotification(tx, { studentEmail: updated.studentEmail, ...notification });
+        await createStudentNotification(tx, {
+          studentId: updated.accountOwnerStudentId,
+          studentEmail: updated.studentEmail,
+          ...notification,
+        });
       }
       return { kind: "ok" as const, booking: updated };
     });
@@ -1119,6 +1124,7 @@ router.patch(
       const notification = await bookingStatusNotification(tx, updated, updated.bookingStatus);
       if (notification) {
         await createStudentNotification(tx, {
+          studentId: updated.accountOwnerStudentId,
           studentEmail: updated.studentEmail,
           ...notification,
         });
@@ -1129,6 +1135,7 @@ router.patch(
       const notification = await paymentStatusNotification(tx, updated, updated.paymentStatus);
       if (notification) {
         await createStudentNotification(tx, {
+          studentId: updated.accountOwnerStudentId,
           studentEmail: updated.studentEmail,
           ...notification,
         });
@@ -1170,6 +1177,7 @@ router.delete(
     const notification = await bookingStatusNotification(tx, existing, "cancelled");
     if (notification) {
       await createStudentNotification(tx, {
+        studentId: existing.accountOwnerStudentId,
         studentEmail: existing.studentEmail,
         ...notification,
       });

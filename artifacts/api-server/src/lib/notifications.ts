@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, notificationsTable, studentsTable } from "@workspace/db";
+import { logger } from "./logger";
 import { sendBroadcastPushNotification, sendPushNotification } from "./pushNotifications";
 
 type NotificationClient = Pick<typeof db, "select" | "insert">;
@@ -38,7 +39,10 @@ async function resolveStudentTarget(
   studentEmail?: string | null,
 ): Promise<string | null> {
   if (studentId != null) return `student:${studentId}`;
-  if (!studentEmail) return null;
+  if (!studentEmail) {
+    logger.warn("Student notification skipped: no student id or email provided");
+    return null;
+  }
 
   const [student] = await client
     .select({ id: studentsTable.id })
@@ -46,7 +50,12 @@ async function resolveStudentTarget(
     .where(sql`lower(trim(${studentsTable.email})) = ${normalizeEmail(studentEmail)}`)
     .limit(1);
 
-  return student ? `student:${student.id}` : null;
+  if (!student) {
+    logger.warn({ studentEmail: normalizeEmail(studentEmail) }, "Student notification skipped: student not found");
+    return null;
+  }
+
+  return `student:${student.id}`;
 }
 
 async function insertNotification(
@@ -58,18 +67,41 @@ async function insertNotification(
   dedupe = true,
 ) {
   if (dedupe) {
+    const hasEntityDedupe =
+      input.type != null &&
+      input.relatedEntityType != null &&
+      input.relatedEntityId != null;
+    const dedupeConditions = hasEntityDedupe
+      ? [
+          eq(notificationsTable.target, target),
+          eq(notificationsTable.type, input.type!),
+          eq(notificationsTable.relatedEntityType, input.relatedEntityType!),
+          eq(notificationsTable.relatedEntityId, input.relatedEntityId!),
+          eq(notificationsTable.isDraft, false),
+        ]
+      : [
+          eq(notificationsTable.target, target),
+          eq(notificationsTable.title, title),
+          eq(notificationsTable.body, body),
+          eq(notificationsTable.isDraft, false),
+        ];
     const [existing] = await client
       .select({ id: notificationsTable.id })
       .from(notificationsTable)
-      .where(and(
-        eq(notificationsTable.target, target),
-        eq(notificationsTable.title, title),
-        eq(notificationsTable.body, body),
-        eq(notificationsTable.isDraft, false),
-      ))
+      .where(and(...dedupeConditions))
       .limit(1);
 
-    if (existing) return null;
+    if (existing) {
+      logger.info({
+        target,
+        type: input.type ?? null,
+        relatedEntityType: input.relatedEntityType ?? null,
+        relatedEntityId: input.relatedEntityId ?? null,
+        existingNotificationId: existing.id,
+        dedupeMode: hasEntityDedupe ? "entity" : "content",
+      }, "Student notification skipped: duplicate suppressed");
+      return null;
+    }
   }
 
   const [row] = await client

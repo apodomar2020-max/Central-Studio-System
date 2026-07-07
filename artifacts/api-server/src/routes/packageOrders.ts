@@ -419,6 +419,7 @@ router.patch(
 
       if (current.status !== "active") {
         await createStudentNotification(tx, {
+          studentId: updated.studentId,
           studentEmail: updated.studentEmail,
           title: "Package active",
           body: `Your ${updated.packageName} package is now active.`,
@@ -459,6 +460,7 @@ router.patch(
 
       if (updated.status === "cancelled" && current.status !== "cancelled") {
         await createStudentNotification(tx, {
+          studentId: updated.studentId,
           studentEmail: updated.studentEmail,
           title: "Package cancelled",
           body: `Your ${updated.packageName} package was cancelled.`,
