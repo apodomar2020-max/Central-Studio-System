@@ -1,13 +1,14 @@
 /**
  * Email OTP verification routes — /api/auth/*
  *
- * Email-keyed (preferred — used by the new auth flow):
+ * Email-shaped endpoints (request email is accepted for wire compatibility,
+ * but identity is always derived from the limited/full student JWT):
  *   POST /api/auth/send-otp     { email }          → issue + send a code
  *   POST /api/auth/resend-otp   { email }          → alias of send-otp (cooldown applies)
  *   POST /api/auth/verify-otp   { email, code }    → verify, mark verified, return full token
  *
- * Legacy studentId-keyed (kept for backward compatibility with the shipped
- * mobile build's verify-email screen):
+ * Mobile-compatible studentId-shaped endpoints (the request field is accepted
+ * for wire compatibility, but identity is always derived from the student JWT):
  *   POST /api/auth/send-email-otp    { studentId }
  *   POST /api/auth/verify-email-otp  { studentId, code }
  *
@@ -20,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { requireStudentAuth } from "../middlewares/studentAuth";
 import {
   invalidateOtpCodes,
   issueOtp,
@@ -106,7 +108,7 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
-  const email = parsed.data.email.toLowerCase().trim();
+  const email = req.studentEmail!.toLowerCase().trim();
   if (respondMissingEmailProvider(res)) return;
 
   const [student] = await db
@@ -134,8 +136,8 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
   }
 }
 
-router.post("/auth/send-otp", handleSendOtp);
-router.post("/auth/resend-otp", handleSendOtp);
+router.post("/auth/send-otp", requireStudentAuth, handleSendOtp);
+router.post("/auth/resend-otp", requireStudentAuth, handleSendOtp);
 
 // ─── POST /api/auth/verify-otp ───────────────────────────────────────────────
 const VerifyOtpBody = z.object({
@@ -143,13 +145,14 @@ const VerifyOtpBody = z.object({
   code: z.string().length(6, "Code must be exactly 6 digits"),
 });
 
-router.post("/auth/verify-otp", async (req, res): Promise<void> => {
+router.post("/auth/verify-otp", requireStudentAuth, async (req, res): Promise<void> => {
   const parsed = VerifyOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
-  const { email, code } = parsed.data;
+  const email = req.studentEmail!;
+  const { code } = parsed.data;
 
   const result = await verifyOtpCode(email, code, "verify");
   if (result.status !== "ok") {
@@ -172,13 +175,13 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
 // ─── Legacy studentId-keyed endpoints (backward compatibility) ───────────────
 const SendEmailOtpBody = z.object({ studentId: z.coerce.number().int().positive() });
 
-router.post("/auth/send-email-otp", async (req, res): Promise<void> => {
+router.post("/auth/send-email-otp", requireStudentAuth, async (req, res): Promise<void> => {
   const parsed = SendEmailOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
-  const { studentId } = parsed.data;
+  const studentId = req.studentId!;
   if (respondMissingEmailProvider(res)) return;
 
   const [student] = await db
@@ -214,13 +217,14 @@ const VerifyEmailOtpBody = z.object({
   code: z.string().length(6, "Code must be exactly 6 digits"),
 });
 
-router.post("/auth/verify-email-otp", async (req, res): Promise<void> => {
+router.post("/auth/verify-email-otp", requireStudentAuth, async (req, res): Promise<void> => {
   const parsed = VerifyEmailOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
-  const { studentId, code } = parsed.data;
+  const studentId = req.studentId!;
+  const { code } = parsed.data;
 
   const [student] = await db
     .select({ email: studentsTable.email })
@@ -234,8 +238,7 @@ router.post("/auth/verify-email-otp", async (req, res): Promise<void> => {
 
   const result = await verifyOtpCode(student.email, code, "verify");
   if (result.status !== "ok") {
-    // Legacy clients expect a generic 400 message.
-    res.status(400).json({ error: "Invalid or expired verification code" });
+    respondVerifyFailure(res, result);
     return;
   }
 

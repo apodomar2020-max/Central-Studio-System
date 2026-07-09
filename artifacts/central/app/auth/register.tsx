@@ -150,8 +150,16 @@ export default function RegisterScreen() {
   const [apiError, setApiError] = useState("");
 
   async function submit() {
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !/\S+@\S+\.\S+/.test(email) || password.length < 6) {
-      setApiError("Please complete all fields (valid email, password ≥ 6 characters).");
+    if (
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !email.trim() ||
+      !/\S+@\S+\.\S+/.test(email) ||
+      password.length < 8 ||
+      !/[A-Za-z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
+      setApiError("Use a valid email and a password with at least 8 characters, one letter, and one number.");
       return;
     }
     setApiError("");
