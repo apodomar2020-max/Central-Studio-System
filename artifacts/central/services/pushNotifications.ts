@@ -5,15 +5,82 @@ import { Platform } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
 
 const DEVICE_ID_KEY = "notificationDeviceId";
+const ANDROID_NOTIFICATION_CHANNEL_ID = "central-default-v1";
+const ANDROID_NOTIFICATION_SOUND = "central_notification.wav";
 
 type ExpoNotificationsModule = typeof import("expo-notifications");
+type DevicePushToken = Awaited<ReturnType<ExpoNotificationsModule["getDevicePushTokenAsync"]>>;
+
+const REDACTED = "[REDACTED]";
+const SENSITIVE_KEY_PATTERN = /token|jwt|password|secret|credential|authorization|api[_-]?key/i;
 
 function pushDiag(message: string, data?: Record<string, unknown>): void {
+  if (!__DEV__) return;
   console.log(`[PUSH_DIAG] ${message}`, data ?? {});
 }
 
 function tokenPrefix(token: string): string {
   return token.slice(0, 12);
+}
+
+function redactForLog(value: unknown, key = ""): unknown {
+  if (SENSITIVE_KEY_PATTERN.test(key)) return REDACTED;
+  if (Array.isArray(value)) return value.map((item) => redactForLog(item));
+  if (value && typeof value === "object") {
+    const safe: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([entryKey, entryValue]) => {
+      safe[entryKey] = redactForLog(entryValue, entryKey);
+    });
+    return safe;
+  }
+  return value;
+}
+
+function safeJson(value: unknown): string {
+  const seen = new WeakSet<object>();
+  try {
+    return JSON.stringify(value, (key, entryValue) => {
+      if (SENSITIVE_KEY_PATTERN.test(key)) return REDACTED;
+      if (entryValue && typeof entryValue === "object") {
+        if (seen.has(entryValue)) return "[Circular]";
+        seen.add(entryValue);
+      }
+      return entryValue;
+    });
+  } catch (error) {
+    return JSON.stringify({
+      serializationError: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function errorDetails(error: unknown): Record<string, unknown> {
+  const record = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+  const enumerableFields = record ? redactForLog({ ...record }) : {};
+  const details = {
+    name: error instanceof Error ? error.name : record && typeof record.name === "string" ? record.name : null,
+    code: record?.code ?? null,
+    message: error instanceof Error ? error.message : typeof error === "string" ? error : String(error),
+    stack: error instanceof Error ? error.stack ?? null : null,
+    enumerableFields,
+  };
+  return {
+    ...details,
+    safeJson: safeJson(details),
+  };
+}
+
+function constantsExtra(): { eas?: { projectId?: string } } | undefined {
+  return Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
+}
+
+function androidPackageId(): string | null {
+  return Constants.expoConfig?.android?.package ?? null;
+}
+
+function isPhysicalDevice(): boolean | null {
+  const constants = Constants as typeof Constants & { isDevice?: boolean };
+  return typeof constants.isDevice === "boolean" ? constants.isDevice : null;
 }
 
 export function isExpoGo(): boolean {
@@ -26,8 +93,53 @@ async function loadNotifications(): Promise<ExpoNotificationsModule | null> {
 }
 
 function getProjectId(): string | undefined {
-  const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
+  const extra = constantsExtra();
   return extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+}
+
+function logRuntimeConfig(Notifications: ExpoNotificationsModule, resolvedProjectId: string | undefined): void {
+  const physicalDevice = isPhysicalDevice();
+  pushDiag("runtime config", {
+    appOwnership: Constants.appOwnership ?? null,
+    executionEnvironment: Constants.executionEnvironment ?? null,
+    easConfigProjectId: Constants.easConfig?.projectId ?? null,
+    expoConfigExtraEasProjectId: constantsExtra()?.eas?.projectId ?? null,
+    resolvedProjectId: resolvedProjectId ?? null,
+    androidPackageId: androidPackageId(),
+    platform: Platform.OS,
+    isPhysicalDevice: physicalDevice,
+    physicalDeviceKnown: physicalDevice != null,
+    physicalDeviceReason: physicalDevice == null ? "not_available_from_expo_constants" : null,
+    notificationsModuleAvailable: true,
+    notificationsNativeMethods: {
+      getPermissionsAsync: typeof Notifications.getPermissionsAsync === "function",
+      requestPermissionsAsync: typeof Notifications.requestPermissionsAsync === "function",
+      setNotificationChannelAsync: typeof Notifications.setNotificationChannelAsync === "function",
+      getDevicePushTokenAsync: typeof Notifications.getDevicePushTokenAsync === "function",
+      getExpoPushTokenAsync: typeof Notifications.getExpoPushTokenAsync === "function",
+    },
+  });
+}
+
+async function ensureAndroidNotificationChannel(Notifications: ExpoNotificationsModule): Promise<void> {
+  if (Platform.OS !== "android") return;
+  pushDiag("android notification channel entered", { channelId: ANDROID_NOTIFICATION_CHANNEL_ID });
+  try {
+    const channel = await Notifications.setNotificationChannelAsync(ANDROID_NOTIFICATION_CHANNEL_ID, {
+      name: "Central Studio Notifications",
+      importance: Notifications.AndroidImportance.MAX,
+      sound: ANDROID_NOTIFICATION_SOUND,
+      vibrationPattern: [0, 250, 250, 250],
+    });
+    pushDiag("android notification channel ready", {
+      channelId: channel?.id ?? ANDROID_NOTIFICATION_CHANNEL_ID,
+      importance: channel?.importance ?? null,
+      sound: channel?.sound ?? null,
+    });
+  } catch (error) {
+    pushDiag("android notification channel failed", errorDetails(error));
+    throw error;
+  }
 }
 
 async function getDeviceId(): Promise<string> {
@@ -75,6 +187,8 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
     return;
   }
 
+  await ensureAndroidNotificationChannel(Notifications);
+
   const current = await Notifications.getPermissionsAsync();
   pushDiag("permission current", {
     status: permissionStatus(current),
@@ -93,15 +207,38 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
   }
 
   const projectId = getProjectId();
-  pushDiag("project id", { exists: Boolean(projectId) });
-  pushDiag("getExpoPushTokenAsync entered", { projectIdExists: Boolean(projectId) });
+  logRuntimeConfig(Notifications, projectId);
+  pushDiag("project id", { exists: Boolean(projectId), value: projectId ?? null });
+  pushDiag("getDevicePushTokenAsync entered");
+  let devicePushToken: DevicePushToken;
+  try {
+    devicePushToken = await Notifications.getDevicePushTokenAsync();
+    pushDiag("device push token received", {
+      received: Boolean(devicePushToken?.data),
+      type: devicePushToken?.type ?? null,
+    });
+  } catch (error) {
+    pushDiag("device push token failed", {
+      projectIdExists: Boolean(projectId),
+      ...errorDetails(error),
+    });
+    throw error;
+  }
+
+  pushDiag("getExpoPushTokenAsync entered", {
+    projectIdExists: Boolean(projectId),
+    projectIdPassed: projectId ?? null,
+    devicePushTokenProvided: Boolean(devicePushToken?.data),
+  });
   let tokenResponse: Awaited<ReturnType<ExpoNotificationsModule["getExpoPushTokenAsync"]>>;
   try {
-    tokenResponse = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+    tokenResponse = await Notifications.getExpoPushTokenAsync(projectId ? { projectId, devicePushToken } : { devicePushToken });
   } catch (error) {
     pushDiag("token request failed", {
       projectIdExists: Boolean(projectId),
-      error: error instanceof Error ? error.message : "unknown",
+      projectIdPassed: projectId ?? null,
+      devicePushTokenProvided: Boolean(devicePushToken?.data),
+      ...errorDetails(error),
     });
     throw error;
   }

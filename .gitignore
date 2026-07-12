@@ -42,6 +42,7 @@ testem.log
 Thumbs.db
 
 .cursor/rules/nx-rules.mdc
+.claude/
 .github/instructions/nx.instructions.md
 
 # Replit
@@ -60,3 +61,8 @@ clean_backticks.js
 fix_*.js
 patch.js
 rewrite_profile*.js
+
+# Firebase / FCM private service-account keys
+google-services-key.json
+*service-account*.json
+*firebase-adminsdk*.json

@@ -19,12 +19,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import { Stack, usePathname } from "expo-router";
+import * as Notifications from "expo-notifications";
+import { router, Stack, usePathname, useRootNavigationState } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Sentry from "@sentry/react-native";
 import * as Updates from "expo-updates";
 import * as WebBrowser from "expo-web-browser";
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -34,7 +35,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import FeedbackGate from "@/components/feedback/FeedbackGate";
 import PushRegistrationGate from "@/components/PushRegistrationGate";
 import { AppContextProvider } from "@/contexts/AppContext";
+import { useAppContext } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
+import { NotificationRoute, resolveNotificationRoute } from "@/services/notificationNavigation";
 
 type ExpoManifestWithUpdateMetadata = {
   extra?: {
@@ -53,6 +56,15 @@ const updatesManifest = Updates.manifest as ExpoManifestWithUpdateMetadata | nul
 const updateGroup = updatesManifest?.metadata?.updateGroup;
 const expoOwner = updatesManifest?.extra?.expoClient?.owner ?? Constants.expoConfig?.owner;
 const expoSlug = updatesManifest?.extra?.expoClient?.slug ?? Constants.expoConfig?.slug;
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 Sentry.init({
   dsn: sentryDsn,
@@ -107,6 +119,62 @@ setAuthTokenGetter(async () => {
 });
 
 const queryClient = new QueryClient();
+
+function notificationResponseKey(response: Notifications.NotificationResponse): string {
+  const notificationId = response.notification.request.identifier;
+  const action = response.actionIdentifier;
+  const appNotificationId = response.notification.request.content.data?.notificationId;
+  return `${notificationId}:${action}:${String(appNotificationId ?? "")}`;
+}
+
+function NotificationRoutingGate() {
+  const { isLoading, user } = useAppContext();
+  const navigationState = useRootNavigationState();
+  const processedResponsesRef = useRef<Set<string>>(new Set());
+  const pendingRouteRef = useRef<NotificationRoute | null>(null);
+  const navigationReady = Boolean(navigationState?.key);
+  const canNavigateToNotificationTarget = navigationReady && !isLoading && Boolean(user?.id) && user?.emailVerified === true;
+
+  const queueResponse = useCallback((response: Notifications.NotificationResponse | null) => {
+    if (!response?.notification) return;
+    const key = notificationResponseKey(response);
+    if (processedResponsesRef.current.has(key)) return;
+    processedResponsesRef.current.add(key);
+    pendingRouteRef.current = resolveNotificationRoute(response.notification.request.content.data);
+    try {
+      Notifications.clearLastNotificationResponse();
+    } catch {
+      // Older native modules may not expose this; the local processed set still dedupes.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      queueResponse(Notifications.getLastNotificationResponse());
+    } catch {
+      // Notification response retrieval is best-effort and must not block launch.
+    }
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      queueResponse(response);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [queueResponse]);
+
+  useEffect(() => {
+    if (!canNavigateToNotificationTarget || !pendingRouteRef.current) return;
+    const route = pendingRouteRef.current;
+    pendingRouteRef.current = null;
+    setTimeout(() => {
+      router.push(route as never);
+    }, 0);
+  }, [canNavigateToNotificationTarget]);
+
+  return null;
+}
 
 function RootLayoutNav() {
   const pathname = usePathname();
@@ -202,6 +270,7 @@ function RootLayout() {
               <KeyboardProvider>
                 <FeedbackGate />
                 <PushRegistrationGate />
+                <NotificationRoutingGate />
                 <RootLayoutNav />
               </KeyboardProvider>
             </GestureHandlerRootView>

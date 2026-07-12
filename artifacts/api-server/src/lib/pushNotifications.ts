@@ -30,6 +30,8 @@ type PushDevice = {
   platform: string;
 };
 
+const ANDROID_NOTIFICATION_CHANNEL_ID = "central-default-v1";
+
 function pushEnabled(): boolean {
   return process.env["PUSH_NOTIFICATIONS_ENABLED"] === "true";
 }
@@ -72,13 +74,19 @@ function platformCounts(devices: PushDevice[]): Record<string, number> {
 async function sendToDevices(args: SendPushInput, devices: PushDevice[]) {
   if (devices.length === 0) return { sent: 0, failed: 0 };
 
-  const messages = devices.map((device) => ({
-    to: device.pushToken,
-    title: args.title,
-    body: args.body,
-    data: compactData(args.data, args.notificationId),
-    sound: "default",
-  }));
+  const messages = devices.map((device) => {
+    const message: Record<string, unknown> = {
+      to: device.pushToken,
+      title: args.title,
+      body: args.body,
+      data: compactData(args.data, args.notificationId),
+      sound: "default",
+    };
+    if (device.platform === "android") {
+      message.channelId = ANDROID_NOTIFICATION_CHANNEL_ID;
+    }
+    return message;
+  });
 
   try {
     const response = await fetch("https://exp.host/--/api/v2/push/send", {

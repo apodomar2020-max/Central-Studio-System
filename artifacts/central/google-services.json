@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "184720699804",
+    "project_id": "central-studio-app",
+    "storage_bucket": "central-studio-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184720699804:android:2990dce1bc396659c75859",
+        "android_client_info": {
+          "package_name": "com.centralstudio.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB9jw90QqNxJLyuDkbR_uG_3Pf9tXLqtns"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

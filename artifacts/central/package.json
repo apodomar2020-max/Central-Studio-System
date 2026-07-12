@@ -64,6 +64,7 @@
     "expo-auth-session": "~7.0.11",
     "expo-clipboard": "^8.0.8",
     "expo-crypto": "~15.0.9",
+    "expo-dev-client": "~6.0.21",
     "expo-notifications": "~0.32.17",
     "expo-updates": "~29.0.18",
     "react-native-fbsdk-next": "^13.4.3",
