@@ -1,44 +1,68 @@
 /**
  * app/ballet/instructors.tsx — Ballet Faculty
  *
- * Uses REAL instructors from the existing API (useListInstructors), filtered
- * to ballet specialty via the adapter's danceStyles. No new backend logic.
- * If no instructor lists "Ballet" as a specialty, all instructors are shown
- * (the studio is ballet-focused) with the gap documented.
+ * Uses the dedicated public GET /api/ballet/instructors endpoint (Phase 4a),
+ * which only ever returns active Ballet instructors — no heuristic
+ * category/specialty filtering needed, and no generic /api/classes|instructors
+ * data involved.
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
-import { useListInstructors } from "@workspace/api-client-react";
+import { normalizeMediaUrl } from "@workspace/api-client-react";
 
-import { mapApiInstructorToMobile } from "@/data/apiAdapters";
-import type { Instructor } from "@/data/mockData";
+import { fetchBalletInstructors, type BalletInstructor } from "@/services/balletAssessmentService";
 import { BalletPageShell, BAL } from "@/components/ballet/BalletPageShell";
 
-function styleLabel(title?: string) {
-  return (title ?? "").replace(/\s*Instructor\s*$/i, "").trim() || "Ballet Faculty";
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function titleFromSpecialties(specialties: string[]): string {
+  return specialties.length ? `${specialties.join(" & ")} Instructor` : "Instructor";
+}
+
+function styleLabel(title: string) {
+  return title.replace(/\s*Instructor\s*$/i, "").trim() || "Ballet Faculty";
 }
 
 export default function BalletInstructorsScreen() {
-  const instructorsQuery = useListInstructors();
+  const [instructors, setInstructors] = useState<BalletInstructor[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const faculty: Instructor[] = useMemo(() => {
-    const all = (instructorsQuery.data ?? []).map(mapApiInstructorToMobile);
-    const ballet = all.filter((i) =>
-      i.danceStyles.some((d) => d.toLowerCase().includes("ballet")),
-    );
-    // Fall back to the full roster if no specialty tag matches ballet.
-    return ballet.length > 0 ? ballet : all;
-  }, [instructorsQuery.data]);
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setIsLoading(true);
+    try {
+      const data = await fetchBalletInstructors(signal);
+      if (signal?.aborted) return;
+      setInstructors(data);
+    } catch (e) {
+      if ((e as any)?.name === "AbortError") return;
+      // Degrade to the existing empty state — matches the previous
+      // react-query-hook behaviour where a failed fetch left `data` undefined.
+      setInstructors([]);
+    } finally {
+      if (!signal?.aborted) setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
 
   return (
     <BalletPageShell title="Instructors" contentStyle={s.content}>
-      {instructorsQuery.isLoading ? (
+      {isLoading ? (
         <View style={s.center}>
           <ActivityIndicator color={BAL.CYAN} />
         </View>
-      ) : faculty.length === 0 ? (
+      ) : instructors.length === 0 ? (
         <View style={s.empty}>
           <View style={s.emptyIcon}>
             <Ionicons name="people-outline" size={28} color={BAL.INK_400} />
@@ -47,27 +71,31 @@ export default function BalletInstructorsScreen() {
           <Text style={s.emptyDesc}>Our ballet faculty will appear here soon.</Text>
         </View>
       ) : (
-        faculty.map((i) => (
-          <View key={i.id} style={s.card}>
-            <View style={s.cardTop}>
-              {i.photoUrl ? (
-                <Image source={{ uri: i.photoUrl }} style={s.avatar} resizeMode="cover" />
-              ) : (
-                <View style={[s.avatar, s.avatarFallback]}>
-                  <Text style={s.avatarInitials}>{i.initials}</Text>
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={s.name}>{i.name}</Text>
-                <Text style={s.title}>{styleLabel(i.title)}</Text>
-                {i.totalClasses > 0 && (
-                  <Text style={s.exp}>{i.totalClasses} yrs experience</Text>
+        instructors.map((i) => {
+          const title = titleFromSpecialties(i.specialties);
+          const photoUrl = normalizeMediaUrl(i.photoUrl, "image");
+          return (
+            <View key={i.id} style={s.card}>
+              <View style={s.cardTop}>
+                {photoUrl ? (
+                  <Image source={{ uri: photoUrl }} style={s.avatar} resizeMode="cover" />
+                ) : (
+                  <View style={[s.avatar, s.avatarFallback]}>
+                    <Text style={s.avatarInitials}>{initialsFromName(i.name)}</Text>
+                  </View>
                 )}
+                <View style={{ flex: 1 }}>
+                  <Text style={s.name}>{i.name}</Text>
+                  <Text style={s.title}>{styleLabel(title)}</Text>
+                  {i.experienceYears > 0 && (
+                    <Text style={s.exp}>{i.experienceYears} yrs experience</Text>
+                  )}
+                </View>
               </View>
+              {!!i.bio && <Text style={s.bio}>{i.bio}</Text>}
             </View>
-            {!!i.bio && <Text style={s.bio}>{i.bio}</Text>}
-          </View>
-        ))
+          );
+        })
       )}
     </BalletPageShell>
   );

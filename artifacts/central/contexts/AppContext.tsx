@@ -135,13 +135,13 @@ export interface BalletApplication {
   emergencyContactPhone: string;
   notes?: string;
   status:
-    | "submitted"
-    | "pendingAssessment"
+    | "pending"
     | "accepted"
-    | "rejected"
     | "needsFollowUp"
     | "assignedToLevel"
-    | "activeBallet";
+    | "active"
+    | "rejected"
+    | "cancelled";
   assignedLevel?: string;
   createdAt: string;
 }
@@ -163,7 +163,12 @@ interface AppContextType {
   user: User | null;
   setUser: (user: User | null) => Promise<void>;
   children: ChildProfile[];
-  addChild: (child: ChildProfile) => void;
+  /** Returns the created profile (with its real backend id) on success, or
+   *  null on failure — the caller can use the id immediately (e.g. to link
+   *  a just-created child to something being submitted in the same flow)
+   *  without waiting for a re-render. Shows its own error Alert on failure;
+   *  callers don't need to show a duplicate one. */
+  addChild: (child: ChildProfile) => Promise<ChildProfile | null>;
   updateChild: (child: ChildProfile) => void;
   removeChild: (childId: string) => void;
   bookings: Booking[];
@@ -571,9 +576,11 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         AsyncStorage.setItem("children", JSON.stringify(next));
         return next;
       });
+      return mappedChild;
     } catch (err) {
       console.error("addChild error:", err);
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to add child profile. Please check your connection.");
+      return null;
     }
   }, []);
 
@@ -757,7 +764,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       const newApp: BalletApplication = {
         ...app,
         id: `ballet-${Date.now()}`,
-        status: "submitted",
+        status: "pending",
         createdAt: new Date().toISOString(),
       };
       setBaletApplications((prev) => {

@@ -126,6 +126,10 @@ export async function fetchBalletSettings(
  * bookedCount and availableSeats are computed server-side at query time —
  * they are always accurate and never cached on the server.
  *
+ * When `childAge` is provided, only slots whose age range covers that age
+ * are returned (server-side filter, supported since Phase 1 — a slot with
+ * no age range set is open to all ages).
+ *
  * No student JWT required — slot availability is public programme info.
  * The shared API key (set in EXPO_PUBLIC_API_KEY) is sufficient.
  *
@@ -133,11 +137,13 @@ export async function fetchBalletSettings(
  * appropriate state (use isOfflineError() to distinguish offline vs error).
  */
 export async function fetchAssessmentSlots(
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  childAge?: number,
 ): Promise<AssessmentSlot[]> {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const query = childAge != null ? `?childAge=${encodeURIComponent(childAge)}` : "";
   const res = await customFetch<AssessmentSlot[]>(
-    `${apiUrl}/api/ballet/assessment-slots`,
+    `${apiUrl}/api/ballet/assessment-slots${query}`,
     { method: "GET", signal }
   );
   return res;
@@ -236,6 +242,9 @@ export interface BalletApplication {
   status: string;
   adminNotes: string | null;
   assignedLevelId: number | null;
+  /** groupId on the application's current active ballet_level_assignments
+   *  row (Phase 4E), or null if a level is assigned but no group yet. */
+  assignedGroupId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -262,7 +271,7 @@ export async function fetchMyApplications(
 
 /**
  * Cancels an open application.
- * Only valid while status is submitted / pendingAssessment / needsFollowUp.
+ * Only valid while status is pending / needsFollowUp.
  * After cancellation the parent is free to submit a new application.
  */
 export async function cancelBalletApplication(
@@ -280,7 +289,7 @@ export async function cancelBalletApplication(
 
 /**
  * Editable fields the parent can change while the application is in an editable
- * status (submitted, pendingAssessment, needsFollowUp).
+ * status (pending, needsFollowUp).
  */
 export interface UpdateApplicationPayload {
   parentPhone?:           string;
@@ -296,7 +305,7 @@ export interface UpdateApplicationPayload {
 
 /**
  * PATCHes editable fields on an existing application.
- * Only valid while status is submitted / pendingAssessment / needsFollowUp.
+ * Only valid while status is pending / needsFollowUp.
  * The server inserts an event row: note = "Application updated by parent".
  */
 export async function updateBalletApplication(
@@ -319,27 +328,147 @@ export async function updateBalletApplication(
 
 // Statuses that mean the parent has an active open application.
 export const ACTIVE_APPLICATION_STATUSES = new Set([
-  "submitted",
-  "pendingAssessment",
+  "pending",
   "accepted",
   "needsFollowUp",
   "assignedToLevel",
-  "activeBallet",
+  "active",
 ]);
 
 // Statuses where Cancel is available.
 export const CANCELLABLE_APPLICATION_STATUSES = new Set([
-  "submitted",
-  "pendingAssessment",
+  "pending",
   "needsFollowUp",
 ]);
 
 // Statuses where Edit is available.
 export const EDITABLE_APPLICATION_STATUSES = new Set([
-  "submitted",
-  "pendingAssessment",
+  "pending",
   "needsFollowUp",
 ]);
+
+// ─── Public catalogue reads ───────────────────────────────────────────────────
+//
+// Phase 4a added 5 public, read-only GET /api/ballet/* endpoints exposing the
+// Ballet catalogue (instructors, classes, levels, performances, groups) that
+// previously only existed behind /api/admin/ballet/*. These mirror the
+// fetchBalletSettings/fetchAssessmentSlots pattern above: no auth beyond the
+// shared API key, never fall back to mock/static data, throw on failure so
+// the calling screen can render its own loading/error/empty state.
+
+/** Shape of a single row from GET /api/ballet/instructors. */
+export interface BalletInstructor {
+  id: number;
+  name: string;
+  bio: string | null;
+  photoUrl: string | null;
+  specialties: string[];
+  experienceYears: number;
+  rating: number | null;
+  instagramUrl: string | null;
+  tiktokUrl: string | null;
+  youtubeUrl: string | null;
+  teachingLevel: string | null;
+  achievements: string[];
+  teachingPhilosophy: string | null;
+  professionalExperience: string[];
+}
+
+export async function fetchBalletInstructors(signal?: AbortSignal): Promise<BalletInstructor[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ instructors: BalletInstructor[] }>(
+    `${apiUrl}/api/ballet/instructors`,
+    { method: "GET", signal }
+  );
+  return res.instructors;
+}
+
+/** One weekly time slot for a ballet class, as nested in GET /api/ballet/classes. */
+export interface BalletClassSchedule {
+  id: number;
+  dayOfWeek: number; // 0=Sunday … 6=Saturday
+  startTime: string; // "16:00"
+  endTime: string;   // "17:00"
+  durationMins: number | null;
+}
+
+/** Shape of a single row from GET /api/ballet/classes. */
+export interface BalletClass {
+  id: number;
+  title: string;
+  classImageUrl: string | null;
+  classVideoUrl: string | null;
+  instructor: { id: number; name: string; photoUrl: string | null } | null;
+  groupIds: number[];
+  levelIds: number[];
+  schedules: BalletClassSchedule[];
+}
+
+export async function fetchBalletClasses(signal?: AbortSignal): Promise<BalletClass[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ classes: BalletClass[] }>(
+    `${apiUrl}/api/ballet/classes`,
+    { method: "GET", signal }
+  );
+  return res.classes;
+}
+
+/** Shape of a single row from GET /api/ballet/levels. */
+export interface BalletLevel {
+  id: number;
+  name: string;
+  sortOrder: number;
+  description: string | null;
+  requirements: string | null;
+  ageMin: number | null;
+  ageMax: number | null;
+}
+
+export async function fetchBalletLevels(signal?: AbortSignal): Promise<BalletLevel[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ levels: BalletLevel[] }>(
+    `${apiUrl}/api/ballet/levels`,
+    { method: "GET", signal }
+  );
+  return res.levels;
+}
+
+/** Shape of a single row from GET /api/ballet/performances. */
+export interface BalletPerformance {
+  id: number;
+  eventTitle: string;
+  eventType: string;
+  locationName: string | null;
+  eventDate: string; // ISO date, e.g. "2026-12-20"
+  startTime: string;
+  endTime: string;
+  requirements: string[];
+}
+
+export async function fetchBalletPerformances(signal?: AbortSignal): Promise<BalletPerformance[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ performances: BalletPerformance[] }>(
+    `${apiUrl}/api/ballet/performances`,
+    { method: "GET", signal }
+  );
+  return res.performances;
+}
+
+/** Shape of a single row from GET /api/ballet/groups. */
+export interface BalletGroup {
+  id: number;
+  name: string;
+  levelId: number;
+}
+
+export async function fetchBalletGroups(signal?: AbortSignal): Promise<BalletGroup[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ groups: BalletGroup[] }>(
+    `${apiUrl}/api/ballet/groups`,
+    { method: "GET", signal }
+  );
+  return res.groups;
+}
 
 // Re-export so callers can check offline status without importing connectivity separately.
 export { isOfflineError };

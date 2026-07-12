@@ -38,7 +38,7 @@ import { probeConnectivity } from "@/services/connectivity";
 import { useAppContext, type ChildProfile } from "@/contexts/AppContext";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
-import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
 
 /* ─── Design tokens (home-ballet2.jsx visual system) ─────────────── */
 const BASE    = "#0A0B0D";
@@ -136,6 +136,23 @@ function calcAgeFromDate(y: number, m: number, d: number): number {
   let age = today.getFullYear() - y;
   if (today.getMonth() + 1 < m || (today.getMonth() + 1 === m && today.getDate() < d)) age--;
   return Math.max(0, age);
+}
+
+/**
+ * Effective age at time of use — always recomputed fresh from the birthday
+ * (never trusts a possibly-stale stored `age` field, including for a
+ * selected saved child). Falls back to the stored/typed age string only
+ * when no birthday is available at all.
+ */
+function computeEffectiveAge(birthday: string, fallbackAgeStr: string): number | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
+    const y = +birthday.slice(0, 4);
+    const m = +birthday.slice(5, 7);
+    const d = +birthday.slice(8, 10);
+    return calcAgeFromDate(y, m, d);
+  }
+  const n = parseInt(fallbackAgeStr, 10);
+  return Number.isNaN(n) ? null : n;
 }
 
 function daysInMonth(y: number, m: number): number {
@@ -419,7 +436,7 @@ const dpStyles = StyleSheet.create({
 
 export default function BalletAssessmentScreen() {
   const insets = useSafeAreaInsets();
-  const { user, children } = useAppContext();
+  const { user, children, addChild } = useAppContext();
   const [step, setStep] = useState(0);
   const [showIntro, setShowIntro] = useState(true);
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
@@ -431,16 +448,34 @@ export default function BalletAssessmentScreen() {
   const hasChildProfiles = isLoggedIn && children.length > 0;
   // Backend children.id of the picked saved child (null = manual entry).
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
-  // Whether the prefilled About You / Child sections are in (submission-only) edit mode.
+  // Whether the prefilled About You section is in (submission-only) edit mode.
+  // Note: the Child Info identity fields (name/birthday/gender) have no such
+  // edit-in-place mode — while selectedChildId is set, they stay locked to
+  // the saved profile's values; "Enter a different child manually" is the
+  // only way to change them (see clearChildSelection).
   const [editAboutYou, setEditAboutYou] = useState(false);
-  const [editChild, setEditChild] = useState(false);
   const authPromptShownRef = useRef(false);
+  const parentGatePromptShownRef = useRef(false);
 
+  // Auth + account-type gate. Also blocks direct deep-link navigation
+  // straight to this screen (not just the "Apply" button on app/ballet/index.tsx).
   useEffect(() => {
-    if (user || authPromptShownRef.current) return;
-    authPromptShownRef.current = true;
-    showAuthRequiredPrompt();
-    router.replace("/ballet" as any);
+    if (!user) {
+      if (!authPromptShownRef.current) {
+        authPromptShownRef.current = true;
+        showAuthRequiredPrompt();
+        router.replace("/ballet" as any);
+      }
+      return;
+    }
+    if (user.accountType !== "parent") {
+      if (!parentGatePromptShownRef.current) {
+        parentGatePromptShownRef.current = true;
+        showParentAccountRequiredPrompt();
+        router.replace("/ballet" as any);
+      }
+      return;
+    }
   }, [user]);
 
   // Prefill the parent fields from the logged-in account once — only filling
@@ -461,7 +496,6 @@ export default function BalletAssessmentScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const numericId = Number(c.id);
     setSelectedChildId(Number.isNaN(numericId) ? null : numericId);
-    setEditChild(false);
     setForm((prev) => ({
       ...prev,
       childName: c.fullName ?? "",
@@ -475,7 +509,6 @@ export default function BalletAssessmentScreen() {
   // Switch to manual child entry (no linked profile).
   function clearChildSelection() {
     setSelectedChildId(null);
-    setEditChild(true);
     setForm((prev) => ({
       ...prev,
       childName: "",
@@ -515,10 +548,13 @@ export default function BalletAssessmentScreen() {
   const [slots, setSlots] = useState<AssessmentSlot[]>([]);
   const [slotsState, setSlotsState] = useState<"idle" | "loading" | "success" | "empty" | "error" | "offline">("idle");
 
-  const loadSlots = useCallback(async (signal?: AbortSignal) => {
+  // Recomputed fresh from the birthday on every render — see computeEffectiveAge.
+  const effectiveAge = computeEffectiveAge(form.childBirthday, form.childAge);
+
+  const loadSlots = useCallback(async (signal?: AbortSignal, age?: number) => {
     setSlotsState("loading");
     try {
-      const data = await fetchAssessmentSlots(signal);
+      const data = await fetchAssessmentSlots(signal, age);
       setSlots(data);
       setSlotsState(data.length === 0 ? "empty" : "success");
     } catch (e) {
@@ -527,28 +563,38 @@ export default function BalletAssessmentScreen() {
     }
   }, []);
 
+  // Connectivity probe — runs once per mount/user change only.
   useEffect(() => {
     if (!user) return;
     const controller = new AbortController();
-
-    // 1. Probe connectivity.
-    // 2. If online, load slots immediately — no need to re-check for active
-    //    applications here because the ballet gate (app/ballet/index.tsx) already
-    //    verified there are none before navigating to this screen.
     probeConnectivity(controller.signal)
       .then((status) => {
         if (controller.signal.aborted) return;
         setConnectivity(status);
-        if (status === "online") loadSlots(controller.signal);
       })
       .catch(() => {
         // AbortError from navigation — ignore.
       });
-
     return () => controller.abort();
-  }, [loadSlots, user]);
+  }, [user]);
 
-  if (!user) {
+  // Slot loading — fires once connectivity is confirmed online, and again
+  // whenever the effective age changes (selected child switched, or the
+  // entered birthday changed) so the age-filtered list stays in sync. Also
+  // clears any previously selected slot on every firing (a no-op on the very
+  // first load, since selectedSlot starts null) — no need to re-check for
+  // active applications here because the ballet gate (app/ballet/index.tsx)
+  // already verified there are none before navigating to this screen.
+  useEffect(() => {
+    if (!user || connectivity !== "online") return;
+    setForm((prev) => (prev.selectedSlot ? { ...prev, selectedSlot: null } : prev));
+    const controller = new AbortController();
+    loadSlots(controller.signal, effectiveAge ?? undefined);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, connectivity, effectiveAge, loadSlots]);
+
+  if (!user || user.accountType !== "parent") {
     return <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]} />;
   }
 
@@ -566,7 +612,7 @@ export default function BalletAssessmentScreen() {
     }
     if (step === 1) {
       if (!form.childName.trim()) return "Child's full name is required.";
-      if (!form.childAge.trim() || isNaN(Number(form.childAge))) return "A valid age is required.";
+      if (computeEffectiveAge(form.childBirthday, form.childAge) == null) return "A valid age is required.";
     }
     if (step === 2) {
       if (form.previousExperience === null) return "Please indicate previous dance experience.";
@@ -598,8 +644,60 @@ export default function BalletAssessmentScreen() {
       return;
     }
 
+    // Guard: the selected slot may have fallen out of the age-filtered list
+    // (e.g. the child selection or birthday changed after it was picked, or
+    // it filled up in the background). Never submit a stale slotId silently.
+    if (!slots.some((s) => s.id === form.selectedSlot!.id)) {
+      Alert.alert(
+        "Slot No Longer Available",
+        "Your selected assessment slot is no longer available for this child's age. Please choose a new slot."
+      );
+      update("selectedSlot", null);
+      setStep(3);
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setSubmitting(true);
+
+    // ── Manual entry: persist the child profile BEFORE submitting the ──────
+    // application, so a retry after a later failure can reuse it as a saved
+    // profile instead of re-entering it (and never creates a duplicate child
+    // on retry, since selectedChildId is set immediately on success below).
+    let childId = selectedChildId;
+    let justCreatedChild = false;
+
+    if (childId == null) {
+      try {
+        const newChild = await addChild({
+          id: "",
+          fullName: form.childName.trim(),
+          birthday: form.childBirthday.trim(),
+          age: effectiveAge ?? 0,
+          gender: form.childGender,
+          medicalNotes: form.medicalNotes.trim() || undefined,
+        });
+        if (!newChild) {
+          // addChild already surfaced its own error Alert — nothing else to add.
+          setSubmitting(false);
+          return;
+        }
+        const numericId = Number(newChild.id);
+        childId = Number.isNaN(numericId) ? null : numericId;
+        justCreatedChild = true;
+        if (childId != null) setSelectedChildId(childId);
+      } catch {
+        // addChild is designed to catch its own errors and return null, but
+        // guard defensively so the button never gets stuck on "Submitting…".
+        Alert.alert("Error", "Failed to save the child profile. Please try again.");
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    const childSavedNote = justCreatedChild
+      ? " Your child's profile has been saved to your account — you can try again and select it as a saved profile."
+      : "";
 
     try {
       await submitBalletApplication({
@@ -608,7 +706,7 @@ export default function BalletAssessmentScreen() {
         parentEmail:            form.parentEmail.trim(),
         childName:              form.childName.trim(),
         childBirthday:          form.childBirthday.trim() || undefined,
-        childAge:               form.childAge.trim() ? parseInt(form.childAge, 10) : undefined,
+        childAge:               effectiveAge ?? undefined,
         childGender:            form.childGender,
         previousExperience:     form.previousExperience ?? false,
         experienceDetails:      form.experienceDetails.trim() || undefined,
@@ -618,8 +716,8 @@ export default function BalletAssessmentScreen() {
         notes:                  form.notes.trim() || undefined,
         slotId,
         // Link the saved child profile when one was picked (backend verifies
-        // ownership). Manual entry / logged-out users omit it.
-        childId:                selectedChildId ?? undefined,
+        // ownership) — including one just created above for manual entry.
+        childId:                childId ?? undefined,
       });
 
       // ── 201 Success: navigate to status screen ──────────────────────────
@@ -640,10 +738,10 @@ export default function BalletAssessmentScreen() {
       if (typed.status === 409) {
         Alert.alert(
           "Slot Full",
-          "The assessment slot you selected has just filled up. Please go back and choose a different slot."
+          "The assessment slot you selected has just filled up. Please go back and choose a different slot." + childSavedNote
         );
         // Reload slots so the user sees updated availability
-        loadSlots();
+        loadSlots(undefined, effectiveAge ?? undefined);
         return;
       }
 
@@ -669,7 +767,7 @@ export default function BalletAssessmentScreen() {
 
         Alert.alert(
           "No Connection",
-          "Unable to reach the server. Please check your internet connection and try again. If you submitted before, your application may already be saved."
+          "Unable to reach the server. Please check your internet connection and try again. If you submitted before, your application may already be saved." + childSavedNote
         );
         return;
       }
@@ -679,7 +777,7 @@ export default function BalletAssessmentScreen() {
         typed.data?.error ??
         typed.message ??
         "Something went wrong. Please try again.";
-      Alert.alert("Submission Failed", serverMsg);
+      Alert.alert("Submission Failed", serverMsg + childSavedNote);
     } finally {
       setSubmitting(false);
     }
@@ -690,11 +788,11 @@ export default function BalletAssessmentScreen() {
     const handleConnectivityRetry = () => {
       setConnectivity("checking");
       const controller = new AbortController();
+      // No need to call loadSlots() here — flipping connectivity to "online"
+      // re-triggers the slot-loading effect above, which already carries the
+      // current effectiveAge.
       probeConnectivity(controller.signal)
-        .then((status) => {
-          setConnectivity(status);
-          if (status === "online") loadSlots();
-        })
+        .then((status) => setConnectivity(status))
         .catch(() => {});
     };
 
@@ -897,12 +995,6 @@ export default function BalletAssessmentScreen() {
                     </TouchableOpacity>
                   );
                 })}
-                {selectedChildId != null && !editChild && (
-                  <TouchableOpacity onPress={() => setEditChild(true)} style={styles.editLink}>
-                    <Ionicons name="create-outline" size={14} color={BALLET_COLOR} />
-                    <Text style={styles.editLinkText}>Edit details for this application</Text>
-                  </TouchableOpacity>
-                )}
                 <TouchableOpacity onPress={clearChildSelection} style={styles.editLink}>
                   <Ionicons name="add-circle-outline" size={14} color={BALLET_COLOR} />
                   <Text style={styles.editLinkText}>Enter a different child manually</Text>
@@ -918,7 +1010,11 @@ export default function BalletAssessmentScreen() {
               </View>
             )}
 
-            {(!hasChildProfiles || editChild || selectedChildId == null) && (
+            {/* Identity fields (name/birthday/gender) are locked to the saved
+                profile's values whenever a real childId is attached — the
+                only way to change them is "Enter a different child manually"
+                above, which clears selectedChildId. */}
+            {(!hasChildProfiles || selectedChildId == null) && (
               <>
                 <Field label="Child Full Name" value={form.childName} onChange={(v) => update("childName", v)} placeholder="Child's full name" required />
                 <DatePickerField
@@ -1035,7 +1131,7 @@ export default function BalletAssessmentScreen() {
             {slotsState === "offline" && (
               <OfflineState
                 variant="compact"
-                onRetry={() => loadSlots()}
+                onRetry={() => loadSlots(undefined, effectiveAge ?? undefined)}
               />
             )}
 
@@ -1045,16 +1141,18 @@ export default function BalletAssessmentScreen() {
                 variant="compact"
                 title="Slots Unavailable"
                 message="Assessment slot booking is not yet available online. Please contact the studio to schedule your assessment."
-                onRetry={() => loadSlots()}
+                onRetry={() => loadSlots(undefined, effectiveAge ?? undefined)}
               />
             )}
 
-            {/* Empty — no future slots */}
+            {/* Empty — no future slots (age-specific copy when we know the age) */}
             {slotsState === "empty" && (
               <View style={styles.slotsPlaceholder}>
                 <Ionicons name="calendar-outline" size={28} color="#6B7280" />
                 <Text style={[styles.slotsPlaceholderText, { color: "#9CA3AF" }]}>
-                  No assessment slots are currently available. Please check back soon or contact the studio.
+                  {effectiveAge != null
+                    ? `No assessment slots are currently available for age ${effectiveAge}. Please check back soon or contact the studio.`
+                    : "No assessment slots are currently available. Please check back soon or contact the studio."}
                 </Text>
               </View>
             )}
@@ -1136,7 +1234,7 @@ export default function BalletAssessmentScreen() {
 
             {[
               { label: "Child Name", value: form.childName },
-              { label: "Child Age", value: `${form.childAge} years old` },
+              { label: "Child Age", value: effectiveAge != null ? `${effectiveAge} years old` : `${form.childAge} years old` },
               { label: "Child Gender", value: form.childGender === "female" ? "Girl" : "Boy" },
               { label: "Date of Birth", value: form.childBirthday || "Not provided" },
               { label: "Experience", value: form.previousExperience ? "Yes" : form.previousExperience === false ? "No" : "—" },
@@ -1148,10 +1246,15 @@ export default function BalletAssessmentScreen() {
               </View>
             ))}
 
-            {selectedChildId != null && (
+            {selectedChildId != null ? (
               <View style={styles.linkedNote}>
                 <Ionicons name="link" size={13} color={BALLET_COLOR} />
                 <Text style={styles.linkedNoteText}>Linked to a saved child profile in your account.</Text>
+              </View>
+            ) : (
+              <View style={styles.linkedNote}>
+                <Ionicons name="save-outline" size={13} color={BALLET_COLOR} />
+                <Text style={styles.linkedNoteText}>This child's profile will be saved to your account when you submit.</Text>
               </View>
             )}
 

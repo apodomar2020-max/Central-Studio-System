@@ -43,12 +43,11 @@ const BALLET_COLOR = "#A78BFA";
 type BalletStatusInfo = { label: string; color: string; icon: any };
 function getBalletStatusInfo(status: string): BalletStatusInfo {
   switch (status) {
-    case "submitted":       return { label: "Under Review",         color: "#F59E0B", icon: "time-outline" };
-    case "pendingAssessment": return { label: "Assessment Scheduled", color: "#60A5FA", icon: "calendar-outline" };
+    case "pending":         return { label: "Under Review",         color: "#F59E0B", icon: "time-outline" };
     case "needsFollowUp":   return { label: "Follow-up Required",   color: "#F59E0B", icon: "chatbubble-ellipses-outline" };
     case "accepted":        return { label: "Accepted",             color: "#22C55E", icon: "checkmark-circle" };
     case "assignedToLevel": return { label: "Level Assigned",       color: BALLET_COLOR, icon: "ribbon-outline" };
-    case "activeBallet":    return { label: "Active Student",       color: BALLET_COLOR, icon: "star-outline" };
+    case "active":          return { label: "Active Student",       color: BALLET_COLOR, icon: "star-outline" };
     case "rejected":        return { label: "Not Accepted",         color: "#EF4444", icon: "close-circle-outline" };
     case "cancelled":       return { label: "Cancelled",            color: "#6B7280", icon: "ban-outline" };
     default:                return { label: status,                 color: "#9CA3AF", icon: "information-circle-outline" };

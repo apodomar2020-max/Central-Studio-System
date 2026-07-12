@@ -10,7 +10,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ImageBackground,
   Platform,
@@ -20,15 +20,15 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useListClasses } from "@workspace/api-client-react";
 
 import {
   fetchMyApplications,
+  fetchBalletClasses,
   ACTIVE_APPLICATION_STATUSES,
+  type BalletClass,
 } from "@/services/balletAssessmentService";
-import { mapApiClassToMobile } from "@/data/apiAdapters";
 import { useAppContext } from "@/contexts/AppContext";
-import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
@@ -164,19 +164,36 @@ export default function BalletProgramScreen() {
   }, [user]);
 
   /* Live ballet-class count for the "Ballet Classes" nav card subtitle.
-     Uses the existing classes API filtered via the adapter's isBallet flag —
-     no new backend. Falls back to generic copy while loading / on error / 0. */
-  const classesQuery = useListClasses();
-  const balletClassCount = useMemo(
-    () =>
-      (classesQuery.data ?? [])
-        .filter((c) => c.isActive)
-        .map((c) => mapApiClassToMobile(c))
-        .filter((c) => c.isBallet).length,
-    [classesQuery.data],
-  );
+     Uses the dedicated public GET /api/ballet/classes endpoint (Phase 4a) —
+     it only ever returns active ballet classes, so no isBallet/isActive
+     filtering is needed. Falls back to generic copy while loading / on
+     error / 0. */
+  const [balletClasses, setBalletClasses] = useState<BalletClass[]>([]);
+  const [classesLoading, setClassesLoading] = useState(true);
+
+  const loadBalletClasses = useCallback(async (signal?: AbortSignal) => {
+    setClassesLoading(true);
+    try {
+      const data = await fetchBalletClasses(signal);
+      if (signal?.aborted) return;
+      setBalletClasses(data);
+    } catch (e) {
+      if ((e as any)?.name === "AbortError") return;
+      setBalletClasses([]);
+    } finally {
+      if (!signal?.aborted) setClassesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    loadBalletClasses(ctrl.signal);
+    return () => ctrl.abort();
+  }, [loadBalletClasses]);
+
+  const balletClassCount = balletClasses.length;
   const balletClassesSub =
-    classesQuery.isSuccess && balletClassCount > 0
+    !classesLoading && balletClassCount > 0
       ? `${balletClassCount} active class${balletClassCount === 1 ? "" : "es"} available`
       : "Browse active ballet classes";
 
@@ -184,6 +201,10 @@ export default function BalletProgramScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (!user) {
       showAuthRequiredPrompt();
+      return;
+    }
+    if (user.accountType !== "parent") {
+      showParentAccountRequiredPrompt();
       return;
     }
     if (hasActiveApplication) {

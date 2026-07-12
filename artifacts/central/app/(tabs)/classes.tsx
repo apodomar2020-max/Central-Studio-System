@@ -128,18 +128,17 @@ function hexToRgb(hex?: string | null): string | null {
 /* ─── Ballet constants ───────────────────────────────────────────── */
 const BALLET_COLOR = "#00B6D6";
 const DETAIL_MODE_STATUSES = new Set([
-  "submitted","pendingAssessment","needsFollowUp",
-  "accepted","assignedToLevel","activeBallet",
+  "pending","needsFollowUp",
+  "accepted","assignedToLevel","active",
 ]);
 
 function getStatusBadgeLabel(s: string) {
   switch (s) {
-    case "submitted":         return "Under Review";
-    case "pendingAssessment": return "Scheduled";
+    case "pending":           return "Under Review";
     case "needsFollowUp":     return "Follow-Up";
     case "accepted":          return "Accepted";
     case "assignedToLevel":   return "Level Assigned";
-    case "activeBallet":      return "Active";
+    case "active":            return "Active";
     case "rejected":          return "Not Accepted";
     case "cancelled":         return "Cancelled";
     default:                  return s;
@@ -147,12 +146,11 @@ function getStatusBadgeLabel(s: string) {
 }
 function getStatusBadgeColor(s: string) {
   switch (s) {
-    case "submitted":         return AMBER;
-    case "pendingAssessment": return "#60A5FA";
+    case "pending":           return AMBER;
     case "needsFollowUp":     return AMBER;
     case "accepted":          return SUCCESS;
     case "assignedToLevel":   return BALLET_COLOR;
-    case "activeBallet":      return BALLET_COLOR;
+    case "active":            return BALLET_COLOR;
     case "rejected":          return DANGER;
     case "cancelled":         return INK_400;
     default:                  return INK_300;

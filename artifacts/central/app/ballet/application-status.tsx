@@ -30,10 +30,14 @@ import {
 import {
   fetchMyApplications,
   cancelBalletApplication,
+  fetchBalletLevels,
+  fetchBalletGroups,
+  fetchBalletClasses,
   CANCELLABLE_APPLICATION_STATUSES,
   EDITABLE_APPLICATION_STATUSES,
   ACTIVE_APPLICATION_STATUSES,
   type BalletApplication,
+  type BalletClassSchedule,
   isOfflineError,
 } from "@/services/balletAssessmentService";
 import colors from "@/constants/colors";
@@ -41,6 +45,17 @@ import AppButton from "@/components/AppButton";
 import OfflineState from "@/components/OfflineState";
 
 const BALLET_COLOR = "#00B6D6";
+
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "18:00" → "6:00 PM", "09:30" → "9:30 AM" */
+function formatTime(timeStr: string): string {
+  const [hoursStr = "0", minsStr = "00"] = timeStr.split(":");
+  const hours = parseInt(hoursStr, 10);
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const h = hours % 12 || 12;
+  return `${h}:${minsStr} ${ampm}`;
+}
 
 // ─── Status meta ──────────────────────────────────────────────────────────────
 
@@ -51,23 +66,20 @@ interface StatusMeta {
   color: string;
 }
 
-function getStatusMeta(status: string): StatusMeta {
+function getStatusMeta(status: string, levelName?: string | null, groupName?: string | null, groupSchedules?: BalletClassSchedule[]): StatusMeta {
+  const groupPart = groupName ? ` in group "${groupName}"` : "";
+  const schedulePart = groupSchedules && groupSchedules.length > 0
+    ? ` (meets ${groupSchedules.map((s) => `${DAY_SHORT[s.dayOfWeek] ?? "?"} ${formatTime(s.startTime)}`).join(", ")})`
+    : "";
+
   switch (status) {
-    case "submitted":
+    case "pending":
       return {
         label: "Under Review",
         description:
-          "Your application has been received. Our team is reviewing it and will reach out to confirm your assessment appointment.",
+          "Your application and assessment appointment are on file. Our team is reviewing your application and will confirm next steps soon.",
         icon: "time-outline",
         color: "#F59E0B",
-      };
-    case "pendingAssessment":
-      return {
-        label: "Assessment Scheduled",
-        description:
-          "Your assessment appointment has been confirmed. Please ensure your child attends on the scheduled date.",
-        icon: "calendar-outline",
-        color: "#60A5FA",
       };
     case "needsFollowUp":
       return {
@@ -88,16 +100,18 @@ function getStatusMeta(status: string): StatusMeta {
     case "assignedToLevel":
       return {
         label: "Level Assigned",
-        description:
-          "Your child has been assessed and assigned to a ballet level. Enrolment can now be completed.",
+        description: levelName
+          ? `Your child has been assessed and assigned to ${levelName}${groupPart}${schedulePart}. Enrolment can now be completed.`
+          : "Your child has been assessed and assigned to a ballet level. Enrolment can now be completed.",
         icon: "ribbon-outline",
         color: BALLET_COLOR,
       };
-    case "activeBallet":
+    case "active":
       return {
         label: "Active Student",
-        description:
-          "Your child is currently an active ballet student at Central Studio.",
+        description: levelName
+          ? `Your child is currently an active ballet student in ${levelName}${groupPart}${schedulePart} at Central Studio.`
+          : "Your child is currently an active ballet student at Central Studio.",
         icon: "star-outline",
         color: BALLET_COLOR,
       };
@@ -135,6 +149,66 @@ export default function ApplicationStatusScreen() {
   const [loadState, setLoadState] = useState<"loading" | "success" | "empty" | "offline" | "error">("loading");
   const [application, setApplication] = useState<BalletApplication | null>(null);
   const [cancelling, setCancelling] = useState(false);
+
+  // Level id → name lookup (mirrors the levelNameById pattern in
+  // app/ballet/classes.tsx) so "assignedToLevel"/"active" cards can show the
+  // real level name instead of a generic phrase. Best-effort — if this fetch
+  // fails, getStatusMeta simply falls back to its generic copy.
+  const [levelNameById, setLevelNameById] = useState<Map<number, string>>(new Map());
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchBalletLevels(ctrl.signal)
+      .then((levels) => {
+        if (ctrl.signal.aborted) return;
+        setLevelNameById(new Map(levels.map((l) => [l.id, l.name])));
+      })
+      .catch(() => {
+        // Best-effort — keep the generic status copy on failure.
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  // Group id → name lookup, and group id → aggregated (deduped) weekly
+  // schedules, built client-side from the two existing public catalogue
+  // endpoints (no new endpoint needed — GET /api/ballet/groups has no
+  // schedule data, but GET /api/ballet/classes does, keyed by groupIds).
+  // Best-effort — if either fetch fails, the group/schedule line is simply
+  // omitted from the status card.
+  const [groupNameById, setGroupNameById] = useState<Map<number, string>>(new Map());
+  const [schedulesByGroupId, setSchedulesByGroupId] = useState<Map<number, BalletClassSchedule[]>>(new Map());
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    Promise.all([fetchBalletGroups(ctrl.signal), fetchBalletClasses(ctrl.signal)])
+      .then(([groups, classes]) => {
+        if (ctrl.signal.aborted) return;
+        setGroupNameById(new Map(groups.map((g) => [g.id, g.name])));
+
+        // groupId -> (scheduleId -> schedule), deduped in case a group
+        // appears across more than one class.
+        const byGroup = new Map<number, Map<number, BalletClassSchedule>>();
+        for (const cls of classes) {
+          for (const groupId of cls.groupIds) {
+            const schedMap = byGroup.get(groupId) ?? new Map<number, BalletClassSchedule>();
+            for (const sch of cls.schedules) schedMap.set(sch.id, sch);
+            byGroup.set(groupId, schedMap);
+          }
+        }
+        const result = new Map<number, BalletClassSchedule[]>();
+        for (const [groupId, schedMap] of byGroup) {
+          result.set(
+            groupId,
+            [...schedMap.values()].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)),
+          );
+        }
+        setSchedulesByGroupId(result);
+      })
+      .catch(() => {
+        // Best-effort — keep the generic status copy on failure.
+      });
+    return () => ctrl.abort();
+  }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoadState("loading");
@@ -265,7 +339,10 @@ export default function ApplicationStatusScreen() {
 
       {/* Application detail */}
       {loadState === "success" && application && (() => {
-        const meta = getStatusMeta(application.status);
+        const levelName = application.assignedLevelId != null ? levelNameById.get(application.assignedLevelId) : null;
+        const groupName = application.assignedGroupId != null ? groupNameById.get(application.assignedGroupId) : null;
+        const groupSchedules = application.assignedGroupId != null ? schedulesByGroupId.get(application.assignedGroupId) : undefined;
+        const meta = getStatusMeta(application.status, levelName, groupName, groupSchedules);
         const isCancellable = CANCELLABLE_APPLICATION_STATUSES.has(application.status);
         const isEditable    = EDITABLE_APPLICATION_STATUSES.has(application.status);
         const isTerminal    = !ACTIVE_APPLICATION_STATUSES.has(application.status);
@@ -318,7 +395,7 @@ export default function ApplicationStatusScreen() {
             ) : null}
 
             {/* Next steps */}
-            {application.status === "submitted" && (
+            {application.status === "pending" && (
               <View style={styles.nextSteps}>
                 <Text style={styles.nextStepsTitle}>What happens next?</Text>
                 {[

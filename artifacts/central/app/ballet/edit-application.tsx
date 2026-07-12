@@ -2,7 +2,7 @@
  * app/ballet/edit-application.tsx
  *
  * Allows a parent to edit their ballet application while it is in an editable
- * status (submitted, pendingAssessment, needsFollowUp).
+ * status (pending, needsFollowUp).
  *
  * Route params:
  *   id  — the application ID (string, parsed to int)
@@ -48,10 +48,6 @@ const BALLET_COLOR = "#00B6D6";
 // ─── Form types ───────────────────────────────────────────────────────────────
 
 type EditFormData = {
-  parentPhone: string;
-  parentEmail: string;
-  emergencyContactName: string;
-  emergencyContactPhone: string;
   previousExperience: boolean | null;
   experienceDetails: string;
   medicalNotes: string;
@@ -111,10 +107,6 @@ export default function EditApplicationScreen() {
 
   // Form state
   const [form, setForm] = useState<EditFormData>({
-    parentPhone: "",
-    parentEmail: "",
-    emergencyContactName: "",
-    emergencyContactPhone: "",
     previousExperience: null,
     experienceDetails: "",
     medicalNotes: "",
@@ -142,10 +134,6 @@ export default function EditApplicationScreen() {
       }
       setApplication(app);
       setForm({
-        parentPhone:           app.parentPhone ?? "",
-        parentEmail:           app.parentEmail ?? "",
-        emergencyContactName:  app.emergencyContactName ?? "",
-        emergencyContactPhone: app.emergencyContactPhone ?? "",
         previousExperience:    app.previousExperience,
         experienceDetails:     app.experienceDetails ?? "",
         medicalNotes:          app.medicalNotes ?? "",
@@ -187,10 +175,6 @@ export default function EditApplicationScreen() {
 
     const payload: Parameters<typeof updateBalletApplication>[1] = {};
 
-    if (form.parentPhone.trim()           !== (application.parentPhone ?? ""))           payload.parentPhone           = form.parentPhone.trim();
-    if (form.parentEmail.trim()           !== (application.parentEmail ?? ""))           payload.parentEmail           = form.parentEmail.trim();
-    if (form.emergencyContactName.trim()  !== (application.emergencyContactName ?? ""))  payload.emergencyContactName  = form.emergencyContactName.trim();
-    if (form.emergencyContactPhone.trim() !== (application.emergencyContactPhone ?? "")) payload.emergencyContactPhone = form.emergencyContactPhone.trim();
     if (form.experienceDetails.trim()     !== (application.experienceDetails ?? ""))     payload.experienceDetails     = form.experienceDetails.trim();
     if (form.medicalNotes.trim()          !== (application.medicalNotes ?? ""))          payload.medicalNotes          = form.medicalNotes.trim();
     if (form.notes.trim()                 !== (application.notes ?? ""))                 payload.notes                 = form.notes.trim();
@@ -294,39 +278,6 @@ export default function EditApplicationScreen() {
               )}
             </View>
 
-            <Text style={styles.sectionLabel}>Contact Details</Text>
-            <Field
-              label="Parent Phone"
-              value={form.parentPhone}
-              onChange={(v) => setForm((f) => ({ ...f, parentPhone: v }))}
-              placeholder="+20 1XX XXX XXXX"
-              keyboardType="phone-pad"
-            />
-            <Field
-              label="Parent Email"
-              value={form.parentEmail}
-              onChange={(v) => setForm((f) => ({ ...f, parentEmail: v }))}
-              placeholder="your@email.com"
-              keyboardType="email-address"
-            />
-
-            <View style={styles.divider} />
-            <Text style={styles.sectionLabel}>Emergency Contact</Text>
-            <Field
-              label="Emergency Contact Name"
-              value={form.emergencyContactName}
-              onChange={(v) => setForm((f) => ({ ...f, emergencyContactName: v }))}
-              placeholder="Full name"
-            />
-            <Field
-              label="Emergency Contact Phone"
-              value={form.emergencyContactPhone}
-              onChange={(v) => setForm((f) => ({ ...f, emergencyContactPhone: v }))}
-              placeholder="+20 1XX XXX XXXX"
-              keyboardType="phone-pad"
-            />
-
-            <View style={styles.divider} />
             <Text style={styles.sectionLabel}>Experience & Notes</Text>
 
             <View style={styles.field}>
