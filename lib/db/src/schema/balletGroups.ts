@@ -12,12 +12,17 @@ import { balletLevelsTable } from "./balletLevels";
  *
  * level_id uses ON DELETE RESTRICT: a level with groups cannot be deleted,
  * matching the ballet_level_assignments convention.
+ *
+ * capacity (Phase A / P0-6) is nullable — null means uncapped/no enforced
+ * limit; a set value is enforced by the assign-group endpoint against the
+ * count of active ballet_level_assignments rows pointed at this group.
  */
 export const balletGroupsTable = pgTable("ballet_groups", {
   id:         serial("id").primaryKey(),
   name:       text("name").notNull(),
   levelId:    integer("level_id").notNull().references(() => balletLevelsTable.id, { onDelete: "restrict" }),
   isActive:   boolean("is_active").notNull().default(true),
+  capacity:   integer("capacity"),
   createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:  timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 });

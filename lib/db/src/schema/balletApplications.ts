@@ -1,9 +1,18 @@
-import { boolean, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
+import { BALLET_APPLICATION_STATUSES, type BalletApplicationStatus } from "@workspace/api-zod";
 import { studentsTable } from "./students";
 import { balletAssessmentSlotsTable } from "./balletAssessmentSlots";
 import { balletLevelsTable } from "./balletLevels";
 import { childrenTable } from "./children";
+
+// Canonical source of truth moved to @workspace/api-zod (Phase A / P0-2b) so
+// frontend packages can import the same literals instead of retyping them.
+// Re-exported here so existing `from "@workspace/db/schema/balletApplications"`
+// imports keep working unchanged.
+export { BALLET_APPLICATION_STATUSES };
+export type { BalletApplicationStatus };
 
 /**
  * ballet_applications — one row per form submission from the mobile app.
@@ -24,18 +33,6 @@ import { childrenTable } from "./children";
  * (Old values "submitted"/"pendingAssessment" merged into "pending" and
  * "activeBallet" renamed to "active" — data migrated in migration 0047.)
  */
-
-export const BALLET_APPLICATION_STATUSES = [
-  "pending",
-  "accepted",
-  "needsFollowUp",
-  "assignedToLevel",
-  "active",
-  "rejected",
-  "cancelled",
-] as const;
-
-export type BalletApplicationStatus = (typeof BALLET_APPLICATION_STATUSES)[number];
 
 export const balletApplicationsTable = pgTable("ballet_applications", {
   id:                    serial("id").primaryKey(),
@@ -62,7 +59,19 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   childId:               integer("child_id").references(() => childrenTable.id, { onDelete: "set null" }),
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
-});
+}, (table) => ([
+  // Phase A / P0-8a: a linked child can have at most one open (non-rejected,
+  // non-cancelled) application at a time.
+  uniqueIndex("ballet_applications_active_per_child")
+    .on(table.childId)
+    .where(sql`${table.childId} is not null and ${table.status} not in ('rejected','cancelled')`),
+  // Phase A / P0-8b: same guarantee for manual (walk-in/phone) submissions
+  // that have no linked child record yet — identity is the best available
+  // proxy (parent account + normalised child name + birthday).
+  uniqueIndex("ballet_applications_active_per_manual_identity")
+    .on(table.parentStudentId, sql`lower(trim(${table.childName}))`, table.childBirthday)
+    .where(sql`${table.childId} is null and ${table.status} not in ('rejected','cancelled')`),
+]));
 
 // Zod schema for the mobile app's POST /api/ballet/applications body.
 // parentStudentId is injected server-side from the student identity header.

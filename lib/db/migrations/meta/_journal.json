@@ -344,6 +344,20 @@
       "when": 1784462404000,
       "tag": "0049_legacy_generic_ballet_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784462405000,
+      "tag": "0050_ballet_applications_active_uniqueness",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1784462406000,
+      "tag": "0051_ballet_groups_capacity",
+      "breakpoints": true
     }
   ]
 }
