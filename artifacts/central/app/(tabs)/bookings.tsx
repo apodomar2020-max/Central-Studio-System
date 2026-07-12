@@ -38,6 +38,14 @@ import {
   type BalletApplication,
 } from "@/services/balletAssessmentService";
 import { isOfflineError } from "@/services/connectivity";
+import { BALLET_APPLICATION_STATUSES, type BalletApplicationStatus } from "@workspace/api-zod";
+
+// Terminal statuses (assessment concluded) — derived from the canonical enum
+// rather than hand-typed, so the Upcoming/Past/Cancelled tab partition below
+// can never drift from the values @workspace/api-zod actually defines.
+const BALLET_ENDED_STATUSES: readonly BalletApplicationStatus[] = BALLET_APPLICATION_STATUSES.filter(
+  (status) => status === "rejected" || status === "cancelled",
+);
 
 const BALLET_COLOR = "#A78BFA";
 type BalletStatusInfo = { label: string; color: string; icon: any };
@@ -447,13 +455,13 @@ export default function BookingsScreen() {
     let balletItems: ListItem[] = [];
     switch (tab) {
       case "Upcoming":
-        balletItems = balletApps.filter((a) => a.status === "Pending" || a.status === "Scheduled" || a.status === "Accepted").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        balletItems = balletApps.filter((a) => !BALLET_ENDED_STATUSES.includes(a.status as BalletApplicationStatus)).map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
         break;
       case "Past":
-        balletItems = balletApps.filter((a) => a.status === "Completed").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        balletItems = balletApps.filter((a) => a.status === "rejected").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
         break;
       case "Cancelled":
-        balletItems = balletApps.filter((a) => a.status === "Rejected").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        balletItems = balletApps.filter((a) => a.status === "cancelled").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
         break;
     }
 
