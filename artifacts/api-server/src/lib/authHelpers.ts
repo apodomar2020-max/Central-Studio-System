@@ -7,9 +7,9 @@
  */
 import jwt from "jsonwebtoken";
 import { randomInt } from "crypto";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, gte, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, emailOtpsTable } from "@workspace/db";
+import { db, emailOtpsTable, studentsTable } from "@workspace/db";
 import { STUDENT_JWT_SECRET, type StudentTokenPayload } from "../middlewares/auth";
 import { logger } from "./logger";
 
@@ -45,6 +45,8 @@ function positiveIntEnv(name: string, fallback: number): number {
 export const OTP_TTL_SECONDS = positiveIntEnv("OTP_TTL_SECONDS", 600);
 export const OTP_RESEND_COOLDOWN_SECONDS = positiveIntEnv("OTP_RESEND_COOLDOWN_SECONDS", 60);
 export const OTP_MAX_ATTEMPTS = positiveIntEnv("OTP_MAX_ATTEMPTS", 5);
+export const OTP_MAX_SENDS_PER_HOUR = positiveIntEnv("OTP_MAX_SENDS_PER_HOUR", 5);
+export const OTP_MAX_SENDS_PER_DAY = positiveIntEnv("OTP_MAX_SENDS_PER_DAY", 10);
 export const PASSWORD_MIN_LENGTH = positiveIntEnv("PASSWORD_MIN_LENGTH", 8);
 
 export const PasswordSchema = z.string()
@@ -189,8 +191,8 @@ export async function sendSecurityNotificationEmail(
 
 export class OtpRateLimitError extends Error {
   retryAfterSeconds: number;
-  constructor(retryAfterSeconds: number) {
-    super("Please wait before requesting another code.");
+  constructor(retryAfterSeconds: number, message = "Please wait before requesting another code.") {
+    super(message);
     this.name = "OtpRateLimitError";
     this.retryAfterSeconds = retryAfterSeconds;
   }
@@ -209,8 +211,9 @@ export async function invalidateOtpCodes(email: string, purpose: OtpPurpose): Pr
 }
 
 /**
- * Issue (and send) a fresh OTP for an email, enforcing a per-email+purpose
- * resend cooldown. Throws OtpRateLimitError when called again too soon.
+ * Issue (and send) a fresh OTP for an email. Issuance is serialized per
+ * email+purpose with a transaction-scoped advisory lock so concurrent requests
+ * cannot bypass the cooldown or rolling hourly/daily limits.
  */
 export async function issueOtp(
   email: string,
@@ -218,43 +221,83 @@ export async function issueOtp(
 ): Promise<{ expiresIn: number }> {
   const normalizedEmail = email.toLowerCase().trim();
   const purpose: OtpPurpose = opts.purpose ?? "verify";
+  const nowMs = Date.now();
+  const hourAgo = new Date(nowMs - 60 * 60 * 1000).toISOString();
+  const dayAgo = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+  const now = new Date(nowMs).toISOString();
+  const code = generateOtp();
+  const expiresAt = new Date(nowMs + OTP_TTL_SECONDS * 1000).toISOString();
 
-  // Rate limit: reject if an unused code for this email+purpose was issued
-  // within the cooldown window.
-  const [recent] = await db
-    .select({ createdAt: emailOtpsTable.createdAt })
-    .from(emailOtpsTable)
-    .where(
-      and(
+  const otpId = await db.transaction(async (tx) => {
+    // Stable, transaction-scoped lock key; no external lock service required.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${normalizedEmail}:${purpose}`}))`);
+
+    const issuedToday = await tx
+      .select({ createdAt: emailOtpsTable.createdAt })
+      .from(emailOtpsTable)
+      .where(and(
+        eq(emailOtpsTable.email, normalizedEmail),
+        eq(emailOtpsTable.purpose, purpose),
+        gte(emailOtpsTable.createdAt, dayAgo),
+      ))
+      .orderBy(emailOtpsTable.createdAt);
+
+    const latest = issuedToday.at(-1);
+    if (latest) {
+      const ageSeconds = (nowMs - new Date(latest.createdAt).getTime()) / 1000;
+      if (ageSeconds < OTP_RESEND_COOLDOWN_SECONDS) {
+        throw new OtpRateLimitError(Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - ageSeconds));
+      }
+    }
+
+    const issuedThisHour = issuedToday.filter((row) => row.createdAt >= hourAgo);
+    if (issuedThisHour.length >= OTP_MAX_SENDS_PER_HOUR) {
+      const retryAt = new Date(issuedThisHour[0]!.createdAt).getTime() + 60 * 60 * 1000;
+      throw new OtpRateLimitError(
+        Math.max(1, Math.ceil((retryAt - nowMs) / 1000)),
+        "Too many verification codes requested. Please try again later.",
+      );
+    }
+
+    if (issuedToday.length >= OTP_MAX_SENDS_PER_DAY) {
+      const retryAt = new Date(issuedToday[0]!.createdAt).getTime() + 24 * 60 * 60 * 1000;
+      throw new OtpRateLimitError(
+        Math.max(1, Math.ceil((retryAt - nowMs) / 1000)),
+        "Daily verification code limit reached. Please try again later.",
+      );
+    }
+
+    await tx
+      .update(emailOtpsTable)
+      .set({ usedAt: now })
+      .where(and(
         eq(emailOtpsTable.email, normalizedEmail),
         eq(emailOtpsTable.purpose, purpose),
         isNull(emailOtpsTable.usedAt),
-      ),
-    )
-    .orderBy(desc(emailOtpsTable.createdAt))
-    .limit(1);
+      ));
 
-  if (recent) {
-    const ageSeconds = (Date.now() - new Date(recent.createdAt).getTime()) / 1000;
-    if (ageSeconds < OTP_RESEND_COOLDOWN_SECONDS) {
-      throw new OtpRateLimitError(Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - ageSeconds));
-    }
-  }
-
-  await invalidateOtpCodes(normalizedEmail, purpose);
-
-  const code = generateOtp();
-  const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
-
-  await db.insert(emailOtpsTable).values({
-    studentId: opts.studentId ?? null,
-    email: normalizedEmail,
-    code,
-    purpose,
-    expiresAt,
+    const [inserted] = await tx
+      .insert(emailOtpsTable)
+      .values({
+        studentId: opts.studentId ?? null,
+        email: normalizedEmail,
+        code,
+        purpose,
+        expiresAt,
+      })
+      .returning({ id: emailOtpsTable.id });
+    return inserted!.id;
   });
 
-  await sendOtpEmail(normalizedEmail, code, purpose);
+  try {
+    await sendOtpEmail(normalizedEmail, code, purpose);
+  } catch (error) {
+    // Failed deliveries should not consume the rolling issuance allowance.
+    // Delete only the row created by this call; older invalidated rows remain
+    // historical evidence and cannot become valid again.
+    await db.delete(emailOtpsTable).where(eq(emailOtpsTable.id, otpId));
+    throw error;
+  }
   logger.info({ email: normalizedEmail, purpose }, "OTP issued");
 
   return { expiresIn: OTP_TTL_SECONDS };
@@ -266,10 +309,60 @@ export type VerifyOtpResult =
   | { status: "expired" }   // no live code — client must resend
   | { status: "locked" };   // too many wrong guesses — client must resend
 
+type OtpTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function verifyOtpInTransaction(
+  tx: OtpTransaction,
+  email: string,
+  code: string,
+  purpose: OtpPurpose,
+): Promise<VerifyOtpResult> {
+  const now = new Date().toISOString();
+  const [otp] = await tx
+    .select()
+    .from(emailOtpsTable)
+    .where(and(
+      eq(emailOtpsTable.email, email),
+      eq(emailOtpsTable.purpose, purpose),
+      isNull(emailOtpsTable.usedAt),
+    ))
+    .orderBy(desc(emailOtpsTable.createdAt))
+    .limit(1)
+    .for("update");
+
+  if (!otp || otp.expiresAt <= now) return { status: "expired" };
+  if (otp.attempts >= OTP_MAX_ATTEMPTS) return { status: "locked" };
+
+  if (otp.code !== code) {
+    const attempts = otp.attempts + 1;
+    await tx
+      .update(emailOtpsTable)
+      .set({ attempts })
+      .where(and(
+        eq(emailOtpsTable.id, otp.id),
+        isNull(emailOtpsTable.usedAt),
+      ));
+    if (attempts >= OTP_MAX_ATTEMPTS) return { status: "locked" };
+    return { status: "invalid", attemptsLeft: OTP_MAX_ATTEMPTS - attempts };
+  }
+
+  const [consumed] = await tx
+    .update(emailOtpsTable)
+    .set({ usedAt: now })
+    .where(and(
+      eq(emailOtpsTable.id, otp.id),
+      isNull(emailOtpsTable.usedAt),
+      gt(emailOtpsTable.expiresAt, now),
+    ))
+    .returning({ id: emailOtpsTable.id });
+
+  return consumed ? { status: "ok" } : { status: "expired" };
+}
+
 /**
  * Verify a code against the latest live (unused, unexpired) OTP for an
- * email+purpose. On success the row is marked used. Wrong guesses increment the
- * attempt counter and lock the code once OTP_MAX_ATTEMPTS is reached.
+ * email+purpose. The row is locked and consumed, or its attempts incremented,
+ * inside one transaction.
  */
 export async function verifyOtpCode(
   email: string,
@@ -277,32 +370,79 @@ export async function verifyOtpCode(
   purpose: OtpPurpose = "verify",
 ): Promise<VerifyOtpResult> {
   const normalizedEmail = email.toLowerCase().trim();
+  return db.transaction((tx) => verifyOtpInTransaction(tx, normalizedEmail, code, purpose));
+}
+
+const verifiedStudentReturning = {
+  id: studentsTable.id,
+  name: studentsTable.name,
+  email: studentsTable.email,
+  phone: studentsTable.phone,
+  accountType: studentsTable.accountType,
+  profileCompleted: studentsTable.profileCompleted,
+  profileCompletedAt: studentsTable.profileCompletedAt,
+  emailVerified: studentsTable.emailVerified,
+  authProvider: studentsTable.authProvider,
+  avatarUrl: studentsTable.avatarUrl,
+  providerDisplayName: studentsTable.providerDisplayName,
+  joinedAt: studentsTable.joinedAt,
+  qrToken: studentsTable.qrToken,
+};
+
+export type VerifyEmailOtpResult =
+  | { status: "ok"; student: Pick<typeof studentsTable.$inferSelect, keyof typeof verifiedStudentReturning> }
+  | Exclude<VerifyOtpResult, { status: "ok" }>;
+
+/**
+ * Email-verification-specific atomic flow: lock and consume the OTP, then mark
+ * the authenticated student verified before the same transaction commits.
+ */
+export async function verifyEmailOtpForStudent(
+  studentId: number,
+  email: string,
+  code: string,
+): Promise<VerifyEmailOtpResult> {
+  const normalizedEmail = email.toLowerCase().trim();
+  return db.transaction(async (tx) => {
+    const result = await verifyOtpInTransaction(tx, normalizedEmail, code, "verify");
+    if (result.status !== "ok") return result;
+
+    const now = new Date().toISOString();
+    const [student] = await tx
+      .update(studentsTable)
+      .set({ emailVerified: true, emailVerifiedAt: now })
+      .where(and(
+        eq(studentsTable.id, studentId),
+        eq(studentsTable.email, normalizedEmail),
+      ))
+      .returning(verifiedStudentReturning);
+
+    if (!student) {
+      throw new Error("Authenticated student not found during OTP verification.");
+    }
+    return { status: "ok" as const, student };
+  });
+}
+
+/**
+ * Delete only historical OTP rows whose creation time is beyond the retention
+ * window and that are already used or expired. This is intentionally not
+ * scheduled here; call it from a future maintenance worker after deployment
+ * ownership and cadence are defined.
+ */
+export async function cleanupOldOtpRows(retentionDays = 30): Promise<number> {
+  const safeRetentionDays = Math.max(7, Math.floor(retentionDays));
   const now = new Date().toISOString();
-
-  const [otp] = await db
-    .select()
-    .from(emailOtpsTable)
-    .where(
-      and(
-        eq(emailOtpsTable.email, normalizedEmail),
-        eq(emailOtpsTable.purpose, purpose),
-        isNull(emailOtpsTable.usedAt),
-        gt(emailOtpsTable.expiresAt, now),
+  const cutoff = new Date(Date.now() - safeRetentionDays * 24 * 60 * 60 * 1000).toISOString();
+  const deleted = await db
+    .delete(emailOtpsTable)
+    .where(and(
+      lt(emailOtpsTable.createdAt, cutoff),
+      or(
+        isNotNull(emailOtpsTable.usedAt),
+        lt(emailOtpsTable.expiresAt, now),
       ),
-    )
-    .orderBy(desc(emailOtpsTable.createdAt))
-    .limit(1);
-
-  if (!otp) return { status: "expired" };
-  if (otp.attempts >= OTP_MAX_ATTEMPTS) return { status: "locked" };
-
-  if (otp.code !== code) {
-    const attempts = otp.attempts + 1;
-    await db.update(emailOtpsTable).set({ attempts }).where(eq(emailOtpsTable.id, otp.id));
-    if (attempts >= OTP_MAX_ATTEMPTS) return { status: "locked" };
-    return { status: "invalid", attemptsLeft: OTP_MAX_ATTEMPTS - attempts };
-  }
-
-  await db.update(emailOtpsTable).set({ usedAt: now }).where(eq(emailOtpsTable.id, otp.id));
-  return { status: "ok" };
+    ))
+    .returning({ id: emailOtpsTable.id });
+  return deleted.length;
 }

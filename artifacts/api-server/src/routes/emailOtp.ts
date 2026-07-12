@@ -25,7 +25,7 @@ import { requireStudentAuth } from "../middlewares/studentAuth";
 import {
   invalidateOtpCodes,
   issueOtp,
-  verifyOtpCode,
+  verifyEmailOtpForStudent,
   signStudentToken,
   EmailDeliveryError,
   EmailProviderConfigurationError,
@@ -37,33 +37,11 @@ import {
 const router: IRouter = Router();
 const GENERIC_SEND_RESPONSE = { ok: true, expiresIn: OTP_TTL_SECONDS };
 
-// Marks a student verified and returns the refreshed row (or null if missing).
-async function markVerified(email: string) {
-  const now = new Date().toISOString();
-  const [student] = await db
-    .update(studentsTable)
-    .set({ emailVerified: true, emailVerifiedAt: now })
-    .where(eq(studentsTable.email, email.toLowerCase().trim()))
-    .returning({
-      id: studentsTable.id,
-      name: studentsTable.name,
-      email: studentsTable.email,
-      phone: studentsTable.phone,
-      accountType: studentsTable.accountType,
-      profileCompleted: studentsTable.profileCompleted,
-      profileCompletedAt: studentsTable.profileCompletedAt,
-      emailVerified: studentsTable.emailVerified,
-      authProvider: studentsTable.authProvider,
-      avatarUrl: studentsTable.avatarUrl,
-      providerDisplayName: studentsTable.providerDisplayName,
-      joinedAt: studentsTable.joinedAt,
-      qrToken: studentsTable.qrToken,
-    });
-  return student ?? null;
-}
-
 // Maps a non-"ok" verifyOtpCode result to an HTTP response.
-function respondVerifyFailure(res: import("express").Response, result: Exclude<Awaited<ReturnType<typeof verifyOtpCode>>, { status: "ok" }>): void {
+function respondVerifyFailure(
+  res: import("express").Response,
+  result: Exclude<Awaited<ReturnType<typeof verifyEmailOtpForStudent>>, { status: "ok" }>,
+): void {
   switch (result.status) {
     case "invalid":
       res.status(400).json({ error: "Incorrect code. Please try again.", attemptsLeft: result.attemptsLeft });
@@ -99,6 +77,14 @@ function respondMissingEmailProvider(res: import("express").Response): boolean {
   return false;
 }
 
+function respondOtpRateLimit(res: import("express").Response, err: OtpRateLimitError): void {
+  res.status(429).json({
+    error: err.message,
+    retryAfter: err.retryAfterSeconds,
+    retryAfterSeconds: err.retryAfterSeconds,
+  });
+}
+
 // ─── POST /api/auth/send-otp  &  /api/auth/resend-otp ────────────────────────
 const SendOtpBody = z.object({ email: z.string().email("Invalid email address") });
 
@@ -127,7 +113,7 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
     res.json({ ok: true, expiresIn });
   } catch (err) {
     if (err instanceof OtpRateLimitError) {
-      res.json(GENERIC_SEND_RESPONSE);
+      respondOtpRateLimit(res, err);
       return;
     }
     await invalidateOtpCodes(email, "verify");
@@ -154,17 +140,13 @@ router.post("/auth/verify-otp", requireStudentAuth, async (req, res): Promise<vo
   const email = req.studentEmail!;
   const { code } = parsed.data;
 
-  const result = await verifyOtpCode(email, code, "verify");
+  const result = await verifyEmailOtpForStudent(req.studentId!, email, code);
   if (result.status !== "ok") {
     respondVerifyFailure(res, result);
     return;
   }
 
-  const student = await markVerified(email);
-  if (!student) {
-    res.status(400).json({ error: "Invalid or expired verification code", requiresResend: true });
-    return;
-  }
+  const { student } = result;
 
   // Issue a fresh FULL token now that the account is verified.
   const accessToken = signStudentToken(student.id, student.email, true);
@@ -203,7 +185,7 @@ router.post("/auth/send-email-otp", requireStudentAuth, async (req, res): Promis
     res.json({ ok: true, expiresIn });
   } catch (err) {
     if (err instanceof OtpRateLimitError) {
-      res.status(429).json({ error: "Please wait before requesting another code.", retryAfter: err.retryAfterSeconds });
+      respondOtpRateLimit(res, err);
       return;
     }
     await invalidateOtpCodes(student.email, "verify");
@@ -236,17 +218,13 @@ router.post("/auth/verify-email-otp", requireStudentAuth, async (req, res): Prom
     return;
   }
 
-  const result = await verifyOtpCode(student.email, code, "verify");
+  const result = await verifyEmailOtpForStudent(studentId, student.email, code);
   if (result.status !== "ok") {
     respondVerifyFailure(res, result);
     return;
   }
 
-  const verifiedStudent = await markVerified(student.email);
-  if (!verifiedStudent) {
-    res.status(400).json({ error: "Invalid or expired verification code" });
-    return;
-  }
+  const verifiedStudent = result.student;
   const accessToken = signStudentToken(verifiedStudent.id, verifiedStudent.email, true);
   logger.info({ studentId }, "Email verified successfully (legacy endpoint)");
   res.json({ ok: true, student: verifiedStudent, accessToken });
