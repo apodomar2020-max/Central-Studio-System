@@ -26,6 +26,22 @@
  *   same child — matched by childId when a saved child profile is linked,
  *   else by name + birthday — POST returns 409 with existingApplicationId so
  *   the mobile can redirect to the status screen without a second round-trip.
+ *   This app-level SELECT is a fast path only (Phase A / P0-3) — the real
+ *   guarantee is the pair of partial unique indexes on ballet_applications
+ *   added in migration 0050 (ballet_applications_active_per_child,
+ *   ballet_applications_active_per_manual_identity); a 23505 from either is
+ *   caught and translated to the same 409 shape.
+ *
+ * Assessment-slot submission (Phase A):
+ *   - P0-4: the slot row is loaded with SELECT ... FOR UPDATE inside the
+ *     submission transaction, so concurrent submissions against the same
+ *     slot serialize on the capacity check instead of racing it.
+ *   - P0-5: age eligibility is always computed server-side from a real
+ *     birthday (children.birthday for a linked child, the submitted
+ *     childBirthday for a manual submission) as of the slot's OWN date —
+ *     never from the client-supplied childAge integer, and never as of
+ *     today's date. Missing/invalid birthdays and out-of-range ages both
+ *     reject with 422.
  */
 
 import { Router, type IRouter } from "express";
@@ -88,6 +104,26 @@ function dayOfWeekFromDate(isoDate: string): string {
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Computes age in whole years as of `referenceDateIso`, NOT as of today —
+ * used to check assessment-slot age eligibility against the child's age on
+ * the slot's actual date, not the date the application happens to be
+ * submitted. Returns null if either date string is not a valid calendar
+ * date (Phase A / P0-5 — a malformed/missing birthday is never silently
+ * treated as "no restriction").
+ */
+function computeAgeAsOf(birthdayIso: string, referenceDateIso: string): number | null {
+  const birth = new Date(`${birthdayIso}T00:00:00Z`);
+  const ref = new Date(`${referenceDateIso}T00:00:00Z`);
+  if (Number.isNaN(birth.getTime()) || Number.isNaN(ref.getTime())) return null;
+
+  let age = ref.getUTCFullYear() - birth.getUTCFullYear();
+  const refMonthDay = ref.getUTCMonth() * 100 + ref.getUTCDate();
+  const birthMonthDay = birth.getUTCMonth() * 100 + birth.getUTCDate();
+  if (refMonthDay < birthMonthDay) age -= 1;
+  return age;
 }
 
 // ─── Default settings ─────────────────────────────────────────────────────────
@@ -551,7 +587,7 @@ router.post(
 
     const {
       parentName, parentPhone, parentEmail,
-      childName, childBirthday, childAge, childGender,
+      childName, childBirthday, childGender,
       emergencyContactName, emergencyContactPhone,
       previousExperience, experienceDetails,
       medicalNotes, notes,
@@ -596,6 +632,10 @@ router.post(
         }
 
         // ── Load slot ─────────────────────────────────────────────────────────
+        // Phase A / P0-4: SELECT ... FOR UPDATE locks this slot row for the
+        // duration of the transaction, so two concurrent submissions against
+        // the same slot serialize on the capacity check below instead of both
+        // reading the same pre-insert count and both passing it.
         const [slot] = await tx
           .select({
             id:       balletAssessmentSlotsTable.id,
@@ -604,10 +644,13 @@ router.post(
             endTime:  balletAssessmentSlotsTable.endTime,
             capacity: balletAssessmentSlotsTable.capacity,
             isActive: balletAssessmentSlotsTable.isActive,
+            ageMin:   balletAssessmentSlotsTable.ageMin,
+            ageMax:   balletAssessmentSlotsTable.ageMax,
           })
           .from(balletAssessmentSlotsTable)
           .where(eq(balletAssessmentSlotsTable.id, slotId))
-          .limit(1);
+          .limit(1)
+          .for("update");
 
         if (!slot || !slot.isActive) {
           throw Object.assign(new Error("Assessment slot not found"), { status: 404 });
@@ -631,9 +674,10 @@ router.post(
         // ── Validate child ownership (only when a saved child was selected) ───
         // A provided childId must belong to the authenticated parent — never
         // let one account link a child profile owned by another account.
+        let resolvedBirthday: string | null = null;
         if (childId != null) {
           const [ownedChild] = await tx
-            .select({ id: childrenTable.id })
+            .select({ id: childrenTable.id, birthday: childrenTable.birthday })
             .from(childrenTable)
             .where(and(eq(childrenTable.id, childId), eq(childrenTable.parentId, parentStudentId)))
             .limit(1);
@@ -643,6 +687,51 @@ router.post(
               { status: 403 },
             );
           }
+          // Phase A / P0-5: the children table's own record is the source of
+          // truth for a linked child's birthday — never the request body,
+          // which the client could have left stale or sent inconsistently.
+          resolvedBirthday = ownedChild.birthday;
+        } else {
+          // Manual (no saved child profile) submission: the submitted
+          // childBirthday is the only signal available. The client-supplied
+          // childAge integer is NEVER used for validation in either path —
+          // it is stored below purely for display/record-keeping.
+          resolvedBirthday = childBirthday ?? null;
+        }
+
+        // ── Age eligibility (Phase A / P0-5) ───────────────────────────────────
+        // Age is computed AS OF the assessment slot's date, not today's date,
+        // so a child who will still be within range on the day of the
+        // assessment isn't rejected due to a birthday between now and then
+        // (or vice versa).
+        if (!resolvedBirthday) {
+          throw Object.assign(
+            new Error(
+              childId != null
+                ? "This child has no birthday on file. Add one to the child's profile before booking an assessment."
+                : "A child birthday is required to book an assessment slot.",
+            ),
+            { status: 422, code: "MISSING_BIRTHDAY" },
+          );
+        }
+
+        const ageAtSlot = computeAgeAsOf(resolvedBirthday, slot.date);
+        if (ageAtSlot == null) {
+          throw Object.assign(
+            new Error("The birthday on file is not a valid date."),
+            { status: 422, code: "MISSING_BIRTHDAY" },
+          );
+        }
+
+        const ageEligible =
+          (slot.ageMin == null || ageAtSlot >= slot.ageMin) &&
+          (slot.ageMax == null || ageAtSlot <= slot.ageMax);
+
+        if (!ageEligible) {
+          throw Object.assign(
+            new Error(`This child will be ${ageAtSlot} at the time of this assessment slot, which is outside the slot's permitted age range.`),
+            { status: 422, code: "AGE_INELIGIBLE" },
+          );
         }
 
         // ── Insert application ────────────────────────────────────────────────
@@ -658,7 +747,11 @@ router.post(
             parentEmail,
             childName:             childName.trim(),
             childBirthday:         childBirthday ?? null,
-            childAge:              childAge ?? null,
+            // Phase A / P0-5 follow-up: store the server-computed age (as of
+            // the assessment slot's date, derived from resolvedBirthday) —
+            // never the client-supplied `childAge`, which is no longer used
+            // anywhere in this handler, including for storage.
+            childAge:              ageAtSlot,
             childGender:           childGender ?? null,
             emergencyContactName:  emergencyContactName ?? null,
             emergencyContactPhone: emergencyContactPhone ?? null,
@@ -691,10 +784,11 @@ router.post(
 
       res.status(201).json({ application: { id: result.id, status: result.status } });
     } catch (err: unknown) {
-      const typed = err as { status?: number; message?: string; existingApplicationId?: number };
+      const typed = err as { status?: number; message?: string; existingApplicationId?: number; code?: string };
 
       if (typed.status === 409 && typed.existingApplicationId != null) {
-        // Duplicate active application
+        // Duplicate active application (fast-path: caught by the app-level
+        // SELECT check before any insert was attempted)
         res.status(409).json({
           error: typed.message ?? "You already have an active ballet application for this child.",
           existingApplicationId: typed.existingApplicationId,
@@ -713,6 +807,59 @@ router.post(
       }
       if (typed.status === 403) {
         res.status(403).json({ error: typed.message ?? "Selected child does not belong to this account." });
+        return;
+      }
+      if (typed.status === 422) {
+        // Age eligibility / missing-birthday failures (Phase A / P0-5)
+        res.status(422).json({ error: typed.message ?? "Validation failed", code: typed.code });
+        return;
+      }
+
+      // ── Phase A / P0-3: unique-violation safety net ───────────────────────
+      // The app-level SELECT check above is a fast path — it closes the vast
+      // majority of duplicate-submission attempts without ever reaching the
+      // database's own guarantee. But between that SELECT and this request's
+      // own INSERT, a concurrent request for the same child/identity can slip
+      // through (the classic check-then-act race) and only the DB-level
+      // partial unique indexes from migration 0050 are guaranteed to catch
+      // it. Postgres reports a unique violation as SQLSTATE 23505 with the
+      // specific constraint name attached — we use that name (not the error
+      // message text) to distinguish which of the two constraints fired and
+      // return an accurate, constraint-specific message.
+      const pgErr = err as { code?: string; constraint?: string };
+      if (pgErr.code === "23505" && pgErr.constraint === "ballet_applications_active_per_child" && childId != null) {
+        const [existing] = await db
+          .select({ id: balletApplicationsTable.id })
+          .from(balletApplicationsTable)
+          .where(and(
+            eq(balletApplicationsTable.childId, childId),
+            inArray(balletApplicationsTable.status, [...ACTIVE_STATUSES]),
+          ))
+          .limit(1);
+        res.status(409).json({
+          error: "You already have an active ballet application for this child.",
+          existingApplicationId: existing?.id,
+          code: "DUPLICATE_APPLICATION",
+        });
+        return;
+      }
+      if (pgErr.code === "23505" && pgErr.constraint === "ballet_applications_active_per_manual_identity") {
+        const [existing] = await db
+          .select({ id: balletApplicationsTable.id })
+          .from(balletApplicationsTable)
+          .where(and(
+            isNull(balletApplicationsTable.childId),
+            eq(balletApplicationsTable.parentStudentId, parentStudentId),
+            ilike(balletApplicationsTable.childName, childName.trim()),
+            inArray(balletApplicationsTable.status, [...ACTIVE_STATUSES]),
+            ...(childBirthday ? [eq(balletApplicationsTable.childBirthday, childBirthday)] : []),
+          ))
+          .limit(1);
+        res.status(409).json({
+          error: "You already have an active ballet application for a child with this name and birthday.",
+          existingApplicationId: existing?.id,
+          code: "DUPLICATE_APPLICATION",
+        });
         return;
       }
 
