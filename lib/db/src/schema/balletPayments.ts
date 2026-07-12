@@ -1,10 +1,18 @@
 import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { BALLET_PAYMENT_STATUSES, type BalletPaymentStatus } from "@workspace/api-zod";
 import { balletApplicationsTable } from "./balletApplications";
 import { balletLevelAssignmentsTable } from "./balletLevelAssignments";
 import { balletPackagesTable } from "./balletPackages";
 import { packageOrdersTable } from "./packageOrders";
+
+// Canonical source of truth moved to @workspace/api-zod (Phase A / P0-2b) so
+// frontend packages can import the same literals instead of retyping them.
+// Re-exported here so existing `from "@workspace/db/schema/balletPayments"`
+// imports keep working unchanged.
+export { BALLET_PAYMENT_STATUSES };
+export type { BalletPaymentStatus };
 
 /**
  * ballet_payments — one row per payment tied to a ballet application.
@@ -13,15 +21,6 @@ import { packageOrdersTable } from "./packageOrders";
  *   pending → paid → refunded
  *           ↘ rejected
  */
-export const BALLET_PAYMENT_STATUSES = [
-  "pending",
-  "rejected",
-  "paid",
-  "refunded",
-] as const;
-
-export type BalletPaymentStatus = (typeof BALLET_PAYMENT_STATUSES)[number];
-
 export const balletPaymentsTable = pgTable("ballet_payments", {
   id:                serial("id").primaryKey(),
   applicationId:     integer("application_id").notNull().references(() => balletApplicationsTable.id, { onDelete: "cascade" }),

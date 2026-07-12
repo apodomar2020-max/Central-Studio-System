@@ -61,6 +61,7 @@
   },
   "dependencies": {
     "@sentry/react-native": "^8.17.2",
+    "@workspace/api-zod": "workspace:*",
     "expo-auth-session": "~7.0.11",
     "expo-clipboard": "^8.0.8",
     "expo-crypto": "~15.0.9",

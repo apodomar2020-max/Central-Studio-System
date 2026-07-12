@@ -410,6 +410,9 @@ importers:
       '@sentry/react-native':
         specifier: ^8.17.2
         version: 8.17.2(@expo/env@2.0.11)(dotenv@16.4.7)(expo@54.0.35)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../../lib/api-zod
       expo-auth-session:
         specifier: ~7.0.11
         version: 7.0.11(expo@54.0.35)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -783,6 +786,9 @@ importers:
 
   lib/db:
     dependencies:
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../api-zod
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(pg@8.21.0)
@@ -1477,7 +1483,6 @@ packages:
   '@esbuild/darwin-arm64@0.27.3':
     resolution: {integrity: sha512-Re491k7ByTVRy0t3EKWajdLIr0gz2kKKfzafkth4Q8A5n1xTHrkqZgLLjFEHVD+AXdUGgQMq+Godfq45mGpCKg==}
     engines: {node: '>=18'}
-    cpu: [arm64]
     os: [darwin]
 
   '@esbuild/darwin-arm64@0.27.7':
