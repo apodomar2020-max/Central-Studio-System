@@ -272,13 +272,13 @@ const STATUS_OPTIONS: Record<Entity, { value: string; label: string }[]> = {
   parents: [{ value: "all", label: "All parents" }],
   ballet: [
     { value: "all", label: "All statuses" },
-    { value: "submitted", label: "Submitted" },
-    { value: "pendingAssessment", label: "Pending assessment" },
+    { value: "pending", label: "Pending" },
     { value: "accepted", label: "Accepted" },
-    { value: "rejected", label: "Rejected" },
     { value: "needsFollowUp", label: "Needs follow-up" },
     { value: "assignedToLevel", label: "Assigned to level" },
-    { value: "activeBallet", label: "Active ballet" },
+    { value: "active", label: "Active" },
+    { value: "rejected", label: "Rejected" },
+    { value: "cancelled", label: "Cancelled" },
   ],
   attendance: [
     { value: "all", label: "All statuses" },

@@ -2,7 +2,7 @@
  * Ballet Applications List — /ballet/applications
  *
  * Displays all submitted ballet assessment applications with:
- *  - Status filter tabs (All / submitted / pendingAssessment / accepted / rejected / needsFollowUp)
+ *  - Status filter tabs (All / Pending / Accepted / Rejected / Needs Follow-up / Cancelled)
  *  - Search (parent name, phone, email, child name, assigned level name)
  *  - Level filter dropdown (Phase 4A — visible with ballet.levels view perm)
  *  - Server-side pagination
@@ -28,13 +28,13 @@ import { Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ApplicationStatus =
-  | "submitted"
-  | "pendingAssessment"
+  | "pending"
   | "accepted"
-  | "rejected"
   | "needsFollowUp"
   | "assignedToLevel"
-  | "activeBallet";
+  | "active"
+  | "rejected"
+  | "cancelled";
 
 interface ApplicationRow {
   id: number;
@@ -64,13 +64,13 @@ interface ListResponse {
 // ─── Status badge config ──────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  submitted:         { label: "Submitted",          className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-  pendingAssessment: { label: "Pending Assessment", className: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+  pending:           { label: "Pending",            className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   accepted:          { label: "Accepted",           className: "bg-green-500/15 text-green-400 border-green-500/30" },
   rejected:          { label: "Rejected",           className: "bg-red-500/15 text-red-400 border-red-500/30" },
   needsFollowUp:     { label: "Needs Follow-up",    className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
   assignedToLevel:   { label: "Assigned to Level",  className: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
-  activeBallet:      { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  active:            { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  cancelled:         { label: "Cancelled",           className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -86,11 +86,11 @@ function StatusBadge({ status }: { status: string }) {
 
 const FILTER_TABS: { label: string; value: string }[] = [
   { label: "All",               value: "" },
-  { label: "Submitted",         value: "submitted" },
-  { label: "Pending",           value: "pendingAssessment" },
+  { label: "Pending",           value: "pending" },
   { label: "Accepted",          value: "accepted" },
   { label: "Rejected",          value: "rejected" },
   { label: "Needs Follow-up",   value: "needsFollowUp" },
+  { label: "Cancelled",         value: "cancelled" },
 ];
 
 // ─── API helpers ──────────────────────────────────────────────────────────────

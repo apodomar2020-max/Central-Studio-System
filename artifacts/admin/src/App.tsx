@@ -39,6 +39,13 @@ import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import AssessmentSlotsPage from "@/pages/ballet/AssessmentSlotsPage";
 import BalletSettingsPage from "@/pages/ballet/BalletSettingsPage";
 import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
+import BalletInstructorsPage from "@/pages/ballet/BalletInstructorsPage";
+import BalletClassesPage from "@/pages/ballet/BalletClassesPage";
+import BalletSchedulesPage from "@/pages/ballet/BalletSchedulesPage";
+import BalletGroupsPage from "@/pages/ballet/BalletGroupsPage";
+import BalletPackagesPage from "@/pages/ballet/BalletPackagesPage";
+import BalletPerformancesPage from "@/pages/ballet/BalletPerformancesPage";
+import BalletPaymentsPage from "@/pages/ballet/BalletPaymentsPage";
 import DesignLabPage from "@/pages/DesignLabPage";
 import SettingsPage from "@/pages/settings";
 import LogsPage from "@/pages/logs";
@@ -117,6 +124,13 @@ const ROUTE_PERMS = {
   balletSlots: [["ballet.assessmentDates", "view"]],
   balletSettings: [["ballet.pricing", "view"]],
   balletLevels: [["ballet.levels", "view"]],
+  balletInstructors: [["ballet.instructors", "view"]],
+  balletClasses: [["ballet.classes", "view"]],
+  balletSchedules: [["ballet.schedules", "view"]],
+  balletGroups: [["ballet.groups", "view"]],
+  balletPackages: [["ballet.packages", "view"]],
+  balletPerformances: [["ballet.performances", "view"]],
+  balletPayments: [["ballet.payments", "view"]],
   settings: [["settings", "view"]],
   logs: [["auditLogs", "view"]],
 } satisfies Record<string, PermRequirement>;
@@ -161,6 +175,13 @@ function ProtectedRouter() {
         <Route path="/ballet/slots">{guarded(ROUTE_PERMS.balletSlots, <AssessmentSlotsPage />)}</Route>
         <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsPage />)}</Route>
         <Route path="/ballet/levels">{guarded(ROUTE_PERMS.balletLevels, <BalletLevelsPage />)}</Route>
+        <Route path="/ballet/instructors">{guarded(ROUTE_PERMS.balletInstructors, <BalletInstructorsPage />)}</Route>
+        <Route path="/ballet/classes">{guarded(ROUTE_PERMS.balletClasses, <BalletClassesPage />)}</Route>
+        <Route path="/ballet/schedules">{guarded(ROUTE_PERMS.balletSchedules, <BalletSchedulesPage />)}</Route>
+        <Route path="/ballet/groups">{guarded(ROUTE_PERMS.balletGroups, <BalletGroupsPage />)}</Route>
+        <Route path="/ballet/packages">{guarded(ROUTE_PERMS.balletPackages, <BalletPackagesPage />)}</Route>
+        <Route path="/ballet/performances">{guarded(ROUTE_PERMS.balletPerformances, <BalletPerformancesPage />)}</Route>
+        <Route path="/ballet/payments">{guarded(ROUTE_PERMS.balletPayments, <BalletPaymentsPage />)}</Route>
         <Route path="/settings">{guarded(ROUTE_PERMS.settings, <SettingsPage />)}</Route>
         <Route path="/logs">{guarded(ROUTE_PERMS.logs, <LogsPage />)}</Route>
         {/* DEV-ONLY: component preview — not in sidebar */}

@@ -67,6 +67,13 @@ interface Level {
   isActive: boolean;
 }
 
+interface Group {
+  id: number;
+  name: string;
+  levelId: number;
+  isActive: boolean;
+}
+
 interface Event {
   id: number;
   fromStatus: string | null;
@@ -82,6 +89,8 @@ interface DetailResponse {
   application: Application;
   slot: Slot | null;
   level: Level | null;
+  group: Group | null;
+  assignmentId: number | null;
   events: Event[];
 }
 
@@ -89,26 +98,30 @@ interface LevelsResponse {
   levels: Level[];
 }
 
+interface GroupsResponse {
+  data: Group[];
+}
+
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const ALL_STATUSES = [
-  { value: "submitted",         label: "Submitted" },
-  { value: "pendingAssessment", label: "Pending Assessment" },
-  { value: "accepted",          label: "Accepted" },
-  { value: "rejected",          label: "Rejected" },
-  { value: "needsFollowUp",     label: "Needs Follow-up" },
-  { value: "assignedToLevel",   label: "Assigned to Level" },
-  { value: "activeBallet",      label: "Active Ballet" },
+  { value: "pending",         label: "Pending" },
+  { value: "accepted",        label: "Accepted" },
+  { value: "needsFollowUp",   label: "Needs Follow-up" },
+  { value: "assignedToLevel", label: "Assigned to Level" },
+  { value: "active",          label: "Active" },
+  { value: "rejected",        label: "Rejected" },
+  { value: "cancelled",       label: "Cancelled" },
 ];
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  submitted:         { label: "Submitted",          className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-  pendingAssessment: { label: "Pending Assessment", className: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+  pending:           { label: "Pending",            className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   accepted:          { label: "Accepted",           className: "bg-green-500/15 text-green-400 border-green-500/30" },
   rejected:          { label: "Rejected",           className: "bg-red-500/15 text-red-400 border-red-500/30" },
   needsFollowUp:     { label: "Needs Follow-up",    className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
   assignedToLevel:   { label: "Assigned to Level",  className: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
-  activeBallet:      { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  active:            { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  cancelled:         { label: "Cancelled",           className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -167,6 +180,8 @@ export default function ApplicationDetailPage() {
   const [statusNote, setStatusNote]     = useState("");
   const [newLevelId, setNewLevelId]     = useState("");
   const [levelNote, setLevelNote]       = useState("");
+  const [newGroupId, setNewGroupId]     = useState("");
+  const [groupNote, setGroupNote]       = useState("");
 
   const appId = parseInt(id ?? "", 10);
 
@@ -193,6 +208,19 @@ export default function ApplicationDetailPage() {
         headers: makeHeaders(token),
       });
       if (!res.ok) throw new Error("Failed to load levels");
+      return res.json();
+    },
+  });
+
+  // ── Fetch available groups ──────────────────────────────────────────────────
+
+  const { data: groupsData } = useQuery<GroupsResponse>({
+    queryKey: ["ballet-groups"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/groups?limit=100`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load groups");
       return res.json();
     },
   });
@@ -247,6 +275,31 @@ export default function ApplicationDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  // ── Group assignment mutation ───────────────────────────────────────────────
+
+  const groupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/assign-group`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify({ groupId: parseInt(newGroupId, 10), note: groupNote || undefined }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to assign group");
+      }
+      return res.json();
+    },
+    onSuccess: (result: { groupName: string }) => {
+      toast({ title: `Assigned to ${result.groupName}` });
+      setNewGroupId("");
+      setGroupNote("");
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   // ── Render states ───────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -268,11 +321,15 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  const { application: app, slot, level, events } = data;
+  const { application: app, slot, level, group, events } = data;
   const levels = levelsData?.levels ?? [];
+  // Groups are only offered for the level actually assigned to this
+  // application — mirrors the existing level-filter pattern used elsewhere
+  // in this admin app (client-side filter, no backend query param).
+  const groups = (groupsData?.data ?? []).filter((g) => g.levelId === app.assignedLevelId);
   const permittedStatuses = ALL_STATUSES.filter((status) => {
     if (status.value === "rejected") return canReject;
-    if (["accepted", "assignedToLevel", "activeBallet"].includes(status.value)) return canApprove;
+    if (["accepted", "assignedToLevel", "active"].includes(status.value)) return canApprove;
     return canReview;
   });
 
@@ -376,6 +433,7 @@ export default function ApplicationDetailPage() {
           {(level || app.assignedLevelId) && (
             <Section title="Assigned Level">
               <Field label="Level"       value={level?.name ?? `ID ${app.assignedLevelId}`} />
+              <Field label="Group"       value={group?.name} />
               <Field label="Assigned at" value={app.assignedAt ? new Date(app.assignedAt).toLocaleString() : null} />
             </Section>
           )}
@@ -462,6 +520,43 @@ export default function ApplicationDetailPage() {
                 {levelMutation.isPending ? (
                   <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
                 ) : "Assign Level"}
+              </Button>
+            </div>
+          )}
+
+          {/* Group assignment — only once a level is assigned; supports
+              reassignment the same way the level section does. */}
+          {canApprove && app.assignedLevelId != null && groups.length > 0 && (
+            <div className="rounded-lg border bg-card p-5 space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Assign to Group
+              </h3>
+              <Select value={newGroupId} onValueChange={setNewGroupId}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select group…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Textarea
+                className="text-sm min-h-[64px] resize-none"
+                placeholder="Note (optional)"
+                value={groupNote}
+                onChange={(e) => setGroupNote(e.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={!newGroupId || groupMutation.isPending}
+                onClick={() => groupMutation.mutate()}
+                style={{ background: "#00B6D6", color: "#000" }}
+                className="w-full"
+              >
+                {groupMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
+                ) : "Assign Group"}
               </Button>
             </div>
           )}

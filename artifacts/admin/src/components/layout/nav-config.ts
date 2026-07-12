@@ -41,6 +41,12 @@ import {
   Smartphone,
   ImagePlay,
   FileText,
+  Layers,
+  CalendarClock,
+  UsersRound,
+  Wallet,
+  Sparkles,
+  Receipt,
 } from "lucide-react";
 import type { PermRequirement } from "@/lib/permissions";
 
@@ -104,6 +110,19 @@ export const NAV_TREE: NavNode[] = [
       link("Assessment Dates", "/ballet/slots", [["ballet.assessmentDates", "view"]], CalendarDays),
       link("Pricing & Settings", "/ballet/settings", [["ballet.pricing", "view"]], Settings2),
       link("Levels", "/ballet/levels", [["ballet.levels", "view"]], Trophy, { pageTitle: "Ballet Levels" }),
+      link("Instructors", "/ballet/instructors", [["ballet.instructors", "view"]], Users, {
+        pageTitle: "Ballet Instructors",
+      }),
+      link("Classes", "/ballet/classes", [["ballet.classes", "view"]], Layers, { pageTitle: "Ballet Classes" }),
+      link("Schedules", "/ballet/schedules", [["ballet.schedules", "view"]], CalendarClock, {
+        pageTitle: "Ballet Schedules",
+      }),
+      link("Groups", "/ballet/groups", [["ballet.groups", "view"]], UsersRound, { pageTitle: "Ballet Groups" }),
+      link("Packages", "/ballet/packages", [["ballet.packages", "view"]], Wallet, { pageTitle: "Ballet Packages" }),
+      link("Performances", "/ballet/performances", [["ballet.performances", "view"]], Sparkles, {
+        pageTitle: "Ballet Performance Opportunities",
+      }),
+      link("Payments", "/ballet/payments", [["ballet.payments", "view"]], Receipt, { pageTitle: "Ballet Payments" }),
     ]),
   ]),
 
