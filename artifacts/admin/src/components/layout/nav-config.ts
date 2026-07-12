@@ -108,7 +108,6 @@ export const NAV_TREE: NavNode[] = [
         pageTitle: "Ballet Applications",
       }),
       link("Assessment Dates", "/ballet/slots", [["ballet.assessmentDates", "view"]], CalendarDays),
-      link("Pricing & Settings", "/ballet/settings", [["ballet.pricing", "view"]], Settings2),
       link("Levels", "/ballet/levels", [["ballet.levels", "view"]], Trophy, { pageTitle: "Ballet Levels" }),
       link("Instructors", "/ballet/instructors", [["ballet.instructors", "view"]], Users, {
         pageTitle: "Ballet Instructors",
@@ -119,10 +118,11 @@ export const NAV_TREE: NavNode[] = [
       }),
       link("Groups", "/ballet/groups", [["ballet.groups", "view"]], UsersRound, { pageTitle: "Ballet Groups" }),
       link("Packages", "/ballet/packages", [["ballet.packages", "view"]], Wallet, { pageTitle: "Ballet Packages" }),
+      link("Payments", "/ballet/payments", [["ballet.payments", "view"]], Receipt, { pageTitle: "Ballet Payments" }),
       link("Performances", "/ballet/performances", [["ballet.performances", "view"]], Sparkles, {
         pageTitle: "Ballet Performance Opportunities",
       }),
-      link("Payments", "/ballet/payments", [["ballet.payments", "view"]], Receipt, { pageTitle: "Ballet Payments" }),
+      link("General Settings", "/ballet/settings", [["ballet.pricing", "view"]], Settings2),
     ]),
   ]),
 
