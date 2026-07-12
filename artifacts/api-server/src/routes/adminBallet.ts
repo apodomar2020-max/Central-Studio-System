@@ -23,6 +23,8 @@ import {
   balletLevelsTable,
   balletSettingsTable,
   balletLevelAssignmentsTable,
+  balletGroupsTable,
+  balletPaymentsTable,
   systemUsersTable,
   notificationsTable,
   BALLET_APPLICATION_STATUSES,
@@ -49,7 +51,7 @@ function requireApplicationStatusPermission(req: Request, res: Response, next: N
   const status = req.body?.status;
   const action = status === "rejected"
     ? "reject"
-    : ["accepted", "assignedToLevel", "activeBallet"].includes(status)
+    : ["accepted", "assignedToLevel", "active"].includes(status)
       ? "approve"
       : "review";
   requireAdminPermission("ballet.applications", action)(req, res, next);
@@ -66,10 +68,10 @@ function getStatusNotification(
   childName: string,
 ): { title: string; body: string } {
   switch (status) {
-    case "pendingAssessment":
+    case "pending":
       return {
-        title: "Assessment Scheduled 📅",
-        body: `${childName}'s ballet assessment has been scheduled. We'll contact you with the exact date and time.`,
+        title: "Application Received",
+        body: `We've received ${childName}'s ballet application. We'll be in touch with next steps soon.`,
       };
     case "needsFollowUp":
       return {
@@ -86,7 +88,7 @@ function getStatusNotification(
         title: "Ballet Level Assigned 🩰",
         body: `${childName} has been placed in a ballet level. Check the app for details about classes and schedule.`,
       };
-    case "activeBallet":
+    case "active":
       return {
         title: "Enrolled in Ballet! ✨",
         body: `${childName} is now an active ballet student at Central Studio. Welcome to the program!`,
@@ -237,9 +239,12 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
 // ─── GET /api/admin/ballet/applications/:id ───────────────────────────────────
 //
 // Returns the full application record plus:
-//   slot      — the assessment slot details (if slotId is set)
-//   level     — the assigned level (if assignedLevelId is set)
-//   events    — full event history (newest first)
+//   slot          — the assessment slot details (if slotId is set)
+//   level         — the assigned level (if assignedLevelId is set)
+//   group         — the assigned group on the current active level
+//                   assignment (Phase 4E), or null if none set yet
+//   assignmentId  — id of that active ballet_level_assignments row, or null
+//   events        — full event history (newest first)
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
@@ -255,8 +260,8 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
 
   if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
-  // Load slot, assigned level, and events in parallel
-  const [slotRows, levelRows, events] = await Promise.all([
+  // Load slot, assigned level, active level assignment, and events in parallel
+  const [slotRows, levelRows, assignmentRows, events] = await Promise.all([
     app.slotId
       ? db.select().from(balletAssessmentSlotsTable).where(eq(balletAssessmentSlotsTable.id, app.slotId)).limit(1)
       : Promise.resolve([]),
@@ -264,6 +269,13 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     app.assignedLevelId
       ? db.select().from(balletLevelsTable).where(eq(balletLevelsTable.id, app.assignedLevelId)).limit(1)
       : Promise.resolve([]),
+
+    db
+      .select({ id: balletLevelAssignmentsTable.id, groupId: balletLevelAssignmentsTable.groupId })
+      .from(balletLevelAssignmentsTable)
+      .where(and(eq(balletLevelAssignmentsTable.applicationId, id), eq(balletLevelAssignmentsTable.status, "active")))
+      .orderBy(desc(balletLevelAssignmentsTable.id))
+      .limit(1),
 
     db
       .select({
@@ -286,10 +298,17 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
       .orderBy(desc(balletApplicationEventsTable.createdAt)),
   ]);
 
+  const activeAssignment = assignmentRows[0] ?? null;
+  const groupRows = activeAssignment?.groupId != null
+    ? await db.select({ id: balletGroupsTable.id, name: balletGroupsTable.name }).from(balletGroupsTable).where(eq(balletGroupsTable.id, activeAssignment.groupId)).limit(1)
+    : [];
+
   res.json({
-    application: app,
-    slot:        slotRows[0] ?? null,
-    level:       levelRows[0] ?? null,
+    application:  app,
+    slot:         slotRows[0] ?? null,
+    level:        levelRows[0] ?? null,
+    group:        groupRows[0] ?? null,
+    assignmentId: activeAssignment?.id ?? null,
     events,
   });
 });
@@ -334,12 +353,51 @@ router.patch(
         status:          balletApplicationsTable.status,
         childName:       balletApplicationsTable.childName,
         parentStudentId: balletApplicationsTable.parentStudentId,
+        assignedLevelId: balletApplicationsTable.assignedLevelId,
       })
       .from(balletApplicationsTable)
       .where(eq(balletApplicationsTable.id, id))
       .limit(1);
 
     if (!app) { res.status(404).json({ error: "Application not found" }); return; }
+
+    // ── Activation gate ─────────────────────────────────────────────────────
+    // Only applies when the TARGET status is exactly "active" — no other
+    // transition is affected.
+    if (status === "active") {
+      if (app.assignedLevelId == null) {
+        res.status(422).json({ error: "Cannot activate: no level assigned yet." });
+        return;
+      }
+
+      const [activeAssignment] = await db
+        .select({ id: balletLevelAssignmentsTable.id, groupId: balletLevelAssignmentsTable.groupId })
+        .from(balletLevelAssignmentsTable)
+        .where(and(eq(balletLevelAssignmentsTable.applicationId, id), eq(balletLevelAssignmentsTable.status, "active")))
+        .orderBy(desc(balletLevelAssignmentsTable.id))
+        .limit(1);
+
+      if (!activeAssignment || activeAssignment.groupId == null) {
+        res.status(422).json({ error: "Cannot activate: assign a group first." });
+        return;
+      }
+
+      // Match on applicationId only — levelAssignmentId is optional/nullable
+      // on ballet_payments, so not every paid row is guaranteed to carry it.
+      // A payment row's status is either "paid" or "refunded", never both, so
+      // this alone correctly handles the multi-payment case: one refunded
+      // row never blocks activation if a separate row is genuinely "paid".
+      const [paidPayment] = await db
+        .select({ id: balletPaymentsTable.id })
+        .from(balletPaymentsTable)
+        .where(and(eq(balletPaymentsTable.applicationId, id), eq(balletPaymentsTable.status, "paid")))
+        .limit(1);
+
+      if (!paidPayment) {
+        res.status(422).json({ error: "Cannot activate: no paid payment on file for this application." });
+        return;
+      }
+    }
 
     const fromStatus = app.status;
     const adminId = req.adminUser?.sub ?? null;
@@ -394,8 +452,19 @@ router.patch(
 // Body: { levelId: number, note?: string }
 //
 // Validates the level exists and is active.
-// Creates a ballet_level_assignments row, updates the application record,
-// and appends an event — all in one transaction.
+//
+// Guarantees at most one ballet_level_assignments row with status="active"
+// per application:
+//   - No existing row at all              → insert a new one (groupId null).
+//   - Most recent row's status = "active" → UPDATE it in place (levelId
+//     changes, groupId is cleared since the level changed and the group must
+//     be re-picked).
+//   - Most recent row's status is anything else (withdrawn/graduated/paused)
+//     → that row is historical and is NEVER touched or reused (this matters
+//     most for "withdrawn" — a prior refund's history must never be
+//     silently overwritten). Insert a brand new row instead.
+// Updates the application record and appends an event — all in one
+// transaction.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AssignLevelBody = z.object({
@@ -442,19 +511,50 @@ router.post(
     const fromStatus = app.status;
     const now = new Date().toISOString();
 
-    const assignment = await db.transaction(async (tx) => {
-      // Create level assignment row
-      const [newAssignment] = await tx
-        .insert(balletLevelAssignmentsTable)
-        .values({
-          applicationId: id,
-          childId:       app.childId ?? null,
-          levelId,
-          enrolledAt:    now,
-          status:        "active",
-          notes:         note ?? null,
-        })
-        .returning({ id: balletLevelAssignmentsTable.id });
+    const { assignment, supersededExistingAssignment } = await db.transaction(async (tx) => {
+      // Find the most recent assignment row for this application (if any).
+      const [mostRecent] = await tx
+        .select({ id: balletLevelAssignmentsTable.id, status: balletLevelAssignmentsTable.status })
+        .from(balletLevelAssignmentsTable)
+        .where(eq(balletLevelAssignmentsTable.applicationId, id))
+        .orderBy(desc(balletLevelAssignmentsTable.id))
+        .limit(1);
+
+      let assignmentRow: { id: number };
+      let superseded = false;
+
+      if (mostRecent && mostRecent.status === "active") {
+        // Supersede the existing active row in place — level changed, so the
+        // group must be re-picked (cleared here).
+        const [updated] = await tx
+          .update(balletLevelAssignmentsTable)
+          .set({
+            levelId,
+            groupId:    null,
+            enrolledAt: now,
+            notes:      note ?? null,
+            updatedAt:  now,
+          })
+          .where(eq(balletLevelAssignmentsTable.id, mostRecent.id))
+          .returning({ id: balletLevelAssignmentsTable.id });
+        assignmentRow = updated;
+        superseded = true;
+      } else {
+        // No assignment yet, or the most recent one is historical
+        // (withdrawn/graduated/paused) — never touch that row.
+        const [inserted] = await tx
+          .insert(balletLevelAssignmentsTable)
+          .values({
+            applicationId: id,
+            childId:       app.childId ?? null,
+            levelId,
+            enrolledAt:    now,
+            status:        "active",
+            notes:         note ?? null,
+          })
+          .returning({ id: balletLevelAssignmentsTable.id });
+        assignmentRow = inserted;
+      }
 
       // Update application: set assigned level, assignedAt, status
       await tx
@@ -476,10 +576,10 @@ router.post(
         note:          note ? `Assigned to ${level.name}. ${note}` : `Assigned to ${level.name}`,
       });
 
-      return newAssignment;
+      return { assignment: assignmentRow, supersededExistingAssignment: superseded };
     });
 
-    logger.info({ applicationId: id, levelId, levelName: level.name, adminId }, "Ballet level assigned");
+    logger.info({ applicationId: id, levelId, levelName: level.name, adminId, supersededExistingAssignment }, "Ballet level assigned");
     await logActivity(req, {
       action: "assignLevel",
       module: "ballet.applications",
@@ -492,11 +592,122 @@ router.post(
         assignedLevelId: levelId,
         levelName: level.name,
         assignmentId: assignment.id,
+        supersededExistingAssignment,
       },
       summary: `Assigned ballet application ${id} to ${level.name}`,
     });
 
     res.status(201).json({ success: true, assignmentId: assignment.id, levelName: level.name });
+  },
+);
+
+// ─── POST /api/admin/ballet/applications/:id/assign-group ────────────────────
+//
+// Body: { groupId: number, note?: string }
+//
+// Requires an existing status="active" ballet_level_assignments row for this
+// application (i.e. a level must already be assigned) — 422 if none exists.
+// Validates the group exists, is active, and belongs to the same level as
+// the current assignment. Updates that assignment row's groupId; does NOT
+// change the application's status. Calling again with a different groupId
+// reassigns (updates the same row again).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const AssignGroupBody = z.object({
+  groupId: z.number({ required_error: "groupId is required" }).int().positive(),
+  note:    z.string().optional(),
+});
+
+router.post(
+  "/admin/ballet/applications/:id/assign-group",
+  requireAdminAuth,
+  requireAdminPermission("ballet.applications", "approve"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const id = parseInt(String(req.params["id"] ?? ""), 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
+
+    const parsed = AssignGroupBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+      return;
+    }
+
+    const { groupId, note } = parsed.data;
+    const adminId = req.adminUser?.sub ?? null;
+
+    // Load application
+    const [app] = await db
+      .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status, childName: balletApplicationsTable.childName })
+      .from(balletApplicationsTable)
+      .where(eq(balletApplicationsTable.id, id))
+      .limit(1);
+
+    if (!app) { res.status(404).json({ error: "Application not found" }); return; }
+
+    // Find the current active level assignment — never set a group on a
+    // withdrawn/graduated/paused row.
+    const [assignment] = await db
+      .select({ id: balletLevelAssignmentsTable.id, levelId: balletLevelAssignmentsTable.levelId, groupId: balletLevelAssignmentsTable.groupId })
+      .from(balletLevelAssignmentsTable)
+      .where(and(eq(balletLevelAssignmentsTable.applicationId, id), eq(balletLevelAssignmentsTable.status, "active")))
+      .orderBy(desc(balletLevelAssignmentsTable.id))
+      .limit(1);
+
+    if (!assignment) {
+      res.status(422).json({ error: "No active level assignment — assign a level first." });
+      return;
+    }
+
+    // Validate group
+    const [group] = await db
+      .select({ id: balletGroupsTable.id, name: balletGroupsTable.name, levelId: balletGroupsTable.levelId, isActive: balletGroupsTable.isActive })
+      .from(balletGroupsTable)
+      .where(eq(balletGroupsTable.id, groupId))
+      .limit(1);
+
+    if (!group) { res.status(404).json({ error: "Group not found" }); return; }
+    if (!group.isActive) { res.status(422).json({ error: `Group "${group.name}" is inactive and cannot be assigned` }); return; }
+    if (group.levelId !== assignment.levelId) {
+      res.status(422).json({ error: `Group "${group.name}" belongs to a different level than this application's assigned level.` });
+      return;
+    }
+
+    const previousGroupId = assignment.groupId;
+    const isReassignment = previousGroupId != null;
+    const now = new Date().toISOString();
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(balletLevelAssignmentsTable)
+        .set({ groupId, updatedAt: now })
+        .where(eq(balletLevelAssignmentsTable.id, assignment.id));
+
+      // Group assignment doesn't change application status — fromStatus and
+      // toStatus are both the application's current status.
+      await tx.insert(balletApplicationEventsTable).values({
+        applicationId: id,
+        fromStatus:    app.status,
+        toStatus:      app.status,
+        changedById:   adminId,
+        note: note
+          ? `${isReassignment ? "Reassigned" : "Assigned"} to group: ${group.name}. ${note}`
+          : `${isReassignment ? "Reassigned" : "Assigned"} to group: ${group.name}`,
+      });
+    });
+
+    logger.info({ applicationId: id, groupId, groupName: group.name, adminId, isReassignment }, "Ballet group assigned");
+    await logActivity(req, {
+      action: isReassignment ? "reassignGroup" : "assignGroup",
+      module: "ballet.applications",
+      entityType: "ballet_application",
+      entityId: id,
+      entityLabel: group.name,
+      before: { groupId: previousGroupId },
+      after: { groupId, groupName: group.name, assignmentId: assignment.id },
+      summary: `${isReassignment ? "Reassigned" : "Assigned"} ballet application ${id} to group ${group.name}`,
+    });
+
+    res.status(201).json({ success: true, assignmentId: assignment.id, groupName: group.name });
   },
 );
 

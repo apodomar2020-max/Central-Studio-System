@@ -433,8 +433,8 @@ async function balletReport(fromIso: string | undefined, toIso: string | undefin
 
   const summary = {
     total: raw.length,
-    submitted: raw.filter((r) => r.status === "submitted").length,
-    active: raw.filter((r) => r.status === "activeBallet").length,
+    submitted: raw.filter((r) => r.status === "pending").length,
+    active: raw.filter((r) => r.status === "active").length,
     rejected: raw.filter((r) => r.status === "rejected").length,
   };
 
@@ -693,8 +693,8 @@ async function analyticsReport(from?: string, to?: string) {
   const creditsRemaining = packageRows.reduce((sum, p) => sum + (p.remainingCredits ?? 0), 0);
   const packageUsageRate = creditsIssued ? Math.round((creditsUsed / creditsIssued) * 1000) / 10 : 0;
 
-  const balletPendingStatuses = new Set(["submitted", "pendingAssessment", "needsFollowUp"]);
-  const balletApprovedStatuses = new Set(["accepted", "assignedToLevel", "activeBallet"]);
+  const balletPendingStatuses = new Set(["pending", "needsFollowUp"]);
+  const balletApprovedStatuses = new Set(["accepted", "assignedToLevel", "active"]);
   const currentNewStudents = studentAccounts(currentStudents);
   const previousNewStudents = studentAccounts(previousStudents);
   const currentNewParents = parentAccounts(currentStudents);
@@ -767,7 +767,7 @@ async function analyticsReport(from?: string, to?: string) {
       approved: balletRows.filter((b) => balletApprovedStatuses.has(b.status)).length,
       pending: balletRows.filter((b) => balletPendingStatuses.has(b.status)).length,
       rejected: balletRows.filter((b) => b.status === "rejected").length,
-      activeBalletStudents: balletRows.filter((b) => b.status === "activeBallet").length,
+      activeBalletStudents: balletRows.filter((b) => b.status === "active").length,
     },
   };
 }

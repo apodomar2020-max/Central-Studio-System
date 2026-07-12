@@ -4,23 +4,32 @@
  * Public routes (shared API key only):
  *   GET  /api/ballet/settings                     — admin-managed pricing + instructions
  *   GET  /api/ballet/assessment-slots             — future active slots with live capacity
+ *   GET  /api/ballet/instructors                  — active instructor roster
+ *   GET  /api/ballet/classes                      — active classes with schedules, instructor, group/level ids
+ *   GET  /api/ballet/levels                       — active levels, ordered by sortOrder
+ *   GET  /api/ballet/performances                 — upcoming performance opportunities
+ *   GET  /api/ballet/groups                       — active groups (id/name/levelId — resolves classes' groupIds)
  *
  * Student-authenticated routes (student JWT required via requireStudentAuth):
  *   POST /api/ballet/applications                 — submit new application (duplicate-safe)
  *   GET  /api/ballet/applications/my             — authenticated parent's own applications
+ *                                                   (Phase 4E: each row also carries
+ *                                                   assignedGroupId, resolved from the
+ *                                                   application's current active
+ *                                                   ballet_level_assignments row)
  *   PATCH  /api/ballet/applications/:id          — edit editable fields (status-gated)
  *   POST /api/ballet/applications/:id/cancel     — cancel an application (status-gated)
  *
  * Duplicate prevention:
- *   Active statuses = submitted | pendingAssessment | accepted | needsFollowUp |
- *                     assignedToLevel | activeBallet
+ *   Active statuses = pending | accepted | needsFollowUp | assignedToLevel | active
  *   If the same authenticated parent already has an active application for the
- *   same child name (case-insensitive), POST returns 409 with existingApplicationId
- *   so the mobile can redirect to the status screen without a second round-trip.
+ *   same child — matched by childId when a saved child profile is linked,
+ *   else by name + birthday — POST returns 409 with existingApplicationId so
+ *   the mobile can redirect to the status screen without a second round-trip.
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, count, desc, eq, gte, ilike, or, inArray, not } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, isNull, lte, or, inArray, not } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -29,6 +38,15 @@ import {
   balletApplicationsTable,
   balletApplicationEventsTable,
   childrenTable,
+  balletInstructorsTable,
+  balletClassesTable,
+  balletSchedulesTable,
+  balletLevelsTable,
+  balletPerformanceOpportunitiesTable,
+  balletGroupsTable,
+  balletClassGroupsTable,
+  balletClassLevelsTable,
+  balletLevelAssignmentsTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
@@ -43,19 +61,18 @@ const router: IRouter = Router();
  * "rejected" and "cancelled" are the only terminal-inactive statuses.
  */
 const ACTIVE_STATUSES = [
-  "submitted",
-  "pendingAssessment",
+  "pending",
   "accepted",
   "needsFollowUp",
   "assignedToLevel",
-  "activeBallet",
+  "active",
 ] as const;
 
 /** Statuses that allow the parent to edit fields on their application. */
-const EDITABLE_STATUSES = ["submitted", "pendingAssessment", "needsFollowUp"] as const;
+const EDITABLE_STATUSES = ["pending", "needsFollowUp"] as const;
 
 /** Statuses that allow the parent to cancel their application. */
-const CANCELLABLE_STATUSES = ["submitted", "pendingAssessment", "needsFollowUp"] as const;
+const CANCELLABLE_STATUSES = ["pending", "needsFollowUp"] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -121,8 +138,26 @@ router.get("/ballet/settings", async (_req, res): Promise<void> => {
 });
 
 // ─── GET /api/ballet/assessment-slots ────────────────────────────────────────
+//
+// Query params:
+//   childAge (optional) — when present, only returns slots whose age range
+//     covers this age: (ageMin is null OR childAge >= ageMin) AND
+//     (ageMax is null OR childAge <= ageMax). A slot with both null is open
+//     to all ages.
+// ─────────────────────────────────────────────────────────────────────────────
 
-router.get("/ballet/assessment-slots", async (_req, res): Promise<void> => {
+const AssessmentSlotsQuery = z.object({
+  childAge: z.coerce.number().int().positive().optional(),
+});
+
+router.get("/ballet/assessment-slots", async (req, res): Promise<void> => {
+  const parsedQuery = AssessmentSlotsQuery.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: "Invalid childAge" });
+    return;
+  }
+  const { childAge } = parsedQuery.data;
+
   try {
     const today = todayIso();
 
@@ -133,6 +168,13 @@ router.get("/ballet/assessment-slots", async (_req, res): Promise<void> => {
       .limit(1);
 
     const fewSeatsThreshold = settingsRow?.fewSeatsThreshold ?? 3;
+
+    const ageConditions = childAge != null
+      ? [
+          or(isNull(balletAssessmentSlotsTable.ageMin), lte(balletAssessmentSlotsTable.ageMin, childAge)),
+          or(isNull(balletAssessmentSlotsTable.ageMax), gte(balletAssessmentSlotsTable.ageMax, childAge)),
+        ]
+      : [];
 
     const rows = await db
       .select({
@@ -156,6 +198,7 @@ router.get("/ballet/assessment-slots", async (_req, res): Promise<void> => {
         and(
           eq(balletAssessmentSlotsTable.isActive, true),
           gte(balletAssessmentSlotsTable.date, today),
+          ...ageConditions,
         ),
       )
       .groupBy(balletAssessmentSlotsTable.id)
@@ -193,10 +236,226 @@ router.get("/ballet/assessment-slots", async (_req, res): Promise<void> => {
   }
 });
 
+// ─── GET /api/ballet/instructors ──────────────────────────────────────────────
+//
+// Public read-only instructor roster. Active instructors only.
+// Response: { instructors: BalletInstructor[] }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/instructors", async (_req, res): Promise<void> => {
+  try {
+    const instructors = await db
+      .select({
+        id:                     balletInstructorsTable.id,
+        name:                   balletInstructorsTable.name,
+        bio:                    balletInstructorsTable.bio,
+        photoUrl:               balletInstructorsTable.photoUrl,
+        specialties:            balletInstructorsTable.specialties,
+        experienceYears:        balletInstructorsTable.experienceYears,
+        rating:                 balletInstructorsTable.rating,
+        instagramUrl:           balletInstructorsTable.instagramUrl,
+        tiktokUrl:              balletInstructorsTable.tiktokUrl,
+        youtubeUrl:             balletInstructorsTable.youtubeUrl,
+        teachingLevel:          balletInstructorsTable.teachingLevel,
+        achievements:           balletInstructorsTable.achievements,
+        teachingPhilosophy:     balletInstructorsTable.teachingPhilosophy,
+        professionalExperience: balletInstructorsTable.professionalExperience,
+      })
+      .from(balletInstructorsTable)
+      .where(eq(balletInstructorsTable.isActive, true))
+      .orderBy(asc(balletInstructorsTable.name));
+
+    res.json({ instructors });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/instructors failed");
+    res.status(500).json({ error: "Failed to load instructors" });
+  }
+});
+
+// ─── GET /api/ballet/levels ────────────────────────────────────────────────────
+//
+// Public read-only level list. Active levels only, ordered by sortOrder.
+// Response: { levels: BalletLevel[] }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/levels", async (_req, res): Promise<void> => {
+  try {
+    const levels = await db
+      .select({
+        id:           balletLevelsTable.id,
+        name:         balletLevelsTable.name,
+        sortOrder:    balletLevelsTable.sortOrder,
+        description:  balletLevelsTable.description,
+        requirements: balletLevelsTable.requirements,
+        ageMin:       balletLevelsTable.ageMin,
+        ageMax:       balletLevelsTable.ageMax,
+      })
+      .from(balletLevelsTable)
+      .where(eq(balletLevelsTable.isActive, true))
+      .orderBy(asc(balletLevelsTable.sortOrder));
+
+    res.json({ levels });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/levels failed");
+    res.status(500).json({ error: "Failed to load levels" });
+  }
+});
+
+// ─── GET /api/ballet/groups ────────────────────────────────────────────────────
+//
+// Public read-only group list — lets the mobile resolve the groupIds returned
+// by GET /api/ballet/classes into display names. Active groups only.
+// Response: { groups: { id, name, levelId }[] }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/groups", async (_req, res): Promise<void> => {
+  try {
+    const groups = await db
+      .select({
+        id:      balletGroupsTable.id,
+        name:    balletGroupsTable.name,
+        levelId: balletGroupsTable.levelId,
+      })
+      .from(balletGroupsTable)
+      .where(eq(balletGroupsTable.isActive, true))
+      .orderBy(asc(balletGroupsTable.name));
+
+    res.json({ groups });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/groups failed");
+    res.status(500).json({ error: "Failed to load groups" });
+  }
+});
+
+// ─── GET /api/ballet/performances ──────────────────────────────────────────────
+//
+// Public read-only upcoming performance opportunities (eventDate >= today).
+// Response: { performances: BalletPerformanceOpportunity[] }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/performances", async (_req, res): Promise<void> => {
+  try {
+    const today = todayIso();
+
+    const performances = await db
+      .select({
+        id:           balletPerformanceOpportunitiesTable.id,
+        eventTitle:   balletPerformanceOpportunitiesTable.eventTitle,
+        eventType:    balletPerformanceOpportunitiesTable.eventType,
+        locationName: balletPerformanceOpportunitiesTable.locationName,
+        eventDate:    balletPerformanceOpportunitiesTable.eventDate,
+        startTime:    balletPerformanceOpportunitiesTable.startTime,
+        endTime:      balletPerformanceOpportunitiesTable.endTime,
+        requirements: balletPerformanceOpportunitiesTable.requirements,
+      })
+      .from(balletPerformanceOpportunitiesTable)
+      .where(gte(balletPerformanceOpportunitiesTable.eventDate, today))
+      .orderBy(asc(balletPerformanceOpportunitiesTable.eventDate));
+
+    res.json({ performances });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/performances failed");
+    res.status(500).json({ error: "Failed to load performance opportunities" });
+  }
+});
+
+// ─── GET /api/ballet/classes ───────────────────────────────────────────────────
+//
+// Public read-only class catalogue. Active classes only, each enriched with:
+//   - schedules: its active (status="active") ballet_schedules rows
+//   - groupIds / levelIds: resolved via the ballet_class_groups /
+//     ballet_class_levels join tables (mirrors adminBalletClasses.ts's
+//     getClassGroupIds/getClassLevelIds pattern)
+//   - instructor: { id, name, photoUrl } resolved via instructorId, or null
+//
+// Response: { classes: [...] }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/classes", async (_req, res): Promise<void> => {
+  try {
+    const classRows = await db
+      .select({
+        id:                 balletClassesTable.id,
+        title:              balletClassesTable.title,
+        classImageUrl:      balletClassesTable.classImageUrl,
+        classVideoUrl:      balletClassesTable.classVideoUrl,
+        instructorId:       balletClassesTable.instructorId,
+        instructorName:     balletInstructorsTable.name,
+        instructorPhotoUrl: balletInstructorsTable.photoUrl,
+      })
+      .from(balletClassesTable)
+      .leftJoin(balletInstructorsTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
+      .where(eq(balletClassesTable.isActive, true))
+      .orderBy(asc(balletClassesTable.title));
+
+    const classIds = classRows.map((c) => c.id);
+
+    const [scheduleRows, groupRows, levelRows] = classIds.length > 0
+      ? await Promise.all([
+          db
+            .select({
+              id:           balletSchedulesTable.id,
+              classId:      balletSchedulesTable.classId,
+              dayOfWeek:    balletSchedulesTable.dayOfWeek,
+              startTime:    balletSchedulesTable.startTime,
+              endTime:      balletSchedulesTable.endTime,
+              durationMins: balletSchedulesTable.durationMins,
+            })
+            .from(balletSchedulesTable)
+            .where(and(inArray(balletSchedulesTable.classId, classIds), eq(balletSchedulesTable.status, "active")))
+            .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime)),
+          db
+            .select({ classId: balletClassGroupsTable.classId, groupId: balletClassGroupsTable.groupId })
+            .from(balletClassGroupsTable)
+            .where(inArray(balletClassGroupsTable.classId, classIds)),
+          db
+            .select({ classId: balletClassLevelsTable.classId, levelId: balletClassLevelsTable.levelId })
+            .from(balletClassLevelsTable)
+            .where(inArray(balletClassLevelsTable.classId, classIds)),
+        ])
+      : [[], [], []];
+
+    const schedulesByClass = new Map<number, Array<{ id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null }>>();
+    for (const s of scheduleRows) {
+      const list = schedulesByClass.get(s.classId) ?? [];
+      list.push({ id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null });
+      schedulesByClass.set(s.classId, list);
+    }
+
+    const groupIdsByClass = new Map<number, number[]>();
+    for (const g of groupRows) groupIdsByClass.set(g.classId, [...(groupIdsByClass.get(g.classId) ?? []), g.groupId]);
+
+    const levelIdsByClass = new Map<number, number[]>();
+    for (const l of levelRows) levelIdsByClass.set(l.classId, [...(levelIdsByClass.get(l.classId) ?? []), l.levelId]);
+
+    const classes = classRows.map((c) => ({
+      id:            c.id,
+      title:         c.title,
+      classImageUrl: c.classImageUrl,
+      classVideoUrl: c.classVideoUrl,
+      instructor:    c.instructorId != null ? { id: c.instructorId, name: c.instructorName, photoUrl: c.instructorPhotoUrl } : null,
+      groupIds:      groupIdsByClass.get(c.id) ?? [],
+      levelIds:      levelIdsByClass.get(c.id) ?? [],
+      schedules:     schedulesByClass.get(c.id) ?? [],
+    }));
+
+    res.json({ classes });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/classes failed");
+    res.status(500).json({ error: "Failed to load classes" });
+  }
+});
+
 // ─── GET /api/ballet/applications/my ─────────────────────────────────────────
 //
 // Returns all ballet applications submitted by the authenticated parent.
 // Ordered by creation date descending (newest first).
+//
+// Each row also carries `assignedGroupId` (Phase 4E) — the groupId on the
+// application's current active ballet_level_assignments row, or null if no
+// group has been assigned yet. Resolved via a small batched lookup (mirrors
+// the level-name enrichment pattern in adminBallet.ts's list route) rather
+// than a join, so the primary query shape stays unchanged.
 //
 // Response: { applications: BalletApplication[] }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,7 +474,25 @@ router.get(
         .where(eq(balletApplicationsTable.parentStudentId, parentStudentId))
         .orderBy(desc(balletApplicationsTable.createdAt));
 
-      res.json({ applications });
+      const applicationIds = applications.map((a) => a.id);
+      const groupIdByApplicationId = new Map<number, number | null>();
+      if (applicationIds.length > 0) {
+        const assignments = await db
+          .select({
+            applicationId: balletLevelAssignmentsTable.applicationId,
+            groupId:       balletLevelAssignmentsTable.groupId,
+          })
+          .from(balletLevelAssignmentsTable)
+          .where(and(inArray(balletLevelAssignmentsTable.applicationId, applicationIds), eq(balletLevelAssignmentsTable.status, "active")));
+        for (const row of assignments) groupIdByApplicationId.set(row.applicationId, row.groupId);
+      }
+
+      res.json({
+        applications: applications.map((a) => ({
+          ...a,
+          assignedGroupId: groupIdByApplicationId.get(a.id) ?? null,
+        })),
+      });
     } catch (err) {
       logger.error({ err }, "GET /ballet/applications/my failed");
       res.status(500).json({ error: "Failed to load your applications" });
@@ -229,7 +506,13 @@ router.get(
 //
 // Duplicate prevention:
 //   Before inserting, checks whether the same parent already has an ACTIVE
-//   application for a child with the same name (case-insensitive).
+//   application for the same child. When the request links a saved child
+//   profile (childId), that's the match key — reliable regardless of name
+//   spelling/casing. Otherwise falls back to name (case-insensitive) +
+//   birthday, so two different children sharing a first name aren't treated
+//   as duplicates; the birthday condition only applies when both the
+//   incoming request and the stored row have a non-null birthday, else it
+//   degrades to name-only (today's behavior for legacy/birthday-less rows).
 //   Active = any status except "rejected" and "cancelled".
 //   Returns 409 with existingApplicationId if a duplicate is detected so the
 //   mobile client can navigate to the status screen without an extra round-trip.
@@ -280,18 +563,29 @@ router.post(
     try {
       const result = await db.transaction(async (tx) => {
         // ── Duplicate prevention ──────────────────────────────────────────────
-        // Check if this parent already has an active application for a child with
-        // the same name (trimmed, case-insensitive).
-        const existing = await tx
-          .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status })
-          .from(balletApplicationsTable)
-          .where(
-            and(
+        // Prefer matching on the linked saved child (childId) — the most
+        // reliable identity signal, immune to name/spelling variants. Falls
+        // back to name + birthday (both, when both sides have one on file)
+        // when no childId was provided.
+        const duplicateWhere = childId != null
+          ? and(
+              eq(balletApplicationsTable.parentStudentId, parentStudentId),
+              eq(balletApplicationsTable.childId, childId),
+              inArray(balletApplicationsTable.status, [...ACTIVE_STATUSES]),
+            )
+          : and(
               eq(balletApplicationsTable.parentStudentId, parentStudentId),
               ilike(balletApplicationsTable.childName, childName.trim()),
               inArray(balletApplicationsTable.status, [...ACTIVE_STATUSES]),
-            ),
-          )
+              ...(childBirthday
+                ? [or(isNull(balletApplicationsTable.childBirthday), eq(balletApplicationsTable.childBirthday, childBirthday))]
+                : []),
+            );
+
+        const existing = await tx
+          .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status })
+          .from(balletApplicationsTable)
+          .where(duplicateWhere)
           .limit(1);
 
         if (existing.length > 0) {
@@ -374,7 +668,7 @@ router.post(
             notes:                 notes ?? null,
             slotId,
             slotLabel,
-            status: "submitted",
+            status: "pending",
           })
           .returning({ id: balletApplicationsTable.id, status: balletApplicationsTable.status });
 
@@ -382,7 +676,7 @@ router.post(
         await tx.insert(balletApplicationEventsTable).values({
           applicationId: application.id,
           fromStatus:    null,
-          toStatus:      "submitted",
+          toStatus:      "pending",
           changedById:   null,
           note:          "Application submitted via mobile app",
         });
@@ -431,19 +725,18 @@ router.post(
 // ─── PATCH /api/ballet/applications/:id ──────────────────────────────────────
 //
 // Allows the authenticated parent to edit selected fields on their own
-// application, but only while the status is submitted / pendingAssessment /
-// needsFollowUp.
+// application, but only while the status is pending / needsFollowUp.
 //
-// Editable fields: parentPhone, parentEmail, emergencyContactName,
-//   emergencyContactPhone, medicalNotes, notes, experienceDetails,
+// Editable fields: medicalNotes, notes, experienceDetails,
 //   previousExperience, slotId (re-selects slot, subject to capacity).
+//
+// Parent/guardian identity fields (parentPhone, parentEmail,
+// emergencyContactName, emergencyContactPhone) are intentionally NOT editable
+// here — by design, a parent must never be able to alter that information
+// after submitting the application.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const UpdateApplicationBody = z.object({
-  parentPhone:           z.string().min(1).optional(),
-  parentEmail:           z.string().email().optional(),
-  emergencyContactName:  z.string().optional(),
-  emergencyContactPhone: z.string().optional(),
   medicalNotes:          z.string().optional(),
   notes:                 z.string().optional(),
   experienceDetails:     z.string().optional(),
@@ -484,7 +777,7 @@ router.patch(
 
       if (!(EDITABLE_STATUSES as readonly string[]).includes(app.status)) {
         res.status(422).json({
-          error: `Application cannot be edited in status "${app.status}". Editing is only allowed while submitted, pending assessment, or needing follow-up.`,
+          error: `Application cannot be edited in status "${app.status}". Editing is only allowed while pending or needing follow-up.`,
         });
         return;
       }
@@ -563,7 +856,7 @@ router.patch(
 // ─── POST /api/ballet/applications/:id/cancel ────────────────────────────────
 //
 // Allows the authenticated parent to cancel their own application, but only
-// while status is submitted / pendingAssessment / needsFollowUp.
+// while status is pending / needsFollowUp.
 //
 // Sets status to "cancelled" and inserts an event row.
 // After cancellation the parent may submit a new application.
