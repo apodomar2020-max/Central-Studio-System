@@ -1,0 +1,3 @@
+ALTER TABLE "ballet_level_assignments" ADD COLUMN "group_id" integer;--> statement-breakpoint
+ALTER TABLE "ballet_level_assignments" ADD CONSTRAINT "ballet_level_assignments_group_id_ballet_groups_id_fk" FOREIGN KEY ("group_id") REFERENCES "public"."ballet_groups"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "ballet_level_assignments_group_id_idx" ON "ballet_level_assignments" USING btree ("group_id");

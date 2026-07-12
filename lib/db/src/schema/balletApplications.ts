@@ -17,19 +17,21 @@ import { childrenTable } from "./children";
  * historical record remains legible if the admin edits the slot later.
  *
  * Status machine:
- *   submitted → pendingAssessment → accepted → assignedToLevel → activeBallet
- *                                 ↘ rejected
- *                                 ↘ needsFollowUp
+ *   pending → accepted → assignedToLevel → active
+ *           ↘ rejected
+ *           ↘ needsFollowUp
+ *
+ * (Old values "submitted"/"pendingAssessment" merged into "pending" and
+ * "activeBallet" renamed to "active" — data migrated in migration 0047.)
  */
 
 export const BALLET_APPLICATION_STATUSES = [
-  "submitted",
-  "pendingAssessment",
+  "pending",
   "accepted",
-  "rejected",
   "needsFollowUp",
   "assignedToLevel",
-  "activeBallet",
+  "active",
+  "rejected",
   "cancelled",
 ] as const;
 
@@ -53,7 +55,7 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   notes:                 text("notes"),
   slotId:                integer("slot_id").references(() => balletAssessmentSlotsTable.id, { onDelete: "set null" }),
   slotLabel:             text("slot_label"),
-  status:                text("status").notNull().default("submitted"),
+  status:                text("status").notNull().default("pending"),
   adminNotes:            text("admin_notes"),
   assignedLevelId:       integer("assigned_level_id").references(() => balletLevelsTable.id, { onDelete: "set null" }),
   assignedAt:            timestamp("assigned_at", { withTimezone: true, mode: "string" }),

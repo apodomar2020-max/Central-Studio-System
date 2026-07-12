@@ -316,6 +316,34 @@
       "when": 1784462400000,
       "tag": "0045_admin_activity_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1784462401000,
+      "tag": "0046_snapshot_catchup",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784462402000,
+      "tag": "0047_ballet_system_separation",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784462403000,
+      "tag": "0048_ballet_group_assignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784462404000,
+      "tag": "0049_legacy_generic_ballet_cleanup",
+      "breakpoints": true
     }
   ]
 }

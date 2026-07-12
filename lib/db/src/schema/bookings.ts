@@ -1,6 +1,7 @@
 import { date, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { balletSchedulesTable } from "./balletSchedules";
 import { childrenTable } from "./children";
 import { studentsTable } from "./students";
 
@@ -14,6 +15,9 @@ export const bookingsTable = pgTable("bookings", {
   bookingScope: text("booking_scope"),
   scheduleId: integer("schedule_id"),
   classId: integer("class_id"),
+  // Ballet system separation: set when the booking is for a ballet schedule.
+  // scheduleId/classId above stay pointed at the generic tables.
+  balletScheduleId: integer("ballet_schedule_id").references(() => balletSchedulesTable.id, { onDelete: "set null" }),
   // The specific class occurrence this booking is for (YYYY-MM-DD). Booking
   // identity = student + schedule + occurrence, so a weekly class can be re-booked
   // for the next occurrence once the previous one passes. Null for legacy rows.

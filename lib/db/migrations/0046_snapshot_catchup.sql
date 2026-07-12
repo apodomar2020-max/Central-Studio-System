@@ -1,0 +1,14 @@
+-- Migration 0046: snapshot catch-up — INTENTIONAL NO-OP.
+--
+-- The drizzle-kit snapshot chain was never maintained: migrations 0001–0045
+-- were hand-written (SQL + journal entry), so meta/0000_snapshot.json still
+-- described the original 11-table schema and `drizzle-kit generate` could not
+-- produce correct diffs.
+--
+-- This migration exists solely to carry meta/0046_snapshot.json, which
+-- captures the full schema state as of migration 0045. All DDL that generate
+-- emitted here (create ~30 tables, drop "offers", add columns) was already
+-- applied on every environment by migrations 0001–0045, so the SQL body is
+-- intentionally empty. From 0047 onward, `pnpm --filter @workspace/db
+-- generate` diffs against an accurate snapshot again.
+SELECT 1;

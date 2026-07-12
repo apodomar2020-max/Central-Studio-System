@@ -22,6 +22,20 @@ export * from "./balletAssessmentSlots";
 export * from "./balletApplications";
 export * from "./balletApplicationEvents";
 export * from "./balletLevelAssignments";
+// Ballet system separation — standalone instructors/classes/schedules/groups/
+// packages/performance opportunities/payments (migration 0047)
+export * from "./balletInstructors";
+export * from "./balletClasses";
+export * from "./balletSchedules";
+export * from "./balletGroups";
+export * from "./balletPackages";
+export * from "./balletPerformanceOpportunities";
+export * from "./balletPayments";
+// Many-to-many join tables for the ballet catalogue (migration 0047)
+export * from "./balletClassGroups";
+export * from "./balletClassLevels";
+export * from "./balletPackageLevels";
+export * from "./balletGroupSchedules";
 // Dance Types — Settings-driven category list (migration 0011)
 export * from "./danceTypes";
 export * from "./classPricingSettings";

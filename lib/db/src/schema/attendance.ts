@@ -1,6 +1,8 @@
 import { boolean, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { balletClassesTable } from "./balletClasses";
+import { balletSchedulesTable } from "./balletSchedules";
 
 export const attendanceTable = pgTable("attendance", {
   id: serial("id").primaryKey(),
@@ -15,6 +17,10 @@ export const attendanceTable = pgTable("attendance", {
   studentId: integer("student_id"),   // → students.id (set when scanned via QR token)
   classId: integer("class_id"),       // → classes.id  (set when admin picks from dropdown)
   scheduleId: integer("schedule_id"), // → schedules.id (set when admin picks from dropdown)
+  // Ballet system separation: set for ballet check-ins. classId/scheduleId
+  // above stay pointed at the generic tables.
+  balletClassId: integer("ballet_class_id").references(() => balletClassesTable.id, { onDelete: "set null" }),
+  balletScheduleId: integer("ballet_schedule_id").references(() => balletSchedulesTable.id, { onDelete: "set null" }),
   // Credit Ledger system (migration 0013)
   bookingId: integer("booking_id"),   // → bookings.id (linked booking this check-in satisfies)
   checkedInBy: text("checked_in_by"), // admin email, "system", or null for legacy records

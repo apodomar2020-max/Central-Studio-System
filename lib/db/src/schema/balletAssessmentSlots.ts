@@ -18,6 +18,10 @@ export const balletAssessmentSlotsTable = pgTable("ballet_assessment_slots", {
   endTime:   text("end_time").notNull(),   // "10:30 AM"
   capacity:  integer("capacity").notNull().default(10),
   notes:     text("notes"),
+  // Optional age restriction for the slot (exact age or narrow range).
+  // Both null = open to all ages.
+  ageMin:    integer("age_min"),
+  ageMax:    integer("age_max"),
   isActive:  boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
