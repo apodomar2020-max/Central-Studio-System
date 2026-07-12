@@ -47,6 +47,40 @@ function isValidStatus(s: string): s is BalletApplicationStatus {
   return VALID_STATUSES.has(s as BalletApplicationStatus);
 }
 
+// ── Status-transition whitelist (Phase A / P0-2a) ───────────────────────────
+//
+// Only the (fromStatus → toStatus) pairs listed below are permitted. Any
+// pair not present here — including a same-status no-op like
+// pending → pending — is rejected with 422 by PATCH .../status below. There
+// is no special-casing: an excluded pair simply isn't in the allow-list.
+//
+// Four transitions are DELIBERATELY EXCLUDED pending an unresolved product
+// decision from the human architect (see the Phase A / P0-2a backlog item's
+// STOP CONDITION — do not add these without an explicit decision):
+//   - accepted        → rejected
+//   - assignedToLevel → rejected
+//   - active          → cancelled
+//   - any same-status no-op (e.g. pending → pending, active → active, ...)
+//
+// assignedToLevel → active is approved, but is never a "free" manual flip —
+// PATCH .../status additionally runs the three-part activation gate
+// (assignedLevelId set, the active assignment's groupId set, a paid
+// ballet_payments row on file) whenever the target status is "active",
+// regardless of which approved fromStatus led here.
+const BALLET_STATUS_TRANSITIONS: Readonly<Record<BalletApplicationStatus, readonly BalletApplicationStatus[]>> = {
+  pending:         ["accepted", "rejected", "needsFollowUp", "cancelled"],
+  needsFollowUp:   ["accepted", "rejected", "cancelled"],
+  accepted:        ["cancelled"],
+  assignedToLevel: ["active"],
+  active:          [],
+  rejected:        [],
+  cancelled:       [],
+};
+
+function isTransitionAllowed(from: BalletApplicationStatus, to: BalletApplicationStatus): boolean {
+  return BALLET_STATUS_TRANSITIONS[from].includes(to);
+}
+
 function requireApplicationStatusPermission(req: Request, res: Response, next: NextFunction): void {
   const status = req.body?.status;
   const action = status === "rejected"
@@ -361,6 +395,18 @@ router.patch(
 
     if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
+    const fromStatus = app.status as BalletApplicationStatus;
+
+    // ── Status-transition whitelist ─────────────────────────────────────────
+    // See BALLET_STATUS_TRANSITIONS above for the full allow-list and the
+    // four transitions currently excluded pending a human decision.
+    if (!isTransitionAllowed(fromStatus, status)) {
+      res.status(422).json({
+        error: `Cannot change status from "${fromStatus}" to "${status}" — this transition is not permitted.`,
+      });
+      return;
+    }
+
     // ── Activation gate ─────────────────────────────────────────────────────
     // Only applies when the TARGET status is exactly "active" — no other
     // transition is affected.
@@ -399,7 +445,6 @@ router.patch(
       }
     }
 
-    const fromStatus = app.status;
     const adminId = req.adminUser?.sub ?? null;
 
     await db.transaction(async (tx) => {
@@ -611,6 +656,14 @@ router.post(
 // the current assignment. Updates that assignment row's groupId; does NOT
 // change the application's status. Calling again with a different groupId
 // reassigns (updates the same row again).
+//
+// Phase A / P0-6: if the group has a non-null capacity, the count of OTHER
+// status="active" ballet_level_assignments rows already pointed at it is
+// checked (under a row lock on the group, taken before the count) and the
+// request is rejected with 422 if assigning would exceed it. Re-saving an
+// assignment that already points at this same group never counts against
+// its own slot, so a same-group no-op update can't spuriously fail at exact
+// capacity.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AssignGroupBody = z.object({
@@ -674,26 +727,72 @@ router.post(
 
     const previousGroupId = assignment.groupId;
     const isReassignment = previousGroupId != null;
+    const isSameGroupNoOp = previousGroupId === groupId;
     const now = new Date().toISOString();
 
-    await db.transaction(async (tx) => {
-      await tx
-        .update(balletLevelAssignmentsTable)
-        .set({ groupId, updatedAt: now })
-        .where(eq(balletLevelAssignmentsTable.id, assignment.id));
+    try {
+      await db.transaction(async (tx) => {
+        // Phase A / P0-6: lock the target group row for the lifetime of this
+        // check+update so two concurrent assign-group calls against the same
+        // group serialize on the capacity count below instead of both
+        // reading the same pre-update count and both passing it.
+        const [lockedGroup] = await tx
+          .select({ id: balletGroupsTable.id, capacity: balletGroupsTable.capacity })
+          .from(balletGroupsTable)
+          .where(eq(balletGroupsTable.id, groupId))
+          .limit(1)
+          .for("update");
 
-      // Group assignment doesn't change application status — fromStatus and
-      // toStatus are both the application's current status.
-      await tx.insert(balletApplicationEventsTable).values({
-        applicationId: id,
-        fromStatus:    app.status,
-        toStatus:      app.status,
-        changedById:   adminId,
-        note: note
-          ? `${isReassignment ? "Reassigned" : "Assigned"} to group: ${group.name}. ${note}`
-          : `${isReassignment ? "Reassigned" : "Assigned"} to group: ${group.name}`,
+        if (lockedGroup?.capacity != null) {
+          const [{ activeCount }] = await tx
+            .select({ activeCount: count(balletLevelAssignmentsTable.id) })
+            .from(balletLevelAssignmentsTable)
+            .where(and(
+              eq(balletLevelAssignmentsTable.groupId, groupId),
+              eq(balletLevelAssignmentsTable.status, "active"),
+            ));
+
+          // If this exact assignment is already pointed at this exact group,
+          // it's already counted in activeCount above — exclude it so a
+          // same-group no-op update isn't spuriously rejected at exact
+          // capacity (re-saving an already-assigned student must never fail).
+          const effectiveCount = isSameGroupNoOp ? Number(activeCount) - 1 : Number(activeCount);
+
+          if (effectiveCount >= lockedGroup.capacity) {
+            throw Object.assign(
+              new Error(`Group "${group.name}" is at capacity (${lockedGroup.capacity}) and cannot accept another student.`),
+              { status: 422 },
+            );
+          }
+        }
+
+        await tx
+          .update(balletLevelAssignmentsTable)
+          .set({ groupId, updatedAt: now })
+          .where(eq(balletLevelAssignmentsTable.id, assignment.id));
+
+        // Group assignment doesn't change application status — fromStatus and
+        // toStatus are both the application's current status.
+        await tx.insert(balletApplicationEventsTable).values({
+          applicationId: id,
+          fromStatus:    app.status,
+          toStatus:      app.status,
+          changedById:   adminId,
+          note: note
+            ? `${isReassignment ? "Reassigned" : "Assigned"} to group: ${group.name}. ${note}`
+            : `${isReassignment ? "Reassigned" : "Assigned"} to group: ${group.name}`,
+        });
       });
-    });
+    } catch (err: unknown) {
+      const typed = err as { status?: number; message?: string };
+      if (typed.status === 422) {
+        res.status(422).json({ error: typed.message });
+        return;
+      }
+      logger.error({ err, applicationId: id, groupId }, "POST /admin/ballet/applications/:id/assign-group failed");
+      res.status(500).json({ error: "Failed to assign group" });
+      return;
+    }
 
     logger.info({ applicationId: id, groupId, groupName: group.name, adminId, isReassignment }, "Ballet group assigned");
     await logActivity(req, {

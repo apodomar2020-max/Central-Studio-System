@@ -35,7 +35,7 @@ import { diffFields, logActivity } from "../lib/activityLog";
 import type { DbClient } from "../lib/dbTypes";
 
 const router: IRouter = Router();
-const BALLET_GROUP_ACTIVITY_FIELDS = ["name", "levelId", "isActive"] as const;
+const BALLET_GROUP_ACTIVITY_FIELDS = ["name", "levelId", "isActive", "capacity"] as const;
 
 class BalletGroupValidationError extends Error {
   constructor(public status: number, message: string) {
@@ -117,6 +117,19 @@ async function attachScheduleIds<T extends { id: number }>(rows: T[]): Promise<A
   return rows.map((row) => ({ ...row, scheduleIds: schedulesByGroup.get(row.id) ?? [] }));
 }
 
+/** Phase A / P0-6: current occupancy — count of status="active" ballet_level_assignments rows per group, for admin display alongside capacity. */
+async function attachOccupancy<T extends { id: number }>(rows: T[]): Promise<Array<T & { activeAssignmentCount: number }>> {
+  if (rows.length === 0) return [];
+  const groupIds = rows.map((r) => r.id);
+  const countRows = await db
+    .select({ groupId: balletLevelAssignmentsTable.groupId, activeCount: count(balletLevelAssignmentsTable.id) })
+    .from(balletLevelAssignmentsTable)
+    .where(and(inArray(balletLevelAssignmentsTable.groupId, groupIds), eq(balletLevelAssignmentsTable.status, "active")))
+    .groupBy(balletLevelAssignmentsTable.groupId);
+  const countByGroup = new Map(countRows.map((r) => [r.groupId, Number(r.activeCount)]));
+  return rows.map((row) => ({ ...row, activeAssignmentCount: countByGroup.get(row.id) ?? 0 }));
+}
+
 const ListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -132,7 +145,8 @@ router.get("/admin/ballet/groups", requireAdminAuth, requireAdminPermission("bal
     db.select().from(balletGroupsTable).orderBy(asc(balletGroupsTable.createdAt)).limit(limit).offset(offset),
     db.select({ total: count(balletGroupsTable.id) }).from(balletGroupsTable),
   ]);
-  const data = await attachScheduleIds(rows);
+  const withSchedules = await attachScheduleIds(rows);
+  const data = await attachOccupancy(withSchedules);
 
   res.json({ data, total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });
 });
@@ -141,6 +155,7 @@ const CreateGroupBody = z.object({
   name:     z.string().min(1, "Name is required"),
   levelId:  z.number({ required_error: "levelId is required" }).int().positive(),
   isActive: z.boolean().optional(),
+  capacity: z.number().int().positive().nullable().optional(),
 });
 
 router.post("/admin/ballet/groups", requireAdminAuth, requireAdminPermission("ballet.groups", "create"), async (req: AdminRequest, res): Promise<void> => {
@@ -190,6 +205,7 @@ const UpdateGroupBody = z.object({
   levelId:     z.number().int().positive().optional(),
   scheduleIds: z.array(z.number().int().positive()).optional(),
   isActive:    z.boolean().optional(),
+  capacity:    z.number().int().positive().nullable().optional(),
 });
 
 router.patch("/admin/ballet/groups/:id", requireAdminAuth, requireAdminPermission("ballet.groups", "edit"), async (req: AdminRequest, res): Promise<void> => {

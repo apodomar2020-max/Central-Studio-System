@@ -67,6 +67,10 @@ interface BalletGroup {
   levelId: number;
   isActive: boolean;
   scheduleIds: number[];
+  /** Null = uncapped (no enforced limit). */
+  capacity: number | null;
+  /** Count of status="active" ballet_level_assignments rows currently pointed at this group. */
+  activeAssignmentCount: number;
 }
 
 interface BalletLevel { id: number; name: string; }
@@ -80,12 +84,15 @@ const formSchema = z.object({
   levelId: z.number({ required_error: "Level is required" }).int().positive(),
   isActive: z.boolean().default(true),
   scheduleIds: z.array(z.number().int().positive()).default([]),
+  // Null = uncapped. A set value is enforced server-side against the count
+  // of active ballet_level_assignments rows pointed at this group.
+  capacity: z.number().int().positive().nullable().default(null),
 });
 
 type FormValues = z.infer<typeof formSchema>;
 
 const EMPTY_VALUES: FormValues = {
-  name: "", levelId: undefined as unknown as number, isActive: true, scheduleIds: [],
+  name: "", levelId: undefined as unknown as number, isActive: true, scheduleIds: [], capacity: null,
 };
 
 export default function BalletGroupsPage() {
@@ -151,6 +158,7 @@ export default function BalletGroupsPage() {
       levelId: group.levelId,
       isActive: group.isActive,
       scheduleIds: group.scheduleIds ?? [],
+      capacity: group.capacity,
     });
     setOpen(true);
   };
@@ -185,15 +193,16 @@ export default function BalletGroupsPage() {
               <TableHead>Name</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Schedules</TableHead>
+              <TableHead>Capacity</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
             ) : groups.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No ballet groups yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ballet groups yet.</TableCell></TableRow>
             ) : (
               groups.map((group) => (
                 <TableRow key={group.id} data-testid={`row-ballet-group-${group.id}`}>
@@ -204,6 +213,15 @@ export default function BalletGroupsPage() {
                       {group.scheduleIds.map((id) => <Badge variant="secondary" key={id}>{getScheduleLabel(id)}</Badge>)}
                       {group.scheduleIds.length === 0 && <span className="text-sm text-muted-foreground">—</span>}
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    {group.capacity == null
+                      ? <span className="text-sm text-muted-foreground">{group.activeAssignmentCount} / Uncapped</span>
+                      : (
+                        <Badge variant={group.activeAssignmentCount >= group.capacity ? "destructive" : "secondary"}>
+                          {group.activeAssignmentCount} / {group.capacity}
+                        </Badge>
+                      )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={group.isActive ? "default" : "outline"}>{group.isActive ? "Active" : "Inactive"}</Badge>
@@ -256,6 +274,28 @@ export default function BalletGroupsPage() {
                       {levels.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="capacity" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Capacity</FormLabel>
+                  <FormControl>
+                    <Input
+                      data-testid="input-ballet-group-capacity"
+                      type="number"
+                      min={1}
+                      placeholder="Uncapped"
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  {editing && (
+                    <p className="text-xs text-muted-foreground">
+                      Currently {editing.activeAssignmentCount} student{editing.activeAssignmentCount === 1 ? "" : "s"} assigned. Leave blank for no limit.
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )} />
