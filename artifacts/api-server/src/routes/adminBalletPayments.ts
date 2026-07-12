@@ -16,6 +16,19 @@
  *   ballet_level_assignments row status = "withdrawn" (never deletes the
  *   application or its event history). A ballet_application_events row is
  *   appended so the application timeline reflects the withdrawal.
+ *
+ * POST create-time validation (Phase A / P0-7 — deliberately narrow scope,
+ * two related checks are explicitly withheld pending separate business
+ * decisions: no unique-paid-payment constraint, no amount-vs-package-price
+ * validation):
+ *   (a) levelAssignmentId, if given, must belong to this same application.
+ *   (b) packageId, if given, must exist and be active.
+ *   (c) packageOrderId, if given, must exist; its studentId is checked
+ *       against the application's parentStudentId ONLY when the application
+ *       has a linked parent account (package_orders has no child/application
+ *       column, only an account-level studentId) — a manual/walk-in
+ *       application (parentStudentId null) skips this specific check, with
+ *       an explicit log line so the skip is visible rather than silent.
  */
 
 import { Router, type IRouter } from "express";
@@ -27,6 +40,7 @@ import {
   balletApplicationsTable,
   balletApplicationEventsTable,
   balletLevelAssignmentsTable,
+  balletPackagesTable,
   packageOrdersTable,
   BALLET_PAYMENT_STATUSES,
 } from "@workspace/db";
@@ -122,20 +136,65 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
   const { applicationId, amountEgp, packageId, packageOrderId, levelAssignmentId, notes } = parsed.data;
 
   const [app] = await db
-    .select({ id: balletApplicationsTable.id, childName: balletApplicationsTable.childName })
+    .select({ id: balletApplicationsTable.id, childName: balletApplicationsTable.childName, parentStudentId: balletApplicationsTable.parentStudentId })
     .from(balletApplicationsTable)
     .where(eq(balletApplicationsTable.id, applicationId))
     .limit(1);
 
   if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
+  // (a) A given levelAssignmentId must belong to THIS application — never
+  // let a payment be recorded against another application's assignment row.
+  if (levelAssignmentId != null) {
+    const [assignment] = await db
+      .select({ id: balletLevelAssignmentsTable.id, applicationId: balletLevelAssignmentsTable.applicationId })
+      .from(balletLevelAssignmentsTable)
+      .where(eq(balletLevelAssignmentsTable.id, levelAssignmentId))
+      .limit(1);
+    if (!assignment) { res.status(404).json({ error: "Level assignment not found" }); return; }
+    if (assignment.applicationId !== applicationId) {
+      res.status(422).json({ error: "levelAssignmentId does not belong to this application." });
+      return;
+    }
+  }
+
+  // (b) A given packageId must exist and be active.
+  if (packageId != null) {
+    const [pkg] = await db
+      .select({ id: balletPackagesTable.id, isActive: balletPackagesTable.isActive })
+      .from(balletPackagesTable)
+      .where(eq(balletPackagesTable.id, packageId))
+      .limit(1);
+    if (!pkg) { res.status(404).json({ error: "Package not found" }); return; }
+    if (!pkg.isActive) { res.status(422).json({ error: "Package is inactive and cannot be used for a payment." }); return; }
+  }
+
+  // (c) A given packageOrderId must exist. Ownership (package_orders.studentId
+  // === this application's parentStudentId) is only checked when the
+  // application actually has a linked parent account — package_orders has no
+  // childId/applicationId column at all (only an account-level studentId), so
+  // for a manual/walk-in application (parentStudentId null) there is no
+  // reliable identity to check ownership against. That case is intentionally
+  // skipped rather than silently passing — logged so it's visible, not silent.
   if (packageOrderId != null) {
     const [packageOrder] = await db
-      .select({ id: packageOrdersTable.id })
+      .select({ id: packageOrdersTable.id, studentId: packageOrdersTable.studentId })
       .from(packageOrdersTable)
       .where(eq(packageOrdersTable.id, packageOrderId))
       .limit(1);
     if (!packageOrder) { res.status(404).json({ error: "Package order not found" }); return; }
+
+    if (app.parentStudentId != null) {
+      if (packageOrder.studentId !== app.parentStudentId) {
+        res.status(422).json({ error: "This package order does not belong to the same account as this application's parent." });
+        return;
+      }
+    } else {
+      logger.info(
+        { applicationId, packageOrderId },
+        "Skipped packageOrderId ownership check — application has no linked parent account (manual/walk-in submission), and package_orders has no child-level identity to check against",
+      );
+    }
   }
 
   try {
