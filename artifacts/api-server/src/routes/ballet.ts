@@ -45,7 +45,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, count, desc, eq, gte, ilike, isNull, lte, or, inArray, not } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, isNull, lte, or, inArray, not, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -63,6 +63,7 @@ import {
   balletClassGroupsTable,
   balletClassLevelsTable,
   balletLevelAssignmentsTable,
+  balletGroupSchedulesTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
@@ -523,11 +524,86 @@ router.get(
         for (const row of assignments) groupIdByApplicationId.set(row.applicationId, row.groupId);
       }
 
+      // ── Resolve real schedule + instructor for active, grouped students (A4) ──
+      // Only applications that are BOTH status="active" AND have an assigned
+      // group get their placeholder ("Ballet Assessment" / "TBD" / "Assigned
+      // Instructor") replaced with real data on the client. Everything else
+      // keeps the existing status-based rendering, so we only resolve the
+      // groups that actually need it. A group can be linked to more than one
+      // schedule slot and more than one class (many-to-many) — we return ALL
+      // resolved schedules and instructors rather than picking one arbitrarily
+      // (judgment call, per A4). Resolution mirrors the batched-lookup pattern
+      // used above (no per-application query).
+      const activeGroupIds = [...new Set(
+        applications
+          .filter((a) => a.status === "active")
+          .map((a) => groupIdByApplicationId.get(a.id))
+          .filter((gid): gid is number => gid != null),
+      )];
+
+      const schedulesByGroupId = new Map<number, { dayOfWeek: number; startTime: string; endTime: string }[]>();
+      const instructorsByGroupId = new Map<number, string[]>();
+
+      if (activeGroupIds.length > 0) {
+        // group → ballet_group_schedules → ballet_schedules (day/start/end).
+        // Only active schedule rows are surfaced; a deactivated/cancelled slot
+        // must not show as a real class time.
+        const scheduleRows = await db
+          .select({
+            groupId:   balletGroupSchedulesTable.groupId,
+            dayOfWeek: balletSchedulesTable.dayOfWeek,
+            startTime: balletSchedulesTable.startTime,
+            endTime:   balletSchedulesTable.endTime,
+          })
+          .from(balletGroupSchedulesTable)
+          .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+          .where(and(
+            inArray(balletGroupSchedulesTable.groupId, activeGroupIds),
+            eq(balletSchedulesTable.status, "active"),
+          ))
+          .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime));
+        for (const row of scheduleRows) {
+          const list = schedulesByGroupId.get(row.groupId) ?? [];
+          list.push({ dayOfWeek: row.dayOfWeek, startTime: row.startTime, endTime: row.endTime });
+          schedulesByGroupId.set(row.groupId, list);
+        }
+
+        // group → ballet_class_groups → ballet_classes → ballet_instructors
+        // (per A4's stated join path). Only active classes with a named
+        // instructor contribute. Names are de-duplicated per group.
+        const instructorRows = await db
+          .select({
+            groupId:        balletClassGroupsTable.groupId,
+            instructorName: balletInstructorsTable.name,
+          })
+          .from(balletClassGroupsTable)
+          .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletClassGroupsTable.classId))
+          .innerJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
+          .where(and(
+            inArray(balletClassGroupsTable.groupId, activeGroupIds),
+            eq(balletClassesTable.isActive, true),
+          ));
+        for (const row of instructorRows) {
+          const list = instructorsByGroupId.get(row.groupId) ?? [];
+          if (!list.includes(row.instructorName)) list.push(row.instructorName);
+          instructorsByGroupId.set(row.groupId, list);
+        }
+      }
+
       res.json({
-        applications: applications.map((a) => ({
-          ...a,
-          assignedGroupId: groupIdByApplicationId.get(a.id) ?? null,
-        })),
+        applications: applications.map((a) => {
+          const assignedGroupId = groupIdByApplicationId.get(a.id) ?? null;
+          const isActiveGrouped = a.status === "active" && assignedGroupId != null;
+          return {
+            ...a,
+            assignedGroupId,
+            // Populated only for active + grouped students; null otherwise so
+            // the client keeps its existing placeholder rendering for every
+            // other status.
+            resolvedSchedules:   isActiveGrouped ? schedulesByGroupId.get(assignedGroupId) ?? [] : null,
+            resolvedInstructors: isActiveGrouped ? instructorsByGroupId.get(assignedGroupId) ?? [] : null,
+          };
+        }),
       });
     } catch (err) {
       logger.error({ err }, "GET /ballet/applications/my failed");
@@ -595,6 +671,13 @@ router.post(
     } = parsed.data;
 
     const parentStudentId = req.studentId!;
+
+    // Phase B / A3 correction: hoisted out of the transaction closure so the
+    // catch block below (the 23505 safety-net) can see the final resolved
+    // childId regardless of which branch (linked vs. manual) produced it —
+    // needed so a manual submission's constraint violation maps to a clean
+    // 409 too, not just a linked submission's.
+    let resolvedChildId: number | null = childId ?? null;
 
     try {
       const result = await db.transaction(async (tx) => {
@@ -734,6 +817,92 @@ router.post(
           );
         }
 
+        // ── Auto-save manual submissions to the parent's profile (A3) ─────────
+        // When no saved child was selected (manual entry), persist the child
+        // to the parent's `children` profile so repeat submissions and other
+        // flows can link to a real child row.
+        //
+        // Phase B / A3 concurrency correction: two concurrent manual
+        // submissions for the same parent+child previously could both miss
+        // each other's uncommitted dedupe SELECT below, each create a
+        // distinct child row, and end up with different childIds — which let
+        // both slip past migration 0050's unique indexes entirely (different
+        // childIds mean ballet_applications_active_per_child never fires,
+        // and ballet_applications_active_per_manual_identity no longer
+        // applies once both rows carry a non-null childId). A Postgres
+        // transaction-scoped advisory lock, keyed deterministically from
+        // parentStudentId + normalized(childName) — same hashtext-composite-
+        // key idiom already used in authHelpers.ts's OTP issuance — forces
+        // concurrent requests for the "same" child to serialize here: the
+        // second request blocks until the first commits, so its own
+        // re-query below sees the first request's now-committed child row
+        // instead of racing it. The lock auto-releases at transaction end
+        // (commit or rollback); no manual unlock needed.
+        if (childId == null) {
+          const normalizedChildName = childName.trim().toLowerCase();
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${`${parentStudentId}:${normalizedChildName}`}))`,
+          );
+
+          const [existingChild] = await tx
+            .select({ id: childrenTable.id })
+            .from(childrenTable)
+            .where(and(
+              eq(childrenTable.parentId, parentStudentId),
+              ilike(childrenTable.fullName, childName.trim()),
+              ...(childBirthday
+                ? [or(isNull(childrenTable.birthday), eq(childrenTable.birthday, childBirthday))]
+                : []),
+            ))
+            .orderBy(asc(childrenTable.id))
+            .limit(1);
+
+          if (existingChild) {
+            resolvedChildId = existingChild.id;
+          } else {
+            const [createdChild] = await tx
+              .insert(childrenTable)
+              .values({
+                parentId:       parentStudentId,
+                fullName:       childName.trim(),
+                birthday:       childBirthday ?? null,
+                gender:         childGender ?? "female",
+                medicalNotes:   medicalNotes ?? null,
+                emergencyName:  emergencyContactName ?? null,
+                emergencyPhone: emergencyContactPhone ?? null,
+              })
+              .returning({ id: childrenTable.id });
+            resolvedChildId = createdChild.id;
+          }
+
+          // Re-check for an active application against the now-resolved
+          // childId, still under the advisory lock — this is what actually
+          // closes the race. If a concurrent request for the same child
+          // committed its application between this request's initial
+          // fast-path check (above, name/birthday-based) and here, that
+          // application is now visible (the committing transaction held
+          // this same lock and released it by the time we reach this line)
+          // and this request 409s cleanly instead of also inserting a
+          // duplicate. Do not rely on the earlier name/birthday check alone
+          // — it ran before resolvedChildId existed. Migration 0050's unique
+          // index remains the final backstop regardless of this check.
+          const [existingActiveApp] = await tx
+            .select({ id: balletApplicationsTable.id })
+            .from(balletApplicationsTable)
+            .where(and(
+              eq(balletApplicationsTable.childId, resolvedChildId),
+              inArray(balletApplicationsTable.status, [...ACTIVE_STATUSES]),
+            ))
+            .limit(1);
+
+          if (existingActiveApp) {
+            throw Object.assign(
+              new Error("You already have an active ballet application for this child."),
+              { status: 409, existingApplicationId: existingActiveApp.id },
+            );
+          }
+        }
+
         // ── Insert application ────────────────────────────────────────────────
         const slotLabel = `${slot.date} ${slot.startTime}-${slot.endTime}`;
 
@@ -741,7 +910,7 @@ router.post(
           .insert(balletApplicationsTable)
           .values({
             parentStudentId,
-            childId:               childId ?? null,
+            childId:               resolvedChildId,
             parentName,
             parentPhone,
             parentEmail,
@@ -826,13 +995,23 @@ router.post(
       // specific constraint name attached — we use that name (not the error
       // message text) to distinguish which of the two constraints fired and
       // return an accurate, constraint-specific message.
+      //
+      // Phase B / A3 correction: this used to key off the request's own
+      // `childId`, which is always null for a manual submission — so a
+      // manual request that still somehow hit this constraint (the advisory
+      // lock above closes the common case, not necessarily every case) fell
+      // through to the generic 500 below instead of a clean 409. Use
+      // `resolvedChildId` instead — set for BOTH the linked path (childId
+      // itself) and the manual path (the reused-or-created child row) before
+      // this catch block can ever run, so this branch now always fires for
+      // this constraint, regardless of which submission path triggered it.
       const pgErr = err as { code?: string; constraint?: string };
-      if (pgErr.code === "23505" && pgErr.constraint === "ballet_applications_active_per_child" && childId != null) {
+      if (pgErr.code === "23505" && pgErr.constraint === "ballet_applications_active_per_child" && resolvedChildId != null) {
         const [existing] = await db
           .select({ id: balletApplicationsTable.id })
           .from(balletApplicationsTable)
           .where(and(
-            eq(balletApplicationsTable.childId, childId),
+            eq(balletApplicationsTable.childId, resolvedChildId),
             inArray(balletApplicationsTable.status, [...ACTIVE_STATUSES]),
           ))
           .limit(1);

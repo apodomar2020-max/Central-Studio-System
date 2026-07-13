@@ -36,6 +36,7 @@ import SystemUsers from "@/pages/system-users";
 import AppContentPage from "@/pages/app-content";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
+import BalletStudentsPage from "@/pages/ballet/BalletStudentsPage";
 import AssessmentSlotsPage from "@/pages/ballet/AssessmentSlotsPage";
 import BalletSettingsPage from "@/pages/ballet/BalletSettingsPage";
 import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
@@ -121,6 +122,7 @@ const ROUTE_PERMS = {
   appContent: [["appContent", "view"]],
   systemUsers: [["adminUsers", "view"], ["roles", "view"]],
   balletApplications: [["ballet.applications", "view"]],
+  balletStudents: [["ballet.applications", "view"]],
   balletSlots: [["ballet.assessmentDates", "view"]],
   balletSettings: [["ballet.pricing", "view"]],
   balletLevels: [["ballet.levels", "view"]],
@@ -172,6 +174,7 @@ function ProtectedRouter() {
         <Route path="/system-users">{guarded(ROUTE_PERMS.systemUsers, <SystemUsers />)}</Route>
         <Route path="/ballet/applications/:id">{guarded(ROUTE_PERMS.balletApplications, <ApplicationDetailPage />)}</Route>
         <Route path="/ballet/applications">{guarded(ROUTE_PERMS.balletApplications, <ApplicationsPage />)}</Route>
+        <Route path="/ballet/students">{guarded(ROUTE_PERMS.balletStudents, <BalletStudentsPage />)}</Route>
         <Route path="/ballet/slots">{guarded(ROUTE_PERMS.balletSlots, <AssessmentSlotsPage />)}</Route>
         <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsPage />)}</Route>
         <Route path="/ballet/levels">{guarded(ROUTE_PERMS.balletLevels, <BalletLevelsPage />)}</Route>

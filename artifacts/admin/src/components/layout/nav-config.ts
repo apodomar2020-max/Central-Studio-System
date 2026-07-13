@@ -25,6 +25,7 @@ import {
   CreditCard,
   Music2,
   ClipboardList,
+  GraduationCap,
   Settings2,
   Trophy,
   Megaphone,
@@ -106,6 +107,9 @@ export const NAV_TREE: NavNode[] = [
     group("Ballet", Music2, [
       link("Applications", "/ballet/applications", [["ballet.applications", "view"]], ClipboardList, {
         pageTitle: "Ballet Applications",
+      }),
+      link("Students", "/ballet/students", [["ballet.applications", "view"]], GraduationCap, {
+        pageTitle: "Ballet Students",
       }),
       link("Assessment Dates", "/ballet/slots", [["ballet.assessmentDates", "view"]], CalendarDays),
       link("Levels", "/ballet/levels", [["ballet.levels", "view"]], Trophy, { pageTitle: "Ballet Levels" }),
