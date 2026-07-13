@@ -2,16 +2,18 @@
  * app/ballet/requirements.tsx — Program Requirements
  *
  * Static program content (dress code, attendance, progression) mirroring the
- * design source. The backend `ballet_settings.requirements` is only a single
- * freeform text field; the structured sections below have no backend yet —
- * documented in the backend gap report.
+ * design source. In addition (A6), the admin-managed freeform
+ * `ballet_settings.requirements` text is fetched from GET /api/ballet/settings
+ * and rendered as an extra "Additional Notes from the Studio" block when
+ * non-empty. The static sections below are kept as-is — this is additive.
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { BalletPageShell, BAL } from "@/components/ballet/BalletPageShell";
+import { fetchBalletSettings } from "@/services/balletAssessmentService";
 
 const SECTIONS: { title: string; items: string[] }[] = [
   {
@@ -58,6 +60,19 @@ const SECTIONS: { title: string; items: string[] }[] = [
 ];
 
 export default function BalletRequirementsScreen() {
+  // A6: admin-managed freeform requirements text. Rendered additively below the
+  // static sections only when present. Failures are swallowed — the static
+  // content is the baseline and must always show regardless of the fetch.
+  const [studioNotes, setStudioNotes] = useState<string>("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchBalletSettings(controller.signal)
+      .then((settings) => setStudioNotes((settings.requirements ?? "").trim()))
+      .catch(() => { /* keep static content only; non-critical */ });
+    return () => controller.abort();
+  }, []);
+
   return (
     <BalletPageShell title="Requirements" contentStyle={s.content}>
       {SECTIONS.map((sec) => (
@@ -73,6 +88,13 @@ export default function BalletRequirementsScreen() {
           </View>
         </View>
       ))}
+
+      {studioNotes.length > 0 && (
+        <View style={s.card}>
+          <Text style={s.cardTitle}>Additional Notes from the Studio</Text>
+          <Text style={s.notesText}>{studioNotes}</Text>
+        </View>
+      )}
     </BalletPageShell>
   );
 }
@@ -91,4 +113,5 @@ const s = StyleSheet.create({
   itemRow: { flexDirection: "row", gap: 9 },
   bullet: { marginTop: 1 },
   itemText: { flex: 1, fontSize: 13, fontFamily: "Archivo_400Regular", color: BAL.INK_200, lineHeight: 19 },
+  notesText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: BAL.INK_200, lineHeight: 19 },
 });

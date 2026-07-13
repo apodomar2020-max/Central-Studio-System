@@ -19,6 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -50,6 +51,10 @@ interface Level {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  description: string | null;
+  requirements: string | null;
+  ageMin: number | null;
+  ageMax: number | null;
   createdAt: string;
 }
 
@@ -57,9 +62,13 @@ interface LevelForm {
   name: string;
   sortOrder: string;
   isActive: boolean;
+  description: string;
+  requirements: string;
+  ageMin: string;
+  ageMax: string;
 }
 
-const EMPTY_FORM: LevelForm = { name: "", sortOrder: "0", isActive: true };
+const EMPTY_FORM: LevelForm = { name: "", sortOrder: "0", isActive: true, description: "", requirements: "", ageMin: "", ageMax: "" };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -123,13 +132,21 @@ export default function BalletLevelsPage() {
     // Default sort order = max + 10
     const maxSort = levels.reduce((m, l) => Math.max(m, l.sortOrder), 0);
     setEditingLevel(null);
-    setForm({ name: "", sortOrder: String(maxSort + 10), isActive: true });
+    setForm({ ...EMPTY_FORM, sortOrder: String(maxSort + 10) });
     setDialogOpen(true);
   }
 
   function openEdit(level: Level) {
     setEditingLevel(level);
-    setForm({ name: level.name, sortOrder: String(level.sortOrder), isActive: level.isActive });
+    setForm({
+      name:         level.name,
+      sortOrder:    String(level.sortOrder),
+      isActive:     level.isActive,
+      description:  level.description ?? "",
+      requirements: level.requirements ?? "",
+      ageMin:       level.ageMin != null ? String(level.ageMin) : "",
+      ageMax:       level.ageMax != null ? String(level.ageMax) : "",
+    });
     setDialogOpen(true);
   }
 
@@ -145,10 +162,21 @@ export default function BalletLevelsPage() {
       return;
     }
     const sortOrder = parseInt(form.sortOrder, 10);
+    const ageMin = parseInt(form.ageMin, 10);
+    const ageMax = parseInt(form.ageMax, 10);
+    if (!isNaN(ageMin) && !isNaN(ageMax) && ageMin > ageMax) {
+      toast({ title: "Invalid age range", description: "Age Min cannot be greater than Age Max.", variant: "destructive" });
+      return;
+    }
     const body = {
       name:      form.name.trim(),
       sortOrder: isNaN(sortOrder) ? 0 : sortOrder,
       isActive:  form.isActive,
+      description:  form.description.trim(),
+      requirements: form.requirements.trim(),
+      // Age fields are optional — omit when blank so they aren't sent as 0.
+      ...(isNaN(ageMin) ? {} : { ageMin }),
+      ...(isNaN(ageMax) ? {} : { ageMax }),
     };
     if (editingLevel) {
       updateMutation.mutate({ id: editingLevel.id, body });
@@ -264,7 +292,7 @@ export default function BalletLevelsPage() {
 
       {/* Create / Edit dialog */}
       <Dialog open={canEdit && dialogOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
-        <DialogContent className="bg-[#0F1923] border-border text-white max-w-sm">
+        <DialogContent className="bg-[#0F1923] border-border text-white max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-white">{editingLevel ? "Edit Level" : "New Ballet Level"}</DialogTitle>
           </DialogHeader>
@@ -291,6 +319,53 @@ export default function BalletLevelsPage() {
                 className="bg-[#1A2535] border-border text-white"
               />
               <p className="text-xs text-muted-foreground">Lower numbers appear first in lists.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">Description</Label>
+              <Textarea
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Short summary of what this level covers"
+                className="bg-[#1A2535] border-border text-white min-h-[70px]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">Requirements</Label>
+              <Textarea
+                value={form.requirements}
+                onChange={(e) => setForm((f) => ({ ...f, requirements: e.target.value }))}
+                placeholder="Prerequisites or expectations for this level"
+                className="bg-[#1A2535] border-border text-white min-h-[70px]"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">Age Min</Label>
+                <Input
+                  type="number"
+                  min={4}
+                  max={14}
+                  value={form.ageMin}
+                  onChange={(e) => setForm((f) => ({ ...f, ageMin: e.target.value }))}
+                  placeholder="4"
+                  className="bg-[#1A2535] border-border text-white"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">Age Max</Label>
+                <Input
+                  type="number"
+                  min={4}
+                  max={14}
+                  value={form.ageMax}
+                  onChange={(e) => setForm((f) => ({ ...f, ageMax: e.target.value }))}
+                  placeholder="14"
+                  className="bg-[#1A2535] border-border text-white"
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
