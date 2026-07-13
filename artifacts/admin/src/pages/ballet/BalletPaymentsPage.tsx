@@ -64,6 +64,16 @@ const LIMIT = 20;
 const STATUSES = ["pending", "rejected", "paid", "refunded"] as const;
 type PaymentStatus = (typeof STATUSES)[number];
 
+// A7: how a manually-entered payment was taken. Data field only — NOT a
+// payment gateway. Mirrors the app-layer enum BALLET_PAYMENT_METHODS.
+const PAYMENT_METHODS = ["bankTransfer", "kashier", "inPerson"] as const;
+type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  bankTransfer: "Bank Transfer",
+  kashier:      "Kashier",
+  inPerson:     "In Person",
+};
+
 function statusBadgeClass(status: PaymentStatus) {
   switch (status) {
     case "pending": return "bg-blue-500/15 text-blue-400 border-blue-500/30";
@@ -83,6 +93,7 @@ interface BalletPayment {
   packageOrderId: number | null;
   amountEgp: number;
   status: PaymentStatus;
+  paymentMethod: PaymentMethod | null;
   paidAt: string | null;
   refundedAt: string | null;
   notes: string | null;
@@ -103,6 +114,7 @@ const formSchema = z.object({
   packageId: z.coerce.number().int().positive().nullish(),
   packageOrderId: z.coerce.number().int().positive().nullish(),
   levelAssignmentId: z.coerce.number().int().positive().nullish(),
+  paymentMethod: z.enum(PAYMENT_METHODS).nullish(),
 });
 
 type FormValues = z.input<typeof formSchema>;
@@ -113,6 +125,7 @@ const EMPTY_VALUES: FormValues = {
   packageId: undefined,
   packageOrderId: undefined,
   levelAssignmentId: undefined,
+  paymentMethod: undefined,
 };
 
 export default function BalletPaymentsPage() {
@@ -176,6 +189,7 @@ export default function BalletPaymentsPage() {
       packageId: parsed.packageId ?? undefined,
       packageOrderId: parsed.packageOrderId ?? undefined,
       levelAssignmentId: parsed.levelAssignmentId ?? undefined,
+      paymentMethod: parsed.paymentMethod ?? undefined,
     });
   };
 
@@ -226,6 +240,7 @@ export default function BalletPaymentsPage() {
               <TableHead>#</TableHead>
               <TableHead>Application</TableHead>
               <TableHead>Amount (EGP)</TableHead>
+              <TableHead>Method</TableHead>
               <TableHead>Package Order</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
@@ -234,17 +249,18 @@ export default function BalletPaymentsPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
             ) : isError ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-destructive text-sm">Failed to load payments.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-destructive text-sm">Failed to load payments.</TableCell></TableRow>
             ) : payments.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No ballet payments yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No ballet payments yet.</TableCell></TableRow>
             ) : (
               payments.map((payment) => (
                 <TableRow key={payment.id} data-testid={`row-ballet-payment-${payment.id}`}>
                   <TableCell className="text-muted-foreground text-xs">{payment.id}</TableCell>
                   <TableCell className="font-medium">#{payment.applicationId}</TableCell>
                   <TableCell>{payment.amountEgp.toLocaleString()} EGP</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{payment.paymentMethod ? PAYMENT_METHOD_LABELS[payment.paymentMethod] : "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{payment.packageOrderId ? `#${payment.packageOrderId}` : "—"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={statusBadgeClass(payment.status)}>
@@ -329,6 +345,28 @@ export default function BalletPaymentsPage() {
                 <FormItem>
                   <FormLabel>Level Assignment ID (optional)</FormLabel>
                   <FormControl><Input type="number" data-testid="input-payment-level-assignment-id" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="paymentMethod" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Payment Method (optional)</FormLabel>
+                  <Select
+                    value={field.value ?? "none"}
+                    onValueChange={(v) => field.onChange(v === "none" ? undefined : v)}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-payment-method">
+                        <SelectValue placeholder="Not recorded" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">Not recorded</SelectItem>
+                      {PAYMENT_METHODS.map((m) => (
+                        <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )} />

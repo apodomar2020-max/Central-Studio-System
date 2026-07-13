@@ -1,0 +1,22 @@
+-- Migration 0052: Ballet Payment Method (Phase B / A7)
+--
+-- Adds a nullable payment_method to ballet_payments. This is a data field
+-- only — it records HOW a manually-entered payment was taken (bankTransfer |
+-- kashier | inPerson), enforced as an enum at the application layer only (no
+-- DB CHECK, matching this table's existing status convention). It is NOT a
+-- payment-gateway integration. Null means "method not recorded"; every
+-- existing row simply reads as null. No backfill needed.
+--
+-- Phase B correction: this migration's meta/_journal.json "when" value was
+-- originally generated below 0050/0051's "when" values. Proven against the
+-- actual installed drizzle-orm migrator (node_modules/.../drizzle-orm/
+-- pg-core/dialect.js, migrate()): it fetches the single most-recent
+-- __drizzle_migrations.created_at and applies a journal entry only if
+-- `lastDbMigration.created_at < migration.folderMillis` — i.e. pending-
+-- detection is driven by "when", not by idx or by a per-migration applied
+-- check. On any database that already had 0051 applied, this migration's
+-- lower "when" meant the condition would evaluate false and this migration
+-- would be silently skipped forever. Corrected in the journal to
+-- 1784462407000 (> 0051's 1784462406000, following this repo's existing
+-- +1000ms-per-migration convention). 0050 and 0051 were left untouched.
+ALTER TABLE "ballet_payments" ADD COLUMN "payment_method" text;

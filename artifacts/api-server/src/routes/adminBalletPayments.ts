@@ -43,6 +43,7 @@ import {
   balletPackagesTable,
   packageOrdersTable,
   BALLET_PAYMENT_STATUSES,
+  BALLET_PAYMENT_METHODS,
 } from "@workspace/db";
 import type { BalletPaymentStatus } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
@@ -50,7 +51,7 @@ import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
-const BALLET_PAYMENT_ACTIVITY_FIELDS = ["applicationId", "levelAssignmentId", "packageId", "packageOrderId", "amountEgp", "status", "paidAt", "refundedAt", "notes"] as const;
+const BALLET_PAYMENT_ACTIVITY_FIELDS = ["applicationId", "levelAssignmentId", "packageId", "packageOrderId", "amountEgp", "status", "paymentMethod", "paidAt", "refundedAt", "notes"] as const;
 
 const VALID_PAYMENT_STATUSES = new Set(BALLET_PAYMENT_STATUSES);
 
@@ -123,6 +124,7 @@ const CreatePaymentBody = z.object({
   packageId:         z.number().int().positive().optional(),
   packageOrderId:    z.number().int().positive().optional(),
   levelAssignmentId: z.number().int().positive().optional(),
+  paymentMethod:     z.enum(BALLET_PAYMENT_METHODS).optional(),
   notes:             z.string().optional(),
 });
 
@@ -133,7 +135,7 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
     return;
   }
 
-  const { applicationId, amountEgp, packageId, packageOrderId, levelAssignmentId, notes } = parsed.data;
+  const { applicationId, amountEgp, packageId, packageOrderId, levelAssignmentId, paymentMethod, notes } = parsed.data;
 
   const [app] = await db
     .select({ id: balletApplicationsTable.id, childName: balletApplicationsTable.childName, parentStudentId: balletApplicationsTable.parentStudentId })
@@ -206,6 +208,7 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
         packageId: packageId ?? null,
         packageOrderId: packageOrderId ?? null,
         levelAssignmentId: levelAssignmentId ?? null,
+        paymentMethod: paymentMethod ?? null,
         notes: notes ?? null,
       })
       .returning();

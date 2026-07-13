@@ -358,6 +358,13 @@
       "when": 1784462406000,
       "tag": "0051_ballet_groups_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1784462407000,
+      "tag": "0052_ballet_payment_method",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,15 @@ export { BALLET_PAYMENT_STATUSES };
 export type { BalletPaymentStatus };
 
 /**
+ * Payment methods (A7) — a small fixed set treated as an enum at the
+ * application layer only (no DB CHECK constraint, matching this table's
+ * existing convention). This records HOW a manually-entered payment was
+ * taken; it is NOT a payment-gateway integration.
+ */
+export const BALLET_PAYMENT_METHODS = ["bankTransfer", "kashier", "inPerson"] as const;
+export type BalletPaymentMethod = (typeof BALLET_PAYMENT_METHODS)[number];
+
+/**
  * ballet_payments — one row per payment tied to a ballet application.
  *
  * Status machine:
@@ -29,6 +38,9 @@ export const balletPaymentsTable = pgTable("ballet_payments", {
   packageOrderId:    integer("package_order_id").references(() => packageOrdersTable.id, { onDelete: "set null" }),
   amountEgp:         integer("amount_egp").notNull(),
   status:            text("status").notNull().default("pending"), // pending | rejected | paid | refunded
+  // A7: how the payment was taken. App-layer enum (BALLET_PAYMENT_METHODS):
+  // bankTransfer | kashier | inPerson. Nullable, no DB CHECK.
+  paymentMethod:     text("payment_method"),
   paidAt:            timestamp("paid_at", { withTimezone: true, mode: "string" }),
   refundedAt:        timestamp("refunded_at", { withTimezone: true, mode: "string" }),
   notes:             text("notes"),
