@@ -232,6 +232,7 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
         slotLabel:     balletApplicationsTable.slotLabel,
         status:        balletApplicationsTable.status,
         createdAt:     balletApplicationsTable.createdAt,
+        updatedAt:     balletApplicationsTable.updatedAt,
         assignedLevelId: balletApplicationsTable.assignedLevelId,
       })
       .from(balletApplicationsTable)
@@ -258,10 +259,29 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
     for (const level of levels) levelNameById.set(level.id, level.name);
   }
 
+  // Enrich rows with the current payment status (A1). An application can have
+  // more than one ballet_payments row — surface the most recently updated
+  // one's status for the list view. Batched lookup, ordered oldest→newest so
+  // the last write into the Map per applicationId wins (= most recent).
+  const applicationIds = rows.map((r) => r.id);
+  const paymentStatusByApplicationId = new Map<number, string>();
+  if (applicationIds.length > 0) {
+    const payments = await db
+      .select({
+        applicationId: balletPaymentsTable.applicationId,
+        status:        balletPaymentsTable.status,
+      })
+      .from(balletPaymentsTable)
+      .where(inArray(balletPaymentsTable.applicationId, applicationIds))
+      .orderBy(asc(balletPaymentsTable.updatedAt));
+    for (const p of payments) paymentStatusByApplicationId.set(p.applicationId, p.status);
+  }
+
   res.json({
     data: rows.map((row) => ({
       ...row,
       levelName: row.assignedLevelId != null ? levelNameById.get(row.assignedLevelId) ?? null : null,
+      paymentStatus: paymentStatusByApplicationId.get(row.id) ?? null,
     })),
     total: Number(total),
     page,
@@ -337,6 +357,15 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     ? await db.select({ id: balletGroupsTable.id, name: balletGroupsTable.name }).from(balletGroupsTable).where(eq(balletGroupsTable.id, activeAssignment.groupId)).limit(1)
     : [];
 
+  // Payments (A1) — return the full history (newest first, don't collapse it)
+  // plus a clear pointer to the most recently updated "current" one for the
+  // list-parity header display.
+  const payments = await db
+    .select()
+    .from(balletPaymentsTable)
+    .where(eq(balletPaymentsTable.applicationId, id))
+    .orderBy(desc(balletPaymentsTable.updatedAt));
+
   res.json({
     application:  app,
     slot:         slotRows[0] ?? null,
@@ -344,6 +373,8 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     group:        groupRows[0] ?? null,
     assignmentId: activeAssignment?.id ?? null,
     events,
+    payments,
+    currentPayment: payments[0] ?? null,
   });
 });
 
@@ -810,6 +841,91 @@ router.post(
   },
 );
 
+// ─── GET /api/admin/ballet/students ───────────────────────────────────────────
+//
+// Phase B / A5: the enrolled-students roster. A "student" is an application
+// whose status is exactly "active". Per the three-part activation gate in
+// PATCH .../status (assignedLevelId set, active assignment's groupId set, a
+// paid ballet_payments row on file), an application cannot reach "active"
+// without an assigned level, an assigned group, and a paid payment — so
+// status = "active" is the ONLY filter needed here; no extra level/group/
+// payment condition is required (confirmed against that handler above).
+//
+// Columns (matching the original spec): Student Name, Date Joined, Parent
+// Name, Age, Level, Group. "Date Joined" = the current active
+// ballet_level_assignments row's enrolledAt (closest match to "became a
+// student"), NOT the application's createdAt — judgment call, per A5.
+//
+// Reuses the ballet.applications "view" permission (no new permission module)
+// and the same pagination conventions as the applications list.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const StudentsListQuerySchema = z.object({
+  page:  z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
+  const parsed = StudentsListQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid query parameters" });
+    return;
+  }
+
+  const { page, limit } = parsed.data;
+  const offset = (page - 1) * limit;
+
+  // Active applications joined to their single active level assignment (at
+  // most one per application, guaranteed by the assign-level logic) — which
+  // carries enrolledAt (Date Joined), the level, and the group. leftJoins on
+  // level/group name are defensive: the activation gate guarantees both are
+  // present for an active row, but a null renders as an empty cell rather
+  // than dropping the student.
+  const where = eq(balletApplicationsTable.status, "active");
+
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select({
+        applicationId: balletApplicationsTable.id,
+        studentName:   balletApplicationsTable.childName,
+        parentName:    balletApplicationsTable.parentName,
+        age:           balletApplicationsTable.childAge,
+        dateJoined:    balletLevelAssignmentsTable.enrolledAt,
+        levelId:       balletLevelsTable.id,
+        levelName:     balletLevelsTable.name,
+        groupId:       balletGroupsTable.id,
+        groupName:     balletGroupsTable.name,
+      })
+      .from(balletApplicationsTable)
+      .leftJoin(
+        balletLevelAssignmentsTable,
+        and(
+          eq(balletLevelAssignmentsTable.applicationId, balletApplicationsTable.id),
+          eq(balletLevelAssignmentsTable.status, "active"),
+        ),
+      )
+      .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
+      .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
+      .where(where)
+      .orderBy(desc(balletLevelAssignmentsTable.enrolledAt))
+      .limit(limit)
+      .offset(offset),
+
+    db
+      .select({ total: count(balletApplicationsTable.id) })
+      .from(balletApplicationsTable)
+      .where(where),
+  ]);
+
+  res.json({
+    data: rows,
+    total: Number(total),
+    page,
+    limit,
+    totalPages: Math.ceil(Number(total) / limit),
+  });
+});
+
 // ─── GET /api/admin/ballet/levels ─────────────────────────────────────────────
 //
 // Returns ALL ballet levels (active and inactive) ordered by sortOrder asc.
@@ -819,11 +935,15 @@ router.post(
 router.get("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ballet.levels", "view"), async (_req, res): Promise<void> => {
   const levels = await db
     .select({
-      id:        balletLevelsTable.id,
-      name:      balletLevelsTable.name,
-      sortOrder: balletLevelsTable.sortOrder,
-      isActive:  balletLevelsTable.isActive,
-      createdAt: balletLevelsTable.createdAt,
+      id:           balletLevelsTable.id,
+      name:         balletLevelsTable.name,
+      sortOrder:    balletLevelsTable.sortOrder,
+      isActive:     balletLevelsTable.isActive,
+      description:  balletLevelsTable.description,
+      requirements: balletLevelsTable.requirements,
+      ageMin:       balletLevelsTable.ageMin,
+      ageMax:       balletLevelsTable.ageMax,
+      createdAt:    balletLevelsTable.createdAt,
     })
     .from(balletLevelsTable)
     .orderBy(asc(balletLevelsTable.sortOrder));
@@ -834,9 +954,13 @@ router.get("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("bal
 // ─── POST /api/admin/ballet/levels ────────────────────────────────────────────
 
 const CreateLevelBody = z.object({
-  name:      z.string().min(1, "Name is required"),
-  sortOrder: z.number().int().min(0).optional(),
-  isActive:  z.boolean().optional(),
+  name:         z.string().min(1, "Name is required"),
+  sortOrder:    z.number().int().min(0).optional(),
+  isActive:     z.boolean().optional(),
+  description:  z.string().optional(),
+  requirements: z.string().optional(),
+  ageMin:       z.number().int().min(4).max(14).optional(),
+  ageMax:       z.number().int().min(4).max(14).optional(),
 });
 
 router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -845,11 +969,19 @@ router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ba
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
     return;
   }
-  const { name, sortOrder, isActive } = parsed.data;
+  const { name, sortOrder, isActive, description, requirements, ageMin, ageMax } = parsed.data;
   try {
     const [level] = await db
       .insert(balletLevelsTable)
-      .values({ name: name.trim(), sortOrder: sortOrder ?? 0, isActive: isActive ?? true })
+      .values({
+        name: name.trim(),
+        sortOrder: sortOrder ?? 0,
+        isActive: isActive ?? true,
+        description:  description ?? null,
+        requirements: requirements ?? null,
+        ageMin:       ageMin ?? null,
+        ageMax:       ageMax ?? null,
+      })
       .returning();
     await logActivity(req, {
       action: "create",
@@ -874,9 +1006,13 @@ router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ba
 // ─── PATCH /api/admin/ballet/levels/:id ───────────────────────────────────────
 
 const UpdateLevelBody = z.object({
-  name:      z.string().min(1).optional(),
-  sortOrder: z.number().int().min(0).optional(),
-  isActive:  z.boolean().optional(),
+  name:         z.string().min(1).optional(),
+  sortOrder:    z.number().int().min(0).optional(),
+  isActive:     z.boolean().optional(),
+  description:  z.string().optional(),
+  requirements: z.string().optional(),
+  ageMin:       z.number().int().min(4).max(14).optional(),
+  ageMax:       z.number().int().min(4).max(14).optional(),
 });
 
 router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermission("ballet.levels", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -890,9 +1026,13 @@ router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermissio
   }
 
   const updates: Record<string, unknown> = {};
-  if (parsed.data.name      !== undefined) updates["name"]      = parsed.data.name.trim();
-  if (parsed.data.sortOrder !== undefined) updates["sortOrder"] = parsed.data.sortOrder;
-  if (parsed.data.isActive  !== undefined) updates["isActive"]  = parsed.data.isActive;
+  if (parsed.data.name         !== undefined) updates["name"]         = parsed.data.name.trim();
+  if (parsed.data.sortOrder    !== undefined) updates["sortOrder"]    = parsed.data.sortOrder;
+  if (parsed.data.isActive     !== undefined) updates["isActive"]     = parsed.data.isActive;
+  if (parsed.data.description  !== undefined) updates["description"]  = parsed.data.description;
+  if (parsed.data.requirements !== undefined) updates["requirements"] = parsed.data.requirements;
+  if (parsed.data.ageMin       !== undefined) updates["ageMin"]       = parsed.data.ageMin;
+  if (parsed.data.ageMax       !== undefined) updates["ageMax"]       = parsed.data.ageMax;
 
   if (Object.keys(updates).length === 0) {
     res.json({ success: true, message: "No changes" });

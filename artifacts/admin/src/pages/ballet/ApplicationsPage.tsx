@@ -23,7 +23,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Search, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,9 @@ interface ApplicationRow {
   slotLabel: string | null;
   status: string;
   createdAt: string;
+  updatedAt: string;
   levelName?: string | null;
+  paymentStatus?: string | null;
 }
 
 interface BalletLevel {
@@ -75,6 +77,25 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 
 function StatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
+  return (
+    <Badge variant="outline" className={cfg.className}>
+      {cfg.label}
+    </Badge>
+  );
+}
+
+// Payment status badge (A1) — the current (most recently updated) payment
+// row's status, or an em-dash when no payment has been recorded yet.
+const PAYMENT_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  pending:  { label: "Pending",  className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
+  paid:     { label: "Paid",     className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  rejected: { label: "Rejected", className: "bg-red-500/15 text-red-400 border-red-500/30" },
+  refunded: { label: "Refunded", className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
+};
+
+function PaymentStatusBadge({ status }: { status?: string | null }) {
+  if (!status) return <span className="italic text-muted-foreground">—</span>;
+  const cfg = PAYMENT_STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
   return (
     <Badge variant="outline" className={cfg.className}>
       {cfg.label}
@@ -252,25 +273,28 @@ export default function ApplicationsPage() {
               <TableHead>Selected Slot</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Payment Status</TableHead>
               <TableHead>Submitted</TableHead>
+              <TableHead>Last Update</TableHead>
+              <TableHead className="w-16 text-right">Edit</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center">
+                <TableCell colSpan={11} className="py-10 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-destructive text-sm">
+                <TableCell colSpan={11} className="py-10 text-center text-destructive text-sm">
                   Failed to load applications.
                 </TableCell>
               </TableRow>
             ) : data?.data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground text-sm">
+                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground text-sm">
                   {search || levelId || activeStatus
                     ? "No applications match the current search/filters."
                     : "No applications found."}
@@ -294,8 +318,23 @@ export default function ApplicationsPage() {
                     {app.levelName ?? <span className="italic">—</span>}
                   </TableCell>
                   <TableCell><StatusBadge status={app.status} /></TableCell>
+                  <TableCell><PaymentStatusBadge status={app.paymentStatus} /></TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {new Date(app.createdAt).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {app.updatedAt ? new Date(app.updatedAt).toLocaleDateString() : <span className="italic">—</span>}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={`Edit application ${app.id}`}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/ballet/applications/${app.id}`); }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
