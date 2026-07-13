@@ -62,6 +62,43 @@ function getBalletStatusInfo(status: string): BalletStatusInfo {
   }
 }
 
+// A4: real schedule/instructor display for active, grouped students.
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+function formatDay(dayOfWeek: number): string {
+  return DAY_NAMES[dayOfWeek] ?? "?";
+}
+
+type BalletActiveDisplay = {
+  isActiveGrouped: boolean;   // active status + assigned group (backend resolved)
+  hasSchedule: boolean;
+  hasInstructor: boolean;
+  daysLabel: string;          // e.g. "Mon, Wed"
+  timesLabel: string;         // e.g. "16:00–17:00"
+  instructorLabel: string;    // e.g. "Ms. Nour"
+};
+
+// Derives the real schedule/instructor strings for an active, grouped student.
+// resolvedSchedules/resolvedInstructors are non-null ONLY when the backend
+// considers the application active + grouped (see GET /ballet/applications/my),
+// so their presence is the source of truth — never the placeholder path.
+function getBalletActiveDisplay(app: BalletApplication): BalletActiveDisplay {
+  const isActiveGrouped = app.status === "active" && app.resolvedSchedules != null;
+  const schedules = app.resolvedSchedules ?? [];
+  const instructors = app.resolvedInstructors ?? [];
+
+  const days = [...new Set(schedules.map((s) => formatDay(s.dayOfWeek)))];
+  const times = [...new Set(schedules.map((s) => `${s.startTime}–${s.endTime}`))];
+
+  return {
+    isActiveGrouped,
+    hasSchedule: schedules.length > 0,
+    hasInstructor: instructors.length > 0,
+    daysLabel: days.join(", "),
+    timesLabel: times.join(", "),
+    instructorLabel: instructors.join(", "),
+  };
+}
+
 const TABS = ["Upcoming", "Past", "Cancelled"] as const;
 
 type ListItem =
@@ -71,7 +108,18 @@ type ListItem =
 // ─── AssessmentCard (matching design) ──────────────────────────────────────────
 function AssessmentCard({ app, onPress }: { app: BalletApplication, onPress?: () => void }) {
   const info = getBalletStatusInfo(app.status);
-  const dateStr = app.slotLabel || new Date(app.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const active = getBalletActiveDisplay(app);
+  // Active + grouped students see their real class schedule/instructor; every
+  // other status keeps the assessment placeholders (A4).
+  const dateStr = active.isActiveGrouped && active.hasSchedule
+    ? `${active.daysLabel} · ${active.timesLabel}`
+    : app.slotLabel || new Date(app.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const cardTitle = active.isActiveGrouped ? "Ballet Class" : "Ballet Level Assessment";
+  const assessorLabel = active.isActiveGrouped ? "Instructor" : "Assessor";
+  const assessorName = active.isActiveGrouped && active.hasInstructor ? active.instructorLabel : "TBD";
+  const assessorInitials = assessorName !== "TBD"
+    ? assessorName.split(/\s+/).filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase()
+    : "TBD";
 
   const childInitials = app.childName
     .split(/\s+/)
@@ -94,7 +142,7 @@ function AssessmentCard({ app, onPress }: { app: BalletApplication, onPress?: ()
             <Text style={[acStyles.statusText, { color: info.color }]}>{info.label}</Text>
           </View>
         </View>
-        <Text style={acStyles.className}>Ballet Level Assessment</Text>
+        <Text style={acStyles.className}>{cardTitle}</Text>
 
         <View style={acStyles.metaRow}>
           <View style={acStyles.slot}>
@@ -109,7 +157,7 @@ function AssessmentCard({ app, onPress }: { app: BalletApplication, onPress?: ()
 
           <View style={acStyles.levelBlock}>
             <Text style={acStyles.levelLabel}>Status</Text>
-            <Text style={acStyles.levelValue}>Pending review</Text>
+            <Text style={acStyles.levelValue}>{info.label}</Text>
           </View>
         </View>
       </LinearGradient>
@@ -126,11 +174,11 @@ function AssessmentCard({ app, onPress }: { app: BalletApplication, onPress?: ()
         <View style={acStyles.instructorRow}>
           <View style={acStyles.slot}>
             <View style={acStyles.slotAvatar}>
-              <Text style={acStyles.slotInitials}>TBD</Text>
+              <Text style={acStyles.slotInitials}>{assessorInitials}</Text>
             </View>
             <View>
-              <Text style={acStyles.slotLabel}>Assessor</Text>
-              <Text style={acStyles.slotName}>TBD</Text>
+              <Text style={acStyles.slotLabel}>{assessorLabel}</Text>
+              <Text style={acStyles.slotName} numberOfLines={1}>{assessorName}</Text>
             </View>
           </View>
           <View>
@@ -194,18 +242,30 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
   const isBallet = item.kind === "ballet";
   const b = item.data as any;
 
-  const tc = { label: isBallet ? "Assessment" : (b.danceType || "Class"), color: "#00B6D7", rgb: isBallet ? "167,139,250" : "45,205,236" };
-  const title = isBallet ? "Ballet Assessment" : b.className;
+  // A4: for an active, grouped ballet student, replace the assessment
+  // placeholders with the real class schedule/instructor resolved by the
+  // backend. Every other status keeps the original placeholder rendering.
+  const balletActive = isBallet ? getBalletActiveDisplay(item.data as BalletApplication) : null;
+  const balletIsClass = !!balletActive?.isActiveGrouped;
+
+  const tc = { label: isBallet ? (balletIsClass ? "Class" : "Assessment") : (b.danceType || "Class"), color: "#00B6D7", rgb: isBallet ? "167,139,250" : "45,205,236" };
+  const title = isBallet ? (balletIsClass ? "Ballet Class" : "Ballet Assessment") : b.className;
   const ref = isBallet ? b.id : b.bookingNumber;
   const statusLabel = isBallet ? getBalletStatusInfo(b.status).label : b.bookingStatus;
   const statusColor = isBallet ? getBalletStatusInfo(b.status).color : "#1FB871";
 
-  const dayDate = isBallet ? (b.slotLabel || "Pending") : (b.date ? b.date : "TBD");
-  const time = isBallet ? "TBD" : (b.time ? `${b.time} (${b.duration})` : b.duration);
+  const dayDate = isBallet
+    ? (balletIsClass && balletActive?.hasSchedule ? balletActive.daysLabel : (b.slotLabel || "Pending"))
+    : (b.date ? b.date : "TBD");
+  const time = isBallet
+    ? (balletIsClass && balletActive?.hasSchedule ? balletActive.timesLabel : "TBD")
+    : (b.time ? `${b.time} (${b.duration})` : b.duration);
   const branch = isBallet ? "Main Branch" : b.location;
 
   const studentName = isBallet ? b.childName : b.participantName;
-  const instName = isBallet ? "Assigned Instructor" : b.instructorName;
+  const instName = isBallet
+    ? (balletIsClass && balletActive?.hasInstructor ? balletActive.instructorLabel : "Assigned Instructor")
+    : b.instructorName;
 
   const isPast = isBallet ? (b.status === "rejected" || b.status === "cancelled") : (b.bookingStatus === "attended" || b.bookingStatus === "completed" || b.bookingStatus === "noShow");
   const isCancelled = isBallet ? (b.status === "cancelled") : (b.bookingStatus === "cancelled" || b.bookingStatus === "rejected");

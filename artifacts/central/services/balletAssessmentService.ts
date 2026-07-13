@@ -218,6 +218,16 @@ export async function submitBalletApplication(
 // ─── My Applications ─────────────────────────────────────────────────────────
 
 /**
+ * One resolved class time for an active, grouped student (A4). dayOfWeek is
+ * 0=Sunday … 6=Saturday, matching ballet_schedules.day_of_week.
+ */
+export interface ResolvedBalletSchedule {
+  dayOfWeek: number;
+  startTime: string; // "16:00"
+  endTime: string;   // "17:00"
+}
+
+/**
  * Full representation of a ballet application as returned by
  * GET /api/ballet/applications/my.
  * Includes all editable fields so the edit form can pre-fill them.
@@ -245,6 +255,14 @@ export interface BalletApplication {
   /** groupId on the application's current active ballet_level_assignments
    *  row (Phase 4E), or null if a level is assigned but no group yet. */
   assignedGroupId: number | null;
+  /** A4: real class time(s) resolved from the assigned group's schedules.
+   *  Populated only when status === "active" AND a group is assigned;
+   *  null otherwise (client keeps its placeholder rendering). May be an
+   *  empty array if the group has no active schedule slots yet. */
+  resolvedSchedules: ResolvedBalletSchedule[] | null;
+  /** A4: instructor name(s) resolved from the assigned group's class(es).
+   *  Same population rule as resolvedSchedules. */
+  resolvedInstructors: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
