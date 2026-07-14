@@ -37,6 +37,7 @@ import AppContentPage from "@/pages/app-content";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import BalletStudentsPage from "@/pages/ballet/BalletStudentsPage";
+import BalletStudentDetailPage from "@/pages/ballet/BalletStudentDetailPage";
 import AssessmentSlotsPage from "@/pages/ballet/AssessmentSlotsPage";
 import BalletSettingsPage from "@/pages/ballet/BalletSettingsPage";
 import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
@@ -174,6 +175,7 @@ function ProtectedRouter() {
         <Route path="/system-users">{guarded(ROUTE_PERMS.systemUsers, <SystemUsers />)}</Route>
         <Route path="/ballet/applications/:id">{guarded(ROUTE_PERMS.balletApplications, <ApplicationDetailPage />)}</Route>
         <Route path="/ballet/applications">{guarded(ROUTE_PERMS.balletApplications, <ApplicationsPage />)}</Route>
+        <Route path="/ballet/students/:assignmentId">{guarded(ROUTE_PERMS.balletStudents, <BalletStudentDetailPage />)}</Route>
         <Route path="/ballet/students">{guarded(ROUTE_PERMS.balletStudents, <BalletStudentsPage />)}</Route>
         <Route path="/ballet/slots">{guarded(ROUTE_PERMS.balletSlots, <AssessmentSlotsPage />)}</Route>
         <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsPage />)}</Route>
