@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import React, {
   useCallback, useMemo, useRef, useState,
   useEffect,
@@ -13,7 +13,6 @@ import {
   Animated,
   FlatList,
   Image,
-  ImageBackground,
   Platform,
   RefreshControl,
   ScrollView,
@@ -29,10 +28,6 @@ import XI from "@/components/XiIcon";
 import CategoryIcon from "@/components/CategoryIcon";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes, getListSchedulesQueryKey } from "@workspace/api-client-react";
-import {
-  fetchMyApplications,
-  ACTIVE_APPLICATION_STATUSES,
-} from "@/services/balletAssessmentService";
 
 import {
   DANCE_CATEGORIES,
@@ -128,38 +123,6 @@ function hexToRgb(hex?: string | null): string | null {
   if (h.length !== 6) return null;
   const n = parseInt(h, 16);
   return Number.isNaN(n) ? null : `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
-}
-
-/* ─── Ballet constants ───────────────────────────────────────────── */
-const BALLET_COLOR = "#00B6D6";
-const DETAIL_MODE_STATUSES = new Set([
-  "pending","needsFollowUp",
-  "accepted","assignedToLevel","active",
-]);
-
-function getStatusBadgeLabel(s: string) {
-  switch (s) {
-    case "pending":           return "Under Review";
-    case "needsFollowUp":     return "Follow-Up";
-    case "accepted":          return "Accepted";
-    case "assignedToLevel":   return "Level Assigned";
-    case "active":            return "Active";
-    case "rejected":          return "Not Accepted";
-    case "cancelled":         return "Cancelled";
-    default:                  return s;
-  }
-}
-function getStatusBadgeColor(s: string) {
-  switch (s) {
-    case "pending":           return AMBER;
-    case "needsFollowUp":     return AMBER;
-    case "accepted":          return SUCCESS;
-    case "assignedToLevel":   return BALLET_COLOR;
-    case "active":            return BALLET_COLOR;
-    case "rejected":          return DANGER;
-    case "cancelled":         return INK_400;
-    default:                  return INK_300;
-  }
 }
 
 /* ─── Class status helpers ───────────────────────────────────────── */
@@ -318,64 +281,6 @@ function ExploreFilters({
           );
         })}
       </ScrollView>
-    </View>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   FEATURED PROGRAM (Ballet)
-═══════════════════════════════════════════════════════════════════ */
-function FeaturedProgramCard({
-  balletStatus, onView, onApply,
-}: {
-  balletStatus: string | null; onView: () => void; onApply: () => void;
-}) {
-  const isDetailMode = balletStatus !== null && DETAIL_MODE_STATUSES.has(balletStatus);
-  const stColor = balletStatus ? getStatusBadgeColor(balletStatus) : null;
-
-  return (
-    <View style={s.featProgSection}>
-      <Text style={s.featProgEyebrow}>Featured Program</Text>
-      <View style={s.featProgCard}>
-        <ImageBackground
-          source={require("@/assets/images/ballet_hero.png")}
-          style={StyleSheet.absoluteFill}
-          imageStyle={{ borderRadius: R_LG }}
-        />
-        <LinearGradient
-          colors={["rgba(5,6,8,0.22)", "rgba(5,6,8,0.30)", "rgba(5,6,8,0.97)"]}
-          locations={[0, 0.25, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={s.featProgTop}>
-          <View style={s.featProgBadge}>
-            <Text style={s.featProgBadgeText}>Featured Program</Text>
-          </View>
-          {stColor && (
-            <View style={[s.featProgStatusBadge, { backgroundColor: stColor + "28", borderColor: stColor + "60" }]}>
-              <Text style={[s.featProgStatusText, { color: stColor }]}>
-                {getStatusBadgeLabel(balletStatus!)}
-              </Text>
-            </View>
-          )}
-        </View>
-        <View style={s.featProgBottom}>
-          <Text style={s.featProgName}>{"Ballet Intensive\nProgram"}</Text>
-          <Text style={s.featProgSub}>12 weeks · Fundamentals to performance stage</Text>
-          <View style={{ flexDirection: "row", gap: 9 }}>
-            <TouchableOpacity onPress={onView} style={s.featProgBtnPrimary} activeOpacity={0.85}>
-              <Text style={s.featProgBtnPrimaryText}>View Program</Text>
-            </TouchableOpacity>
-            {!isDetailMode && (
-              <TouchableOpacity onPress={onApply} style={s.featProgBtnGhost} activeOpacity={0.85}>
-                <Text style={s.featProgBtnGhostText}>Apply Now</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </View>
     </View>
   );
 }
@@ -784,21 +689,6 @@ export default function ClassesScreen() {
   const [ageFilter, setAge]     = useState("all");
   const [levelFilter, setLevel] = useState("all");
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
-  const [balletStatus, setBalletStatus]   = useState<string | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      const ctrl = new AbortController();
-      fetchMyApplications(ctrl.signal)
-        .then((apps) => {
-          if (ctrl.signal.aborted) return;
-          const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
-          setBalletStatus(active?.status ?? apps[0]?.status ?? null);
-        })
-        .catch(() => {});
-      return () => ctrl.abort();
-    }, []),
-  );
 
   const classesQuery      = useListClasses();
   const instructorsQuery  = useListInstructors();
@@ -989,20 +879,6 @@ export default function ClassesScreen() {
           <ExploreSearch query={search} onChange={setSearch} />
           <ExploreFilters age={ageFilter} level={levelFilter} onAge={setAge} onLevel={setLevel} />
 
-          {showFeatures && (
-            <FeaturedProgramCard
-              balletStatus={balletStatus}
-              onView={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                router.push("/ballet" as any);
-              }}
-              onApply={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                router.push("/ballet/assessment" as any);
-              }}
-            />
-          )}
-
           {showFeatures && filtered.length > 0 && (
             <FeaturedCarousel classes={filtered} onSelect={handleSelectClass} />
           )}
@@ -1141,47 +1017,6 @@ const s = StyleSheet.create({
   levelChipActive: { backgroundColor: INK_900, borderColor: "rgba(255,255,255,0.28)" },
   levelChipText: { fontSize: 12.5, fontFamily: "Archivo_700Bold", color: INK_400 },
   levelChipTextActive: { color: "#fff" },
-
-  /* featured program */
-  featProgSection: { paddingHorizontal: 20, marginBottom: 26 },
-  featProgEyebrow: {
-    fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
-    textTransform: "uppercase", color: CYAN, marginBottom: 12,
-  },
-  featProgCard: {
-    height: 216, borderRadius: R_LG, overflow: "hidden",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.09)",
-  },
-  featProgTop: {
-    position: "absolute", top: 14, left: 14, right: 14,
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-  },
-  featProgBadge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL,
-    backgroundColor: "rgba(124,58,237,0.82)",
-  },
-  featProgBadgeText: {
-    fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: "#fff",
-    letterSpacing: 0.7, textTransform: "uppercase",
-  },
-  featProgStatusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL, borderWidth: 1 },
-  featProgStatusText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold" },
-  featProgBottom: { position: "absolute", left: 16, right: 16, bottom: 14 },
-  featProgName: {
-    fontSize: 26, fontFamily: "Anton_400Regular", color: "#fff",
-    lineHeight: 24, ...iosDisplayTextStyle(26, 24), textTransform: "uppercase", marginBottom: 6,
-  },
-  featProgSub: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, marginBottom: 12 },
-  featProgBtnPrimary: {
-    flex: 1, paddingVertical: 12, backgroundColor: CYAN,
-    borderRadius: R_MD, alignItems: "center",
-  },
-  featProgBtnPrimaryText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
-  featProgBtnGhost: {
-    flex: 1, paddingVertical: 12, backgroundColor: "rgba(255,255,255,0.09)",
-    borderRadius: R_MD, borderWidth: 1, borderColor: "rgba(255,255,255,0.20)", alignItems: "center",
-  },
-  featProgBtnGhostText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#fff" },
 
   /* trending carousel */
   carouselSection: { marginBottom: 26 },

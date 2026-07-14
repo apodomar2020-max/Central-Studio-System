@@ -54,6 +54,7 @@ import {
 import { formatCairoDateKey, getCairoTomorrowDateKey } from "@/utils/cairoDate";
 import colors from "@/constants/colors";
 import PackagePurchaseModal from "@/components/PackagePurchaseModal";
+import BalletFeaturedProgramCard from "@/components/BalletFeaturedProgramCard";
 import NewStudentBanner from "@/components/NewStudentBanner";
 import ProfileCompletionBanner from "@/components/ProfileCompletionBanner";
 import { nextStepRoute } from "@/services/authProfile";
@@ -63,6 +64,7 @@ import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
+import { ACTIVE_APPLICATION_STATUSES, fetchMyApplications } from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 const { width: SW } = Dimensions.get("window");
@@ -836,6 +838,24 @@ export default function StudioHomeScreen() {
     () => (allHero ?? []).filter((i) => i.isActive), [allHero],
   );
 
+  // ── Ballet application status ────────────────────────────────────────────
+  const {
+    data: balletApplications,
+    refetch: refetchBalletApplications,
+    isRefetching: refetchingBalletApplications,
+  } = useQuery({
+    queryKey: ["ballet-applications-my"],
+    queryFn: ({ signal }) => fetchMyApplications(signal),
+    enabled: Boolean(user),
+    staleTime: 60 * 1000,
+    retry: false,
+  });
+  const balletStatus = React.useMemo(() => {
+    const apps = balletApplications ?? [];
+    const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
+    return active?.status ?? apps[0]?.status ?? null;
+  }, [balletApplications]);
+
   // ── Instructors ───────────────────────────────────────────────────────────
   const { data: apiInst, refetch: refetchInst, isRefetching: refetchingInst, isLoading: instLoading, isError: instError, error: instErr } = useListInstructors();
   const instructors: Instructor[] = React.useMemo(
@@ -892,10 +912,11 @@ export default function StudioHomeScreen() {
     ).slice(0, 5);
   }, [apiScheds, apiClasses, singlePrice, classCapacityEnabled]);
 
-  const isRefreshing = refetchingInst || refetchingScheds || refetchingClasses;
+  const isRefreshing = refetchingInst || refetchingScheds || refetchingClasses || refetchingBalletApplications;
   const onRefresh = useCallback(() => {
     refetchHero(); refetchInst(); refetchScheds(); refetchClasses();
-  }, [refetchHero, refetchInst, refetchScheds, refetchClasses]);
+    if (user) refetchBalletApplications();
+  }, [refetchHero, refetchInst, refetchScheds, refetchClasses, user, refetchBalletApplications]);
 
   const topPad = Platform.OS === "web" ? 20 : insets.top + 6;
 
@@ -970,39 +991,18 @@ export default function StudioHomeScreen() {
           onRetry={refetchHero}
         />
 
-        {/* Instructors */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <View>
-              <Text style={s.eyebrow}>LEARN FROM THE BEST</Text>
-              <Text style={s.sectionTitle}>Instructors</Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/classes")} style={s.seeAllRow}>
-              <Text style={s.seeAllText}>See all</Text>
-              <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
-            </TouchableOpacity>
-          </View>
-          {instLoading ? (
-            <FlatList
-              data={[1, 2, 3, 4]} keyExtractor={(i) => String(i)}
-              renderItem={() => <InstructorCardSkeleton />}
-              horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingLeft: 20, gap: 14 }}
-              scrollEnabled={false}
-            />
-          ) : instError ? (
-            isOfflineError(instErr)
-              ? <OfflineState variant="compact" onRetry={refetchInst} />
-              : <ErrorState variant="compact" onRetry={refetchInst} message="Couldn't load instructors." />
-          ) : (
-            <FlatList
-              data={instructors} keyExtractor={(i) => i.id}
-              renderItem={({ item }) => <InstructorCard instructor={item} />}
-              horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingLeft: 20, gap: 14, paddingRight: 20 }}
-            />
-          )}
-        </View>
+        {/* Ballet */}
+        <BalletFeaturedProgramCard
+          balletStatus={balletStatus}
+          onView={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/ballet" as any);
+          }}
+          onApply={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/ballet/assessment" as any);
+          }}
+        />
 
         {/* Upcoming Classes */}
         <View style={s.section}>
@@ -1048,6 +1048,40 @@ export default function StudioHomeScreen() {
 
         {/* Packages */}
         <PackagesSection />
+
+        {/* Instructors */}
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <View>
+              <Text style={s.eyebrow}>LEARN FROM THE BEST</Text>
+              <Text style={s.sectionTitle}>Instructors</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/classes")} style={s.seeAllRow}>
+              <Text style={s.seeAllText}>See all</Text>
+              <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
+            </TouchableOpacity>
+          </View>
+          {instLoading ? (
+            <FlatList
+              data={[1, 2, 3, 4]} keyExtractor={(i) => String(i)}
+              renderItem={() => <InstructorCardSkeleton />}
+              horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingLeft: 20, gap: 14 }}
+              scrollEnabled={false}
+            />
+          ) : instError ? (
+            isOfflineError(instErr)
+              ? <OfflineState variant="compact" onRetry={refetchInst} />
+              : <ErrorState variant="compact" onRetry={refetchInst} message="Couldn't load instructors." />
+          ) : (
+            <FlatList
+              data={instructors} keyExtractor={(i) => i.id}
+              renderItem={({ item }) => <InstructorCard instructor={item} />}
+              horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingLeft: 20, gap: 14, paddingRight: 20 }}
+            />
+          )}
+        </View>
 
         {/* Reels */}
         <ReelsSection />
