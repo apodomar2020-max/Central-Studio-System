@@ -1,4 +1,4 @@
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import {
@@ -43,6 +43,22 @@ export const balletPaymentsTable = pgTable("ballet_payments", {
   // historical rows and non-monthly payment types stay valid. A monthly
   // entitlement lookup filters status='paid' AND billing_month = 'YYYY-MM'.
   billingMonth:      text("billing_month"),
+  // C6: monthly subscription lifecycle. Dates are business calendar days
+  // ("YYYY-MM-DD"), not instants; expiration is inclusive through expiresAt.
+  subscriptionStartDate: text("subscription_start_date"),
+  subscriptionExpiresAt: text("subscription_expires_at"),
+  originalExpiresAt:     text("original_expires_at"),
+  isRenewal:             boolean("is_renewal").notNull().default(false),
+  renewedFromId:         integer("renewed_from_id"),
+  extensionHistory:      jsonb("extension_history").$type<Array<{
+    previousExpiresAt: string;
+    newExpiresAt: string;
+    daysAdded: number;
+    reason: string;
+    note: string | null;
+    actorId: number | null;
+    extendedAt: string;
+  }>>().notNull().default([]),
   paidAt:            timestamp("paid_at", { withTimezone: true, mode: "string" }),
   refundedAt:        timestamp("refunded_at", { withTimezone: true, mode: "string" }),
   notes:             text("notes"),
