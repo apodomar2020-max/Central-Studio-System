@@ -26,7 +26,8 @@ import {
   ListBookingsResponse,
 } from "@workspace/api-zod";
 import { currentOccurrenceDate, checkInWindowState } from "../lib/occurrence";
-import { DUPLICATE_BLOCKING_STATUSES, isSeatReservedBooking } from "../lib/bookingStatus";
+import { DUPLICATE_BLOCKING_STATUSES, RESERVED_SEAT_STATUSES, isSeatReservedBooking } from "../lib/bookingStatus";
+import { isClassCapacityEnabled } from "../lib/classCapacitySettings";
 
 const router: IRouter = Router();
 
@@ -74,25 +75,6 @@ async function refreshScheduleLifecycle(scheduleId: number): Promise<void> {
       and ${schedulesTable.status} <> 'expired'
     `);
 
-  await db
-    .update(schedulesTable)
-    .set({ status: "completed" })
-    .where(sql`
-      ${schedulesTable.id} = ${scheduleId}
-      and ${schedulesTable.status} = 'active'
-      and exists (
-        select 1
-        from ${classesTable}
-        where ${classesTable.id} = ${schedulesTable.classId}
-          and ${classesTable.capacity} <= (
-            select count(*)::int
-            from ${bookingsTable}
-            where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-              -- RESERVED seats only; pending requests do not reserve a seat.
-              and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
-          )
-      )
-    `);
 }
 
 function normalizeEmail(email: string): string {
@@ -725,7 +707,7 @@ router.post(
         message: schedule.status === "cancelled"
           ? "This class schedule has been cancelled."
           : schedule.status === "completed"
-            ? "This class schedule is full."
+            ? "This class schedule has been completed."
             : "This class schedule has expired.",
       });
       return;
@@ -838,6 +820,7 @@ router.post(
   }
 
   const createResult = await db.transaction(async (tx) => {
+    const classCapacityEnabled = await isClassCapacityEnabled();
     if (normalized.scheduleId != null) {
       const [lockedSchedule] = await tx
         .select({
@@ -867,17 +850,44 @@ router.post(
         return { kind: "package_not_eligible" as const };
       }
 
-      if (isSeatReservedBooking({ bookingStatus: String(normalized.bookingStatus) })) {
+      const targetMatch = normalized.scheduleId != null
+        ? eq(bookingsTable.scheduleId, normalized.scheduleId)
+        : normalized.classId != null
+          ? eq(bookingsTable.classId, normalized.classId)
+          : null;
+      if (targetMatch) {
+        const [existingActive] = await tx
+          .select({ id: bookingsTable.id })
+          .from(bookingsTable)
+          .where(and(
+            sql`(${bookingsTable.accountOwnerStudentId} = ${accountOwnerStudentId} OR lower(trim(${bookingsTable.studentEmail})) = ${normalizeEmail(studentEmail)})`,
+            targetMatch,
+            sql`${bookingsTable.participantChildId} is not distinct from ${participantChildId}`,
+            occurrenceDate != null
+              ? eq(bookingsTable.occurrenceDate, occurrenceDate)
+              : sql`${bookingsTable.occurrenceDate} is null`,
+            inArray(bookingsTable.bookingStatus, [...DUPLICATE_BLOCKING_STATUSES]),
+          ))
+          .limit(1);
+        if (existingActive) return { kind: "duplicate_booking" as const };
+      }
+
+      if (
+        classCapacityEnabled &&
+        occurrenceDate != null &&
+        isSeatReservedBooking({ bookingStatus: String(normalized.bookingStatus) })
+      ) {
         const [reservedSeats] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(bookingsTable)
           .where(and(
             eq(bookingsTable.scheduleId, lockedSchedule.id),
-            inArray(bookingsTable.bookingStatus, ["confirmed", "attended"]),
+            eq(bookingsTable.occurrenceDate, occurrenceDate),
+            inArray(bookingsTable.bookingStatus, [...RESERVED_SEAT_STATUSES]),
           ));
 
         if ((reservedSeats?.count ?? 0) >= lockedSchedule.capacity) {
-          return { kind: "schedule_unavailable" as const, status: "completed" as const };
+          return { kind: "capacity_full" as const };
         }
       }
     }
@@ -904,29 +914,6 @@ router.post(
       ...notification,
     });
 
-    if (inserted.scheduleId != null) {
-      await tx
-        .update(schedulesTable)
-        .set({ status: "completed" })
-        .where(sql`
-          ${schedulesTable.id} = ${inserted.scheduleId}
-          and ${schedulesTable.status} = 'active'
-          and exists (
-            select 1
-            from ${classesTable}
-            where ${classesTable.id} = ${schedulesTable.classId}
-              and ${classesTable.capacity} <= (
-                select count(*)::int
-                from ${bookingsTable}
-                where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-                  -- RESERVED seats only (see lib/bookingStatus RESERVED_SEAT_STATUSES);
-                  -- pending requests do NOT reserve a seat.
-                  and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
-              )
-          )
-        `);
-    }
-
     return inserted;
   });
 
@@ -945,8 +932,24 @@ router.post(
         message: createResult.status === "cancelled"
           ? "This class schedule has been cancelled."
           : createResult.status === "completed"
-            ? "This class schedule is full."
+            ? "This class schedule has been completed."
             : "This class schedule has expired.",
+      });
+      return;
+    }
+
+    if (createResult.kind === "capacity_full") {
+      res.status(409).json({
+        error: "schedule_capacity_full",
+        message: "This class occurrence is full.",
+      });
+      return;
+    }
+
+    if (createResult.kind === "duplicate_booking") {
+      res.status(409).json({
+        error: "You already have an active booking for this class.",
+        code: "duplicate_booking",
       });
       return;
     }
@@ -990,8 +993,7 @@ router.get("/bookings/:id", requireBookingReadAccess, async (req, res): Promise<
 // ── Student-safe cancellation ────────────────────────────────────────────────
 // Students may cancel ONLY their own ACTIVE booking. Sets bookingStatus =
 // 'cancelled' (keeps the record for history — never deletes), which releases the
-// seat (booked count excludes cancelled). If the schedule had been auto-marked
-// "completed" (full), free it back to "active" so the seat is reusable.
+// seat because booked count excludes cancelled bookings.
 router.patch(
   "/bookings/:id/cancel",
   requireStudentAuth,
@@ -1018,30 +1020,6 @@ router.patch(
         .set({ bookingStatus: "cancelled", status: "cancelled" })
         .where(eq(bookingsTable.id, existing.id))
         .returning();
-      // Release the seat: revert a "completed" (full) schedule back to active when
-      // it is now below capacity.
-      if (updated.scheduleId != null) {
-        await tx.update(schedulesTable).set({ status: "active" }).where(sql`
-          ${schedulesTable.id} = ${updated.scheduleId}
-          and ${schedulesTable.status} = 'completed'
-          and not (
-            ${schedulesTable.type} = 'one_time'
-            and ${schedulesTable.date} is not null
-            and (${schedulesTable.date}::text || ' ' || ${schedulesTable.endTime})::timestamp
-              < (now() at time zone 'Africa/Cairo')
-          )
-          and exists (
-            select 1 from ${classesTable}
-            where ${classesTable.id} = ${schedulesTable.classId}
-              and ${classesTable.capacity} > (
-                select count(*)::int from ${bookingsTable}
-                where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-                  -- RESERVED seats only; pending requests do not reserve a seat.
-                  and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
-              )
-          )
-        `);
-      }
       const notification = await bookingStatusNotification(tx, updated, "cancelled");
       if (notification) {
         await createStudentNotification(tx, {

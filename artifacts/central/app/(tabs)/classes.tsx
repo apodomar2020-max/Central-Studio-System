@@ -43,6 +43,7 @@ import {
 import {
   classCapacityDisplay,
   compareSchedulesByNextOccurrence,
+  isClassCapacityDisplayEnabled,
   isMobileVisibleSchedule,
   mapApiClassWithScheduleToMobile,
   mapApiInstructorToMobile,
@@ -55,6 +56,10 @@ import {
   DEFAULT_SINGLE_CLASS_PRICE_EGP,
   fetchClassPricing,
 } from "@/services/classPricingService";
+import {
+  DEFAULT_CLASS_CAPACITY_ENABLED,
+  fetchClassCapacitySettings,
+} from "@/services/classCapacityService";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
@@ -163,6 +168,7 @@ function statusLabel(st: DanceClass["status"]) {
        : st === "fewSeats"  ? "Few Seats"
        : st === "full"      ? "Full"
        : st === "cancelled" ? "Cancelled"
+       : st === "unavailable" ? "Unavailable"
        : "Waitlist";
 }
 function statusColor(st: DanceClass["status"]) {
@@ -170,6 +176,7 @@ function statusColor(st: DanceClass["status"]) {
        : st === "fewSeats"  ? AMBER
        : st === "full"      ? DANGER
        : st === "cancelled" ? DANGER
+       : st === "unavailable" ? INK_400
        : INK_300;
 }
 function statusBg(st: DanceClass["status"]) {
@@ -177,6 +184,7 @@ function statusBg(st: DanceClass["status"]) {
        : st === "fewSeats"  ? "rgba(255,176,46,0.16)"
        : st === "full"      ? "rgba(255,59,71,0.10)"
        : st === "cancelled" ? "rgba(255,59,71,0.10)"
+       : st === "unavailable" ? "rgba(255,255,255,0.06)"
        : "rgba(255,255,255,0.06)";
 }
 
@@ -382,7 +390,7 @@ function FeaturedCard({
 }) {
   const stC = statusColor(item.status);
   const stBg = statusBg(item.status);
-  const isTrending = item.capacity > 0 && item.bookedCount / item.capacity > 0.5;
+  const isTrending = isClassCapacityDisplayEnabled(item) && item.capacity > 0 && item.bookedCount / item.capacity > 0.5;
   return (
     <TouchableOpacity onPress={() => onSelect(item)} style={s.featCard} activeOpacity={0.88}>
       {item.photoUrl ? (
@@ -427,7 +435,7 @@ function FeaturedCarousel({
   classes: DanceClass[]; onSelect: (c: DanceClass) => void;
 }) {
   const trending = useMemo(
-    () => classes.filter((c) => c.capacity > 0 && c.bookedCount / c.capacity > 0.4).slice(0, 6),
+    () => classes.filter((c) => isClassCapacityDisplayEnabled(c) && c.capacity > 0 && c.bookedCount / c.capacity > 0.4).slice(0, 6),
     [classes],
   );
   if (trending.length === 0) return null;
@@ -515,17 +523,17 @@ function ExploreClassCard({
     );
   }, [activeBooking, cancelBooking, item.title, queryClient]);
 
-  // Display-only capacity (full/completed reads as fully booked; real backend
-  // bookedCount is never mutated). Reflects the CURRENT occurrence.
-  // TODO: Replace schedule-level bookedCount with occurrence-level bookedCount when recurring occurrence model is introduced.
+  // Display-only capacity. Reflects the current canonical occurrence; completed
+  // schedules are treated as unavailable, not capacity-full.
   const cap = classCapacityDisplay(item);
+  const showCapacity = isClassCapacityDisplayEnabled(item);
   const pct = cap.pct;
   const barColor = pct >= 85 ? DANGER : pct >= 60 ? AMBER : CYAN;
   const st = item.status;
   const stC = statusColor(st);
   const stBg = statusBg(st);
   const difficulty = deriveDifficulty(item.ageGroup);
-  const isTrending = pct > 50;
+  const isTrending = showCapacity && pct > 50;
   const creditsLeft = item.packageEligible ? packageCreditsRemaining : 0;
   const availableSeats = cap.available;
   const rating = (item as any).rating as number | undefined;
@@ -611,18 +619,20 @@ function ExploreClassCard({
           </View>
         </View>
         <View style={s.divider} />
-        <View style={s.capacitySection}>
-          <View style={s.capacityRow}>
-            <Text style={s.capacityText}>
-              <Text style={{ color: SUCCESS, fontFamily: "Archivo_700Bold" }}>{availableSeats}</Text>
-              {" available · "}{cap.booked}/{item.capacity} booked
-            </Text>
-            <XI name="users" size={14} stroke={2} color={INK_400} />
+        {showCapacity && (
+          <View style={s.capacitySection}>
+            <View style={s.capacityRow}>
+              <Text style={s.capacityText}>
+                <Text style={{ color: SUCCESS, fontFamily: "Archivo_700Bold" }}>{availableSeats}</Text>
+                {" available · "}{cap.booked}/{item.capacity} booked
+              </Text>
+              <XI name="users" size={14} stroke={2} color={INK_400} />
+            </View>
+            <View style={s.capBarBg}>
+              <View style={[s.capBarFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
+            </View>
           </View>
-          <View style={s.capBarBg}>
-            <View style={[s.capBarFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
-          </View>
-        </View>
+        )}
         <View style={s.creditsRow}>
           {creditsLeft > 0 ? (
             <>
@@ -655,7 +665,7 @@ function ExploreClassCard({
           </TouchableOpacity>
         ) : (
           <>
-            {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
+            {creditsLeft > 0 && st !== "full" && st !== "cancelled" && st !== "unavailable" && (
               <TouchableOpacity
                 onPress={() => onBook(item, "package")}
                 style={s.btnPackage}
@@ -665,12 +675,12 @@ function ExploreClassCard({
               </TouchableOpacity>
             )}
             <TouchableOpacity
-              onPress={() => { if (st !== "full" && st !== "cancelled") onBook(item, "cash"); }}
-              style={[s.btnBook, (st === "full" || st === "cancelled") && { backgroundColor: "rgba(255,255,255,0.06)" }]}
+              onPress={() => { if (st !== "full" && st !== "cancelled" && st !== "unavailable") onBook(item, "cash"); }}
+              style={[s.btnBook, (st === "full" || st === "cancelled" || st === "unavailable") && { backgroundColor: "rgba(255,255,255,0.06)" }]}
               activeOpacity={0.85}
             >
-              <Text style={[s.btnBookText, (st === "full" || st === "cancelled") && { color: INK_400 }]}>
-                {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : "Book Now"}
+              <Text style={[s.btnBookText, (st === "full" || st === "cancelled" || st === "unavailable") && { color: INK_400 }]}>
+                {st === "cancelled" ? "Cancelled" : st === "unavailable" ? "Unavailable" : st === "full" ? "Full" : "Book Now"}
               </Text>
             </TouchableOpacity>
           </>
@@ -798,8 +808,15 @@ export default function ClassesScreen() {
     queryFn: fetchClassPricing,
     staleTime: 5 * 60 * 1000,
   });
+  const classCapacityQuery = useQuery({
+    queryKey: ["class-capacity"],
+    queryFn: fetchClassCapacitySettings,
+    staleTime: 60 * 1000,
+  });
   const singleClassPriceEgp =
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
+  const classCapacityEnabled =
+    classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
 
   const isLoading = classesQuery.isLoading || instructorsQuery.isLoading || schedulesQuery.isLoading;
   const isError   = classesQuery.isError   || instructorsQuery.isError   || schedulesQuery.isError;
@@ -812,7 +829,8 @@ export default function ClassesScreen() {
     instructorsQuery.refetch();
     schedulesQuery.refetch();
     classPricingQuery.refetch();
-  }, [classesQuery, instructorsQuery, schedulesQuery, classPricingQuery]);
+    classCapacityQuery.refetch();
+  }, [classesQuery, instructorsQuery, schedulesQuery, classPricingQuery, classCapacityQuery]);
 
   const instructors: Instructor[] = useMemo(
     () => (instructorsQuery.data ?? []).map(mapApiInstructorToMobile),
@@ -847,8 +865,8 @@ export default function ClassesScreen() {
     return (classesQuery.data ?? [])
       .filter((c) => c.isActive)
       .filter((c) => !scheduledClassIds.has(c.id) || visibleScheduledClassIds.has(c.id))
-      .map((c) => mapApiClassWithScheduleToMobile(c, schedulesByClassId.get(c.id), singleClassPriceEgp));
-  }, [classesQuery.data, schedulesQuery.data, singleClassPriceEgp]);
+      .map((c) => mapApiClassWithScheduleToMobile(c, schedulesByClassId.get(c.id), singleClassPriceEgp, classCapacityEnabled));
+  }, [classesQuery.data, schedulesQuery.data, singleClassPriceEgp, classCapacityEnabled]);
 
   const nonBalletClasses = useMemo(() => allClasses.filter((c) => !c.isBallet), [allClasses]);
 
@@ -916,7 +934,7 @@ export default function ClassesScreen() {
   }
 
   function handleBook(c: DanceClass, method: "package" | "cash") {
-    if (c.status === "full" || c.status === "cancelled") return;
+    if (c.status === "full" || c.status === "cancelled" || c.status === "unavailable") return;
     if (!user) {
       showAuthRequiredPrompt();
       return;

@@ -5,7 +5,7 @@ import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { DanceClass, Instructor } from "@/data/mockData";
-import { classCapacityDisplay, getScheduleLabel } from "@/data/apiAdapters";
+import { classCapacityDisplay, getScheduleLabel, isClassCapacityDisplayEnabled } from "@/data/apiAdapters";
 import { useColors } from "@/hooks/useColors";
 import colors from "@/constants/colors";
 import { useAppContext } from "@/contexts/AppContext";
@@ -29,6 +29,8 @@ function getStatusConfig(status: DanceClass["status"]) {
       return { label: "Full", color: colors.error };
     case "cancelled":
       return { label: "Cancelled", color: colors.error };
+    case "unavailable":
+      return { label: "Unavailable", color: "#6B7280" };
     case "waitingList":
       return { label: "Waiting List", color: colors.info };
   }
@@ -52,9 +54,10 @@ export default function ClassCard({
   const statusConfig = getStatusConfig(item.status);
   // Display-only: full/completed reads as 0 available (real bookedCount kept).
   const availableSeats = classCapacityDisplay(item).available;
+  const showCapacity = isClassCapacityDisplayEnabled(item);
   const scheduleLabel = getScheduleLabel(item);
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
-  const isBookable = hasSchedule && item.status !== "full" && item.status !== "cancelled";
+  const isBookable = hasSchedule && item.status !== "full" && item.status !== "cancelled" && item.status !== "unavailable";
   const canUsePackageCredits = item.packageEligible !== false && packageCreditsRemaining > 0;
   const priceLabel = purchaseMode === "package"
     ? "Uses 1 credit"
@@ -77,11 +80,11 @@ export default function ClassCard({
         <Text style={[styles.categoryLabel, { color: colors.studio.primary }]}>
           {item.categoryName}
         </Text>
-        <View style={[styles.statusBadge, { backgroundColor: badgeColor + "22" }]}>
+        {(showCapacity || item.status === "cancelled" || item.status === "unavailable" || !hasSchedule) && <View style={[styles.statusBadge, { backgroundColor: badgeColor + "22" }]}>
           <Text style={[styles.statusText, { color: badgeColor }]}>
             {badgeLabel}
           </Text>
-        </View>
+        </View>}
       </View>
 
       <View style={styles.body}>
@@ -131,12 +134,12 @@ export default function ClassCard({
             <Text style={[styles.price, { color: colors.studio.primary }]}>
               {priceLabel}
             </Text>
-            <View style={styles.seatsRow}>
+            {showCapacity && <View style={styles.seatsRow}>
               <Feather name="users" size={11} color={c.mutedForeground} />
               <Text style={[styles.seatsText, { color: c.mutedForeground }]}>
                 {availableSeats} seats
               </Text>
-            </View>
+            </View>}
           </View>
         </View>
         <View style={styles.actionRow}>

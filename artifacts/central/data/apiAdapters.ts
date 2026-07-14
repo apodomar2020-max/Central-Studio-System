@@ -168,7 +168,12 @@ export function compareSchedulesByNextOccurrence(a: ApiSchedule, b: ApiSchedule,
   return a.startTime.localeCompare(b.startTime);
 }
 
-function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?: string): DanceClass {
+function applySchedule(
+  cls: DanceClass,
+  schedule?: ApiSchedule,
+  occurrenceDate?: string,
+  classCapacityEnabled = true,
+): DanceClass {
   if (!schedule) return cls;
   const dayOfWeek = coerceDayOfWeek(schedule.dayOfWeek);
   const startTime = formatTime(schedule.startTime);
@@ -185,13 +190,20 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
   // bookings — NOT attendance). Drives the capacity/progress bar and a coherent
   // availability status so the bar, the "X available · Y/Z booked" text, and the
   // status chip all agree.
-  const bookedCount = schedule.bookedCount ?? cls.bookedCount;
+  const effectiveClassCapacityEnabled =
+    classCapacityEnabled &&
+    schedule.classCapacityEnabled !== false &&
+    schedule.capacityDisplayEnabled !== false &&
+    schedule.capacityEnforcementEnabled !== false;
+  const bookedCount = schedule.actualBookedCount ?? schedule.reservedSeatCount ?? schedule.bookedCount ?? cls.bookedCount;
   const availableSeats = cls.capacity - bookedCount;
   const scheduleStatus = coerceScheduleStatus(schedule.status);
   const status: DanceClass["status"] =
     scheduleStatus === "cancelled" ? "cancelled"
-    : scheduleStatus === "completed" ? "full"
-    : availableSeats <= 0 ? "full" : availableSeats <= 3 ? "fewSeats" : "available";
+    : scheduleStatus === "completed" ? "unavailable"
+    : effectiveClassCapacityEnabled && availableSeats <= 0 ? "full"
+    : effectiveClassCapacityEnabled && availableSeats <= 3 ? "fewSeats"
+    : "available";
 
   return {
     ...cls,
@@ -209,17 +221,12 @@ function applySchedule(cls: DanceClass, schedule?: ApiSchedule, occurrenceDate?:
     location: schedule.location ?? cls.location,
     price: schedule.priceEgp ?? cls.price,
     bookedCount,
+    classCapacityEnabled: effectiveClassCapacityEnabled,
     status,
   };
 }
 
-/**
- * Display-only capacity values for a class card. When a class is full/completed
- * (Admin marks a schedule "completed" → mapped to status "full"), it must READ as
- * fully booked everywhere — 0 available, capacity/capacity booked, 100% bar — even
- * if the app's real bookedCount is lower (offline bookings filled the seats). The
- * real backend bookedCount is NEVER mutated; this only affects what's shown.
- */
+/** Display-only capacity values for the current canonical occurrence. */
 export function classCapacityDisplay(
   cls: Pick<DanceClass, "status" | "capacity" | "bookedCount">,
 ): { booked: number; available: number; pct: number; isFull: boolean } {
@@ -228,6 +235,10 @@ export function classCapacityDisplay(
   const available = Math.max(0, cls.capacity - booked);
   const pct = cls.capacity > 0 ? Math.round((booked / cls.capacity) * 100) : isFull ? 100 : 0;
   return { booked, available, pct, isFull };
+}
+
+export function isClassCapacityDisplayEnabled(cls: Pick<DanceClass, "classCapacityEnabled">): boolean {
+  return cls.classCapacityEnabled !== false;
 }
 
 export function getScheduleLabel(cls: DanceClass): string {
@@ -250,11 +261,13 @@ export function mapScheduleAndClassToMobile(
   cls: ApiClass,
   weekStart: Date, // the Saturday of the current Egyptian week
   singleClassPriceEgp = 0,
+  classCapacityEnabled = true,
 ): DanceClass {
   return applySchedule(
     mapApiClassToMobile(cls, singleClassPriceEgp),
     schedule,
     scheduleDateForWeek(schedule, weekStart),
+    classCapacityEnabled,
   );
 }
 
@@ -284,6 +297,7 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
     price: singleClassPriceEgp,
     capacity: api.capacity,
     bookedCount: 0,
+    classCapacityEnabled: true,
     level: coerceLevel(api.level),
     ageGroup: coerceAgeGroup(api.ageGroup),
     status: "available",
@@ -298,6 +312,9 @@ export function mapApiClassWithScheduleToMobile(
   api: ApiClass,
   schedule: ApiSchedule | undefined,
   singleClassPriceEgp = 0,
+  classCapacityEnabled = true,
 ): DanceClass {
-  return applySchedule(mapApiClassToMobile(api, singleClassPriceEgp), schedule);
+  const cls = mapApiClassToMobile(api, singleClassPriceEgp);
+  cls.classCapacityEnabled = classCapacityEnabled;
+  return applySchedule(cls, schedule, undefined, classCapacityEnabled);
 }

@@ -49,9 +49,10 @@ export interface DanceClass {
   price: number;
   capacity: number;
   bookedCount: number;
+  classCapacityEnabled?: boolean;
   level: "Beginner" | "Intermediate" | "Advanced" | "All Levels";
   ageGroup: AgeGroup;
-  status: "available" | "fewSeats" | "full" | "waitingList" | "cancelled";
+  status: "available" | "fewSeats" | "full" | "waitingList" | "cancelled" | "unavailable";
   policy: string;
   featured: boolean;
   isBallet?: boolean;

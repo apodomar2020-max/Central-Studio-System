@@ -30,6 +30,7 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 
 type PaymentMethod = "online" | "cash" | "packageCredit";
 
@@ -63,14 +64,21 @@ export default function BookingFlowScreen() {
     queryFn: fetchClassPricing,
     staleTime: 5 * 60 * 1000,
   });
+  const classCapacityQuery = useQuery({
+    queryKey: ["class-capacity"],
+    queryFn: fetchClassCapacitySettings,
+    staleTime: 60 * 1000,
+  });
   const singleClassPriceEgp =
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
+  const classCapacityEnabled =
+    classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
   const primarySchedule = schedulesQuery.data
     ? schedulesQuery.data.filter(isMobileVisibleSchedule).find((schedule) => String(schedule.id) === scheduleId) ??
       [...schedulesQuery.data].filter(isMobileVisibleSchedule).sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
-    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
+    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp, classCapacityEnabled)
     : null;
   const activePackages = userPackages.filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0);
   const packageCreditsRemaining = activePackages.reduce((sum, pkg) => sum + pkg.remainingCredits, 0);
@@ -205,11 +213,12 @@ export default function BookingFlowScreen() {
       return;
     }
     if (!canBookSchedule) {
+      const isCancelled = cls.scheduleStatus === "cancelled";
       Alert.alert(
-        cls.scheduleStatus === "cancelled" ? "Class cancelled" : "Class full",
-        cls.scheduleStatus === "cancelled"
+        isCancelled ? "Class cancelled" : "Class unavailable",
+        isCancelled
           ? "This class schedule has been cancelled and cannot be booked."
-          : "This class schedule is full and cannot accept more bookings.",
+          : "This class schedule is not currently accepting bookings.",
       );
       return;
     }
@@ -743,7 +752,7 @@ export default function BookingFlowScreen() {
       <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 12 }]}>
         {step < 3 ? (
           <AppButton
-            title={!hasSchedule ? "Schedule Not Set" : canBookSchedule ? "Continue" : cls?.scheduleStatus === "cancelled" ? "Class Cancelled" : "Class Full"}
+            title={!hasSchedule ? "Schedule Not Set" : canBookSchedule ? "Continue" : cls?.scheduleStatus === "cancelled" ? "Class Cancelled" : "Class Unavailable"}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep(step + 1); }}
             disabled={!canBookSchedule}
             fullWidth

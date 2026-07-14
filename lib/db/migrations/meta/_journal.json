@@ -393,6 +393,13 @@
       "when": 1784462411000,
       "tag": "0056_ballet_subscription_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784462412000,
+      "tag": "0057_class_capacity_settings",
+      "breakpoints": true
     }
   ]
 }

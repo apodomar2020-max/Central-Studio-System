@@ -49,6 +49,10 @@ interface DanceTypeItem {
   sortOrder: number;
 }
 
+interface ClassCapacitySettings {
+  classCapacityEnabled: boolean;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "All Levels"];
@@ -123,6 +127,18 @@ export default function Classes() {
       return r.json() as Promise<DanceTypeItem[]>;
     },
   });
+
+  const { data: classCapacity } = useQuery<ClassCapacitySettings>({
+    queryKey: ["admin-class-capacity"],
+    queryFn: async () => {
+      const r = await fetch(`${API}/api/admin/settings/class-capacity`, {
+        headers: makeAdminHeaders(token),
+      });
+      if (!r.ok) return { classCapacityEnabled: true };
+      return r.json() as Promise<ClassCapacitySettings>;
+    },
+  });
+  const capacityInactive = classCapacity?.classCapacityEnabled === false;
 
   /** Active dance types sorted for the dropdown */
   const activeCategories = danceTypes
@@ -252,7 +268,12 @@ export default function Classes() {
                   <TableCell>{cls.level}</TableCell>
                   <TableCell>{cls.ageGroup || "Adults"}</TableCell>
                   <TableCell>{cls.durationMins} min</TableCell>
-                  <TableCell>{cls.capacity}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span>{cls.capacity}</span>
+                      {capacityInactive && <Badge variant="outline">Inactive</Badge>}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={cls.isActive ? "default" : "outline"}>
                       {cls.isActive ? "Active" : "Inactive"}
@@ -435,6 +456,11 @@ export default function Classes() {
                       <FormControl>
                         <Input type="number" data-testid="input-class-capacity" {...field} />
                       </FormControl>
+                      {capacityInactive && (
+                        <p className="text-xs text-muted-foreground">
+                          Capacity is currently inactive globally, but this saved value will be reused when re-enabled.
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

@@ -30,6 +30,7 @@ import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import {
   classCapacityDisplay,
   compareSchedulesByNextOccurrence,
+  isClassCapacityDisplayEnabled,
   isMobileVisibleSchedule,
   mapApiClassWithScheduleToMobile,
   mapApiInstructorToMobile,
@@ -39,6 +40,7 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import type { AgeGroup, DanceClass, Instructor } from "@/data/mockData";
@@ -81,6 +83,7 @@ function statusLabel(st: DanceClass["status"]) {
        : st === "fewSeats" ? "Few Seats"
        : st === "full" ? "Full"
        : st === "cancelled" ? "Cancelled"
+       : st === "unavailable" ? "Unavailable"
        : "Waitlist";
 }
 
@@ -89,6 +92,7 @@ function statusColor(st: DanceClass["status"]) {
        : st === "fewSeats" ? AMBER
        : st === "full" ? DANGER
        : st === "cancelled" ? DANGER
+       : st === "unavailable" ? INK_400
        : INK_300;
 }
 
@@ -97,6 +101,7 @@ function statusBg(st: DanceClass["status"]) {
        : st === "fewSeats" ? "rgba(255,176,46,0.16)"
        : st === "full" ? "rgba(255,59,71,0.10)"
        : st === "cancelled" ? "rgba(255,59,71,0.10)"
+       : st === "unavailable" ? "rgba(255,255,255,0.06)"
        : "rgba(255,255,255,0.06)";
 }
 
@@ -149,15 +154,22 @@ export default function ClassDetailScreen() {
     queryFn: fetchClassPricing,
     staleTime: 5 * 60 * 1000,
   });
+  const classCapacityQuery = useQuery({
+    queryKey: ["class-capacity"],
+    queryFn: fetchClassCapacitySettings,
+    staleTime: 60 * 1000,
+  });
   const singleClassPriceEgp =
     classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
+  const classCapacityEnabled =
+    classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
 
   const primarySchedule = schedulesQuery.data
     ? schedulesQuery.data.filter(isMobileVisibleSchedule).find((schedule) => String(schedule.id) === scheduleId) ??
       [...schedulesQuery.data].filter(isMobileVisibleSchedule).sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
-    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp)
+    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp, classCapacityEnabled)
     : null;
 
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {
@@ -244,6 +256,7 @@ export default function ClassDetailScreen() {
   const stBg = statusBg(st);
   const difficulty = deriveDifficulty(cls.ageGroup);
   const cap = classCapacityDisplay(cls);
+  const showCapacity = isClassCapacityDisplayEnabled(cls);
   const availableSeats = cap.available;
   const creditsLeft = cls.packageEligible ? packageCreditsRemaining : 0;
   const rating = (cls as unknown as { rating?: number }).rating;
@@ -256,7 +269,7 @@ export default function ClassDetailScreen() {
 
   function openBooking(usePackage: boolean) {
     const currentClass = cls;
-    if (!currentClass || st === "full" || st === "cancelled" || !hasSchedule) return;
+    if (!currentClass || st === "full" || st === "cancelled" || st === "unavailable" || !hasSchedule) return;
     if (!user) {
       showAuthRequiredPrompt();
       return;
@@ -374,6 +387,7 @@ export default function ClassDetailScreen() {
             </View>
           </View>
 
+          {showCapacity && (
           <View style={styles.section}>
             <Text style={styles.eyebrow}>Capacity</Text>
             <View style={styles.capCard}>
@@ -393,6 +407,7 @@ export default function ClassDetailScreen() {
               </View>
             </View>
           </View>
+          )}
         </View>
 
         <View style={{ height: 160 }} />
@@ -421,7 +436,7 @@ export default function ClassDetailScreen() {
           </TouchableOpacity>
         ) : (
           <View style={styles.actionRow}>
-            {creditsLeft > 0 && st !== "full" && st !== "cancelled" && (
+            {creditsLeft > 0 && st !== "full" && st !== "cancelled" && st !== "unavailable" && (
               <TouchableOpacity
                 onPress={() => openBooking(true)}
                 style={styles.btnPackage}
@@ -435,14 +450,16 @@ export default function ClassDetailScreen() {
               style={[
                 styles.btnBook,
                 (st === "full" || st === "cancelled" || !hasSchedule) && styles.btnDisabled,
+                (st === "unavailable") && styles.btnDisabled,
               ]}
               activeOpacity={0.85}
             >
               <Text style={[
                 styles.btnBookText,
                 (st === "full" || st === "cancelled" || !hasSchedule) && styles.btnDisabledText,
+                (st === "unavailable") && styles.btnDisabledText,
               ]}>
-                {st === "cancelled" ? "Cancelled" : st === "full" ? "Full" : hasSchedule ? "Book Now" : "Schedule Not Set"}
+                {st === "cancelled" ? "Cancelled" : st === "unavailable" ? "Unavailable" : st === "full" ? "Full" : hasSchedule ? "Book Now" : "Schedule Not Set"}
               </Text>
             </TouchableOpacity>
           </View>

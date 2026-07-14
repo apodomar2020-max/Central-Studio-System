@@ -5,6 +5,7 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
 import { currentOccurrenceDate } from "../lib/occurrence";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
+import { isClassCapacityEnabled } from "../lib/classCapacitySettings";
 import { createStudentNotification } from "../lib/notifications";
 import { DbClient } from "../lib/dbTypes";
 import { diffFields, logActivity } from "../lib/activityLog";
@@ -96,27 +97,6 @@ async function validateActiveScheduleAllowed(
     return "Expired one-time schedules cannot be set back to active.";
   }
 
-  if (scheduleId == null || schedule.classId == null) return null;
-
-  const [capacityRow] = await db
-    .select({
-      capacity: classesTable.capacity,
-      bookedCount: sql<number>`(
-        select count(*)::int
-        from ${bookingsTable}
-        where ${bookingsTable.scheduleId} = ${scheduleId}
-          -- RESERVED seats only; pending requests do not reserve a seat.
-          and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
-      )`,
-    })
-    .from(classesTable)
-    .where(eq(classesTable.id, schedule.classId))
-    .limit(1);
-
-  if (capacityRow && capacityRow.bookedCount >= capacityRow.capacity) {
-    return "Full schedules cannot be set back to active while booked seats are at capacity.";
-  }
-
   return null;
 }
 
@@ -132,24 +112,6 @@ async function syncAutomaticScheduleStatuses(): Promise<void> {
       and ${schedulesTable.status} <> 'expired'
     `);
 
-  await db
-    .update(schedulesTable)
-    .set({ status: "completed" })
-    .where(sql`
-      ${schedulesTable.status} = 'active'
-      and exists (
-        select 1
-        from ${classesTable}
-        where ${classesTable.id} = ${schedulesTable.classId}
-          and ${classesTable.capacity} <= (
-            select count(*)::int
-            from ${bookingsTable}
-            where ${bookingsTable.scheduleId} = ${schedulesTable.id}
-              -- RESERVED seats only; pending requests do not auto-complete a schedule.
-              and ${bookingsTable.bookingStatus} in ('confirmed', 'attended')
-          )
-      )
-    `);
 }
 
 function normalizeScheduleInput(
@@ -302,6 +264,7 @@ router.get("/schedules/today", async (req, res): Promise<void> => {
 
 router.get("/schedules", async (req, res): Promise<void> => {
   await syncAutomaticScheduleStatuses();
+  const classCapacityEnabled = await isClassCapacityEnabled();
   const query = ListSchedulesQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
@@ -346,8 +309,22 @@ router.get("/schedules", async (req, res): Promise<void> => {
   }
   const enriched = scheduleRows.map((s) => {
     const occ = currentOccurrenceDate(s);
-    const bookedCount = occ ? countByKey.get(`${s.id}|${occ}`) ?? 0 : 0;
-    return { ...s, bookedCount, currentOccurrenceDate: occ };
+    const actualBookedCount = occ ? countByKey.get(`${s.id}|${occ}`) ?? 0 : 0;
+    const legacyBookedCount = classCapacityEnabled ? actualBookedCount : 0;
+    return {
+      ...s,
+      // Backward compatibility: released mobile clients derive "full" locally
+      // from bookedCount/capacity and do not know classCapacityEnabled. While
+      // disabled, keep legacy bookedCount non-blocking and expose the real count
+      // through optional additive fields for updated clients/internal use.
+      bookedCount: legacyBookedCount,
+      actualBookedCount,
+      reservedSeatCount: actualBookedCount,
+      currentOccurrenceDate: occ,
+      classCapacityEnabled,
+      capacityDisplayEnabled: classCapacityEnabled,
+      capacityEnforcementEnabled: classCapacityEnabled,
+    };
   });
   res.json(ListSchedulesResponse.parse(enriched));
 });

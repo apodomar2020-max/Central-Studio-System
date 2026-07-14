@@ -21,6 +21,7 @@ tags:
   - name: analytics
   - name: packageOrders
   - name: attendance
+  - name: settings
 
 paths:
   /healthz:
@@ -48,6 +49,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
+
+  /settings/class-capacity:
+    get:
+      operationId: getClassCapacitySettings
+      tags: [settings]
+      summary: Get class capacity feature status
+      responses:
+        "200":
+          description: Class capacity settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassCapacitySettings"
+
+  /admin/settings/class-capacity:
+    get:
+      operationId: getAdminClassCapacitySettings
+      tags: [settings]
+      summary: Get admin class capacity settings
+      responses:
+        "200":
+          description: Class capacity settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassCapacitySettings"
+    patch:
+      operationId: updateAdminClassCapacitySettings
+      tags: [settings]
+      summary: Update admin class capacity settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [classCapacityEnabled]
+              properties:
+                classCapacityEnabled: { type: boolean }
+                confirmOverCapacity: { type: boolean }
+      responses:
+        "200":
+          description: Updated class capacity settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassCapacitySettings"
+        "409":
+          description: Over-capacity warning when re-enabling
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message, overCapacityOccurrences]
+                properties:
+                  error: { type: string }
+                  message: { type: string }
+                  overCapacityOccurrences:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/OverCapacityOccurrence"
 
   /instructors:
     get:
@@ -1157,7 +1219,39 @@ components:
         isRecurring: { type: boolean }
         effectiveFrom: { type: ["string", "null"] }
         effectiveUntil: { type: ["string", "null"] }
+        bookedCount: { type: integer }
+        actualBookedCount: { type: integer }
+        reservedSeatCount: { type: integer }
+        currentOccurrenceDate: { type: ["string", "null"] }
+        classCapacityEnabled: { type: boolean }
+        capacityDisplayEnabled: { type: boolean }
+        capacityEnforcementEnabled: { type: boolean }
         createdAt: { type: string }
+
+    OverCapacityOccurrence:
+      type: object
+      required: [scheduleId, classId, classTitle, bookedCount, capacity]
+      properties:
+        scheduleId: { type: integer }
+        classId: { type: integer }
+        classTitle: { type: string }
+        occurrenceDate: { type: ["string", "null"] }
+        bookedCount: { type: integer }
+        capacity: { type: integer }
+
+    ClassCapacitySettings:
+      type: object
+      required: [id, classCapacityEnabled, enforcementEnabled, displayEnabled, overCapacityOccurrences, updatedAt]
+      properties:
+        id: { type: integer }
+        classCapacityEnabled: { type: boolean }
+        enforcementEnabled: { type: boolean }
+        displayEnabled: { type: boolean }
+        overCapacityOccurrences:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverCapacityOccurrence"
+        updatedAt: { type: string }
 
     CreateScheduleBody:
       type: object

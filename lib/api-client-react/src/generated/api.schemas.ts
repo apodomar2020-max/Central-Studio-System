@@ -194,8 +194,18 @@ export interface Schedule {
   effectiveUntil?: string | null;
   /** Non-cancelled bookings for this schedule's current occurrence (list endpoint only). */
   bookedCount?: number;
+  /** Real reserved-seat count for this schedule's current occurrence, even when legacy bookedCount is compatibility-adjusted. */
+  actualBookedCount?: number;
+  /** Alias for the real reserved-seat count used by capacity enforcement. */
+  reservedSeatCount?: number;
   /** The current upcoming occurrence date YYYY-MM-DD (list endpoint only). */
   currentOccurrenceDate?: string | null;
+  /** Whether regular class capacity is globally active. */
+  classCapacityEnabled?: boolean;
+  /** Whether clients should display class capacity values. */
+  capacityDisplayEnabled?: boolean;
+  /** Whether bookings are currently blocked by capacity. */
+  capacityEnforcementEnabled?: boolean;
   createdAt: string;
 }
 

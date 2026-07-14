@@ -46,6 +46,7 @@ import type {
 } from "@workspace/api-client-react";
 import {
   compareSchedulesByNextOccurrence,
+  isClassCapacityDisplayEnabled,
   isMobileVisibleSchedule,
   mapApiClassWithScheduleToMobile,
   mapApiInstructorToMobile,
@@ -61,6 +62,7 @@ import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 const { width: SW } = Dimensions.get("window");
@@ -463,9 +465,10 @@ function ClassCard({
 }) {
   const { user } = useAppContext();
   const instructor = instructorMap?.get(item.instructorId);
+  const showCapacity = isClassCapacityDisplayEnabled(item);
   const available = item.capacity - item.bookedCount;
   const hasSchedule = Boolean(item.scheduleId && item.dayOfWeek && item.startTime);
-  const isBookable  = hasSchedule && item.status !== "full" && item.status !== "cancelled";
+  const isBookable  = hasSchedule && item.status !== "full" && item.status !== "cancelled" && item.status !== "unavailable";
 
   const today     = formatCairoDateKey();
   const tomorrow  = getCairoTomorrowDateKey();
@@ -483,7 +486,8 @@ function ClassCard({
     item.status === "available" ? "Available" :
     item.status === "fewSeats"  ? `${available} left` :
     item.status === "full"      ? "Full" :
-    item.status === "cancelled" ? "Cancelled" : "Waitlist";
+    item.status === "cancelled" ? "Cancelled" :
+    item.status === "unavailable" ? "Unavailable" : "Waitlist";
 
   const levelCol = ageGroupColor(item.ageGroup);
 
@@ -513,10 +517,10 @@ function ClassCard({
           <View style={[s.levelChip, { borderColor: levelCol }]}>
             <Text style={[s.levelChipText, { color: levelCol }]}>{item.ageGroup}</Text>
           </View>
-          <View style={[s.statusChip, { backgroundColor: statusColor + "26" }]}>
+          {showCapacity || item.status === "cancelled" || item.status === "unavailable" ? <View style={[s.statusChip, { backgroundColor: statusColor + "26" }]}>
             <View style={[s.statusDot, { backgroundColor: statusColor }]} />
             <Text style={[s.statusChipText, { color: statusColor }]}>{statusLabel}</Text>
-          </View>
+          </View> : null}
         </View>
       </View>
 
@@ -582,7 +586,7 @@ function ClassCard({
           ]}
         >
           <Text style={[s.bookBtnText, { color: isBookable ? INK_900 : INK_300 }]}>
-            {item.status === "cancelled" ? "Cancelled" : item.status === "full" ? "Full" : isBookable ? "Book Now" : "N/A"}
+            {item.status === "cancelled" ? "Cancelled" : item.status === "unavailable" ? "Unavailable" : item.status === "full" ? "Full" : isBookable ? "Book Now" : "N/A"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -847,7 +851,9 @@ export default function StudioHomeScreen() {
   const { data: apiScheds, refetch: refetchScheds, isRefetching: refetchingScheds, isLoading: schedsLoading, isError: schedsError, error: schedsErr } = useListSchedules();
   const { data: apiClasses, refetch: refetchClasses, isRefetching: refetchingClasses, isLoading: classesLoading } = useListClasses();
   const pricingQuery = useQuery({ queryKey: ["class-pricing"], queryFn: fetchClassPricing, staleTime: 5 * 60 * 1000 });
+  const classCapacityQuery = useQuery({ queryKey: ["class-capacity"], queryFn: fetchClassCapacitySettings, staleTime: 60 * 1000 });
   const singlePrice  = pricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
+  const classCapacityEnabled = classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
 
   const weekClasses = React.useMemo<DanceClass[]>(() => {
     if (!apiScheds?.length || !apiClasses?.length) return [];
@@ -859,7 +865,7 @@ export default function StudioHomeScreen() {
       .map((sched) => {
         const cls = classMap.get(sched.classId);
         if (!cls || !cls.isActive) return null;
-        const mapped = mapApiClassWithScheduleToMobile(cls, sched, singlePrice);
+        const mapped = mapApiClassWithScheduleToMobile(cls, sched, singlePrice, classCapacityEnabled);
         if (mapped.isBallet) return null;
         return mapped;
       })
@@ -884,7 +890,7 @@ export default function StudioHomeScreen() {
     return deduped.sort((a, b) =>
       a.date !== b.date ? a.date.localeCompare(b.date) : parseTime(a.startTime) - parseTime(b.startTime),
     ).slice(0, 5);
-  }, [apiScheds, apiClasses, singlePrice]);
+  }, [apiScheds, apiClasses, singlePrice, classCapacityEnabled]);
 
   const isRefreshing = refetchingInst || refetchingScheds || refetchingClasses;
   const onRefresh = useCallback(() => {

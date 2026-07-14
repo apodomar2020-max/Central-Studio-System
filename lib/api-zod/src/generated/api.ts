@@ -264,7 +264,12 @@ export const ListSchedulesResponseItem = zod.object({
   effectiveFrom: zod.string().nullish(),
   effectiveUntil: zod.string().nullish(),
   bookedCount: zod.number().optional(),
+  actualBookedCount: zod.number().optional(),
+  reservedSeatCount: zod.number().optional(),
   currentOccurrenceDate: zod.string().nullish(),
+  classCapacityEnabled: zod.boolean().optional(),
+  capacityDisplayEnabled: zod.boolean().optional(),
+  capacityEnforcementEnabled: zod.boolean().optional(),
   createdAt: zod.string(),
 });
 export const ListSchedulesResponse = zod.array(ListSchedulesResponseItem);
