@@ -171,6 +171,21 @@ function AssessmentCard({ app, onPress }: { app: BalletApplication, onPress?: ()
           </View>
         </View>
 
+        {/* C4/D3: current-month hours for an active, subscribed student.
+            attendanceSummary is now also populated when the student is
+            active but NOT subscribed this month (D3, so the full status
+            screen can show its own message) — this compact card explicitly
+            checks hasActiveSubscription so it keeps hiding in that case,
+            never showing "nullh left of nullh". */}
+        {app.attendanceSummary?.hasActiveSubscription && (
+          <View style={acStyles.hoursRow}>
+            <SBI name="clock" size={14} stroke={2} color="#1FB871" />
+            <Text style={acStyles.hoursText}>
+              {app.attendanceSummary.remainingHours}h left of {app.attendanceSummary.monthlyHours}h · {app.attendanceSummary.billingMonth}
+            </Text>
+          </View>
+        )}
+
         <View style={acStyles.instructorRow}>
           <View style={acStyles.slot}>
             <View style={acStyles.slotAvatar}>
@@ -227,6 +242,8 @@ const acStyles = StyleSheet.create({
   scheduleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   metaText: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: "#8E97A2" },
+  hoursRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  hoursText: { fontFamily: "Archivo_600SemiBold", fontSize: 12.5, color: "#1FB871" },
   instructorRow: { flexDirection: "row", gap: 18, marginBottom: 12 },
   payStatus: { flexDirection: "row", alignItems: "center", gap: 5 },
   payIconWrap: { width: 18, height: 18, borderRadius: 9, backgroundColor: "rgba(255,255,255,0.07)", alignItems: "center", justifyContent: "center" },

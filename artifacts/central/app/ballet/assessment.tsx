@@ -30,6 +30,7 @@ import {
 } from "@/services/balletAssessmentService";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { probeConnectivity } from "@/services/connectivity";
+import type { BalletPaymentMethod } from "@workspace/api-zod";
 
 // NOTE: This screen is only navigated to when the ballet gate (app/ballet/index.tsx)
 // has already confirmed there is no active application, OR from within the ballet
@@ -52,7 +53,16 @@ const INK_200 = "#D1D5DB";
 const INK_300 = "#9CA3AF";
 const INK_400 = "#4B5563";
 const BALLET_COLOR = CYAN; // keep the existing semantic name; aligned to the design cyan
-const STEPS = ["About You", "Child Info", "Experience", "Select Slot", "Review"];
+// C1: "Payment Method" sits between slot selection and the final Review, per
+// the original spec (payment-method choice before Review).
+const STEPS = ["About You", "Child Info", "Experience", "Select Slot", "Payment Method", "Review"];
+
+// C1: parent-facing labels for the three app-layer payment methods.
+const PAYMENT_METHOD_OPTIONS: { value: BalletPaymentMethod; label: string; hint: string }[] = [
+  { value: "bankTransfer", label: "Bank Transfer",     hint: "Transfer to the studio's bank account" },
+  { value: "kashier",      label: "Kashier",           hint: "Pay online via Kashier" },
+  { value: "inPerson",     label: "Pay at the Studio", hint: "Settle in person at reception" },
+];
 
 type FormData = {
   parentName: string;
@@ -69,6 +79,7 @@ type FormData = {
   emergencyContactName: string;
   emergencyContactPhone: string;
   notes: string;
+  preferredPaymentMethod: BalletPaymentMethod | null;
 };
 
 const INITIAL_FORM: FormData = {
@@ -86,6 +97,7 @@ const INITIAL_FORM: FormData = {
   emergencyContactName: "",
   emergencyContactPhone: "",
   notes: "",
+  preferredPaymentMethod: null,
 };
 
 function Field({
@@ -602,6 +614,24 @@ export default function BalletAssessmentScreen() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  // D5: sensitive-information confirmation. Editing the prefilled About You
+  // fields here only affects this one Ballet application — it never writes
+  // back to the saved account/profile. Reuses this file's existing
+  // Alert.alert confirmation pattern (see promptCancel-style usage elsewhere
+  // in this app) rather than introducing a new confirmation mechanism, and
+  // only flips editAboutYou (i.e. only enables the editable fields) once the
+  // parent has explicitly confirmed.
+  function confirmEditAboutYou() {
+    Alert.alert(
+      "Edit for this application only",
+      "Changing your name, phone, or email here only affects this Ballet application. Your saved account profile will not be updated.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Continue", onPress: () => setEditAboutYou(true) },
+      ],
+    );
+  }
+
   function validateStep(): string | null {
     if (step === 0) {
       if (!form.parentName.trim()) return "Parent full name is required.";
@@ -619,6 +649,9 @@ export default function BalletAssessmentScreen() {
     }
     if (step === 3) {
       if (!form.selectedSlot) return "Please select an assessment appointment slot.";
+    }
+    if (step === 4) {
+      if (!form.preferredPaymentMethod) return "Please choose a payment method.";
     }
     return null;
   }
@@ -715,6 +748,8 @@ export default function BalletAssessmentScreen() {
         emergencyContactPhone:  form.emergencyContactPhone.trim() || undefined,
         notes:                  form.notes.trim() || undefined,
         slotId,
+        // C1: validated non-null by validateStep() before Review is reachable.
+        preferredPaymentMethod: form.preferredPaymentMethod!,
         // Link the saved child profile when one was picked (backend verifies
         // ownership) — including one just created above for manual entry.
         childId:                childId ?? undefined,
@@ -724,6 +759,18 @@ export default function BalletAssessmentScreen() {
       router.replace("/ballet/application-status" as any);
     } catch (err: unknown) {
       const typed = err as { status?: number; data?: { code?: string; error?: string }; message?: string };
+
+      // ── D4: 403 Parent account required ─────────────────────────────────
+      // Defense in depth — the gate above (user.accountType !== "parent")
+      // already keeps a Student-type account off this screen entirely, but
+      // the server enforces the same rule independently (account type could
+      // theoretically change between screen mount and submit). Handle it the
+      // same way as the client-side gate: the existing conversion prompt,
+      // which points at the existing profile-update route.
+      if (typed.status === 403 && typed.data?.code === "PARENT_ACCOUNT_REQUIRED") {
+        showParentAccountRequiredPrompt();
+        return;
+      }
 
       // ── 409 Duplicate application ───────────────────────────────────────
       // Server returned 409 with code DUPLICATE_APPLICATION — this parent
@@ -944,7 +991,7 @@ export default function BalletAssessmentScreen() {
                 <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Name</Text><Text style={styles.summaryValue}>{form.parentName || "—"}</Text></View>
                 <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Phone</Text><Text style={styles.summaryValue}>{form.parentPhone || "—"}</Text></View>
                 <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Email</Text><Text style={styles.summaryValue}>{form.parentEmail || "—"}</Text></View>
-                <TouchableOpacity onPress={() => setEditAboutYou(true)} style={styles.editLink}>
+                <TouchableOpacity onPress={confirmEditAboutYou} style={styles.editLink}>
                   <Ionicons name="create-outline" size={14} color={BALLET_COLOR} />
                   <Text style={styles.editLinkText}>Edit for this application</Text>
                 </TouchableOpacity>
@@ -1214,6 +1261,38 @@ export default function BalletAssessmentScreen() {
         {step === 4 && (
           <View style={styles.stepWrap}>
             <View style={styles.stepHeader}>
+              <Text style={styles.stepTitle}>Payment Method</Text>
+              <Text style={styles.stepDesc}>How would you like to pay for the ballet program? You can confirm the actual payment with the studio after acceptance.</Text>
+            </View>
+
+            {PAYMENT_METHOD_OPTIONS.map((opt) => {
+              const isSelected = form.preferredPaymentMethod === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  onPress={() => { Haptics.selectionAsync(); update("preferredPaymentMethod", opt.value); }}
+                  style={[
+                    styles.slotCard,
+                    isSelected && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "10" },
+                  ]}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.slotLeft}>
+                    <Text style={styles.slotDay}>{opt.label}</Text>
+                    <Text style={styles.slotTime}>{opt.hint}</Text>
+                  </View>
+                  <View style={styles.slotRight}>
+                    {isSelected && <Ionicons name="checkmark-circle" size={22} color={BALLET_COLOR} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {step === 5 && (
+          <View style={styles.stepWrap}>
+            <View style={styles.stepHeader}>
               <Text style={styles.stepTitle}>Review & Submit</Text>
               <Text style={styles.stepDesc}>Please review your information before submitting.</Text>
             </View>
@@ -1269,6 +1348,17 @@ export default function BalletAssessmentScreen() {
                 </Text>
                 <Text style={styles.slotReviewTime}>
                   {form.selectedSlot?.startTime} – {form.selectedSlot?.endTime}
+                </Text>
+              </View>
+            </View>
+
+            {/* C1: chosen payment method */}
+            <View style={[styles.slotReview, { borderColor: BALLET_COLOR + "40" }]}>
+              <Ionicons name="card-outline" size={18} color={BALLET_COLOR} />
+              <View>
+                <Text style={styles.slotReviewLabel}>Payment Method</Text>
+                <Text style={[styles.slotReviewValue, { color: BALLET_COLOR }]}>
+                  {PAYMENT_METHOD_OPTIONS.find((o) => o.value === form.preferredPaymentMethod)?.label ?? "—"}
                 </Text>
               </View>
             </View>

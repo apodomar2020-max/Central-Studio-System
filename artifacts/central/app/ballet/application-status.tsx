@@ -384,6 +384,36 @@ export default function ApplicationStatusScreen() {
               <InfoRow label="Application ID" value={`#${application.id}`} />
             </View>
 
+            {/* D3: full monthly attendance section for an active Ballet
+                student. attendanceSummary is populated whenever there's an
+                active level assignment, whether or not there's a paid
+                package for the current billing month — the distinct
+                "no active monthly subscription" case is rendered explicitly
+                below rather than hiding the section or showing zero hours. */}
+            {application.status === "active" && application.attendanceSummary && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Monthly Attendance</Text>
+                <InfoRow label="Billing Month" value={application.attendanceSummary.billingMonth} />
+                {application.attendanceSummary.hasActiveSubscription ? (
+                  <>
+                    <InfoRow label="Monthly Hours" value={`${application.attendanceSummary.monthlyHours}h`} />
+                    <InfoRow label="Attended" value={`${application.attendanceSummary.attendedHours}h`} />
+                    <InfoRow label="Absent" value={`${application.attendanceSummary.absentHours}h`} />
+                    <InfoRow label="Consumed" value={`${application.attendanceSummary.consumedHours}h`} />
+                    <InfoRow label="Remaining" value={`${application.attendanceSummary.remainingHours}h`} />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.adminNote}>
+                      No active monthly subscription for {application.attendanceSummary.billingMonth}.
+                    </Text>
+                    <InfoRow label="Attended" value={`${application.attendanceSummary.attendedHours}h`} />
+                    <InfoRow label="Absent" value={`${application.attendanceSummary.absentHours}h`} />
+                  </>
+                )}
+              </View>
+            )}
+
             {/* Admin notes (shown if present) */}
             {application.adminNotes ? (
               <View style={[styles.section, { borderColor: BALLET_COLOR + "30" }]}>

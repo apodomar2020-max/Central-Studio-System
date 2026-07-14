@@ -25,6 +25,7 @@
  */
 
 import { customFetch } from "@workspace/api-client-react";
+import type { BalletPaymentMethod } from "@workspace/api-zod";
 import { isOfflineError } from "@/services/connectivity";
 
 // ─── Static programme config ──────────────────────────────────────────────────
@@ -171,6 +172,9 @@ export interface SubmitApplicationPayload {
   medicalNotes?:          string;
   notes?:                 string;
   slotId:                 number;
+  /** C1: parent's chosen payment method at intake — required by the backend.
+   *  A preference only; the backend never creates a payment from it. */
+  preferredPaymentMethod: BalletPaymentMethod;
   /** Optional link to a saved child profile (children.id). Omitted for manual
    *  entry / logged-out users. The backend verifies it belongs to the parent. */
   childId?:               number;
@@ -228,6 +232,23 @@ export interface ResolvedBalletSchedule {
 }
 
 /**
+ * C4: current-month attendance-hours summary for an active, subscribed student.
+ * Present on an application only when there IS an active monthly subscription
+ * for the current calendar month; null otherwise (same null-when-not-applicable
+ * convention as resolvedSchedules/resolvedInstructors). When present,
+ * hasActiveSubscription is always true and monthly/remaining are non-null.
+ */
+export interface BalletAttendanceSummary {
+  billingMonth: string;        // "YYYY-MM"
+  hasActiveSubscription: boolean;
+  attendedHours: number;
+  absentHours: number;
+  consumedHours: number;
+  monthlyHours: number | null;
+  remainingHours: number | null;
+}
+
+/**
  * Full representation of a ballet application as returned by
  * GET /api/ballet/applications/my.
  * Includes all editable fields so the edit form can pre-fill them.
@@ -263,6 +284,9 @@ export interface BalletApplication {
   /** A4: instructor name(s) resolved from the assigned group's class(es).
    *  Same population rule as resolvedSchedules. */
   resolvedInstructors: string[] | null;
+  /** C4: current-month hours summary, or null when there's no active monthly
+   *  subscription for the current month (or no active assignment). */
+  attendanceSummary: BalletAttendanceSummary | null;
   createdAt: string;
   updatedAt: string;
 }
