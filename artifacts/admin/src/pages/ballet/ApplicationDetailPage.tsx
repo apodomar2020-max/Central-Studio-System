@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ChevronLeft, Clock, User, ArrowRight } from "lucide-react";
+import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -48,6 +48,7 @@ interface Application {
   assignedLevelId: number | null;
   assignedAt: string | null;
   createdAt: string;
+  preferredPaymentMethod: string | null;
   updatedAt: string;
 }
 
@@ -91,6 +92,35 @@ interface GroupSchedule {
   startTime: string;
   endTime: string;
   status: string;
+  classId?: number | null;
+  classTitle?: string | null;
+  instructorId?: number | null;
+  instructorName?: string | null;
+}
+
+interface BalletPayment {
+  id: number;
+  applicationId: number;
+  levelAssignmentId: number | null;
+  packageId: number | null;
+  packageName?: string | null;
+  amountEgp: number;
+  status: string;
+  paymentMethod: string | null;
+  billingMonth: string | null;
+  paidAt: string | null;
+  refundedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface BalletPackage {
+  id: number;
+  name: string;
+  priceEgp: number;
+  monthlyHours: number;
+  isActive: boolean;
 }
 
 interface AttendanceSummary {
@@ -127,6 +157,8 @@ interface DetailResponse {
   assignmentId: number | null;
   groupSchedules: GroupSchedule[];
   events: Event[];
+  payments: BalletPayment[];
+  currentPayment: BalletPayment | null;
   attendanceSummary: AttendanceSummary | null;
 }
 
@@ -144,6 +176,10 @@ interface LevelsResponse {
 
 interface GroupsResponse {
   data: Group[];
+}
+
+interface PackagesResponse {
+  data: BalletPackage[];
 }
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -167,6 +203,36 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   active:            { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
   cancelled:         { label: "Cancelled",           className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
 };
+
+const PAYMENT_STATUSES = [
+  { value: "pending", label: "Pending" },
+  { value: "paid", label: "Paid" },
+  { value: "rejected", label: "Rejected" },
+  { value: "refunded", label: "Refunded" },
+];
+
+const PAYMENT_METHODS = [
+  { value: "bankTransfer", label: "Bank Transfer" },
+  { value: "kashier", label: "Kashier" },
+  { value: "inPerson", label: "In Person" },
+];
+
+const PAYMENT_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  pending:  { label: "Pending",  className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
+  paid:     { label: "Paid",     className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  rejected: { label: "Rejected", className: "bg-red-500/15 text-red-400 border-red-500/30" },
+  refunded: { label: "Refunded", className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
+};
+
+function formatPaymentMethod(method?: string | null) {
+  return PAYMENT_METHODS.find((item) => item.value === method)?.label ?? method ?? null;
+}
+
+function PaymentStatusBadge({ status }: { status?: string | null }) {
+  if (!status) return <span className="italic text-muted-foreground">—</span>;
+  const cfg = PAYMENT_STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
+  return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;
+}
 
 function StatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
@@ -232,6 +298,13 @@ export default function ApplicationDetailPage() {
   const [attStatus, setAttStatus]         = useState("checked_in");
   const [attDuration, setAttDuration]     = useState("");
   const [attNote, setAttNote]             = useState("");
+  const [paymentPackageId, setPaymentPackageId] = useState("");
+  const [paymentBillingMonth, setPaymentBillingMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentInitialStatus, setPaymentInitialStatus] = useState("pending");
+  const [paymentStatus, setPaymentStatus] = useState("");
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // D1: inline correction state for an existing attendance history row.
   const [editingAttendanceId, setEditingAttendanceId] = useState<number | null>(null);
@@ -281,6 +354,17 @@ export default function ApplicationDetailPage() {
     },
   });
 
+  const { data: packagesData } = useQuery<PackagesResponse>({
+    queryKey: ["ballet-packages"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/packages?limit=100`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load packages");
+      return res.json();
+    },
+  });
+
   // ── Status mutation ─────────────────────────────────────────────────────────
 
   const statusMutation = useMutation({
@@ -302,6 +386,7 @@ export default function ApplicationDetailPage() {
       setStatusNote("");
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -327,6 +412,7 @@ export default function ApplicationDetailPage() {
       setLevelNote("");
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -352,9 +438,95 @@ export default function ApplicationDetailPage() {
       setGroupNote("");
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  // ── Payment mutations ──────────────────────────────────────────────────────
+
+  const createPaymentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/payments`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify({
+          applicationId: appId,
+          packageId: parseInt(paymentPackageId, 10),
+          billingMonth: paymentBillingMonth,
+          amountEgp: parseInt(paymentAmount, 10),
+          paymentMethod: paymentMethod || data?.application.preferredPaymentMethod || undefined,
+          status: paymentInitialStatus,
+          levelAssignmentId: data?.assignmentId ?? undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to create payment");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Payment created" });
+      setPaymentPackageId("");
+      setPaymentAmount("");
+      setPaymentInitialStatus("pending");
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updatePaymentStatusMutation = useMutation({
+    mutationFn: async (payment: BalletPayment) => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/payments/${payment.id}/status`, {
+        method: "PATCH",
+        headers: makeHeaders(token),
+        body: JSON.stringify({ status: paymentStatus }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to update payment status");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Payment status updated" });
+      setPaymentStatus("");
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  async function handleExportPdf() {
+    setIsExportingPdf(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/export.pdf`, { headers: makeHeaders(token) });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Failed to export PDF");
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const fallbackName = `Ballet-Application-${appId}-${app?.childName ?? "application"}.pdf`;
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ title: "Export failed", description: (err as Error)?.message ?? "Failed to export PDF", variant: "destructive" });
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }
 
   // ── Attendance history + monthly summary (D1) ──────────────────────────────
   // A dedicated fetch against the new GET endpoint — the detail route above
@@ -474,13 +646,14 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  const { application: app, slot, level, group, events, groupSchedules, attendanceSummary } = data;
+  const { application: app, slot, level, group, events, groupSchedules, attendanceSummary, currentPayment, payments } = data;
   const activeSchedules = (groupSchedules ?? []).filter((s) => s.status === "active");
   const levels = levelsData?.levels ?? [];
   // Groups are only offered for the level actually assigned to this
   // application — mirrors the existing level-filter pattern used elsewhere
   // in this admin app (client-side filter, no backend query param).
   const groups = (groupsData?.data ?? []).filter((g) => g.levelId === app.assignedLevelId);
+  const packages = (packagesData?.data ?? []).filter((pkg) => pkg.isActive);
   const permittedStatuses = ALL_STATUSES.filter((status) => {
     if (status.value === "rejected") return canReject;
     if (["accepted", "assignedToLevel", "active"].includes(status.value)) return canApprove;
@@ -505,7 +678,13 @@ export default function ApplicationDetailPage() {
             description={`Submitted by ${app.parentName} · ${new Date(app.createdAt).toLocaleDateString()}`}
             mode="stage"
           >
-            <StatusBadge status={app.status} />
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={app.status} />
+              <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={isExportingPdf}>
+                {isExportingPdf ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
+                Export PDF
+              </Button>
+            </div>
           </PageHeader>
         </div>
       </div>
@@ -583,6 +762,36 @@ export default function ApplicationDetailPage() {
             )}
           </Section>
 
+          <Section title="Payment">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Current status" value={<PaymentStatusBadge status={currentPayment?.status} />} />
+              <Field label="Amount" value={currentPayment ? `${currentPayment.amountEgp} EGP` : null} />
+              <Field label="Package" value={currentPayment?.packageName ?? (currentPayment?.packageId ? `#${currentPayment.packageId}` : null)} />
+              <Field label="Billing month" value={currentPayment?.billingMonth} />
+              <Field label="Preferred method" value={formatPaymentMethod(app.preferredPaymentMethod)} />
+              <Field label="Recorded method" value={formatPaymentMethod(currentPayment?.paymentMethod)} />
+              <Field label="Last update" value={currentPayment?.updatedAt ? new Date(currentPayment.updatedAt).toLocaleString() : null} />
+            </div>
+            {payments.length > 1 && (
+              <div className="mt-4 space-y-2">
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Payment History</h4>
+                <div className="space-y-2">
+                  {payments.map((payment) => (
+                    <div key={payment.id} className="rounded-md border p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium">#{payment.id} · {payment.packageName ?? (payment.packageId ? `Package #${payment.packageId}` : "No package")}</span>
+                        <PaymentStatusBadge status={payment.status} />
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {payment.amountEgp} EGP · {payment.billingMonth ?? "No billing month"} · {formatPaymentMethod(payment.paymentMethod) ?? "No method"} · {new Date(payment.updatedAt).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+
           {/* Assigned level (if any) */}
           {(level || app.assignedLevelId) && (
             <Section title="Assigned Level">
@@ -629,6 +838,100 @@ export default function ApplicationDetailPage() {
 
         {/* Right column — actions + timeline */}
         <div className="space-y-4">
+
+          <div className="rounded-lg border bg-card p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              <CreditCard className="mr-1 inline h-3.5 w-3.5" /> Payment
+            </h3>
+            {!currentPayment ? (
+              <>
+                <Select value={paymentPackageId} onValueChange={(value) => {
+                  setPaymentPackageId(value);
+                  const selected = packages.find((pkg) => String(pkg.id) === value);
+                  if (selected) setPaymentAmount(String(selected.priceEgp));
+                }}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Select package…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {packages.map((pkg) => (
+                      <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <input
+                  type="month"
+                  className="w-full h-8 rounded-md border bg-background px-2 text-sm"
+                  value={paymentBillingMonth}
+                  onChange={(e) => setPaymentBillingMonth(e.target.value)}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  className="w-full h-8 rounded-md border bg-background px-2 text-sm"
+                  placeholder="Amount EGP"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                />
+                <Select value={paymentMethod || app.preferredPaymentMethod || ""} onValueChange={setPaymentMethod}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Payment method…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_METHODS.map((method) => (
+                      <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={paymentInitialStatus} onValueChange={setPaymentInitialStatus}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_STATUSES.map((status) => (
+                      <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  disabled={!paymentPackageId || !paymentBillingMonth || !paymentAmount || !(paymentMethod || app.preferredPaymentMethod) || createPaymentMutation.isPending}
+                  onClick={() => createPaymentMutation.mutate()}
+                  style={{ background: "#00B6D6", color: "#000" }}
+                  className="w-full"
+                >
+                  {createPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating…</> : "Create Payment"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <PaymentStatusBadge status={currentPayment.status} />
+                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">new status</span>
+                </div>
+                <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Select payment status…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_STATUSES.filter((s) => s.value !== currentPayment.status).map((status) => (
+                      <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  disabled={!paymentStatus || updatePaymentStatusMutation.isPending}
+                  onClick={() => updatePaymentStatusMutation.mutate(currentPayment)}
+                  style={{ background: "#00B6D6", color: "#000" }}
+                  className="w-full"
+                >
+                  {updatePaymentStatusMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</> : "Update Payment Status"}
+                </Button>
+              </>
+            )}
+          </div>
 
           {/* Status change */}
           {permittedStatuses.length > 0 && <div className="rounded-lg border bg-card p-5 space-y-4">

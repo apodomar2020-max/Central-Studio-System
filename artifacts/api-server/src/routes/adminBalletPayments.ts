@@ -31,7 +31,7 @@
  *       an explicit log line so the skip is visible rather than silent.
  */
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { and, count, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -125,6 +125,7 @@ const CreatePaymentBody = z.object({
   packageOrderId:    z.number().int().positive().optional(),
   levelAssignmentId: z.number().int().positive().optional(),
   paymentMethod:     z.enum(BALLET_PAYMENT_METHODS).optional(),
+  status:            z.enum(BALLET_PAYMENT_STATUSES).optional(),
   // C2: calendar month this payment covers, "YYYY-MM". Optional at the API
   // level (historical/non-monthly payments omit it), but it is the required
   // input for a payment meant to represent a monthly entitlement — the C4
@@ -140,7 +141,7 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
     return;
   }
 
-  const { applicationId, amountEgp, packageId, packageOrderId, levelAssignmentId, paymentMethod, billingMonth, notes } = parsed.data;
+  const { applicationId, amountEgp, packageId, packageOrderId, levelAssignmentId, paymentMethod, status, billingMonth, notes } = parsed.data;
 
   const [app] = await db
     .select({
@@ -210,6 +211,8 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
   }
 
   try {
+    const createdStatus = status ?? "pending";
+    const now = new Date().toISOString();
     const [payment] = await db
       .insert(balletPaymentsTable)
       .values({
@@ -218,10 +221,13 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
         packageId: packageId ?? null,
         packageOrderId: packageOrderId ?? null,
         levelAssignmentId: levelAssignmentId ?? null,
+        status: createdStatus,
         // C1: prefill the method from the application's intake preference when
         // the admin didn't explicitly choose one. Explicit body value always wins.
         paymentMethod: paymentMethod ?? app.preferredPaymentMethod ?? null,
         billingMonth: billingMonth ?? null,
+        paidAt: createdStatus === "paid" ? now : null,
+        refundedAt: createdStatus === "refunded" ? now : null,
         notes: notes ?? null,
       })
       .returning();
@@ -250,6 +256,105 @@ const UpdatePaymentStatusBody = z.object({
   note:   z.string().optional(),
 });
 
+async function updatePaymentStatus(
+  req: AdminRequest,
+  res: Response,
+  id: number,
+  expectedApplicationId?: number,
+): Promise<void> {
+  const parsed = UpdatePaymentStatusBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const { status, note } = parsed.data;
+  if (!isValidPaymentStatus(status)) {
+    res.status(400).json({ error: `Invalid status: ${status}. Must be one of: ${BALLET_PAYMENT_STATUSES.join(", ")}` });
+    return;
+  }
+
+  const [payment] = await db
+    .select()
+    .from(balletPaymentsTable)
+    .where(eq(balletPaymentsTable.id, id))
+    .limit(1);
+
+  if (!payment) { res.status(404).json({ error: "Payment not found" }); return; }
+  if (expectedApplicationId != null && payment.applicationId !== expectedApplicationId) {
+    res.status(422).json({ error: "Payment does not belong to this ballet application." });
+    return;
+  }
+
+  const [app] = await db
+    .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status, childName: balletApplicationsTable.childName })
+    .from(balletApplicationsTable)
+    .where(eq(balletApplicationsTable.id, payment.applicationId))
+    .limit(1);
+
+  const fromStatus = payment.status;
+  const adminId = req.adminUser?.sub ?? null;
+  const now = new Date().toISOString();
+
+  const updates: Record<string, unknown> = { status, updatedAt: now };
+  if (status === "paid") updates["paidAt"] = now;
+  if (status === "refunded") updates["refundedAt"] = now;
+
+  let updatedPayment: typeof payment | undefined;
+
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(balletPaymentsTable)
+      .set(updates)
+      .where(eq(balletPaymentsTable.id, id))
+      .returning();
+    updatedPayment = row;
+
+    if (status === "refunded" && payment.levelAssignmentId != null) {
+      await tx
+        .update(balletLevelAssignmentsTable)
+        .set({
+          status: "withdrawn",
+          notes: `Withdrawn — payment refunded on ${now.slice(0, 10)}`,
+          updatedAt: now,
+        })
+        .where(eq(balletLevelAssignmentsTable.id, payment.levelAssignmentId));
+
+      await tx.insert(balletApplicationEventsTable).values({
+        applicationId: payment.applicationId,
+        fromStatus:    app?.status ?? null,
+        toStatus:      app?.status ?? null,
+        changedById:   adminId,
+        note:          note ? `Payment refunded — enrollment withdrawn. ${note}` : "Payment refunded — enrollment withdrawn",
+      });
+    }
+  });
+
+  logger.info({ paymentId: id, fromStatus, toStatus: status, adminId }, "Ballet payment status updated");
+
+  if (updatedPayment && fromStatus !== status) {
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, payment[key]])),
+      Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, updatedPayment![key]])),
+      BALLET_PAYMENT_ACTIVITY_FIELDS,
+    );
+    await logActivity(req, {
+      action: status === "refunded" ? "refund" : status === "paid" ? "markPaid" : "statusChange",
+      module: "ballet.payments",
+      entityType: "ballet_payment",
+      entityId: id,
+      entityLabel: app?.childName ?? `Application #${payment.applicationId}`,
+      before,
+      after,
+      summary: status === "refunded"
+        ? `Refunded ballet payment ${id} for ${app?.childName ?? `application #${payment.applicationId}`} — enrollment withdrawn`
+        : `Changed ballet payment ${id} status from ${fromStatus} to ${status}`,
+    });
+  }
+
+  res.json({ payment: updatedPayment });
+}
+
 router.patch(
   "/admin/ballet/payments/:id/status",
   requireAdminAuth,
@@ -257,95 +362,20 @@ router.patch(
   async (req: AdminRequest, res): Promise<void> => {
     const id = parseInt(String(req.params["id"] ?? ""), 10);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid payment ID" }); return; }
+    await updatePaymentStatus(req, res, id);
+  },
+);
 
-    const parsed = UpdatePaymentStatusBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
-      return;
-    }
-
-    const { status, note } = parsed.data;
-    if (!isValidPaymentStatus(status)) {
-      res.status(400).json({ error: `Invalid status: ${status}. Must be one of: ${BALLET_PAYMENT_STATUSES.join(", ")}` });
-      return;
-    }
-
-    const [payment] = await db
-      .select()
-      .from(balletPaymentsTable)
-      .where(eq(balletPaymentsTable.id, id))
-      .limit(1);
-
-    if (!payment) { res.status(404).json({ error: "Payment not found" }); return; }
-
-    const [app] = await db
-      .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status, childName: balletApplicationsTable.childName })
-      .from(balletApplicationsTable)
-      .where(eq(balletApplicationsTable.id, payment.applicationId))
-      .limit(1);
-
-    const fromStatus = payment.status;
-    const adminId = req.adminUser?.sub ?? null;
-    const now = new Date().toISOString();
-
-    const updates: Record<string, unknown> = { status, updatedAt: now };
-    if (status === "paid") updates["paidAt"] = now;
-    if (status === "refunded") updates["refundedAt"] = now;
-
-    let updatedPayment: typeof payment | undefined;
-
-    await db.transaction(async (tx) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const [row] = await tx
-        .update(balletPaymentsTable)
-        .set(updates as any)
-        .where(eq(balletPaymentsTable.id, id))
-        .returning();
-      updatedPayment = row;
-
-      if (status === "refunded" && payment.levelAssignmentId != null) {
-        await tx
-          .update(balletLevelAssignmentsTable)
-          .set({
-            status: "withdrawn",
-            notes: `Withdrawn — payment refunded on ${now.slice(0, 10)}`,
-            updatedAt: now,
-          })
-          .where(eq(balletLevelAssignmentsTable.id, payment.levelAssignmentId));
-
-        await tx.insert(balletApplicationEventsTable).values({
-          applicationId: payment.applicationId,
-          fromStatus:    app?.status ?? null,
-          toStatus:      app?.status ?? null,
-          changedById:   adminId,
-          note:          note ? `Payment refunded — enrollment withdrawn. ${note}` : "Payment refunded — enrollment withdrawn",
-        });
-      }
-    });
-
-    logger.info({ paymentId: id, fromStatus, toStatus: status, adminId }, "Ballet payment status updated");
-
-    if (updatedPayment && fromStatus !== status) {
-      const { before, after } = diffFields(
-        Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, payment[key]])),
-        Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, updatedPayment![key]])),
-        BALLET_PAYMENT_ACTIVITY_FIELDS,
-      );
-      await logActivity(req, {
-        action: status === "refunded" ? "refund" : status === "paid" ? "markPaid" : "statusChange",
-        module: "ballet.payments",
-        entityType: "ballet_payment",
-        entityId: id,
-        entityLabel: app?.childName ?? `Application #${payment.applicationId}`,
-        before,
-        after,
-        summary: status === "refunded"
-          ? `Refunded ballet payment ${id} for ${app?.childName ?? `application #${payment.applicationId}`} — enrollment withdrawn`
-          : `Changed ballet payment ${id} status from ${fromStatus} to ${status}`,
-      });
-    }
-
-    res.json({ payment: updatedPayment });
+router.patch(
+  "/admin/ballet/applications/:applicationId/payments/:id/status",
+  requireAdminAuth,
+  requireAdminPermission("ballet.payments", "edit"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const applicationId = parseInt(String(req.params["applicationId"] ?? ""), 10);
+    const id = parseInt(String(req.params["id"] ?? ""), 10);
+    if (isNaN(applicationId)) { res.status(400).json({ error: "Invalid application ID" }); return; }
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid payment ID" }); return; }
+    await updatePaymentStatus(req, res, id, applicationId);
   },
 );
 

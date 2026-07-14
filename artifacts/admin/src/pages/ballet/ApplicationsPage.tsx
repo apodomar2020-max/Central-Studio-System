@@ -129,7 +129,7 @@ function makeHeaders(token: string | null): HeadersInit {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-const LIMIT = 20;
+const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 export default function ApplicationsPage() {
   const { token, can } = useAdminAuth();
@@ -140,17 +140,18 @@ export default function ApplicationsPage() {
   const [searchInput, setSearchInput]   = useState("");
   const [levelId, setLevelId]           = useState("");
   const [page, setPage]                 = useState(1);
+  const [pageSize, setPageSize]         = useState(25);
 
   // The levels list endpoint requires ballet.levels view — hide the filter
   // (not the page) for admins without it.
   const canFilterByLevel = can("ballet.levels", "view");
 
   const { data, isLoading, isError } = useQuery<ListResponse>({
-    queryKey: ["ballet-applications", page, activeStatus, search, levelId],
+    queryKey: ["ballet-applications", page, pageSize, activeStatus, search, levelId],
     queryFn: async () => {
       const params = new URLSearchParams({
         page:  String(page),
-        limit: String(LIMIT),
+        limit: String(pageSize),
         ...(activeStatus ? { status: activeStatus } : {}),
         ...(search ? { search } : {}),
         ...(levelId ? { levelId } : {}),
@@ -189,6 +190,11 @@ export default function ApplicationsPage() {
 
   function handleLevelChange(value: string) {
     setLevelId(value === "all" ? "" : value);
+    setPage(1);
+  }
+
+  function handlePageSizeChange(value: string) {
+    setPageSize(parseInt(value, 10));
     setPage(1);
   }
 
@@ -344,32 +350,45 @@ export default function ApplicationsPage() {
       </div>
 
       {/* Pagination */}
-      {data && data.totalPages > 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+      {data && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
           <span>
-            Showing {((page - 1) * LIMIT) + 1}–{Math.min(page * LIMIT, data.total)} of {data.total}
+            {data.total === 0
+              ? "Showing 0 of 0"
+              : `Showing ${((data.page - 1) * data.limit) + 1}–${Math.min(data.page * data.limit, data.total)} of ${data.total}`}
           </span>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs">Rows</span>
+            <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
+              <SelectTrigger className="h-7 w-20 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={size} value={String(size)}>{size}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
-              size="icon"
-              className="h-7 w-7"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              size="sm"
+              className="h-7"
+              disabled={page <= 1 || isLoading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="mr-1 h-4 w-4" /> Previous
             </Button>
             <span className="flex items-center px-2 text-xs">
-              {page} / {data.totalPages}
+              Page {data.page} of {Math.max(data.totalPages, 1)}
             </span>
             <Button
               variant="outline"
-              size="icon"
-              className="h-7 w-7"
-              disabled={page >= data.totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              size="sm"
+              className="h-7"
+              disabled={page >= data.totalPages || isLoading || data.totalPages === 0}
+              onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
             >
-              <ChevronRight className="h-4 w-4" />
+              Next <ChevronRight className="ml-1 h-4 w-4" />
             </Button>
           </div>
         </div>
