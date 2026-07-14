@@ -1,0 +1,23 @@
+-- Migration 0053: Ballet billing month + intake payment preference (Phase B / C1 + C2)
+--
+-- Two simple additive, nullable text columns on two different tables — bundled
+-- into one migration as the smallest additive design for this round:
+--
+--   ballet_applications.preferred_payment_method (C1)
+--     Parent's chosen payment method at intake. App-layer enum
+--     BALLET_PAYMENT_METHODS (bankTransfer | kashier | inPerson), no DB CHECK.
+--     Required by the POST body for new submissions, nullable at the DB level
+--     so historical rows stay valid. A preference only — never creates/touches
+--     a ballet_payments row; consumed as a prefill when admin records a payment.
+--
+--   ballet_payments.billing_month (C2)
+--     Which calendar month a payment covers, "YYYY-MM". Validated at the
+--     application layer (no DB CHECK, matching status/payment_method). Nullable
+--     so historical and non-monthly rows stay valid. A monthly-entitlement
+--     lookup filters status='paid' AND billing_month='YYYY-MM'.
+--
+-- Journal "when" set to 1784462408000 (> 0052's 1784462407000), following this
+-- repo's +1000ms-per-migration convention so the installed drizzle-orm migrator
+-- (pending-detection by "when", not idx) never skips it.
+ALTER TABLE "ballet_applications" ADD COLUMN "preferred_payment_method" text;--> statement-breakpoint
+ALTER TABLE "ballet_payments" ADD COLUMN "billing_month" text;

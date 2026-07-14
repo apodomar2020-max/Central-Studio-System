@@ -52,6 +52,12 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   notes:                 text("notes"),
   slotId:                integer("slot_id").references(() => balletAssessmentSlotsTable.id, { onDelete: "set null" }),
   slotLabel:             text("slot_label"),
+  // C1: parent's chosen payment method at intake (app-layer enum
+  // BALLET_PAYMENT_METHODS). Nullable at the DB level so historical rows stay
+  // valid, but required by the POST body for new submissions. This is a
+  // preference only — it never creates or touches a ballet_payments row; it is
+  // consumed as a prefill convenience when admin staff later record a payment.
+  preferredPaymentMethod: text("preferred_payment_method"),
   status:                text("status").notNull().default("pending"),
   adminNotes:            text("admin_notes"),
   assignedLevelId:       integer("assigned_level_id").references(() => balletLevelsTable.id, { onDelete: "set null" }),

@@ -1,7 +1,12 @@
 import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
-import { BALLET_PAYMENT_STATUSES, type BalletPaymentStatus } from "@workspace/api-zod";
+import {
+  BALLET_PAYMENT_STATUSES,
+  type BalletPaymentStatus,
+  BALLET_PAYMENT_METHODS,
+  type BalletPaymentMethod,
+} from "@workspace/api-zod";
 import { balletApplicationsTable } from "./balletApplications";
 import { balletLevelAssignmentsTable } from "./balletLevelAssignments";
 import { balletPackagesTable } from "./balletPackages";
@@ -10,18 +15,10 @@ import { packageOrdersTable } from "./packageOrders";
 // Canonical source of truth moved to @workspace/api-zod (Phase A / P0-2b) so
 // frontend packages can import the same literals instead of retyping them.
 // Re-exported here so existing `from "@workspace/db/schema/balletPayments"`
-// imports keep working unchanged.
-export { BALLET_PAYMENT_STATUSES };
-export type { BalletPaymentStatus };
-
-/**
- * Payment methods (A7) — a small fixed set treated as an enum at the
- * application layer only (no DB CHECK constraint, matching this table's
- * existing convention). This records HOW a manually-entered payment was
- * taken; it is NOT a payment-gateway integration.
- */
-export const BALLET_PAYMENT_METHODS = ["bankTransfer", "kashier", "inPerson"] as const;
-export type BalletPaymentMethod = (typeof BALLET_PAYMENT_METHODS)[number];
+// imports keep working unchanged. BALLET_PAYMENT_METHODS was hoisted to
+// @workspace/api-zod in C1 (shared with ballet_applications.preferredPaymentMethod).
+export { BALLET_PAYMENT_STATUSES, BALLET_PAYMENT_METHODS };
+export type { BalletPaymentStatus, BalletPaymentMethod };
 
 /**
  * ballet_payments — one row per payment tied to a ballet application.
@@ -41,6 +38,11 @@ export const balletPaymentsTable = pgTable("ballet_payments", {
   // A7: how the payment was taken. App-layer enum (BALLET_PAYMENT_METHODS):
   // bankTransfer | kashier | inPerson. Nullable, no DB CHECK.
   paymentMethod:     text("payment_method"),
+  // C2: which calendar month this payment covers, "YYYY-MM". Validated at the
+  // application layer (no DB CHECK, matching status/paymentMethod). Nullable so
+  // historical rows and non-monthly payment types stay valid. A monthly
+  // entitlement lookup filters status='paid' AND billing_month = 'YYYY-MM'.
+  billingMonth:      text("billing_month"),
   paidAt:            timestamp("paid_at", { withTimezone: true, mode: "string" }),
   refundedAt:        timestamp("refunded_at", { withTimezone: true, mode: "string" }),
   notes:             text("notes"),
