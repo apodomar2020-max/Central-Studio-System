@@ -41,7 +41,7 @@ interface ApplicationRow {
   childName: string;
   parentName: string;
   parentPhone: string;
-  slotLabel: string | null;
+  assessmentDate: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -318,7 +318,7 @@ export default function ApplicationsPage() {
               <TableHead>Child</TableHead>
               <TableHead>Parent</TableHead>
               <TableHead>Phone</TableHead>
-              <TableHead>Selected Slot</TableHead>
+              <TableHead>Assessment Date</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Payment Status</TableHead>
@@ -361,7 +361,7 @@ export default function ApplicationsPage() {
                   <TableCell>{app.parentName}</TableCell>
                   <TableCell className="text-muted-foreground text-sm">{app.parentPhone}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {app.slotLabel ?? <span className="italic">—</span>}
+                    {app.assessmentDate ?? <span className="italic">—</span>}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {app.levelName ?? <span className="italic">—</span>}

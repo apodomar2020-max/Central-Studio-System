@@ -7,19 +7,18 @@
  *
  * Routes:
  *   GET   /api/admin/ballet/applications              — paginated list + filter + search
- *   GET   /api/admin/ballet/applications/:id          — full detail with slot, level, events
+ *   GET   /api/admin/ballet/applications/:id          — full detail with assessment schedule, level, events
  *   PATCH /api/admin/ballet/applications/:id/status   — change status + append event
  *   POST  /api/admin/ballet/applications/:id/assign-level — assign level + update app + event
  */
 
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, ilike, inArray, not, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
   balletApplicationsTable,
   balletApplicationEventsTable,
-  balletAssessmentSlotsTable,
   balletLevelsTable,
   balletSettingsTable,
   balletLevelAssignmentsTable,
@@ -29,6 +28,7 @@ import {
   balletPackagesTable,
   balletPaymentsTable,
   balletClassesTable,
+  balletClassLevelsTable,
   balletInstructorsTable,
   attendanceTable,
   systemUsersTable,
@@ -50,7 +50,6 @@ import {
 
 const router: IRouter = Router();
 const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive"] as const;
-const BALLET_SLOT_ACTIVITY_FIELDS = ["date", "startTime", "endTime", "capacity", "notes", "isActive"] as const;
 const BALLET_SETTINGS_ACTIVITY_FIELDS = ["preBalletPriceEgp", "preBalletHoursMonthly", "levelsPriceEgp", "levelsHoursMonthly", "fewSeatsThreshold", "assessmentInstructions", "requirements", "acceptanceMessageTemplate"] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -103,11 +102,6 @@ function requireApplicationStatusPermission(req: Request, res: Response, next: N
       ? "approve"
       : "review";
   requireAdminPermission("ballet.applications", action)(req, res, next);
-}
-
-function requireAssessmentSlotUpdatePermission(req: Request, res: Response, next: NextFunction): void {
-  const action = req.body?.isActive === false ? "delete" : "edit";
-  requireAdminPermission("ballet.assessmentDates", action)(req, res, next);
 }
 
 /** Human-readable notification content for each ballet application status change. */
@@ -265,8 +259,8 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
         parentName:    balletApplicationsTable.parentName,
         parentPhone:   balletApplicationsTable.parentPhone,
         parentEmail:   balletApplicationsTable.parentEmail,
-        slotId:        balletApplicationsTable.slotId,
-        slotLabel:     balletApplicationsTable.slotLabel,
+        assessmentScheduleId: balletApplicationsTable.assessmentScheduleId,
+        assessmentDate:       balletApplicationsTable.assessmentDate,
         status:        balletApplicationsTable.status,
         createdAt:     balletApplicationsTable.createdAt,
         updatedAt:     balletApplicationsTable.updatedAt,
@@ -329,7 +323,7 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
 // ─── GET /api/admin/ballet/applications/:id ───────────────────────────────────
 //
 // Returns the full application record plus:
-//   slot          — the assessment slot details (if slotId is set)
+//   assessmentSchedule — selected schedule details (if assessmentScheduleId is set)
 //   level         — the assigned level (if assignedLevelId is set)
 //   group         — the assigned group on the current active level
 //                   assignment (Phase 4E), or null if none set yet
@@ -350,10 +344,32 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
 
   if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
-  // Load slot, assigned level, active level assignment, and events in parallel
-  const [slotRows, levelRows, assignmentRows, events] = await Promise.all([
-    app.slotId
-      ? db.select().from(balletAssessmentSlotsTable).where(eq(balletAssessmentSlotsTable.id, app.slotId)).limit(1)
+  // Load selected assessment schedule, assigned level, active level assignment,
+  // and events in parallel.
+  const [assessmentScheduleRows, levelRows, assignmentRows, events] = await Promise.all([
+    app.assessmentScheduleId
+      ? db
+          .select({
+            id:             balletSchedulesTable.id,
+            dayOfWeek:      balletSchedulesTable.dayOfWeek,
+            startTime:      balletSchedulesTable.startTime,
+            endTime:        balletSchedulesTable.endTime,
+            status:         balletSchedulesTable.status,
+            classId:        balletClassesTable.id,
+            classTitle:     balletClassesTable.title,
+            instructorId:   balletInstructorsTable.id,
+            instructorName: balletInstructorsTable.name,
+            levelId:        balletLevelsTable.id,
+            levelName:      balletLevelsTable.name,
+          })
+          .from(balletSchedulesTable)
+          .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+          .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
+          .leftJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
+          .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
+          .where(eq(balletSchedulesTable.id, app.assessmentScheduleId))
+          .orderBy(asc(balletLevelsTable.sortOrder))
+          .limit(1)
       : Promise.resolve([]),
 
     app.assignedLevelId
@@ -438,7 +454,7 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
 
   res.json({
     application:  app,
-    slot:         slotRows[0] ?? null,
+    assessmentSchedule: assessmentScheduleRows[0] ?? null,
     level:        levelRows[0] ?? null,
     group:        groupRows[0] ?? null,
     assignmentId: activeAssignment?.id ?? null,
@@ -461,8 +477,31 @@ router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requir
   const [app] = await db.select().from(balletApplicationsTable).where(eq(balletApplicationsTable.id, id)).limit(1);
   if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
-  const [slotRows, levelRows, assignmentRows, events] = await Promise.all([
-    app.slotId ? db.select().from(balletAssessmentSlotsTable).where(eq(balletAssessmentSlotsTable.id, app.slotId)).limit(1) : Promise.resolve([]),
+  const [assessmentScheduleRows, levelRows, assignmentRows, events] = await Promise.all([
+    app.assessmentScheduleId
+      ? db
+          .select({
+            id: balletSchedulesTable.id,
+            dayOfWeek: balletSchedulesTable.dayOfWeek,
+            startTime: balletSchedulesTable.startTime,
+            endTime: balletSchedulesTable.endTime,
+            status: balletSchedulesTable.status,
+            classId: balletClassesTable.id,
+            classTitle: balletClassesTable.title,
+            instructorId: balletInstructorsTable.id,
+            instructorName: balletInstructorsTable.name,
+            levelId: balletLevelsTable.id,
+            levelName: balletLevelsTable.name,
+          })
+          .from(balletSchedulesTable)
+          .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+          .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
+          .leftJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
+          .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
+          .where(eq(balletSchedulesTable.id, app.assessmentScheduleId))
+          .orderBy(asc(balletLevelsTable.sortOrder))
+          .limit(1)
+      : Promise.resolve([]),
     app.assignedLevelId ? db.select().from(balletLevelsTable).where(eq(balletLevelsTable.id, app.assignedLevelId)).limit(1) : Promise.resolve([]),
     db.select({ id: balletLevelAssignmentsTable.id, groupId: balletLevelAssignmentsTable.groupId })
       .from(balletLevelAssignmentsTable)
@@ -517,7 +556,7 @@ router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requir
 
   const buf = await buildBalletApplicationPdfBuffer({
     application: app,
-    slot: slotRows[0] ?? null,
+    assessmentSchedule: assessmentScheduleRows[0] ?? null,
     level: levelRows[0] ?? null,
     group: groupRows[0] ?? null,
     groupSchedules,
@@ -1706,166 +1745,6 @@ router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermissio
     }
     logger.error({ err }, "PATCH /admin/ballet/levels/:id failed");
     res.status(500).json({ error: "Failed to update level" });
-  }
-});
-
-// ─── GET /api/admin/ballet/slots ──────────────────────────────────────────────
-//
-// Returns all assessment slots (past and future) with live booked count.
-// Ordered by date asc, startTime asc.
-// ─────────────────────────────────────────────────────────────────────────────
-
-router.get("/admin/ballet/slots", requireAdminAuth, requireAdminPermission("ballet.assessmentDates", "view"), async (_req, res): Promise<void> => {
-  try {
-    const rows = await db
-      .select({
-        id:          balletAssessmentSlotsTable.id,
-        date:        balletAssessmentSlotsTable.date,
-        startTime:   balletAssessmentSlotsTable.startTime,
-        endTime:     balletAssessmentSlotsTable.endTime,
-        capacity:    balletAssessmentSlotsTable.capacity,
-        notes:       balletAssessmentSlotsTable.notes,
-        isActive:    balletAssessmentSlotsTable.isActive,
-        createdAt:   balletAssessmentSlotsTable.createdAt,
-        bookedCount: count(balletApplicationsTable.id),
-      })
-      .from(balletAssessmentSlotsTable)
-      .leftJoin(
-        balletApplicationsTable,
-        and(
-          eq(balletApplicationsTable.slotId, balletAssessmentSlotsTable.id),
-          not(eq(balletApplicationsTable.status, "cancelled")),
-        ),
-      )
-      .groupBy(balletAssessmentSlotsTable.id)
-      .orderBy(asc(balletAssessmentSlotsTable.date), asc(balletAssessmentSlotsTable.startTime));
-
-    res.json({ slots: rows.map((r) => ({ ...r, bookedCount: Number(r.bookedCount) })) });
-  } catch (err) {
-    logger.error({ err }, "GET /admin/ballet/slots failed");
-    res.status(500).json({ error: "Failed to load slots" });
-  }
-});
-
-// ─── POST /api/admin/ballet/slots ─────────────────────────────────────────────
-
-const CreateSlotBody = z.object({
-  date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
-  startTime: z.string().min(1, "startTime is required"),
-  endTime:   z.string().min(1, "endTime is required"),
-  capacity:  z.number().int().positive().default(10),
-  notes:     z.string().nullable().optional(),   // nullable so frontend can send null for "no notes"
-  isActive:  z.boolean().optional(),
-});
-
-router.post("/admin/ballet/slots", requireAdminAuth, requireAdminPermission("ballet.assessmentDates", "create"), async (req: AdminRequest, res): Promise<void> => {
-  const parsed = CreateSlotBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
-    return;
-  }
-  try {
-    const [slot] = await db
-      .insert(balletAssessmentSlotsTable)
-      .values({
-        date:      parsed.data.date,
-        startTime: parsed.data.startTime,
-        endTime:   parsed.data.endTime,
-        capacity:  parsed.data.capacity,
-        notes:     parsed.data.notes ?? null,
-        isActive:  parsed.data.isActive ?? true,
-      })
-      .returning();
-    await logActivity(req, {
-      action: "create",
-      module: "ballet.assessmentDates",
-      entityType: "ballet_assessment_slot",
-      entityId: slot.id,
-      entityLabel: `${slot.date} ${slot.startTime}`,
-      after: Object.fromEntries(BALLET_SLOT_ACTIVITY_FIELDS.map((key) => [key, slot[key]])),
-      summary: `Created ballet assessment date ${slot.date} ${slot.startTime}`,
-    });
-    res.status(201).json({ slot });
-  } catch (err) {
-    logger.error({ err }, "POST /admin/ballet/slots failed");
-    res.status(500).json({ error: "Failed to create slot" });
-  }
-});
-
-// ─── PATCH /api/admin/ballet/slots/:id ────────────────────────────────────────
-
-const UpdateSlotBody = z.object({
-  date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  startTime: z.string().min(1).optional(),
-  endTime:   z.string().min(1).optional(),
-  capacity:  z.number().int().positive().optional(),
-  notes:     z.string().nullable().optional(),
-  isActive:  z.boolean().optional(),
-});
-
-router.patch("/admin/ballet/slots/:id", requireAdminAuth, requireAssessmentSlotUpdatePermission, async (req: AdminRequest, res): Promise<void> => {
-  const id = parseInt(String(req.params["id"] ?? ""), 10);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid slot ID" }); return; }
-
-  const parsed = UpdateSlotBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
-    return;
-  }
-
-  const updates: Record<string, unknown> = {};
-  const d = parsed.data;
-  if (d.date      !== undefined) updates["date"]      = d.date;
-  if (d.startTime !== undefined) updates["startTime"] = d.startTime;
-  if (d.endTime   !== undefined) updates["endTime"]   = d.endTime;
-  if (d.capacity  !== undefined) updates["capacity"]  = d.capacity;
-  if (d.notes     !== undefined) updates["notes"]     = d.notes;
-  if (d.isActive  !== undefined) updates["isActive"]  = d.isActive;
-
-  if (Object.keys(updates).length === 0) {
-    res.json({ success: true, message: "No changes" });
-    return;
-  }
-
-  updates["updatedAt"] = new Date().toISOString();
-
-  try {
-    const [existing] = await db.select().from(balletAssessmentSlotsTable).where(eq(balletAssessmentSlotsTable.id, id)).limit(1);
-    if (!existing) { res.status(404).json({ error: "Slot not found" }); return; }
-    const [slot] = await db
-      .update(balletAssessmentSlotsTable)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .set(updates as any)
-      .where(eq(balletAssessmentSlotsTable.id, id))
-      .returning();
-    if (!slot) { res.status(404).json({ error: "Slot not found" }); return; }
-    const { before, after } = diffFields(
-      Object.fromEntries(BALLET_SLOT_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
-      Object.fromEntries(BALLET_SLOT_ACTIVITY_FIELDS.map((key) => [key, slot[key]])),
-      BALLET_SLOT_ACTIVITY_FIELDS,
-    );
-    const changedKeys = Object.keys(after);
-    if (changedKeys.length > 0) {
-      const action = existing.isActive !== slot.isActive ? slot.isActive ? "activate" : "delete" : "update";
-      await logActivity(req, {
-        action,
-        module: "ballet.assessmentDates",
-        entityType: "ballet_assessment_slot",
-        entityId: slot.id,
-        entityLabel: `${slot.date} ${slot.startTime}`,
-        before,
-        after,
-        summary: action === "delete"
-          ? `Deactivated ballet assessment date ${slot.date} ${slot.startTime}`
-          : action === "activate"
-            ? `Activated ballet assessment date ${slot.date} ${slot.startTime}`
-            : `Updated ballet assessment date ${slot.date} ${slot.startTime}: ${changedKeys.join(", ")}`,
-      });
-    }
-    res.json({ slot });
-  } catch (err) {
-    logger.error({ err }, "PATCH /admin/ballet/slots/:id failed");
-    res.status(500).json({ error: "Failed to update slot" });
   }
 });
 

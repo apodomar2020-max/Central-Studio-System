@@ -111,7 +111,6 @@ export const NAV_TREE: NavNode[] = [
       link("Students", "/ballet/students", [["ballet.applications", "view"]], GraduationCap, {
         pageTitle: "Ballet Students",
       }),
-      link("Assessment Dates", "/ballet/slots", [["ballet.assessmentDates", "view"]], CalendarDays),
       link("Levels", "/ballet/levels", [["ballet.levels", "view"]], Trophy, { pageTitle: "Ballet Levels" }),
       link("Instructors", "/ballet/instructors", [["ballet.instructors", "view"]], Users, {
         pageTitle: "Ballet Instructors",

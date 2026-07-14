@@ -484,7 +484,7 @@ export default function DesignLabScreen() {
         {/* ── Date / Time Fields ─────────────────────────────────────────── */}
         <SectionHeader
           title="DATE & TIME FIELDS"
-          file="admin/AssessmentSlotsPage.tsx"
+          file="admin/BalletSchedulesPage.tsx"
         />
         <View style={styles.card}>
           <DateTimeFields />

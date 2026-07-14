@@ -113,7 +113,7 @@ function AssessmentCard({ app, onPress }: { app: BalletApplication, onPress?: ()
   // other status keeps the assessment placeholders (A4).
   const dateStr = active.isActiveGrouped && active.hasSchedule
     ? `${active.daysLabel} · ${active.timesLabel}`
-    : app.slotLabel || new Date(app.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    : app.assessmentDate || new Date(app.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const cardTitle = active.isActiveGrouped ? "Ballet Class" : "Ballet Level Assessment";
   const assessorLabel = active.isActiveGrouped ? "Instructor" : "Assessor";
   const assessorName = active.isActiveGrouped && active.hasInstructor ? active.instructorLabel : "TBD";
@@ -272,7 +272,7 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
   const statusColor = isBallet ? getBalletStatusInfo(b.status).color : "#1FB871";
 
   const dayDate = isBallet
-    ? (balletIsClass && balletActive?.hasSchedule ? balletActive.daysLabel : (b.slotLabel || "Pending"))
+    ? (balletIsClass && balletActive?.hasSchedule ? balletActive.daysLabel : (b.assessmentDate || "Pending"))
     : (b.date ? b.date : "TBD");
   const time = isBallet
     ? (balletIsClass && balletActive?.hasSchedule ? balletActive.timesLabel : "TBD")

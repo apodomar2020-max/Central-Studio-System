@@ -280,7 +280,7 @@ export default function BalletSettingsPage() {
               <Textarea
                 value={form.assessmentInstructions}
                 onChange={(e) => update("assessmentInstructions", e.target.value)}
-                placeholder="Instructions shown to parents before they book an assessment slot…"
+                placeholder="Instructions shown to parents before they choose an assessment schedule…"
                 rows={4}
                 className="bg-background text-foreground resize-none"
               />

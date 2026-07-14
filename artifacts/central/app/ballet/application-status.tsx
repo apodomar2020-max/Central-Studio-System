@@ -370,8 +370,8 @@ export default function ApplicationStatusScreen() {
               <Text style={styles.sectionTitle}>Application Details</Text>
 
               <InfoRow label="Child" value={application.childName} />
-              {application.slotLabel && (
-                <InfoRow label="Assessment Slot" value={application.slotLabel} />
+              {application.assessmentDate && (
+                <InfoRow label="Assessment Date" value={application.assessmentDate} />
               )}
               <InfoRow
                 label="Submitted"

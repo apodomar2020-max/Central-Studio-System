@@ -18,7 +18,6 @@ export * from "./systemUsers";
 export * from "./children";
 export * from "./balletSettings";
 export * from "./balletLevels";
-export * from "./balletAssessmentSlots";
 export * from "./balletApplications";
 export * from "./balletApplicationEvents";
 export * from "./balletLevelAssignments";

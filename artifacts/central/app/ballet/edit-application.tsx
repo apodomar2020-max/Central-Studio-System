@@ -32,8 +32,8 @@ import {
 } from "react-native";
 
 import {
-  AssessmentSlot,
-  fetchAssessmentSlots,
+  AssessmentScheduleOption,
+  fetchAvailableAssessmentSchedules,
   fetchMyApplications,
   updateBalletApplication,
   isOfflineError,
@@ -52,7 +52,7 @@ type EditFormData = {
   experienceDetails: string;
   medicalNotes: string;
   notes: string;
-  selectedSlot: AssessmentSlot | null;
+  selectedSlot: AssessmentScheduleOption | null;
 };
 
 // ─── Field helper ─────────────────────────────────────────────────────────────
@@ -100,8 +100,8 @@ export default function EditApplicationScreen() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error" | "offline">("loading");
   const [application, setApplication] = useState<BalletApplication | null>(null);
 
-  // Slot state (for optional slot change)
-  const [slots, setSlots] = useState<AssessmentSlot[]>([]);
+  // Assessment schedule state (for optional assessment change)
+  const [slots, setSlots] = useState<AssessmentScheduleOption[]>([]);
   const [slotsState, setSlotsState] = useState<"idle" | "loading" | "done">("idle");
   const [showSlotPicker, setShowSlotPicker] = useState(false);
 
@@ -153,14 +153,18 @@ export default function EditApplicationScreen() {
     return () => ctrl.abort();
   }, [loadApplication]);
 
-  // ── Load slots (lazy — only when the slot picker is opened) ───────────────
+  // ── Load assessment schedules (lazy — only when the picker is opened) ─────
 
   async function openSlotPicker() {
+    if (!application?.childBirthday) {
+      Alert.alert("Birthday Required", "A child birthday is required to choose a new assessment date.");
+      return;
+    }
     setShowSlotPicker(true);
     if (slotsState !== "idle") return;
     setSlotsState("loading");
     try {
-      const data = await fetchAssessmentSlots();
+      const data = await fetchAvailableAssessmentSchedules(undefined, application.childBirthday);
       setSlots(data);
       setSlotsState("done");
     } catch {
@@ -181,8 +185,12 @@ export default function EditApplicationScreen() {
     if (form.previousExperience !== null  && form.previousExperience !== application.previousExperience) {
       payload.previousExperience = form.previousExperience;
     }
-    if (form.selectedSlot && parseInt(form.selectedSlot.id, 10) !== application.slotId) {
-      payload.slotId = parseInt(form.selectedSlot.id, 10);
+    if (
+      form.selectedSlot &&
+      (form.selectedSlot.scheduleId !== application.assessmentScheduleId || form.selectedSlot.date !== application.assessmentDate)
+    ) {
+      payload.assessmentScheduleId = form.selectedSlot.scheduleId;
+      payload.assessmentDate = form.selectedSlot.date;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -203,7 +211,7 @@ export default function EditApplicationScreen() {
         return;
       }
       if (typed.status === 409) {
-        Alert.alert("Slot Full", "The selected assessment slot has just filled up. Please choose a different slot.");
+        Alert.alert("Cannot Save", typed.data?.error ?? "The selected assessment can no longer be used.");
         return;
       }
       if (isOfflineError(err)) {
@@ -266,14 +274,14 @@ export default function EditApplicationScreen() {
               <Text style={styles.summaryMeta}>
                 Submitted {new Date(application.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
               </Text>
-              {application.slotLabel && !form.selectedSlot && (
+              {application.assessmentDate && !form.selectedSlot && (
                 <Text style={styles.summarySlot}>
-                  <Ionicons name="calendar-outline" size={12} color="#9CA3AF" /> {application.slotLabel}
+                  <Ionicons name="calendar-outline" size={12} color="#9CA3AF" /> {application.assessmentDate}
                 </Text>
               )}
               {form.selectedSlot && (
                 <Text style={[styles.summarySlot, { color: BALLET_COLOR }]}>
-                  <Ionicons name="calendar" size={12} color={BALLET_COLOR} /> New slot: {form.selectedSlot.dayOfWeek} {form.selectedSlot.date}, {form.selectedSlot.startTime}
+                  <Ionicons name="calendar" size={12} color={BALLET_COLOR} /> New assessment: {form.selectedSlot.day} {form.selectedSlot.date}, {form.selectedSlot.time}
                 </Text>
               )}
             </View>
@@ -331,21 +339,21 @@ export default function EditApplicationScreen() {
             />
 
             <View style={styles.divider} />
-            <Text style={styles.sectionLabel}>Assessment Slot</Text>
+            <Text style={styles.sectionLabel}>Assessment Date</Text>
             <TouchableOpacity style={styles.slotPickerBtn} onPress={openSlotPicker} activeOpacity={0.8}>
               <View style={{ flex: 1 }}>
                 {form.selectedSlot ? (
                   <>
                     <Text style={[styles.slotPickerValue, { color: BALLET_COLOR }]}>
-                      {form.selectedSlot.dayOfWeek} {form.selectedSlot.date}
+                      {form.selectedSlot.day} {form.selectedSlot.date}
                     </Text>
-                    <Text style={styles.slotPickerMeta}>{form.selectedSlot.startTime} – {form.selectedSlot.endTime}</Text>
+                    <Text style={styles.slotPickerMeta}>{form.selectedSlot.className} · {form.selectedSlot.time}</Text>
                   </>
                 ) : (
                   <>
-                    <Text style={styles.slotPickerValue}>Keep current slot</Text>
-                    {application.slotLabel && (
-                      <Text style={styles.slotPickerMeta}>{application.slotLabel}</Text>
+                    <Text style={styles.slotPickerValue}>Keep current assessment</Text>
+                    {application.assessmentDate && (
+                      <Text style={styles.slotPickerMeta}>{application.assessmentDate}</Text>
                     )}
                   </>
                 )}
@@ -360,7 +368,7 @@ export default function EditApplicationScreen() {
                   style={[styles.slotItem, !form.selectedSlot && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "10" }]}
                   onPress={() => { setForm((f) => ({ ...f, selectedSlot: null })); setShowSlotPicker(false); }}
                 >
-                  <Text style={[styles.slotItemText, !form.selectedSlot && { color: BALLET_COLOR }]}>Keep current slot</Text>
+                  <Text style={[styles.slotItemText, !form.selectedSlot && { color: BALLET_COLOR }]}>Keep current assessment</Text>
                 </TouchableOpacity>
 
                 {slotsState === "loading" && (
@@ -368,12 +376,10 @@ export default function EditApplicationScreen() {
                 )}
 
                 {slotsState === "done" && slots.map((slot) => {
-                  const isFull = slot.status === "full";
-                  const isSelected = form.selectedSlot?.id === slot.id;
+                  const isSelected = form.selectedSlot?.scheduleId === slot.scheduleId && form.selectedSlot?.date === slot.date;
                   return (
                     <TouchableOpacity
-                      key={slot.id}
-                      disabled={isFull}
+                      key={`${slot.scheduleId}-${slot.date}`}
                       onPress={() => {
                         Haptics.selectionAsync();
                         setForm((f) => ({ ...f, selectedSlot: slot }));
@@ -382,22 +388,15 @@ export default function EditApplicationScreen() {
                       style={[
                         styles.slotItem,
                         isSelected && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "10" },
-                        isFull && { opacity: 0.4 },
                       ]}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.slotItemText, isSelected && { color: BALLET_COLOR }]}>
-                          {slot.dayOfWeek} {slot.date}
+                          {slot.day} {slot.date}
                         </Text>
-                        <Text style={styles.slotItemMeta}>{slot.startTime} – {slot.endTime}</Text>
+                        <Text style={styles.slotItemMeta}>{slot.className} · {slot.levelName} · {slot.time}</Text>
                       </View>
-                      <Text style={{
-                        fontSize: 11,
-                        fontFamily: "Inter_600SemiBold",
-                        color: slot.status === "available" ? "#22C55E" : slot.status === "fewSeats" ? "#F59E0B" : "#EF4444",
-                      }}>
-                        {isFull ? "Full" : slot.status === "fewSeats" ? `${slot.availableSeats} left` : "Available"}
-                      </Text>
+                      <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#22C55E" }}>{slot.time}</Text>
                     </TouchableOpacity>
                   );
                 })}

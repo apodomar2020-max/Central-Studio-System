@@ -186,13 +186,6 @@ const permissionCatalog = [
     actions: actions(["view", "View"], ["review", "Review"], ["approve", "Approve"], ["reject", "Reject"]),
   },
   {
-    key: "ballet.assessmentDates",
-    label: "Ballet Assessment Dates",
-    description: "Assessment date and capacity management.",
-    group: "Ballet",
-    actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
-  },
-  {
     key: "ballet.pricing",
     label: "Ballet Pricing",
     description: "Ballet pricing and registration settings.",

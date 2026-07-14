@@ -45,8 +45,8 @@ interface Application {
   experienceDetails: string | null;
   medicalNotes: string | null;
   notes: string | null;
-  slotId: number | null;
-  slotLabel: string | null;
+  assessmentScheduleId: number | null;
+  assessmentDate: string | null;
   status: string;
   adminNotes: string | null;
   assignedLevelId: number | null;
@@ -56,13 +56,18 @@ interface Application {
   updatedAt: string;
 }
 
-interface Slot {
+interface AssessmentSchedule {
   id: number;
-  date: string;
+  dayOfWeek: number;
   startTime: string;
   endTime: string;
-  capacity: number;
-  isActive: boolean;
+  status: string;
+  classId: number | null;
+  classTitle: string | null;
+  instructorId: number | null;
+  instructorName: string | null;
+  levelId: number | null;
+  levelName: string | null;
 }
 
 interface Level {
@@ -180,7 +185,7 @@ interface AttendanceHistoryResponse {
 
 interface DetailResponse {
   application: Application;
-  slot: Slot | null;
+  assessmentSchedule: AssessmentSchedule | null;
   level: Level | null;
   group: Group | null;
   assignmentId: number | null;
@@ -800,7 +805,7 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  const { application: app, slot, level, group, events, groupSchedules, attendanceSummary, currentPayment, payments } = data;
+  const { application: app, assessmentSchedule, level, group, events, groupSchedules, attendanceSummary, currentPayment, payments } = data;
   const currentSubscription = data.currentSubscription ?? currentPayment;
   const activeSchedules = (groupSchedules ?? []).filter((s) => s.status === "active");
   const levels = levelsData?.levels ?? [];
@@ -928,17 +933,21 @@ export default function ApplicationDetailPage() {
             </Section>
           )}
 
-          {/* Assessment slot */}
-          <Section title="Assessment Slot">
-            {slot ? (
+          {/* Assessment */}
+          <Section title="Assessment">
+            {assessmentSchedule ? (
               <>
-                <Field label="Date"     value={slot.date} />
-                <Field label="Time"     value={`${slot.startTime} – ${slot.endTime}`} />
-                <Field label="Capacity" value={String(slot.capacity)} />
+                <Field label="Class" value={assessmentSchedule.classTitle} />
+                <Field label="Level" value={assessmentSchedule.levelName} />
+                <Field label="Schedule" value={`${DAY_NAMES[assessmentSchedule.dayOfWeek] ?? assessmentSchedule.dayOfWeek} ${assessmentSchedule.startTime} – ${assessmentSchedule.endTime}`} />
+                <Field label="Selected date" value={app.assessmentDate} />
+                {assessmentSchedule.instructorName && (
+                  <Field label="Instructor" value={assessmentSchedule.instructorName} />
+                )}
               </>
             ) : (
               <p className="text-sm text-muted-foreground italic">
-                {app.slotLabel ?? "No slot selected"}
+                No assessment schedule selected
               </p>
             )}
           </Section>

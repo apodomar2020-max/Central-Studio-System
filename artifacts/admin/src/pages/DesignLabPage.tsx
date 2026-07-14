@@ -434,7 +434,7 @@ export default function DesignLabPage() {
         <div className="text-xs text-muted-foreground px-1">
           File: <CodeHint text="artifacts/admin/src/components/ui/input.tsx" />
           {" · "}
-          <CodeHint text="AssessmentSlotsPage.tsx → TimeSelect" />
+          <CodeHint text="BalletSchedulesPage.tsx → TimeSelect" />
         </div>
       </Section>
 

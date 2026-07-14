@@ -3,7 +3,7 @@
  *
  * Public routes (shared API key only):
  *   GET  /api/ballet/settings                     — admin-managed pricing + instructions
- *   GET  /api/ballet/assessment-slots             — future active slots with live capacity
+ *   GET  /api/ballet/available-assessment-schedules — schedule-based assessment occurrences
  *   GET  /api/ballet/instructors                  — active instructor roster
  *   GET  /api/ballet/classes                      — active classes with schedules, instructor, group/level ids
  *   GET  /api/ballet/levels                       — active levels, ordered by sortOrder
@@ -32,25 +32,18 @@
  *   ballet_applications_active_per_manual_identity); a 23505 from either is
  *   caught and translated to the same 409 shape.
  *
- * Assessment-slot submission (Phase A):
- *   - P0-4: the slot row is loaded with SELECT ... FOR UPDATE inside the
- *     submission transaction, so concurrent submissions against the same
- *     slot serialize on the capacity check instead of racing it.
- *   - P0-5: age eligibility is always computed server-side from a real
- *     birthday (children.birthday for a linked child, the submitted
- *     childBirthday for a manual submission) as of the slot's OWN date —
- *     never from the client-supplied childAge integer, and never as of
- *     today's date. Missing/invalid birthdays and out-of-range ages both
- *     reject with 422.
+ * Assessment schedule submission:
+ *   Assessment options are projected from active ballet_schedules connected to
+ *   active classes and age-eligible active levels. Submissions store only the
+ *   selected schedule occurrence on ballet_applications.
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, count, desc, eq, gte, ilike, isNull, lte, or, inArray, not, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, isNull, or, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
   balletSettingsTable,
-  balletAssessmentSlotsTable,
   balletApplicationsTable,
   balletApplicationEventsTable,
   childrenTable,
@@ -111,6 +104,22 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function addDaysIso(dateIso: string, days: number): string {
+  const date = new Date(`${dateIso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeTimeLabel(time: string): string {
+  const [hourRaw, minuteRaw = "00"] = time.split(":");
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return time;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
 /**
  * Computes age in whole years as of `referenceDateIso`, NOT as of today —
  * used to check assessment-slot age eligibility against the child's age on
@@ -129,6 +138,140 @@ function computeAgeAsOf(birthdayIso: string, referenceDateIso: string): number |
   const birthMonthDay = birth.getUTCMonth() * 100 + birth.getUTCDate();
   if (refMonthDay < birthMonthDay) age -= 1;
   return age;
+}
+
+type AssessmentOccurrence = {
+  scheduleId: number;
+  classId: number;
+  className: string;
+  levelId: number;
+  levelName: string;
+  date: string;
+  day: string;
+  time: string;
+  startTime: string;
+  endTime: string;
+};
+
+async function listAvailableAssessmentSchedules(childBirthday: string): Promise<AssessmentOccurrence[]> {
+  const today = todayIso();
+  const end = addDaysIso(today, 28);
+
+  const rows = await db
+    .select({
+      scheduleId: balletSchedulesTable.id,
+      dayOfWeek:  balletSchedulesTable.dayOfWeek,
+      startTime:  balletSchedulesTable.startTime,
+      endTime:    balletSchedulesTable.endTime,
+      classId:    balletClassesTable.id,
+      className:  balletClassesTable.title,
+      levelId:    balletLevelsTable.id,
+      levelName:  balletLevelsTable.name,
+      ageMin:     balletLevelsTable.ageMin,
+      ageMax:     balletLevelsTable.ageMax,
+    })
+    .from(balletSchedulesTable)
+    .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+    .innerJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
+    .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
+    .where(and(
+      eq(balletSchedulesTable.status, "active"),
+      eq(balletClassesTable.isActive, true),
+      eq(balletLevelsTable.isActive, true),
+    ))
+    .orderBy(asc(balletLevelsTable.sortOrder), asc(balletClassesTable.title), asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime));
+
+  const occurrences: AssessmentOccurrence[] = [];
+  for (const row of rows) {
+    for (let cursor = today; cursor <= end; cursor = addDaysIso(cursor, 1)) {
+      const date = new Date(`${cursor}T12:00:00Z`);
+      if (date.getUTCDay() !== row.dayOfWeek) continue;
+
+      const age = computeAgeAsOf(childBirthday, cursor);
+      if (age == null) continue;
+      const eligible =
+        (row.ageMin == null || age >= row.ageMin) &&
+        (row.ageMax == null || age <= row.ageMax);
+      if (!eligible) continue;
+
+      occurrences.push({
+        scheduleId: row.scheduleId,
+        classId:    row.classId,
+        className:  row.className,
+        levelId:    row.levelId,
+        levelName:  row.levelName,
+        date:       cursor,
+        day:        DAY_NAMES[row.dayOfWeek] ?? dayOfWeekFromDate(cursor),
+        time:       normalizeTimeLabel(row.startTime),
+        startTime:  row.startTime,
+        endTime:    row.endTime,
+      });
+    }
+  }
+
+  return occurrences.sort((a, b) => (
+    a.date.localeCompare(b.date) ||
+    a.startTime.localeCompare(b.startTime) ||
+    a.className.localeCompare(b.className) ||
+    a.levelName.localeCompare(b.levelName)
+  ));
+}
+
+async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: string, childBirthday: string): Promise<AssessmentOccurrence | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(assessmentDate)) return null;
+
+  const rows = await db
+    .select({
+      scheduleId: balletSchedulesTable.id,
+      dayOfWeek:  balletSchedulesTable.dayOfWeek,
+      startTime:  balletSchedulesTable.startTime,
+      endTime:    balletSchedulesTable.endTime,
+      classId:    balletClassesTable.id,
+      className:  balletClassesTable.title,
+      levelId:    balletLevelsTable.id,
+      levelName:  balletLevelsTable.name,
+      ageMin:     balletLevelsTable.ageMin,
+      ageMax:     balletLevelsTable.ageMax,
+    })
+    .from(balletSchedulesTable)
+    .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+    .innerJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
+    .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
+    .where(and(
+      eq(balletSchedulesTable.id, scheduleId),
+      eq(balletSchedulesTable.status, "active"),
+      eq(balletClassesTable.isActive, true),
+      eq(balletLevelsTable.isActive, true),
+    ))
+    .orderBy(asc(balletLevelsTable.sortOrder))
+    .limit(10);
+
+  const selectedDate = new Date(`${assessmentDate}T12:00:00Z`);
+  if (Number.isNaN(selectedDate.getTime())) return null;
+
+  for (const row of rows) {
+    if (selectedDate.getUTCDay() !== row.dayOfWeek) continue;
+    const age = computeAgeAsOf(childBirthday, assessmentDate);
+    if (age == null) return null;
+    const eligible =
+      (row.ageMin == null || age >= row.ageMin) &&
+      (row.ageMax == null || age <= row.ageMax);
+    if (!eligible) continue;
+    return {
+      scheduleId: row.scheduleId,
+      classId:    row.classId,
+      className:  row.className,
+      levelId:    row.levelId,
+      levelName:  row.levelName,
+      date:       assessmentDate,
+      day:        DAY_NAMES[row.dayOfWeek] ?? dayOfWeekFromDate(assessmentDate),
+      time:       normalizeTimeLabel(row.startTime),
+      startTime:  row.startTime,
+      endTime:    row.endTime,
+    };
+  }
+
+  return null;
 }
 
 // ─── Default settings ─────────────────────────────────────────────────────────
@@ -178,102 +321,30 @@ router.get("/ballet/settings", async (_req, res): Promise<void> => {
   }
 });
 
-// ─── GET /api/ballet/assessment-slots ────────────────────────────────────────
+// ─── GET /api/ballet/available-assessment-schedules ─────────────────────────
 //
 // Query params:
-//   childAge (optional) — when present, only returns slots whose age range
-//     covers this age: (ageMin is null OR childAge >= ageMin) AND
-//     (ageMax is null OR childAge <= ageMax). A slot with both null is open
-//     to all ages.
+//   childBirthday (required) — used server-side to derive age eligibility
+//     against each projected schedule occurrence in the next 4 weeks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AssessmentSlotsQuery = z.object({
-  childAge: z.coerce.number().int().positive().optional(),
+const AvailableAssessmentSchedulesQuery = z.object({
+  childBirthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "childBirthday must be YYYY-MM-DD"),
 });
 
-router.get("/ballet/assessment-slots", async (req, res): Promise<void> => {
-  const parsedQuery = AssessmentSlotsQuery.safeParse(req.query);
+router.get("/ballet/available-assessment-schedules", async (req, res): Promise<void> => {
+  const parsedQuery = AvailableAssessmentSchedulesQuery.safeParse(req.query);
   if (!parsedQuery.success) {
-    res.status(400).json({ error: "Invalid childAge" });
+    res.status(400).json({ error: parsedQuery.error.issues[0]?.message ?? "Invalid childBirthday" });
     return;
   }
-  const { childAge } = parsedQuery.data;
 
   try {
-    const today = todayIso();
-
-    const [settingsRow] = await db
-      .select({ fewSeatsThreshold: balletSettingsTable.fewSeatsThreshold })
-      .from(balletSettingsTable)
-      .where(eq(balletSettingsTable.id, 1))
-      .limit(1);
-
-    const fewSeatsThreshold = settingsRow?.fewSeatsThreshold ?? 3;
-
-    const ageConditions = childAge != null
-      ? [
-          or(isNull(balletAssessmentSlotsTable.ageMin), lte(balletAssessmentSlotsTable.ageMin, childAge)),
-          or(isNull(balletAssessmentSlotsTable.ageMax), gte(balletAssessmentSlotsTable.ageMax, childAge)),
-        ]
-      : [];
-
-    const rows = await db
-      .select({
-        id:          balletAssessmentSlotsTable.id,
-        date:        balletAssessmentSlotsTable.date,
-        startTime:   balletAssessmentSlotsTable.startTime,
-        endTime:     balletAssessmentSlotsTable.endTime,
-        capacity:    balletAssessmentSlotsTable.capacity,
-        bookedCount: count(balletApplicationsTable.id),
-      })
-      .from(balletAssessmentSlotsTable)
-      .leftJoin(
-        balletApplicationsTable,
-        and(
-          eq(balletApplicationsTable.slotId, balletAssessmentSlotsTable.id),
-          // Only count non-cancelled applications against capacity
-          not(eq(balletApplicationsTable.status, "cancelled")),
-        ),
-      )
-      .where(
-        and(
-          eq(balletAssessmentSlotsTable.isActive, true),
-          gte(balletAssessmentSlotsTable.date, today),
-          ...ageConditions,
-        ),
-      )
-      .groupBy(balletAssessmentSlotsTable.id)
-      .orderBy(
-        asc(balletAssessmentSlotsTable.date),
-        asc(balletAssessmentSlotsTable.startTime),
-      );
-
-    const slots = rows.map((row) => {
-      const bookedCount    = Number(row.bookedCount);
-      const availableSeats = Math.max(0, row.capacity - bookedCount);
-
-      let status: "available" | "fewSeats" | "full";
-      if (availableSeats <= 0)              status = "full";
-      else if (availableSeats <= fewSeatsThreshold) status = "fewSeats";
-      else                                  status = "available";
-
-      return {
-        id:             String(row.id),
-        date:           row.date,
-        dayOfWeek:      dayOfWeekFromDate(row.date),
-        startTime:      row.startTime,
-        endTime:        row.endTime,
-        capacity:       row.capacity,
-        bookedCount,
-        availableSeats,
-        status,
-      };
-    });
-
-    res.json(slots);
+    const schedules = await listAvailableAssessmentSchedules(parsedQuery.data.childBirthday);
+    res.json(schedules);
   } catch (err) {
-    logger.error({ err }, "GET /ballet/assessment-slots failed");
-    res.status(500).json({ error: "Failed to load assessment slots" });
+    logger.error({ err }, "GET /ballet/available-assessment-schedules failed");
+    res.status(500).json({ error: "Failed to load available assessment schedules" });
   }
 });
 
@@ -687,7 +758,8 @@ const SubmitApplicationBody = z.object({
   experienceDetails:     z.string().optional(),
   medicalNotes:          z.string().optional(),
   notes:                 z.string().optional(),
-  slotId:                z.number({ required_error: "slotId is required" }).int().positive(),
+  assessmentScheduleId:  z.number({ required_error: "assessmentScheduleId is required" }).int().positive(),
+  assessmentDate:        z.string({ required_error: "assessmentDate is required" }).regex(/^\d{4}-\d{2}-\d{2}$/, "assessmentDate must be YYYY-MM-DD"),
   // C1: parent's chosen payment method at intake — required for new
   // submissions. Preference only; never creates/touches a ballet_payments row.
   preferredPaymentMethod: z.enum(BALLET_PAYMENT_METHODS, {
@@ -716,7 +788,7 @@ router.post(
       emergencyContactName, emergencyContactPhone,
       previousExperience, experienceDetails,
       medicalNotes, notes,
-      slotId, childId, preferredPaymentMethod,
+      assessmentScheduleId, assessmentDate, childId, preferredPaymentMethod,
     } = parsed.data;
 
     const parentStudentId = req.studentId!;
@@ -783,46 +855,6 @@ router.post(
           );
         }
 
-        // ── Load slot ─────────────────────────────────────────────────────────
-        // Phase A / P0-4: SELECT ... FOR UPDATE locks this slot row for the
-        // duration of the transaction, so two concurrent submissions against
-        // the same slot serialize on the capacity check below instead of both
-        // reading the same pre-insert count and both passing it.
-        const [slot] = await tx
-          .select({
-            id:       balletAssessmentSlotsTable.id,
-            date:     balletAssessmentSlotsTable.date,
-            startTime: balletAssessmentSlotsTable.startTime,
-            endTime:  balletAssessmentSlotsTable.endTime,
-            capacity: balletAssessmentSlotsTable.capacity,
-            isActive: balletAssessmentSlotsTable.isActive,
-            ageMin:   balletAssessmentSlotsTable.ageMin,
-            ageMax:   balletAssessmentSlotsTable.ageMax,
-          })
-          .from(balletAssessmentSlotsTable)
-          .where(eq(balletAssessmentSlotsTable.id, slotId))
-          .limit(1)
-          .for("update");
-
-        if (!slot || !slot.isActive) {
-          throw Object.assign(new Error("Assessment slot not found"), { status: 404 });
-        }
-
-        // ── Capacity check (exclude cancelled) ────────────────────────────────
-        const [{ bookedCount }] = await tx
-          .select({ bookedCount: count(balletApplicationsTable.id) })
-          .from(balletApplicationsTable)
-          .where(
-            and(
-              eq(balletApplicationsTable.slotId, slotId),
-              not(eq(balletApplicationsTable.status, "cancelled")),
-            ),
-          );
-
-        if (Number(bookedCount) >= slot.capacity) {
-          throw Object.assign(new Error("Selected assessment slot is full"), { status: 409 });
-        }
-
         // ── Validate child ownership (only when a saved child was selected) ───
         // A provided childId must belong to the authenticated parent — never
         // let one account link a child profile owned by another account.
@@ -851,38 +883,34 @@ router.post(
           resolvedBirthday = childBirthday ?? null;
         }
 
-        // ── Age eligibility (Phase A / P0-5) ───────────────────────────────────
-        // Age is computed AS OF the assessment slot's date, not today's date,
-        // so a child who will still be within range on the day of the
-        // assessment isn't rejected due to a birthday between now and then
-        // (or vice versa).
+        // ── Schedule occurrence eligibility ───────────────────────────────────
+        // Assessment choices are projected from real active class schedules.
+        // Age eligibility is derived from the linked class level as of the
+        // selected occurrence date; no separate assessment capacity exists.
         if (!resolvedBirthday) {
           throw Object.assign(
             new Error(
               childId != null
                 ? "This child has no birthday on file. Add one to the child's profile before booking an assessment."
-                : "A child birthday is required to book an assessment slot.",
+                : "A child birthday is required to book an assessment.",
             ),
             { status: 422, code: "MISSING_BIRTHDAY" },
           );
         }
 
-        const ageAtSlot = computeAgeAsOf(resolvedBirthday, slot.date);
-        if (ageAtSlot == null) {
+        const ageAtAssessment = computeAgeAsOf(resolvedBirthday, assessmentDate);
+        if (ageAtAssessment == null) {
           throw Object.assign(
             new Error("The birthday on file is not a valid date."),
             { status: 422, code: "MISSING_BIRTHDAY" },
           );
         }
 
-        const ageEligible =
-          (slot.ageMin == null || ageAtSlot >= slot.ageMin) &&
-          (slot.ageMax == null || ageAtSlot <= slot.ageMax);
-
-        if (!ageEligible) {
+        const assessment = await resolveAssessmentOccurrence(assessmentScheduleId, assessmentDate, resolvedBirthday);
+        if (!assessment) {
           throw Object.assign(
-            new Error(`This child will be ${ageAtSlot} at the time of this assessment slot, which is outside the slot's permitted age range.`),
-            { status: 422, code: "AGE_INELIGIBLE" },
+            new Error("Selected assessment schedule is no longer available for this child's age."),
+            { status: 422, code: "ASSESSMENT_SCHEDULE_UNAVAILABLE" },
           );
         }
 
@@ -973,8 +1001,6 @@ router.post(
         }
 
         // ── Insert application ────────────────────────────────────────────────
-        const slotLabel = `${slot.date} ${slot.startTime}-${slot.endTime}`;
-
         const [application] = await tx
           .insert(balletApplicationsTable)
           .values({
@@ -985,11 +1011,11 @@ router.post(
             parentEmail,
             childName:             childName.trim(),
             childBirthday:         childBirthday ?? null,
-            // Phase A / P0-5 follow-up: store the server-computed age (as of
-            // the assessment slot's date, derived from resolvedBirthday) —
+            // Store the server-computed age (as of the assessment occurrence
+            // date, derived from resolvedBirthday) —
             // never the client-supplied `childAge`, which is no longer used
             // anywhere in this handler, including for storage.
-            childAge:              ageAtSlot,
+            childAge:              ageAtAssessment,
             childGender:           childGender ?? null,
             emergencyContactName:  emergencyContactName ?? null,
             emergencyContactPhone: emergencyContactPhone ?? null,
@@ -997,8 +1023,8 @@ router.post(
             experienceDetails:     experienceDetails ?? null,
             medicalNotes:          medicalNotes ?? null,
             notes:                 notes ?? null,
-            slotId,
-            slotLabel,
+            assessmentScheduleId,
+            assessmentDate,
             // C1: intake payment preference. Stored on the application only —
             // no ballet_payments row is created at submission time.
             preferredPaymentMethod,
@@ -1019,7 +1045,7 @@ router.post(
       });
 
       logger.info(
-        { applicationId: result.id, studentId: parentStudentId, slotId },
+        { applicationId: result.id, studentId: parentStudentId, assessmentScheduleId, assessmentDate },
         "Ballet application submitted",
       );
 
@@ -1037,13 +1063,8 @@ router.post(
         });
         return;
       }
-      if (typed.status === 409) {
-        // Slot full
-        res.status(409).json({ error: "Selected assessment slot is full", code: "SLOT_FULL" });
-        return;
-      }
       if (typed.status === 404) {
-        res.status(404).json({ error: "Assessment slot not found" });
+        res.status(404).json({ error: "Assessment schedule not found" });
         return;
       }
       if (typed.status === 403) {
@@ -1126,7 +1147,7 @@ router.post(
 // application, but only while the status is pending / needsFollowUp.
 //
 // Editable fields: medicalNotes, notes, experienceDetails,
-//   previousExperience, slotId (re-selects slot, subject to capacity).
+//   previousExperience, assessmentScheduleId + assessmentDate.
 //
 // Parent/guardian identity fields (parentPhone, parentEmail,
 // emergencyContactName, emergencyContactPhone) are intentionally NOT editable
@@ -1139,7 +1160,8 @@ const UpdateApplicationBody = z.object({
   notes:                 z.string().optional(),
   experienceDetails:     z.string().optional(),
   previousExperience:    z.boolean().optional(),
-  slotId:                z.number().int().positive().optional(),
+  assessmentScheduleId:  z.number().int().positive().optional(),
+  assessmentDate:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 router.patch(
@@ -1161,7 +1183,14 @@ router.patch(
     try {
       // Load application — must belong to this parent
       const [app] = await db
-        .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status, slotId: balletApplicationsTable.slotId })
+        .select({
+          id:                   balletApplicationsTable.id,
+          status:               balletApplicationsTable.status,
+          childId:              balletApplicationsTable.childId,
+          childBirthday:        balletApplicationsTable.childBirthday,
+          assessmentScheduleId: balletApplicationsTable.assessmentScheduleId,
+          assessmentDate:       balletApplicationsTable.assessmentDate,
+        })
         .from(balletApplicationsTable)
         .where(
           and(
@@ -1181,40 +1210,44 @@ router.patch(
       }
 
       const updates: Record<string, unknown> = {};
-      const { slotId, ...rest } = parsed.data;
+      const { assessmentScheduleId, assessmentDate, ...rest } = parsed.data;
 
       // Copy scalar fields directly
       for (const [k, v] of Object.entries(rest)) {
         if (v !== undefined) updates[k] = v;
       }
 
-      // Handle slot change — re-validate capacity
-      if (slotId != null && slotId !== app.slotId) {
-        const [slot] = await db
-          .select({ id: balletAssessmentSlotsTable.id, date: balletAssessmentSlotsTable.date, startTime: balletAssessmentSlotsTable.startTime, endTime: balletAssessmentSlotsTable.endTime, capacity: balletAssessmentSlotsTable.capacity, isActive: balletAssessmentSlotsTable.isActive })
-          .from(balletAssessmentSlotsTable)
-          .where(eq(balletAssessmentSlotsTable.id, slotId))
-          .limit(1);
-
-        if (!slot || !slot.isActive) { res.status(404).json({ error: "Assessment slot not found" }); return; }
-
-        const [{ bookedCount }] = await db
-          .select({ bookedCount: count(balletApplicationsTable.id) })
-          .from(balletApplicationsTable)
-          .where(
-            and(
-              eq(balletApplicationsTable.slotId, slotId),
-              not(eq(balletApplicationsTable.status, "cancelled")),
-            ),
-          );
-
-        if (Number(bookedCount) >= slot.capacity) {
-          res.status(409).json({ error: "Selected assessment slot is full" });
+      // Handle assessment schedule change — re-validate active schedule,
+      // active class, age-eligible level, and date/weekday match.
+      if (assessmentScheduleId != null || assessmentDate != null) {
+        if (assessmentScheduleId == null || assessmentDate == null) {
+          res.status(400).json({ error: "assessmentScheduleId and assessmentDate must be supplied together" });
           return;
         }
+        const changed = assessmentScheduleId !== app.assessmentScheduleId || assessmentDate !== app.assessmentDate;
+        if (changed) {
+          let birthday = app.childBirthday;
+          if (app.childId != null) {
+            const [child] = await db
+              .select({ birthday: childrenTable.birthday })
+              .from(childrenTable)
+              .where(and(eq(childrenTable.id, app.childId), eq(childrenTable.parentId, parentStudentId)))
+              .limit(1);
+            birthday = child?.birthday ?? birthday;
+          }
 
-        updates["slotId"]    = slotId;
-        updates["slotLabel"] = `${slot.date} ${slot.startTime}-${slot.endTime}`;
+          if (!birthday) {
+            res.status(422).json({ error: "A child birthday is required to book an assessment.", code: "MISSING_BIRTHDAY" });
+            return;
+          }
+          const assessment = await resolveAssessmentOccurrence(assessmentScheduleId, assessmentDate, birthday);
+          if (!assessment) {
+            res.status(422).json({ error: "Selected assessment schedule is no longer available for this child's age.", code: "ASSESSMENT_SCHEDULE_UNAVAILABLE" });
+            return;
+          }
+          updates["assessmentScheduleId"] = assessmentScheduleId;
+          updates["assessmentDate"] = assessmentDate;
+        }
       }
 
       if (Object.keys(updates).length === 0) {

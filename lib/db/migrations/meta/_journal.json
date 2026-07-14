@@ -400,6 +400,20 @@
       "when": 1784462412000,
       "tag": "0057_class_capacity_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784462413000,
+      "tag": "0058_ballet_assessment_schedule_selection",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784462414000,
+      "tag": "0059_drop_ballet_assessment_slots",
+      "breakpoints": true
     }
   ]
 }

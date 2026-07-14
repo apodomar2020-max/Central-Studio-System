@@ -1,10 +1,10 @@
-import { boolean, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { BALLET_APPLICATION_STATUSES, type BalletApplicationStatus } from "@workspace/api-zod";
 import { studentsTable } from "./students";
-import { balletAssessmentSlotsTable } from "./balletAssessmentSlots";
 import { balletLevelsTable } from "./balletLevels";
+import { balletSchedulesTable } from "./balletSchedules";
 import { childrenTable } from "./children";
 
 // Canonical source of truth moved to @workspace/api-zod (Phase A / P0-2b) so
@@ -21,9 +21,6 @@ export type { BalletApplicationStatus };
  * because many submissions come from parents who have not created an app
  * account yet (walk-in / phone calls). The child_id FK is populated later
  * if the parent links their account.
- *
- * slot_label is a denormalised copy of the slot's display string so the
- * historical record remains legible if the admin edits the slot later.
  *
  * Status machine:
  *   pending → accepted → assignedToLevel → active
@@ -50,8 +47,8 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   experienceDetails:     text("experience_details"),
   medicalNotes:          text("medical_notes"),
   notes:                 text("notes"),
-  slotId:                integer("slot_id").references(() => balletAssessmentSlotsTable.id, { onDelete: "set null" }),
-  slotLabel:             text("slot_label"),
+  assessmentScheduleId:  integer("assessment_schedule_id").references(() => balletSchedulesTable.id, { onDelete: "set null" }),
+  assessmentDate:        text("assessment_date"),
   // C1: parent's chosen payment method at intake (app-layer enum
   // BALLET_PAYMENT_METHODS). Nullable at the DB level so historical rows stay
   // valid, but required by the POST body for new submissions. This is a
@@ -77,6 +74,8 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   uniqueIndex("ballet_applications_active_per_manual_identity")
     .on(table.parentStudentId, sql`lower(trim(${table.childName}))`, table.childBirthday)
     .where(sql`${table.childId} is null and ${table.status} not in ('rejected','cancelled')`),
+  index("ballet_applications_assessment_schedule_idx").on(table.assessmentScheduleId),
+  index("ballet_applications_assessment_date_idx").on(table.assessmentDate),
 ]));
 
 // Zod schema for the mobile app's POST /api/ballet/applications body.
@@ -95,8 +94,8 @@ export const insertBalletApplicationSchema = z.object({
   experienceDetails:     z.string().optional(),
   medicalNotes:          z.string().optional(),
   notes:                 z.string().optional(),
-  slotId:                z.number().int().positive().optional(),
-  slotLabel:             z.string().optional(),
+  assessmentScheduleId:  z.number().int().positive().optional(),
+  assessmentDate:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export type BalletApplication = typeof balletApplicationsTable.$inferSelect;

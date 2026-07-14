@@ -20,9 +20,9 @@ import {
   BALLET_LEVELS,
   BALLET_PRICING,
   type BalletSettings,
-  AssessmentSlot,
+  AssessmentScheduleOption,
   fetchBalletSettings,
-  fetchAssessmentSlots,
+  fetchAvailableAssessmentSchedules,
   fetchMyApplications,
   submitBalletApplication,
   ACTIVE_APPLICATION_STATUSES,
@@ -53,9 +53,9 @@ const INK_200 = "#D1D5DB";
 const INK_300 = "#9CA3AF";
 const INK_400 = "#4B5563";
 const BALLET_COLOR = CYAN; // keep the existing semantic name; aligned to the design cyan
-// C1: "Payment Method" sits between slot selection and the final Review, per
+// C1: "Payment Method" sits between assessment selection and the final Review, per
 // the original spec (payment-method choice before Review).
-const STEPS = ["About You", "Child Info", "Experience", "Select Slot", "Payment Method", "Review"];
+const STEPS = ["About You", "Child Info", "Experience", "Assessment", "Payment Method", "Review"];
 
 // C1: parent-facing labels for the three app-layer payment methods.
 const PAYMENT_METHOD_OPTIONS: { value: BalletPaymentMethod; label: string; hint: string }[] = [
@@ -75,7 +75,7 @@ type FormData = {
   previousExperience: boolean | null;
   experienceDetails: string;
   medicalNotes: string;
-  selectedSlot: AssessmentSlot | null;
+  selectedSlot: AssessmentScheduleOption | null;
   emergencyContactName: string;
   emergencyContactPhone: string;
   notes: string;
@@ -556,17 +556,17 @@ export default function BalletAssessmentScreen() {
       ]
     : BALLET_PRICING;
 
-  // ── Slot data state ────────────────────────────────────────────────────────
-  const [slots, setSlots] = useState<AssessmentSlot[]>([]);
+  // ── Assessment schedule data state ─────────────────────────────────────────
+  const [slots, setSlots] = useState<AssessmentScheduleOption[]>([]);
   const [slotsState, setSlotsState] = useState<"idle" | "loading" | "success" | "empty" | "error" | "offline">("idle");
 
   // Recomputed fresh from the birthday on every render — see computeEffectiveAge.
   const effectiveAge = computeEffectiveAge(form.childBirthday, form.childAge);
 
-  const loadSlots = useCallback(async (signal?: AbortSignal, age?: number) => {
+  const loadSlots = useCallback(async (signal?: AbortSignal, birthday?: string) => {
     setSlotsState("loading");
     try {
-      const data = await fetchAssessmentSlots(signal, age);
+      const data = await fetchAvailableAssessmentSchedules(signal, birthday);
       setSlots(data);
       setSlotsState(data.length === 0 ? "empty" : "success");
     } catch (e) {
@@ -590,10 +590,10 @@ export default function BalletAssessmentScreen() {
     return () => controller.abort();
   }, [user]);
 
-  // Slot loading — fires once connectivity is confirmed online, and again
+  // Assessment loading — fires once connectivity is confirmed online, and again
   // whenever the effective age changes (selected child switched, or the
   // entered birthday changed) so the age-filtered list stays in sync. Also
-  // clears any previously selected slot on every firing (a no-op on the very
+  // clears any previously selected assessment on every firing (a no-op on the very
   // first load, since selectedSlot starts null) — no need to re-check for
   // active applications here because the ballet gate (app/ballet/index.tsx)
   // already verified there are none before navigating to this screen.
@@ -601,10 +601,10 @@ export default function BalletAssessmentScreen() {
     if (!user || connectivity !== "online") return;
     setForm((prev) => (prev.selectedSlot ? { ...prev, selectedSlot: null } : prev));
     const controller = new AbortController();
-    loadSlots(controller.signal, effectiveAge ?? undefined);
+    loadSlots(controller.signal, form.childBirthday.trim() || undefined);
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, connectivity, effectiveAge, loadSlots]);
+  }, [user, connectivity, effectiveAge, form.childBirthday, loadSlots]);
 
   if (!user || user.accountType !== "parent") {
     return <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]} />;
@@ -648,7 +648,7 @@ export default function BalletAssessmentScreen() {
       if (form.previousExperience === null) return "Please indicate previous dance experience.";
     }
     if (step === 3) {
-      if (!form.selectedSlot) return "Please select an assessment appointment slot.";
+      if (!form.selectedSlot) return "Please select an available assessment date.";
     }
     if (step === 4) {
       if (!form.preferredPaymentMethod) return "Please choose a payment method.";
@@ -671,19 +671,19 @@ export default function BalletAssessmentScreen() {
   async function handleSubmit() {
     if (!form.selectedSlot || submitting) return;
 
-    const slotId = parseInt(form.selectedSlot.id, 10);
-    if (isNaN(slotId)) {
-      Alert.alert("Error", "Invalid slot selection. Please go back and select a slot again.");
+    const assessmentScheduleId = form.selectedSlot.scheduleId;
+    const assessmentDate = form.selectedSlot.date;
+    if (!assessmentScheduleId || !assessmentDate) {
+      Alert.alert("Error", "Invalid assessment selection. Please go back and select an assessment date again.");
       return;
     }
 
-    // Guard: the selected slot may have fallen out of the age-filtered list
-    // (e.g. the child selection or birthday changed after it was picked, or
-    // it filled up in the background). Never submit a stale slotId silently.
-    if (!slots.some((s) => s.id === form.selectedSlot!.id)) {
+    // Guard: the selected assessment may have fallen out of the age-filtered list
+    // (e.g. the child selection or birthday changed after it was picked).
+    if (!slots.some((s) => s.scheduleId === form.selectedSlot!.scheduleId && s.date === form.selectedSlot!.date)) {
       Alert.alert(
-        "Slot No Longer Available",
-        "Your selected assessment slot is no longer available for this child's age. Please choose a new slot."
+        "Assessment No Longer Available",
+        "Your selected assessment date is no longer available for this child's age. Please choose a new one."
       );
       update("selectedSlot", null);
       setStep(3);
@@ -747,7 +747,8 @@ export default function BalletAssessmentScreen() {
         emergencyContactName:   form.emergencyContactName.trim() || undefined,
         emergencyContactPhone:  form.emergencyContactPhone.trim() || undefined,
         notes:                  form.notes.trim() || undefined,
-        slotId,
+        assessmentScheduleId,
+        assessmentDate,
         // C1: validated non-null by validateStep() before Review is reachable.
         preferredPaymentMethod: form.preferredPaymentMethod!,
         // Link the saved child profile when one was picked (backend verifies
@@ -781,14 +782,13 @@ export default function BalletAssessmentScreen() {
         return;
       }
 
-      // ── 409 Slot full ───────────────────────────────────────────────────
+      // ── 409 fallback ────────────────────────────────────────────────────
       if (typed.status === 409) {
         Alert.alert(
-          "Slot Full",
-          "The assessment slot you selected has just filled up. Please go back and choose a different slot." + childSavedNote
+          "Application Already Exists",
+          (typed.data?.error ?? "You already have an active Ballet application for this child.") + childSavedNote
         );
-        // Reload slots so the user sees updated availability
-        loadSlots(undefined, effectiveAge ?? undefined);
+        loadSlots(undefined, form.childBirthday.trim() || undefined);
         return;
       }
 
@@ -836,7 +836,7 @@ export default function BalletAssessmentScreen() {
       setConnectivity("checking");
       const controller = new AbortController();
       // No need to call loadSlots() here — flipping connectivity to "online"
-      // re-triggers the slot-loading effect above, which already carries the
+      // re-triggers the assessment-loading effect above, which already carries the
       // current effectiveAge.
       probeConnectivity(controller.signal)
         .then((status) => setConnectivity(status))
@@ -1162,23 +1162,23 @@ export default function BalletAssessmentScreen() {
         {step === 3 && (
           <View style={styles.stepWrap}>
             <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Choose Assessment Slot</Text>
-              <Text style={styles.stepDesc}>Select your preferred assessment appointment. Each session is 30 minutes.</Text>
+              <Text style={styles.stepTitle}>Choose Assessment Date</Text>
+              <Text style={styles.stepDesc}>Select a class schedule occurrence for the assessment.</Text>
             </View>
 
             {/* Loading state */}
             {slotsState === "loading" && (
               <View style={styles.slotsPlaceholder}>
                 <Ionicons name="time-outline" size={28} color={BALLET_COLOR} />
-                <Text style={styles.slotsPlaceholderText}>Loading available slots…</Text>
+                <Text style={styles.slotsPlaceholderText}>Loading available assessment dates…</Text>
               </View>
             )}
 
-            {/* Offline state (detected while loading slots) */}
+            {/* Offline state (detected while loading assessment dates) */}
             {slotsState === "offline" && (
               <OfflineState
                 variant="compact"
-                onRetry={() => loadSlots(undefined, effectiveAge ?? undefined)}
+                onRetry={() => loadSlots(undefined, form.childBirthday.trim() || undefined)}
               />
             )}
 
@@ -1186,70 +1186,47 @@ export default function BalletAssessmentScreen() {
             {slotsState === "error" && (
               <ErrorState
                 variant="compact"
-                title="Slots Unavailable"
-                message="Assessment slot booking is not yet available online. Please contact the studio to schedule your assessment."
-                onRetry={() => loadSlots(undefined, effectiveAge ?? undefined)}
+                title="Assessments Unavailable"
+                message="Assessment booking is not yet available online. Please contact the studio to schedule your assessment."
+                onRetry={() => loadSlots(undefined, form.childBirthday.trim() || undefined)}
               />
             )}
 
-            {/* Empty — no future slots (age-specific copy when we know the age) */}
+            {/* Empty — no future schedules (age-specific copy when we know the age) */}
             {slotsState === "empty" && (
               <View style={styles.slotsPlaceholder}>
                 <Ionicons name="calendar-outline" size={28} color="#6B7280" />
                 <Text style={[styles.slotsPlaceholderText, { color: "#9CA3AF" }]}>
                   {effectiveAge != null
-                    ? `No assessment slots are currently available for age ${effectiveAge}. Please check back soon or contact the studio.`
-                    : "No assessment slots are currently available. Please check back soon or contact the studio."}
+                    ? `No assessment schedules are currently available for age ${effectiveAge}. Please check back soon or contact the studio.`
+                    : "No assessment schedules are currently available. Please check back soon or contact the studio."}
                 </Text>
               </View>
             )}
 
-            {/* Success — render live slots from backend */}
+            {/* Success — render live schedule occurrences from backend */}
             {slotsState === "success" && slots.map((slot) => {
-              const isSelected = form.selectedSlot?.id === slot.id;
-              const isFull = slot.status === "full";
+              const isSelected = form.selectedSlot?.scheduleId === slot.scheduleId && form.selectedSlot?.date === slot.date;
               return (
                 <TouchableOpacity
-                  key={slot.id}
+                  key={`${slot.scheduleId}-${slot.date}`}
                   onPress={() => {
-                    if (!isFull) {
-                      Haptics.selectionAsync();
-                      update("selectedSlot", slot);
-                    }
+                    Haptics.selectionAsync();
+                    update("selectedSlot", slot);
                   }}
-                  disabled={isFull}
                   style={[
                     styles.slotCard,
                     isSelected && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "10" },
-                    isFull && { opacity: 0.4 },
                   ]}
                   activeOpacity={0.8}
                 >
                   <View style={styles.slotLeft}>
-                    <Text style={styles.slotDay}>{slot.dayOfWeek}</Text>
+                    <Text style={styles.slotDay}>{slot.day}</Text>
                     <Text style={styles.slotDate}>{slot.date}</Text>
-                    <Text style={styles.slotTime}>{slot.startTime} – {slot.endTime}</Text>
+                    <Text style={styles.slotTime}>{slot.className} · {slot.levelName}</Text>
                   </View>
                   <View style={styles.slotRight}>
-                    <View style={[
-                      styles.slotStatusBadge,
-                      {
-                        backgroundColor:
-                          slot.status === "available" ? SUCCESS + "22" :
-                          slot.status === "fewSeats" ? AMBER + "22" : DANGER + "22",
-                      },
-                    ]}>
-                      <Text style={[
-                        styles.slotStatusText,
-                        {
-                          color:
-                            slot.status === "available" ? SUCCESS :
-                            slot.status === "fewSeats" ? AMBER : DANGER,
-                        },
-                      ]}>
-                        {isFull ? "Full" : slot.status === "fewSeats" ? `${slot.availableSeats} left` : "Available"}
-                      </Text>
-                    </View>
+                    <Text style={[styles.slotStatusText, { color: SUCCESS }]}>{slot.time}</Text>
                     {isSelected && <Ionicons name="checkmark-circle" size={22} color={BALLET_COLOR} />}
                   </View>
                 </TouchableOpacity>
@@ -1344,10 +1321,10 @@ export default function BalletAssessmentScreen() {
               <View>
                 <Text style={styles.slotReviewLabel}>Assessment Appointment</Text>
                 <Text style={[styles.slotReviewValue, { color: BALLET_COLOR }]}>
-                  {form.selectedSlot?.dayOfWeek} {form.selectedSlot?.date}
+                  {form.selectedSlot?.day} {form.selectedSlot?.date}
                 </Text>
                 <Text style={styles.slotReviewTime}>
-                  {form.selectedSlot?.startTime} – {form.selectedSlot?.endTime}
+                  {form.selectedSlot?.className} · {form.selectedSlot?.time}
                 </Text>
               </View>
             </View>

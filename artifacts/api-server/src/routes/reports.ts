@@ -423,7 +423,7 @@ async function balletReport(fromIso: string | undefined, toIso: string | undefin
       childName: balletApplicationsTable.childName,
       childAge: balletApplicationsTable.childAge,
       status: balletApplicationsTable.status,
-      slotLabel: balletApplicationsTable.slotLabel,
+      assessmentDate: balletApplicationsTable.assessmentDate,
       createdAt: balletApplicationsTable.createdAt,
     })
     .from(balletApplicationsTable)
@@ -445,7 +445,7 @@ async function balletReport(fromIso: string | undefined, toIso: string | undefin
     childName: r.childName,
     childAge: r.childAge ?? "—",
     status: r.status,
-    slotLabel: r.slotLabel ?? "—",
+    assessmentDate: r.assessmentDate ?? "—",
     createdAt: fmtDate(r.createdAt),
   }));
 
@@ -456,7 +456,7 @@ async function balletReport(fromIso: string | undefined, toIso: string | undefin
     { key: "childName", label: "Child Name" },
     { key: "childAge", label: "Child Age" },
     { key: "status", label: "Status" },
-    { key: "slotLabel", label: "Preferred Slot" },
+    { key: "assessmentDate", label: "Assessment Date" },
     { key: "createdAt", label: "Created At" },
   ];
   return { columns, rows, summary };

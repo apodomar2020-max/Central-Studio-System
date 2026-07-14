@@ -11,7 +11,7 @@
  *
  * DYNAMIC DATA  (always fetched from the backend)
  *   fetchBalletSettings()   — admin-managed pricing + assessment instructions.
- *   fetchAssessmentSlots()  — real-time slot availability with live capacity.
+ *   fetchAvailableAssessmentSchedules() — schedule-based assessment availability.
  *
  * ─── Production rule ──────────────────────────────────────────────────────────
  *
@@ -82,19 +82,20 @@ export interface BalletSettings {
 }
 
 /**
- * Shape of a single assessment appointment slot.
- * Must match the shape returned by GET /api/ballet/assessment-slots.
+ * Shape of one projected assessment schedule occurrence.
+ * Must match GET /api/ballet/available-assessment-schedules.
  */
-export interface AssessmentSlot {
-  id: string;
-  date: string;            // ISO date, e.g. "2026-07-05"
-  dayOfWeek: string;       // "Saturday"
-  startTime: string;       // "10:00 AM"
-  endTime: string;         // "10:30 AM"
-  capacity: number;
-  bookedCount: number;
-  availableSeats: number;
-  status: "available" | "fewSeats" | "full";
+export interface AssessmentScheduleOption {
+  scheduleId: number;
+  classId: number;
+  className: string;
+  levelId: number;
+  levelName: string;
+  date: string;
+  day: string;
+  time: string;
+  startTime: string;
+  endTime: string;
 }
 
 // ─── Fetch functions ───────────────────────────────────────────────────────────
@@ -121,15 +122,11 @@ export async function fetchBalletSettings(
 }
 
 /**
- * Fetches live assessment slot availability from the backend.
+ * Fetches live assessment schedule occurrences from the backend.
  *
- * Returns only future, active slots ordered by date asc then startTime asc.
- * bookedCount and availableSeats are computed server-side at query time —
- * they are always accurate and never cached on the server.
- *
- * When `childAge` is provided, only slots whose age range covers that age
- * are returned (server-side filter, supported since Phase 1 — a slot with
- * no age range set is open to all ages).
+ * Returns projected occurrences for the next 4 weeks based on active Ballet
+ * levels, classes, and class schedules. Age filtering is derived server-side
+ * from the child's birthday.
  *
  * No student JWT required — slot availability is public programme info.
  * The shared API key (set in EXPO_PUBLIC_API_KEY) is sufficient.
@@ -137,14 +134,14 @@ export async function fetchBalletSettings(
  * Throws on any failure — the calling screen catches and renders the
  * appropriate state (use isOfflineError() to distinguish offline vs error).
  */
-export async function fetchAssessmentSlots(
+export async function fetchAvailableAssessmentSchedules(
   signal?: AbortSignal,
-  childAge?: number,
-): Promise<AssessmentSlot[]> {
+  childBirthday?: string,
+): Promise<AssessmentScheduleOption[]> {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-  const query = childAge != null ? `?childAge=${encodeURIComponent(childAge)}` : "";
-  const res = await customFetch<AssessmentSlot[]>(
-    `${apiUrl}/api/ballet/assessment-slots${query}`,
+  const query = childBirthday ? `?childBirthday=${encodeURIComponent(childBirthday)}` : "";
+  const res = await customFetch<AssessmentScheduleOption[]>(
+    `${apiUrl}/api/ballet/available-assessment-schedules${query}`,
     { method: "GET", signal }
   );
   return res;
@@ -171,7 +168,8 @@ export interface SubmitApplicationPayload {
   experienceDetails?:     string;
   medicalNotes?:          string;
   notes?:                 string;
-  slotId:                 number;
+  assessmentScheduleId:   number;
+  assessmentDate:         string;
   /** C1: parent's chosen payment method at intake — required by the backend.
    *  A preference only; the backend never creates a payment from it. */
   preferredPaymentMethod: BalletPaymentMethod;
@@ -196,8 +194,7 @@ export interface SubmitApplicationResult {
  *
  * Throws:
  *   - TypeError        → device offline / network unreachable
- *   - ApiError (409)   → slot is full
- *   - ApiError (404)   → slot not found or inactive
+ *   - ApiError (422)   → schedule unavailable or age-ineligible
  *   - ApiError (400)   → validation failed
  *   - ApiError (401)   → not logged in
  *   - Error (other)    → server error
@@ -268,8 +265,8 @@ export interface BalletApplication {
   experienceDetails: string | null;
   medicalNotes: string | null;
   notes: string | null;
-  slotId: number | null;
-  slotLabel: string | null;
+  assessmentScheduleId: number | null;
+  assessmentDate: string | null;
   status: string;
   adminNotes: string | null;
   assignedLevelId: number | null;
@@ -342,7 +339,8 @@ export interface UpdateApplicationPayload {
   notes?:                 string;
   experienceDetails?:     string;
   previousExperience?:    boolean;
-  slotId?:                number;
+  assessmentScheduleId?:  number;
+  assessmentDate?:        string;
 }
 
 /**
@@ -394,7 +392,7 @@ export const EDITABLE_APPLICATION_STATUSES = new Set([
 // Phase 4a added 5 public, read-only GET /api/ballet/* endpoints exposing the
 // Ballet catalogue (instructors, classes, levels, performances, groups) that
 // previously only existed behind /api/admin/ballet/*. These mirror the
-// fetchBalletSettings/fetchAssessmentSlots pattern above: no auth beyond the
+// fetchBalletSettings/fetchAvailableAssessmentSchedules pattern above: no auth beyond the
 // shared API key, never fall back to mock/static data, throw on failure so
 // the calling screen can render its own loading/error/empty state.
 
