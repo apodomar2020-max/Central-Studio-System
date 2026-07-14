@@ -39,6 +39,7 @@ import myRouter from "./myRoutes";
 import appContentRouter from "./appContent";
 import instagramRouter from "./instagram";
 import reportsRouter from "./reports";
+import backgroundMusicRouter from "./backgroundMusic";
 
 const router: IRouter = Router();
 
@@ -82,5 +83,6 @@ router.use(myRouter);
 router.use(appContentRouter);
 router.use(instagramRouter);
 router.use(reportsRouter);
+router.use(backgroundMusicRouter);
 
 export default router;

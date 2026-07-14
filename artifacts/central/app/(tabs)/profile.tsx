@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -24,6 +25,7 @@ import type { MyAttendanceRecord, MyAttendanceResponse } from "@workspace/api-cl
 import { useAppContext, ChildProfile } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import { useBackgroundMusic } from "@/components/BackgroundMusicProvider";
 import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
@@ -600,6 +602,7 @@ const dpStyles = StyleSheet.create({
 
 export default function ProfileScreen() {
   const { user, setUser, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications } = useAppContext();
+  const { localEnabled: backgroundMusicEnabled, setLocalEnabled: setBackgroundMusicEnabled } = useBackgroundMusic();
   const insets = useSafeAreaInsets();
   const navigatingRef = React.useRef(false);
   const [addChildVisible, setAddChildVisible] = useState(false);
@@ -951,6 +954,26 @@ export default function ProfileScreen() {
             )}
           </View>
         )}
+
+        <Text style={[styles.sectionEyebrow, { marginTop: 24 }]}>APP PREFERENCES</Text>
+        <View style={styles.menuContainer}>
+          <View style={styles.menuItem}>
+            <View style={[styles.menuIcon, { backgroundColor: colors.studio.primary + "15" }]}>
+              <Ionicons name="musical-notes" size={19} color={colors.studio.primary} />
+            </View>
+            <View style={styles.menuTextCol}>
+              <Text style={styles.menuLabel}>Background Music</Text>
+              <Text style={styles.menuSubtitle}>Play while the app is active</Text>
+            </View>
+            <Switch
+              value={backgroundMusicEnabled}
+              onValueChange={(value) => { void setBackgroundMusicEnabled(value); }}
+              trackColor={{ false: "#2A2F37", true: colors.studio.primary + "55" }}
+              thumbColor={backgroundMusicEnabled ? colors.studio.primary : "#9CA3AF"}
+              ios_backgroundColor="#2A2F37"
+            />
+          </View>
+        </View>
 
         <Text style={[styles.sectionEyebrow, { marginTop: 24 }]}>ACTIVITY & SUPPORT</Text>
         <View style={styles.menuContainer}>

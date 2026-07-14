@@ -34,6 +34,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import FeedbackGate from "@/components/feedback/FeedbackGate";
 import PushRegistrationGate from "@/components/PushRegistrationGate";
+import { BackgroundMusicProvider } from "@/components/BackgroundMusicProvider";
 import { AppContextProvider } from "@/contexts/AppContext";
 import { useAppContext } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
@@ -268,10 +269,12 @@ function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView>
               <KeyboardProvider>
-                <FeedbackGate />
-                <PushRegistrationGate />
-                <NotificationRoutingGate />
-                <RootLayoutNav />
+                <BackgroundMusicProvider>
+                  <FeedbackGate />
+                  <PushRegistrationGate />
+                  <NotificationRoutingGate />
+                  <RootLayoutNav />
+                </BackgroundMusicProvider>
               </KeyboardProvider>
             </GestureHandlerRootView>
           </QueryClientProvider>

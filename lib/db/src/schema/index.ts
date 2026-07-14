@@ -39,6 +39,7 @@ export * from "./balletGroupSchedules";
 // Dance Types — Settings-driven category list (migration 0011)
 export * from "./danceTypes";
 export * from "./classPricingSettings";
+export * from "./backgroundMusicSettings";
 export * from "./appContentPages";
 export * from "./appFaqItems";
 export * from "./appContactLinks";
