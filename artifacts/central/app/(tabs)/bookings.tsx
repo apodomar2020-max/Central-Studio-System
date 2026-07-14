@@ -532,13 +532,18 @@ export default function BookingsScreen() {
     let balletItems: ListItem[] = [];
     switch (tab) {
       case "Upcoming":
-        balletItems = balletApps.filter((a) => !BALLET_ENDED_STATUSES.includes(a.status as BalletApplicationStatus)).map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        balletItems = balletApps
+          .filter((a) => {
+            const hasSchedules = a.resolvedSchedules != null && a.resolvedSchedules.length > 0;
+            return a.status === "active" && a.assignedGroupId != null && hasSchedules;
+          })
+          .map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
         break;
       case "Past":
-        balletItems = balletApps.filter((a) => a.status === "rejected").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        balletItems = [];
         break;
       case "Cancelled":
-        balletItems = balletApps.filter((a) => a.status === "cancelled").map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
+        balletItems = [];
         break;
     }
 

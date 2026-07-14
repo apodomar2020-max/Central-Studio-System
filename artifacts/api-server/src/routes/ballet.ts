@@ -735,8 +735,9 @@ router.get(
       res.json({
         applications: applications.map((a) => {
           const assignedGroupId = groupIdByApplicationId.get(a.id) ?? null;
-          const isActiveGrouped = a.status === "active" && assignedGroupId != null;
           const summary = attendanceSummaryByApplicationId.get(a.id);
+          const hasActiveSubscription = summary?.hasActiveSubscription === true;
+          const isActiveGrouped = a.status === "active" && assignedGroupId != null && hasActiveSubscription;
           return {
             ...a,
             assignedGroupId,
