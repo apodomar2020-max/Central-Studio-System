@@ -85,14 +85,58 @@ interface Event {
   changedByFullName: string | null;
 }
 
+interface GroupSchedule {
+  id: number;
+  dayOfWeek: number; // 0=Sun … 6=Sat
+  startTime: string;
+  endTime: string;
+  status: string;
+}
+
+interface AttendanceSummary {
+  billingMonth: string;
+  hasActiveSubscription: boolean;
+  attendedHours: number;
+  absentHours: number;
+  consumedHours: number;
+  monthlyHours: number | null;
+  remainingHours: number | null;
+}
+
+// D1: one row from GET /admin/ballet/attendance's history array.
+interface AttendanceHistoryRow {
+  id: number;
+  classDate: string | null;
+  status: string;
+  durationMinutes: number | null;
+  notes: string | null;
+  balletScheduleId: number | null;
+  createdAt: string;
+}
+
+interface AttendanceHistoryResponse {
+  history: AttendanceHistoryRow[];
+  summary: AttendanceSummary;
+}
+
 interface DetailResponse {
   application: Application;
   slot: Slot | null;
   level: Level | null;
   group: Group | null;
   assignmentId: number | null;
+  groupSchedules: GroupSchedule[];
   events: Event[];
+  attendanceSummary: AttendanceSummary | null;
 }
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const ATTENDANCE_STATUSES = [
+  { value: "checked_in", label: "Checked In" },
+  { value: "late",       label: "Late" },
+  { value: "absent",     label: "Absent" },
+  { value: "cancelled",  label: "Cancelled" },
+];
 
 interface LevelsResponse {
   levels: Level[];
@@ -173,6 +217,7 @@ export default function ApplicationDetailPage() {
   const canReview = can("ballet.applications", "review");
   const canApprove = can("ballet.applications", "approve");
   const canReject = can("ballet.applications", "reject");
+  const canCheckIn = can("attendance", "checkIn");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -182,6 +227,17 @@ export default function ApplicationDetailPage() {
   const [levelNote, setLevelNote]       = useState("");
   const [newGroupId, setNewGroupId]     = useState("");
   const [groupNote, setGroupNote]       = useState("");
+  const [attScheduleId, setAttScheduleId] = useState("");
+  const [attDate, setAttDate]             = useState("");
+  const [attStatus, setAttStatus]         = useState("checked_in");
+  const [attDuration, setAttDuration]     = useState("");
+  const [attNote, setAttNote]             = useState("");
+
+  // D1: inline correction state for an existing attendance history row.
+  const [editingAttendanceId, setEditingAttendanceId] = useState<number | null>(null);
+  const [editStatus, setEditStatus]     = useState("checked_in");
+  const [editDuration, setEditDuration] = useState("");
+  const [editNote, setEditNote]         = useState("");
 
   const appId = parseInt(id ?? "", 10);
 
@@ -300,6 +356,103 @@ export default function ApplicationDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  // ── Attendance history + monthly summary (D1) ──────────────────────────────
+  // A dedicated fetch against the new GET endpoint — the detail route above
+  // already carries this month's summary (attendanceSummary, kept as-is
+  // below); this one additionally carries the full history list so staff can
+  // see and correct past entries.
+
+  const { data: attendanceHistoryData } = useQuery<AttendanceHistoryResponse>({
+    queryKey: ["ballet-attendance-history", data?.assignmentId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/attendance?levelAssignmentId=${data!.assignmentId}`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load attendance history");
+      return res.json();
+    },
+    enabled: data?.assignmentId != null,
+  });
+
+  // ── Attendance mutation (C3 / D1) ───────────────────────────────────────────
+
+  const attendanceMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/attendance`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify({
+          levelAssignmentId: data?.assignmentId,
+          balletScheduleId: parseInt(attScheduleId, 10),
+          classDate: attDate,
+          status: attStatus,
+          durationMinutes: attDuration ? parseInt(attDuration, 10) : undefined,
+          note: attNote || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw Object.assign(
+          new Error((err as { error?: string }).error ?? "Failed to record attendance"),
+          { existingAttendanceId: (err as { existingAttendanceId?: number }).existingAttendanceId },
+        );
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Attendance recorded" });
+      setAttScheduleId("");
+      setAttDate("");
+      setAttStatus("checked_in");
+      setAttDuration("");
+      setAttNote("");
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-attendance-history", data?.assignmentId] });
+    },
+    onError: (e: Error & { existingAttendanceId?: number | null }) => toast({
+      title: "Error",
+      description: e.existingAttendanceId
+        ? `${e.message} (existing record #${e.existingAttendanceId})`
+        : e.message,
+      variant: "destructive",
+    }),
+  });
+
+  // ── Attendance correction mutation (D1) ─────────────────────────────────────
+
+  const patchAttendanceMutation = useMutation({
+    mutationFn: async (vars: { id: number; status: string; durationMinutes: string; note: string }) => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/attendance/${vars.id}`, {
+        method: "PATCH",
+        headers: makeHeaders(token),
+        body: JSON.stringify({
+          status: vars.status,
+          durationMinutes: vars.durationMinutes ? parseInt(vars.durationMinutes, 10) : null,
+          note: vars.note || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to update attendance");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Attendance corrected" });
+      setEditingAttendanceId(null);
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-attendance-history", data?.assignmentId] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  function startEditAttendance(row: AttendanceHistoryRow) {
+    setEditingAttendanceId(row.id);
+    setEditStatus(row.status);
+    setEditDuration(row.durationMinutes != null ? String(row.durationMinutes) : "");
+    setEditNote(row.notes ?? "");
+  }
+
   // ── Render states ───────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -321,7 +474,8 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  const { application: app, slot, level, group, events } = data;
+  const { application: app, slot, level, group, events, groupSchedules, attendanceSummary } = data;
+  const activeSchedules = (groupSchedules ?? []).filter((s) => s.status === "active");
   const levels = levelsData?.levels ?? [];
   // Groups are only offered for the level actually assigned to this
   // application — mirrors the existing level-filter pattern used elsewhere
@@ -435,6 +589,33 @@ export default function ApplicationDetailPage() {
               <Field label="Level"       value={level?.name ?? `ID ${app.assignedLevelId}`} />
               <Field label="Group"       value={group?.name} />
               <Field label="Assigned at" value={app.assignedAt ? new Date(app.assignedAt).toLocaleString() : null} />
+            </Section>
+          )}
+
+          {/* Attendance hours — this month (C4). Only meaningful once a level
+              is assigned; the backend returns null otherwise. */}
+          {app.assignedLevelId != null && (
+            <Section title={`Attendance — ${attendanceSummary?.billingMonth ?? "this month"}`}>
+              {attendanceSummary && attendanceSummary.hasActiveSubscription ? (
+                <>
+                  <Field label="Monthly hours"  value={`${attendanceSummary.monthlyHours}h`} />
+                  <Field label="Attended"        value={`${attendanceSummary.attendedHours}h`} />
+                  <Field label="Absent"          value={`${attendanceSummary.absentHours}h`} />
+                  <Field label="Consumed"        value={`${attendanceSummary.consumedHours}h`} />
+                  <Field label="Remaining"       value={`${attendanceSummary.remainingHours}h`} />
+                </>
+              ) : attendanceSummary ? (
+                <>
+                  <p className="text-sm text-muted-foreground italic">
+                    No active monthly subscription for {attendanceSummary.billingMonth}.
+                  </p>
+                  {/* Attendance facts still shown even without a subscription. */}
+                  <Field label="Attended" value={`${attendanceSummary.attendedHours}h`} />
+                  <Field label="Absent"   value={`${attendanceSummary.absentHours}h`} />
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">No attendance data.</p>
+              )}
             </Section>
           )}
 
@@ -558,6 +739,154 @@ export default function ApplicationDetailPage() {
                   <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
                 ) : "Assign Group"}
               </Button>
+            </div>
+          )}
+
+          {/* Mark attendance (C3) — minimal admin-recorded path. Shown only when
+              this student has an active level assignment with a group that has
+              schedules, and the admin holds attendance:checkIn. The schedule
+              picker is scoped to the group's own schedules (what the endpoint
+              will accept). */}
+          {canCheckIn && data.assignmentId != null && activeSchedules.length > 0 && (
+            <div className="rounded-lg border bg-card p-5 space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Mark Attendance
+              </h3>
+              <Select value={attScheduleId} onValueChange={setAttScheduleId}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select class schedule…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeSchedules.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {DAY_NAMES[s.dayOfWeek] ?? "?"} {s.startTime}–{s.endTime}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <input
+                type="date"
+                className="w-full h-8 rounded-md border bg-background px-2 text-sm"
+                value={attDate}
+                onChange={(e) => setAttDate(e.target.value)}
+              />
+              <Select value={attStatus} onValueChange={setAttStatus}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ATTENDANCE_STATUSES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* D1: optional — defaults server-side to the schedule's own duration. */}
+              <input
+                type="number"
+                min={0}
+                className="w-full h-8 rounded-md border bg-background px-2 text-sm"
+                placeholder="Duration in minutes (optional — defaults to schedule length)"
+                value={attDuration}
+                onChange={(e) => setAttDuration(e.target.value)}
+              />
+              <Textarea
+                className="text-sm min-h-[56px] resize-none"
+                placeholder="Note (optional)"
+                value={attNote}
+                onChange={(e) => setAttNote(e.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={!attScheduleId || !attDate || attendanceMutation.isPending}
+                onClick={() => attendanceMutation.mutate()}
+                style={{ background: "#00B6D6", color: "#000" }}
+                className="w-full"
+              >
+                {attendanceMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Recording…</>
+                ) : "Record Attendance"}
+              </Button>
+            </div>
+          )}
+
+          {/* Attendance history + correction (D1) — shown alongside Mark
+              Attendance whenever this student has an active level assignment. */}
+          {canCheckIn && data.assignmentId != null && (
+            <div className="rounded-lg border bg-card p-5 space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Attendance History
+              </h3>
+              {!attendanceHistoryData || attendanceHistoryData.history.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">No attendance recorded yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {attendanceHistoryData.history.map((row) => (
+                    <div key={row.id} className="rounded-md border p-3 text-sm space-y-2">
+                      {editingAttendanceId === row.id ? (
+                        <>
+                          <Select value={editStatus} onValueChange={setEditStatus}>
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ATTENDANCE_STATUSES.map((s) => (
+                                <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-full h-8 rounded-md border bg-background px-2 text-sm"
+                            placeholder="Duration in minutes"
+                            value={editDuration}
+                            onChange={(e) => setEditDuration(e.target.value)}
+                          />
+                          <Textarea
+                            className="text-sm min-h-[48px] resize-none"
+                            placeholder="Note (optional)"
+                            value={editNote}
+                            onChange={(e) => setEditNote(e.target.value)}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              disabled={patchAttendanceMutation.isPending}
+                              onClick={() => patchAttendanceMutation.mutate({ id: row.id, status: editStatus, durationMinutes: editDuration, note: editNote })}
+                              style={{ background: "#00B6D6", color: "#000" }}
+                            >
+                              {patchAttendanceMutation.isPending ? (
+                                <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</>
+                              ) : "Save Correction"}
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingAttendanceId(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium">{row.classDate ?? "—"}</span>
+                              <Badge variant="outline" className="text-xs">
+                                {ATTENDANCE_STATUSES.find((s) => s.value === row.status)?.label ?? row.status}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {row.durationMinutes != null ? `${row.durationMinutes} min` : "no duration"}
+                              </span>
+                            </div>
+                            {row.notes && <p className="mt-1 text-xs text-muted-foreground">{row.notes}</p>}
+                          </div>
+                          <Button size="sm" variant="ghost" onClick={() => startEditAttendance(row)}>
+                            Correct
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

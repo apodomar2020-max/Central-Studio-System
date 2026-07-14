@@ -94,6 +94,7 @@ interface BalletPayment {
   amountEgp: number;
   status: PaymentStatus;
   paymentMethod: PaymentMethod | null;
+  billingMonth: string | null;
   paidAt: string | null;
   refundedAt: string | null;
   notes: string | null;
@@ -115,6 +116,9 @@ const formSchema = z.object({
   packageOrderId: z.coerce.number().int().positive().nullish(),
   levelAssignmentId: z.coerce.number().int().positive().nullish(),
   paymentMethod: z.enum(PAYMENT_METHODS).nullish(),
+  // C2: calendar month this payment covers, "YYYY-MM". Optional, but required
+  // input for a payment that represents a monthly entitlement (drives C4).
+  billingMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use YYYY-MM").or(z.literal("")).nullish(),
 });
 
 type FormValues = z.input<typeof formSchema>;
@@ -126,6 +130,7 @@ const EMPTY_VALUES: FormValues = {
   packageOrderId: undefined,
   levelAssignmentId: undefined,
   paymentMethod: undefined,
+  billingMonth: "",
 };
 
 export default function BalletPaymentsPage() {
@@ -190,6 +195,7 @@ export default function BalletPaymentsPage() {
       packageOrderId: parsed.packageOrderId ?? undefined,
       levelAssignmentId: parsed.levelAssignmentId ?? undefined,
       paymentMethod: parsed.paymentMethod ?? undefined,
+      billingMonth: parsed.billingMonth ? parsed.billingMonth : undefined,
     });
   };
 
@@ -241,6 +247,7 @@ export default function BalletPaymentsPage() {
               <TableHead>Application</TableHead>
               <TableHead>Amount (EGP)</TableHead>
               <TableHead>Method</TableHead>
+              <TableHead>Billing Month</TableHead>
               <TableHead>Package Order</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
@@ -249,11 +256,11 @@ export default function BalletPaymentsPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
             ) : isError ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-destructive text-sm">Failed to load payments.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-destructive text-sm">Failed to load payments.</TableCell></TableRow>
             ) : payments.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No ballet payments yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No ballet payments yet.</TableCell></TableRow>
             ) : (
               payments.map((payment) => (
                 <TableRow key={payment.id} data-testid={`row-ballet-payment-${payment.id}`}>
@@ -261,6 +268,7 @@ export default function BalletPaymentsPage() {
                   <TableCell className="font-medium">#{payment.applicationId}</TableCell>
                   <TableCell>{payment.amountEgp.toLocaleString()} EGP</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{payment.paymentMethod ? PAYMENT_METHOD_LABELS[payment.paymentMethod] : "—"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{payment.billingMonth ?? "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{payment.packageOrderId ? `#${payment.packageOrderId}` : "—"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={statusBadgeClass(payment.status)}>
@@ -367,6 +375,20 @@ export default function BalletPaymentsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="billingMonth" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Billing Month (optional, YYYY-MM)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="month"
+                      data-testid="input-payment-billing-month"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
