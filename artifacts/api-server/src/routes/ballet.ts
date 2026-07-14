@@ -39,7 +39,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gte, ilike, isNull, or, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, ilike, isNull, or, inArray, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -60,6 +60,7 @@ import {
   BALLET_PAYMENT_METHODS,
   studentsTable,
 } from "@workspace/db";
+import { BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS } from "@workspace/api-zod";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth } from "../lib/balletAttendance";
@@ -151,11 +152,12 @@ type AssessmentOccurrence = {
   time: string;
   startTime: string;
   endTime: string;
+  capacity: number | null;
 };
 
 async function listAvailableAssessmentSchedules(childBirthday: string): Promise<AssessmentOccurrence[]> {
   const today = todayIso();
-  const end = addDaysIso(today, 28);
+  const end = addDaysIso(today, BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS);
 
   const rows = await db
     .select({
@@ -169,6 +171,7 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
       levelName:  balletLevelsTable.name,
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
+      capacity:   balletSchedulesTable.capacity,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
@@ -180,6 +183,30 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
       eq(balletLevelsTable.isActive, true),
     ))
     .orderBy(asc(balletLevelsTable.sortOrder), asc(balletClassesTable.title), asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime));
+
+  // Query booked counts for active applications in the window
+  const bookings = await db
+    .select({
+      scheduleId: balletApplicationsTable.assessmentScheduleId,
+      date:       balletApplicationsTable.assessmentDate,
+      count:      count(),
+    })
+    .from(balletApplicationsTable)
+    .where(and(
+      inArray(balletApplicationsTable.status, ["pending", "accepted", "needsFollowUp", "assignedToLevel", "active"]),
+      sql`${balletApplicationsTable.assessmentScheduleId} is not null`,
+      sql`${balletApplicationsTable.assessmentDate} is not null`,
+      gte(balletApplicationsTable.assessmentDate, today),
+      lte(balletApplicationsTable.assessmentDate, end),
+    ))
+    .groupBy(balletApplicationsTable.assessmentScheduleId, balletApplicationsTable.assessmentDate);
+
+  const bookedCountMap = new Map<string, number>();
+  for (const b of bookings) {
+    if (b.scheduleId != null && b.date != null) {
+      bookedCountMap.set(`${b.scheduleId}:${b.date}`, b.count);
+    }
+  }
 
   const occurrences: AssessmentOccurrence[] = [];
   for (const row of rows) {
@@ -194,6 +221,10 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
         (row.ageMax == null || age <= row.ageMax);
       if (!eligible) continue;
 
+      const bookedKey = `${row.scheduleId}:${cursor}`;
+      const booked = bookedCountMap.get(bookedKey) ?? 0;
+      if (row.capacity != null && booked >= row.capacity) continue;
+
       occurrences.push({
         scheduleId: row.scheduleId,
         classId:    row.classId,
@@ -205,6 +236,7 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
         time:       normalizeTimeLabel(row.startTime),
         startTime:  row.startTime,
         endTime:    row.endTime,
+        capacity:   row.capacity,
       });
     }
   }
@@ -232,6 +264,7 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
       levelName:  balletLevelsTable.name,
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
+      capacity:   balletSchedulesTable.capacity,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
@@ -268,6 +301,7 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
       time:       normalizeTimeLabel(row.startTime),
       startTime:  row.startTime,
       endTime:    row.endTime,
+      capacity:   row.capacity,
     };
   }
 
@@ -898,6 +932,22 @@ router.post(
           );
         }
 
+        const today = todayIso();
+        if (resolvedBirthday > today) {
+          throw Object.assign(
+            new Error("Child birthday cannot be in the future."),
+            { status: 400 },
+          );
+        }
+
+        const maxDate = addDaysIso(today, BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS);
+        if (assessmentDate < today || assessmentDate > maxDate) {
+          throw Object.assign(
+            new Error("Selected date is outside the allowed booking window."),
+            { status: 422, code: "ASSESSMENT_DATE_OUT_OF_WINDOW" },
+          );
+        }
+
         const ageAtAssessment = computeAgeAsOf(resolvedBirthday, assessmentDate);
         if (ageAtAssessment == null) {
           throw Object.assign(
@@ -912,6 +962,30 @@ router.post(
             new Error("Selected assessment schedule is no longer available for this child's age."),
             { status: 422, code: "ASSESSMENT_SCHEDULE_UNAVAILABLE" },
           );
+        }
+
+        // Capacity check under Ballet-specific advisory lock
+        if (assessment.capacity != null) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${`ballet-assessment:${assessmentScheduleId}:${assessmentDate}`}))`
+          );
+
+          const [bookedCountRow] = await tx
+            .select({ count: count() })
+            .from(balletApplicationsTable)
+            .where(and(
+              eq(balletApplicationsTable.assessmentScheduleId, assessmentScheduleId),
+              eq(balletApplicationsTable.assessmentDate, assessmentDate),
+              inArray(balletApplicationsTable.status, ["pending", "accepted", "needsFollowUp", "assignedToLevel", "active"])
+            ));
+
+          const bookedCount = bookedCountRow?.count ?? 0;
+          if (bookedCount >= assessment.capacity) {
+            throw Object.assign(
+              new Error("Selected assessment schedule is at full capacity on this date."),
+              { status: 422, code: "ASSESSMENT_SCHEDULE_FULL" }
+            );
+          }
         }
 
         // ── Auto-save manual submissions to the parent's profile (A3) ─────────
@@ -1136,7 +1210,10 @@ router.post(
       }
 
       logger.error({ err }, "POST /ballet/applications failed");
-      res.status(500).json({ error: "Failed to submit application" });
+      const error = err as any;
+      const status = error.status ?? 500;
+      const message = error.message ?? "Failed to submit application";
+      res.status(status).json({ error: message, code: error.code });
     }
   },
 );
@@ -1240,6 +1317,19 @@ router.patch(
             res.status(422).json({ error: "A child birthday is required to book an assessment.", code: "MISSING_BIRTHDAY" });
             return;
           }
+
+          const today = todayIso();
+          if (birthday > today) {
+            res.status(400).json({ error: "Child birthday cannot be in the future." });
+            return;
+          }
+
+          const maxDate = addDaysIso(today, BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS);
+          if (assessmentDate < today || assessmentDate > maxDate) {
+            res.status(422).json({ error: "Selected date is outside the allowed booking window.", code: "ASSESSMENT_DATE_OUT_OF_WINDOW" });
+            return;
+          }
+
           const assessment = await resolveAssessmentOccurrence(assessmentScheduleId, assessmentDate, birthday);
           if (!assessment) {
             res.status(422).json({ error: "Selected assessment schedule is no longer available for this child's age.", code: "ASSESSMENT_SCHEDULE_UNAVAILABLE" });
@@ -1259,6 +1349,41 @@ router.patch(
 
       // Wrap update + event insert in a transaction.
       await db.transaction(async (tx) => {
+        // Enforce capacity check under advisory lock if schedule changed
+        if (updates["assessmentScheduleId"] != null && updates["assessmentDate"] != null) {
+          const schedId = updates["assessmentScheduleId"] as number;
+          const dateVal = updates["assessmentDate"] as string;
+
+          const [sched] = await tx
+            .select({ capacity: balletSchedulesTable.capacity })
+            .from(balletSchedulesTable)
+            .where(eq(balletSchedulesTable.id, schedId))
+            .limit(1);
+
+          if (sched && sched.capacity != null) {
+            await tx.execute(
+              sql`select pg_advisory_xact_lock(hashtext(${`ballet-assessment:${schedId}:${dateVal}`}))`
+            );
+
+            const [bookedCountRow] = await tx
+              .select({ count: count() })
+              .from(balletApplicationsTable)
+              .where(and(
+                eq(balletApplicationsTable.assessmentScheduleId, schedId),
+                eq(balletApplicationsTable.assessmentDate, dateVal),
+                inArray(balletApplicationsTable.status, ["pending", "accepted", "needsFollowUp", "assignedToLevel", "active"])
+              ));
+
+            const bookedCount = bookedCountRow?.count ?? 0;
+            if (bookedCount >= sched.capacity) {
+              throw Object.assign(
+                new Error("Selected assessment schedule is at full capacity on this date."),
+                { status: 422, code: "ASSESSMENT_SCHEDULE_FULL" }
+              );
+            }
+          }
+        }
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await tx
           .update(balletApplicationsTable)
@@ -1277,9 +1402,11 @@ router.patch(
       logger.info({ applicationId: id, studentId: parentStudentId, updates: Object.keys(updates) }, "Ballet application updated by parent");
 
       res.json({ success: true });
-    } catch (err) {
+    } catch (err: any) {
       logger.error({ err }, "PATCH /ballet/applications/:id failed");
-      res.status(500).json({ error: "Failed to update application" });
+      const status = err.status ?? 500;
+      const message = err.message ?? "Failed to update application";
+      res.status(status).json({ error: message, code: err.code });
     }
   },
 );

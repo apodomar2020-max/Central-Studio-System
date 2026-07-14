@@ -21,6 +21,7 @@ export const balletSchedulesTable = pgTable("ballet_schedules", {
   endTime:      text("end_time").notNull(),
   status:       text("status").notNull().default("active"), // active | deactivated | cancelled
   durationMins: integer("duration_mins"),
+  capacity:     integer("capacity"),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 });

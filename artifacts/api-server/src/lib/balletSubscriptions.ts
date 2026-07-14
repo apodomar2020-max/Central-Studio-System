@@ -4,8 +4,11 @@ import {
   balletPaymentsTable,
   balletPackagesTable,
 } from "@workspace/db";
-
-export type BalletSubscriptionStatus = "pending" | "active" | "renewed" | "expired";
+import {
+  BALLET_PAYMENT_STATUSES,
+  BALLET_SUBSCRIPTION_STATUS_LABELS,
+  type BalletSubscriptionStatus,
+} from "@workspace/api-zod";
 
 export interface BalletSubscriptionExtension {
   previousExpiresAt: string;
@@ -107,11 +110,7 @@ export function serializePaymentCycle(row: BalletPaymentCycle, today: string = t
         ? "renewed"
         : "active";
 
-  const subscriptionDisplayStatus =
-    subscriptionStatus === "pending" ? "Pending Payment"
-    : subscriptionStatus === "active" ? "Active"
-    : subscriptionStatus === "renewed" ? "Renewed — Active"
-    : "Expired";
+  const subscriptionDisplayStatus = BALLET_SUBSCRIPTION_STATUS_LABELS[subscriptionStatus];
 
   return {
     ...row,
