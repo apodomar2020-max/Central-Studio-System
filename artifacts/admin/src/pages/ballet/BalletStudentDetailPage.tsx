@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, ChevronLeft, Download, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -98,10 +100,34 @@ interface BalletPayment {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="rounded-lg border bg-card p-5 space-y-3"><h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</h3>{children}</div>;
+  return <Card><CardHeader className="pb-3"><CardTitle className="text-sm">{title}</CardTitle></CardHeader><CardContent className="space-y-3">{children}</CardContent></Card>;
 }
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="grid grid-cols-[150px_1fr] gap-2 text-sm"><span className="text-muted-foreground">{label}</span><span>{value ?? <span className="italic text-muted-foreground">—</span>}</span></div>;
+  return <div><div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div><div className="mt-1 text-sm text-foreground">{value ?? <span className="italic text-muted-foreground">—</span>}</div></div>;
+}
+function SummaryCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return <Card><CardContent className="p-4"><div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div><div className="mt-1 text-lg font-semibold text-white">{value ?? "—"}</div>{sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}</CardContent></Card>;
+}
+function SubscriptionBadge({ status, display }: { status: string; display: string }) {
+  const className = status === "expired"
+    ? "bg-red-500/15 text-red-400 border-red-500/30"
+    : status === "renewed"
+      ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
+      : status === "active"
+        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+        : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+  return <Badge variant="outline" className={className}>{display}</Badge>;
+}
+function PaymentBadge({ status }: { status?: string | null }) {
+  if (!status) return <span className="italic text-muted-foreground">—</span>;
+  const className = status === "paid"
+    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+    : status === "rejected"
+      ? "bg-red-500/15 text-red-400 border-red-500/30"
+      : status === "refunded"
+        ? "bg-slate-500/15 text-slate-400 border-slate-500/30"
+        : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+  return <Badge variant="outline" className={className}>{status.replace(/^./, (c) => c.toUpperCase())}</Badge>;
 }
 export default function BalletStudentDetailPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
@@ -193,10 +219,41 @@ export default function BalletStudentDetailPage() {
       <div className="flex items-start gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate("/ballet/students")} className="mt-1 -ml-2 text-muted-foreground"><ChevronLeft className="mr-1 h-4 w-4" /> Back</Button>
         <div className="flex-1">
-          <PageHeader title={`${student.studentName} — Ballet Student`} description={`Application #${student.applicationId} · Assignment #${student.assignmentId}`} mode="stage">
-            <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => navigate(`/ballet/applications/${student.applicationId}`)}><FileText className="mr-2 h-3.5 w-3.5" />Open Application</Button><Button variant="outline" size="sm" onClick={handleExportPdf} disabled={isExportingPdf}>{isExportingPdf ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}Export PDF</Button></div>
-          </PageHeader>
+          <PageHeader title={student.studentName} description={`Ballet Student File · Application #${student.applicationId}`} mode="stage" />
         </div>
+      </div>
+
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-lg font-semibold text-white">{student.studentName}</span>
+              <SubscriptionBadge status={student.subscriptionStatus} display={student.subscriptionDisplayStatus} />
+              <Badge variant="secondary">{student.levelName ?? "No level"}</Badge>
+              {student.groupName && <Badge variant="outline">{student.groupName}</Badge>}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <span>Parent: {student.parentName}</span>
+              <span>Application #{student.applicationId}</span>
+              <span>Assignment #{student.assignmentId}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>Joined {student.dateJoined ? new Date(student.dateJoined).toLocaleString() : "—"}</span>
+              <span>Phone {student.parentPhone}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate(`/ballet/applications/${student.applicationId}`)}><FileText className="mr-2 h-3.5 w-3.5" />Open Application</Button>
+            <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={isExportingPdf}>{isExportingPdf ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}Export PDF</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard label="Current Level" value={student.levelName ?? "Not assigned"} sub={student.groupName ? `Group: ${student.groupName}` : "No group yet"} />
+        <SummaryCard label="Subscription" value={<SubscriptionBadge status={student.subscriptionStatus} display={student.subscriptionDisplayStatus} />} sub={student.subscriptionExpiresAt ? `Expires ${student.subscriptionExpiresAt}` : "No active period"} />
+        <SummaryCard label="Payment Status" value={<PaymentBadge status={student.paymentStatus} />} sub={currentPayment ? `${currentPayment.amountEgp} EGP` : "No payment recorded"} />
+        <SummaryCard label="Remaining Hours" value={data.attendanceSummary?.remainingHours ?? "—"} sub={data.attendanceSummary?.billingMonth ? `For ${data.attendanceSummary.billingMonth}` : undefined} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -230,13 +287,28 @@ export default function BalletStudentDetailPage() {
             </div>
           )}
         </Section>
-        <Section title="Payment"><Field label="Preferred method" value={student.preferredPaymentMethod} /><Field label="Actual method" value={currentPayment?.paymentMethod} /><Field label="Package" value={currentPayment?.packageName} /><Field label="Billing month" value={currentPayment?.billingMonth} /><Field label="Amount" value={currentPayment ? `${currentPayment.amountEgp} EGP` : null} /><Field label="Payment status" value={currentPayment?.status} /><Field label="Subscription" value={student.subscriptionDisplayStatus} /><Field label="Start" value={student.subscriptionStartDate} /><Field label="Expiry" value={student.subscriptionExpiresAt} /><Field label="Days remaining" value={student.daysRemaining != null ? `${student.daysRemaining}` : null} />
+        <Section title="Subscription">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Preferred method" value={student.preferredPaymentMethod} />
+            <Field label="Actual method" value={currentPayment?.paymentMethod} />
+            <Field label="Package" value={currentPayment?.packageName} />
+            <Field label="Billing month" value={currentPayment?.billingMonth} />
+            <Field label="Amount" value={currentPayment ? `${currentPayment.amountEgp} EGP` : null} />
+            <Field label="Payment status" value={<PaymentBadge status={currentPayment?.status} />} />
+            <Field label="Subscription" value={<SubscriptionBadge status={student.subscriptionStatus} display={student.subscriptionDisplayStatus} />} />
+            <Field label="Start" value={student.subscriptionStartDate} />
+            <Field label="Expiry" value={student.subscriptionExpiresAt} />
+            <Field label="Days remaining" value={student.daysRemaining != null ? `${student.daysRemaining}` : null} />
+          </div>
           <div className="pt-3 border-t">
             <Button size="sm" variant="outline" onClick={() => navigate(`/ballet/applications/${student.applicationId}`)}>
               Manage Payment in Application
             </Button>
           </div>
-          {data.payments.length > 1 && <div className="pt-2 space-y-2"><h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Payment History</h4>{data.payments.map((payment) => <div key={payment.id} className="rounded-md border p-3 text-sm"><div className="font-medium">#{payment.id} · {payment.packageName ?? "No package"} · {payment.status} · {payment.subscriptionDisplayStatus}</div><p className="text-xs text-muted-foreground">{payment.amountEgp} EGP · {payment.billingMonth ?? "No billing month"} · {payment.paymentMethod ?? "No method"} · {payment.subscriptionStartDate ?? "No start"} → {payment.subscriptionExpiresAt ?? "No expiry"} · {new Date(payment.updatedAt).toLocaleString()}</p>{payment.extensionHistory.map((extension, index) => <p key={`${payment.id}-${index}`} className="text-xs text-muted-foreground">Extended {extension.previousExpiresAt} → {extension.newExpiresAt} (+{extension.daysAdded}d) · {extension.reason}</p>)}</div>)}</div>}</Section>
+        </Section>
+        <Section title="Payment History">
+          {data.payments.length ? <div className="space-y-2">{data.payments.map((payment) => <div key={payment.id} className="rounded-md border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">#{payment.id} · {payment.packageName ?? "No package"}</span><div className="flex flex-wrap gap-2"><PaymentBadge status={payment.status} /><SubscriptionBadge status={payment.subscriptionStatus} display={payment.subscriptionDisplayStatus} /></div></div><p className="mt-1 text-xs text-muted-foreground">{payment.amountEgp} EGP · {payment.billingMonth ?? "No billing month"} · {payment.paymentMethod ?? "No method"} · {payment.subscriptionStartDate ?? "No start"} → {payment.subscriptionExpiresAt ?? "No expiry"} · {new Date(payment.updatedAt).toLocaleString()}</p>{payment.extensionHistory.map((extension, index) => <p key={`${payment.id}-${index}`} className="text-xs text-muted-foreground">Extended {extension.previousExpiresAt} → {extension.newExpiresAt} (+{extension.daysAdded}d) · {extension.reason}</p>)}</div>)}</div> : <p className="text-sm italic text-muted-foreground">No payment history recorded yet.</p>}
+        </Section>
         <Section title="Enrollment History">
           {data.enrollmentHistory.length ? (
             <div className="space-y-2">

@@ -15,6 +15,7 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -301,22 +302,38 @@ function makeHeaders(token: string | null): HeadersInit {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border bg-card p-5 space-y-3">
-      <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        {title}
-      </h3>
-      {children}
-    </div>
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">{children}</CardContent>
+    </Card>
   );
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-2 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-foreground">{value ?? <span className="italic text-muted-foreground/60">—</span>}</span>
+    <div>
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm text-foreground">{value ?? <span className="italic text-muted-foreground">—</span>}</div>
     </div>
   );
+}
+
+function SummaryCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div className="mt-1 text-lg font-semibold text-white">{value ?? "—"}</div>
+        {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function formatDateTime(value?: string | null) {
+  return value ? new Date(value).toLocaleString() : "—";
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -812,19 +829,45 @@ export default function ApplicationDetailPage() {
         </Button>
         <div className="flex-1">
           <PageHeader
-            title={`Application #${app.id} — ${app.childName}`}
-            description={`Submitted by ${app.parentName} · ${new Date(app.createdAt).toLocaleDateString()}`}
+            title={app.childName}
+            description={`Ballet Application #${app.id} · Submitted by ${app.parentName}`}
             mode="stage"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={app.status} />
-              <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={isExportingPdf}>
-                {isExportingPdf ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
-                Export PDF
-              </Button>
-            </div>
-          </PageHeader>
+          />
         </div>
+      </div>
+
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-lg font-semibold text-white">{app.childName}</span>
+              <StatusBadge status={app.status} />
+              <SubscriptionBadge payment={currentSubscription} />
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <span>Parent: {app.parentName}</span>
+              <span>Application #{app.id}</span>
+              {app.childId != null && <span>Child profile #{app.childId}</span>}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>Submitted {formatDateTime(app.createdAt)}</span>
+              <span>Last updated {formatDateTime(app.updatedAt)}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={isExportingPdf}>
+              {isExportingPdf ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
+              Export PDF
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard label="Application Status" value={<StatusBadge status={app.status} />} sub={`Updated ${new Date(app.updatedAt).toLocaleDateString()}`} />
+        <SummaryCard label="Assigned Level" value={level?.name ?? "Not assigned"} sub={group?.name ? `Group: ${group.name}` : "No group yet"} />
+        <SummaryCard label="Payment Status" value={<PaymentStatusBadge status={currentPayment?.status} />} sub={currentPayment ? `${currentPayment.amountEgp} EGP` : "No payment recorded"} />
+        <SummaryCard label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} sub={currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "No active period"} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -995,30 +1038,24 @@ export default function ApplicationDetailPage() {
         {/* Right column — actions + timeline */}
         <div className="space-y-4">
 
-          <div className="rounded-lg border bg-card p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              <CreditCard className="mr-1 inline h-3.5 w-3.5" /> Current Subscription
-            </h3>
-            <Field label="Package" value={currentSubscription?.packageName ?? (currentSubscription?.packageId ? `Package #${currentSubscription.packageId}` : null)} />
-            <Field label="Amount" value={currentSubscription ? `${currentSubscription.amountEgp} EGP` : null} />
-            <Field label="Preferred method" value={formatPaymentMethod(app.preferredPaymentMethod)} />
-            <Field label="Actual method" value={formatPaymentMethod(currentSubscription?.paymentMethod)} />
-            <Field label="Payment status" value={<PaymentStatusBadge status={currentSubscription?.status ?? currentPayment?.status} />} />
-            <Field label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} />
-            <Field label="Start date" value={currentSubscription?.subscriptionStartDate} />
-            <Field label="Original expiry" value={currentSubscription?.originalExpiresAt} />
-            <Field label="Current expiry" value={currentSubscription?.subscriptionExpiresAt} />
-            <Field label="Days remaining" value={currentSubscription?.daysRemaining != null ? `${currentSubscription.daysRemaining}` : null} />
-            <Field label="Billing month" value={currentSubscription?.billingMonth} />
-            <Field label="Last update" value={currentSubscription?.updatedAt ? new Date(currentSubscription.updatedAt).toLocaleString() : null} />
-
-            {currentSubscription?.subscriptionStatus === "expired" && (
-              <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                Subscription renewal is required. Expired on {currentSubscription.subscriptionExpiresAt}.
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm"><CreditCard className="h-4 w-4" /> Subscription Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <PaymentStatusBadge status={currentSubscription?.status ?? currentPayment?.status} />
+                <SubscriptionBadge payment={currentSubscription} />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Manage the payment cycle from this application file. Updating subscription state does not change the application status automatically.
               </p>
-            )}
-
-            <div className="flex flex-wrap gap-2">
+              {currentSubscription?.subscriptionStatus === "expired" && (
+                <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                  Subscription renewal is required. Expired on {currentSubscription.subscriptionExpiresAt}.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
               {!currentPayment ? (
                 <Button size="sm" onClick={() => setSubscriptionDialog("create")} style={{ background: "#00B6D6", color: "#000" }}>Create Subscription</Button>
               ) : (
@@ -1033,8 +1070,9 @@ export default function ApplicationDetailPage() {
                   }}>Renew Subscription</Button>}
                 </>
               )}
-            </div>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <Dialog open={subscriptionDialog === "create"} onOpenChange={(open) => setSubscriptionDialog(open ? "create" : null)}>
             <DialogContent className="max-w-md">
