@@ -25,7 +25,12 @@ interface StudentRow {
   groupId: number | null;
   groupName: string | null;
   paymentStatus: string | null;
-  studentStage: "Pending Payment" | "Active";
+  subscriptionStatus: "pending" | "active" | "renewed" | "expired";
+  subscriptionDisplayStatus: string;
+  subscriptionStartDate: string | null;
+  subscriptionExpiresAt: string | null;
+  daysRemaining: number | null;
+  studentStage: "Pending Payment" | "Active" | "Renewed" | "Expired";
 }
 
 interface ListResponse {
@@ -49,11 +54,29 @@ function makeHeaders(token: string | null): HeadersInit {
 }
 
 function StageBadge({ stage }: { stage: StudentRow["studentStage"] }) {
+  const className = stage === "Active"
+    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+    : stage === "Renewed"
+      ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
+      : stage === "Expired"
+        ? "bg-red-500/15 text-red-400 border-red-500/30"
+        : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
   return (
-    <Badge variant="outline" className={stage === "Active" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30"}>
+    <Badge variant="outline" className={className}>
       {stage}
     </Badge>
   );
+}
+
+function SubscriptionBadge({ student }: { student: StudentRow }) {
+  const className = student.subscriptionStatus === "expired"
+    ? "bg-red-500/15 text-red-400 border-red-500/30"
+    : student.subscriptionStatus === "renewed"
+      ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
+      : student.subscriptionStatus === "active"
+        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+        : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+  return <Badge variant="outline" className={className}>{student.subscriptionDisplayStatus}</Badge>;
 }
 
 function PaymentBadge({ status }: { status: string | null }) {
@@ -101,17 +124,21 @@ export default function BalletStudentsPage() {
               <TableHead>Level</TableHead>
               <TableHead>Group</TableHead>
               <TableHead>Payment Status</TableHead>
+              <TableHead>Subscription</TableHead>
+              <TableHead>Start</TableHead>
+              <TableHead>Expiry</TableHead>
+              <TableHead>Days</TableHead>
               <TableHead>Student Stage</TableHead>
               <TableHead className="w-16 text-right">View</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={10} className="py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={14} className="py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
             ) : isError ? (
-              <TableRow><TableCell colSpan={10} className="py-10 text-center text-destructive text-sm">Failed to load students.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={14} className="py-10 text-center text-destructive text-sm">Failed to load students.</TableCell></TableRow>
             ) : data?.data.length === 0 ? (
-              <TableRow><TableCell colSpan={10} className="py-10 text-center text-muted-foreground text-sm">No ballet level assignments yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={14} className="py-10 text-center text-muted-foreground text-sm">No ballet level assignments yet.</TableCell></TableRow>
             ) : (
               data?.data.map((s) => (
                 <TableRow key={s.assignmentId} className="cursor-pointer hover:bg-muted/40" onClick={() => navigate(`/ballet/students/${s.assignmentId}`)}>
@@ -123,6 +150,10 @@ export default function BalletStudentsPage() {
                   <TableCell className="text-sm text-muted-foreground">{s.levelName ?? dash}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.groupName ?? dash}</TableCell>
                   <TableCell><PaymentBadge status={s.paymentStatus} /></TableCell>
+                  <TableCell><SubscriptionBadge student={s} /></TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{s.subscriptionStartDate ?? dash}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{s.subscriptionExpiresAt ?? dash}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{s.daysRemaining != null ? s.daysRemaining : dash}</TableCell>
                   <TableCell><StageBadge stage={s.studentStage} /></TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`View student ${s.assignmentId}`} onClick={(e) => { e.stopPropagation(); navigate(`/ballet/students/${s.assignmentId}`); }}>

@@ -47,6 +47,12 @@ interface ApplicationRow {
   updatedAt: string;
   levelName?: string | null;
   paymentStatus?: string | null;
+  subscription?: {
+    subscriptionStatus: "pending" | "active" | "renewed" | "expired";
+    subscriptionDisplayStatus: string;
+    subscriptionExpiresAt: string | null;
+    daysRemaining: number | null;
+  } | null;
 }
 
 interface BalletLevel {
@@ -103,6 +109,16 @@ function PaymentStatusBadge({ status }: { status?: string | null }) {
   );
 }
 
+function SubscriptionBadge({ subscription }: { subscription?: ApplicationRow["subscription"] }) {
+  if (!subscription) return <Badge variant="outline" className="bg-yellow-500/15 text-yellow-400 border-yellow-500/30">Pending Payment</Badge>;
+  const className =
+    subscription.subscriptionStatus === "expired" ? "bg-red-500/15 text-red-400 border-red-500/30"
+    : subscription.subscriptionStatus === "renewed" ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
+    : subscription.subscriptionStatus === "active" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+    : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+  return <div className="space-y-1"><Badge variant="outline" className={className}>{subscription.subscriptionDisplayStatus}</Badge>{subscription.subscriptionExpiresAt && <div className="text-xs text-muted-foreground">{subscription.subscriptionExpiresAt}{subscription.daysRemaining != null ? ` · ${subscription.daysRemaining}d` : ""}</div>}</div>;
+}
+
 // ─── Filter tabs ──────────────────────────────────────────────────────────────
 
 const FILTER_TABS: { label: string; value: string }[] = [
@@ -112,6 +128,15 @@ const FILTER_TABS: { label: string; value: string }[] = [
   { label: "Rejected",          value: "rejected" },
   { label: "Needs Follow-up",   value: "needsFollowUp" },
   { label: "Cancelled",         value: "cancelled" },
+];
+
+const SUBSCRIPTION_FILTERS = [
+  { label: "All subscriptions", value: "all" },
+  { label: "Pending Payment", value: "pending" },
+  { label: "Active Subscription", value: "active" },
+  { label: "Expiring Soon", value: "expiringSoon" },
+  { label: "Expired", value: "expired" },
+  { label: "Renewed", value: "renewed" },
 ];
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -139,6 +164,7 @@ export default function ApplicationsPage() {
   const [search, setSearch]             = useState("");
   const [searchInput, setSearchInput]   = useState("");
   const [levelId, setLevelId]           = useState("");
+  const [subscriptionFilter, setSubscriptionFilter] = useState("");
   const [page, setPage]                 = useState(1);
   const [pageSize, setPageSize]         = useState(25);
 
@@ -147,7 +173,7 @@ export default function ApplicationsPage() {
   const canFilterByLevel = can("ballet.levels", "view");
 
   const { data, isLoading, isError } = useQuery<ListResponse>({
-    queryKey: ["ballet-applications", page, pageSize, activeStatus, search, levelId],
+    queryKey: ["ballet-applications", page, pageSize, activeStatus, search, levelId, subscriptionFilter],
     queryFn: async () => {
       const params = new URLSearchParams({
         page:  String(page),
@@ -155,6 +181,7 @@ export default function ApplicationsPage() {
         ...(activeStatus ? { status: activeStatus } : {}),
         ...(search ? { search } : {}),
         ...(levelId ? { levelId } : {}),
+        ...(subscriptionFilter ? { subscription: subscriptionFilter } : {}),
       });
       const res = await fetch(`${API_BASE}/api/admin/ballet/applications?${params}`, {
         headers: makeHeaders(token),
@@ -195,6 +222,11 @@ export default function ApplicationsPage() {
 
   function handlePageSizeChange(value: string) {
     setPageSize(parseInt(value, 10));
+    setPage(1);
+  }
+
+  function handleSubscriptionFilterChange(value: string) {
+    setSubscriptionFilter(value === "all" ? "" : value);
     setPage(1);
   }
 
@@ -243,6 +275,16 @@ export default function ApplicationsPage() {
               </SelectContent>
             </Select>
           )}
+          <Select value={subscriptionFilter || "all"} onValueChange={handleSubscriptionFilterChange}>
+            <SelectTrigger className="h-8 w-44 text-sm" data-testid="select-subscription-filter">
+              <SelectValue placeholder="All subscriptions" />
+            </SelectTrigger>
+            <SelectContent>
+              {SUBSCRIPTION_FILTERS.map((filter) => (
+                <SelectItem key={filter.value} value={filter.value}>{filter.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="relative min-w-0 flex-1 sm:flex-none">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
@@ -280,6 +322,7 @@ export default function ApplicationsPage() {
               <TableHead>Level</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Payment Status</TableHead>
+              <TableHead>Subscription</TableHead>
               <TableHead>Submitted</TableHead>
               <TableHead>Last Update</TableHead>
               <TableHead className="w-16 text-right">Edit</TableHead>
@@ -288,20 +331,20 @@ export default function ApplicationsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center">
+                <TableCell colSpan={12} className="py-10 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-destructive text-sm">
+                <TableCell colSpan={12} className="py-10 text-center text-destructive text-sm">
                   Failed to load applications.
                 </TableCell>
               </TableRow>
             ) : data?.data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground text-sm">
-                  {search || levelId || activeStatus
+                <TableCell colSpan={12} className="py-10 text-center text-muted-foreground text-sm">
+                  {search || levelId || activeStatus || subscriptionFilter
                     ? "No applications match the current search/filters."
                     : "No applications found."}
                 </TableCell>
@@ -325,6 +368,7 @@ export default function ApplicationsPage() {
                   </TableCell>
                   <TableCell><StatusBadge status={app.status} /></TableCell>
                   <TableCell><PaymentStatusBadge status={app.paymentStatus} /></TableCell>
+                  <TableCell><SubscriptionBadge subscription={app.subscription} /></TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {new Date(app.createdAt).toLocaleDateString()}
                   </TableCell>
