@@ -10,6 +10,7 @@ import { Loader2, ChevronLeft, Download, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
@@ -108,6 +109,9 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function SummaryCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return <Card><CardContent className="p-4"><div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div><div className="mt-1 text-lg font-semibold text-white">{value ?? "—"}</div>{sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}</CardContent></Card>;
 }
+
+const STATUS_BADGE_BASE = "inline-flex h-6 items-center justify-center rounded-full px-2.5 py-0 text-xs font-medium leading-none align-middle";
+
 function SubscriptionBadge({ status, display }: { status: string; display: string }) {
   const className = status === "expired"
     ? "bg-red-500/15 text-red-400 border-red-500/30"
@@ -116,7 +120,7 @@ function SubscriptionBadge({ status, display }: { status: string; display: strin
       : status === "active"
         ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
         : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
-  return <Badge variant="outline" className={className}>{display}</Badge>;
+  return <Badge variant="outline" className={`${STATUS_BADGE_BASE} ${className}`}>{display}</Badge>;
 }
 function PaymentBadge({ status }: { status?: string | null }) {
   if (!status) return <span className="italic text-muted-foreground">—</span>;
@@ -127,7 +131,19 @@ function PaymentBadge({ status }: { status?: string | null }) {
       : status === "refunded"
         ? "bg-slate-500/15 text-slate-400 border-slate-500/30"
         : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
-  return <Badge variant="outline" className={className}>{status.replace(/^./, (c) => c.toUpperCase())}</Badge>;
+  return <Badge variant="outline" className={`${STATUS_BADGE_BASE} ${className}`}>{status.replace(/^./, (c) => c.toUpperCase())}</Badge>;
+}
+function StatusBadge({ status }: { status?: string | null }) {
+  if (!status) return <span className="italic text-muted-foreground">—</span>;
+  const className = status === "active" || status === "assignedToLevel"
+    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+    : status === "rejected" || status === "expired"
+      ? "bg-red-500/15 text-red-400 border-red-500/30"
+      : status === "cancelled" || status === "withdrawn" || status === "graduated"
+        ? "bg-slate-500/15 text-slate-400 border-slate-500/30"
+        : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+  const label = status.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  return <Badge variant="outline" className={`${STATUS_BADGE_BASE} ${className}`}>{label}</Badge>;
 }
 export default function BalletStudentDetailPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
@@ -214,6 +230,9 @@ export default function BalletStudentDetailPage() {
     && group.levelId === student.levelId
     && (group.isActive || group.id === student.groupId)
   ));
+  const attendanceRate = data.attendanceSummary && data.attendanceSummary.consumedHours > 0
+    ? Math.round((data.attendanceSummary.attendedHours / data.attendanceSummary.consumedHours) * 100)
+    : null;
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-4">
@@ -229,8 +248,8 @@ export default function BalletStudentDetailPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-lg font-semibold text-white">{student.studentName}</span>
               <SubscriptionBadge status={student.subscriptionStatus} display={student.subscriptionDisplayStatus} />
-              <Badge variant="secondary">{student.levelName ?? "No level"}</Badge>
-              {student.groupName && <Badge variant="outline">{student.groupName}</Badge>}
+              <Badge variant="secondary" className={STATUS_BADGE_BASE}>{student.levelName ?? "No level"}</Badge>
+              {student.groupName && <Badge variant="outline" className={STATUS_BADGE_BASE}>{student.groupName}</Badge>}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
               <span>Parent: {student.parentName}</span>
@@ -256,76 +275,245 @@ export default function BalletStudentDetailPage() {
         <SummaryCard label="Remaining Hours" value={data.attendanceSummary?.remainingHours ?? "—"} sub={data.attendanceSummary?.billingMonth ? `For ${data.attendanceSummary.billingMonth}` : undefined} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="Student"><Field label="Name" value={student.studentName} /><Field label="Birthday" value={student.birthday} /><Field label="Age" value={student.age != null ? `${student.age} years` : null} /><Field label="Gender" value={student.gender} /><Field label="Date joined" value={student.dateJoined ? new Date(student.dateJoined).toLocaleString() : null} /><Field label="Child profile ID" value={student.childId != null ? `#${student.childId}` : null} /></Section>
-        <Section title="Parent"><Field label="Name" value={student.parentName} /><Field label="Phone" value={student.parentPhone} /><Field label="Email" value={student.parentEmail} /><Field label="Emergency contact" value={[student.emergencyContactName, student.emergencyContactPhone].filter(Boolean).join(" · ") || null} /></Section>
-        <Section title="Enrollment"><Field label="Application ID" value={`#${student.applicationId}`} /><Field label="Application status" value={student.applicationStatus} /><Field label="Level" value={student.levelName} /><Field label="Group" value={student.groupName} /><Field label="Class schedules" value={data.groupSchedules.length ? data.groupSchedules.map((s) => `${s.classTitle ?? "Class"}: ${DAY_NAMES[s.dayOfWeek] ?? "?"} ${s.startTime}-${s.endTime}`).join("; ") : null} /><Field label="Instructor" value={data.groupSchedules.map((s) => s.instructorName).filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).join(", ") || null} /></Section>
-        <Section title="Assigned Group">
-          <Field label="Current level" value={student.levelName} />
-          <Field label="Current group" value={student.groupName} />
-          {student.levelId == null ? (
-            <p className="text-sm italic text-muted-foreground">Assign a Ballet level before choosing a group.</p>
-          ) : (
-            <div className="space-y-3">
-              <Select value={selectedGroupId} onValueChange={setSelectedGroupId} disabled={isLoadingGroups}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder={isLoadingGroups ? "Loading groups…" : "Select a group for this level"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {levelGroups.length ? levelGroups.map((group) => (
-                    <SelectItem key={group.id} value={String(group.id)}>
-                      {group.name}{group.capacity == null ? "" : ` · ${group.activeAssignmentCount}/${group.capacity}`}
-                    </SelectItem>
-                  )) : <SelectItem value="none" disabled>No active groups for this level</SelectItem>}
-                </SelectContent>
-              </Select>
-              <Textarea className="text-sm min-h-[58px] resize-none" placeholder="Optional internal note" value={groupNote} onChange={(e) => setGroupNote(e.target.value)} />
-              <Button size="sm" variant="outline" disabled={!selectedGroupId || selectedGroupId === "none" || groupMutation.isPending} onClick={() => groupMutation.mutate()}>
-                {groupMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                Update Group
+      <Tabs defaultValue="student-info" className="w-full">
+        <TabsList className="flex h-auto flex-wrap">
+          <TabsTrigger value="student-info">Student Info</TabsTrigger>
+          <TabsTrigger value="parent-info">Parent Info</TabsTrigger>
+          <TabsTrigger value="enrollment">Enrollment</TabsTrigger>
+          <TabsTrigger value="subscription">Subscription</TabsTrigger>
+          <TabsTrigger value="payment-history">Payment History</TabsTrigger>
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="attendance-history">Attendance History</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="student-info">
+          <Section title="Student Information">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Name" value={student.studentName} />
+              <Field label="Birthday" value={student.birthday} />
+              <Field label="Age" value={student.age != null ? `${student.age} years` : null} />
+              <Field label="Gender" value={student.gender} />
+              <Field label="Child profile ID" value={student.childId != null ? `#${student.childId}` : null} />
+              <Field label="Date joined" value={student.dateJoined ? new Date(student.dateJoined).toLocaleString() : null} />
+              <Field label="Current level" value={student.levelName} />
+              <Field label="Current group" value={student.groupName} />
+            </div>
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="parent-info">
+          <Section title="Parent Information">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Parent name" value={student.parentName} />
+              <Field label="Phone" value={student.parentPhone} />
+              <Field label="Email" value={student.parentEmail} />
+              <Field label="Emergency contact" value={[student.emergencyContactName, student.emergencyContactPhone].filter(Boolean).join(" · ") || null} />
+            </div>
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="enrollment">
+          <div className="space-y-4">
+            <Section title="Current Enrollment">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Application ID" value={`#${student.applicationId}`} />
+                <Field label="Application status" value={<StatusBadge status={student.applicationStatus} />} />
+                <Field label="Assessment slot" value={<Button size="sm" variant="outline" onClick={() => navigate(`/ballet/applications/${student.applicationId}`)}>Open Application</Button>} />
+                <Field label="Assigned level" value={student.levelName} />
+                <Field label="Assigned group" value={student.groupName} />
+                <Field label="Instructor" value={data.groupSchedules.map((s) => s.instructorName).filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).join(", ") || null} />
+                <Field label="Schedule" value={data.groupSchedules.length ? data.groupSchedules.map((s) => `${s.classTitle ?? "Class"}: ${DAY_NAMES[s.dayOfWeek] ?? "?"} ${s.startTime}-${s.endTime}`).join("; ") : null} />
+              </div>
+            </Section>
+
+            <Section title="Assigned Group">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field label="Current level" value={student.levelName} />
+                <Field label="Current group" value={student.groupName} />
+              </div>
+              {student.levelId == null ? (
+                <p className="text-sm italic text-muted-foreground">Assign a Ballet level before choosing a group.</p>
+              ) : (
+                <div className="space-y-3">
+                  <Select value={selectedGroupId} onValueChange={setSelectedGroupId} disabled={isLoadingGroups}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder={isLoadingGroups ? "Loading groups…" : "Select a group for this level"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {levelGroups.length ? levelGroups.map((group) => (
+                        <SelectItem key={group.id} value={String(group.id)}>
+                          {group.name}{group.capacity == null ? "" : ` · ${group.activeAssignmentCount}/${group.capacity}`}
+                        </SelectItem>
+                      )) : <SelectItem value="none" disabled>No active groups for this level</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                  <Textarea className="text-sm min-h-[58px] resize-none" placeholder="Optional internal note" value={groupNote} onChange={(e) => setGroupNote(e.target.value)} />
+                  <Button size="sm" variant="outline" disabled={!selectedGroupId || selectedGroupId === "none" || groupMutation.isPending} onClick={() => groupMutation.mutate()}>
+                    {groupMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                    Update Group
+                  </Button>
+                </div>
+              )}
+            </Section>
+
+            <Section title="Enrollment History">
+              {data.enrollmentHistory.length ? (
+                <div className="space-y-2">
+                  {data.enrollmentHistory.map((entry) => (
+                    <div key={entry.assignmentId} className="rounded-lg border p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium">Assignment #{entry.assignmentId} · {entry.levelName ?? "No level"}</span>
+                        <StatusBadge status={entry.assignmentStatus} />
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {entry.groupName ?? "No group"} · Application #{entry.applicationId} ({entry.applicationStatus}) · {entry.enrolledAt ? new Date(entry.enrolledAt).toLocaleString() : "No date"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-sm italic text-muted-foreground">No enrollment history recorded yet.</p>}
+            </Section>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="subscription">
+          <Section title="Subscription">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Current status" value={<SubscriptionBadge status={student.subscriptionStatus} display={student.subscriptionDisplayStatus} />} />
+              <Field label="Start date" value={student.subscriptionStartDate} />
+              <Field label="Expiry date" value={student.subscriptionExpiresAt} />
+              <Field label="Remaining days" value={student.daysRemaining != null ? `${student.daysRemaining}` : null} />
+              <Field label="Monthly hours" value={data.attendanceSummary?.monthlyHours} />
+              <Field label="Billing month" value={data.attendanceSummary?.billingMonth ?? currentPayment?.billingMonth} />
+              <Field label="Package" value={currentPayment?.packageName} />
+              <Field label="Payment status" value={<PaymentBadge status={currentPayment?.status} />} />
+              <Field label="Lifecycle" value={currentPayment?.isRenewal ? `Renewed from #${currentPayment.renewedFromId}` : currentPayment ? "Initial subscription" : null} />
+            </div>
+            <div className="pt-3 border-t">
+              <Button size="sm" variant="outline" onClick={() => navigate(`/ballet/applications/${student.applicationId}`)}>
+                Manage Payment in Application
               </Button>
             </div>
-          )}
-        </Section>
-        <Section title="Subscription">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Preferred method" value={student.preferredPaymentMethod} />
-            <Field label="Actual method" value={currentPayment?.paymentMethod} />
-            <Field label="Package" value={currentPayment?.packageName} />
-            <Field label="Billing month" value={currentPayment?.billingMonth} />
-            <Field label="Amount" value={currentPayment ? `${currentPayment.amountEgp} EGP` : null} />
-            <Field label="Payment status" value={<PaymentBadge status={currentPayment?.status} />} />
-            <Field label="Subscription" value={<SubscriptionBadge status={student.subscriptionStatus} display={student.subscriptionDisplayStatus} />} />
-            <Field label="Start" value={student.subscriptionStartDate} />
-            <Field label="Expiry" value={student.subscriptionExpiresAt} />
-            <Field label="Days remaining" value={student.daysRemaining != null ? `${student.daysRemaining}` : null} />
-          </div>
-          <div className="pt-3 border-t">
-            <Button size="sm" variant="outline" onClick={() => navigate(`/ballet/applications/${student.applicationId}`)}>
-              Manage Payment in Application
-            </Button>
-          </div>
-        </Section>
-        <Section title="Payment History">
-          {data.payments.length ? <div className="space-y-2">{data.payments.map((payment) => <div key={payment.id} className="rounded-md border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">#{payment.id} · {payment.packageName ?? "No package"}</span><div className="flex flex-wrap gap-2"><PaymentBadge status={payment.status} /><SubscriptionBadge status={payment.subscriptionStatus} display={payment.subscriptionDisplayStatus} /></div></div><p className="mt-1 text-xs text-muted-foreground">{payment.amountEgp} EGP · {payment.billingMonth ?? "No billing month"} · {payment.paymentMethod ?? "No method"} · {payment.subscriptionStartDate ?? "No start"} → {payment.subscriptionExpiresAt ?? "No expiry"} · {new Date(payment.updatedAt).toLocaleString()}</p>{payment.extensionHistory.map((extension, index) => <p key={`${payment.id}-${index}`} className="text-xs text-muted-foreground">Extended {extension.previousExpiresAt} → {extension.newExpiresAt} (+{extension.daysAdded}d) · {extension.reason}</p>)}</div>)}</div> : <p className="text-sm italic text-muted-foreground">No payment history recorded yet.</p>}
-        </Section>
-        <Section title="Enrollment History">
-          {data.enrollmentHistory.length ? (
-            <div className="space-y-2">
+            {currentPayment?.extensionHistory.length ? (
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Extension History</h4>
+                {currentPayment.extensionHistory.map((extension, index) => (
+                  <div key={`${currentPayment.id}-extension-${index}`} className="rounded-lg border p-3 text-sm">
+                    <div className="font-medium">{extension.previousExpiresAt} → {extension.newExpiresAt} (+{extension.daysAdded}d)</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{extension.reason}{extension.note ? ` · ${extension.note}` : ""}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="payment-history">
+          <Section title="Payment Records">
+            {data.payments.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="py-2 pr-3 text-left font-semibold">Date</th>
+                      <th className="py-2 pr-3 text-left font-semibold">Package</th>
+                      <th className="py-2 pr-3 text-left font-semibold">Amount</th>
+                      <th className="py-2 pr-3 text-left font-semibold">Method</th>
+                      <th className="py-2 pr-3 text-left font-semibold">Status</th>
+                      <th className="py-2 pr-3 text-left font-semibold">Subscription</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {data.payments.map((payment) => (
+                      <tr key={payment.id}>
+                        <td className="py-3 pr-3 text-muted-foreground">{new Date(payment.updatedAt).toLocaleDateString()}</td>
+                        <td className="py-3 pr-3">{payment.packageName ?? "No package"}</td>
+                        <td className="py-3 pr-3">{payment.amountEgp} EGP</td>
+                        <td className="py-3 pr-3 text-muted-foreground">{payment.paymentMethod ?? "—"}</td>
+                        <td className="py-3 pr-3"><PaymentBadge status={payment.status} /></td>
+                        <td className="py-3 pr-3"><SubscriptionBadge status={payment.subscriptionStatus} display={payment.subscriptionDisplayStatus} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm italic text-muted-foreground">No payment history recorded yet.</p>}
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="attendance">
+          <Section title="Current Month Attendance">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Billing month" value={data.attendanceSummary?.billingMonth} />
+              <Field label="Monthly entitlement" value={data.attendanceSummary?.monthlyHours != null ? `${data.attendanceSummary.monthlyHours}h` : null} />
+              <Field label="Attended hours" value={data.attendanceSummary?.attendedHours != null ? `${data.attendanceSummary.attendedHours}h` : null} />
+              <Field label="Absent hours" value={data.attendanceSummary?.absentHours != null ? `${data.attendanceSummary.absentHours}h` : null} />
+              <Field label="Consumed hours" value={data.attendanceSummary?.consumedHours != null ? `${data.attendanceSummary.consumedHours}h` : null} />
+              <Field label="Remaining hours" value={data.attendanceSummary?.remainingHours != null ? `${data.attendanceSummary.remainingHours}h` : null} />
+              <Field label="Attendance rate" value={attendanceRate != null ? `${attendanceRate}%` : null} />
+            </div>
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="attendance-history">
+          <Section title="Attendance History">
+            {data.attendanceHistory.length ? (
+              <div className="space-y-2">
+                {data.attendanceHistory.map((row) => (
+                  <div key={row.id} className="rounded-lg border p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">{row.classDate ?? "—"} · Ballet class</span>
+                      <StatusBadge status={row.status} />
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Schedule {row.balletScheduleId != null ? `#${row.balletScheduleId}` : "—"} · {row.durationMinutes ?? "—"} min · Recorded {new Date(row.createdAt).toLocaleString()}
+                    </p>
+                    {row.notes && <p className="mt-1 text-xs text-muted-foreground">{row.notes}</p>}
+                  </div>
+                ))}
+              </div>
+            ) : <p className="text-sm italic text-muted-foreground">No attendance recorded yet.</p>}
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="history">
+          <Section title="Student History">
+            <div className="space-y-3">
               {data.enrollmentHistory.map((entry) => (
-                <div key={entry.assignmentId} className="rounded-md border p-3 text-sm">
-                  <div className="font-medium">Assignment #{entry.assignmentId} · {entry.levelName ?? "No level"} · {entry.assignmentStatus}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {entry.groupName ?? "No group"} · Application #{entry.applicationId} ({entry.applicationStatus}) · {entry.enrolledAt ? new Date(entry.enrolledAt).toLocaleString() : "No date"}
-                  </p>
+                <div key={`enrollment-${entry.assignmentId}`} className="rounded-lg border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">Enrollment · {entry.levelName ?? "No level"}</span>
+                    <StatusBadge status={entry.assignmentStatus} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{entry.groupName ?? "No group"} · {entry.enrolledAt ? new Date(entry.enrolledAt).toLocaleString() : "No date"}</p>
                 </div>
               ))}
+              {data.payments.map((payment) => (
+                <div key={`payment-${payment.id}`} className="rounded-lg border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">Payment #{payment.id} · {payment.packageName ?? "No package"}</span>
+                    <PaymentBadge status={payment.status} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{payment.amountEgp} EGP · {payment.subscriptionStartDate ?? "No start"} → {payment.subscriptionExpiresAt ?? "No expiry"} · {new Date(payment.updatedAt).toLocaleString()}</p>
+                </div>
+              ))}
+              {data.attendanceHistory.map((row) => (
+                <div key={`attendance-${row.id}`} className="rounded-lg border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">Attendance · {row.classDate ?? "—"}</span>
+                    <StatusBadge status={row.status} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{row.durationMinutes ?? "—"} min · {new Date(row.createdAt).toLocaleString()}</p>
+                </div>
+              ))}
+              {!data.enrollmentHistory.length && !data.payments.length && !data.attendanceHistory.length && (
+                <p className="text-sm italic text-muted-foreground">No history records yet.</p>
+              )}
             </div>
-          ) : <p className="text-sm italic text-muted-foreground">No enrollment history recorded yet.</p>}
-        </Section>
-        <Section title="Attendance"><Field label="Billing month" value={data.attendanceSummary?.billingMonth} /><Field label="Monthly hours" value={data.attendanceSummary?.monthlyHours} /><Field label="Attended hours" value={data.attendanceSummary?.attendedHours} /><Field label="Absent hours" value={data.attendanceSummary?.absentHours} /><Field label="Consumed hours" value={data.attendanceSummary?.consumedHours} /><Field label="Remaining hours" value={data.attendanceSummary?.remainingHours} /></Section>
-        <Section title="Attendance History">{data.attendanceHistory.length ? <div className="space-y-2">{data.attendanceHistory.map((row) => <div key={row.id} className="rounded-md border p-3 text-sm"><div className="font-medium">{row.classDate ?? "—"} · {row.status} · {row.durationMinutes ?? "—"} min</div>{row.notes && <p className="text-xs text-muted-foreground">{row.notes}</p>}</div>)}</div> : <p className="text-sm italic text-muted-foreground">No attendance recorded yet.</p>}</Section>
-      </div>
+          </Section>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
