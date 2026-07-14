@@ -28,6 +28,8 @@ import {
   balletSchedulesTable,
   balletPackagesTable,
   balletPaymentsTable,
+  balletClassesTable,
+  balletInstructorsTable,
   attendanceTable,
   systemUsersTable,
   notificationsTable,
@@ -38,6 +40,7 @@ import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./a
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth, isValidBillingMonth } from "../lib/balletAttendance";
+import { buildBalletApplicationPdfBuffer, balletApplicationPdfFilename } from "./balletApplicationPdf";
 
 const router: IRouter = Router();
 const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive"] as const;
@@ -373,9 +376,15 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
           startTime: balletSchedulesTable.startTime,
           endTime:   balletSchedulesTable.endTime,
           status:    balletSchedulesTable.status,
+          classId:   balletClassesTable.id,
+          classTitle: balletClassesTable.title,
+          instructorId: balletInstructorsTable.id,
+          instructorName: balletInstructorsTable.name,
         })
         .from(balletGroupSchedulesTable)
         .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+        .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+        .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
         .where(eq(balletGroupSchedulesTable.groupId, activeAssignment.groupId))
         .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
     : [];
@@ -383,11 +392,25 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
   // Payments (A1) — return the full history (newest first, don't collapse it)
   // plus a clear pointer to the most recently updated "current" one for the
   // list-parity header display.
-  const payments = await db
+  const paymentRows = await db
     .select()
     .from(balletPaymentsTable)
     .where(eq(balletPaymentsTable.applicationId, id))
     .orderBy(desc(balletPaymentsTable.updatedAt));
+
+  const packageIds = [...new Set(paymentRows.map((p) => p.packageId).filter((packageId): packageId is number => packageId != null))];
+  const packageNameById = new Map<number, string>();
+  if (packageIds.length > 0) {
+    const packages = await db
+      .select({ id: balletPackagesTable.id, name: balletPackagesTable.name })
+      .from(balletPackagesTable)
+      .where(inArray(balletPackagesTable.id, packageIds));
+    for (const pkg of packages) packageNameById.set(pkg.id, pkg.name);
+  }
+  const payments = paymentRows.map((payment) => ({
+    ...payment,
+    packageName: payment.packageId != null ? packageNameById.get(payment.packageId) ?? null : null,
+  }));
 
   // Attendance-hours summary (C4) for the requested (default current) calendar
   // month. Only meaningful once there's an active level assignment; null
@@ -414,6 +437,94 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     currentPayment: payments[0] ?? null,
     attendanceSummary,
   });
+});
+
+
+// ─── GET /api/admin/ballet/applications/:id/export.pdf ───────────────────────
+
+router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req: AdminRequest, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
+
+  const [app] = await db.select().from(balletApplicationsTable).where(eq(balletApplicationsTable.id, id)).limit(1);
+  if (!app) { res.status(404).json({ error: "Application not found" }); return; }
+
+  const [slotRows, levelRows, assignmentRows, events] = await Promise.all([
+    app.slotId ? db.select().from(balletAssessmentSlotsTable).where(eq(balletAssessmentSlotsTable.id, app.slotId)).limit(1) : Promise.resolve([]),
+    app.assignedLevelId ? db.select().from(balletLevelsTable).where(eq(balletLevelsTable.id, app.assignedLevelId)).limit(1) : Promise.resolve([]),
+    db.select({ id: balletLevelAssignmentsTable.id, groupId: balletLevelAssignmentsTable.groupId })
+      .from(balletLevelAssignmentsTable)
+      .where(and(eq(balletLevelAssignmentsTable.applicationId, id), eq(balletLevelAssignmentsTable.status, "active")))
+      .orderBy(desc(balletLevelAssignmentsTable.id))
+      .limit(1),
+    db
+      .select({
+        id: balletApplicationEventsTable.id,
+        fromStatus: balletApplicationEventsTable.fromStatus,
+        toStatus: balletApplicationEventsTable.toStatus,
+        note: balletApplicationEventsTable.note,
+        createdAt: balletApplicationEventsTable.createdAt,
+        changedById: balletApplicationEventsTable.changedById,
+        changedByUsername: systemUsersTable.username,
+        changedByFullName: systemUsersTable.fullName,
+      })
+      .from(balletApplicationEventsTable)
+      .leftJoin(systemUsersTable, eq(balletApplicationEventsTable.changedById, systemUsersTable.id))
+      .where(eq(balletApplicationEventsTable.applicationId, id))
+      .orderBy(desc(balletApplicationEventsTable.createdAt)),
+  ]);
+
+  const activeAssignment = assignmentRows[0] ?? null;
+  const groupRows = activeAssignment?.groupId != null
+    ? await db.select({ id: balletGroupsTable.id, name: balletGroupsTable.name }).from(balletGroupsTable).where(eq(balletGroupsTable.id, activeAssignment.groupId)).limit(1)
+    : [];
+  const groupSchedules = activeAssignment?.groupId != null
+    ? await db
+        .select({
+          id: balletSchedulesTable.id,
+          dayOfWeek: balletSchedulesTable.dayOfWeek,
+          startTime: balletSchedulesTable.startTime,
+          endTime: balletSchedulesTable.endTime,
+          status: balletSchedulesTable.status,
+          classId: balletClassesTable.id,
+          classTitle: balletClassesTable.title,
+          instructorId: balletInstructorsTable.id,
+          instructorName: balletInstructorsTable.name,
+        })
+        .from(balletGroupSchedulesTable)
+        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+        .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+        .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
+        .where(eq(balletGroupSchedulesTable.groupId, activeAssignment.groupId))
+        .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
+    : [];
+
+  const paymentRows = await db.select().from(balletPaymentsTable).where(eq(balletPaymentsTable.applicationId, id)).orderBy(desc(balletPaymentsTable.updatedAt));
+  const packageIds = [...new Set(paymentRows.map((p) => p.packageId).filter((packageId): packageId is number => packageId != null))];
+  const packageNameById = new Map<number, string>();
+  if (packageIds.length > 0) {
+    const packages = await db.select({ id: balletPackagesTable.id, name: balletPackagesTable.name }).from(balletPackagesTable).where(inArray(balletPackagesTable.id, packageIds));
+    for (const pkg of packages) packageNameById.set(pkg.id, pkg.name);
+  }
+  const payments = paymentRows.map((payment) => ({ ...payment, packageName: payment.packageId != null ? packageNameById.get(payment.packageId) ?? null : null }));
+  const attendanceSummary = activeAssignment ? await computeBalletMonthlyAttendanceSummary(activeAssignment.id, id, currentBillingMonth()) : null;
+
+  const buf = await buildBalletApplicationPdfBuffer({
+    application: app,
+    slot: slotRows[0] ?? null,
+    level: levelRows[0] ?? null,
+    group: groupRows[0] ?? null,
+    groupSchedules,
+    events,
+    payments,
+    currentPayment: payments[0] ?? null,
+    attendanceSummary,
+    generatedBy: req.adminUser?.username ?? "Admin",
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${balletApplicationPdfFilename(app.id, app.childName)}"`);
+  res.send(buf);
 });
 
 // ─── PATCH /api/admin/ballet/applications/:id/status ─────────────────────────
@@ -881,27 +992,49 @@ router.post(
 
 // ─── GET /api/admin/ballet/students ───────────────────────────────────────────
 //
-// Phase B / A5: the enrolled-students roster. A "student" is an application
-// whose status is exactly "active". Per the three-part activation gate in
-// PATCH .../status (assignedLevelId set, active assignment's groupId set, a
-// paid ballet_payments row on file), an application cannot reach "active"
-// without an assigned level, an assigned group, and a paid payment — so
-// status = "active" is the ONLY filter needed here; no extra level/group/
-// payment condition is required (confirmed against that handler above).
-//
-// Columns (matching the original spec): Student Name, Date Joined, Parent
-// Name, Age, Level, Group. "Date Joined" = the current active
-// ballet_level_assignments row's enrolledAt (closest match to "became a
-// student"), NOT the application's createdAt — judgment call, per A5.
-//
-// Reuses the ballet.applications "view" permission (no new permission module)
-// and the same pagination conventions as the applications list.
+// A Ballet student is the current active ballet_level_assignments row. The
+// application may still be waiting on payment/activation, so the roster must
+// not depend on application.status = "active". Stage is derived from the same
+// source of truth: active assignment + paid payment + active application.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const StudentsListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+function deriveStudentStage(applicationStatus: string, paymentStatus: string | null): "Pending Payment" | "Active" {
+  return applicationStatus === "active" && paymentStatus === "paid" ? "Active" : "Pending Payment";
+}
+
+async function getLatestPaymentByApplicationIds(applicationIds: number[]) {
+  const latestPaymentByApplicationId = new Map<number, {
+    id: number; applicationId: number; packageId: number | null; packageName: string | null; amountEgp: number; status: string; paymentMethod: string | null; billingMonth: string | null; paidAt: string | null; refundedAt: string | null; notes: string | null; createdAt: string; updatedAt: string;
+  }>();
+  if (applicationIds.length === 0) return latestPaymentByApplicationId;
+  const rows = await db
+    .select({
+      id: balletPaymentsTable.id,
+      applicationId: balletPaymentsTable.applicationId,
+      packageId: balletPaymentsTable.packageId,
+      packageName: balletPackagesTable.name,
+      amountEgp: balletPaymentsTable.amountEgp,
+      status: balletPaymentsTable.status,
+      paymentMethod: balletPaymentsTable.paymentMethod,
+      billingMonth: balletPaymentsTable.billingMonth,
+      paidAt: balletPaymentsTable.paidAt,
+      refundedAt: balletPaymentsTable.refundedAt,
+      notes: balletPaymentsTable.notes,
+      createdAt: balletPaymentsTable.createdAt,
+      updatedAt: balletPaymentsTable.updatedAt,
+    })
+    .from(balletPaymentsTable)
+    .leftJoin(balletPackagesTable, eq(balletPackagesTable.id, balletPaymentsTable.packageId))
+    .where(inArray(balletPaymentsTable.applicationId, applicationIds))
+    .orderBy(asc(balletPaymentsTable.updatedAt));
+  for (const row of rows) latestPaymentByApplicationId.set(row.applicationId, row);
+  return latestPaymentByApplicationId;
+}
 
 router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
   const parsed = StudentsListQuerySchema.safeParse(req.query);
@@ -912,21 +1045,17 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
 
   const { page, limit } = parsed.data;
   const offset = (page - 1) * limit;
-
-  // Active applications joined to their single active level assignment (at
-  // most one per application, guaranteed by the assign-level logic) — which
-  // carries enrolledAt (Date Joined), the level, and the group. leftJoins on
-  // level/group name are defensive: the activation gate guarantees both are
-  // present for an active row, but a null renders as an empty cell rather
-  // than dropping the student.
-  const where = eq(balletApplicationsTable.status, "active");
+  const where = eq(balletLevelAssignmentsTable.status, "active");
 
   const [rows, [{ total }]] = await Promise.all([
     db
       .select({
+        assignmentId:  balletLevelAssignmentsTable.id,
         applicationId: balletApplicationsTable.id,
+        applicationStatus: balletApplicationsTable.status,
         studentName:   balletApplicationsTable.childName,
         parentName:    balletApplicationsTable.parentName,
+        parentPhone:   balletApplicationsTable.parentPhone,
         age:           balletApplicationsTable.childAge,
         dateJoined:    balletLevelAssignmentsTable.enrolledAt,
         levelId:       balletLevelsTable.id,
@@ -934,14 +1063,8 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
         groupId:       balletGroupsTable.id,
         groupName:     balletGroupsTable.name,
       })
-      .from(balletApplicationsTable)
-      .leftJoin(
-        balletLevelAssignmentsTable,
-        and(
-          eq(balletLevelAssignmentsTable.applicationId, balletApplicationsTable.id),
-          eq(balletLevelAssignmentsTable.status, "active"),
-        ),
-      )
+      .from(balletLevelAssignmentsTable)
+      .innerJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletLevelAssignmentsTable.applicationId))
       .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
       .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
       .where(where)
@@ -950,17 +1073,136 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
       .offset(offset),
 
     db
-      .select({ total: count(balletApplicationsTable.id) })
-      .from(balletApplicationsTable)
+      .select({ total: count(balletLevelAssignmentsTable.id) })
+      .from(balletLevelAssignmentsTable)
       .where(where),
   ]);
 
+  const latestPayments = await getLatestPaymentByApplicationIds(rows.map((row) => row.applicationId));
+
   res.json({
-    data: rows,
+    data: rows.map((row) => {
+      const payment = latestPayments.get(row.applicationId) ?? null;
+      return {
+        ...row,
+        paymentStatus: payment?.status ?? null,
+        studentStage: deriveStudentStage(row.applicationStatus, payment?.status ?? null),
+      };
+    }),
     total: Number(total),
     page,
     limit,
     totalPages: Math.ceil(Number(total) / limit),
+  });
+});
+
+router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
+  const assignmentId = parseInt(String(req.params["assignmentId"] ?? ""), 10);
+  if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid assignment ID" }); return; }
+
+  const [row] = await db
+    .select({
+      assignmentId: balletLevelAssignmentsTable.id,
+      applicationId: balletApplicationsTable.id,
+      applicationStatus: balletApplicationsTable.status,
+      childId: balletApplicationsTable.childId,
+      studentName: balletApplicationsTable.childName,
+      birthday: balletApplicationsTable.childBirthday,
+      age: balletApplicationsTable.childAge,
+      gender: balletApplicationsTable.childGender,
+      dateJoined: balletLevelAssignmentsTable.enrolledAt,
+      parentName: balletApplicationsTable.parentName,
+      parentPhone: balletApplicationsTable.parentPhone,
+      parentEmail: balletApplicationsTable.parentEmail,
+      emergencyContactName: balletApplicationsTable.emergencyContactName,
+      emergencyContactPhone: balletApplicationsTable.emergencyContactPhone,
+      preferredPaymentMethod: balletApplicationsTable.preferredPaymentMethod,
+      levelId: balletLevelsTable.id,
+      levelName: balletLevelsTable.name,
+      groupId: balletGroupsTable.id,
+      groupName: balletGroupsTable.name,
+    })
+    .from(balletLevelAssignmentsTable)
+    .innerJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletLevelAssignmentsTable.applicationId))
+    .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
+    .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
+    .where(and(eq(balletLevelAssignmentsTable.id, assignmentId), eq(balletLevelAssignmentsTable.status, "active")))
+    .limit(1);
+
+  if (!row) { res.status(404).json({ error: "Ballet student not found" }); return; }
+
+  const [latestPayments, paymentRows, groupSchedules, attendanceSummary] = await Promise.all([
+    getLatestPaymentByApplicationIds([row.applicationId]),
+    db
+      .select({
+        id: balletPaymentsTable.id,
+        applicationId: balletPaymentsTable.applicationId,
+        packageId: balletPaymentsTable.packageId,
+        packageName: balletPackagesTable.name,
+        amountEgp: balletPaymentsTable.amountEgp,
+        status: balletPaymentsTable.status,
+        paymentMethod: balletPaymentsTable.paymentMethod,
+        billingMonth: balletPaymentsTable.billingMonth,
+        paidAt: balletPaymentsTable.paidAt,
+        refundedAt: balletPaymentsTable.refundedAt,
+        notes: balletPaymentsTable.notes,
+        createdAt: balletPaymentsTable.createdAt,
+        updatedAt: balletPaymentsTable.updatedAt,
+      })
+      .from(balletPaymentsTable)
+      .leftJoin(balletPackagesTable, eq(balletPackagesTable.id, balletPaymentsTable.packageId))
+      .where(eq(balletPaymentsTable.applicationId, row.applicationId))
+      .orderBy(desc(balletPaymentsTable.updatedAt)),
+    row.groupId != null
+      ? db
+          .select({
+            id: balletSchedulesTable.id,
+            dayOfWeek: balletSchedulesTable.dayOfWeek,
+            startTime: balletSchedulesTable.startTime,
+            endTime: balletSchedulesTable.endTime,
+            status: balletSchedulesTable.status,
+            classId: balletClassesTable.id,
+            classTitle: balletClassesTable.title,
+            instructorId: balletInstructorsTable.id,
+            instructorName: balletInstructorsTable.name,
+          })
+          .from(balletGroupSchedulesTable)
+          .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+          .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+          .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
+          .where(eq(balletGroupSchedulesTable.groupId, row.groupId))
+          .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
+      : Promise.resolve([]),
+    computeBalletMonthlyAttendanceSummary(row.assignmentId, row.applicationId, currentBillingMonth()),
+  ]);
+
+  const attendance = await db
+    .select({
+      id: attendanceTable.id,
+      classDate: attendanceTable.classDate,
+      status: attendanceTable.status,
+      durationMinutes: attendanceTable.durationMinutes,
+      notes: attendanceTable.notes,
+      balletScheduleId: attendanceTable.balletScheduleId,
+      createdAt: attendanceTable.createdAt,
+    })
+    .from(attendanceTable)
+    .where(eq(attendanceTable.balletLevelAssignmentId, assignmentId))
+    .orderBy(desc(attendanceTable.classDate), desc(attendanceTable.createdAt))
+    .limit(100);
+
+  const currentPayment = latestPayments.get(row.applicationId) ?? null;
+  res.json({
+    student: {
+      ...row,
+      paymentStatus: currentPayment?.status ?? null,
+      studentStage: deriveStudentStage(row.applicationStatus, currentPayment?.status ?? null),
+    },
+    currentPayment,
+    payments: paymentRows,
+    groupSchedules,
+    attendanceSummary,
+    attendanceHistory: attendance,
   });
 });
 
