@@ -1465,8 +1465,17 @@ router.get("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("bal
       ageMin:       balletLevelsTable.ageMin,
       ageMax:       balletLevelsTable.ageMax,
       createdAt:    balletLevelsTable.createdAt,
+      totalStudents: sql<number>`coalesce(count(${balletLevelAssignmentsTable.id}), 0)::int`,
     })
     .from(balletLevelsTable)
+    .leftJoin(
+      balletLevelAssignmentsTable,
+      and(
+        eq(balletLevelAssignmentsTable.levelId, balletLevelsTable.id),
+        eq(balletLevelAssignmentsTable.status, "active"),
+      ),
+    )
+    .groupBy(balletLevelsTable.id)
     .orderBy(asc(balletLevelsTable.sortOrder));
 
   res.json({ levels });

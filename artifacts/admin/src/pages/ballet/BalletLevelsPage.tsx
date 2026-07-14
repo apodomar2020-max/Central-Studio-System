@@ -55,6 +55,7 @@ interface Level {
   requirements: string | null;
   ageMin: number | null;
   ageMax: number | null;
+  totalStudents: number;
   createdAt: string;
 }
 
@@ -69,6 +70,11 @@ interface LevelForm {
 }
 
 const EMPTY_FORM: LevelForm = { name: "", sortOrder: "0", isActive: true, description: "", requirements: "", ageMin: "", ageMax: "" };
+
+function formatAgeRange(level: Level) {
+  if (level.ageMin == null || level.ageMax == null) return "Not Set";
+  return `${level.ageMin} - ${level.ageMax} years`;
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -240,6 +246,8 @@ export default function BalletLevelsPage() {
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground w-16">Order</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Level Name</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Age Range</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Total Students</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
               </tr>
@@ -253,6 +261,8 @@ export default function BalletLevelsPage() {
                       {level.name}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-muted-foreground">{formatAgeRange(level)}</td>
+                  <td className="px-4 py-3 text-muted-foreground font-medium">{level.totalStudents}</td>
                   <td className="px-4 py-3">
                     {level.isActive
                       ? <Badge className="bg-green-500/20 text-green-400">Active</Badge>
