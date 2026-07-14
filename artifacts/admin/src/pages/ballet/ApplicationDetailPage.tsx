@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isTransitionAllowed, type BalletApplicationStatus } from "@workspace/api-zod";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -818,7 +819,9 @@ export default function ApplicationDetailPage() {
     if (status.value === "rejected") return canReject;
     if (["accepted", "assignedToLevel", "active"].includes(status.value)) return canApprove;
     return canReview;
-  });
+  }).filter((status) =>
+    isTransitionAllowed(app.status as BalletApplicationStatus, status.value as BalletApplicationStatus)
+  );
 
   return (
     <div className="space-y-6">

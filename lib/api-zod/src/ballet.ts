@@ -27,6 +27,25 @@ export const BALLET_APPLICATION_STATUSES = [
 
 export type BalletApplicationStatus = (typeof BALLET_APPLICATION_STATUSES)[number];
 
+export const BALLET_APPLICATION_STATUS_LABELS: Record<BalletApplicationStatus, string> = {
+  pending: "Pending",
+  accepted: "Accepted",
+  needsFollowUp: "Needs Follow-up",
+  assignedToLevel: "Assigned to Level",
+  active: "Active",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+};
+
+export const BALLET_ACTIVE_APPLICATION_STATUSES = BALLET_APPLICATION_STATUSES.filter(
+  (status) => status !== "rejected" && status !== "cancelled",
+);
+
+export const BALLET_TERMINAL_APPLICATION_STATUSES = [
+  "rejected",
+  "cancelled",
+] as const satisfies readonly BalletApplicationStatus[];
+
 /**
  * Status machine:
  *   pending → paid → refunded
@@ -40,6 +59,13 @@ export const BALLET_PAYMENT_STATUSES = [
 ] as const;
 
 export type BalletPaymentStatus = (typeof BALLET_PAYMENT_STATUSES)[number];
+
+export const BALLET_PAYMENT_STATUS_LABELS: Record<BalletPaymentStatus, string> = {
+  pending: "Pending",
+  rejected: "Rejected",
+  paid: "Paid",
+  refunded: "Refunded",
+};
 
 /**
  * Payment methods — a small fixed set treated as an enum at the application
@@ -56,3 +82,103 @@ export const BALLET_PAYMENT_METHODS = [
 ] as const;
 
 export type BalletPaymentMethod = (typeof BALLET_PAYMENT_METHODS)[number];
+
+export const BALLET_PAYMENT_METHOD_LABELS: Record<BalletPaymentMethod, string> = {
+  bankTransfer: "Bank Transfer",
+  kashier: "Kashier",
+  inPerson: "In Person",
+};
+
+export const BALLET_SUBSCRIPTION_STATUSES = [
+  "pending",
+  "active",
+  "renewed",
+  "expired",
+] as const;
+
+export type BalletSubscriptionStatus = (typeof BALLET_SUBSCRIPTION_STATUSES)[number];
+
+export const BALLET_SUBSCRIPTION_STATUS_LABELS: Record<BalletSubscriptionStatus, string> = {
+  pending: "Pending Payment",
+  active: "Active",
+  renewed: "Renewed — Active",
+  expired: "Expired",
+};
+
+export const BALLET_SUBSCRIPTION_FILTERS = [
+  "pending",
+  "active",
+  "expiringSoon",
+  "expired",
+  "renewed",
+] as const;
+
+export type BalletSubscriptionFilter = (typeof BALLET_SUBSCRIPTION_FILTERS)[number];
+
+export const BALLET_SUBSCRIPTION_FILTER_LABELS: Record<BalletSubscriptionFilter, string> = {
+  pending: "Pending Payment",
+  active: "Active Subscription",
+  expiringSoon: "Expiring Soon",
+  expired: "Expired",
+  renewed: "Renewed",
+};
+
+export const BALLET_ATTENDANCE_STATUSES = [
+  "checked_in",
+  "late",
+  "absent",
+  "cancelled",
+] as const;
+
+export type BalletAttendanceStatus = (typeof BALLET_ATTENDANCE_STATUSES)[number];
+
+export const BALLET_ATTENDANCE_STATUS_LABELS: Record<BalletAttendanceStatus, string> = {
+  checked_in: "Checked In",
+  late: "Late",
+  absent: "Absent",
+  cancelled: "Cancelled",
+};
+
+export const BALLET_ATTENDED_ATTENDANCE_STATUSES = [
+  "checked_in",
+  "late",
+] as const satisfies readonly BalletAttendanceStatus[];
+
+export const BALLET_ABSENT_ATTENDANCE_STATUS = "absent" satisfies BalletAttendanceStatus;
+export const BALLET_CANCELLED_ATTENDANCE_STATUS = "cancelled" satisfies BalletAttendanceStatus;
+
+export const BALLET_LEVEL_ASSIGNMENT_STATUSES = [
+  "active",
+  "paused",
+  "graduated",
+  "withdrawn",
+] as const;
+
+export type BalletLevelAssignmentStatus = (typeof BALLET_LEVEL_ASSIGNMENT_STATUSES)[number];
+
+export const BALLET_LEVEL_ASSIGNMENT_STATUS_LABELS: Record<BalletLevelAssignmentStatus, string> = {
+  active: "Active",
+  paused: "Paused",
+  graduated: "Graduated",
+  withdrawn: "Withdrawn",
+};
+
+// ─── Status Lifecycle & Allowed Transitions ────────────────────────────────────
+
+export const BALLET_STATUS_TRANSITIONS: Record<BalletApplicationStatus, readonly BalletApplicationStatus[]> = {
+  pending:         ["accepted", "rejected", "needsFollowUp", "cancelled"],
+  needsFollowUp:   ["accepted", "rejected", "cancelled"],
+  accepted:        ["cancelled"],
+  assignedToLevel: ["active"],
+  active:          [],
+  rejected:        [],
+  cancelled:       [],
+};
+
+export function isTransitionAllowed(from: BalletApplicationStatus, to: BalletApplicationStatus): boolean {
+  return BALLET_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+// ─── Assessment Booking Window ──────────────────────────────────────────────────
+
+export const BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS = 28;

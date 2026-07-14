@@ -5,6 +5,13 @@ import { z } from "zod/v4";
 import { balletClassesTable } from "./balletClasses";
 import { balletSchedulesTable } from "./balletSchedules";
 import { balletLevelAssignmentsTable } from "./balletLevelAssignments";
+import {
+  BALLET_ATTENDANCE_STATUSES,
+  type BalletAttendanceStatus,
+} from "@workspace/api-zod";
+
+export { BALLET_ATTENDANCE_STATUSES };
+export type { BalletAttendanceStatus };
 
 export const attendanceTable = pgTable("attendance", {
   id: serial("id").primaryKey(),

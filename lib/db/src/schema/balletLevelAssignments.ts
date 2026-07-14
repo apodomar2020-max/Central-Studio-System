@@ -3,6 +3,13 @@ import { balletApplicationsTable } from "./balletApplications";
 import { childrenTable } from "./children";
 import { balletLevelsTable } from "./balletLevels";
 import { balletGroupsTable } from "./balletGroups";
+import {
+  BALLET_LEVEL_ASSIGNMENT_STATUSES,
+  type BalletLevelAssignmentStatus,
+} from "@workspace/api-zod";
+
+export { BALLET_LEVEL_ASSIGNMENT_STATUSES };
+export type { BalletLevelAssignmentStatus };
 
 /**
  * ballet_level_assignments — active enrollment records.

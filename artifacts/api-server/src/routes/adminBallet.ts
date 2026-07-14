@@ -36,6 +36,7 @@ import {
   BALLET_APPLICATION_STATUSES,
 } from "@workspace/db";
 import type { BalletApplicationStatus } from "@workspace/db";
+import { isTransitionAllowed } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
@@ -58,40 +59,6 @@ const VALID_STATUSES = new Set(BALLET_APPLICATION_STATUSES);
 
 function isValidStatus(s: string): s is BalletApplicationStatus {
   return VALID_STATUSES.has(s as BalletApplicationStatus);
-}
-
-// ── Status-transition whitelist (Phase A / P0-2a) ───────────────────────────
-//
-// Only the (fromStatus → toStatus) pairs listed below are permitted. Any
-// pair not present here — including a same-status no-op like
-// pending → pending — is rejected with 422 by PATCH .../status below. There
-// is no special-casing: an excluded pair simply isn't in the allow-list.
-//
-// Four transitions are DELIBERATELY EXCLUDED pending an unresolved product
-// decision from the human architect (see the Phase A / P0-2a backlog item's
-// STOP CONDITION — do not add these without an explicit decision):
-//   - accepted        → rejected
-//   - assignedToLevel → rejected
-//   - active          → cancelled
-//   - any same-status no-op (e.g. pending → pending, active → active, ...)
-//
-// assignedToLevel → active is approved, but is never a "free" manual flip —
-// PATCH .../status additionally runs the three-part activation gate
-// (assignedLevelId set, the active assignment's groupId set, a paid
-// ballet_payments row on file) whenever the target status is "active",
-// regardless of which approved fromStatus led here.
-const BALLET_STATUS_TRANSITIONS: Readonly<Record<BalletApplicationStatus, readonly BalletApplicationStatus[]>> = {
-  pending:         ["accepted", "rejected", "needsFollowUp", "cancelled"],
-  needsFollowUp:   ["accepted", "rejected", "cancelled"],
-  accepted:        ["cancelled"],
-  assignedToLevel: ["active"],
-  active:          [],
-  rejected:        [],
-  cancelled:       [],
-};
-
-function isTransitionAllowed(from: BalletApplicationStatus, to: BalletApplicationStatus): boolean {
-  return BALLET_STATUS_TRANSITIONS[from].includes(to);
 }
 
 function requireApplicationStatusPermission(req: Request, res: Response, next: NextFunction): void {
@@ -622,10 +589,13 @@ router.patch(
 
     const fromStatus = app.status as BalletApplicationStatus;
 
+    if (status === fromStatus) {
+      res.json({ success: true, status, message: "No change" });
+      return;
+    }
+
     // ── Status-transition whitelist ─────────────────────────────────────────
-    // See BALLET_STATUS_TRANSITIONS above for the full allow-list and the
-    // four transitions currently excluded pending a human decision.
-    if (!isTransitionAllowed(fromStatus, status)) {
+    if (!isTransitionAllowed(fromStatus, status as BalletApplicationStatus)) {
       res.status(422).json({
         error: `Cannot change status from "${fromStatus}" to "${status}" — this transition is not permitted.`,
       });
@@ -758,6 +728,14 @@ router.post(
 
     if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
+    const fromStatus = app.status as BalletApplicationStatus;
+    if (fromStatus === "pending" || fromStatus === "needsFollowUp") {
+      res.status(422).json({
+        error: `Cannot assign level to application in status "${fromStatus}". Review and accept the application first.`,
+      });
+      return;
+    }
+
     // Validate level
     const [level] = await db
       .select({ id: balletLevelsTable.id, name: balletLevelsTable.name, isActive: balletLevelsTable.isActive })
@@ -768,7 +746,6 @@ router.post(
     if (!level) { res.status(404).json({ error: "Level not found" }); return; }
     if (!level.isActive) { res.status(422).json({ error: `Level "${level.name}" is inactive and cannot be assigned` }); return; }
 
-    const fromStatus = app.status;
     const now = new Date().toISOString();
 
     const { assignment, supersededExistingAssignment } = await db.transaction(async (tx) => {
