@@ -18,9 +18,26 @@ import { db, balletInstructorsTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { normalizeInstructorPhotoUrl, normalizeInstructorPhotoUrlForResponse } from "../lib/instructorPhotoUrl";
 
 const router: IRouter = Router();
 const BALLET_INSTRUCTOR_ACTIVITY_FIELDS = ["name", "bio", "photoUrl", "specialties", "experienceYears", "rating", "isActive", "instagramUrl", "tiktokUrl", "youtubeUrl", "teachingLevel", "achievements", "teachingPhilosophy", "professionalExperience"] as const;
+
+type BalletInstructorRow = typeof balletInstructorsTable.$inferSelect;
+
+function serializeBalletInstructor(row: BalletInstructorRow): BalletInstructorRow {
+  return {
+    ...row,
+    photoUrl: normalizeInstructorPhotoUrlForResponse(row.photoUrl),
+  };
+}
+
+function normalizeInstructorPayload<T extends { photoUrl?: string | null }>(payload: T): T {
+  if (payload.photoUrl !== undefined) {
+    return { ...payload, photoUrl: normalizeInstructorPhotoUrl(payload.photoUrl) };
+  }
+  return payload;
+}
 
 const ListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
@@ -38,23 +55,23 @@ router.get("/admin/ballet/instructors", requireAdminAuth, requireAdminPermission
     db.select({ total: count(balletInstructorsTable.id) }).from(balletInstructorsTable),
   ]);
 
-  res.json({ data: rows, total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });
+  res.json({ data: rows.map(serializeBalletInstructor), total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });
 });
 
 const CreateInstructorBody = z.object({
   name:                   z.string().min(1, "Name is required"),
-  bio:                    z.string().optional(),
-  photoUrl:               z.string().optional(),
+  bio:                    z.string().nullable().optional(),
+  photoUrl:               z.string().nullable().optional(),
   specialties:            z.array(z.string()).optional(),
   experienceYears:        z.number().int().min(0).optional(),
-  rating:                 z.number().optional(),
+  rating:                 z.number().nullable().optional(),
   isActive:               z.boolean().optional(),
-  instagramUrl:           z.string().optional(),
-  tiktokUrl:              z.string().optional(),
-  youtubeUrl:             z.string().optional(),
-  teachingLevel:          z.string().optional(),
+  instagramUrl:           z.string().nullable().optional(),
+  tiktokUrl:              z.string().nullable().optional(),
+  youtubeUrl:             z.string().nullable().optional(),
+  teachingLevel:          z.string().nullable().optional(),
   achievements:           z.array(z.string()).optional(),
-  teachingPhilosophy:     z.string().optional(),
+  teachingPhilosophy:     z.string().nullable().optional(),
   professionalExperience: z.array(z.string()).optional(),
 });
 
@@ -65,7 +82,8 @@ router.post("/admin/ballet/instructors", requireAdminAuth, requireAdminPermissio
     return;
   }
   try {
-    const [instructor] = await db.insert(balletInstructorsTable).values(parsed.data).returning();
+    const payload = normalizeInstructorPayload(parsed.data);
+    const [instructor] = await db.insert(balletInstructorsTable).values(payload).returning();
     await logActivity(req, {
       action: "create",
       module: "ballet.instructors",
@@ -75,8 +93,12 @@ router.post("/admin/ballet/instructors", requireAdminAuth, requireAdminPermissio
       after: Object.fromEntries(BALLET_INSTRUCTOR_ACTIVITY_FIELDS.map((key) => [key, instructor[key]])),
       summary: `Created ballet instructor ${instructor.name}`,
     });
-    res.status(201).json({ instructor });
+    res.status(201).json({ instructor: serializeBalletInstructor(instructor) });
   } catch (err) {
+    if (err instanceof Error && (err.message.includes("Google Drive photo URL") || err.message.includes("Photo URL"))) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
     logger.error({ err }, "POST /admin/ballet/instructors failed");
     res.status(500).json({ error: "Failed to create instructor" });
   }
@@ -95,7 +117,8 @@ router.patch("/admin/ballet/instructors/:id", requireAdminAuth, requireAdminPerm
   }
 
   const updates: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(parsed.data)) {
+  const normalizedData = normalizeInstructorPayload(parsed.data);
+  for (const [k, v] of Object.entries(normalizedData)) {
     if (v !== undefined) updates[k] = v;
   }
   if (Object.keys(updates).length === 0) {
@@ -138,8 +161,12 @@ router.patch("/admin/ballet/instructors/:id", requireAdminAuth, requireAdminPerm
             : `Updated ballet instructor ${instructor.name}: ${changedKeys.join(", ")}`,
       });
     }
-    res.json({ instructor });
+    res.json({ instructor: serializeBalletInstructor(instructor) });
   } catch (err) {
+    if (err instanceof Error && (err.message.includes("Google Drive photo URL") || err.message.includes("Photo URL"))) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
     logger.error({ err }, "PATCH /admin/ballet/instructors/:id failed");
     res.status(500).json({ error: "Failed to update instructor" });
   }

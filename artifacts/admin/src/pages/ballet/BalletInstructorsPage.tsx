@@ -66,13 +66,17 @@ interface BalletInstructor {
   experienceYears: number;
   rating?: number | null;
   isActive: boolean;
-  instagramUrl?: string | null;
-  tiktokUrl?: string | null;
-  youtubeUrl?: string | null;
   teachingLevel?: string | null;
   achievements: string[];
   teachingPhilosophy?: string | null;
   professionalExperience?: string[];
+}
+
+interface BalletLevel {
+  id: number;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
 }
 
 interface ListResponse {
@@ -81,6 +85,10 @@ interface ListResponse {
   page: number;
   limit: number;
   totalPages: number;
+}
+
+interface LevelsResponse {
+  levels: BalletLevel[];
 }
 
 // Catalog-sized list — fetch a single generous page rather than build
@@ -96,9 +104,6 @@ const formSchema = z.object({
   rating: z.coerce.number().min(0).max(5).nullish(),
   isActive: z.boolean().default(true),
   teachingLevel: z.string().nullish(),
-  instagramUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
-  tiktokUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
-  youtubeUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
   achievements: z.string().nullish(),
   teachingPhilosophy: z.string().max(600, "Keep it under 600 characters").nullish(),
   professionalExperience: z.string().nullish(),
@@ -109,7 +114,7 @@ type FormValues = z.infer<typeof formSchema>;
 const EMPTY_VALUES: FormValues = {
   name: "", bio: "", photoUrl: "", specialties: "",
   experienceYears: 0, rating: undefined, isActive: true,
-  teachingLevel: "", instagramUrl: "", tiktokUrl: "", youtubeUrl: "", achievements: "",
+  teachingLevel: "", achievements: "",
   teachingPhilosophy: "", professionalExperience: "",
 };
 
@@ -138,6 +143,7 @@ export default function BalletInstructorsPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletInstructor | null>(null);
+  const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES });
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-ballet-instructors", token],
@@ -145,6 +151,19 @@ export default function BalletInstructorsPage() {
     refetchOnWindowFocus: false,
   });
   const instructors = data?.data ?? [];
+
+  const { data: levelsData, isLoading: isLevelsLoading } = useQuery({
+    queryKey: ["admin-ballet-levels", token],
+    queryFn: () => adminFetch<LevelsResponse>(`${API_BASE}/api/admin/ballet/levels`, {}, token),
+    refetchOnWindowFocus: true,
+  });
+  const activeLevelNames = (levelsData?.levels ?? [])
+    .filter((level) => level.isActive)
+    .map((level) => level.name);
+  const selectedTeachingLevel = form.watch("teachingLevel")?.trim() ?? "";
+  const levelOptions = selectedTeachingLevel && !activeLevelNames.includes(selectedTeachingLevel)
+    ? [...activeLevelNames, selectedTeachingLevel]
+    : activeLevelNames;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-ballet-instructors"] });
 
@@ -159,8 +178,6 @@ export default function BalletInstructorsPage() {
     onSuccess: () => { invalidate(); toast({ title: "Instructor updated" }); setOpen(false); },
     onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update instructor", variant: "destructive" }),
   });
-
-  const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES });
 
   const openCreate = () => {
     setEditing(null);
@@ -179,9 +196,6 @@ export default function BalletInstructorsPage() {
       rating: instructor.rating ?? undefined,
       isActive: instructor.isActive,
       teachingLevel: instructor.teachingLevel ?? "",
-      instagramUrl: instructor.instagramUrl ?? "",
-      tiktokUrl: instructor.tiktokUrl ?? "",
-      youtubeUrl: instructor.youtubeUrl ?? "",
       achievements: instructor.achievements?.join(", ") ?? "",
       teachingPhilosophy: instructor.teachingPhilosophy ?? "",
       professionalExperience: instructor.professionalExperience?.join("\n") ?? "",
@@ -200,9 +214,6 @@ export default function BalletInstructorsPage() {
       teachingPhilosophy: nullIfEmpty(values.teachingPhilosophy),
       photoUrl: nullIfEmpty(values.photoUrl),
       teachingLevel: nullIfEmpty(values.teachingLevel),
-      instagramUrl: nullIfEmpty(values.instagramUrl),
-      tiktokUrl: nullIfEmpty(values.tiktokUrl),
-      youtubeUrl: nullIfEmpty(values.youtubeUrl),
     };
     if (editing) {
       updateMutation.mutate({ id: editing.id, body });
@@ -298,12 +309,16 @@ export default function BalletInstructorsPage() {
                         className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
                         {...field}
                         value={field.value ?? ""}
+                        disabled={isLevelsLoading}
                       >
                         <option value="">All Levels</option>
-                        <option value="Beginner">Beginner</option>
-                        <option value="Intermediate">Intermediate</option>
-                        <option value="Advanced">Advanced</option>
-                        <option value="All Levels">All Levels</option>
+                        {isLevelsLoading && <option value="" disabled>Loading levels...</option>}
+                        {!isLevelsLoading && activeLevelNames.length === 0 && <option value="" disabled>No active levels</option>}
+                        {levelOptions.map((levelName) => (
+                          <option key={levelName} value={levelName}>
+                            {activeLevelNames.includes(levelName) ? levelName : `${levelName} (inactive)`}
+                          </option>
+                        ))}
                       </select>
                     </FormControl>
                     <FormMessage />
@@ -370,31 +385,6 @@ export default function BalletInstructorsPage() {
                   )}
                 </FormItem>
               )} />
-
-              <p className="text-sm font-medium text-muted-foreground pt-1">Social Media</p>
-              <div className="grid grid-cols-1 gap-3">
-                <FormField control={form.control} name="instagramUrl" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Instagram URL</FormLabel>
-                    <FormControl><Input placeholder="https://instagram.com/username" {...field} value={field.value ?? ""} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="tiktokUrl" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>TikTok URL</FormLabel>
-                    <FormControl><Input placeholder="https://tiktok.com/@username" {...field} value={field.value ?? ""} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="youtubeUrl" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>YouTube URL</FormLabel>
-                    <FormControl><Input placeholder="https://youtube.com/@username" {...field} value={field.value ?? ""} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
 
               <FormField control={form.control} name="isActive" render={({ field }) => (
                 <FormItem className="flex items-center gap-3">

@@ -30,6 +30,21 @@ function styleLabel(title: string) {
   return title.replace(/\s*Instructor\s*$/i, "").trim() || "Ballet Faculty";
 }
 
+function InstructorAvatar({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [photoUrl]);
+
+  if (photoUrl && !failed) {
+    return <Image source={{ uri: photoUrl }} style={s.avatar} resizeMode="cover" onError={() => setFailed(true)} />;
+  }
+
+  return (
+    <View style={[s.avatar, s.avatarFallback]}>
+      <Text style={s.avatarInitials}>{initialsFromName(name)}</Text>
+    </View>
+  );
+}
+
 export default function BalletInstructorsScreen() {
   const [instructors, setInstructors] = useState<BalletInstructor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,13 +92,7 @@ export default function BalletInstructorsScreen() {
           return (
             <View key={i.id} style={s.card}>
               <View style={s.cardTop}>
-                {photoUrl ? (
-                  <Image source={{ uri: photoUrl }} style={s.avatar} resizeMode="cover" />
-                ) : (
-                  <View style={[s.avatar, s.avatarFallback]}>
-                    <Text style={s.avatarInitials}>{initialsFromName(i.name)}</Text>
-                  </View>
-                )}
+                <InstructorAvatar name={i.name} photoUrl={photoUrl} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.name}>{i.name}</Text>
                   <Text style={s.title}>{styleLabel(title)}</Text>

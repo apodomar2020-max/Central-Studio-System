@@ -70,6 +70,7 @@ import {
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth } from "../lib/balletAttendance";
+import { normalizeInstructorPhotoUrlForResponse } from "../lib/instructorPhotoUrl";
 
 const router: IRouter = Router();
 
@@ -305,7 +306,10 @@ router.get("/ballet/instructors", async (_req, res): Promise<void> => {
       .where(eq(balletInstructorsTable.isActive, true))
       .orderBy(asc(balletInstructorsTable.name));
 
-    res.json({ instructors });
+    res.json({ instructors: instructors.map((instructor) => ({
+      ...instructor,
+      photoUrl: normalizeInstructorPhotoUrlForResponse(instructor.photoUrl),
+    })) });
   } catch (err) {
     logger.error({ err }, "GET /ballet/instructors failed");
     res.status(500).json({ error: "Failed to load instructors" });
@@ -473,7 +477,7 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
       title:         c.title,
       classImageUrl: c.classImageUrl,
       classVideoUrl: c.classVideoUrl,
-      instructor:    c.instructorId != null ? { id: c.instructorId, name: c.instructorName, photoUrl: c.instructorPhotoUrl } : null,
+      instructor:    c.instructorId != null ? { id: c.instructorId, name: c.instructorName, photoUrl: normalizeInstructorPhotoUrlForResponse(c.instructorPhotoUrl) } : null,
       groupIds:      groupIdsByClass.get(c.id) ?? [],
       levelIds:      levelIdsByClass.get(c.id) ?? [],
       schedules:     schedulesByClass.get(c.id) ?? [],
