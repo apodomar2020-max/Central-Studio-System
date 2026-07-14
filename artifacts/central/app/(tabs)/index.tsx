@@ -992,17 +992,25 @@ export default function StudioHomeScreen() {
         />
 
         {/* Ballet */}
-        <BalletFeaturedProgramCard
-          balletStatus={balletStatus}
-          onView={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/ballet" as any);
-          }}
-          onApply={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/ballet/assessment" as any);
-          }}
-        />
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <View>
+              <Text style={s.eyebrow}>Featured Program</Text>
+              <Text style={s.sectionTitle}>Ballet Program</Text>
+            </View>
+          </View>
+          <BalletFeaturedProgramCard
+            balletStatus={balletStatus}
+            onView={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/ballet" as any);
+            }}
+            onApply={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/ballet/assessment" as any);
+            }}
+          />
+        </View>
 
         {/* Upcoming Classes */}
         <View style={s.section}>

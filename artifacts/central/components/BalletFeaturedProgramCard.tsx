@@ -62,8 +62,7 @@ export default function BalletFeaturedProgramCard({
   const statusColor = balletStatus ? getStatusBadgeColor(balletStatus) : null;
 
   return (
-    <View style={styles.section}>
-      <Text style={styles.eyebrow}>Featured Program</Text>
+    <View style={styles.container}>
       <View style={styles.card}>
         <ImageBackground
           source={require("@/assets/images/ballet_hero.png")}
@@ -78,9 +77,6 @@ export default function BalletFeaturedProgramCard({
           style={StyleSheet.absoluteFill}
         />
         <View style={styles.top}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>Featured Program</Text>
-          </View>
           {statusColor && (
             <View style={[styles.statusBadge, { backgroundColor: statusColor + "28", borderColor: statusColor + "60" }]}>
               <Text style={[styles.statusText, { color: statusColor }]}>
@@ -109,15 +105,7 @@ export default function BalletFeaturedProgramCard({
 }
 
 const styles = StyleSheet.create({
-  section: { paddingHorizontal: 20, marginBottom: 26 },
-  eyebrow: {
-    fontSize: 10,
-    fontFamily: "SpaceMono_700Bold",
-    letterSpacing: 1.8,
-    textTransform: "uppercase",
-    color: CYAN,
-    marginBottom: 12,
-  },
+  container: { paddingHorizontal: 20 },
   card: {
     height: 216,
     borderRadius: R_LG,
@@ -131,21 +119,8 @@ const styles = StyleSheet.create({
     left: 14,
     right: 14,
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: R_PILL,
-    backgroundColor: "rgba(124,58,237,0.82)",
-  },
-  badgeText: {
-    fontSize: 10,
-    fontFamily: "Archivo_800ExtraBold",
-    color: "#fff",
-    letterSpacing: 0.7,
-    textTransform: "uppercase",
   },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL, borderWidth: 1 },
   statusText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold" },
