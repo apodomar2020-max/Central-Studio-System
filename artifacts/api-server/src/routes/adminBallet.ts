@@ -24,7 +24,11 @@ import {
   balletSettingsTable,
   balletLevelAssignmentsTable,
   balletGroupsTable,
+  balletGroupSchedulesTable,
+  balletSchedulesTable,
+  balletPackagesTable,
   balletPaymentsTable,
+  attendanceTable,
   systemUsersTable,
   notificationsTable,
   BALLET_APPLICATION_STATUSES,
@@ -33,6 +37,7 @@ import type { BalletApplicationStatus } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { computeBalletMonthlyAttendanceSummary, currentBillingMonth, isValidBillingMonth } from "../lib/balletAttendance";
 
 const router: IRouter = Router();
 const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive"] as const;
@@ -357,6 +362,24 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     ? await db.select({ id: balletGroupsTable.id, name: balletGroupsTable.name }).from(balletGroupsTable).where(eq(balletGroupsTable.id, activeAssignment.groupId)).limit(1)
     : [];
 
+  // C3: the active group's schedule slots, so the "Mark Attendance" control on
+  // the detail page can offer a picker scoped to exactly the schedules the
+  // attendance endpoint will accept (same group→ballet_group_schedules join).
+  const groupSchedules = activeAssignment?.groupId != null
+    ? await db
+        .select({
+          id:        balletSchedulesTable.id,
+          dayOfWeek: balletSchedulesTable.dayOfWeek,
+          startTime: balletSchedulesTable.startTime,
+          endTime:   balletSchedulesTable.endTime,
+          status:    balletSchedulesTable.status,
+        })
+        .from(balletGroupSchedulesTable)
+        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+        .where(eq(balletGroupSchedulesTable.groupId, activeAssignment.groupId))
+        .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
+    : [];
+
   // Payments (A1) — return the full history (newest first, don't collapse it)
   // plus a clear pointer to the most recently updated "current" one for the
   // list-parity header display.
@@ -366,15 +389,30 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     .where(eq(balletPaymentsTable.applicationId, id))
     .orderBy(desc(balletPaymentsTable.updatedAt));
 
+  // Attendance-hours summary (C4) for the requested (default current) calendar
+  // month. Only meaningful once there's an active level assignment; null
+  // otherwise. When ?month is supplied it must be a valid YYYY-MM.
+  const monthParam = typeof req.query["month"] === "string" ? req.query["month"] : undefined;
+  if (monthParam != null && !isValidBillingMonth(monthParam)) {
+    res.status(400).json({ error: "month must be in YYYY-MM format" });
+    return;
+  }
+  const billingMonth = monthParam ?? currentBillingMonth();
+  const attendanceSummary = activeAssignment
+    ? await computeBalletMonthlyAttendanceSummary(activeAssignment.id, id, billingMonth)
+    : null;
+
   res.json({
     application:  app,
     slot:         slotRows[0] ?? null,
     level:        levelRows[0] ?? null,
     group:        groupRows[0] ?? null,
     assignmentId: activeAssignment?.id ?? null,
+    groupSchedules,
     events,
     payments,
     currentPayment: payments[0] ?? null,
+    attendanceSummary,
   });
 });
 
@@ -924,6 +962,279 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
     limit,
     totalPages: Math.ceil(Number(total) / limit),
   });
+});
+
+// ─── Ballet attendance: POST / PATCH / GET ────────────────────────────────────
+//
+// Phase B / C3 (+ D1 correction pass): the admin-recorded Ballet attendance
+// path — enough to enforce the required identity/uniqueness rules, make C4's
+// hours calculation real, and let staff correct a mis-recorded entry and see
+// history. A full check-in UX (QR, self-check-in) is out of scope.
+//
+// POST /admin/ballet/attendance
+//   Body: { levelAssignmentId, balletScheduleId, classDate (YYYY-MM-DD), status,
+//           durationMinutes?, note? }
+//   status ∈ checked_in | late | absent | cancelled
+//
+// Validation:
+//   - the level assignment exists and is status = "active";
+//   - balletScheduleId belongs to the assignment's CURRENT group (via
+//     ballet_group_schedules — the same join shape used by the mobile
+//     schedule-resolution in ballet.ts's GET /ballet/applications/my);
+//   - balletClassId is derived server-side from ballet_schedules.classId — it
+//     is never accepted from the client, to avoid a mismatched class/schedule.
+//   - the attendance table's pre-existing NOT NULL studentName/studentEmail are
+//     populated from the assignment's application (childName/parentEmail).
+//   - durationMinutes: if omitted, copied from the selected schedule's
+//     durationMins at record time and stored as an immutable snapshot on the
+//     row (D2: the monthly calculation reads this snapshot, never a live
+//     join, so later schedule-duration edits never rewrite past totals).
+//   - a 23505 on the partial unique index (migration 0054) returns a clean
+//     409 that includes the existing attendance row's id — never a 500, and
+//     the existing row is never silently overwritten.
+//
+// PATCH /admin/ballet/attendance/:id
+//   Corrects status / durationMinutes / note only. levelAssignmentId,
+//   balletScheduleId, and classDate are immutable via this endpoint — to
+//   change the occurrence itself, record a new attendance row instead.
+//
+// GET /admin/ballet/attendance?levelAssignmentId=&month=YYYY-MM
+//   Returns the assignment's attendance history plus the same monthly
+//   summary shape used elsewhere (C4).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BALLET_ATTENDANCE_STATUSES = ["checked_in", "late", "absent", "cancelled"] as const;
+
+const CreateAttendanceBody = z.object({
+  levelAssignmentId: z.number({ required_error: "levelAssignmentId is required" }).int().positive(),
+  balletScheduleId:  z.number({ required_error: "balletScheduleId is required" }).int().positive(),
+  classDate:         z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "classDate must be in YYYY-MM-DD format"),
+  status:            z.enum(BALLET_ATTENDANCE_STATUSES),
+  // D1: optional — defaults to the selected schedule's durationMins when omitted.
+  durationMinutes:   z.number().int().nonnegative().optional(),
+  note:              z.string().optional(),
+});
+
+router.post("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission("attendance", "checkIn"), async (req: AdminRequest, res): Promise<void> => {
+  const parsed = CreateAttendanceBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const { levelAssignmentId, balletScheduleId, classDate, status, durationMinutes: requestedDuration, note } = parsed.data;
+
+  // Load the level assignment + its application identity (for the NOT NULL
+  // studentName/studentEmail columns).
+  const [assignment] = await db
+    .select({
+      id:            balletLevelAssignmentsTable.id,
+      status:        balletLevelAssignmentsTable.status,
+      groupId:       balletLevelAssignmentsTable.groupId,
+      applicationId: balletLevelAssignmentsTable.applicationId,
+      childName:     balletApplicationsTable.childName,
+      parentEmail:   balletApplicationsTable.parentEmail,
+    })
+    .from(balletLevelAssignmentsTable)
+    .innerJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletLevelAssignmentsTable.applicationId))
+    .where(eq(balletLevelAssignmentsTable.id, levelAssignmentId))
+    .limit(1);
+
+  if (!assignment) { res.status(404).json({ error: "Level assignment not found" }); return; }
+  if (assignment.status !== "active") {
+    res.status(422).json({ error: "Level assignment is not active — cannot record attendance." });
+    return;
+  }
+  if (assignment.groupId == null) {
+    res.status(422).json({ error: "This student has no assigned group — cannot record attendance." });
+    return;
+  }
+
+  // The schedule must belong to the assignment's current group, and we derive
+  // the class from the schedule itself (never trust a client-supplied classId).
+  const [scheduleLink] = await db
+    .select({
+      scheduleId:   balletSchedulesTable.id,
+      classId:      balletSchedulesTable.classId,
+      durationMins: balletSchedulesTable.durationMins,
+    })
+    .from(balletGroupSchedulesTable)
+    .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+    .where(and(
+      eq(balletGroupSchedulesTable.groupId, assignment.groupId),
+      eq(balletGroupSchedulesTable.scheduleId, balletScheduleId),
+    ))
+    .limit(1);
+
+  if (!scheduleLink) {
+    res.status(422).json({ error: "The selected schedule does not belong to this student's group." });
+    return;
+  }
+
+  const adminEmail = req.adminUser?.email ?? null;
+  // D1: snapshot the duration NOW — client override wins, else the schedule's
+  // current durationMins, else null (never silently coerced to 0).
+  const durationMinutes = requestedDuration ?? scheduleLink.durationMins ?? null;
+
+  try {
+    const [attendance] = await db
+      .insert(attendanceTable)
+      .values({
+        // Ballet identity + occurrence
+        balletLevelAssignmentId: levelAssignmentId,
+        balletScheduleId,
+        balletClassId: scheduleLink.classId,
+        classDate,
+        status,
+        durationMinutes,
+        notes: note ?? null,
+        // Satisfy pre-existing NOT NULL columns with already-available data.
+        studentName:  assignment.childName,
+        studentEmail: assignment.parentEmail,
+        checkedInBy:  adminEmail,
+      })
+      .returning();
+
+    await logActivity(req, {
+      action: "checkIn",
+      module: "attendance",
+      entityType: "ballet_attendance",
+      entityId: attendance.id,
+      entityLabel: assignment.childName,
+      after: { levelAssignmentId, balletScheduleId, balletClassId: scheduleLink.classId, classDate, status, durationMinutes },
+      summary: `Recorded ballet attendance (${status}) for ${assignment.childName} on ${classDate}`,
+    });
+
+    res.status(201).json({ attendance });
+  } catch (err: unknown) {
+    const cause = (err as { cause?: unknown }).cause;
+    const pgErr = (cause ?? err) as { code?: string; constraint?: string };
+    if (pgErr.code === "23505" && pgErr.constraint === "attendance_ballet_unique_per_slot_date") {
+      // Never silently overwrite — surface the existing row's id so the
+      // caller can look at (or correct via PATCH) what's already there.
+      const [existing] = await db
+        .select({ id: attendanceTable.id })
+        .from(attendanceTable)
+        .where(and(
+          eq(attendanceTable.balletLevelAssignmentId, levelAssignmentId),
+          eq(attendanceTable.balletScheduleId, balletScheduleId),
+          eq(attendanceTable.classDate, classDate),
+        ))
+        .limit(1);
+      res.status(409).json({
+        error: "Attendance for this schedule and date is already recorded",
+        existingAttendanceId: existing?.id ?? null,
+      });
+      return;
+    }
+    logger.error({ err, levelAssignmentId, balletScheduleId, classDate }, "POST /admin/ballet/attendance failed");
+    res.status(500).json({ error: "Failed to record attendance" });
+  }
+});
+
+// ─── PATCH /api/admin/ballet/attendance/:id ───────────────────────────────────
+//
+// Corrects an existing ballet attendance row. Only status / durationMinutes /
+// note may change — the occurrence identity (levelAssignmentId,
+// balletScheduleId, classDate) is immutable here by design (not accepted in
+// the body at all, so there's nothing to reject-if-present; a differently
+// shaped occurrence is a new attendance row, not a correction to this one).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PatchAttendanceBody = z.object({
+  status:          z.enum(BALLET_ATTENDANCE_STATUSES).optional(),
+  durationMinutes: z.number().int().nonnegative().nullable().optional(),
+  note:            z.string().nullable().optional(),
+}).refine((b) => b.status !== undefined || b.durationMinutes !== undefined || b.note !== undefined, {
+  message: "At least one of status, durationMinutes, or note is required",
+});
+
+router.patch("/admin/ballet/attendance/:id", requireAdminAuth, requireAdminPermission("attendance", "checkIn"), async (req: AdminRequest, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid attendance id" }); return; }
+
+  const parsed = PatchAttendanceBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const [existing] = await db
+    .select()
+    .from(attendanceTable)
+    .where(eq(attendanceTable.id, id))
+    .limit(1);
+
+  if (!existing || existing.balletLevelAssignmentId == null) {
+    res.status(404).json({ error: "Ballet attendance record not found" });
+    return;
+  }
+
+  const { status, durationMinutes, note } = parsed.data;
+  const updates: Partial<typeof attendanceTable.$inferInsert> = {};
+  if (status !== undefined) updates.status = status;
+  if (durationMinutes !== undefined) updates.durationMinutes = durationMinutes;
+  if (note !== undefined) updates.notes = note;
+
+  const [attendance] = await db
+    .update(attendanceTable)
+    .set(updates)
+    .where(eq(attendanceTable.id, id))
+    .returning();
+
+  await logActivity(req, {
+    action: "update",
+    module: "attendance",
+    entityType: "ballet_attendance",
+    entityId: id,
+    entityLabel: existing.studentName,
+    before: { status: existing.status, durationMinutes: existing.durationMinutes, notes: existing.notes },
+    after: { status: attendance.status, durationMinutes: attendance.durationMinutes, notes: attendance.notes },
+    summary: `Corrected ballet attendance #${id} for ${existing.studentName}`,
+  });
+
+  res.json({ attendance });
+});
+
+// ─── GET /api/admin/ballet/attendance ─────────────────────────────────────────
+//
+// Query: ?levelAssignmentId=<number>&month=YYYY-MM (month optional, defaults
+// to the current calendar month). Returns the assignment's full attendance
+// history (all months, newest first) plus the requested month's summary —
+// same shape as the applications/:id detail route's attendanceSummary.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission("attendance", "checkIn"), async (req: AdminRequest, res): Promise<void> => {
+  const levelAssignmentId = parseInt(String(req.query["levelAssignmentId"] ?? ""), 10);
+  if (isNaN(levelAssignmentId)) {
+    res.status(400).json({ error: "levelAssignmentId is required" });
+    return;
+  }
+  const monthParam = typeof req.query["month"] === "string" ? req.query["month"] : undefined;
+  if (monthParam != null && !isValidBillingMonth(monthParam)) {
+    res.status(400).json({ error: "month must be in YYYY-MM format" });
+    return;
+  }
+  const month = monthParam ?? currentBillingMonth();
+
+  const [assignment] = await db
+    .select({ id: balletLevelAssignmentsTable.id, applicationId: balletLevelAssignmentsTable.applicationId })
+    .from(balletLevelAssignmentsTable)
+    .where(eq(balletLevelAssignmentsTable.id, levelAssignmentId))
+    .limit(1);
+
+  if (!assignment) { res.status(404).json({ error: "Level assignment not found" }); return; }
+
+  const [history, summary] = await Promise.all([
+    db
+      .select()
+      .from(attendanceTable)
+      .where(eq(attendanceTable.balletLevelAssignmentId, levelAssignmentId))
+      .orderBy(desc(attendanceTable.classDate), desc(attendanceTable.createdAt)),
+    computeBalletMonthlyAttendanceSummary(levelAssignmentId, assignment.applicationId, month),
+  ]);
+
+  res.json({ history, summary });
 });
 
 // ─── GET /api/admin/ballet/levels ─────────────────────────────────────────────

@@ -64,9 +64,12 @@ import {
   balletClassLevelsTable,
   balletLevelAssignmentsTable,
   balletGroupSchedulesTable,
+  BALLET_PAYMENT_METHODS,
+  studentsTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
+import { computeBalletMonthlyAttendanceSummary, currentBillingMonth } from "../lib/balletAttendance";
 
 const router: IRouter = Router();
 
@@ -513,15 +516,20 @@ router.get(
 
       const applicationIds = applications.map((a) => a.id);
       const groupIdByApplicationId = new Map<number, number | null>();
+      const assignmentIdByApplicationId = new Map<number, number>();
       if (applicationIds.length > 0) {
         const assignments = await db
           .select({
+            id:            balletLevelAssignmentsTable.id,
             applicationId: balletLevelAssignmentsTable.applicationId,
             groupId:       balletLevelAssignmentsTable.groupId,
           })
           .from(balletLevelAssignmentsTable)
           .where(and(inArray(balletLevelAssignmentsTable.applicationId, applicationIds), eq(balletLevelAssignmentsTable.status, "active")));
-        for (const row of assignments) groupIdByApplicationId.set(row.applicationId, row.groupId);
+        for (const row of assignments) {
+          groupIdByApplicationId.set(row.applicationId, row.groupId);
+          assignmentIdByApplicationId.set(row.applicationId, row.id);
+        }
       }
 
       // ── Resolve real schedule + instructor for active, grouped students (A4) ──
@@ -590,10 +598,36 @@ router.get(
         }
       }
 
+      // ── Attendance-hours summary for the current calendar month (C4 / D3) ────
+      // Only active applications with an active level assignment can have a
+      // monthly subscription. We compute per-assignment and surface the FULL
+      // summary object (including hasActiveSubscription: false) whenever
+      // there's an active assignment — null only when there's no active
+      // assignment at all — mirroring the admin detail route's behaviour.
+      // D3: this is deliberately NOT collapsed to null just because
+      // hasActiveSubscription is false, so the parent-facing full attendance
+      // screen (application-status.tsx) can render the distinct "No active
+      // monthly subscription for this month" state instead of hiding the
+      // section or silently showing zero hours. The compact card in
+      // bookings.tsx explicitly checks attendanceSummary?.hasActiveSubscription
+      // so its own display is unaffected by this change. Await count == number
+      // of the parent's active applications (typically 1, at most a handful).
+      const month = currentBillingMonth();
+      const attendanceSummaryByApplicationId = new Map<number, Awaited<ReturnType<typeof computeBalletMonthlyAttendanceSummary>>>();
+      await Promise.all(
+        applications
+          .filter((a) => a.status === "active" && assignmentIdByApplicationId.has(a.id))
+          .map(async (a) => {
+            const summary = await computeBalletMonthlyAttendanceSummary(assignmentIdByApplicationId.get(a.id)!, a.id, month);
+            attendanceSummaryByApplicationId.set(a.id, summary);
+          }),
+      );
+
       res.json({
         applications: applications.map((a) => {
           const assignedGroupId = groupIdByApplicationId.get(a.id) ?? null;
           const isActiveGrouped = a.status === "active" && assignedGroupId != null;
+          const summary = attendanceSummaryByApplicationId.get(a.id);
           return {
             ...a,
             assignedGroupId,
@@ -602,6 +636,11 @@ router.get(
             // other status.
             resolvedSchedules:   isActiveGrouped ? schedulesByGroupId.get(assignedGroupId) ?? [] : null,
             resolvedInstructors: isActiveGrouped ? instructorsByGroupId.get(assignedGroupId) ?? [] : null,
+            // C4 / D3: full summary (including hasActiveSubscription: false)
+            // whenever there's an active assignment; null only when there is
+            // none. See the comment above this block for why this is no
+            // longer collapsed to null on !hasActiveSubscription.
+            attendanceSummary: summary ?? null,
           };
         }),
       });
@@ -645,6 +684,12 @@ const SubmitApplicationBody = z.object({
   medicalNotes:          z.string().optional(),
   notes:                 z.string().optional(),
   slotId:                z.number({ required_error: "slotId is required" }).int().positive(),
+  // C1: parent's chosen payment method at intake — required for new
+  // submissions. Preference only; never creates/touches a ballet_payments row.
+  preferredPaymentMethod: z.enum(BALLET_PAYMENT_METHODS, {
+    required_error: "preferredPaymentMethod is required",
+    invalid_type_error: "preferredPaymentMethod is required",
+  }),
   // Optional link to a saved child profile (children.id). When present it must
   // belong to the authenticated parent; legacy/manual submissions omit it.
   childId:               z.number().int().positive().optional(),
@@ -667,10 +712,30 @@ router.post(
       emergencyContactName, emergencyContactPhone,
       previousExperience, experienceDetails,
       medicalNotes, notes,
-      slotId, childId,
+      slotId, childId, preferredPaymentMethod,
     } = parsed.data;
 
     const parentStudentId = req.studentId!;
+
+    // D4: server-side Parent-account gate. The mobile UI already blocks
+    // Student-type accounts from reaching this screen (assessment.tsx checks
+    // user.accountType !== "parent" and shows a conversion prompt), but that
+    // is a UX convenience, not a security boundary — enforce it here too so
+    // a Student-type JWT can never submit a Ballet application directly
+    // against the API.
+    const [account] = await db
+      .select({ accountType: studentsTable.accountType })
+      .from(studentsTable)
+      .where(eq(studentsTable.id, parentStudentId))
+      .limit(1);
+
+    if (!account || account.accountType !== "parent") {
+      res.status(403).json({
+        error: "A Parent account is required to submit a Ballet application.",
+        code: "PARENT_ACCOUNT_REQUIRED",
+      });
+      return;
+    }
 
     // Phase B / A3 correction: hoisted out of the transaction closure so the
     // catch block below (the 23505 safety-net) can see the final resolved
@@ -930,6 +995,9 @@ router.post(
             notes:                 notes ?? null,
             slotId,
             slotLabel,
+            // C1: intake payment preference. Stored on the application only —
+            // no ballet_payments row is created at submission time.
+            preferredPaymentMethod,
             status: "pending",
           })
           .returning({ id: balletApplicationsTable.id, status: balletApplicationsTable.status });
