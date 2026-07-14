@@ -47,6 +47,18 @@ interface DetailResponse {
   };
   currentPayment: BalletPayment | null;
   payments: BalletPayment[];
+  enrollmentHistory: {
+    assignmentId: number;
+    applicationId: number;
+    applicationStatus: string;
+    assignmentStatus: string;
+    levelId: number | null;
+    levelName: string | null;
+    groupId: number | null;
+    groupName: string | null;
+    enrolledAt: string | null;
+    updatedAt: string | null;
+  }[];
   groupSchedules: { id: number; dayOfWeek: number; startTime: string; endTime: string; status: string; classTitle: string | null; instructorName: string | null }[];
   attendanceSummary: { billingMonth: string; monthlyHours: number | null; attendedHours: number; absentHours: number; consumedHours: number; remainingHours: number | null; hasActiveSubscription: boolean } | null;
   attendanceHistory: { id: number; classDate: string | null; status: string; durationMinutes: number | null; notes: string | null; balletScheduleId: number | null; createdAt: string }[];
@@ -225,6 +237,20 @@ export default function BalletStudentDetailPage() {
             </Button>
           </div>
           {data.payments.length > 1 && <div className="pt-2 space-y-2"><h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Payment History</h4>{data.payments.map((payment) => <div key={payment.id} className="rounded-md border p-3 text-sm"><div className="font-medium">#{payment.id} · {payment.packageName ?? "No package"} · {payment.status} · {payment.subscriptionDisplayStatus}</div><p className="text-xs text-muted-foreground">{payment.amountEgp} EGP · {payment.billingMonth ?? "No billing month"} · {payment.paymentMethod ?? "No method"} · {payment.subscriptionStartDate ?? "No start"} → {payment.subscriptionExpiresAt ?? "No expiry"} · {new Date(payment.updatedAt).toLocaleString()}</p>{payment.extensionHistory.map((extension, index) => <p key={`${payment.id}-${index}`} className="text-xs text-muted-foreground">Extended {extension.previousExpiresAt} → {extension.newExpiresAt} (+{extension.daysAdded}d) · {extension.reason}</p>)}</div>)}</div>}</Section>
+        <Section title="Enrollment History">
+          {data.enrollmentHistory.length ? (
+            <div className="space-y-2">
+              {data.enrollmentHistory.map((entry) => (
+                <div key={entry.assignmentId} className="rounded-md border p-3 text-sm">
+                  <div className="font-medium">Assignment #{entry.assignmentId} · {entry.levelName ?? "No level"} · {entry.assignmentStatus}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {entry.groupName ?? "No group"} · Application #{entry.applicationId} ({entry.applicationStatus}) · {entry.enrolledAt ? new Date(entry.enrolledAt).toLocaleString() : "No date"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-sm italic text-muted-foreground">No enrollment history recorded yet.</p>}
+        </Section>
         <Section title="Attendance"><Field label="Billing month" value={data.attendanceSummary?.billingMonth} /><Field label="Monthly hours" value={data.attendanceSummary?.monthlyHours} /><Field label="Attended hours" value={data.attendanceSummary?.attendedHours} /><Field label="Absent hours" value={data.attendanceSummary?.absentHours} /><Field label="Consumed hours" value={data.attendanceSummary?.consumedHours} /><Field label="Remaining hours" value={data.attendanceSummary?.remainingHours} /></Section>
         <Section title="Attendance History">{data.attendanceHistory.length ? <div className="space-y-2">{data.attendanceHistory.map((row) => <div key={row.id} className="rounded-md border p-3 text-sm"><div className="font-medium">{row.classDate ?? "—"} · {row.status} · {row.durationMinutes ?? "—"} min</div>{row.notes && <p className="text-xs text-muted-foreground">{row.notes}</p>}</div>)}</div> : <p className="text-sm italic text-muted-foreground">No attendance recorded yet.</p>}</Section>
       </div>

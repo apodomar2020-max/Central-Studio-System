@@ -988,10 +988,9 @@ router.post(
 
 // ─── GET /api/admin/ballet/students ───────────────────────────────────────────
 //
-// A Ballet student is the current active ballet_level_assignments row. The
-// application may still be waiting on payment/activation, so the roster must
-// not depend on application.status = "active". Stage is derived from the same
-// source of truth: active assignment + paid payment + active application.
+// A Ballet student is the child identity, with one current assignment selected
+// for the roster. Historical level/group rows remain intact for detail/history,
+// but they must not multiply the operational Students list.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const StudentsListQuerySchema = z.object({
@@ -1013,6 +1012,72 @@ async function getLatestPaymentByApplicationIds(applicationIds: number[]) {
   return latestPaymentByApplicationId;
 }
 
+interface BalletStudentListRow {
+  [key: string]: unknown;
+  assignmentId: number;
+  applicationId: number;
+  applicationStatus: string;
+  studentName: string;
+  parentName: string;
+  parentPhone: string;
+  age: number | null;
+  dateJoined: string | null;
+  levelId: number | null;
+  levelName: string | null;
+  groupId: number | null;
+  groupName: string | null;
+}
+
+interface BalletStudentEnrollmentHistoryRow {
+  [key: string]: unknown;
+  assignmentId: number;
+  applicationId: number;
+  applicationStatus: string;
+  assignmentStatus: string;
+  levelId: number | null;
+  levelName: string | null;
+  groupId: number | null;
+  groupName: string | null;
+  enrolledAt: string | null;
+  updatedAt: string | null;
+}
+
+const studentIdentitySql = sql`
+  coalesce(
+    'child:' || coalesce(ballet_level_assignments.child_id, ballet_applications.child_id)::text,
+    'manual:' || coalesce(ballet_applications.parent_student_id::text, '') || ':' || lower(trim(ballet_applications.child_name)) || ':' || coalesce(ballet_applications.child_birthday, '')
+  )
+`;
+
+const currentBalletStudentsCte = sql`
+  with ranked_students as (
+    select
+      ballet_level_assignments.id as "assignmentId",
+      ballet_applications.id as "applicationId",
+      ballet_applications.status as "applicationStatus",
+      ballet_applications.child_name as "studentName",
+      ballet_applications.parent_name as "parentName",
+      ballet_applications.parent_phone as "parentPhone",
+      ballet_applications.child_age as "age",
+      ballet_level_assignments.enrolled_at as "dateJoined",
+      ballet_levels.id as "levelId",
+      ballet_levels.name as "levelName",
+      ballet_groups.id as "groupId",
+      ballet_groups.name as "groupName",
+      row_number() over (
+        partition by ${studentIdentitySql}
+        order by
+          case when ballet_level_assignments.status = 'active' then 0 else 1 end,
+          ballet_level_assignments.enrolled_at desc nulls last,
+          ballet_level_assignments.id desc
+      ) as rn
+    from ballet_level_assignments
+    inner join ballet_applications on ballet_applications.id = ballet_level_assignments.application_id
+    left join ballet_levels on ballet_levels.id = ballet_level_assignments.level_id
+    left join ballet_groups on ballet_groups.id = ballet_level_assignments.group_id
+  )
+`;
+
 router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
   const parsed = StudentsListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
@@ -1022,38 +1087,38 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
 
   const { page, limit } = parsed.data;
   const offset = (page - 1) * limit;
-  const where = eq(balletLevelAssignmentsTable.status, "active");
+  const [rowsResult, totalResult] = await Promise.all([
+    db.execute<BalletStudentListRow>(sql`
+      ${currentBalletStudentsCte}
+      select
+        "assignmentId",
+        "applicationId",
+        "applicationStatus",
+        "studentName",
+        "parentName",
+        "parentPhone",
+        "age",
+        "dateJoined",
+        "levelId",
+        "levelName",
+        "groupId",
+        "groupName"
+      from ranked_students
+      where rn = 1
+      order by "dateJoined" desc nulls last, "assignmentId" desc
+      limit ${limit}
+      offset ${offset}
+    `),
 
-  const [rows, [{ total }]] = await Promise.all([
-    db
-      .select({
-        assignmentId:  balletLevelAssignmentsTable.id,
-        applicationId: balletApplicationsTable.id,
-        applicationStatus: balletApplicationsTable.status,
-        studentName:   balletApplicationsTable.childName,
-        parentName:    balletApplicationsTable.parentName,
-        parentPhone:   balletApplicationsTable.parentPhone,
-        age:           balletApplicationsTable.childAge,
-        dateJoined:    balletLevelAssignmentsTable.enrolledAt,
-        levelId:       balletLevelsTable.id,
-        levelName:     balletLevelsTable.name,
-        groupId:       balletGroupsTable.id,
-        groupName:     balletGroupsTable.name,
-      })
-      .from(balletLevelAssignmentsTable)
-      .innerJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletLevelAssignmentsTable.applicationId))
-      .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
-      .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
-      .where(where)
-      .orderBy(desc(balletLevelAssignmentsTable.enrolledAt))
-      .limit(limit)
-      .offset(offset),
-
-    db
-      .select({ total: count(balletLevelAssignmentsTable.id) })
-      .from(balletLevelAssignmentsTable)
-      .where(where),
+    db.execute<{ total: number }>(sql`
+      ${currentBalletStudentsCte}
+      select count(*)::int as total
+      from ranked_students
+      where rn = 1
+    `),
   ]);
+  const rows = rowsResult.rows;
+  const total = Number(totalResult.rows[0]?.total ?? 0);
 
   const latestPayments = await getLatestPaymentByApplicationIds(rows.map((row) => row.applicationId));
 
@@ -1071,10 +1136,10 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
         studentStage: deriveStudentStage(row.applicationStatus, payment?.subscriptionStatus ?? null),
       };
     }),
-    total: Number(total),
+    total,
     page,
     limit,
-    totalPages: Math.ceil(Number(total) / limit),
+    totalPages: Math.ceil(total / limit),
   });
 });
 
@@ -1108,12 +1173,12 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
     .innerJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletLevelAssignmentsTable.applicationId))
     .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
     .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
-    .where(and(eq(balletLevelAssignmentsTable.id, assignmentId), eq(balletLevelAssignmentsTable.status, "active")))
+    .where(eq(balletLevelAssignmentsTable.id, assignmentId))
     .limit(1);
 
   if (!row) { res.status(404).json({ error: "Ballet student not found" }); return; }
 
-  const [latestPayments, paymentRows, groupSchedules, attendanceSummary] = await Promise.all([
+  const [latestPayments, paymentRows, groupSchedules, attendanceSummary, enrollmentHistoryResult] = await Promise.all([
     getLatestPaymentByApplicationIds([row.applicationId]),
     getPaymentCyclesForApplication(row.applicationId),
     row.groupId != null
@@ -1137,6 +1202,36 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
           .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
       : Promise.resolve([]),
     computeBalletMonthlyAttendanceSummary(row.assignmentId, row.applicationId, currentBillingMonth()),
+    db.execute<BalletStudentEnrollmentHistoryRow>(sql`
+      with selected_student as (
+        select ${studentIdentitySql} as identity_key
+        from ballet_level_assignments
+        inner join ballet_applications on ballet_applications.id = ballet_level_assignments.application_id
+        where ballet_level_assignments.id = ${assignmentId}
+        limit 1
+      )
+      select
+        ballet_level_assignments.id as "assignmentId",
+        ballet_applications.id as "applicationId",
+        ballet_applications.status as "applicationStatus",
+        ballet_level_assignments.status as "assignmentStatus",
+        ballet_levels.id as "levelId",
+        ballet_levels.name as "levelName",
+        ballet_groups.id as "groupId",
+        ballet_groups.name as "groupName",
+        ballet_level_assignments.enrolled_at as "enrolledAt",
+        ballet_level_assignments.updated_at as "updatedAt"
+      from ballet_level_assignments
+      inner join ballet_applications on ballet_applications.id = ballet_level_assignments.application_id
+      left join ballet_levels on ballet_levels.id = ballet_level_assignments.level_id
+      left join ballet_groups on ballet_groups.id = ballet_level_assignments.group_id
+      cross join selected_student
+      where ${studentIdentitySql} = selected_student.identity_key
+      order by
+        case when ballet_level_assignments.id = ${assignmentId} then 0 else 1 end,
+        ballet_level_assignments.enrolled_at desc nulls last,
+        ballet_level_assignments.id desc
+    `),
   ]);
 
   const attendance = await db
@@ -1168,6 +1263,7 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
     },
     currentPayment,
     payments: paymentRows,
+    enrollmentHistory: enrollmentHistoryResult.rows,
     groupSchedules,
     attendanceSummary,
     attendanceHistory: attendance,
