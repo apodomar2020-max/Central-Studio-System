@@ -26,11 +26,33 @@ const CHAR_MAP: Record<string, string> = { "—": "-", "–": "-", "‘": "'", "
 
 interface PdfAttendanceSummary {
   billingMonth?: unknown;
+  subscriptionDisplayStatus?: unknown;
+  subscriptionStartDate?: unknown;
+  originalExpiresAt?: unknown;
+  subscriptionExpiresAt?: unknown;
+  daysRemaining?: unknown;
+  isRenewal?: unknown;
   monthlyHours?: unknown;
   attendedHours?: unknown;
   absentHours?: unknown;
   consumedHours?: unknown;
   remainingHours?: unknown;
+}
+
+interface PdfPayment {
+  id?: unknown;
+  packageName?: unknown;
+  amountEgp?: unknown;
+  billingMonth?: unknown;
+  paymentMethod?: unknown;
+  status?: unknown;
+  subscriptionDisplayStatus?: unknown;
+  subscriptionStartDate?: unknown;
+  originalExpiresAt?: unknown;
+  subscriptionExpiresAt?: unknown;
+  daysRemaining?: unknown;
+  isRenewal?: unknown;
+  updatedAt?: unknown;
 }
 
 export interface BalletApplicationPdfInput {
@@ -40,8 +62,8 @@ export interface BalletApplicationPdfInput {
   group: Record<string, unknown> | null;
   groupSchedules: Record<string, unknown>[];
   events: Record<string, unknown>[];
-  payments: Record<string, unknown>[];
-  currentPayment: Record<string, unknown> | null;
+  payments: PdfPayment[];
+  currentPayment: PdfPayment | null;
   attendanceSummary: PdfAttendanceSummary | null;
   generatedBy: string;
   generatedAt?: Date;
@@ -137,8 +159,8 @@ export async function buildBalletApplicationPdfBuffer(input: BalletApplicationPd
   section("Child"); keyValues([["Name", asText(app.childName)], ["Date of Birth", asText(app.childBirthday)], ["Age", asText(app.childAge)], ["Gender", asText(app.childGender)], ["Linked Child Profile ID", asText(app.childId)], ["Submitted", formatDateTime(app.createdAt)]]);
   section("Application"); keyValues([["Previous Ballet Experience", boolText(app.previousExperience)], ["Assessment", slot ? `${asText(slot.date)} ${asText(slot.startTime)}-${asText(slot.endTime)}` : asText(app.slotLabel)], ["Preferred Payment Method", titleCase(app.preferredPaymentMethod)], ["Last Update", formatDateTime(app.updatedAt)]]); keyValues([["Experience Details", asText(app.experienceDetails)], ["Medical Notes", asText(app.medicalNotes)], ["Additional Notes", asText(app.notes)], ["Admin Notes", asText(app.adminNotes)]]);
   section("Assignment"); keyValues([["Assigned Level", asText(level?.name)], ["Assigned Group", asText(group?.name)], ["Assigned At", formatDateTime(app.assignedAt)], ["Instructor", groupSchedules.map((s) => asText(s.instructorName)).filter((v, i, arr) => v !== DASH && arr.indexOf(v) === i).join(", ") || DASH]]); table([{ label: "Class", width: 160 }, { label: "Schedule", width: 120 }, { label: "Instructor", width: 120 }, { label: "Status", width: 70 }], groupSchedules.map((s) => [asText(s.classTitle), `${asText(s.dayOfWeek)} ${asText(s.startTime)}-${asText(s.endTime)}`, asText(s.instructorName), titleCase(s.status)]));
-  section("Payment"); keyValues([["Package", asText(currentPayment?.packageName)], ["Amount", money(currentPayment?.amountEgp)], ["Billing Month", asText(currentPayment?.billingMonth)], ["Actual Method", titleCase(currentPayment?.paymentMethod)], ["Payment Status", titleCase(currentPayment?.status)], ["Payment Updated", formatDateTime(currentPayment?.updatedAt)]]);
-  if (payments.length > 1) table([{ label: "Payment", width: 70 }, { label: "Package", width: 120 }, { label: "Amount", width: 70 }, { label: "Month", width: 70 }, { label: "Method", width: 80 }, { label: "Status", width: 70 }, { label: "Updated", width: 100 }], payments.map((p) => [`#${asText(p.id)}`, asText(p.packageName), money(p.amountEgp), asText(p.billingMonth), titleCase(p.paymentMethod), titleCase(p.status), formatDateTime(p.updatedAt)]));
+  section("Payment"); keyValues([["Package", asText(currentPayment?.packageName)], ["Amount", money(currentPayment?.amountEgp)], ["Billing Month", asText(currentPayment?.billingMonth)], ["Actual Method", titleCase(currentPayment?.paymentMethod)], ["Payment Status", titleCase(currentPayment?.status)], ["Subscription Status", asText(currentPayment?.subscriptionDisplayStatus)], ["Subscription Start", asText(currentPayment?.subscriptionStartDate)], ["Original Expiry", asText(currentPayment?.originalExpiresAt)], ["Current Expiry", asText(currentPayment?.subscriptionExpiresAt)], ["Days Remaining", asText(currentPayment?.daysRemaining)], ["Renewal", currentPayment?.isRenewal ? "Yes" : "No"], ["Payment Updated", formatDateTime(currentPayment?.updatedAt)]]);
+  if (payments.length > 1) table([{ label: "Payment", width: 52 }, { label: "Package", width: 92 }, { label: "Amount", width: 55 }, { label: "Month", width: 55 }, { label: "Status", width: 58 }, { label: "Sub.", width: 78 }, { label: "Period", width: 110 }, { label: "Updated", width: 82 }], payments.map((p) => [`#${asText(p.id)}`, asText(p.packageName), money(p.amountEgp), asText(p.billingMonth), titleCase(p.status), asText(p.subscriptionDisplayStatus), `${asText(p.subscriptionStartDate)} to ${asText(p.subscriptionExpiresAt)}`, formatDateTime(p.updatedAt)]));
   if (attendanceSummary) { section("Attendance Summary"); keyValues([["Billing Month", asText(attendanceSummary.billingMonth)], ["Monthly Hours", asText(attendanceSummary.monthlyHours)], ["Attended Hours", asText(attendanceSummary.attendedHours)], ["Absent Hours", asText(attendanceSummary.absentHours)], ["Consumed Hours", asText(attendanceSummary.consumedHours)], ["Remaining Hours", asText(attendanceSummary.remainingHours)]]); }
   section("History"); table([{ label: "From", width: 70 }, { label: "To", width: 80 }, { label: "Note", width: 220 }, { label: "Actor", width: 90 }, { label: "Date", width: 100 }], events.map((ev) => [titleCase(ev.fromStatus), titleCase(ev.toStatus), asText(ev.note), asText(ev.changedByFullName ?? ev.changedByUsername), formatDateTime(ev.createdAt)]));
 

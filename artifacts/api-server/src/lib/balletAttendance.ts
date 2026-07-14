@@ -29,13 +29,13 @@
  * never fall back to another month's package.
  */
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   db,
   attendanceTable,
-  balletPaymentsTable,
   balletPackagesTable,
 } from "@workspace/db";
+import { getCurrentSubscriptionForApplication } from "./balletSubscriptions";
 
 export interface BalletMonthlyAttendanceSummary {
   billingMonth: string;
@@ -45,6 +45,11 @@ export interface BalletMonthlyAttendanceSummary {
   consumedHours: number;
   monthlyHours: number | null;
   remainingHours: number | null;
+  subscriptionId: number | null;
+  subscriptionStatus: string;
+  subscriptionStartDate: string | null;
+  subscriptionExpiresAt: string | null;
+  daysRemaining: number | null;
 }
 
 /** Current calendar month as "YYYY-MM" (UTC, to avoid server-TZ drift). */
@@ -57,6 +62,24 @@ export function currentBillingMonth(now: Date = new Date()): string {
 /** True when `value` is a well-formed "YYYY-MM" calendar month. */
 export function isValidBillingMonth(value: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+}
+
+function monthRange(month: string): { start: string; end: string } {
+  const [yearText, monthText] = month.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  const start = new Date(Date.UTC(year, monthIndex, 1));
+  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
+}
+
+function subscriptionOverlapsMonth(startDate: string | null, expiresAt: string | null, month: string): boolean {
+  if (!startDate || !expiresAt) return false;
+  const range = monthRange(month);
+  return startDate <= range.end && expiresAt >= range.start;
 }
 
 /**
@@ -98,20 +121,16 @@ export async function computeBalletMonthlyAttendanceSummary(
   const absentHours = absentMins / 60;
   const consumedHours = attendedHours + absentHours;
 
-  // ── Monthly entitlement: the package on the paid payment for month M ──────
-  const [paid] = await db
-    .select({ monthlyHours: balletPackagesTable.monthlyHours })
-    .from(balletPaymentsTable)
-    .innerJoin(balletPackagesTable, eq(balletPackagesTable.id, balletPaymentsTable.packageId))
-    .where(and(
-      eq(balletPaymentsTable.applicationId, applicationId),
-      eq(balletPaymentsTable.status, "paid"),
-      eq(balletPaymentsTable.billingMonth, month),
-    ))
-    .orderBy(desc(balletPaymentsTable.updatedAt))
-    .limit(1);
+  // ── Monthly entitlement: the current valid subscription cycle ─────────────
+  // The legacy billingMonth is still returned for reporting, but access is now
+  // derived from the paid payment cycle's date-only start/expires fields. A
+  // renewal starts a fresh entitlement; unused hours never roll forward.
+  const paid = await getCurrentSubscriptionForApplication(applicationId);
 
-  if (!paid) {
+  const subscriptionCoversMonth = paid?.status === "paid"
+    && subscriptionOverlapsMonth(paid.subscriptionStartDate, paid.subscriptionExpiresAt, month);
+
+  if (!paid || !subscriptionCoversMonth || paid.packageId == null || paid.packageName == null) {
     // Distinct "no active monthly subscription for this month" result.
     return {
       billingMonth: month,
@@ -121,10 +140,37 @@ export async function computeBalletMonthlyAttendanceSummary(
       consumedHours,
       monthlyHours: null,
       remainingHours: null,
+      subscriptionId: paid?.id ?? null,
+      subscriptionStatus: paid?.subscriptionStatus ?? "pending",
+      subscriptionStartDate: paid?.subscriptionStartDate ?? null,
+      subscriptionExpiresAt: paid?.subscriptionExpiresAt ?? null,
+      daysRemaining: paid?.daysRemaining ?? null,
     };
   }
 
-  const monthlyHours = paid.monthlyHours;
+  const [packageRow] = await db
+    .select({ monthlyHours: balletPackagesTable.monthlyHours })
+    .from(balletPackagesTable)
+    .where(eq(balletPackagesTable.id, paid.packageId))
+    .limit(1);
+  if (!packageRow) {
+    return {
+      billingMonth: month,
+      hasActiveSubscription: false,
+      attendedHours,
+      absentHours,
+      consumedHours,
+      monthlyHours: null,
+      remainingHours: null,
+      subscriptionId: paid.id,
+      subscriptionStatus: paid.subscriptionStatus,
+      subscriptionStartDate: paid.subscriptionStartDate,
+      subscriptionExpiresAt: paid.subscriptionExpiresAt,
+      daysRemaining: paid.daysRemaining,
+    };
+  }
+
+  const monthlyHours = packageRow.monthlyHours;
   return {
     billingMonth: month,
     hasActiveSubscription: true,
@@ -133,5 +179,10 @@ export async function computeBalletMonthlyAttendanceSummary(
     consumedHours,
     monthlyHours,
     remainingHours: Math.max(monthlyHours - consumedHours, 0),
+    subscriptionId: paid.id,
+    subscriptionStatus: paid.subscriptionStatus,
+    subscriptionStartDate: paid.subscriptionStartDate,
+    subscriptionExpiresAt: paid.subscriptionExpiresAt,
+    daysRemaining: paid.daysRemaining,
   };
 }

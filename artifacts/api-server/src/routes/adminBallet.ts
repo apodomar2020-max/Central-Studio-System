@@ -41,6 +41,12 @@ import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth, isValidBillingMonth } from "../lib/balletAttendance";
 import { buildBalletApplicationPdfBuffer, balletApplicationPdfFilename } from "./balletApplicationPdf";
+import {
+  currentSubscription,
+  getCurrentSubscriptionForApplication,
+  getPaymentCyclesForApplication,
+  getPaymentCyclesForApplications,
+} from "../lib/balletSubscriptions";
 
 const router: IRouter = Router();
 const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive"] as const;
@@ -173,6 +179,7 @@ const ListQuerySchema = z.object({
   status:  z.string().optional(),
   search:  z.string().optional(),
   levelId: z.coerce.number().int().positive().optional(),
+  subscription: z.enum(["pending", "active", "expiringSoon", "expired", "renewed"]).optional(),
 });
 
 router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
@@ -182,7 +189,7 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
     return;
   }
 
-  const { page, limit, status, search, levelId } = parsed.data;
+  const { page, limit, status, search, levelId, subscription } = parsed.data;
   const offset = (page - 1) * limit;
 
   // Build WHERE conditions
@@ -223,6 +230,28 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
       );
     }
     conditions.push(or(...searchClauses));
+  }
+
+  if (subscription) {
+    const paymentRows = await getPaymentCyclesForApplications(
+      (await db.select({ id: balletApplicationsTable.id }).from(balletApplicationsTable)).map((row) => row.id),
+    );
+    const matchingApplicationIds: number[] = [];
+    for (const [applicationId, payments] of paymentRows.entries()) {
+      const current = currentSubscription(payments);
+      const matches =
+        subscription === "pending" ? !current || current.subscriptionStatus === "pending"
+        : subscription === "active" ? current?.subscriptionStatus === "active"
+        : subscription === "renewed" ? current?.subscriptionStatus === "renewed"
+        : subscription === "expired" ? current?.subscriptionStatus === "expired"
+        : Boolean(current?.hasActiveSubscription && current.daysRemaining != null && current.daysRemaining <= 7);
+      if (matches) matchingApplicationIds.push(applicationId);
+    }
+    if (subscription === "pending") {
+      const allIds = (await db.select({ id: balletApplicationsTable.id }).from(balletApplicationsTable)).map((row) => row.id);
+      for (const id of allIds) if (!paymentRows.has(id)) matchingApplicationIds.push(id);
+    }
+    conditions.push(matchingApplicationIds.length > 0 ? inArray(balletApplicationsTable.id, [...new Set(matchingApplicationIds)]) : sql`false`);
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -273,16 +302,14 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
   // the last write into the Map per applicationId wins (= most recent).
   const applicationIds = rows.map((r) => r.id);
   const paymentStatusByApplicationId = new Map<number, string>();
+  const subscriptionByApplicationId = new Map<number, ReturnType<typeof currentSubscription>>();
   if (applicationIds.length > 0) {
-    const payments = await db
-      .select({
-        applicationId: balletPaymentsTable.applicationId,
-        status:        balletPaymentsTable.status,
-      })
-      .from(balletPaymentsTable)
-      .where(inArray(balletPaymentsTable.applicationId, applicationIds))
-      .orderBy(asc(balletPaymentsTable.updatedAt));
-    for (const p of payments) paymentStatusByApplicationId.set(p.applicationId, p.status);
+    const paymentCycles = await getPaymentCyclesForApplications(applicationIds);
+    for (const [applicationId, payments] of paymentCycles.entries()) {
+      const current = currentSubscription(payments);
+      subscriptionByApplicationId.set(applicationId, current);
+      if (current) paymentStatusByApplicationId.set(applicationId, current.status);
+    }
   }
 
   res.json({
@@ -290,6 +317,7 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
       ...row,
       levelName: row.assignedLevelId != null ? levelNameById.get(row.assignedLevelId) ?? null : null,
       paymentStatus: paymentStatusByApplicationId.get(row.id) ?? null,
+      subscription: subscriptionByApplicationId.get(row.id) ?? null,
     })),
     total: Number(total),
     page,
@@ -392,25 +420,8 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
   // Payments (A1) — return the full history (newest first, don't collapse it)
   // plus a clear pointer to the most recently updated "current" one for the
   // list-parity header display.
-  const paymentRows = await db
-    .select()
-    .from(balletPaymentsTable)
-    .where(eq(balletPaymentsTable.applicationId, id))
-    .orderBy(desc(balletPaymentsTable.updatedAt));
-
-  const packageIds = [...new Set(paymentRows.map((p) => p.packageId).filter((packageId): packageId is number => packageId != null))];
-  const packageNameById = new Map<number, string>();
-  if (packageIds.length > 0) {
-    const packages = await db
-      .select({ id: balletPackagesTable.id, name: balletPackagesTable.name })
-      .from(balletPackagesTable)
-      .where(inArray(balletPackagesTable.id, packageIds));
-    for (const pkg of packages) packageNameById.set(pkg.id, pkg.name);
-  }
-  const payments = paymentRows.map((payment) => ({
-    ...payment,
-    packageName: payment.packageId != null ? packageNameById.get(payment.packageId) ?? null : null,
-  }));
+  const payments = await getPaymentCyclesForApplication(id);
+  const currentPayment = currentSubscription(payments);
 
   // Attendance-hours summary (C4) for the requested (default current) calendar
   // month. Only meaningful once there's an active level assignment; null
@@ -434,7 +445,8 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     groupSchedules,
     events,
     payments,
-    currentPayment: payments[0] ?? null,
+    currentPayment,
+    currentSubscription: currentPayment,
     attendanceSummary,
   });
 });
@@ -499,14 +511,8 @@ router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requir
         .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
     : [];
 
-  const paymentRows = await db.select().from(balletPaymentsTable).where(eq(balletPaymentsTable.applicationId, id)).orderBy(desc(balletPaymentsTable.updatedAt));
-  const packageIds = [...new Set(paymentRows.map((p) => p.packageId).filter((packageId): packageId is number => packageId != null))];
-  const packageNameById = new Map<number, string>();
-  if (packageIds.length > 0) {
-    const packages = await db.select({ id: balletPackagesTable.id, name: balletPackagesTable.name }).from(balletPackagesTable).where(inArray(balletPackagesTable.id, packageIds));
-    for (const pkg of packages) packageNameById.set(pkg.id, pkg.name);
-  }
-  const payments = paymentRows.map((payment) => ({ ...payment, packageName: payment.packageId != null ? packageNameById.get(payment.packageId) ?? null : null }));
+  const payments = await getPaymentCyclesForApplication(id);
+  const currentPayment = currentSubscription(payments);
   const attendanceSummary = activeAssignment ? await computeBalletMonthlyAttendanceSummary(activeAssignment.id, id, currentBillingMonth()) : null;
 
   const buf = await buildBalletApplicationPdfBuffer({
@@ -517,7 +523,7 @@ router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requir
     groupSchedules,
     events,
     payments,
-    currentPayment: payments[0] ?? null,
+    currentPayment,
     attendanceSummary,
     generatedBy: req.adminUser?.username ?? "Admin",
   });
@@ -608,19 +614,9 @@ router.patch(
         return;
       }
 
-      // Match on applicationId only — levelAssignmentId is optional/nullable
-      // on ballet_payments, so not every paid row is guaranteed to carry it.
-      // A payment row's status is either "paid" or "refunded", never both, so
-      // this alone correctly handles the multi-payment case: one refunded
-      // row never blocks activation if a separate row is genuinely "paid".
-      const [paidPayment] = await db
-        .select({ id: balletPaymentsTable.id })
-        .from(balletPaymentsTable)
-        .where(and(eq(balletPaymentsTable.applicationId, id), eq(balletPaymentsTable.status, "paid")))
-        .limit(1);
-
-      if (!paidPayment) {
-        res.status(422).json({ error: "Cannot activate: no paid payment on file for this application." });
+      const activeSubscription = await getCurrentSubscriptionForApplication(id);
+      if (!activeSubscription?.hasActiveSubscription) {
+        res.status(422).json({ error: "Cannot activate: no active paid Ballet subscription period on file for this application." });
         return;
       }
     }
@@ -1003,36 +999,17 @@ const StudentsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-function deriveStudentStage(applicationStatus: string, paymentStatus: string | null): "Pending Payment" | "Active" {
-  return applicationStatus === "active" && paymentStatus === "paid" ? "Active" : "Pending Payment";
+function deriveStudentStage(applicationStatus: string, subscriptionStatus: string | null): "Pending Payment" | "Active" | "Renewed" | "Expired" {
+  if (subscriptionStatus === "expired") return "Expired";
+  if (subscriptionStatus === "renewed") return "Renewed";
+  if (applicationStatus === "active" && subscriptionStatus === "active") return "Active";
+  return "Pending Payment";
 }
 
 async function getLatestPaymentByApplicationIds(applicationIds: number[]) {
-  const latestPaymentByApplicationId = new Map<number, {
-    id: number; applicationId: number; packageId: number | null; packageName: string | null; amountEgp: number; status: string; paymentMethod: string | null; billingMonth: string | null; paidAt: string | null; refundedAt: string | null; notes: string | null; createdAt: string; updatedAt: string;
-  }>();
-  if (applicationIds.length === 0) return latestPaymentByApplicationId;
-  const rows = await db
-    .select({
-      id: balletPaymentsTable.id,
-      applicationId: balletPaymentsTable.applicationId,
-      packageId: balletPaymentsTable.packageId,
-      packageName: balletPackagesTable.name,
-      amountEgp: balletPaymentsTable.amountEgp,
-      status: balletPaymentsTable.status,
-      paymentMethod: balletPaymentsTable.paymentMethod,
-      billingMonth: balletPaymentsTable.billingMonth,
-      paidAt: balletPaymentsTable.paidAt,
-      refundedAt: balletPaymentsTable.refundedAt,
-      notes: balletPaymentsTable.notes,
-      createdAt: balletPaymentsTable.createdAt,
-      updatedAt: balletPaymentsTable.updatedAt,
-    })
-    .from(balletPaymentsTable)
-    .leftJoin(balletPackagesTable, eq(balletPackagesTable.id, balletPaymentsTable.packageId))
-    .where(inArray(balletPaymentsTable.applicationId, applicationIds))
-    .orderBy(asc(balletPaymentsTable.updatedAt));
-  for (const row of rows) latestPaymentByApplicationId.set(row.applicationId, row);
+  const latestPaymentByApplicationId = new Map<number, ReturnType<typeof currentSubscription>>();
+  const payments = await getPaymentCyclesForApplications(applicationIds);
+  for (const [applicationId, rows] of payments.entries()) latestPaymentByApplicationId.set(applicationId, currentSubscription(rows));
   return latestPaymentByApplicationId;
 }
 
@@ -1086,7 +1063,12 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
       return {
         ...row,
         paymentStatus: payment?.status ?? null,
-        studentStage: deriveStudentStage(row.applicationStatus, payment?.status ?? null),
+        subscriptionStatus: payment?.subscriptionStatus ?? "pending",
+        subscriptionDisplayStatus: payment?.subscriptionDisplayStatus ?? "Pending Payment",
+        subscriptionStartDate: payment?.subscriptionStartDate ?? null,
+        subscriptionExpiresAt: payment?.subscriptionExpiresAt ?? null,
+        daysRemaining: payment?.daysRemaining ?? null,
+        studentStage: deriveStudentStage(row.applicationStatus, payment?.subscriptionStatus ?? null),
       };
     }),
     total: Number(total),
@@ -1133,26 +1115,7 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
 
   const [latestPayments, paymentRows, groupSchedules, attendanceSummary] = await Promise.all([
     getLatestPaymentByApplicationIds([row.applicationId]),
-    db
-      .select({
-        id: balletPaymentsTable.id,
-        applicationId: balletPaymentsTable.applicationId,
-        packageId: balletPaymentsTable.packageId,
-        packageName: balletPackagesTable.name,
-        amountEgp: balletPaymentsTable.amountEgp,
-        status: balletPaymentsTable.status,
-        paymentMethod: balletPaymentsTable.paymentMethod,
-        billingMonth: balletPaymentsTable.billingMonth,
-        paidAt: balletPaymentsTable.paidAt,
-        refundedAt: balletPaymentsTable.refundedAt,
-        notes: balletPaymentsTable.notes,
-        createdAt: balletPaymentsTable.createdAt,
-        updatedAt: balletPaymentsTable.updatedAt,
-      })
-      .from(balletPaymentsTable)
-      .leftJoin(balletPackagesTable, eq(balletPackagesTable.id, balletPaymentsTable.packageId))
-      .where(eq(balletPaymentsTable.applicationId, row.applicationId))
-      .orderBy(desc(balletPaymentsTable.updatedAt)),
+    getPaymentCyclesForApplication(row.applicationId),
     row.groupId != null
       ? db
           .select({
@@ -1195,8 +1158,13 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
   res.json({
     student: {
       ...row,
-      paymentStatus: currentPayment?.status ?? null,
-      studentStage: deriveStudentStage(row.applicationStatus, currentPayment?.status ?? null),
+        paymentStatus: currentPayment?.status ?? null,
+        subscriptionStatus: currentPayment?.subscriptionStatus ?? "pending",
+        subscriptionDisplayStatus: currentPayment?.subscriptionDisplayStatus ?? "Pending Payment",
+        subscriptionStartDate: currentPayment?.subscriptionStartDate ?? null,
+        subscriptionExpiresAt: currentPayment?.subscriptionExpiresAt ?? null,
+        daysRemaining: currentPayment?.daysRemaining ?? null,
+        studentStage: deriveStudentStage(row.applicationStatus, currentPayment?.subscriptionStatus ?? null),
     },
     currentPayment,
     payments: paymentRows,
