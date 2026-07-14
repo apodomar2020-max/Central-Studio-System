@@ -17,6 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, CreditCard } from "lucide-react";
@@ -361,6 +364,7 @@ export default function ApplicationDetailPage() {
   const [extensionNote, setExtensionNote] = useState("");
   const [confirmExpiredExtension, setConfirmExpiredExtension] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [subscriptionDialog, setSubscriptionDialog] = useState<"create" | "status" | "renew" | "extend" | null>(null);
 
   // D1: inline correction state for an existing attendance history row.
   const [editingAttendanceId, setEditingAttendanceId] = useState<number | null>(null);
@@ -531,6 +535,7 @@ export default function ApplicationDetailPage() {
       setPaymentInitialStatus("pending");
       setPaymentStartDate(new Date().toISOString().slice(0, 10));
       setPaymentExpiresAt(addDays(new Date().toISOString().slice(0, 10), 30));
+      setSubscriptionDialog(null);
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
@@ -558,6 +563,7 @@ export default function ApplicationDetailPage() {
     onSuccess: () => {
       toast({ title: "Payment status updated" });
       setPaymentStatus("");
+      setSubscriptionDialog(null);
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
@@ -592,6 +598,7 @@ export default function ApplicationDetailPage() {
       setRenewPackageId("");
       setRenewAmount("");
       setRenewStatus("pending");
+      setSubscriptionDialog(null);
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
@@ -623,6 +630,7 @@ export default function ApplicationDetailPage() {
       setExtensionDate("");
       setExtensionNote("");
       setConfirmExpiredExtension(false);
+      setSubscriptionDialog(null);
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
@@ -989,199 +997,158 @@ export default function ApplicationDetailPage() {
 
           <div className="rounded-lg border bg-card p-5 space-y-4">
             <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              <CreditCard className="mr-1 inline h-3.5 w-3.5" /> Payment
+              <CreditCard className="mr-1 inline h-3.5 w-3.5" /> Current Subscription
             </h3>
-            {!currentPayment ? (
-              <>
+            <Field label="Package" value={currentSubscription?.packageName ?? (currentSubscription?.packageId ? `Package #${currentSubscription.packageId}` : null)} />
+            <Field label="Amount" value={currentSubscription ? `${currentSubscription.amountEgp} EGP` : null} />
+            <Field label="Preferred method" value={formatPaymentMethod(app.preferredPaymentMethod)} />
+            <Field label="Actual method" value={formatPaymentMethod(currentSubscription?.paymentMethod)} />
+            <Field label="Payment status" value={<PaymentStatusBadge status={currentSubscription?.status ?? currentPayment?.status} />} />
+            <Field label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} />
+            <Field label="Start date" value={currentSubscription?.subscriptionStartDate} />
+            <Field label="Original expiry" value={currentSubscription?.originalExpiresAt} />
+            <Field label="Current expiry" value={currentSubscription?.subscriptionExpiresAt} />
+            <Field label="Days remaining" value={currentSubscription?.daysRemaining != null ? `${currentSubscription.daysRemaining}` : null} />
+            <Field label="Billing month" value={currentSubscription?.billingMonth} />
+            <Field label="Last update" value={currentSubscription?.updatedAt ? new Date(currentSubscription.updatedAt).toLocaleString() : null} />
+
+            {currentSubscription?.subscriptionStatus === "expired" && (
+              <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                Subscription renewal is required. Expired on {currentSubscription.subscriptionExpiresAt}.
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              {!currentPayment ? (
+                <Button size="sm" onClick={() => setSubscriptionDialog("create")} style={{ background: "#00B6D6", color: "#000" }}>Create Subscription</Button>
+              ) : (
+                <>
+                  {currentPayment.status !== "paid" && <Button size="sm" onClick={() => setSubscriptionDialog("status")} style={{ background: "#00B6D6", color: "#000" }}>Confirm Payment</Button>}
+                  {currentSubscription?.subscriptionExpiresAt && currentSubscription.subscriptionStatus !== "expired" && <Button size="sm" variant="outline" onClick={() => setSubscriptionDialog("extend")}>Extend Subscription</Button>}
+                  {currentSubscription && <Button size="sm" variant="outline" onClick={() => {
+                    setRenewPackageId(String(currentSubscription.packageId ?? ""));
+                    setRenewAmount(String(currentSubscription.amountEgp));
+                    setRenewMethod(currentSubscription.paymentMethod ?? app.preferredPaymentMethod ?? "");
+                    setSubscriptionDialog("renew");
+                  }}>Renew Subscription</Button>}
+                </>
+              )}
+            </div>
+          </div>
+
+          <Dialog open={subscriptionDialog === "create"} onOpenChange={(open) => setSubscriptionDialog(open ? "create" : null)}>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle>Create Subscription</DialogTitle></DialogHeader>
+              <div className="space-y-3">
                 <Select value={paymentPackageId} onValueChange={(value) => {
                   setPaymentPackageId(value);
                   const selected = packages.find((pkg) => String(pkg.id) === value);
                   if (selected) setPaymentAmount(String(selected.priceEgp));
                 }}>
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder="Select package…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {packages.map((pkg) => (
-                      <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select package…" /></SelectTrigger>
+                  <SelectContent>{packages.map((pkg) => <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>)}</SelectContent>
                 </Select>
-                <input
-                  type="month"
-                  className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                  value={paymentBillingMonth}
-                  onChange={(e) => setPaymentBillingMonth(e.target.value)}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                  placeholder="Amount EGP"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                />
+                <input type="month" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentBillingMonth} onChange={(e) => setPaymentBillingMonth(e.target.value)} />
+                <input type="number" min={1} className="w-full h-8 rounded-md border bg-background px-2 text-sm" placeholder="Amount EGP" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
                 <Select value={paymentMethod || app.preferredPaymentMethod || ""} onValueChange={setPaymentMethod}>
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder="Payment method…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAYMENT_METHODS.map((method) => (
-                      <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Payment method…" /></SelectTrigger>
+                  <SelectContent>{PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
                 </Select>
                 <Select value={paymentInitialStatus} onValueChange={setPaymentInitialStatus}>
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAYMENT_STATUSES.map((status) => (
-                      <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>{PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
                 </Select>
-                {paymentInitialStatus === "paid" && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="date"
-                      className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                      value={paymentStartDate}
-                      onChange={(e) => {
-                        setPaymentStartDate(e.target.value);
-                        setPaymentExpiresAt(addDays(e.target.value, 30));
-                      }}
-                    />
-                    <input
-                      type="date"
-                      className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                      value={paymentExpiresAt}
-                      onChange={(e) => setPaymentExpiresAt(e.target.value)}
-                    />
-                  </div>
-                )}
-                <Button
-                  size="sm"
-                  disabled={!paymentPackageId || !paymentBillingMonth || !paymentAmount || !(paymentMethod || app.preferredPaymentMethod) || createPaymentMutation.isPending}
-                  onClick={() => createPaymentMutation.mutate()}
-                  style={{ background: "#00B6D6", color: "#000" }}
-                  className="w-full"
-                >
-                  {createPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating…</> : "Create Payment"}
+                {paymentInitialStatus === "paid" && <div className="grid grid-cols-2 gap-2">
+                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentStartDate} onChange={(e) => { setPaymentStartDate(e.target.value); setPaymentExpiresAt(addDays(e.target.value, 30)); }} />
+                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentExpiresAt} onChange={(e) => setPaymentExpiresAt(e.target.value)} />
+                </div>}
+                <Button size="sm" disabled={!paymentPackageId || !paymentBillingMonth || !paymentAmount || !(paymentMethod || app.preferredPaymentMethod) || createPaymentMutation.isPending} onClick={() => createPaymentMutation.mutate()} style={{ background: "#00B6D6", color: "#000" }} className="w-full">
+                  {createPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating…</> : "Create Subscription"}
                 </Button>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  <PaymentStatusBadge status={currentPayment.status} />
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">new status</span>
-                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {currentPayment && <Dialog open={subscriptionDialog === "status"} onOpenChange={(open) => setSubscriptionDialog(open ? "status" : null)}>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle>Confirm Payment</DialogTitle></DialogHeader>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2"><PaymentStatusBadge status={currentPayment.status} /><ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs text-muted-foreground">new status</span></div>
                 <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder="Select payment status…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAYMENT_STATUSES.filter((s) => s.value !== currentPayment.status).map((status) => (
-                      <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select payment status…" /></SelectTrigger>
+                  <SelectContent>{PAYMENT_STATUSES.filter((s) => s.value !== currentPayment.status).map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
                 </Select>
-                {paymentStatus === "paid" && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="date"
-                      className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                      value={paymentStartDate}
-                      onChange={(e) => {
-                        setPaymentStartDate(e.target.value);
-                        setPaymentExpiresAt(addDays(e.target.value, 30));
-                      }}
-                    />
-                    <input
-                      type="date"
-                      className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                      value={paymentExpiresAt}
-                      onChange={(e) => setPaymentExpiresAt(e.target.value)}
-                    />
-                  </div>
-                )}
-                <Button
-                  size="sm"
-                  disabled={!paymentStatus || updatePaymentStatusMutation.isPending}
-                  onClick={() => updatePaymentStatusMutation.mutate(currentPayment)}
-                  style={{ background: "#00B6D6", color: "#000" }}
-                  className="w-full"
-                >
+                {paymentStatus === "paid" && <div className="grid grid-cols-2 gap-2">
+                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentStartDate} onChange={(e) => { setPaymentStartDate(e.target.value); setPaymentExpiresAt(addDays(e.target.value, 30)); }} />
+                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentExpiresAt} onChange={(e) => setPaymentExpiresAt(e.target.value)} />
+                </div>}
+                <Button size="sm" disabled={!paymentStatus || updatePaymentStatusMutation.isPending} onClick={() => updatePaymentStatusMutation.mutate(currentPayment)} style={{ background: "#00B6D6", color: "#000" }} className="w-full">
                   {updatePaymentStatusMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</> : "Update Payment Status"}
                 </Button>
-                {currentSubscription && (
-                  <div className="border-t pt-4 space-y-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Renew Subscription</h4>
-                    <Select value={renewPackageId} onValueChange={(value) => {
-                      setRenewPackageId(value);
-                      const selected = packages.find((pkg) => String(pkg.id) === value);
-                      if (selected) setRenewAmount(String(selected.priceEgp));
-                    }}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Package…" /></SelectTrigger>
-                      <SelectContent>{packages.map((pkg) => <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>)}</SelectContent>
-                    </Select>
-                    <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="number" min={1} placeholder="Amount EGP" value={renewAmount} onChange={(e) => setRenewAmount(e.target.value)} />
-                    <Select value={renewMethod || currentSubscription.paymentMethod || app.preferredPaymentMethod || ""} onValueChange={setRenewMethod}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Method…" /></SelectTrigger>
-                      <SelectContent>{PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Select value={renewStatus} onValueChange={setRenewStatus}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>{PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewStartDate} onChange={(e) => { setRenewStartDate(e.target.value); setRenewExpiresAt(addDays(e.target.value, 30)); }} />
-                      <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewExpiresAt} onChange={(e) => setRenewExpiresAt(e.target.value)} />
-                    </div>
-                    <Button size="sm" variant="outline" className="w-full" disabled={!renewPackageId || !renewAmount || !(renewMethod || currentSubscription.paymentMethod || app.preferredPaymentMethod) || renewSubscriptionMutation.isPending} onClick={() => renewSubscriptionMutation.mutate(currentSubscription)}>
-                      {renewSubscriptionMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Renewing…</> : "Renew Subscription"}
-                    </Button>
-                  </div>
-                )}
-                {currentSubscription?.subscriptionExpiresAt && (
-                  <div className="border-t pt-4 space-y-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Extend Subscription</h4>
-                    <Field label="Current expiry" value={currentSubscription.subscriptionExpiresAt} />
-                    <Select value={extendMode} onValueChange={(value) => setExtendMode(value as "date" | "days")}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="days">Additional days</SelectItem><SelectItem value="date">New date</SelectItem></SelectContent>
-                    </Select>
-                    {extendMode === "days" ? (
-                      <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="number" min={1} placeholder="Additional days" value={extensionDays} onChange={(e) => setExtensionDays(e.target.value)} />
-                    ) : (
-                      <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="date" value={extensionDate} onChange={(e) => setExtensionDate(e.target.value)} />
-                    )}
-                    <Select value={extensionReason} onValueChange={setExtensionReason}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="studio_holiday">Studio holiday</SelectItem>
-                        <SelectItem value="emergency_closure">Emergency closure</SelectItem>
-                        <SelectItem value="class_suspension">Class suspension</SelectItem>
-                        <SelectItem value="instructor_unavailability">Instructor unavailability</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Textarea className="text-sm min-h-[58px] resize-none" placeholder="Internal note (optional)" value={extensionNote} onChange={(e) => setExtensionNote(e.target.value)} />
-                    {currentSubscription.subscriptionStatus === "expired" && (
-                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input type="checkbox" checked={confirmExpiredExtension} onChange={(e) => setConfirmExpiredExtension(e.target.checked)} />
-                        Confirm extending an expired subscription
-                      </label>
-                    )}
-                    <Button size="sm" variant="outline" className="w-full" disabled={(extendMode === "days" ? !extensionDays : !extensionDate) || extendSubscriptionMutation.isPending} onClick={() => extendSubscriptionMutation.mutate(currentSubscription)}>
-                      {extendSubscriptionMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Extending…</> : "Extend Subscription"}
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+              </div>
+            </DialogContent>
+          </Dialog>}
+
+          {currentSubscription && <Dialog open={subscriptionDialog === "renew"} onOpenChange={(open) => setSubscriptionDialog(open ? "renew" : null)}>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle>Renew Subscription</DialogTitle></DialogHeader>
+              <div className="space-y-3">
+                <Select value={renewPackageId} onValueChange={(value) => {
+                  setRenewPackageId(value);
+                  const selected = packages.find((pkg) => String(pkg.id) === value);
+                  if (selected) setRenewAmount(String(selected.priceEgp));
+                }}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Package…" /></SelectTrigger>
+                  <SelectContent>{packages.map((pkg) => <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>)}</SelectContent>
+                </Select>
+                <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="number" min={1} placeholder="Amount EGP" value={renewAmount} onChange={(e) => setRenewAmount(e.target.value)} />
+                <Select value={renewMethod || currentSubscription.paymentMethod || app.preferredPaymentMethod || ""} onValueChange={setRenewMethod}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Method…" /></SelectTrigger>
+                  <SelectContent>{PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
+                </Select>
+                <Select value={renewStatus} onValueChange={setRenewStatus}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>{PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
+                </Select>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewStartDate} onChange={(e) => { setRenewStartDate(e.target.value); setRenewExpiresAt(addDays(e.target.value, 30)); }} />
+                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewExpiresAt} onChange={(e) => setRenewExpiresAt(e.target.value)} />
+                </div>
+                <Button size="sm" variant="outline" className="w-full" disabled={!renewPackageId || !renewAmount || !(renewMethod || currentSubscription.paymentMethod || app.preferredPaymentMethod) || renewSubscriptionMutation.isPending} onClick={() => renewSubscriptionMutation.mutate(currentSubscription)}>
+                  {renewSubscriptionMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Renewing…</> : "Renew Subscription"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>}
+
+          {currentSubscription?.subscriptionExpiresAt && <Dialog open={subscriptionDialog === "extend"} onOpenChange={(open) => setSubscriptionDialog(open ? "extend" : null)}>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle>Extend Subscription</DialogTitle></DialogHeader>
+              <div className="space-y-3">
+                <Field label="Current expiry" value={currentSubscription.subscriptionExpiresAt} />
+                <Select value={extendMode} onValueChange={(value) => setExtendMode(value as "date" | "days")}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="days">Additional days</SelectItem><SelectItem value="date">New date</SelectItem></SelectContent>
+                </Select>
+                {extendMode === "days" ? <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="number" min={1} placeholder="Additional days" value={extensionDays} onChange={(e) => setExtensionDays(e.target.value)} /> : <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="date" value={extensionDate} onChange={(e) => setExtensionDate(e.target.value)} />}
+                <Select value={extensionReason} onValueChange={setExtensionReason}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="studio_holiday">Studio holiday</SelectItem>
+                    <SelectItem value="emergency_closure">Emergency closure</SelectItem>
+                    <SelectItem value="class_suspension">Class suspension</SelectItem>
+                    <SelectItem value="instructor_unavailability">Instructor unavailability</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Textarea className="text-sm min-h-[58px] resize-none" placeholder="Internal note (optional)" value={extensionNote} onChange={(e) => setExtensionNote(e.target.value)} />
+                {currentSubscription.subscriptionStatus === "expired" && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={confirmExpiredExtension} onChange={(e) => setConfirmExpiredExtension(e.target.checked)} />Confirm extending an expired subscription</label>}
+                <Button size="sm" variant="outline" className="w-full" disabled={(extendMode === "days" ? !extensionDays : !extensionDate) || extendSubscriptionMutation.isPending} onClick={() => extendSubscriptionMutation.mutate(currentSubscription)}>
+                  {extendSubscriptionMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Extending…</> : "Extend Subscription"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>}
 
           {/* Status change */}
           {permittedStatuses.length > 0 && <div className="rounded-lg border bg-card p-5 space-y-4">
