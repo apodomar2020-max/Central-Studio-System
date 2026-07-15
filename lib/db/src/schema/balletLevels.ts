@@ -15,6 +15,7 @@ export const balletLevelsTable = pgTable("ballet_levels", {
   isActive:     boolean("is_active").notNull().default(true),
   description:  text("description"),
   requirements: text("requirements"),
+  imageUrl:     text("image_url"),
   // Applicable age range for the level, within the ballet program's 4–14 span.
   ageMin:       integer("age_min"),
   ageMax:       integer("age_max"),
@@ -27,6 +28,7 @@ export const insertBalletLevelSchema = z.object({
   isActive:     z.boolean().optional(),
   description:  z.string().optional(),
   requirements: z.string().optional(),
+  imageUrl:     z.string().url().nullable().optional(),
   ageMin:       z.number().int().min(4).max(14).optional(),
   ageMax:       z.number().int().min(4).max(14).optional(),
 });

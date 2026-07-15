@@ -133,6 +133,14 @@ function PaymentBadge({ status }: { status?: string | null }) {
         : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
   return <Badge variant="outline" className={`${STATUS_BADGE_BASE} ${className}`}>{status.replace(/^./, (c) => c.toUpperCase())}</Badge>;
 }
+
+function formatPaymentMethod(method: string | null | undefined) {
+  if (method === "bankTransfer") return "Legacy Bank Transfer";
+  if (method === "kashier") return "Online Payment";
+  if (method === "inPerson") return "Pay at Studio";
+  return method ?? "—";
+}
+
 function StatusBadge({ status }: { status?: string | null }) {
   if (!status) return <span className="italic text-muted-foreground">—</span>;
   const className = status === "active" || status === "assignedToLevel"
@@ -430,7 +438,7 @@ export default function BalletStudentDetailPage() {
                         <td className="py-3 pr-3 text-muted-foreground">{new Date(payment.updatedAt).toLocaleDateString()}</td>
                         <td className="py-3 pr-3">{payment.packageName ?? "No package"}</td>
                         <td className="py-3 pr-3">{payment.amountEgp} EGP</td>
-                        <td className="py-3 pr-3 text-muted-foreground">{payment.paymentMethod ?? "—"}</td>
+                        <td className="py-3 pr-3 text-muted-foreground">{formatPaymentMethod(payment.paymentMethod)}</td>
                         <td className="py-3 pr-3"><PaymentBadge status={payment.status} /></td>
                         <td className="py-3 pr-3"><SubscriptionBadge status={payment.subscriptionStatus} display={payment.subscriptionDisplayStatus} /></td>
                       </tr>

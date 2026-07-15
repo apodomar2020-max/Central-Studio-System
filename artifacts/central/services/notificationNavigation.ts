@@ -1,4 +1,4 @@
-export type NotificationRoute = "/(tabs)/bookings" | "/package-center" | "/notifications";
+export type NotificationRoute = "/(tabs)/bookings" | "/package-center" | "/notifications" | `/ballet/application-status${string}`;
 
 const BOOKING_NOTIFICATION_TYPES = new Set([
   "booking_confirmed",
@@ -19,8 +19,27 @@ const PACKAGE_NOTIFICATION_TYPES = new Set([
   "package_rejected",
 ]);
 
+const BALLET_NOTIFICATION_TYPES = new Set([
+  "ballet_application_cancelled",
+  "ballet_cancellation_requested",
+  "ballet_cancellation_withdrawn",
+  "ballet_cancellation_completed",
+  "ballet_cancellation_scheduled",
+  "ballet_cancellation_rejected",
+  "ballet_refund_approved",
+  "ballet_refund_rejected",
+  "ballet_refund_processing",
+  "ballet_refund_completed",
+  "ballet_refund_failed",
+]);
+
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function idValue(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return String(value);
+  return stringValue(value);
 }
 
 export function resolveNotificationRoute(data: unknown): NotificationRoute {
@@ -35,6 +54,16 @@ export function resolveNotificationRoute(data: unknown): NotificationRoute {
 
   if (type && PACKAGE_NOTIFICATION_TYPES.has(type)) {
     return "/package-center";
+  }
+
+  if (type && BALLET_NOTIFICATION_TYPES.has(type)) {
+    const metadata = payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
+      ? payload.metadata as Record<string, unknown>
+      : {};
+    const applicationId = idValue(metadata.applicationId) ?? idValue(payload.applicationId);
+    return applicationId
+      ? `/ballet/application-status?id=${encodeURIComponent(applicationId)}`
+      : "/ballet/application-status";
   }
 
   return "/notifications";

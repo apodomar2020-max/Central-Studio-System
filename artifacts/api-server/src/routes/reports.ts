@@ -767,6 +767,8 @@ async function analyticsReport(from?: string, to?: string) {
       approved: balletRows.filter((b) => balletApprovedStatuses.has(b.status)).length,
       pending: balletRows.filter((b) => balletPendingStatuses.has(b.status)).length,
       rejected: balletRows.filter((b) => b.status === "rejected").length,
+      cancelled: balletRows.filter((b) => b.status === "cancelled").length,
+      withdrawn: balletRows.filter((b) => b.status === "withdrawn").length,
       activeBalletStudents: balletRows.filter((b) => b.status === "active").length,
     },
   };

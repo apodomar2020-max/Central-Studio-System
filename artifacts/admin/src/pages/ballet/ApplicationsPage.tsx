@@ -34,7 +34,8 @@ type ApplicationStatus =
   | "assignedToLevel"
   | "active"
   | "rejected"
-  | "cancelled";
+  | "cancelled"
+  | "withdrawn";
 
 interface ApplicationRow {
   id: number;
@@ -79,6 +80,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   assignedToLevel:   { label: "Assigned to Level",  className: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
   active:            { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
   cancelled:         { label: "Cancelled",           className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
+  withdrawn:         { label: "Withdrawn",           className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -128,6 +130,7 @@ const FILTER_TABS: { label: string; value: string }[] = [
   { label: "Rejected",          value: "rejected" },
   { label: "Needs Follow-up",   value: "needsFollowUp" },
   { label: "Cancelled",         value: "cancelled" },
+  { label: "Withdrawn",         value: "withdrawn" },
 ];
 
 const SUBSCRIPTION_FILTERS = [

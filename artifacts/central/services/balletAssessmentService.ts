@@ -6,11 +6,9 @@
  * STATIC CONFIG  (defined in code — these are programme definitions)
  *   BALLET_LEVELS   — the level progression offered by the studio.
  *                     Changes only when the studio restructures its curriculum.
- *   BALLET_PRICING  — offline fallback pricing for display while settings load.
- *                     The live source of truth is GET /api/ballet/settings.
  *
  * DYNAMIC DATA  (always fetched from the backend)
- *   fetchBalletSettings()   — admin-managed pricing + assessment instructions.
+ *   fetchBalletSettings()   — admin-managed mobile presentation settings.
  *   fetchAvailableAssessmentSchedules() — schedule-based assessment availability.
  *
  * ─── Production rule ──────────────────────────────────────────────────────────
@@ -19,9 +17,6 @@
  * If the endpoint is not available the screen renders an appropriate state
  * (offline, error) — never phantom pricing or phantom slots.
  *
- * The static BALLET_PRICING constants below are emergency offline fallback
- * values rendered in the UI only when the settings fetch is in-flight or
- * has errored. They must never be used as authoritative pricing.
  */
 
 import { customFetch } from "@workspace/api-client-react";
@@ -44,41 +39,52 @@ export const BALLET_LEVELS: string[] = [
   "Ballet Level 9",
 ];
 
-/**
- * Emergency offline fallback pricing.
- *
- * These values are used ONLY when the settings endpoint has not yet responded
- * (e.g. during initial load or when the device is offline). The screen should
- * replace them as soon as fetchBalletSettings() resolves.
- *
- * DO NOT treat these as authoritative. The admin can change pricing at any
- * time via the dashboard, and the server is always the source of truth.
- */
-export const BALLET_PRICING: { level: string; hours: string; price: number }[] =
-  [
-    { level: "Pre-Ballet", hours: "8 hours monthly", price: 1_950 },
-    { level: "Levels 1–9", hours: "12 hours monthly", price: 2_650 },
-  ];
-
 // ─── Response types ────────────────────────────────────────────────────────────
 
 /**
  * Shape returned by GET /api/ballet/settings.
- * Reflects admin-managed config from the ballet_settings table (id = 1).
+ * Reflects admin-managed mobile presentation config from the ballet_settings
+ * table (id = 1).
  */
 export interface BalletSettings {
-  preBallet: {
-    monthlyHours: number;
-    priceEgp: number;
-  };
-  levels19: {
-    monthlyHours: number;
-    priceEgp: number;
-  };
-  assessmentInstructions: string | null;
-  requirements: string | null;
-  acceptanceMessageTemplate: string | null;
-  fewSeatsThreshold: number;
+  homeCardImageUrl: string | null;
+  whatsappNumber: string | null;
+  phoneNumber: string | null;
+  email: string | null;
+  studioLocationUrl: string | null;
+}
+
+/**
+ * Public aggregate counts returned by GET /api/ballet/summary.
+ * These are programme-level numbers only; no personal application/student data.
+ */
+export interface BalletSummary {
+  activeStudents: number;
+  instructors: number;
+  levels: number;
+  classes: number;
+}
+
+export interface BalletProgramRequirementItem {
+  id: number;
+  sectionId: number;
+  text: string;
+  sortOrder: number;
+}
+
+export interface BalletProgramRequirementSection {
+  id: number;
+  title: string;
+  description: string | null;
+  sortOrder: number;
+  items: BalletProgramRequirementItem[];
+}
+
+export interface BalletFaq {
+  id: number;
+  question: string;
+  answer: string;
+  sortOrder: number;
 }
 
 /**
@@ -98,17 +104,21 @@ export interface AssessmentScheduleOption {
   endTime: string;
 }
 
+export interface BalletPackageOption {
+  id: number;
+  name: string;
+  monthlyClasses: number;
+  monthlyHours: number;
+  priceEgp: number;
+  levelIds: number[];
+}
+
 // ─── Fetch functions ───────────────────────────────────────────────────────────
 
 /**
- * Fetches admin-managed ballet settings from the backend.
- *
- * Returns pricing, session hours, assessment instructions, and the
- * fewSeatsThreshold used to colour-code slot availability.
+ * Fetches admin-managed ballet mobile presentation settings from the backend.
  *
  * Throws on network failure (TypeError) or server error (Error).
- * The calling screen is responsible for catching and rendering the
- * appropriate state (isOfflineError check for offline vs server error).
  */
 export async function fetchBalletSettings(
   signal?: AbortSignal
@@ -119,6 +129,34 @@ export async function fetchBalletSettings(
     { method: "GET", signal }
   );
   return res;
+}
+
+export async function fetchBalletSummary(
+  signal?: AbortSignal
+): Promise<BalletSummary> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  return customFetch<BalletSummary>(
+    `${apiUrl}/api/ballet/summary`,
+    { method: "GET", signal }
+  );
+}
+
+export async function fetchBalletProgramRequirements(signal?: AbortSignal): Promise<BalletProgramRequirementSection[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ sections: BalletProgramRequirementSection[] }>(
+    `${apiUrl}/api/ballet/program-requirements`,
+    { method: "GET", signal }
+  );
+  return res.sections;
+}
+
+export async function fetchBalletFaqs(signal?: AbortSignal): Promise<BalletFaq[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ faqs: BalletFaq[] }>(
+    `${apiUrl}/api/ballet/faqs`,
+    { method: "GET", signal }
+  );
+  return res.faqs;
 }
 
 /**
@@ -147,6 +185,17 @@ export async function fetchAvailableAssessmentSchedules(
   return res;
 }
 
+export async function fetchBalletPackages(
+  signal?: AbortSignal,
+): Promise<BalletPackageOption[]> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ packages: BalletPackageOption[] }>(
+    `${apiUrl}/api/ballet/packages`,
+    { method: "GET", signal }
+  );
+  return res.packages;
+}
+
 // ─── Application submission ───────────────────────────────────────────────────
 
 /**
@@ -173,6 +222,7 @@ export interface SubmitApplicationPayload {
   /** C1: parent's chosen payment method at intake — required by the backend.
    *  A preference only; the backend never creates a payment from it. */
   preferredPaymentMethod: BalletPaymentMethod;
+  preferredPackageId?:    number;
   /** Optional link to a saved child profile (children.id). Omitted for manual
    *  entry / logged-out users. The backend verifies it belongs to the parent. */
   childId?:               number;
@@ -252,6 +302,7 @@ export interface BalletAttendanceSummary {
  */
 export interface BalletApplication {
   id: number;
+  childId: number | null;
   parentName: string;
   parentPhone: string;
   parentEmail: string;
@@ -267,6 +318,7 @@ export interface BalletApplication {
   notes: string | null;
   assessmentScheduleId: number | null;
   assessmentDate: string | null;
+  preferredPackageId: number | null;
   status: string;
   adminNotes: string | null;
   assignedLevelId: number | null;
@@ -286,6 +338,59 @@ export interface BalletApplication {
   attendanceSummary: BalletAttendanceSummary | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BalletLevelAssignmentSummary {
+  id: number;
+  applicationId: number;
+  childId: number | null;
+  levelId: number;
+  groupId: number | null;
+  status: string;
+}
+
+export interface BalletCancellationRequest {
+  id: number;
+  applicationId: number | null;
+  levelAssignmentId: number | null;
+  status: string;
+  requestedTiming: string;
+  approvedTiming: string | null;
+  requestedEffectiveDate: string | null;
+  approvedEffectiveDate: string | null;
+  reason: string;
+  requestRefund: boolean;
+  adminNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BalletRefundSummary {
+  id: number;
+  cancellationRequestId: number | null;
+  paymentId: number;
+  status: string;
+  refundMethod: string;
+  approvedAmountEgp: number | null;
+  refundedAmountEgp: number | null;
+  transactionReference: string | null;
+  requestedReason: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BalletApplicationDetail {
+  application: BalletApplication;
+  activeAssignment: BalletLevelAssignmentSummary | null;
+  openCancellationRequest: BalletCancellationRequest | null;
+  currentPayment: {
+    id: number;
+    amountEgp: number;
+    status: string;
+    paymentMethod: string | null;
+    paidAt: string | null;
+  } | null;
+  refunds: BalletRefundSummary[];
 }
 
 /**
@@ -308,6 +413,17 @@ export async function fetchMyApplications(
   return res.applications;
 }
 
+export async function fetchBalletApplicationDetail(
+  applicationId: number,
+  signal?: AbortSignal
+): Promise<BalletApplicationDetail> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  return customFetch<BalletApplicationDetail>(
+    `${apiUrl}/api/ballet/applications/${applicationId}`,
+    { method: "GET", signal }
+  );
+}
+
 /**
  * Cancels an open application.
  * Only valid while status is pending / needsFollowUp.
@@ -315,11 +431,35 @@ export async function fetchMyApplications(
  */
 export async function cancelBalletApplication(
   applicationId: number,
+  options?: { requestRefund?: boolean; reason?: string },
   signal?: AbortSignal
 ): Promise<void> {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
   await customFetch<{ success: boolean }>(
     `${apiUrl}/api/ballet/applications/${applicationId}/cancel`,
+    { method: "POST", body: JSON.stringify(options ?? {}), signal }
+  );
+}
+
+export async function requestBalletEnrollmentCancellation(
+  levelAssignmentId: number,
+  payload: { requestedTiming: "immediate" | "endOfPeriod"; reason: string; requestRefund?: boolean },
+  signal?: AbortSignal
+): Promise<{ cancellationRequest: BalletCancellationRequest; refundCreated: boolean; refund: BalletRefundSummary | null }> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  return customFetch(
+    `${apiUrl}/api/ballet/enrollments/${levelAssignmentId}/cancellation-requests`,
+    { method: "POST", body: JSON.stringify(payload), signal }
+  );
+}
+
+export async function withdrawBalletEnrollmentCancellationRequest(
+  cancellationRequestId: number,
+  signal?: AbortSignal
+): Promise<{ cancellationRequest: BalletCancellationRequest }> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  return customFetch(
+    `${apiUrl}/api/ballet/enrollment-cancellation-requests/${cancellationRequestId}/withdraw`,
     { method: "POST", signal }
   );
 }
@@ -341,6 +481,8 @@ export interface UpdateApplicationPayload {
   previousExperience?:    boolean;
   assessmentScheduleId?:  number;
   assessmentDate?:        string;
+  preferredPackageId?:    number;
+  preferredPaymentMethod?: BalletPaymentMethod;
 }
 
 /**
@@ -379,6 +521,8 @@ export const ACTIVE_APPLICATION_STATUSES = new Set([
 export const CANCELLABLE_APPLICATION_STATUSES = new Set([
   "pending",
   "needsFollowUp",
+  "accepted",
+  "assignedToLevel",
 ]);
 
 // Statuses where Edit is available.
@@ -423,6 +567,18 @@ export async function fetchBalletInstructors(signal?: AbortSignal): Promise<Ball
   return res.instructors;
 }
 
+export async function fetchBalletInstructor(
+  instructorId: number,
+  signal?: AbortSignal
+): Promise<BalletInstructor> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const res = await customFetch<{ instructor: BalletInstructor }>(
+    `${apiUrl}/api/ballet/instructors/${instructorId}`,
+    { method: "GET", signal }
+  );
+  return res.instructor;
+}
+
 /** One weekly time slot for a ballet class, as nested in GET /api/ballet/classes. */
 export interface BalletClassSchedule {
   id: number;
@@ -458,8 +614,10 @@ export interface BalletLevel {
   id: number;
   name: string;
   sortOrder: number;
+  isActive: boolean;
   description: string | null;
   requirements: string | null;
+  imageUrl: string | null;
   ageMin: number | null;
   ageMax: number | null;
 }
@@ -477,12 +635,15 @@ export async function fetchBalletLevels(signal?: AbortSignal): Promise<BalletLev
 export interface BalletPerformance {
   id: number;
   eventTitle: string;
+  description: string | null;
+  imageUrl: string | null;
   eventType: string;
   locationName: string | null;
   eventDate: string; // ISO date, e.g. "2026-12-20"
   startTime: string;
   endTime: string;
   requirements: string[];
+  externalCtaUrl: string | null;
 }
 
 export async function fetchBalletPerformances(signal?: AbortSignal): Promise<BalletPerformance[]> {

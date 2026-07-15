@@ -1116,15 +1116,99 @@ components:
 
     DashboardSummary:
       type: object
-      required: [totalStudents, totalBookings, todayBookings, activeClasses, totalRevenue, pendingBookings, activeInstructors]
+      required:
+        - totalUsers
+        - totalStudents
+        - totalParents
+        - totalBookings
+        - todayBookings
+        - confirmedBookings
+        - cancelledBookings
+        - completedBookings
+        - pendingPayments
+        - refundedBookings
+        - activeClasses
+        - activeInstructors
+        - totalRevenue
+        - revenueTrackingComplete
+        - pendingBookings
+        - activePackages
+        - pendingPackageOrders
+        - totalCheckIns
+        - todayCheckIns
+        - missedAttendance
+        - todayClasses
+        - upcomingClasses
+        - grossGenericBookingRevenueEgp
+        - grossGenericPackageRevenueEgp
+        - grossBalletRevenueEgp
+        - balletCompletedRefundsEgp
+        - legacyBalletRefundedPaymentsEgp
+        - balletPendingRefundExposureEgp
+        - balletNetRevenueEgp
+        - totalGrossRevenueEgp
+        - totalNetRevenueEgp
+        - balletPayAtStudioRevenueEgp
+        - balletOnlineRevenueEgp
+        - balletLegacyBankTransferRevenueEgp
+        - legacyRevenueTrackingLimitations
+        - pendingCancellationRequests
+        - activeBalletEnrollments
+        - withdrawnBalletEnrollments
+        - refundsUnderReview
+        - approvedProcessingRefundExposureEgp
+        - completedFullRefunds
+        - completedPartialRefunds
       properties:
+        totalUsers: { type: integer }
         totalStudents: { type: integer }
+        totalParents: { type: integer }
         totalBookings: { type: integer }
         todayBookings: { type: integer }
+        confirmedBookings: { type: integer }
+        cancelledBookings: { type: integer }
+        completedBookings: { type: integer }
+        pendingPayments: { type: integer }
+        refundedBookings: { type: integer }
         activeClasses: { type: integer }
         activeInstructors: { type: integer }
         totalRevenue: { type: number }
+        revenueTrackingComplete: { type: boolean }
         pendingBookings: { type: integer }
+        activePackages: { type: integer }
+        pendingPackageOrders: { type: integer }
+        totalCheckIns: { type: integer }
+        todayCheckIns: { type: integer }
+        missedAttendance: { type: integer }
+        todayClasses: { type: integer }
+        upcomingClasses: { type: integer }
+        grossGenericBookingRevenueEgp: { type: number }
+        grossGenericPackageRevenueEgp: { type: number }
+        grossBalletRevenueEgp: { type: number }
+        balletCompletedRefundsEgp: { type: number }
+        legacyBalletRefundedPaymentsEgp: { type: number }
+        balletPendingRefundExposureEgp: { type: number }
+        balletNetRevenueEgp: { type: number }
+        totalGrossRevenueEgp: { type: number }
+        totalNetRevenueEgp: { type: number }
+        balletPayAtStudioRevenueEgp: { type: number }
+        balletOnlineRevenueEgp: { type: number }
+        balletLegacyBankTransferRevenueEgp: { type: number }
+        legacyRevenueTrackingLimitations:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+        pendingCancellationRequests: { type: integer }
+        activeBalletEnrollments: { type: integer }
+        withdrawnBalletEnrollments: { type: integer }
+        refundsUnderReview: { type: integer }
+        approvedProcessingRefundExposureEgp: { type: number }
+        completedFullRefunds: { type: integer }
+        completedPartialRefunds: { type: integer }
 
     Instructor:
       type: object

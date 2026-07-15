@@ -4,7 +4,7 @@
  * new child system. Visual style matches the rest of the onboarding funnel.
  */
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,6 +28,7 @@ function calculateAge(birthday: string): number | null {
 }
 
 export default function OnboardingChildrenScreen() {
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const insets = useSafeAreaInsets();
   const { children, addChild, setUser } = useAppContext();
   const topPad = (Platform.OS === "web" ? 40 : insets.top) + 24;
@@ -70,7 +71,13 @@ export default function OnboardingChildrenScreen() {
       const { user } = await fetchCurrentUser();
       await setUser(user);
       const nextStep = user.profileCompletion?.nextStep ?? "medical";
-      router.replace(nextStepRoute(nextStep) as never);
+      const destination = nextStep === "done" && returnTo
+        ? returnTo
+        : {
+            pathname: nextStepRoute(nextStep) as never,
+            params: returnTo ? { returnTo } : undefined,
+          };
+      router.replace(destination as never);
     } finally {
       setContinuing(false);
     }

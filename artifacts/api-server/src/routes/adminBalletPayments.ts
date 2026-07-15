@@ -8,14 +8,12 @@
  * Routes:
  *   GET   /api/admin/ballet/payments              — paginated list + filter by status/applicationId
  *   POST  /api/admin/ballet/payments               — create a payment record for an application
- *   PATCH /api/admin/ballet/payments/:id/status    — change status; "refunded" withdraws the enrollment
+ *   PATCH /api/admin/ballet/payments/:id/status    — change payment status.
  *
- * Refund side-effect:
- *   Transitioning a payment to "refunded" sets refundedAt and, if the payment
- *   is tied to a level assignment (levelAssignmentId), marks that
- *   ballet_level_assignments row status = "withdrawn" (never deletes the
- *   application or its event history). A ballet_application_events row is
- *   appended so the application timeline reflects the withdrawal.
+ * Refund workflow:
+ *   New refund operations must use ballet_refunds. Directly changing a
+ *   payment to "refunded" is rejected so refunds never withdraw enrollments
+ *   implicitly. Historical rows with status="refunded" remain readable.
  *
  * POST create-time validation (Phase A / P0-7 — deliberately narrow scope,
  * two related checks are explicitly withheld pending separate business
@@ -59,6 +57,7 @@ import {
   todayDateOnly,
   validateSubscriptionDates,
 } from "../lib/balletSubscriptions";
+import { isSupportedManualBalletPaymentMethod } from "../lib/financialAggregates";
 
 const router: IRouter = Router();
 const BALLET_PAYMENT_ACTIVITY_FIELDS = ["applicationId", "levelAssignmentId", "packageId", "packageOrderId", "amountEgp", "status", "paymentMethod", "billingMonth", "subscriptionStartDate", "subscriptionExpiresAt", "originalExpiresAt", "isRenewal", "renewedFromId", "extensionHistory", "paidAt", "refundedAt", "notes"] as const;
@@ -168,6 +167,22 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
 
   if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
+  const effectivePaymentMethod = paymentMethod ?? app.preferredPaymentMethod ?? null;
+  if (!isSupportedManualBalletPaymentMethod(effectivePaymentMethod)) {
+    res.status(422).json({
+      error: "Manual Ballet payment creation currently supports Pay at Studio only. Online payment must be created by the future verified Kashier gateway flow; Bank Transfer is legacy display-only.",
+      code: "BALLET_PAYMENT_METHOD_NOT_SUPPORTED",
+    });
+    return;
+  }
+  if (status === "refunded") {
+    res.status(422).json({
+      error: "Create a paid or pending Ballet payment first. Refund handling requires the dedicated refund workflow.",
+      code: "BALLET_REFUND_WORKFLOW_REQUIRED",
+    });
+    return;
+  }
+
   // (a) A given levelAssignmentId must belong to THIS application — never
   // let a payment be recorded against another application's assignment row.
   if (levelAssignmentId != null) {
@@ -244,7 +259,7 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
         status: createdStatus,
         // C1: prefill the method from the application's intake preference when
         // the admin didn't explicitly choose one. Explicit body value always wins.
-        paymentMethod: paymentMethod ?? app.preferredPaymentMethod ?? null,
+        paymentMethod: effectivePaymentMethod,
         billingMonth: billingMonth ?? null,
         subscriptionStartDate,
         subscriptionExpiresAt,
@@ -298,6 +313,13 @@ async function updatePaymentStatus(
     res.status(400).json({ error: `Invalid status: ${status}. Must be one of: ${BALLET_PAYMENT_STATUSES.join(", ")}` });
     return;
   }
+  if (status === "refunded") {
+    res.status(422).json({
+      error: "Use the Ballet refund workflow. Payment status is historical receipt state and no longer drives enrollment withdrawal.",
+      code: "USE_BALLET_REFUND_WORKFLOW",
+    });
+    return;
+  }
 
   const [payment] = await db
     .select()
@@ -332,8 +354,6 @@ async function updatePaymentStatus(
     updates["subscriptionExpiresAt"] = subscriptionExpiresAt;
     updates["originalExpiresAt"] = payment.originalExpiresAt ?? subscriptionExpiresAt;
   }
-  if (status === "refunded") updates["refundedAt"] = now;
-
   let updatedPayment: typeof payment | undefined;
 
   await db.transaction(async (tx) => {
@@ -344,24 +364,6 @@ async function updatePaymentStatus(
       .returning();
     updatedPayment = row;
 
-    if (status === "refunded" && payment.levelAssignmentId != null) {
-      await tx
-        .update(balletLevelAssignmentsTable)
-        .set({
-          status: "withdrawn",
-          notes: `Withdrawn — payment refunded on ${now.slice(0, 10)}`,
-          updatedAt: now,
-        })
-        .where(eq(balletLevelAssignmentsTable.id, payment.levelAssignmentId));
-
-      await tx.insert(balletApplicationEventsTable).values({
-        applicationId: payment.applicationId,
-        fromStatus:    app?.status ?? null,
-        toStatus:      app?.status ?? null,
-        changedById:   adminId,
-        note:          note ? `Payment refunded — enrollment withdrawn. ${note}` : "Payment refunded — enrollment withdrawn",
-      });
-    }
   });
 
   logger.info({ paymentId: id, fromStatus, toStatus: status, adminId }, "Ballet payment status updated");
@@ -373,16 +375,14 @@ async function updatePaymentStatus(
       BALLET_PAYMENT_ACTIVITY_FIELDS,
     );
     await logActivity(req, {
-      action: status === "refunded" ? "refund" : status === "paid" ? "markPaid" : "statusChange",
+      action: status === "paid" ? "markPaid" : "statusChange",
       module: "ballet.payments",
       entityType: "ballet_payment",
       entityId: id,
       entityLabel: app?.childName ?? `Application #${payment.applicationId}`,
       before,
       after,
-      summary: status === "refunded"
-        ? `Refunded ballet payment ${id} for ${app?.childName ?? `application #${payment.applicationId}`} — enrollment withdrawn`
-        : `Changed ballet payment ${id} status from ${fromStatus} to ${status}`,
+      summary: `Changed ballet payment ${id} status from ${fromStatus} to ${status}`,
     });
   }
 
@@ -454,6 +454,21 @@ router.post(
 
     const previous = await findPaymentForApplication(renewedFromId, applicationId);
     if (!previous) { res.status(404).json({ error: "Previous subscription/payment cycle not found for this application." }); return; }
+
+    if (!isSupportedManualBalletPaymentMethod(paymentMethod)) {
+      res.status(422).json({
+        error: "Manual Ballet subscription renewal currently supports Pay at Studio only. Online payment must be created by the future verified Kashier gateway flow; Bank Transfer is legacy display-only.",
+        code: "BALLET_PAYMENT_METHOD_NOT_SUPPORTED",
+      });
+      return;
+    }
+    if (status === "refunded") {
+      res.status(422).json({
+        error: "Refund handling requires the dedicated refund workflow.",
+        code: "BALLET_REFUND_WORKFLOW_REQUIRED",
+      });
+      return;
+    }
 
     const [pkg] = await db
       .select({ id: balletPackagesTable.id, isActive: balletPackagesTable.isActive })

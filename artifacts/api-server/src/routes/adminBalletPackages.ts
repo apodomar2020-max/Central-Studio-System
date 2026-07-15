@@ -1,9 +1,7 @@
 /**
  * Admin Ballet Packages routes — /api/admin/ballet/packages/*
  *
- * Admin-managed pricing packages for the Ballet system. Will eventually
- * replace the flat preBallet/levels pricing fields on ballet_settings (those
- * are left untouched here).
+ * Admin-managed pricing packages for the Ballet system.
  *
  * Routes:
  *   GET   /api/admin/ballet/packages       — paginated list

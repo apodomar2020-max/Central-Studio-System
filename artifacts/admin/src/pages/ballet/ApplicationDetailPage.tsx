@@ -54,6 +54,8 @@ interface Application {
   assignedAt: string | null;
   createdAt: string;
   preferredPaymentMethod: string | null;
+  preferredPackageId: number | null;
+  preferredPackageName: string | null;
   updatedAt: string;
 }
 
@@ -135,6 +137,37 @@ interface BalletPayment {
   updatedAt: string;
 }
 
+interface CancellationRequest {
+  id: number;
+  status: string;
+  requestedTiming: string;
+  approvedTiming: string | null;
+  requestedEffectiveDate: string | null;
+  approvedEffectiveDate: string | null;
+  reason: string;
+  requestRefund: boolean;
+  adminNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface BalletRefund {
+  id: number;
+  cancellationRequestId: number | null;
+  paymentId: number;
+  status: string;
+  refundMethod: string;
+  requestedReason: string;
+  approvedAmountEgp: number | null;
+  refundedAmountEgp: number | null;
+  transactionReference: string | null;
+  adminNotes: string | null;
+  failedReason: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface SubscriptionExtension {
   previousExpiresAt: string;
   newExpiresAt: string;
@@ -196,6 +229,8 @@ interface DetailResponse {
   currentPayment: BalletPayment | null;
   currentSubscription: BalletPayment | null;
   attendanceSummary: AttendanceSummary | null;
+  cancellationRequests?: CancellationRequest[];
+  refunds?: BalletRefund[];
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -228,6 +263,7 @@ const ALL_STATUSES = [
   { value: "active",          label: "Active" },
   { value: "rejected",        label: "Rejected" },
   { value: "cancelled",       label: "Cancelled" },
+  { value: "withdrawn",       label: "Withdrawn" },
 ];
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -238,6 +274,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   assignedToLevel:   { label: "Assigned to Level",  className: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
   active:            { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
   cancelled:         { label: "Cancelled",           className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
+  withdrawn:         { label: "Withdrawn",           className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
 };
 
 const PAYMENT_STATUSES = [
@@ -247,11 +284,17 @@ const PAYMENT_STATUSES = [
   { value: "refunded", label: "Refunded" },
 ];
 
-const PAYMENT_METHODS = [
-  { value: "bankTransfer", label: "Bank Transfer" },
-  { value: "kashier", label: "Kashier" },
-  { value: "inPerson", label: "In Person" },
+const NEW_PAYMENT_STATUSES = PAYMENT_STATUSES.filter((status) => status.value !== "refunded");
+
+const MANUAL_PAYMENT_METHODS = [
+  { value: "inPerson", label: "Pay at Studio" },
 ];
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  bankTransfer: "Legacy Bank Transfer",
+  kashier: "Online Payment",
+  inPerson: "Pay at Studio",
+};
 
 const PAYMENT_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   pending:  { label: "Pending",  className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
@@ -261,7 +304,7 @@ const PAYMENT_STATUS_CONFIG: Record<string, { label: string; className: string }
 };
 
 function formatPaymentMethod(method?: string | null) {
-  return PAYMENT_METHODS.find((item) => item.value === method)?.label ?? method ?? null;
+  return method ? PAYMENT_METHOD_LABELS[method] ?? method : null;
 }
 
 function PaymentStatusBadge({ status }: { status?: string | null }) {
@@ -538,7 +581,7 @@ export default function ApplicationDetailPage() {
           packageId: parseInt(paymentPackageId, 10),
           billingMonth: paymentBillingMonth,
           amountEgp: parseInt(paymentAmount, 10),
-          paymentMethod: paymentMethod || data?.application.preferredPaymentMethod || undefined,
+          paymentMethod: paymentMethod || "inPerson",
           status: paymentInitialStatus,
           startDate: paymentInitialStatus === "paid" ? paymentStartDate : undefined,
           expiresAt: paymentInitialStatus === "paid" ? paymentExpiresAt : undefined,
@@ -556,6 +599,7 @@ export default function ApplicationDetailPage() {
       setPaymentPackageId("");
       setPaymentAmount("");
       setPaymentInitialStatus("pending");
+      setPaymentMethod("");
       setPaymentStartDate(new Date().toISOString().slice(0, 10));
       setPaymentExpiresAt(addDays(new Date().toISOString().slice(0, 10), 30));
       setSubscriptionDialog(null);
@@ -603,7 +647,7 @@ export default function ApplicationDetailPage() {
           renewedFromId: payment.id,
           packageId: parseInt(renewPackageId, 10),
           amountEgp: parseInt(renewAmount, 10),
-          paymentMethod: renewMethod || payment.paymentMethod || data?.application.preferredPaymentMethod,
+          paymentMethod: renewMethod || "inPerson",
           status: renewStatus,
           startDate: renewStartDate,
           expiresAt: renewExpiresAt,
@@ -807,6 +851,8 @@ export default function ApplicationDetailPage() {
   }
 
   const { application: app, assessmentSchedule, level, group, events, groupSchedules, attendanceSummary, currentPayment, payments } = data;
+  const cancellationRequests = data.cancellationRequests ?? [];
+  const refunds = data.refunds ?? [];
   const currentSubscription = data.currentSubscription ?? currentPayment;
   const activeSchedules = (groupSchedules ?? []).filter((s) => s.status === "active");
   const levels = levelsData?.levels ?? [];
@@ -960,6 +1006,14 @@ export default function ApplicationDetailPage() {
               <Field label="Current status" value={<PaymentStatusBadge status={currentPayment?.status} />} />
               <Field label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} />
               <Field label="Amount" value={currentPayment ? `${currentPayment.amountEgp} EGP` : null} />
+              <Field
+                label="Preferred package"
+                value={
+                  app.preferredPackageName
+                    ? `${app.preferredPackageName}${app.preferredPackageId ? ` (#${app.preferredPackageId})` : ""}`
+                    : "No preferred package selected (legacy application)"
+                }
+              />
               <Field label="Package" value={currentPayment?.packageName ?? (currentPayment?.packageId ? `#${currentPayment.packageId}` : null)} />
               <Field label="Billing month" value={currentPayment?.billingMonth} />
               <Field label="Preferred method" value={formatPaymentMethod(app.preferredPaymentMethod)} />
@@ -1011,6 +1065,45 @@ export default function ApplicationDetailPage() {
               <Field label="Assigned at" value={app.assignedAt ? new Date(app.assignedAt).toLocaleString() : null} />
             </Section>
           )}
+
+          <Section title="Cancellation & Refunds">
+            {cancellationRequests.length === 0 && refunds.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">No cancellation or refund workflow records.</p>
+            ) : (
+              <div className="space-y-3">
+                {cancellationRequests.map((request) => (
+                  <div key={`cancel-${request.id}`} className="rounded-md border p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">Cancellation #{request.id}</span>
+                      <Badge variant="outline">{request.status}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Requested {request.requestedTiming}
+                      {request.approvedTiming ? ` · approved ${request.approvedTiming}` : ""}
+                      {request.approvedEffectiveDate ? ` · effective ${request.approvedEffectiveDate}` : ""}
+                      {request.requestRefund ? " · refund requested" : ""}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">{request.reason}</p>
+                  </div>
+                ))}
+                {refunds.map((refund) => (
+                  <div key={`refund-${refund.id}`} className="rounded-md border p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">Refund #{refund.id} · Payment #{refund.paymentId}</span>
+                      <Badge variant="outline">{refund.status}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {refund.refundMethod === "cash" ? "Cash refund" : refund.refundMethod}
+                      {refund.approvedAmountEgp ? ` · approved ${refund.approvedAmountEgp} EGP` : ""}
+                      {refund.refundedAmountEgp ? ` · refunded ${refund.refundedAmountEgp} EGP` : ""}
+                      {refund.transactionReference ? ` · ref ${refund.transactionReference}` : ""}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">{refund.requestedReason}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
 
           {/* Attendance hours — this month (C4). Only meaningful once a level
               is assigned; the backend returns null otherwise. */}
@@ -1077,7 +1170,7 @@ export default function ApplicationDetailPage() {
                   {currentSubscription && <Button size="sm" variant="outline" onClick={() => {
                     setRenewPackageId(String(currentSubscription.packageId ?? ""));
                     setRenewAmount(String(currentSubscription.amountEgp));
-                    setRenewMethod(currentSubscription.paymentMethod ?? app.preferredPaymentMethod ?? "");
+                    setRenewMethod("inPerson");
                     setSubscriptionDialog("renew");
                   }}>Renew Subscription</Button>}
                 </>
@@ -1100,19 +1193,19 @@ export default function ApplicationDetailPage() {
                 </Select>
                 <input type="month" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentBillingMonth} onChange={(e) => setPaymentBillingMonth(e.target.value)} />
                 <input type="number" min={1} className="w-full h-8 rounded-md border bg-background px-2 text-sm" placeholder="Amount EGP" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
-                <Select value={paymentMethod || app.preferredPaymentMethod || ""} onValueChange={setPaymentMethod}>
+                <Select value={paymentMethod || "inPerson"} onValueChange={setPaymentMethod}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Payment method…" /></SelectTrigger>
-                  <SelectContent>{PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{MANUAL_PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
                 </Select>
                 <Select value={paymentInitialStatus} onValueChange={setPaymentInitialStatus}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>{PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{NEW_PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
                 </Select>
                 {paymentInitialStatus === "paid" && <div className="grid grid-cols-2 gap-2">
                   <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentStartDate} onChange={(e) => { setPaymentStartDate(e.target.value); setPaymentExpiresAt(addDays(e.target.value, 30)); }} />
                   <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentExpiresAt} onChange={(e) => setPaymentExpiresAt(e.target.value)} />
                 </div>}
-                <Button size="sm" disabled={!paymentPackageId || !paymentBillingMonth || !paymentAmount || !(paymentMethod || app.preferredPaymentMethod) || createPaymentMutation.isPending} onClick={() => createPaymentMutation.mutate()} style={{ background: "#00B6D6", color: "#000" }} className="w-full">
+                <Button size="sm" disabled={!paymentPackageId || !paymentBillingMonth || !paymentAmount || createPaymentMutation.isPending} onClick={() => createPaymentMutation.mutate()} style={{ background: "#00B6D6", color: "#000" }} className="w-full">
                   {createPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating…</> : "Create Subscription"}
                 </Button>
               </div>
@@ -1126,7 +1219,7 @@ export default function ApplicationDetailPage() {
                 <div className="flex items-center gap-2"><PaymentStatusBadge status={currentPayment.status} /><ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs text-muted-foreground">new status</span></div>
                 <Select value={paymentStatus} onValueChange={setPaymentStatus}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select payment status…" /></SelectTrigger>
-                  <SelectContent>{PAYMENT_STATUSES.filter((s) => s.value !== currentPayment.status).map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{NEW_PAYMENT_STATUSES.filter((s) => s.value !== currentPayment.status).map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
                 </Select>
                 {paymentStatus === "paid" && <div className="grid grid-cols-2 gap-2">
                   <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentStartDate} onChange={(e) => { setPaymentStartDate(e.target.value); setPaymentExpiresAt(addDays(e.target.value, 30)); }} />
@@ -1152,19 +1245,19 @@ export default function ApplicationDetailPage() {
                   <SelectContent>{packages.map((pkg) => <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>)}</SelectContent>
                 </Select>
                 <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="number" min={1} placeholder="Amount EGP" value={renewAmount} onChange={(e) => setRenewAmount(e.target.value)} />
-                <Select value={renewMethod || currentSubscription.paymentMethod || app.preferredPaymentMethod || ""} onValueChange={setRenewMethod}>
+                <Select value={renewMethod || "inPerson"} onValueChange={setRenewMethod}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Method…" /></SelectTrigger>
-                  <SelectContent>{PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{MANUAL_PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
                 </Select>
                 <Select value={renewStatus} onValueChange={setRenewStatus}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>{PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>{NEW_PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
                 </Select>
                 <div className="grid grid-cols-2 gap-2">
                   <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewStartDate} onChange={(e) => { setRenewStartDate(e.target.value); setRenewExpiresAt(addDays(e.target.value, 30)); }} />
                   <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewExpiresAt} onChange={(e) => setRenewExpiresAt(e.target.value)} />
                 </div>
-                <Button size="sm" variant="outline" className="w-full" disabled={!renewPackageId || !renewAmount || !(renewMethod || currentSubscription.paymentMethod || app.preferredPaymentMethod) || renewSubscriptionMutation.isPending} onClick={() => renewSubscriptionMutation.mutate(currentSubscription)}>
+                <Button size="sm" variant="outline" className="w-full" disabled={!renewPackageId || !renewAmount || renewSubscriptionMutation.isPending} onClick={() => renewSubscriptionMutation.mutate(currentSubscription)}>
                   {renewSubscriptionMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Renewing…</> : "Renew Subscription"}
                 </Button>
               </div>

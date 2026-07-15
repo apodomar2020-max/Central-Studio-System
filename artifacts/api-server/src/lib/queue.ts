@@ -6,6 +6,7 @@ export const QUEUE_NAMES = {
   whatsappCampaigns: "whatsapp-campaigns",
   reports: "reports",
   notificationAutomation: "notification-automation",
+  balletCancellationFinalization: "ballet-cancellation-finalization",
 } as const;
 
 export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];
@@ -36,6 +37,10 @@ export type NotificationAutomationJob = {
   source?: "admin" | "scheduler" | "system";
 };
 
+export type BalletCancellationFinalizationJob =
+  | { type: "reconcile_due_cancellations"; source?: "scheduler" | "admin" | "system" }
+  | { type: "finalize_cancellation_request"; requestId: number; source?: "scheduler" | "admin" | "system" };
+
 /**
  * Production scheduling for notification automation (Option B — BullMQ Job
  * Schedulers registered by the worker at startup). Each entry has a STABLE
@@ -55,6 +60,10 @@ export const NOTIFICATION_AUTOMATION_SCHEDULES: readonly NotificationAutomationS
   { schedulerId: "notification-automation:class-reminders", type: "class_reminders", pattern: "0 * * * *" },
   { schedulerId: "notification-automation:post-class-reminders", type: "post_class_reminders", pattern: "20 * * * *" },
   { schedulerId: "notification-automation:package-reminders", type: "package_reminders", pattern: "0 */6 * * *" },
+] as const;
+
+export const BALLET_CANCELLATION_FINALIZATION_SCHEDULES: readonly { schedulerId: string; pattern: string }[] = [
+  { schedulerId: "ballet-cancellation-finalization:hourly-reconciliation", pattern: "5 * * * *" },
 ] as const;
 
 /**

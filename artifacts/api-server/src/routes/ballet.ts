@@ -2,10 +2,12 @@
  * Ballet routes — /api/ballet/*
  *
  * Public routes (shared API key only):
- *   GET  /api/ballet/settings                     — admin-managed pricing + instructions
+ *   GET  /api/ballet/settings                     — admin-managed mobile presentation settings
+ *   GET  /api/ballet/summary                      — public aggregate programme counts
  *   GET  /api/ballet/available-assessment-schedules — schedule-based assessment occurrences
  *   GET  /api/ballet/instructors                  — active instructor roster
  *   GET  /api/ballet/classes                      — active classes with schedules, instructor, group/level ids
+ *   GET  /api/ballet/packages                     — active monthly Ballet packages with level ids
  *   GET  /api/ballet/levels                       — active levels, ordered by sortOrder
  *   GET  /api/ballet/performances                 — upcoming performance opportunities
  *   GET  /api/ballet/groups                       — active groups (id/name/levelId — resolves classes' groupIds)
@@ -21,7 +23,7 @@
  *   POST /api/ballet/applications/:id/cancel     — cancel an application (status-gated)
  *
  * Duplicate prevention:
- *   Active statuses = pending | accepted | needsFollowUp | assignedToLevel | active
+ *   Open statuses = pending | accepted | needsFollowUp | assignedToLevel | active
  *   If the same authenticated parent already has an active application for the
  *   same child — matched by childId when a saved child profile is linked,
  *   else by name + birthday — POST returns 409 with existingApplicationId so
@@ -30,7 +32,8 @@
  *   guarantee is the pair of partial unique indexes on ballet_applications
  *   added in migration 0050 (ballet_applications_active_per_child,
  *   ballet_applications_active_per_manual_identity); a 23505 from either is
- *   caught and translated to the same 409 shape.
+ *   caught and translated to the same 409 shape. Rejected, cancelled, and
+ *   withdrawn are terminal and allow reapplication.
  *
  * Assessment schedule submission:
  *   Assessment options are projected from active ballet_schedules connected to
@@ -52,10 +55,17 @@ import {
   balletSchedulesTable,
   balletLevelsTable,
   balletPerformanceOpportunitiesTable,
+  balletProgramRequirementSectionsTable,
+  balletProgramRequirementItemsTable,
+  balletFaqsTable,
   balletGroupsTable,
+  balletPackagesTable,
+  balletPackageLevelsTable,
   balletClassGroupsTable,
   balletClassLevelsTable,
   balletLevelAssignmentsTable,
+  balletPaymentsTable,
+  balletRefundsTable,
   balletGroupSchedulesTable,
   BALLET_PAYMENT_METHODS,
   studentsTable,
@@ -71,9 +81,9 @@ const router: IRouter = Router();
 // ─── Statuses ─────────────────────────────────────────────────────────────────
 
 /**
- * Statuses that mean an application is still "active" — i.e. the parent has
+ * Statuses that mean an application is still open — i.e. the parent has
  * an open slot and should not be allowed to submit a duplicate.
- * "rejected" and "cancelled" are the only terminal-inactive statuses.
+ * "rejected", "cancelled", and "withdrawn" are terminal-inactive statuses.
  */
 const ACTIVE_STATUSES = [
   "pending",
@@ -86,8 +96,10 @@ const ACTIVE_STATUSES = [
 /** Statuses that allow the parent to edit fields on their application. */
 const EDITABLE_STATUSES = ["pending", "needsFollowUp"] as const;
 
-/** Statuses that allow the parent to cancel their application. */
-const CANCELLABLE_STATUSES = ["pending", "needsFollowUp"] as const;
+/** Statuses that allow the parent to cancel before active enrollment. */
+const CANCELLABLE_STATUSES = ["pending", "needsFollowUp", "accepted", "assignedToLevel"] as const;
+
+const SUPPORTED_MOBILE_ASSESSMENT_PAYMENT_METHOD = "inPerson" as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -152,7 +164,6 @@ type AssessmentOccurrence = {
   time: string;
   startTime: string;
   endTime: string;
-  capacity: number | null;
 };
 
 async function listAvailableAssessmentSchedules(childBirthday: string): Promise<AssessmentOccurrence[]> {
@@ -171,7 +182,6 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
       levelName:  balletLevelsTable.name,
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
-      capacity:   balletSchedulesTable.capacity,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
@@ -183,30 +193,6 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
       eq(balletLevelsTable.isActive, true),
     ))
     .orderBy(asc(balletLevelsTable.sortOrder), asc(balletClassesTable.title), asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime));
-
-  // Query booked counts for active applications in the window
-  const bookings = await db
-    .select({
-      scheduleId: balletApplicationsTable.assessmentScheduleId,
-      date:       balletApplicationsTable.assessmentDate,
-      count:      count(),
-    })
-    .from(balletApplicationsTable)
-    .where(and(
-      inArray(balletApplicationsTable.status, ["pending", "accepted", "needsFollowUp", "assignedToLevel", "active"]),
-      sql`${balletApplicationsTable.assessmentScheduleId} is not null`,
-      sql`${balletApplicationsTable.assessmentDate} is not null`,
-      gte(balletApplicationsTable.assessmentDate, today),
-      lte(balletApplicationsTable.assessmentDate, end),
-    ))
-    .groupBy(balletApplicationsTable.assessmentScheduleId, balletApplicationsTable.assessmentDate);
-
-  const bookedCountMap = new Map<string, number>();
-  for (const b of bookings) {
-    if (b.scheduleId != null && b.date != null) {
-      bookedCountMap.set(`${b.scheduleId}:${b.date}`, b.count);
-    }
-  }
 
   const occurrences: AssessmentOccurrence[] = [];
   for (const row of rows) {
@@ -221,10 +207,6 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
         (row.ageMax == null || age <= row.ageMax);
       if (!eligible) continue;
 
-      const bookedKey = `${row.scheduleId}:${cursor}`;
-      const booked = bookedCountMap.get(bookedKey) ?? 0;
-      if (row.capacity != null && booked >= row.capacity) continue;
-
       occurrences.push({
         scheduleId: row.scheduleId,
         classId:    row.classId,
@@ -236,7 +218,6 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
         time:       normalizeTimeLabel(row.startTime),
         startTime:  row.startTime,
         endTime:    row.endTime,
-        capacity:   row.capacity,
       });
     }
   }
@@ -264,7 +245,6 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
       levelName:  balletLevelsTable.name,
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
-      capacity:   balletSchedulesTable.capacity,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
@@ -301,7 +281,6 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
       time:       normalizeTimeLabel(row.startTime),
       startTime:  row.startTime,
       endTime:    row.endTime,
-      capacity:   row.capacity,
     };
   }
 
@@ -311,12 +290,11 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
 // ─── Default settings ─────────────────────────────────────────────────────────
 
 const DEFAULT_SETTINGS = {
-  preBallet: { monthlyHours: 8, priceEgp: 1950 },
-  levels19: { monthlyHours: 12, priceEgp: 2650 },
-  assessmentInstructions: null,
-  requirements: null,
-  acceptanceMessageTemplate: null,
-  fewSeatsThreshold: 3,
+  homeCardImageUrl: null,
+  whatsappNumber: null,
+  phoneNumber: null,
+  email: null,
+  studioLocationUrl: null,
 };
 
 // ─── GET /api/ballet/settings ─────────────────────────────────────────────────
@@ -336,22 +314,140 @@ router.get("/ballet/settings", async (_req, res): Promise<void> => {
     }
 
     res.json({
-      preBallet: {
-        monthlyHours: row.preBalletHoursMonthly,
-        priceEgp:     row.preBalletPriceEgp,
-      },
-      levels19: {
-        monthlyHours: row.levelsHoursMonthly,
-        priceEgp:     row.levelsPriceEgp,
-      },
-      assessmentInstructions:    row.assessmentInstructions    ?? null,
-      requirements:              row.requirements              ?? null,
-      acceptanceMessageTemplate: row.acceptanceMessageTemplate ?? null,
-      fewSeatsThreshold:         row.fewSeatsThreshold,
+      homeCardImageUrl: row.homeCardImageUrl ?? null,
+      whatsappNumber: row.whatsappNumber ?? null,
+      phoneNumber: row.phoneNumber ?? null,
+      email: row.email ?? null,
+      studioLocationUrl: row.studioLocationUrl ?? null,
     });
   } catch (err) {
     logger.error({ err }, "GET /ballet/settings failed");
     res.status(500).json({ error: "Failed to load ballet settings" });
+  }
+});
+
+// ─── GET /api/ballet/program-requirements ─────────────────────────────────────
+
+router.get("/ballet/program-requirements", async (_req, res): Promise<void> => {
+  try {
+    const [sections, items] = await Promise.all([
+      db
+        .select({
+          id:          balletProgramRequirementSectionsTable.id,
+          title:       balletProgramRequirementSectionsTable.title,
+          description: balletProgramRequirementSectionsTable.description,
+          sortOrder:   balletProgramRequirementSectionsTable.sortOrder,
+        })
+        .from(balletProgramRequirementSectionsTable)
+        .where(eq(balletProgramRequirementSectionsTable.isActive, true))
+        .orderBy(asc(balletProgramRequirementSectionsTable.sortOrder), asc(balletProgramRequirementSectionsTable.id)),
+      db
+        .select({
+          id:        balletProgramRequirementItemsTable.id,
+          sectionId: balletProgramRequirementItemsTable.sectionId,
+          text:      balletProgramRequirementItemsTable.text,
+          sortOrder: balletProgramRequirementItemsTable.sortOrder,
+        })
+        .from(balletProgramRequirementItemsTable)
+        .where(eq(balletProgramRequirementItemsTable.isActive, true))
+        .orderBy(asc(balletProgramRequirementItemsTable.sectionId), asc(balletProgramRequirementItemsTable.sortOrder), asc(balletProgramRequirementItemsTable.id)),
+    ]);
+
+    const activeSectionIds = new Set(sections.map((section) => section.id));
+    const itemsBySection = new Map<number, typeof items>();
+    for (const item of items) {
+      if (!activeSectionIds.has(item.sectionId)) continue;
+      itemsBySection.set(item.sectionId, [...(itemsBySection.get(item.sectionId) ?? []), item]);
+    }
+
+    res.json({
+      sections: sections.map((section) => ({
+        ...section,
+        items: itemsBySection.get(section.id) ?? [],
+      })),
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/program-requirements failed");
+    res.status(500).json({ error: "Failed to load ballet program requirements" });
+  }
+});
+
+// ─── GET /api/ballet/faqs ─────────────────────────────────────────────────────
+
+router.get("/ballet/faqs", async (_req, res): Promise<void> => {
+  try {
+    const faqs = await db
+      .select({
+        id:        balletFaqsTable.id,
+        question:  balletFaqsTable.question,
+        answer:    balletFaqsTable.answer,
+        sortOrder: balletFaqsTable.sortOrder,
+      })
+      .from(balletFaqsTable)
+      .where(eq(balletFaqsTable.isActive, true))
+      .orderBy(asc(balletFaqsTable.sortOrder), asc(balletFaqsTable.id));
+
+    res.json({ faqs });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/faqs failed");
+    res.status(500).json({ error: "Failed to load Ballet FAQs" });
+  }
+});
+
+// ─── GET /api/ballet/summary ─────────────────────────────────────────────────
+//
+// Public aggregate programme counts for the mobile landing page.
+// Returns counts only — no student IDs, names, contact details, or row data.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/summary", async (_req, res): Promise<void> => {
+  try {
+    const [
+      [activeStudents],
+      [instructors],
+      [levels],
+      [classes],
+    ] = await Promise.all([
+      db
+        .select({ total: sql<number>`count(distinct coalesce(${balletApplicationsTable.childId}::text, 'application:' || ${balletApplicationsTable.id}::text))::int` })
+        .from(balletApplicationsTable)
+        .where(eq(balletApplicationsTable.status, "active")),
+      db
+        .select({ total: sql<number>`count(distinct ${balletInstructorsTable.id})::int` })
+        .from(balletInstructorsTable)
+        .innerJoin(balletClassesTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
+        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
+        .where(and(
+          eq(balletInstructorsTable.isActive, true),
+          eq(balletClassesTable.isActive, true),
+          eq(balletSchedulesTable.status, "active"),
+        )),
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(balletLevelsTable)
+        .where(eq(balletLevelsTable.isActive, true)),
+      db
+        .select({ total: sql<number>`count(distinct ${balletSchedulesTable.id})::int` })
+        .from(balletSchedulesTable)
+        .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+        .innerJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
+        .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
+        .where(and(
+          eq(balletSchedulesTable.status, "active"),
+          eq(balletClassesTable.isActive, true),
+          eq(balletLevelsTable.isActive, true),
+        )),
+    ]);
+
+    res.json({
+      activeStudents: activeStudents?.total ?? 0,
+      instructors: instructors?.total ?? 0,
+      levels: levels?.total ?? 0,
+      classes: classes?.total ?? 0,
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/summary failed");
+    res.status(500).json({ error: "Failed to load ballet summary" });
   }
 });
 
@@ -421,6 +517,58 @@ router.get("/ballet/instructors", async (_req, res): Promise<void> => {
   }
 });
 
+// ─── GET /api/ballet/instructors/:id ─────────────────────────────────────────
+//
+// Public read-only instructor detail. Active instructors only.
+// Response: { instructor: BalletInstructor }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/instructors/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid instructor ID" });
+    return;
+  }
+
+  try {
+    const [instructor] = await db
+      .select({
+        id:                     balletInstructorsTable.id,
+        name:                   balletInstructorsTable.name,
+        bio:                    balletInstructorsTable.bio,
+        photoUrl:               balletInstructorsTable.photoUrl,
+        specialties:            balletInstructorsTable.specialties,
+        experienceYears:        balletInstructorsTable.experienceYears,
+        rating:                 balletInstructorsTable.rating,
+        instagramUrl:           balletInstructorsTable.instagramUrl,
+        tiktokUrl:              balletInstructorsTable.tiktokUrl,
+        youtubeUrl:             balletInstructorsTable.youtubeUrl,
+        teachingLevel:          balletInstructorsTable.teachingLevel,
+        achievements:           balletInstructorsTable.achievements,
+        teachingPhilosophy:     balletInstructorsTable.teachingPhilosophy,
+        professionalExperience: balletInstructorsTable.professionalExperience,
+      })
+      .from(balletInstructorsTable)
+      .where(and(eq(balletInstructorsTable.id, id), eq(balletInstructorsTable.isActive, true)))
+      .limit(1);
+
+    if (!instructor) {
+      res.status(404).json({ error: "Instructor not found" });
+      return;
+    }
+
+    res.json({
+      instructor: {
+        ...instructor,
+        photoUrl: normalizeInstructorPhotoUrlForResponse(instructor.photoUrl),
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/instructors/:id failed");
+    res.status(500).json({ error: "Failed to load instructor" });
+  }
+});
+
 // ─── GET /api/ballet/levels ────────────────────────────────────────────────────
 //
 // Public read-only level list. Active levels only, ordered by sortOrder.
@@ -434,14 +582,16 @@ router.get("/ballet/levels", async (_req, res): Promise<void> => {
         id:           balletLevelsTable.id,
         name:         balletLevelsTable.name,
         sortOrder:    balletLevelsTable.sortOrder,
+        isActive:     balletLevelsTable.isActive,
         description:  balletLevelsTable.description,
         requirements: balletLevelsTable.requirements,
+        imageUrl:     balletLevelsTable.imageUrl,
         ageMin:       balletLevelsTable.ageMin,
         ageMax:       balletLevelsTable.ageMax,
       })
       .from(balletLevelsTable)
       .where(eq(balletLevelsTable.isActive, true))
-      .orderBy(asc(balletLevelsTable.sortOrder));
+      .orderBy(asc(balletLevelsTable.sortOrder), asc(balletLevelsTable.id));
 
     res.json({ levels });
   } catch (err) {
@@ -476,6 +626,56 @@ router.get("/ballet/groups", async (_req, res): Promise<void> => {
   }
 });
 
+// ─── GET /api/ballet/packages ─────────────────────────────────────────────────
+//
+// Public read-only monthly Ballet package catalogue. Active packages only.
+// Response: { packages: { id, name, monthlyClasses, monthlyHours, priceEgp, levelIds }[] }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/ballet/packages", async (_req, res): Promise<void> => {
+  try {
+    const packages = await db
+      .select({
+        id:             balletPackagesTable.id,
+        name:           balletPackagesTable.name,
+        monthlyClasses: balletPackagesTable.monthlyClasses,
+        monthlyHours:   balletPackagesTable.monthlyHours,
+        priceEgp:       balletPackagesTable.priceEgp,
+      })
+      .from(balletPackagesTable)
+      .where(eq(balletPackagesTable.isActive, true))
+      .orderBy(asc(balletPackagesTable.priceEgp), asc(balletPackagesTable.id));
+
+    const packageIds = packages.map((pkg) => pkg.id);
+    const levelIdsByPackageId = new Map<number, number[]>();
+
+    if (packageIds.length > 0) {
+      const levelRows = await db
+        .select({
+          packageId: balletPackageLevelsTable.packageId,
+          levelId:   balletPackageLevelsTable.levelId,
+        })
+        .from(balletPackageLevelsTable)
+        .where(inArray(balletPackageLevelsTable.packageId, packageIds))
+        .orderBy(asc(balletPackageLevelsTable.packageId), asc(balletPackageLevelsTable.levelId));
+
+      for (const row of levelRows) {
+        levelIdsByPackageId.set(row.packageId, [...(levelIdsByPackageId.get(row.packageId) ?? []), row.levelId]);
+      }
+    }
+
+    res.json({
+      packages: packages.map((pkg) => ({
+        ...pkg,
+        levelIds: levelIdsByPackageId.get(pkg.id) ?? [],
+      })),
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /ballet/packages failed");
+    res.status(500).json({ error: "Failed to load Ballet packages" });
+  }
+});
+
 // ─── GET /api/ballet/performances ──────────────────────────────────────────────
 //
 // Public read-only upcoming performance opportunities (eventDate >= today).
@@ -490,15 +690,21 @@ router.get("/ballet/performances", async (_req, res): Promise<void> => {
       .select({
         id:           balletPerformanceOpportunitiesTable.id,
         eventTitle:   balletPerformanceOpportunitiesTable.eventTitle,
+        description:  balletPerformanceOpportunitiesTable.description,
+        imageUrl:     balletPerformanceOpportunitiesTable.imageUrl,
         eventType:    balletPerformanceOpportunitiesTable.eventType,
         locationName: balletPerformanceOpportunitiesTable.locationName,
         eventDate:    balletPerformanceOpportunitiesTable.eventDate,
         startTime:    balletPerformanceOpportunitiesTable.startTime,
         endTime:      balletPerformanceOpportunitiesTable.endTime,
         requirements: balletPerformanceOpportunitiesTable.requirements,
+        externalCtaUrl: balletPerformanceOpportunitiesTable.externalCtaUrl,
       })
       .from(balletPerformanceOpportunitiesTable)
-      .where(gte(balletPerformanceOpportunitiesTable.eventDate, today))
+      .where(and(
+        eq(balletPerformanceOpportunitiesTable.status, "active"),
+        gte(balletPerformanceOpportunitiesTable.eventDate, today),
+      ))
       .orderBy(asc(balletPerformanceOpportunitiesTable.eventDate));
 
     res.json({ performances });
@@ -774,7 +980,8 @@ router.get(
 //   as duplicates; the birthday condition only applies when both the
 //   incoming request and the stored row have a non-null birthday, else it
 //   degrades to name-only (today's behavior for legacy/birthday-less rows).
-//   Active = any status except "rejected" and "cancelled".
+//   Open = pending | needsFollowUp | accepted | assignedToLevel | active.
+//   Rejected, cancelled, and withdrawn allow a new application.
 //   Returns 409 with existingApplicationId if a duplicate is detected so the
 //   mobile client can navigate to the status screen without an extra round-trip.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -801,6 +1008,7 @@ const SubmitApplicationBody = z.object({
     required_error: "preferredPaymentMethod is required",
     invalid_type_error: "preferredPaymentMethod is required",
   }),
+  preferredPackageId:    z.number().int().positive().optional(),
   // Optional link to a saved child profile (children.id). When present it must
   // belong to the authenticated parent; legacy/manual submissions omit it.
   childId:               z.number().int().positive().optional(),
@@ -823,8 +1031,18 @@ router.post(
       emergencyContactName, emergencyContactPhone,
       previousExperience, experienceDetails,
       medicalNotes, notes,
-      assessmentScheduleId, assessmentDate, childId, preferredPaymentMethod,
+      assessmentScheduleId, assessmentDate, childId, preferredPaymentMethod, preferredPackageId,
     } = parsed.data;
+
+    // Future backlog: Online Ballet payment requires a checkout session,
+    // verified webhook/callback, reconciliation, and idempotent retry support.
+    if (preferredPaymentMethod !== SUPPORTED_MOBILE_ASSESSMENT_PAYMENT_METHOD) {
+      res.status(422).json({
+        error: "Only Pay at Studio is currently supported for Ballet assessment applications.",
+        code: "BALLET_ONLINE_PAYMENT_NOT_AVAILABLE",
+      });
+      return;
+    }
 
     const parentStudentId = req.studentId!;
 
@@ -965,26 +1183,17 @@ router.post(
           );
         }
 
-        // Capacity check under Ballet-specific advisory lock
-        if (assessment.capacity != null) {
-          await tx.execute(
-            sql`select pg_advisory_xact_lock(hashtext(${`ballet-assessment:${assessmentScheduleId}:${assessmentDate}`}))`
-          );
+        if (preferredPackageId != null) {
+          const [pkg] = await tx
+            .select({ id: balletPackagesTable.id, isActive: balletPackagesTable.isActive })
+            .from(balletPackagesTable)
+            .where(eq(balletPackagesTable.id, preferredPackageId))
+            .limit(1);
 
-          const [bookedCountRow] = await tx
-            .select({ count: count() })
-            .from(balletApplicationsTable)
-            .where(and(
-              eq(balletApplicationsTable.assessmentScheduleId, assessmentScheduleId),
-              eq(balletApplicationsTable.assessmentDate, assessmentDate),
-              inArray(balletApplicationsTable.status, ["pending", "accepted", "needsFollowUp", "assignedToLevel", "active"])
-            ));
-
-          const bookedCount = bookedCountRow?.count ?? 0;
-          if (bookedCount >= assessment.capacity) {
+          if (!pkg || !pkg.isActive) {
             throw Object.assign(
-              new Error("Selected assessment schedule is at full capacity on this date."),
-              { status: 422, code: "ASSESSMENT_SCHEDULE_FULL" }
+              new Error("Selected Ballet package is no longer available."),
+              { status: 422, code: "BALLET_PACKAGE_UNAVAILABLE" },
             );
           }
         }
@@ -1103,6 +1312,7 @@ router.post(
             // C1: intake payment preference. Stored on the application only —
             // no ballet_payments row is created at submission time.
             preferredPaymentMethod,
+            preferredPackageId: preferredPackageId ?? null,
             status: "pending",
           })
           .returning({ id: balletApplicationsTable.id, status: balletApplicationsTable.status });
@@ -1240,6 +1450,8 @@ const UpdateApplicationBody = z.object({
   previousExperience:    z.boolean().optional(),
   assessmentScheduleId:  z.number().int().positive().optional(),
   assessmentDate:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  preferredPackageId:    z.number().int().positive().optional(),
+  preferredPaymentMethod: z.enum(BALLET_PAYMENT_METHODS).optional(),
 });
 
 router.patch(
@@ -1288,11 +1500,37 @@ router.patch(
       }
 
       const updates: Record<string, unknown> = {};
-      const { assessmentScheduleId, assessmentDate, ...rest } = parsed.data;
+      const { assessmentScheduleId, assessmentDate, preferredPackageId, preferredPaymentMethod, ...rest } = parsed.data;
 
       // Copy scalar fields directly
       for (const [k, v] of Object.entries(rest)) {
         if (v !== undefined) updates[k] = v;
+      }
+
+      if (preferredPaymentMethod !== undefined) {
+        // Future backlog: Online Ballet payment requires a checkout session,
+        // verified webhook/callback, reconciliation, and idempotent retry support.
+        if (preferredPaymentMethod !== SUPPORTED_MOBILE_ASSESSMENT_PAYMENT_METHOD) {
+          res.status(422).json({
+            error: "Only Pay at Studio is currently supported for Ballet assessment applications.",
+            code: "BALLET_ONLINE_PAYMENT_NOT_AVAILABLE",
+          });
+          return;
+        }
+        updates["preferredPaymentMethod"] = preferredPaymentMethod;
+      }
+
+      if (preferredPackageId !== undefined) {
+        const [pkg] = await db
+          .select({ id: balletPackagesTable.id, isActive: balletPackagesTable.isActive })
+          .from(balletPackagesTable)
+          .where(eq(balletPackagesTable.id, preferredPackageId))
+          .limit(1);
+        if (!pkg || !pkg.isActive) {
+          res.status(422).json({ error: "Selected Ballet package is no longer available.", code: "BALLET_PACKAGE_UNAVAILABLE" });
+          return;
+        }
+        updates["preferredPackageId"] = preferredPackageId;
       }
 
       // Handle assessment schedule change — re-validate active schedule,
@@ -1350,41 +1588,6 @@ router.patch(
 
       // Wrap update + event insert in a transaction.
       await db.transaction(async (tx) => {
-        // Enforce capacity check under advisory lock if schedule changed
-        if (updates["assessmentScheduleId"] != null && updates["assessmentDate"] != null) {
-          const schedId = updates["assessmentScheduleId"] as number;
-          const dateVal = updates["assessmentDate"] as string;
-
-          const [sched] = await tx
-            .select({ capacity: balletSchedulesTable.capacity })
-            .from(balletSchedulesTable)
-            .where(eq(balletSchedulesTable.id, schedId))
-            .limit(1);
-
-          if (sched && sched.capacity != null) {
-            await tx.execute(
-              sql`select pg_advisory_xact_lock(hashtext(${`ballet-assessment:${schedId}:${dateVal}`}))`
-            );
-
-            const [bookedCountRow] = await tx
-              .select({ count: count() })
-              .from(balletApplicationsTable)
-              .where(and(
-                eq(balletApplicationsTable.assessmentScheduleId, schedId),
-                eq(balletApplicationsTable.assessmentDate, dateVal),
-                inArray(balletApplicationsTable.status, ["pending", "accepted", "needsFollowUp", "assignedToLevel", "active"])
-              ));
-
-            const bookedCount = bookedCountRow?.count ?? 0;
-            if (bookedCount >= sched.capacity) {
-              throw Object.assign(
-                new Error("Selected assessment schedule is at full capacity on this date."),
-                { status: 422, code: "ASSESSMENT_SCHEDULE_FULL" }
-              );
-            }
-          }
-        }
-
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await tx
           .update(balletApplicationsTable)
@@ -1408,73 +1611,6 @@ router.patch(
       const status = err.status ?? 500;
       const message = err.message ?? "Failed to update application";
       res.status(status).json({ error: message, code: err.code });
-    }
-  },
-);
-
-// ─── POST /api/ballet/applications/:id/cancel ────────────────────────────────
-//
-// Allows the authenticated parent to cancel their own application, but only
-// while status is pending / needsFollowUp.
-//
-// Sets status to "cancelled" and inserts an event row.
-// After cancellation the parent may submit a new application.
-// ─────────────────────────────────────────────────────────────────────────────
-
-router.post(
-  "/ballet/applications/:id/cancel",
-  requireStudentAuth,
-  requireVerifiedStudent,
-  async (req, res): Promise<void> => {
-    const id = parseInt(String(req.params["id"] ?? ""), 10);
-    if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
-
-    const parentStudentId = req.studentId!;
-
-    try {
-      const [app] = await db
-        .select({ id: balletApplicationsTable.id, status: balletApplicationsTable.status })
-        .from(balletApplicationsTable)
-        .where(
-          and(
-            eq(balletApplicationsTable.id, id),
-            eq(balletApplicationsTable.parentStudentId, parentStudentId),
-          ),
-        )
-        .limit(1);
-
-      if (!app) { res.status(404).json({ error: "Application not found" }); return; }
-
-      if (!(CANCELLABLE_STATUSES as readonly string[]).includes(app.status)) {
-        res.status(422).json({
-          error: `Application cannot be cancelled in status "${app.status}".`,
-        });
-        return;
-      }
-
-      const now = new Date().toISOString();
-
-      await db.transaction(async (tx) => {
-        await tx
-          .update(balletApplicationsTable)
-          .set({ status: "cancelled", updatedAt: now })
-          .where(eq(balletApplicationsTable.id, id));
-
-        await tx.insert(balletApplicationEventsTable).values({
-          applicationId: id,
-          fromStatus:    app.status,
-          toStatus:      "cancelled",
-          changedById:   null,
-          note:          "Application cancelled by parent via mobile app",
-        });
-      });
-
-      logger.info({ applicationId: id, studentId: parentStudentId }, "Ballet application cancelled by parent");
-
-      res.json({ success: true, status: "cancelled" });
-    } catch (err) {
-      logger.error({ err }, "POST /ballet/applications/:id/cancel failed");
-      res.status(500).json({ error: "Failed to cancel application" });
     }
   },
 );

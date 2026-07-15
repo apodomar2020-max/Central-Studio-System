@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useFocusEffect } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { router } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  Animated,
   Modal,
   Platform,
   ScrollView,
@@ -15,315 +16,739 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  BALLET_LEVELS,
-  BALLET_PRICING,
-  type BalletSettings,
-  AssessmentScheduleOption,
-  fetchBalletSettings,
-  fetchAvailableAssessmentSchedules,
-  fetchMyApplications,
-  submitBalletApplication,
-  ACTIVE_APPLICATION_STATUSES,
-  isOfflineError,
-} from "@/services/balletAssessmentService";
-import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
-import { probeConnectivity } from "@/services/connectivity";
-import type { BalletPaymentMethod } from "@workspace/api-zod";
-
-// NOTE: This screen is only navigated to when the ballet gate (app/ballet/index.tsx)
-// has already confirmed there is no active application, OR from within the ballet
-// flow after a terminal status (rejected/cancelled). Do NOT add a duplicate-app
-// check here — index.tsx handles that redirect before this screen ever renders.
-import { useAppContext, type ChildProfile } from "@/contexts/AppContext";
-import OfflineState from "@/components/OfflineState";
+import BalletAssessmentAppointmentCard from "@/components/ballet/BalletAssessmentAppointmentCard";
+import BalletAssessmentChildCard from "@/components/ballet/BalletAssessmentChildCard";
+import BalletAssessmentHeader from "@/components/ballet/BalletAssessmentHeader";
+import BalletAssessmentPackageCard from "@/components/ballet/BalletAssessmentPackageCard";
+import BalletAssessmentSuccessActions from "@/components/ballet/BalletAssessmentSuccessActions";
+import BalletAssessmentSummaryCard from "@/components/ballet/BalletAssessmentSummaryCard";
+import BalletStepIndicator from "@/components/ballet/BalletStepIndicator";
+import { BA, BA_RADIUS } from "@/components/ballet/assessmentTokens";
 import ErrorState from "@/components/ErrorState";
+import OfflineState from "@/components/OfflineState";
+import { SkeletonBox } from "@/components/SkeletonLoader";
+import { useAppContext, type ChildProfile } from "@/contexts/AppContext";
+import { nextStepRoute } from "@/services/authProfile";
+import {
+  ACTIVE_APPLICATION_STATUSES,
+  AssessmentScheduleOption,
+  BalletApplication,
+  BalletPackageOption,
+  cancelBalletApplication,
+  fetchBalletApplicationDetail,
+  fetchAvailableAssessmentSchedules,
+  fetchBalletPackages,
+  fetchMyApplications,
+  isOfflineError,
+  submitBalletApplication,
+  updateBalletApplication,
+} from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
+import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
-/* ─── Design tokens (home-ballet2.jsx visual system) ─────────────── */
-const BASE    = "#0A0B0D";
-const CARD    = "#15171B";
-const SURFACE = "#22262C";
-const CYAN    = "#00B6D7";
-const AMBER   = "#FFB02E";
-const SUCCESS = "#1FB871";
-const DANGER  = "#FF3B47";
-const INK_200 = "#D1D5DB";
-const INK_300 = "#9CA3AF";
-const INK_400 = "#4B5563";
-const BALLET_COLOR = CYAN; // keep the existing semantic name; aligned to the design cyan
-// C1: "Payment Method" sits between assessment selection and the final Review, per
-// the original spec (payment-method choice before Review).
-const STEPS = ["About You", "Child Info", "Experience", "Assessment", "Payment Method", "Review"];
+const RETURN_TO_ASSESSMENT = "/ballet/assessment";
+const BLOCKING_CHILD_APPLICATION_STATUSES = new Set([
+  ...ACTIVE_APPLICATION_STATUSES,
+]);
 
-// C1: parent-facing labels for the three app-layer payment methods.
-const PAYMENT_METHOD_OPTIONS: { value: BalletPaymentMethod; label: string; hint: string }[] = [
-  { value: "bankTransfer", label: "Bank Transfer",     hint: "Transfer to the studio's bank account" },
-  { value: "kashier",      label: "Kashier",           hint: "Pay online via Kashier" },
-  { value: "inPerson",     label: "Pay at the Studio", hint: "Settle in person at reception" },
-];
+const CANONICAL_PAYMENT_METHOD = "inPerson" as const;
+const CANONICAL_PAYMENT_LABEL = "Pay at Studio";
 
-type FormData = {
-  parentName: string;
-  parentPhone: string;
-  parentEmail: string;
-  childName: string;
-  childBirthday: string;
-  childAge: string;
-  childGender: "male" | "female";
-  previousExperience: boolean | null;
-  experienceDetails: string;
-  medicalNotes: string;
-  selectedSlot: AssessmentScheduleOption | null;
-  emergencyContactName: string;
-  emergencyContactPhone: string;
-  notes: string;
-  preferredPaymentMethod: BalletPaymentMethod | null;
-};
+type Step = "child" | "appointment" | "package" | "review";
 
-const INITIAL_FORM: FormData = {
-  parentName: "",
-  parentPhone: "",
-  parentEmail: "",
-  childName: "",
-  childBirthday: "",
-  childAge: "",
-  childGender: "female",
-  previousExperience: null,
-  experienceDetails: "",
-  medicalNotes: "",
-  selectedSlot: null,
-  emergencyContactName: "",
-  emergencyContactPhone: "",
-  notes: "",
-  preferredPaymentMethod: null,
-};
+const STEP_ORDER: Step[] = ["child", "appointment", "package", "review"];
+
+type LoadState = "loading" | "ready" | "empty" | "error" | "offline";
+
+function calculateAge(birthday?: string | null): number {
+  if (!birthday || !/^\d{4}-\d{2}-\d{2}$/.test(birthday)) return 0;
+  const [y, m, d] = birthday.split("-").map((part) => Number(part));
+  if ([y, m, d].some((part) => Number.isNaN(part))) return 0;
+  const today = new Date();
+  let age = today.getFullYear() - y;
+  if (today.getMonth() < m - 1 || (today.getMonth() === m - 1 && today.getDate() < d)) age -= 1;
+  return Math.max(age, 0);
+}
+
+function formatDisplayDate(value?: string | null, withWeekday = false) {
+  if (!value) return "—";
+  const date = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", {
+    weekday: withWeekday ? "long" : undefined,
+    day: "2-digit",
+    month: "long",
+    year: withWeekday ? undefined : "numeric",
+  });
+}
+
+function getChildApplicationStatus(child: ChildProfile, applications: BalletApplication[]) {
+  const childId = Number(child.id);
+  const matching = applications.find((app) => {
+    if (!Number.isNaN(childId) && app.childId === childId) return true;
+    const sameName = app.childName.trim().toLowerCase() === child.fullName.trim().toLowerCase();
+    const sameBirthday = !!child.birthday && app.childBirthday === child.birthday;
+    return sameName && sameBirthday;
+  });
+  return matching?.status ?? null;
+}
 
 function Field({
   label,
   value,
-  onChange,
+  onChangeText,
   placeholder,
   keyboardType,
   multiline,
-  required,
+  style,
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  keyboardType?: "default" | "email-address" | "phone-pad" | "numeric";
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  keyboardType?: "default" | "number-pad";
   multiline?: boolean;
-  required?: boolean;
+  style?: object;
 }) {
   return (
     <View style={styles.field}>
-      <Text style={styles.fieldLabel}>
-        {label}
-        {required && <Text style={{ color: BALLET_COLOR }}> *</Text>}
-      </Text>
+      <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         value={value}
-        onChangeText={onChange}
+        onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#4B5563"
-        style={[styles.input, styles.inputText, multiline && { minHeight: 72 }]}
-        keyboardType={keyboardType ?? "default"}
+        placeholderTextColor="rgba(255,255,255,0.34)"
+        keyboardType={keyboardType}
         multiline={multiline}
-        autoCapitalize={keyboardType === "email-address" ? "none" : "words"}
+        textAlignVertical={multiline ? "top" : "center"}
+        style={[styles.input, style]}
       />
     </View>
   );
 }
 
-// ─── Date Picker ─────────────────────────────────────────────────────────────
-
-const DP_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const DP_MIN_YEAR = 2000;
-const DP_MAX_YEAR = new Date().getFullYear() - 1;
-
-function calcAgeFromDate(y: number, m: number, d: number): number {
-  const today = new Date();
-  let age = today.getFullYear() - y;
-  if (today.getMonth() + 1 < m || (today.getMonth() + 1 === m && today.getDate() < d)) age--;
-  return Math.max(0, age);
-}
-
-/**
- * Effective age at time of use — always recomputed fresh from the birthday
- * (never trusts a possibly-stale stored `age` field, including for a
- * selected saved child). Falls back to the stored/typed age string only
- * when no birthday is available at all.
- */
-function computeEffectiveAge(birthday: string, fallbackAgeStr: string): number | null {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
-    const y = +birthday.slice(0, 4);
-    const m = +birthday.slice(5, 7);
-    const d = +birthday.slice(8, 10);
-    return calcAgeFromDate(y, m, d);
-  }
-  const n = parseInt(fallbackAgeStr, 10);
-  return Number.isNaN(n) ? null : n;
-}
-
-function daysInMonth(y: number, m: number): number {
-  return new Date(y, m, 0).getDate();
-}
-
-function SpinnerCol({
-  displayValue,
-  onIncrement,
-  onDecrement,
-}: {
-  displayValue: string;
-  onIncrement: () => void;
-  onDecrement: () => void;
-}) {
+function LoadingCards() {
   return (
-    <View style={dpStyles.col}>
-      <TouchableOpacity onPress={onIncrement} style={dpStyles.arrowBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-        <Ionicons name="chevron-up" size={22} color={BALLET_COLOR} />
-      </TouchableOpacity>
-      <Text style={dpStyles.spinnerValue}>{displayValue}</Text>
-      <TouchableOpacity onPress={onDecrement} style={dpStyles.arrowBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-        <Ionicons name="chevron-down" size={22} color={BALLET_COLOR} />
-      </TouchableOpacity>
+    <View style={{ gap: 12 }}>
+      {[0, 1, 2].map((item) => (
+        <View key={item} style={styles.skeletonCard}>
+          <SkeletonBox width={44} height={44} borderRadius={22} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <SkeletonBox width="70%" height={15} borderRadius={8} />
+            <SkeletonBox width="48%" height={12} borderRadius={6} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
 
-function DatePickerField({
-  value,
-  onChangeWithAge,
-  label,
-}: {
-  value: string;
-  onChangeWithAge: (dateStr: string, age: number) => void;
-  label: string;
-}) {
-  const [open, setOpen] = useState(false);
+function ScreenTitle({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <View style={styles.stepIntro}>
+      <Text style={styles.stepTitle}>{title}</Text>
+      <Text style={styles.stepSubtitle}>{subtitle}</Text>
+    </View>
+  );
+}
 
-  // Parse initial or default to ~8 years old
-  const defaultYear = new Date().getFullYear() - 8;
-  const parseInitial = () => {
-    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return { y: +value.slice(0, 4), m: +value.slice(5, 7), d: +value.slice(8, 10) };
+export default function BalletAssessmentScreen() {
+  const insets = useSafeAreaInsets();
+  const { user, children, addChild } = useAppContext();
+
+  const [step, setStep] = useState<Step>("child");
+  const [selectedChild, setSelectedChild] = useState<ChildProfile | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<AssessmentScheduleOption | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<BalletPackageOption | null>(null);
+  const [applications, setApplications] = useState<BalletApplication[]>([]);
+  const [applicationsState, setApplicationsState] = useState<LoadState>("loading");
+  const [appointments, setAppointments] = useState<AssessmentScheduleOption[]>([]);
+  const [appointmentsState, setAppointmentsState] = useState<LoadState>("loading");
+  const [packages, setPackages] = useState<BalletPackageOption[]>([]);
+  const [packagesState, setPackagesState] = useState<LoadState>("loading");
+  const [submitting, setSubmitting] = useState(false);
+  const [submittedApplicationId, setSubmittedApplicationId] = useState<number | null>(null);
+  const [editingApplicationId, setEditingApplicationId] = useState<number | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelReasonOpen, setCancelReasonOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [addChildOpen, setAddChildOpen] = useState(false);
+  const [newChildName, setNewChildName] = useState("");
+  const [newChildDay, setNewChildDay] = useState("");
+  const [newChildMonth, setNewChildMonth] = useState("");
+  const [newChildYear, setNewChildYear] = useState("");
+  const [newChildGender, setNewChildGender] = useState<"female" | "male">("female");
+  const authPromptShownRef = useRef(false);
+  const parentPromptShownRef = useRef(false);
+  const successScale = useRef(new Animated.Value(0)).current;
+  const trimmedCancelReason = cancelReason.trim();
+  const cancelReasonError = trimmedCancelReason.length === 0
+    ? "Reason is required."
+    : trimmedCancelReason.length < 5
+      ? "Reason must be at least 5 characters."
+      : trimmedCancelReason.length > 500
+        ? "Reason must be at most 500 characters."
+        : null;
+
+  const stepIndex = STEP_ORDER.indexOf(step);
+  const profileComplete = user?.profileCompletion?.isComplete ?? user?.profileCompleted ?? false;
+
+  useEffect(() => {
+    if (!user) {
+      if (!authPromptShownRef.current) {
+        authPromptShownRef.current = true;
+        showAuthRequiredPrompt();
+        router.replace("/ballet" as never);
+      }
+      return;
     }
-    return { y: defaultYear, m: 1, d: 1 };
-  };
 
-  const init = parseInitial();
-  const [year, setYear] = useState(init.y);
-  const [month, setMonth] = useState(init.m);
-  const [day, setDay] = useState(init.d);
+    if (!profileComplete) {
+      const nextStep = user.profileCompletion?.nextStep ?? "profile";
+      router.replace({
+        pathname: nextStepRoute(nextStep) as never,
+        params: { returnTo: RETURN_TO_ASSESSMENT },
+      } as never);
+      return;
+    }
 
-  // Re-sync if external value changes
+    if (user.accountType !== "parent") {
+      if (!parentPromptShownRef.current) {
+        parentPromptShownRef.current = true;
+        showParentAccountRequiredPrompt();
+        router.replace("/ballet" as never);
+      }
+    }
+  }, [profileComplete, user]);
+
+  const loadApplications = useCallback(async (signal?: AbortSignal) => {
+    setApplicationsState("loading");
+    try {
+      const data = await fetchMyApplications(signal);
+      if (signal?.aborted) return;
+      setApplications(data);
+      setApplicationsState("ready");
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      setApplicationsState(isOfflineError(err) ? "offline" : "error");
+    }
+  }, []);
+
+  const loadPackages = useCallback(async (signal?: AbortSignal) => {
+    setPackagesState("loading");
+    try {
+      const data = await fetchBalletPackages(signal);
+      if (signal?.aborted) return;
+      setPackages(data);
+      setPackagesState(data.length ? "ready" : "empty");
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      setPackagesState(isOfflineError(err) ? "offline" : "error");
+    }
+  }, []);
+
+  const loadAppointments = useCallback(async (child: ChildProfile, signal?: AbortSignal) => {
+    setAppointmentsState("loading");
+    try {
+      const data = await fetchAvailableAssessmentSchedules(signal, child.birthday);
+      if (signal?.aborted) return;
+      setAppointments(data);
+      setAppointmentsState(data.length ? "ready" : "empty");
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      setAppointmentsState(isOfflineError(err) ? "offline" : "error");
+    }
+  }, []);
+
   useEffect(() => {
-    const p = parseInitial();
-    setYear(p.y); setMonth(p.m); setDay(p.d);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+    if (!user || !profileComplete || user.accountType !== "parent") return;
+    const controller = new AbortController();
+    loadApplications(controller.signal);
+    loadPackages(controller.signal);
+    return () => controller.abort();
+  }, [loadApplications, loadPackages, profileComplete, user]);
 
-  const maxDay = daysInMonth(year, month);
-  const clampedDay = Math.min(day, maxDay);
-
-  // Clamp day if month/year changes makes it invalid
   useEffect(() => {
-    if (day > daysInMonth(year, month)) setDay(daysInMonth(year, month));
-  }, [year, month]);
+    if (!selectedChild) return;
+    const controller = new AbortController();
+    setSelectedAppointment(null);
+    loadAppointments(selectedChild, controller.signal);
+    return () => controller.abort();
+  }, [loadAppointments, selectedChild]);
 
-  function handleConfirm() {
-    const d = clampedDay;
-    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    onChangeWithAge(dateStr, calcAgeFromDate(year, month, d));
-    setOpen(false);
+  useEffect(() => {
+    if (submittedApplicationId == null) return;
+    Animated.spring(successScale, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }).start();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [submittedApplicationId, successScale]);
+
+  function goBack() {
+    if (submittedApplicationId != null) {
+      router.replace("/ballet" as never);
+      return;
+    }
+    if (stepIndex <= 0) {
+      router.back();
+      return;
+    }
+    setStep(STEP_ORDER[stepIndex - 1]);
   }
 
-  const displayDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? `${String(+value.slice(8, 10)).padStart(2, "0")} ${DP_MONTHS[+value.slice(5, 7) - 1]} ${value.slice(0, 4)}`
-    : "";
+  function goNext() {
+    if (step === "child" && !selectedChild) {
+      Alert.alert("Select Child", "Choose the child applying for Ballet Assessment.");
+      return;
+    }
+    if (step === "appointment" && !selectedAppointment) {
+      Alert.alert("Select Appointment", "Choose an available assessment appointment.");
+      return;
+    }
+    if (step === "package" && !selectedPackage) {
+      Alert.alert("Select Package", "Choose a Ballet package.");
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setStep(STEP_ORDER[Math.min(stepIndex + 1, STEP_ORDER.length - 1)]);
+  }
 
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TouchableOpacity
-        onPress={() => setOpen(true)}
-        style={[styles.input, dpStyles.trigger]}
-        activeOpacity={0.8}
-      >
-        <Text style={[dpStyles.triggerText, !displayDate && { color: "#4B5563" }]}>
-          {displayDate || "Select date of birth"}
-        </Text>
-        <Ionicons name="calendar-outline" size={16} color={BALLET_COLOR} />
-      </TouchableOpacity>
+  async function handleAddChild() {
+    if (!newChildName.trim()) {
+      Alert.alert("Child Name", "Please enter the child's full name.");
+      return;
+    }
+    const birthday = newChildDay && newChildMonth && newChildYear
+      ? `${newChildYear}-${newChildMonth.padStart(2, "0")}-${newChildDay.padStart(2, "0")}`
+      : "";
+    const age = calculateAge(birthday);
+    if (!birthday || age <= 0) {
+      Alert.alert("Birthday", "Please enter a valid child birthday.");
+      return;
+    }
+    const created = await addChild({
+      id: "",
+      fullName: newChildName.trim(),
+      birthday,
+      age,
+      gender: newChildGender,
+    });
+    if (!created) return;
+    setSelectedChild(created);
+    setAddChildOpen(false);
+    setNewChildName("");
+    setNewChildDay("");
+    setNewChildMonth("");
+    setNewChildYear("");
+    setNewChildGender("female");
+  }
 
-      <Modal
-        visible={open}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setOpen(false)}
-      >
-        <View style={dpStyles.overlay}>
-          <View style={dpStyles.sheet}>
-            {/* Header */}
-            <View style={dpStyles.sheetHeader}>
-              <Text style={dpStyles.sheetTitle}>Date of Birth</Text>
-              <TouchableOpacity onPress={() => setOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close" size={20} color="#9CA3AF" />
+  async function handleSubmit() {
+    if (!user || !selectedChild || !selectedAppointment || !selectedPackage || submitting) return;
+    const selectedChildId = Number(selectedChild.id);
+    if (!Number.isInteger(selectedChildId) || selectedChildId <= 0) {
+      Alert.alert("Invalid Child", "Please select a saved child profile before submitting.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (editingApplicationId != null) {
+        await updateBalletApplication(editingApplicationId, {
+          assessmentScheduleId: selectedAppointment.scheduleId,
+          assessmentDate: selectedAppointment.date,
+          preferredPackageId: selectedPackage.id,
+          preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
+        });
+        setSubmittedApplicationId(editingApplicationId);
+        setEditingApplicationId(null);
+        return;
+      }
+
+      const result = await submitBalletApplication({
+        parentName: user.fullName,
+        parentPhone: user.phone,
+        parentEmail: user.email,
+        childName: selectedChild.fullName,
+        childBirthday: selectedChild.birthday,
+        childAge: selectedChild.age || calculateAge(selectedChild.birthday),
+        childGender: selectedChild.gender,
+        previousExperience: false,
+        medicalNotes: selectedChild.medicalNotes,
+        emergencyContactName: selectedChild.emergencyContactName,
+        emergencyContactPhone: selectedChild.emergencyContactPhone,
+        assessmentScheduleId: selectedAppointment.scheduleId,
+        assessmentDate: selectedAppointment.date,
+        preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
+        preferredPackageId: selectedPackage.id,
+        childId: selectedChildId,
+      });
+      setSubmittedApplicationId(result.application.id);
+      setApplications((prev) => [
+        {
+          id: result.application.id,
+          childId: selectedChildId,
+          parentName: user.fullName,
+          parentPhone: user.phone,
+          parentEmail: user.email,
+          childName: selectedChild.fullName,
+          childBirthday: selectedChild.birthday,
+          childAge: selectedChild.age || calculateAge(selectedChild.birthday),
+          childGender: selectedChild.gender,
+          emergencyContactName: selectedChild.emergencyContactName ?? null,
+          emergencyContactPhone: selectedChild.emergencyContactPhone ?? null,
+          previousExperience: false,
+          experienceDetails: null,
+          medicalNotes: selectedChild.medicalNotes ?? null,
+          notes: null,
+          assessmentScheduleId: selectedAppointment.scheduleId,
+          assessmentDate: selectedAppointment.date,
+          preferredPackageId: selectedPackage.id,
+          status: result.application.status,
+          adminNotes: null,
+          assignedLevelId: null,
+          assignedGroupId: null,
+          resolvedSchedules: null,
+          resolvedInstructors: null,
+          attendanceSummary: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    } catch (err) {
+      const typed = err as { status?: number; data?: { error?: string; code?: string }; message?: string };
+      if (typed.status === 409) {
+        Alert.alert("Already Applied", typed.data?.error ?? "This child already has a Ballet application.");
+        await loadApplications();
+        return;
+      }
+      Alert.alert(
+        isOfflineError(err) ? "No Connection" : "Submission Failed",
+        typed.data?.error ?? typed.message ?? "We couldn't submit the application. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function resetForAnotherChild() {
+    setSubmittedApplicationId(null);
+    setEditingApplicationId(null);
+    setSelectedChild(null);
+    setSelectedAppointment(null);
+    setSelectedPackage(null);
+    setStep("child");
+    loadApplications();
+  }
+
+  function confirmCancel() {
+    if (submittedApplicationId == null) return;
+    Alert.alert(
+      "Cancel Application?",
+      "This will cancel the submitted Ballet Assessment application. You can apply again afterwards.",
+      [
+        { text: "Keep Application", style: "cancel" },
+        {
+          text: "Cancel Application",
+          style: "destructive",
+          onPress: () => {
+            setCancelReason("");
+            setCancelReasonOpen(true);
+          },
+        },
+      ],
+    );
+  }
+
+  async function submitCancelApplication() {
+    if (submittedApplicationId == null || cancelReasonError) return;
+    setCancelLoading(true);
+    try {
+      const latest = await fetchBalletApplicationDetail(submittedApplicationId);
+      if (!["pending", "needsFollowUp", "accepted", "assignedToLevel"].includes(latest.application.status)) {
+        Alert.alert(
+          "Cannot Cancel Here",
+          latest.application.status === "active"
+            ? "This application is now an active enrollment. Please use Request Ballet Cancellation from the application status screen."
+            : "This application can no longer be cancelled from this screen.",
+        );
+        router.replace("/ballet/application-status" as any);
+        return;
+      }
+      await cancelBalletApplication(submittedApplicationId, { reason: trimmedCancelReason });
+      Alert.alert("Application Cancelled", "The application has been cancelled.");
+      setCancelReasonOpen(false);
+      resetForAnotherChild();
+    } catch (err) {
+      Alert.alert("Could Not Cancel", err instanceof Error ? err.message : "Please try again.");
+    } finally {
+      setCancelLoading(false);
+    }
+  }
+
+  if (!user || !profileComplete || user.accountType !== "parent") {
+    return <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]} />;
+  }
+
+  if (submittedApplicationId != null && selectedChild && selectedAppointment) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient colors={["#04161B", BA.ink900]} style={StyleSheet.absoluteFill} />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.successScroll, { paddingTop: (Platform.OS === "web" ? 40 : insets.top) + 34 }]}
+        >
+          <Animated.View style={[styles.successIcon, { transform: [{ scale: successScale }] }]}>
+            <Svg width={42} height={42} viewBox="0 0 24 24" fill="none">
+              <Path d="M20 6 9 17l-5-5" stroke={BA.ink900} strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </Animated.View>
+          <Text style={styles.successTitle}>Application Submitted Successfully</Text>
+          <View style={styles.successCard}>
+            <Text style={styles.successLabel}>Child</Text>
+            <Text style={styles.successValue}>{selectedChild.fullName}</Text>
+            <Text style={styles.successLabel}>Assessment</Text>
+            <Text style={styles.successValue}>{formatDisplayDate(selectedAppointment.date, true)}</Text>
+            <Text style={styles.successValue}>{selectedAppointment.time}</Text>
+            <Text style={styles.successLabel}>Payment Method</Text>
+            <Text style={styles.successValue}>{CANONICAL_PAYMENT_LABEL}</Text>
+            <Text style={styles.successLabel}>Status</Text>
+            <Text style={[styles.successValue, { color: BA.amber }]}>Pending Review</Text>
+          </View>
+        </ScrollView>
+        <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
+          <BalletAssessmentSuccessActions
+            onHome={() => router.replace("/" as never)}
+            onModify={() => {
+              setEditingApplicationId(submittedApplicationId);
+              setSubmittedApplicationId(null);
+              setStep("review");
+            }}
+            onAnotherChild={resetForAnotherChild}
+            onCancel={confirmCancel}
+            cancelLoading={cancelLoading}
+          />
+        </View>
+        <Modal visible={cancelReasonOpen} animationType="slide" transparent onRequestClose={() => !cancelLoading && setCancelReasonOpen(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Cancel Application</Text>
+                <TouchableOpacity onPress={() => !cancelLoading && setCancelReasonOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close" size={22} color={BA.ink300} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalHelper}>Please tell the studio why you are cancelling this application.</Text>
+              <Field
+                label="Reason *"
+                value={cancelReason}
+                onChangeText={(value) => setCancelReason(value.slice(0, 500))}
+                placeholder="Write your reason…"
+                multiline
+                style={{ minHeight: 120 }}
+              />
+              <View style={styles.reasonMetaRow}>
+                <Text style={[styles.reasonValidation, !cancelReasonError || trimmedCancelReason.length === 0 ? styles.reasonHint : null]}>
+                  {trimmedCancelReason.length === 0 ? "Minimum 5 characters." : cancelReasonError ?? "Looks good."}
+                </Text>
+                <Text style={styles.reasonCount}>{cancelReason.length}/500</Text>
+              </View>
+              <TouchableOpacity
+                onPress={submitCancelApplication}
+                activeOpacity={0.86}
+                disabled={Boolean(cancelReasonError) || cancelLoading}
+                style={[styles.primaryButton, { minHeight: 50 }, (Boolean(cancelReasonError) || cancelLoading) && { opacity: 0.5 }]}
+              >
+                {cancelLoading ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Submit Cancellation</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  }
 
-            {/* Spinners */}
-            <View style={dpStyles.spinners}>
-              {/* Day */}
-              <View style={dpStyles.spinnerWrap}>
-                <Text style={dpStyles.spinnerLabel}>Day</Text>
-                <SpinnerCol
-                  displayValue={String(clampedDay).padStart(2, "0")}
-                  onIncrement={() => setDay((d) => (d >= maxDay ? 1 : d + 1))}
-                  onDecrement={() => setDay((d) => (d <= 1 ? maxDay : d - 1))}
-                />
+  return (
+    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+      <LinearGradient
+        colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.04)", "transparent"]}
+        locations={[0, 0.42, 1]}
+        style={styles.glow}
+        pointerEvents="none"
+      />
+      <BalletAssessmentHeader onBack={goBack} />
+      <BalletStepIndicator currentIndex={stepIndex} />
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scroll, { paddingBottom: 124 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {step === "child" && (
+          <View style={styles.section}>
+            <ScreenTitle title="Select Child" subtitle="Choose the child applying for Ballet Assessment" />
+            {applicationsState === "loading" ? <LoadingCards /> : null}
+            {applicationsState === "offline" ? <OfflineState variant="compact" onRetry={() => loadApplications()} /> : null}
+            {applicationsState === "error" ? <ErrorState variant="compact" message="Couldn't load existing applications." onRetry={() => loadApplications()} /> : null}
+            {applicationsState === "ready" && children.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyTitle}>No children found</Text>
+                <Text style={styles.emptyText}>Add a child profile before starting the Ballet Assessment application.</Text>
               </View>
-
-              <View style={dpStyles.spinnerSep} />
-
-              {/* Month */}
-              <View style={dpStyles.spinnerWrap}>
-                <Text style={dpStyles.spinnerLabel}>Month</Text>
-                <SpinnerCol
-                  displayValue={DP_MONTHS[month - 1] ?? ""}
-                  onIncrement={() => setMonth((m) => (m >= 12 ? 1 : m + 1))}
-                  onDecrement={() => setMonth((m) => (m <= 1 ? 12 : m - 1))}
+            ) : null}
+            {applicationsState === "ready" && children.map((child) => {
+              const status = getChildApplicationStatus(child, applications);
+              const disabled = status != null && BLOCKING_CHILD_APPLICATION_STATUSES.has(status);
+              const label = status === "pending" || status === "needsFollowUp"
+                ? "Application Pending"
+                : disabled
+                  ? "Already Applied"
+                  : undefined;
+              return (
+                <BalletAssessmentChildCard
+                  key={child.id}
+                  child={child}
+                  selected={selectedChild?.id === child.id}
+                  disabled={disabled}
+                  unavailableLabel={label}
+                  onPress={() => {
+                    if (disabled) return;
+                    Haptics.selectionAsync();
+                    setSelectedChild(child);
+                  }}
                 />
-              </View>
+              );
+            })}
+            <TouchableOpacity style={styles.addChildButton} onPress={() => setAddChildOpen(true)} activeOpacity={0.82}>
+              <Ionicons name="add-circle-outline" size={19} color={BA.cyan500} />
+              <Text style={styles.addChildText}>+ Add New Child</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-              <View style={dpStyles.spinnerSep} />
-
-              {/* Year */}
-              <View style={dpStyles.spinnerWrap}>
-                <Text style={dpStyles.spinnerLabel}>Year</Text>
-                <SpinnerCol
-                  displayValue={String(year)}
-                  onIncrement={() => setYear((y) => Math.min(y + 1, DP_MAX_YEAR))}
-                  onDecrement={() => setYear((y) => Math.max(y - 1, DP_MIN_YEAR))}
-                />
-              </View>
+        {step === "appointment" && selectedChild && (
+          <View style={styles.section}>
+            <ScreenTitle title="Select Assessment Appointment" subtitle="Choose an age-eligible assessment appointment." />
+            <View style={styles.infoBanner}>
+              <Ionicons name="information-circle-outline" size={18} color={BA.cyan400} />
+              <Text style={styles.infoText}>This appointment is for your Ballet Assessment, not your weekly Ballet class.</Text>
             </View>
+            {appointmentsState === "loading" ? <LoadingCards /> : null}
+            {appointmentsState === "offline" ? <OfflineState variant="compact" onRetry={() => loadAppointments(selectedChild)} /> : null}
+            {appointmentsState === "error" ? <ErrorState variant="compact" message="Couldn't load assessment appointments." onRetry={() => loadAppointments(selectedChild)} /> : null}
+            {appointmentsState === "empty" ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyTitle}>No assessment appointments available</Text>
+                <Text style={styles.emptyText}>No active assessment schedules match {selectedChild.fullName}'s age right now.</Text>
+              </View>
+            ) : null}
+            {appointmentsState === "ready" && appointments.map((appointment) => (
+              <BalletAssessmentAppointmentCard
+                key={`${appointment.scheduleId}-${appointment.date}`}
+                appointment={appointment}
+                selected={selectedAppointment?.scheduleId === appointment.scheduleId && selectedAppointment.date === appointment.date}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setSelectedAppointment(appointment);
+                }}
+              />
+            ))}
+          </View>
+        )}
 
-            {/* Preview */}
-            <View style={dpStyles.preview}>
-              <Text style={dpStyles.previewDate}>
-                {String(clampedDay).padStart(2, "0")} {DP_MONTHS[month - 1]} {year}
-              </Text>
-              <Text style={dpStyles.previewAge}>
-                Age: {calcAgeFromDate(year, month, clampedDay)} years old
-              </Text>
+        {step === "package" && (
+          <View style={styles.section}>
+            <ScreenTitle title="Select Package" subtitle="Choose the Ballet package you prefer for this application." />
+            {packagesState === "loading" ? <LoadingCards /> : null}
+            {packagesState === "offline" ? <OfflineState variant="compact" onRetry={() => loadPackages()} /> : null}
+            {packagesState === "error" ? <ErrorState variant="compact" message="Couldn't load Ballet packages." onRetry={() => loadPackages()} /> : null}
+            {packagesState === "empty" ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyTitle}>No packages available</Text>
+                <Text style={styles.emptyText}>The studio has not published active Ballet packages yet.</Text>
+              </View>
+            ) : null}
+            {packagesState === "ready" && packages.map((pkg) => (
+              <BalletAssessmentPackageCard
+                key={pkg.id}
+                pkg={pkg}
+                selected={selectedPackage?.id === pkg.id}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setSelectedPackage(pkg);
+                }}
+              />
+            ))}
+          </View>
+        )}
+
+        {step === "review" && selectedChild && selectedAppointment && selectedPackage && (
+          <View style={styles.section}>
+            <ScreenTitle title="Review Application" subtitle="Confirm every detail before submitting." />
+            <BalletAssessmentSummaryCard
+              child={selectedChild}
+              appointment={selectedAppointment}
+              pkg={selectedPackage}
+              paymentLabel={CANONICAL_PAYMENT_LABEL}
+              onEdit={(section) => {
+                const target: Step = section === "child" ? "child" : section === "appointment" ? "appointment" : "package";
+                setStep(target);
+              }}
+            />
+          </View>
+        )}
+      </ScrollView>
+
+      <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
+        {stepIndex > 0 ? (
+          <TouchableOpacity style={[styles.footerButton, styles.secondaryButton]} onPress={goBack} activeOpacity={0.86}>
+            <Text style={styles.secondaryButtonText}>Back</Text>
+          </TouchableOpacity>
+        ) : null}
+        {step === "review" ? (
+          <TouchableOpacity
+            style={[styles.footerButton, styles.primaryButton, submitting && { opacity: 0.6 }]}
+            onPress={handleSubmit}
+            disabled={submitting}
+            activeOpacity={0.86}
+          >
+            {submitting ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Submit Application</Text>}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={[styles.footerButton, styles.primaryButton]} onPress={goNext} activeOpacity={0.86}>
+            <Text style={styles.primaryButtonText}>Continue</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <Modal visible={addChildOpen} animationType="slide" transparent onRequestClose={() => setAddChildOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add New Child</Text>
+              <TouchableOpacity onPress={() => setAddChildOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={22} color={BA.ink300} />
+              </TouchableOpacity>
             </View>
-
-            {/* Confirm */}
-            <TouchableOpacity onPress={handleConfirm} style={dpStyles.confirmBtn} activeOpacity={0.85}>
-              <Text style={dpStyles.confirmText}>Confirm Date</Text>
+            <Field label="Child Full Name" value={newChildName} onChangeText={setNewChildName} placeholder="Sara Ahmed" />
+            <View style={styles.birthRow}>
+              <Field label="Day" value={newChildDay} onChangeText={setNewChildDay} placeholder="12" keyboardType="number-pad" />
+              <Field label="Month" value={newChildMonth} onChangeText={setNewChildMonth} placeholder="03" keyboardType="number-pad" />
+              <Field label="Year" value={newChildYear} onChangeText={setNewChildYear} placeholder="2021" keyboardType="number-pad" />
+            </View>
+            <View style={styles.genderRow}>
+              {(["female", "male"] as const).map((gender) => {
+                const selected = newChildGender === gender;
+                return (
+                  <TouchableOpacity key={gender} onPress={() => setNewChildGender(gender)} style={[styles.genderButton, selected && styles.genderButtonSelected]}>
+                    <Text style={[styles.genderText, selected && styles.genderTextSelected]}>{gender === "female" ? "Girl" : "Boy"}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity onPress={handleAddChild} activeOpacity={0.86} style={[styles.primaryButton, { minHeight: 50 }]}>
+              <Text style={styles.primaryButtonText}>Save Child</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -332,1299 +757,260 @@ function DatePickerField({
   );
 }
 
-const dpStyles = StyleSheet.create({
-  trigger: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  triggerText: {
-    flex: 1,
-    color: "#FFFFFF",
-    fontFamily: "Archivo_400Regular",
-    fontSize: 15,
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    borderTopColor: CYAN + "30",
-    paddingHorizontal: 24,
-    paddingBottom: Platform.OS === "ios" ? 40 : 24,
-    paddingTop: 20,
-    gap: 20,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  sheetTitle: {
-    fontSize: 17,
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: BA.ink900 },
+  glow: { position: "absolute", left: 0, right: 0, top: 0, height: 260 },
+  scroll: { paddingHorizontal: 20, paddingTop: 2 },
+  section: { gap: 12 },
+  stepIntro: { gap: 6, marginBottom: 4 },
+  stepTitle: {
+    color: BA.white,
     fontFamily: "Archivo_800ExtraBold",
-    color: "#FFFFFF",
+    fontSize: 24,
   },
-  spinners: {
+  stepSubtitle: {
+    color: BA.ink300,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  skeletonCard: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 0,
-    backgroundColor: BASE,
-    borderRadius: 16,
-    padding: 16,
-  },
-  spinnerWrap: {
-    flex: 1,
-    alignItems: "center",
-    gap: 6,
-  },
-  spinnerLabel: {
-    fontSize: 10,
-    fontFamily: "SpaceMono_700Bold",
-    color: INK_400,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  col: {
     alignItems: "center",
     gap: 12,
-  },
-  arrowBtn: {
-    padding: 4,
-  },
-  spinnerValue: {
-    fontSize: 30,
-    fontFamily: "Anton_400Regular",
-    color: "#FFFFFF",
-    ...iosDisplayTextStyle(30, 35),
-    minWidth: 60,
-    textAlign: "center",
-  },
-  spinnerSep: {
-    width: 1,
-    height: 80,
-    backgroundColor: "rgba(255,255,255,0.10)",
-    marginHorizontal: 4,
-  },
-  preview: {
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: BA_RADIUS.lg,
     borderWidth: 1,
-    borderColor: CYAN + "30",
-    backgroundColor: CYAN + "0F",
-  },
-  previewDate: {
-    fontSize: 16,
-    fontFamily: "Archivo_800ExtraBold",
-    color: CYAN,
-  },
-  previewAge: {
-    fontSize: 12,
-    fontFamily: "Archivo_400Regular",
-    color: INK_300,
-  },
-  confirmBtn: {
-    backgroundColor: CYAN,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  confirmText: {
-    fontSize: 15,
-    fontFamily: "Archivo_800ExtraBold",
-    color: "#FFFFFF",
-  },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-export default function BalletAssessmentScreen() {
-  const insets = useSafeAreaInsets();
-  const { user, children, addChild } = useAppContext();
-  const [step, setStep] = useState(0);
-  const [showIntro, setShowIntro] = useState(true);
-  const [form, setForm] = useState<FormData>(INITIAL_FORM);
-  const [submitting, setSubmitting] = useState(false);
-
-  // ── Parent/child prefill (logged-in accounts only) ─────────────────────────
-  const isLoggedIn = !!user;
-  // Saved child profiles available to pick from (parents with synced children).
-  const hasChildProfiles = isLoggedIn && children.length > 0;
-  // Backend children.id of the picked saved child (null = manual entry).
-  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
-  // Whether the prefilled About You section is in (submission-only) edit mode.
-  // Note: the Child Info identity fields (name/birthday/gender) have no such
-  // edit-in-place mode — while selectedChildId is set, they stay locked to
-  // the saved profile's values; "Enter a different child manually" is the
-  // only way to change them (see clearChildSelection).
-  const [editAboutYou, setEditAboutYou] = useState(false);
-  const authPromptShownRef = useRef(false);
-  const parentGatePromptShownRef = useRef(false);
-
-  // Auth + account-type gate. Also blocks direct deep-link navigation
-  // straight to this screen (not just the "Apply" button on app/ballet/index.tsx).
-  useEffect(() => {
-    if (!user) {
-      if (!authPromptShownRef.current) {
-        authPromptShownRef.current = true;
-        showAuthRequiredPrompt();
-        router.replace("/ballet" as any);
-      }
-      return;
-    }
-    if (user.accountType !== "parent") {
-      if (!parentGatePromptShownRef.current) {
-        parentGatePromptShownRef.current = true;
-        showParentAccountRequiredPrompt();
-        router.replace("/ballet" as any);
-      }
-      return;
-    }
-  }, [user]);
-
-  // Prefill the parent fields from the logged-in account once — only filling
-  // blanks so we never clobber something the user already typed.
-  useEffect(() => {
-    if (!user) return;
-    setForm((prev) => ({
-      ...prev,
-      parentName: prev.parentName || user.fullName || "",
-      parentEmail: prev.parentEmail || user.email || "",
-      parentPhone: prev.parentPhone || user.phone || "",
-    }));
-  }, [user]);
-
-  // Apply a saved child's details to the form (submission-only — never writes
-  // back to the saved profile). Stores the backend childId for linking.
-  function selectChild(c: ChildProfile) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const numericId = Number(c.id);
-    setSelectedChildId(Number.isNaN(numericId) ? null : numericId);
-    setForm((prev) => ({
-      ...prev,
-      childName: c.fullName ?? "",
-      childBirthday: c.birthday || "",
-      childAge: c.age ? String(c.age) : "",
-      childGender: c.gender,
-      medicalNotes: c.medicalNotes || prev.medicalNotes,
-    }));
-  }
-
-  // Switch to manual child entry (no linked profile).
-  function clearChildSelection() {
-    setSelectedChildId(null);
-    setForm((prev) => ({
-      ...prev,
-      childName: "",
-      childBirthday: "",
-      childAge: "",
-      childGender: "female",
-    }));
-  }
-  // Note: success/duplicate navigation goes to /ballet/application-status — no local "submitted" state.
-
-  // ── Connectivity gate ──────────────────────────────────────────────────────
-  // We probe connectivity on mount so offline users see OfflineState immediately
-  // rather than navigating into the form and hitting an error at step 3.
-  const [connectivity, setConnectivity] = useState<"checking" | "online" | "offline">("checking");
-
-  // ── Live settings (pricing from admin) ────────────────────────────────────
-  const [liveSettings, setLiveSettings] = useState<BalletSettings | null>(null);
-
-  useFocusEffect(useCallback(() => {
-    if (!user) return;
-    let active = true;
-    fetchBalletSettings()
-      .then((s) => { if (active) setLiveSettings(s); })
-      .catch(() => { /* keep BALLET_PRICING fallback on error */ });
-    return () => { active = false; };
-  }, [user]));
-
-  // Pricing shown on Review step — live from admin settings, with static fallback
-  const displayPricing = liveSettings
-    ? [
-        { level: "Pre-Ballet", hours: `${liveSettings.preBallet.monthlyHours} hours monthly`, price: liveSettings.preBallet.priceEgp },
-        { level: "Levels 1–9", hours: `${liveSettings.levels19.monthlyHours} hours monthly`, price: liveSettings.levels19.priceEgp },
-      ]
-    : BALLET_PRICING;
-
-  // ── Assessment schedule data state ─────────────────────────────────────────
-  const [slots, setSlots] = useState<AssessmentScheduleOption[]>([]);
-  const [slotsState, setSlotsState] = useState<"idle" | "loading" | "success" | "empty" | "error" | "offline">("idle");
-
-  // Recomputed fresh from the birthday on every render — see computeEffectiveAge.
-  const effectiveAge = computeEffectiveAge(form.childBirthday, form.childAge);
-
-  const loadSlots = useCallback(async (signal?: AbortSignal, birthday?: string) => {
-    setSlotsState("loading");
-    try {
-      const data = await fetchAvailableAssessmentSchedules(signal, birthday);
-      setSlots(data);
-      setSlotsState(data.length === 0 ? "empty" : "success");
-    } catch (e) {
-      if ((e as any)?.name === "AbortError") return;
-      setSlotsState(isOfflineError(e) ? "offline" : "error");
-    }
-  }, []);
-
-  // Connectivity probe — runs once per mount/user change only.
-  useEffect(() => {
-    if (!user) return;
-    const controller = new AbortController();
-    probeConnectivity(controller.signal)
-      .then((status) => {
-        if (controller.signal.aborted) return;
-        setConnectivity(status);
-      })
-      .catch(() => {
-        // AbortError from navigation — ignore.
-      });
-    return () => controller.abort();
-  }, [user]);
-
-  // Assessment loading — fires once connectivity is confirmed online, and again
-  // whenever the effective age changes (selected child switched, or the
-  // entered birthday changed) so the age-filtered list stays in sync. Also
-  // clears any previously selected assessment on every firing (a no-op on the very
-  // first load, since selectedSlot starts null) — no need to re-check for
-  // active applications here because the ballet gate (app/ballet/index.tsx)
-  // already verified there are none before navigating to this screen.
-  useEffect(() => {
-    if (!user || connectivity !== "online") return;
-    setForm((prev) => (prev.selectedSlot ? { ...prev, selectedSlot: null } : prev));
-    const controller = new AbortController();
-    loadSlots(controller.signal, form.childBirthday.trim() || undefined);
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, connectivity, effectiveAge, form.childBirthday, loadSlots]);
-
-  if (!user || user.accountType !== "parent") {
-    return <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]} />;
-  }
-
-  function update<K extends keyof FormData>(key: K, value: FormData[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  // D5: sensitive-information confirmation. Editing the prefilled About You
-  // fields here only affects this one Ballet application — it never writes
-  // back to the saved account/profile. Reuses this file's existing
-  // Alert.alert confirmation pattern (see promptCancel-style usage elsewhere
-  // in this app) rather than introducing a new confirmation mechanism, and
-  // only flips editAboutYou (i.e. only enables the editable fields) once the
-  // parent has explicitly confirmed.
-  function confirmEditAboutYou() {
-    Alert.alert(
-      "Edit for this application only",
-      "Changing your name, phone, or email here only affects this Ballet application. Your saved account profile will not be updated.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Continue", onPress: () => setEditAboutYou(true) },
-      ],
-    );
-  }
-
-  function validateStep(): string | null {
-    if (step === 0) {
-      if (!form.parentName.trim()) return "Parent full name is required.";
-      if (!form.parentPhone.trim()) return "Parent phone is required.";
-      if (!form.parentEmail.trim()) return "Parent email is required.";
-      if (!form.emergencyContactName.trim()) return "Emergency contact name is required.";
-      if (!form.emergencyContactPhone.trim()) return "Emergency contact phone is required.";
-    }
-    if (step === 1) {
-      if (!form.childName.trim()) return "Child's full name is required.";
-      if (computeEffectiveAge(form.childBirthday, form.childAge) == null) return "A valid age is required.";
-    }
-    if (step === 2) {
-      if (form.previousExperience === null) return "Please indicate previous dance experience.";
-    }
-    if (step === 3) {
-      if (!form.selectedSlot) return "Please select an available assessment date.";
-    }
-    if (step === 4) {
-      if (!form.preferredPaymentMethod) return "Please choose a payment method.";
-    }
-    return null;
-  }
-
-  function handleNext() {
-    const err = validateStep();
-    if (err) { Alert.alert("Required", err); return; }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setStep((s) => Math.min(s + 1, STEPS.length - 1));
-  }
-
-  function handleBack() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setStep((s) => Math.max(s - 1, 0));
-  }
-
-  async function handleSubmit() {
-    if (!form.selectedSlot || submitting) return;
-
-    const assessmentScheduleId = form.selectedSlot.scheduleId;
-    const assessmentDate = form.selectedSlot.date;
-    if (!assessmentScheduleId || !assessmentDate) {
-      Alert.alert("Error", "Invalid assessment selection. Please go back and select an assessment date again.");
-      return;
-    }
-
-    // Guard: the selected assessment may have fallen out of the age-filtered list
-    // (e.g. the child selection or birthday changed after it was picked).
-    if (!slots.some((s) => s.scheduleId === form.selectedSlot!.scheduleId && s.date === form.selectedSlot!.date)) {
-      Alert.alert(
-        "Assessment No Longer Available",
-        "Your selected assessment date is no longer available for this child's age. Please choose a new one."
-      );
-      update("selectedSlot", null);
-      setStep(3);
-      return;
-    }
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setSubmitting(true);
-
-    // ── Manual entry: persist the child profile BEFORE submitting the ──────
-    // application, so a retry after a later failure can reuse it as a saved
-    // profile instead of re-entering it (and never creates a duplicate child
-    // on retry, since selectedChildId is set immediately on success below).
-    let childId = selectedChildId;
-    let justCreatedChild = false;
-
-    if (childId == null) {
-      try {
-        const newChild = await addChild({
-          id: "",
-          fullName: form.childName.trim(),
-          birthday: form.childBirthday.trim(),
-          age: effectiveAge ?? 0,
-          gender: form.childGender,
-          medicalNotes: form.medicalNotes.trim() || undefined,
-        });
-        if (!newChild) {
-          // addChild already surfaced its own error Alert — nothing else to add.
-          setSubmitting(false);
-          return;
-        }
-        const numericId = Number(newChild.id);
-        childId = Number.isNaN(numericId) ? null : numericId;
-        justCreatedChild = true;
-        if (childId != null) setSelectedChildId(childId);
-      } catch {
-        // addChild is designed to catch its own errors and return null, but
-        // guard defensively so the button never gets stuck on "Submitting…".
-        Alert.alert("Error", "Failed to save the child profile. Please try again.");
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    const childSavedNote = justCreatedChild
-      ? " Your child's profile has been saved to your account — you can try again and select it as a saved profile."
-      : "";
-
-    try {
-      await submitBalletApplication({
-        parentName:             form.parentName.trim(),
-        parentPhone:            form.parentPhone.trim(),
-        parentEmail:            form.parentEmail.trim(),
-        childName:              form.childName.trim(),
-        childBirthday:          form.childBirthday.trim() || undefined,
-        childAge:               effectiveAge ?? undefined,
-        childGender:            form.childGender,
-        previousExperience:     form.previousExperience ?? false,
-        experienceDetails:      form.experienceDetails.trim() || undefined,
-        medicalNotes:           form.medicalNotes.trim() || undefined,
-        emergencyContactName:   form.emergencyContactName.trim() || undefined,
-        emergencyContactPhone:  form.emergencyContactPhone.trim() || undefined,
-        notes:                  form.notes.trim() || undefined,
-        assessmentScheduleId,
-        assessmentDate,
-        // C1: validated non-null by validateStep() before Review is reachable.
-        preferredPaymentMethod: form.preferredPaymentMethod!,
-        // Link the saved child profile when one was picked (backend verifies
-        // ownership) — including one just created above for manual entry.
-        childId:                childId ?? undefined,
-      });
-
-      // ── 201 Success: navigate to status screen ──────────────────────────
-      router.replace("/ballet/application-status" as any);
-    } catch (err: unknown) {
-      const typed = err as { status?: number; data?: { code?: string; error?: string }; message?: string };
-
-      // ── D4: 403 Parent account required ─────────────────────────────────
-      // Defense in depth — the gate above (user.accountType !== "parent")
-      // already keeps a Student-type account off this screen entirely, but
-      // the server enforces the same rule independently (account type could
-      // theoretically change between screen mount and submit). Handle it the
-      // same way as the client-side gate: the existing conversion prompt,
-      // which points at the existing profile-update route.
-      if (typed.status === 403 && typed.data?.code === "PARENT_ACCOUNT_REQUIRED") {
-        showParentAccountRequiredPrompt();
-        return;
-      }
-
-      // ── 409 Duplicate application ───────────────────────────────────────
-      // Server returned 409 with code DUPLICATE_APPLICATION — this parent
-      // already has an active application for this child. Treat it the same
-      // as a successful submit and navigate to the status screen.
-      if (typed.status === 409 && typed.data?.code === "DUPLICATE_APPLICATION") {
-        router.replace("/ballet/application-status" as any);
-        return;
-      }
-
-      // ── 409 fallback ────────────────────────────────────────────────────
-      if (typed.status === 409) {
-        Alert.alert(
-          "Application Already Exists",
-          (typed.data?.error ?? "You already have an active Ballet application for this child.") + childSavedNote
-        );
-        loadSlots(undefined, form.childBirthday.trim() || undefined);
-        return;
-      }
-
-      // ── TypeError — possible dropped response after server commit ────────
-      // React Native throws TypeError: "Network request failed" when the
-      // connection drops AFTER the server has committed the insert but BEFORE
-      // the 201 response arrives on the device. We don't know whether the
-      // server actually saved the record, so we probe the server.
-      if (isOfflineError(err)) {
-        try {
-          // Small delay to let connectivity recover, then check.
-          await new Promise((r) => setTimeout(r, 1_500));
-          const apps = await fetchMyApplications();
-          const hasActive = apps.some((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
-          if (hasActive) {
-            // Server did commit — redirect as if success.
-            router.replace("/ballet/application-status" as any);
-            return;
-          }
-        } catch {
-          // /my fetch also failed (still offline). Fall through to the alert.
-        }
-
-        Alert.alert(
-          "No Connection",
-          "Unable to reach the server. Please check your internet connection and try again. If you submitted before, your application may already be saved." + childSavedNote
-        );
-        return;
-      }
-
-      // ── Other server errors ─────────────────────────────────────────────
-      const serverMsg =
-        typed.data?.error ??
-        typed.message ??
-        "Something went wrong. Please try again.";
-      Alert.alert("Submission Failed", serverMsg + childSavedNote);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // Show offline gate while checking, or if offline
-  if (connectivity !== "online") {
-    const handleConnectivityRetry = () => {
-      setConnectivity("checking");
-      const controller = new AbortController();
-      // No need to call loadSlots() here — flipping connectivity to "online"
-      // re-triggers the assessment-loading effect above, which already carries the
-      // current effectiveAge.
-      probeConnectivity(controller.signal)
-        .then((status) => setConnectivity(status))
-        .catch(() => {});
-    };
-
-    return (
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <LinearGradient
-          colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.05)", "transparent"]}
-          locations={[0, 0.4, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.glow}
-          pointerEvents="none"
-        />
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBack} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={styles.headerBackText}>Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.topBarTitle}>Ballet Assessment</Text>
-          <View style={{ width: 60 }} />
-        </View>
-        {connectivity === "offline" ? (
-          <OfflineState onRetry={handleConnectivityRetry} />
-        ) : (
-          // "checking" state — blank while we probe
-          <View style={{ flex: 1 }} />
-        )}
-      </View>
-    );
-  }
-
-  // ── Intro / overview step (design parity: home-ballet2 Step1) ──
-  if (showIntro) {
-    const HOW_IT_WORKS = [
-      { icon: "clipboard-outline", title: "Complete the form", desc: "Personal info, dance background, and physical details" },
-      { icon: "camera-outline", title: "Submit your media", desc: "Profile photo, full-body photo, and optional video" },
-      { icon: "calendar-outline", title: "Get your appointment", desc: "We'll contact you to schedule the assessment session" },
-      { icon: "ribbon-outline", title: "Receive your result", desc: "Your level placement within 48 hours of the session" },
-    ] as const;
-    return (
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <LinearGradient
-          colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.05)", "transparent"]}
-          locations={[0, 0.4, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.glow}
-          pointerEvents="none"
-        />
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBack} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={styles.headerBackText}>Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.topBarTitle}>Ballet Assessment</Text>
-          <View style={{ width: 60 }} />
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: 120 }]}>
-          <View style={styles.introHeader}>
-            <View style={styles.introIconCircle}>
-              <Ionicons name="sparkles-outline" size={36} color={CYAN} />
-            </View>
-            <Text style={styles.introTitle}>{"Ballet\nAssessment"}</Text>
-            <Text style={styles.introLead}>A free placement assessment to find the perfect level for your dance journey.</Text>
-          </View>
-
-          {HOW_IT_WORKS.map((s) => (
-            <View key={s.title} style={styles.introCard}>
-              <View style={styles.introCardIcon}>
-                <Ionicons name={s.icon as any} size={20} color={CYAN} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.introCardTitle}>{s.title}</Text>
-                <Text style={styles.introCardDesc}>{s.desc}</Text>
-              </View>
-            </View>
-          ))}
-
-          <View style={styles.introFreeNote}>
-            <Ionicons name="sparkles" size={15} color={CYAN} />
-            <Text style={styles.introFreeText}>The placement assessment is completely free of charge.</Text>
-          </View>
-        </ScrollView>
-
-        <View style={[styles.footer, { paddingBottom: Platform.OS === "web" ? 24 : (insets.bottom || 16) + 8 }]}>
-          <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowIntro(false); }}
-            style={[styles.btnPrimary, { flex: 1 }]}
-            activeOpacity={0.88}
-          >
-            <Text style={styles.btnPrimaryText}>Start Application →</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-      <LinearGradient
-        colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.05)", "transparent"]}
-        locations={[0, 0.4, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={styles.glow}
-        pointerEvents="none"
-      />
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={step === 0 ? () => setShowIntro(true) : handleBack} style={styles.headerBack} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={20} color={CYAN} />
-          <Text style={styles.headerBackText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Ballet Assessment</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
-      {/* Progress — segmented bar + step label (design parity) */}
-      <View style={styles.progressWrap}>
-        <View style={styles.progressTrack}>
-          {STEPS.map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.progressSeg,
-                { backgroundColor: i <= step ? CYAN : "rgba(255,255,255,0.08)" },
-              ]}
-            />
-          ))}
-        </View>
-        <Text style={styles.progressLabel}>
-          Step {step + 1} of {STEPS.length} · {STEPS[step]}
-        </Text>
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: 120 }]}
-        keyboardShouldPersistTaps="handled"
-      >
-        {step === 0 && (
-          <View style={styles.stepWrap}>
-            <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Parent / Guardian Information</Text>
-              <Text style={styles.stepDesc}>As most applications are submitted by parents, please fill in your details.</Text>
-            </View>
-            {isLoggedIn && !editAboutYou ? (
-              <View style={styles.summaryCard}>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Name</Text><Text style={styles.summaryValue}>{form.parentName || "—"}</Text></View>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Phone</Text><Text style={styles.summaryValue}>{form.parentPhone || "—"}</Text></View>
-                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Email</Text><Text style={styles.summaryValue}>{form.parentEmail || "—"}</Text></View>
-                <TouchableOpacity onPress={confirmEditAboutYou} style={styles.editLink}>
-                  <Ionicons name="create-outline" size={14} color={BALLET_COLOR} />
-                  <Text style={styles.editLinkText}>Edit for this application</Text>
-                </TouchableOpacity>
-                <Text style={styles.summaryHint}>From your account. Editing here only changes this application.</Text>
-              </View>
-            ) : (
-              <>
-                <Field label="Parent Full Name" value={form.parentName} onChange={(v) => update("parentName", v)} placeholder="Your full name" required />
-                <Field label="Phone Number" value={form.parentPhone} onChange={(v) => update("parentPhone", v)} placeholder="+20 1XX XXX XXXX" keyboardType="phone-pad" required />
-                <Field label="Email Address" value={form.parentEmail} onChange={(v) => update("parentEmail", v)} placeholder="your@email.com" keyboardType="email-address" required />
-              </>
-            )}
-            <View style={styles.divider} />
-            <Text style={styles.subSectionLabel}>Emergency Contact</Text>
-            <Field label="Emergency Contact Name" value={form.emergencyContactName} onChange={(v) => update("emergencyContactName", v)} placeholder="Full name" required />
-            <Field label="Emergency Contact Phone" value={form.emergencyContactPhone} onChange={(v) => update("emergencyContactPhone", v)} placeholder="+20 1XX XXX XXXX" keyboardType="phone-pad" required />
-          </View>
-        )}
-
-        {step === 1 && (
-          <View style={styles.stepWrap}>
-            <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Child Information</Text>
-              <Text style={styles.stepDesc}>Tell us about the child applying for the ballet assessment.</Text>
-            </View>
-            {hasChildProfiles && (
-              <View style={{ gap: 8, marginBottom: 4 }}>
-                <Text style={styles.subSectionLabel}>Select a child profile</Text>
-                {children.map((c) => {
-                  const selected = selectedChildId === Number(c.id);
-                  return (
-                    <TouchableOpacity
-                      key={c.id}
-                      onPress={() => selectChild(c)}
-                      style={[styles.childCard, selected && styles.childCardSelected]}
-                    >
-                      <View style={styles.childAvatar}>
-                        <Ionicons name="happy-outline" size={18} color={BALLET_COLOR} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.childCardName}>{c.fullName}</Text>
-                        <Text style={styles.childCardMeta}>
-                          {c.age ? `${c.age} yrs` : "Age —"} · {c.gender === "female" ? "Girl" : "Boy"}
-                          {c.birthday ? ` · ${c.birthday}` : ""}
-                        </Text>
-                      </View>
-                      {selected && <Ionicons name="checkmark-circle" size={20} color={BALLET_COLOR} />}
-                    </TouchableOpacity>
-                  );
-                })}
-                <TouchableOpacity onPress={clearChildSelection} style={styles.editLink}>
-                  <Ionicons name="add-circle-outline" size={14} color={BALLET_COLOR} />
-                  <Text style={styles.editLinkText}>Enter a different child manually</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {isLoggedIn && children.length === 0 && (
-              <View style={styles.emptyChildBox}>
-                <Text style={styles.emptyChildText}>
-                  No saved child profiles yet. Add a child from your Profile to reuse it next time, or enter the details below for this application.
-                </Text>
-              </View>
-            )}
-
-            {/* Identity fields (name/birthday/gender) are locked to the saved
-                profile's values whenever a real childId is attached — the
-                only way to change them is "Enter a different child manually"
-                above, which clears selectedChildId. */}
-            {(!hasChildProfiles || selectedChildId == null) && (
-              <>
-                <Field label="Child Full Name" value={form.childName} onChange={(v) => update("childName", v)} placeholder="Child's full name" required />
-                <DatePickerField
-                  label="Date of Birth"
-                  value={form.childBirthday}
-                  onChangeWithAge={(dateStr, age) => {
-                    update("childBirthday", dateStr);
-                    update("childAge", String(age));
-                  }}
-                />
-                <Field label="Age" value={form.childAge} onChange={(v) => update("childAge", v)} placeholder="Age (auto-filled from date)" keyboardType="numeric" required />
-                <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>Gender</Text>
-                  <View style={styles.genderRow}>
-                    {(["female", "male"] as const).map((g) => (
-                      <TouchableOpacity
-                        key={g}
-                        onPress={() => update("childGender", g)}
-                        style={[styles.genderBtn, form.childGender === g && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "15" }]}
-                      >
-                        <Text style={[styles.genderBtnText, form.childGender === g && { color: BALLET_COLOR }]}>
-                          {g === "female" ? "Girl" : "Boy"}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </>
-            )}
-            <Field label="Medical Notes or Injuries" value={form.medicalNotes} onChange={(v) => update("medicalNotes", v)} placeholder="Any conditions, injuries, or medical info the instructor should know..." multiline />
-          </View>
-        )}
-
-        {step === 2 && (
-          <View style={styles.stepWrap}>
-            <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Dance Experience</Text>
-              <Text style={styles.stepDesc}>This helps us understand your child's starting level.</Text>
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Previous ballet or dance experience?</Text>
-              <View style={styles.yesNoRow}>
-                {[true, false].map((val) => (
-                  <TouchableOpacity
-                    key={String(val)}
-                    onPress={() => update("previousExperience", val)}
-                    style={[
-                      styles.yesNoBtn,
-                      form.previousExperience === val && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "15" },
-                    ]}
-                  >
-                    <Ionicons
-                      name={val ? "checkmark-circle" : "close-circle"}
-                      size={20}
-                      color={form.previousExperience === val ? BALLET_COLOR : "#4B5563"}
-                    />
-                    <Text style={[styles.yesNoBtnText, form.previousExperience === val && { color: BALLET_COLOR }]}>
-                      {val ? "Yes" : "No"}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {form.previousExperience && (
-              <Field
-                label="Describe the experience"
-                value={form.experienceDetails}
-                onChange={(v) => update("experienceDetails", v)}
-                placeholder="School name, years of experience, styles studied..."
-                multiline
-              />
-            )}
-
-            <Field
-              label="Additional Notes"
-              value={form.notes}
-              onChange={(v) => update("notes", v)}
-              placeholder="Anything else you'd like us to know..."
-              multiline
-            />
-
-            <View style={styles.levelsInfo}>
-              <Text style={styles.levelsInfoTitle}>Ballet Levels</Text>
-              <View style={styles.levelsList}>
-                {BALLET_LEVELS.map((level, i) => (
-                  <View key={level} style={styles.levelItem}>
-                    <View style={[styles.levelDot, { backgroundColor: BALLET_COLOR }]} />
-                    <Text style={styles.levelText}>{level}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </View>
-        )}
-
-        {step === 3 && (
-          <View style={styles.stepWrap}>
-            <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Choose Assessment Date</Text>
-              <Text style={styles.stepDesc}>Select a class schedule occurrence for the assessment.</Text>
-            </View>
-
-            {/* Loading state */}
-            {slotsState === "loading" && (
-              <View style={styles.slotsPlaceholder}>
-                <Ionicons name="time-outline" size={28} color={BALLET_COLOR} />
-                <Text style={styles.slotsPlaceholderText}>Loading available assessment dates…</Text>
-              </View>
-            )}
-
-            {/* Offline state (detected while loading assessment dates) */}
-            {slotsState === "offline" && (
-              <OfflineState
-                variant="compact"
-                onRetry={() => loadSlots(undefined, form.childBirthday.trim() || undefined)}
-              />
-            )}
-
-            {/* Server/endpoint error — endpoint not ready yet */}
-            {slotsState === "error" && (
-              <ErrorState
-                variant="compact"
-                title="Assessments Unavailable"
-                message="Assessment booking is not yet available online. Please contact the studio to schedule your assessment."
-                onRetry={() => loadSlots(undefined, form.childBirthday.trim() || undefined)}
-              />
-            )}
-
-            {/* Empty — no future schedules (age-specific copy when we know the age) */}
-            {slotsState === "empty" && (
-              <View style={styles.slotsPlaceholder}>
-                <Ionicons name="calendar-outline" size={28} color="#6B7280" />
-                <Text style={[styles.slotsPlaceholderText, { color: "#9CA3AF" }]}>
-                  {effectiveAge != null
-                    ? `No assessment schedules are currently available for age ${effectiveAge}. Please check back soon or contact the studio.`
-                    : "No assessment schedules are currently available. Please check back soon or contact the studio."}
-                </Text>
-              </View>
-            )}
-
-            {/* Success — render live schedule occurrences from backend */}
-            {slotsState === "success" && slots.map((slot) => {
-              const isSelected = form.selectedSlot?.scheduleId === slot.scheduleId && form.selectedSlot?.date === slot.date;
-              return (
-                <TouchableOpacity
-                  key={`${slot.scheduleId}-${slot.date}`}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    update("selectedSlot", slot);
-                  }}
-                  style={[
-                    styles.slotCard,
-                    isSelected && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "10" },
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.slotLeft}>
-                    <Text style={styles.slotDay}>{slot.day}</Text>
-                    <Text style={styles.slotDate}>{slot.date}</Text>
-                    <Text style={styles.slotTime}>{slot.className} · {slot.levelName}</Text>
-                  </View>
-                  <View style={styles.slotRight}>
-                    <Text style={[styles.slotStatusText, { color: SUCCESS }]}>{slot.time}</Text>
-                    {isSelected && <Ionicons name="checkmark-circle" size={22} color={BALLET_COLOR} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {step === 4 && (
-          <View style={styles.stepWrap}>
-            <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Payment Method</Text>
-              <Text style={styles.stepDesc}>How would you like to pay for the ballet program? You can confirm the actual payment with the studio after acceptance.</Text>
-            </View>
-
-            {PAYMENT_METHOD_OPTIONS.map((opt) => {
-              const isSelected = form.preferredPaymentMethod === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  onPress={() => { Haptics.selectionAsync(); update("preferredPaymentMethod", opt.value); }}
-                  style={[
-                    styles.slotCard,
-                    isSelected && { borderColor: BALLET_COLOR, backgroundColor: BALLET_COLOR + "10" },
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.slotLeft}>
-                    <Text style={styles.slotDay}>{opt.label}</Text>
-                    <Text style={styles.slotTime}>{opt.hint}</Text>
-                  </View>
-                  <View style={styles.slotRight}>
-                    {isSelected && <Ionicons name="checkmark-circle" size={22} color={BALLET_COLOR} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {step === 5 && (
-          <View style={styles.stepWrap}>
-            <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Review & Submit</Text>
-              <Text style={styles.stepDesc}>Please review your information before submitting.</Text>
-            </View>
-
-            {[
-              { label: "Parent Name", value: form.parentName },
-              { label: "Parent Phone", value: form.parentPhone },
-              { label: "Parent Email", value: form.parentEmail },
-              { label: "Emergency Contact", value: `${form.emergencyContactName} · ${form.emergencyContactPhone}` },
-            ].map((item) => (
-              <View key={item.label} style={styles.reviewRow}>
-                <Text style={styles.reviewLabel}>{item.label}</Text>
-                <Text style={styles.reviewValue}>{item.value || "—"}</Text>
-              </View>
-            ))}
-
-            <View style={styles.divider} />
-
-            {[
-              { label: "Child Name", value: form.childName },
-              { label: "Child Age", value: effectiveAge != null ? `${effectiveAge} years old` : `${form.childAge} years old` },
-              { label: "Child Gender", value: form.childGender === "female" ? "Girl" : "Boy" },
-              { label: "Date of Birth", value: form.childBirthday || "Not provided" },
-              { label: "Experience", value: form.previousExperience ? "Yes" : form.previousExperience === false ? "No" : "—" },
-              { label: "Medical Notes", value: form.medicalNotes || "None" },
-            ].map((item) => (
-              <View key={item.label} style={styles.reviewRow}>
-                <Text style={styles.reviewLabel}>{item.label}</Text>
-                <Text style={styles.reviewValue}>{item.value}</Text>
-              </View>
-            ))}
-
-            {selectedChildId != null ? (
-              <View style={styles.linkedNote}>
-                <Ionicons name="link" size={13} color={BALLET_COLOR} />
-                <Text style={styles.linkedNoteText}>Linked to a saved child profile in your account.</Text>
-              </View>
-            ) : (
-              <View style={styles.linkedNote}>
-                <Ionicons name="save-outline" size={13} color={BALLET_COLOR} />
-                <Text style={styles.linkedNoteText}>This child's profile will be saved to your account when you submit.</Text>
-              </View>
-            )}
-
-            <View style={styles.divider} />
-
-            <View style={[styles.slotReview, { borderColor: BALLET_COLOR + "40" }]}>
-              <Ionicons name="calendar" size={18} color={BALLET_COLOR} />
-              <View>
-                <Text style={styles.slotReviewLabel}>Assessment Appointment</Text>
-                <Text style={[styles.slotReviewValue, { color: BALLET_COLOR }]}>
-                  {form.selectedSlot?.day} {form.selectedSlot?.date}
-                </Text>
-                <Text style={styles.slotReviewTime}>
-                  {form.selectedSlot?.className} · {form.selectedSlot?.time}
-                </Text>
-              </View>
-            </View>
-
-            {/* C1: chosen payment method */}
-            <View style={[styles.slotReview, { borderColor: BALLET_COLOR + "40" }]}>
-              <Ionicons name="card-outline" size={18} color={BALLET_COLOR} />
-              <View>
-                <Text style={styles.slotReviewLabel}>Payment Method</Text>
-                <Text style={[styles.slotReviewValue, { color: BALLET_COLOR }]}>
-                  {PAYMENT_METHOD_OPTIONS.find((o) => o.value === form.preferredPaymentMethod)?.label ?? "—"}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.pricingBox}>
-              <Text style={styles.pricingTitle}>Ballet Pricing (if accepted)</Text>
-              {displayPricing.map((p) => (
-                <View key={p.level} style={styles.pricingRow}>
-                  <View>
-                    <Text style={styles.pricingLevel}>{p.level}</Text>
-                    <Text style={styles.pricingHours}>{p.hours}</Text>
-                  </View>
-                  <Text style={[styles.pricingAmount, { color: BALLET_COLOR }]}>EGP {p.price.toLocaleString()}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-      </ScrollView>
-
-      <View style={[styles.footer, { paddingBottom: Platform.OS === "web" ? 24 : (insets.bottom || 16) + 8 }]}>
-        {step > 0 && (
-          <TouchableOpacity onPress={handleBack} style={[styles.btnGhost, { flex: 1 }]} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>Back</Text>
-          </TouchableOpacity>
-        )}
-        {step < STEPS.length - 1 ? (
-          <TouchableOpacity onPress={handleNext} style={[styles.btnPrimary, { flex: 2 }]} activeOpacity={0.88}>
-            <Text style={styles.btnPrimaryText}>Continue →</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={submitting}
-            style={[styles.btnPrimary, { flex: 2 }, submitting && { opacity: 0.6 }]}
-            activeOpacity={0.88}
-          >
-            <Text style={styles.btnPrimaryText}>
-              {submitting ? "Submitting…" : "Submit Application ✦"}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BASE },
-  glow: { position: "absolute", top: 0, left: 0, right: 0, height: 280 },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,182,215,0.14)",
-  },
-  headerBack: { flexDirection: "row", alignItems: "center", gap: 4, minWidth: 60 },
-  headerBackText: { fontSize: 14, fontFamily: "Archivo_600SemiBold", color: CYAN },
-  topBarTitle: { fontSize: 16, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-
-  // ── Progress (segmented + step label) ──
-  progressWrap: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 14 },
-  progressTrack: { flexDirection: "row", gap: 3 },
-  progressSeg: { flex: 1, height: 3, borderRadius: 2 },
-  progressLabel: {
-    fontSize: 11,
-    fontFamily: "SpaceMono_700Bold",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: INK_400,
-    marginTop: 8,
-  },
-
-  scroll: { paddingHorizontal: 20 },
-  stepWrap: { gap: 14 },
-  stepHeader: { gap: 6, marginBottom: 6 },
-  stepTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  stepDesc: { fontSize: 13.5, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 20 },
-  introHeader: { alignItems: "center", paddingVertical: 20 },
-  introIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: "rgba(0,182,215,0.12)", alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  introTitle: { fontSize: 44, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", textAlign: "center", lineHeight: 40, ...iosDisplayTextStyle(44, 40), marginBottom: 12 - iosCapGuard(44, 40) },
-  introLead: { fontSize: 15, fontFamily: "Archivo_400Regular", color: "#B6BDC6", textAlign: "center", lineHeight: 23, maxWidth: 300 },
-  introCard: { flexDirection: "row", gap: 13, padding: 13, marginBottom: 12, borderRadius: 14, backgroundColor: "rgba(0,182,215,0.07)", borderWidth: 1, borderColor: "rgba(0,182,215,0.16)" },
-  introCardIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: "rgba(0,182,215,0.12)", alignItems: "center", justifyContent: "center" },
-  introCardTitle: { fontSize: 14.5, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  introCardDesc: { fontSize: 12.5, fontFamily: "Archivo_400Regular", color: INK_300, marginTop: 2, lineHeight: 18 },
-  introFreeNote: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderRadius: 12, backgroundColor: "rgba(0,182,215,0.08)", borderWidth: 1, borderColor: "rgba(0,182,215,0.22)", marginTop: 4 },
-  introFreeText: { flex: 1, fontSize: 13, fontFamily: "Archivo_600SemiBold", color: CYAN, lineHeight: 18 },
-
-  field: { gap: 6 },
-  fieldLabel: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300 },
-  input: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.10)",
-  },
-  inputText: {
-    color: "#FFFFFF",
-    fontFamily: "Archivo_400Regular",
-    fontSize: 15,
-    ...iosTextInputStyle(15, 18),
-  },
-  genderRow: { flexDirection: "row", gap: 10 },
-  genderBtn: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: BA.ink800,
+    padding: 14,
   },
-  genderBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: INK_400 },
-  yesNoRow: { flexDirection: "row", gap: 10 },
-  yesNoBtn: {
-    flex: 1,
+  emptyBox: {
+    borderRadius: BA_RADIUS.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: BA.ink800,
+    padding: 16,
+    gap: 6,
+  },
+  emptyTitle: {
+    color: BA.white,
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 16,
+  },
+  emptyText: {
+    color: BA.ink300,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  addChildButton: {
+    minHeight: 48,
+    borderRadius: BA_RADIUS.md,
+    borderWidth: 1,
+    borderColor: "rgba(0,182,215,0.32)",
+    backgroundColor: "rgba(0,182,215,0.08)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.05)",
   },
-  yesNoBtnText: { fontSize: 15, fontFamily: "Archivo_700Bold", color: INK_400 },
-  subSectionLabel: {
-    fontSize: 11,
-    fontFamily: "SpaceMono_700Bold",
-    letterSpacing: 1.6,
-    textTransform: "uppercase",
-    color: CYAN,
-    marginBottom: 2,
+  addChildText: {
+    color: BA.cyan400,
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 14,
   },
-  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginVertical: 4 },
-  slotsPlaceholder: {
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 32,
-    paddingHorizontal: 16,
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 9,
+    padding: 12,
+    borderRadius: BA_RADIUS.md,
+    borderWidth: 1,
+    borderColor: "rgba(0,182,215,0.24)",
+    backgroundColor: "rgba(0,182,215,0.08)",
   },
-  slotsPlaceholderText: {
-    fontSize: 13,
-    fontFamily: "Archivo_400Regular",
-    color: CYAN,
-    textAlign: "center",
+  infoText: {
+    flex: 1,
+    color: BA.ink300,
+    fontFamily: "Archivo_600SemiBold",
+    fontSize: 12.5,
     lineHeight: 18,
   },
-  slotCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: CARD,
-  },
-  slotLeft: { gap: 3 },
-  slotDay: { fontSize: 15, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  slotDate: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300 },
-  slotTime: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: INK_300 },
-  slotRight: { alignItems: "flex-end", gap: 8 },
-  slotStatusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
-  slotStatusText: { fontSize: 11, fontFamily: "Archivo_700Bold" },
-  levelsInfo: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: CYAN + "30",
-    padding: 14,
-    backgroundColor: CARD,
-    gap: 10,
-    marginTop: 4,
-  },
-  levelsInfoTitle: {
-    fontSize: 11,
-    fontFamily: "SpaceMono_700Bold",
-    letterSpacing: 1.6,
-    textTransform: "uppercase",
-    color: CYAN,
-  },
-  levelsList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  levelItem: { flexDirection: "row", alignItems: "center", gap: 5, width: "47%" },
-  levelDot: { width: 6, height: 6, borderRadius: 3 },
-  levelText: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300 },
-  reviewRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-    gap: 16,
-  },
-  reviewLabel: { fontSize: 12.5, fontFamily: "Archivo_600SemiBold", color: INK_400, flex: 1 },
-  reviewValue: { fontSize: 13, fontFamily: "Archivo_700Bold", color: "#FFFFFF", flex: 2, textAlign: "right" },
-  slotReview: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    backgroundColor: CARD,
-  },
-  slotReviewLabel: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
-  slotReviewValue: { fontSize: 15, fontFamily: "Archivo_700Bold" },
-  slotReviewTime: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300 },
-  pricingBox: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    padding: 14,
-    gap: 10,
-    backgroundColor: CARD,
-  },
-  pricingTitle: {
-    fontSize: 11,
-    fontFamily: "SpaceMono_700Bold",
-    letterSpacing: 1.6,
-    textTransform: "uppercase",
-    color: INK_300,
-  },
-  pricingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  pricingLevel: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  pricingHours: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
-  pricingAmount: { fontSize: 19, fontFamily: "Anton_400Regular", ...iosDisplayTextStyle(19, 22) },
   footer: {
-    flexDirection: "row",
-    gap: 10,
     paddingHorizontal: 20,
     paddingTop: 12,
-    backgroundColor: BASE,
+    backgroundColor: BA.ink900,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.07)",
+    borderTopColor: "rgba(255,255,255,0.08)",
+    flexDirection: "row",
+    gap: 10,
   },
-
-  // ── Footer buttons (design parity) ──
-  btnPrimary: {
-    paddingVertical: 15,
-    backgroundColor: CYAN,
-    borderRadius: 12,
+  footerButton: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: BA_RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: CYAN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 5,
   },
-  btnPrimaryText: { fontSize: 15, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  btnGhost: {
-    paddingVertical: 15,
-    borderRadius: 12,
+  primaryButton: {
+    backgroundColor: BA.cyan500,
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: BA_RADIUS.md,
+  },
+  primaryButtonText: {
+    color: BA.ink900,
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 15,
+  },
+  secondaryButton: {
     backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(255,255,255,0.12)",
   },
-  btnGhostText: { fontSize: 15, fontFamily: "Archivo_700Bold", color: INK_200 },
-
-  // ── Prefill: parent summary card ──
-  summaryCard: { borderRadius: 16, borderWidth: 1, borderColor: CYAN + "30", backgroundColor: CYAN + "0D", padding: 14, gap: 8 },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
-  summaryLabel: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_300 },
-  summaryValue: { fontSize: 14, fontFamily: "Archivo_700Bold", color: "#FFFFFF", flexShrink: 1, textAlign: "right" },
-  summaryHint: { fontSize: 11, fontFamily: "Archivo_400Regular", color: INK_400 },
-  editLink: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
-  editLinkText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: CYAN },
-
-  // ── Prefill: child selector cards ──
-  childCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", backgroundColor: SURFACE },
-  childCardSelected: { borderColor: CYAN, backgroundColor: CYAN + "15" },
-  childAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: CYAN + "1F" },
-  childCardName: { fontSize: 15, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  childCardMeta: { fontSize: 12, fontFamily: "Archivo_400Regular", color: INK_300, marginTop: 1 },
-  emptyChildBox: { borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", backgroundColor: CARD, padding: 12, marginBottom: 4 },
-  emptyChildText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 19 },
-
-  // ── Review: linked-profile note ──
-  linkedNote: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  linkedNoteText: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: CYAN },
+  secondaryButtonText: {
+    color: BA.white,
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 15,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.62)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: BA.ink800,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0,182,215,0.28)",
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 28,
+    gap: 14,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalTitle: {
+    color: BA.white,
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 18,
+  },
+  modalHelper: {
+    color: BA.ink300,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  field: { flex: 1, gap: 6 },
+  fieldLabel: {
+    color: BA.ink300,
+    fontFamily: "SpaceMono_700Bold",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  input: {
+    minHeight: 46,
+    borderRadius: BA_RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    color: BA.white,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 14,
+    paddingHorizontal: 13,
+    ...iosTextInputStyle(14, 18),
+  },
+  birthRow: { flexDirection: "row", gap: 8 },
+  genderRow: { flexDirection: "row", gap: 8 },
+  genderButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: BA_RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  genderButtonSelected: {
+    borderColor: BA.cyan500,
+    backgroundColor: "rgba(0,182,215,0.12)",
+  },
+  genderText: {
+    color: BA.ink300,
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 13,
+  },
+  genderTextSelected: { color: BA.cyan400 },
+  reasonMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  reasonValidation: {
+    flex: 1,
+    color: BA.danger,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 12,
+  },
+  reasonHint: {
+    color: BA.ink300,
+  },
+  reasonCount: {
+    color: BA.ink400,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 12,
+  },
+  successScroll: {
+    paddingHorizontal: 24,
+    paddingBottom: 220,
+    alignItems: "center",
+  },
+  successIcon: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: BA.cyan500,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 22,
+  },
+  successTitle: {
+    color: BA.white,
+    fontFamily: "Anton_400Regular",
+    fontSize: 40,
+    lineHeight: 39,
+    textTransform: "uppercase",
+    textAlign: "center",
+    ...iosDisplayTextStyle(40, 39),
+    marginBottom: 24,
+  },
+  successCard: {
+    width: "100%",
+    borderRadius: BA_RADIUS.xl,
+    borderWidth: 1,
+    borderColor: "rgba(0,182,215,0.28)",
+    backgroundColor: BA.ink800,
+    padding: 16,
+    gap: 4,
+  },
+  successLabel: {
+    color: BA.ink400,
+    fontFamily: "SpaceMono_700Bold",
+    fontSize: 10,
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
+    marginTop: 8,
+  },
+  successValue: {
+    color: BA.white,
+    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 15,
+  },
 });

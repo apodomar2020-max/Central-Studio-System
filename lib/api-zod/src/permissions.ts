@@ -186,11 +186,12 @@ const permissionCatalog = [
     actions: actions(["view", "View"], ["review", "Review"], ["approve", "Approve"], ["reject", "Reject"]),
   },
   {
-    key: "ballet.pricing",
-    label: "Ballet Pricing",
-    description: "Ballet pricing and registration settings.",
+    key: "ballet.settings",
+    label: "Ballet General Settings",
+    description: "Ballet mobile presentation settings.",
     group: "Ballet",
     actions: actions(["view", "View"], ["edit", "Edit"]),
+    legacyAliases: ["ballet.pricing"],
   },
   {
     key: "ballet.levels",

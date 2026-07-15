@@ -8,7 +8,7 @@
  * by the response's profileCompletion.nextStep (never a hardcoded route).
  */
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { KeyboardAvoidingView, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
@@ -113,6 +113,7 @@ const ProfileGlow = React.memo(function ProfileGlow() {
 });
 
 export default function CompleteProfileScreen() {
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const { setUser, user } = useAppContext();
   const insets = useSafeAreaInsets();
   const topPad = (Platform.OS === "web" ? 40 : insets.top) + 24;
@@ -196,7 +197,13 @@ export default function CompleteProfileScreen() {
       const updated: User = mapStudentToUser(data.student);
       await setUser(updated);
 
-      const destination = postAuthDestination(updated);
+      const nextStep = updated.profileCompletion?.nextStep;
+      const destination = nextStep && nextStep !== "done"
+        ? {
+            pathname: postAuthDestination(updated) as never,
+            params: returnTo ? { returnTo } : undefined,
+          }
+        : (returnTo ? returnTo : postAuthDestination(updated));
       if (__DEV__) {
         console.log("[AUTH_NAV] completeProfile submit success", {
           userId: updated.id,

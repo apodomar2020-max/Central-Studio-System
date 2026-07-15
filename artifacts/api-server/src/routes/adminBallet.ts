@@ -27,9 +27,14 @@ import {
   balletSchedulesTable,
   balletPackagesTable,
   balletPaymentsTable,
+  balletEnrollmentCancellationRequestsTable,
+  balletRefundsTable,
   balletClassesTable,
   balletClassLevelsTable,
   balletInstructorsTable,
+  balletProgramRequirementSectionsTable,
+  balletProgramRequirementItemsTable,
+  balletFaqsTable,
   attendanceTable,
   systemUsersTable,
   notificationsTable,
@@ -50,8 +55,12 @@ import {
 } from "../lib/balletSubscriptions";
 
 const router: IRouter = Router();
-const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive"] as const;
-const BALLET_SETTINGS_ACTIVITY_FIELDS = ["preBalletPriceEgp", "preBalletHoursMonthly", "levelsPriceEgp", "levelsHoursMonthly", "fewSeatsThreshold", "assessmentInstructions", "requirements", "acceptanceMessageTemplate"] as const;
+const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive", "description", "requirements", "ageMin", "ageMax", "imageUrl"] as const;
+const BALLET_SETTINGS_ACTIVITY_FIELDS = ["homeCardImageUrl", "whatsappNumber", "phoneNumber", "email", "studioLocationUrl"] as const;
+const BALLET_REQUIREMENT_SECTION_ACTIVITY_FIELDS = ["title", "description", "sortOrder", "isActive"] as const;
+const BALLET_REQUIREMENT_ITEM_ACTIVITY_FIELDS = ["sectionId", "text", "sortOrder", "isActive"] as const;
+const BALLET_FAQ_ACTIVITY_FIELDS = ["question", "answer", "sortOrder", "isActive"] as const;
+const GOOGLE_DRIVE_IMAGE_HOSTS = new Set(["drive.google.com", "www.drive.google.com", "docs.google.com"]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,6 +78,85 @@ function requireApplicationStatusPermission(req: Request, res: Response, next: N
       ? "approve"
       : "review";
   requireAdminPermission("ballet.applications", action)(req, res, next);
+}
+
+function extractGoogleDriveFileId(input: URL): string | null {
+  const pathMatch = input.pathname.match(/\/file\/d\/([^/]+)/i);
+  const raw = pathMatch?.[1] ?? input.searchParams.get("id");
+  if (!raw) return null;
+  const decoded = decodeURIComponent(raw).trim();
+  return /^[A-Za-z0-9_-]{10,}$/.test(decoded) ? decoded : null;
+}
+
+function normalizeBalletImageUrl(input: string | null | undefined, label = "Image URL"): string | null {
+  const trimmed = input?.trim();
+  if (!trimmed) return null;
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+
+  if (url.protocol !== "https:") {
+    throw new Error(`${label} must use HTTPS.`);
+  }
+
+  if (!url.username && !url.password && !GOOGLE_DRIVE_IMAGE_HOSTS.has(url.hostname.toLowerCase())) {
+    return url.toString();
+  }
+
+  if (url.username || url.password) {
+    throw new Error(`${label} must not include credentials.`);
+  }
+
+  const driveId = extractGoogleDriveFileId(url);
+  if (!driveId) {
+    throw new Error("Google Drive image URL must include a public file ID.");
+  }
+
+  return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`;
+}
+
+function normalizePhoneNumber(input: string | null | undefined, label: string): string | null {
+  const trimmed = input?.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed
+    .replace(/[\s().-]+/g, "")
+    .replace(/^00/, "+");
+  if (!/^\+?[0-9]{7,15}$/.test(normalized)) {
+    throw new Error(`${label} must contain 7 to 15 digits and may start with +.`);
+  }
+  return normalized;
+}
+
+function normalizeEmail(input: string | null | undefined): string | null {
+  const trimmed = input?.trim();
+  if (!trimmed) return null;
+  const parsed = z.string().email().safeParse(trimmed);
+  if (!parsed.success) {
+    throw new Error("Email must be a valid email address.");
+  }
+  return trimmed.toLowerCase();
+}
+
+function normalizeHttpsUrl(input: string | null | undefined, label: string): string | null {
+  const trimmed = input?.trim();
+  if (!trimmed) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`${label} must use HTTPS.`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${label} must not include credentials.`);
+  }
+  return url.toString();
 }
 
 /** Human-readable notification content for each ballet application status change. */
@@ -311,6 +399,14 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
 
   if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
+  const [preferredPackage] = app.preferredPackageId != null
+    ? await db
+        .select({ id: balletPackagesTable.id, name: balletPackagesTable.name })
+        .from(balletPackagesTable)
+        .where(eq(balletPackagesTable.id, app.preferredPackageId))
+        .limit(1)
+    : [];
+
   // Load selected assessment schedule, assigned level, active level assignment,
   // and events in parallel.
   const [assessmentScheduleRows, levelRows, assignmentRows, events] = await Promise.all([
@@ -403,7 +499,19 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
   // Payments (A1) — return the full history (newest first, don't collapse it)
   // plus a clear pointer to the most recently updated "current" one for the
   // list-parity header display.
-  const payments = await getPaymentCyclesForApplication(id);
+  const [payments, cancellationRequests, refunds] = await Promise.all([
+    getPaymentCyclesForApplication(id),
+    db
+      .select()
+      .from(balletEnrollmentCancellationRequestsTable)
+      .where(eq(balletEnrollmentCancellationRequestsTable.applicationId, id))
+      .orderBy(desc(balletEnrollmentCancellationRequestsTable.createdAt)),
+    db
+      .select()
+      .from(balletRefundsTable)
+      .where(eq(balletRefundsTable.applicationId, id))
+      .orderBy(desc(balletRefundsTable.createdAt)),
+  ]);
   const currentPayment = currentSubscription(payments);
 
   // Attendance-hours summary (C4) for the requested (default current) calendar
@@ -420,7 +528,10 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     : null;
 
   res.json({
-    application:  app,
+    application:  {
+      ...app,
+      preferredPackageName: preferredPackage?.name ?? null,
+    },
     assessmentSchedule: assessmentScheduleRows[0] ?? null,
     level:        levelRows[0] ?? null,
     group:        groupRows[0] ?? null,
@@ -431,6 +542,8 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     currentPayment,
     currentSubscription: currentPayment,
     attendanceSummary,
+    cancellationRequests,
+    refunds,
   });
 });
 
@@ -633,6 +746,31 @@ router.patch(
     const adminId = req.adminUser?.sub ?? null;
 
     await db.transaction(async (tx) => {
+      if (status === "cancelled" && fromStatus === "assignedToLevel") {
+        const [assignment] = await tx
+          .select({ id: balletLevelAssignmentsTable.id })
+          .from(balletLevelAssignmentsTable)
+          .where(and(eq(balletLevelAssignmentsTable.applicationId, id), eq(balletLevelAssignmentsTable.status, "active")))
+          .orderBy(desc(balletLevelAssignmentsTable.id))
+          .limit(1)
+          .for("update");
+
+        if (assignment) {
+          const now = new Date().toISOString();
+          await tx
+            .update(balletLevelAssignmentsTable)
+            .set({
+              status: "withdrawn",
+              withdrawnAt: now,
+              withdrawalEffectiveDate: now.slice(0, 10),
+              withdrawalReason: note ?? "Application cancelled before activation",
+              withdrawnByAdminId: adminId,
+              updatedAt: now,
+            })
+            .where(eq(balletLevelAssignmentsTable.id, assignment.id));
+        }
+      }
+
       await tx
         .update(balletApplicationsTable)
         .set({ status, updatedAt: new Date().toISOString() })
@@ -1574,6 +1712,7 @@ router.get("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("bal
       isActive:     balletLevelsTable.isActive,
       description:  balletLevelsTable.description,
       requirements: balletLevelsTable.requirements,
+      imageUrl:     balletLevelsTable.imageUrl,
       ageMin:       balletLevelsTable.ageMin,
       ageMax:       balletLevelsTable.ageMax,
       createdAt:    balletLevelsTable.createdAt,
@@ -1601,6 +1740,7 @@ const CreateLevelBody = z.object({
   isActive:     z.boolean().optional(),
   description:  z.string().optional(),
   requirements: z.string().optional(),
+  imageUrl:     z.string().nullable().optional(),
   ageMin:       z.number().int().min(4).max(14).optional(),
   ageMax:       z.number().int().min(4).max(14).optional(),
 });
@@ -1610,6 +1750,15 @@ router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ba
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
     return;
+  }
+  let imageUrl: string | null = null;
+  if (parsed.data.imageUrl !== undefined) {
+    try {
+      imageUrl = normalizeBalletImageUrl(parsed.data.imageUrl, "Level image URL");
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid level image URL" });
+      return;
+    }
   }
   const { name, sortOrder, isActive, description, requirements, ageMin, ageMax } = parsed.data;
   try {
@@ -1621,6 +1770,7 @@ router.post("/admin/ballet/levels", requireAdminAuth, requireAdminPermission("ba
         isActive: isActive ?? true,
         description:  description ?? null,
         requirements: requirements ?? null,
+        imageUrl,
         ageMin:       ageMin ?? null,
         ageMax:       ageMax ?? null,
       })
@@ -1653,6 +1803,7 @@ const UpdateLevelBody = z.object({
   isActive:     z.boolean().optional(),
   description:  z.string().optional(),
   requirements: z.string().optional(),
+  imageUrl:     z.string().nullable().optional(),
   ageMin:       z.number().int().min(4).max(14).optional(),
   ageMax:       z.number().int().min(4).max(14).optional(),
 });
@@ -1673,6 +1824,14 @@ router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermissio
   if (parsed.data.isActive     !== undefined) updates["isActive"]     = parsed.data.isActive;
   if (parsed.data.description  !== undefined) updates["description"]  = parsed.data.description;
   if (parsed.data.requirements !== undefined) updates["requirements"] = parsed.data.requirements;
+  if (parsed.data.imageUrl     !== undefined) {
+    try {
+      updates["imageUrl"] = normalizeBalletImageUrl(parsed.data.imageUrl, "Level image URL");
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid level image URL" });
+      return;
+    }
+  }
   if (parsed.data.ageMin       !== undefined) updates["ageMin"]       = parsed.data.ageMin;
   if (parsed.data.ageMax       !== undefined) updates["ageMax"]       = parsed.data.ageMax;
 
@@ -1725,9 +1884,366 @@ router.patch("/admin/ballet/levels/:id", requireAdminAuth, requireAdminPermissio
   }
 });
 
+// ─── Ballet Program Requirements ──────────────────────────────────────────────
+
+async function getAdminRequirementSectionsWithItems(): Promise<Array<typeof balletProgramRequirementSectionsTable.$inferSelect & { items: Array<typeof balletProgramRequirementItemsTable.$inferSelect> }>> {
+  const [sections, items] = await Promise.all([
+    db
+      .select()
+      .from(balletProgramRequirementSectionsTable)
+      .orderBy(asc(balletProgramRequirementSectionsTable.sortOrder), asc(balletProgramRequirementSectionsTable.id)),
+    db
+      .select()
+      .from(balletProgramRequirementItemsTable)
+      .orderBy(asc(balletProgramRequirementItemsTable.sectionId), asc(balletProgramRequirementItemsTable.sortOrder), asc(balletProgramRequirementItemsTable.id)),
+  ]);
+
+  const itemsBySection = new Map<number, typeof items>();
+  for (const item of items) {
+    itemsBySection.set(item.sectionId, [...(itemsBySection.get(item.sectionId) ?? []), item]);
+  }
+
+  return sections.map((section) => ({ ...section, items: itemsBySection.get(section.id) ?? [] }));
+}
+
+router.get("/admin/ballet/program-requirement-sections", requireAdminAuth, requireAdminPermission("ballet.settings", "view"), async (_req, res): Promise<void> => {
+  try {
+    const sections = await getAdminRequirementSectionsWithItems();
+    res.json({ sections });
+  } catch (err) {
+    logger.error({ err }, "GET /admin/ballet/program-requirement-sections failed");
+    res.status(500).json({ error: "Failed to load program requirements" });
+  }
+});
+
+const CreateRequirementSectionBody = z.object({
+  title:       z.string().min(1, "Title is required"),
+  description: z.string().nullable().optional(),
+  sortOrder:   z.number().int().optional(),
+  isActive:    z.boolean().optional(),
+});
+
+router.post("/admin/ballet/program-requirement-sections", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const parsed = CreateRequirementSectionBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  try {
+    const [section] = await db.insert(balletProgramRequirementSectionsTable).values({
+      title: parsed.data.title.trim(),
+      description: parsed.data.description?.trim() || null,
+      sortOrder: parsed.data.sortOrder ?? 0,
+      isActive: parsed.data.isActive ?? true,
+    }).returning();
+
+    await logActivity(req, {
+      action: "create",
+      module: "ballet.settings",
+      entityType: "ballet_program_requirement_section",
+      entityId: section.id,
+      entityLabel: section.title,
+      after: Object.fromEntries(BALLET_REQUIREMENT_SECTION_ACTIVITY_FIELDS.map((key) => [key, section[key]])),
+      summary: `Created ballet program requirement section ${section.title}`,
+    });
+
+    res.status(201).json({ section: { ...section, items: [] } });
+  } catch (err) {
+    logger.error({ err }, "POST /admin/ballet/program-requirement-sections failed");
+    res.status(500).json({ error: "Failed to create program requirement section" });
+  }
+});
+
+const UpdateRequirementSectionBody = CreateRequirementSectionBody.partial();
+
+router.patch("/admin/ballet/program-requirement-sections/:id", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid section ID" }); return; }
+
+  const parsed = UpdateRequirementSectionBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.title !== undefined) updates["title"] = parsed.data.title.trim();
+  if (parsed.data.description !== undefined) updates["description"] = parsed.data.description?.trim() || null;
+  if (parsed.data.sortOrder !== undefined) updates["sortOrder"] = parsed.data.sortOrder;
+  if (parsed.data.isActive !== undefined) updates["isActive"] = parsed.data.isActive;
+  if (Object.keys(updates).length === 0) {
+    res.json({ success: true, message: "No changes" });
+    return;
+  }
+  updates["updatedAt"] = new Date().toISOString();
+
+  try {
+    const [existing] = await db.select().from(balletProgramRequirementSectionsTable).where(eq(balletProgramRequirementSectionsTable.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Program requirement section not found" }); return; }
+    const [section] = await db
+      .update(balletProgramRequirementSectionsTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(balletProgramRequirementSectionsTable.id, id))
+      .returning();
+    if (!section) { res.status(404).json({ error: "Program requirement section not found" }); return; }
+
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_REQUIREMENT_SECTION_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(BALLET_REQUIREMENT_SECTION_ACTIVITY_FIELDS.map((key) => [key, section[key]])),
+      BALLET_REQUIREMENT_SECTION_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      await logActivity(req, {
+        action: "update",
+        module: "ballet.settings",
+        entityType: "ballet_program_requirement_section",
+        entityId: section.id,
+        entityLabel: section.title,
+        before,
+        after,
+        summary: `Updated ballet program requirement section ${section.title}: ${changedKeys.join(", ")}`,
+      });
+    }
+
+    const items = await db
+      .select()
+      .from(balletProgramRequirementItemsTable)
+      .where(eq(balletProgramRequirementItemsTable.sectionId, section.id))
+      .orderBy(asc(balletProgramRequirementItemsTable.sortOrder), asc(balletProgramRequirementItemsTable.id));
+    res.json({ section: { ...section, items } });
+  } catch (err) {
+    logger.error({ err }, "PATCH /admin/ballet/program-requirement-sections/:id failed");
+    res.status(500).json({ error: "Failed to update program requirement section" });
+  }
+});
+
+const CreateRequirementItemBody = z.object({
+  sectionId: z.number({ required_error: "sectionId is required" }).int().positive(),
+  text:      z.string().min(1, "Text is required"),
+  sortOrder: z.number().int().optional(),
+  isActive:  z.boolean().optional(),
+});
+
+router.post("/admin/ballet/program-requirement-items", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const parsed = CreateRequirementItemBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  try {
+    const [section] = await db.select({ id: balletProgramRequirementSectionsTable.id }).from(balletProgramRequirementSectionsTable).where(eq(balletProgramRequirementSectionsTable.id, parsed.data.sectionId)).limit(1);
+    if (!section) { res.status(404).json({ error: "Program requirement section not found" }); return; }
+
+    const [item] = await db.insert(balletProgramRequirementItemsTable).values({
+      sectionId: parsed.data.sectionId,
+      text: parsed.data.text.trim(),
+      sortOrder: parsed.data.sortOrder ?? 0,
+      isActive: parsed.data.isActive ?? true,
+    }).returning();
+
+    await logActivity(req, {
+      action: "create",
+      module: "ballet.settings",
+      entityType: "ballet_program_requirement_item",
+      entityId: item.id,
+      entityLabel: item.text,
+      after: Object.fromEntries(BALLET_REQUIREMENT_ITEM_ACTIVITY_FIELDS.map((key) => [key, item[key]])),
+      summary: `Created ballet program requirement item`,
+    });
+
+    res.status(201).json({ item });
+  } catch (err) {
+    logger.error({ err }, "POST /admin/ballet/program-requirement-items failed");
+    res.status(500).json({ error: "Failed to create program requirement item" });
+  }
+});
+
+const UpdateRequirementItemBody = CreateRequirementItemBody.partial();
+
+router.patch("/admin/ballet/program-requirement-items/:id", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid item ID" }); return; }
+
+  const parsed = UpdateRequirementItemBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.sectionId !== undefined) updates["sectionId"] = parsed.data.sectionId;
+  if (parsed.data.text !== undefined) updates["text"] = parsed.data.text.trim();
+  if (parsed.data.sortOrder !== undefined) updates["sortOrder"] = parsed.data.sortOrder;
+  if (parsed.data.isActive !== undefined) updates["isActive"] = parsed.data.isActive;
+  if (Object.keys(updates).length === 0) {
+    res.json({ success: true, message: "No changes" });
+    return;
+  }
+  updates["updatedAt"] = new Date().toISOString();
+
+  try {
+    const [existing] = await db.select().from(balletProgramRequirementItemsTable).where(eq(balletProgramRequirementItemsTable.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Program requirement item not found" }); return; }
+    if (parsed.data.sectionId !== undefined) {
+      const [section] = await db.select({ id: balletProgramRequirementSectionsTable.id }).from(balletProgramRequirementSectionsTable).where(eq(balletProgramRequirementSectionsTable.id, parsed.data.sectionId)).limit(1);
+      if (!section) { res.status(404).json({ error: "Program requirement section not found" }); return; }
+    }
+
+    const [item] = await db
+      .update(balletProgramRequirementItemsTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(balletProgramRequirementItemsTable.id, id))
+      .returning();
+    if (!item) { res.status(404).json({ error: "Program requirement item not found" }); return; }
+
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_REQUIREMENT_ITEM_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(BALLET_REQUIREMENT_ITEM_ACTIVITY_FIELDS.map((key) => [key, item[key]])),
+      BALLET_REQUIREMENT_ITEM_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      await logActivity(req, {
+        action: "update",
+        module: "ballet.settings",
+        entityType: "ballet_program_requirement_item",
+        entityId: item.id,
+        entityLabel: item.text,
+        before,
+        after,
+        summary: `Updated ballet program requirement item: ${changedKeys.join(", ")}`,
+      });
+    }
+
+    res.json({ item });
+  } catch (err) {
+    logger.error({ err }, "PATCH /admin/ballet/program-requirement-items/:id failed");
+    res.status(500).json({ error: "Failed to update program requirement item" });
+  }
+});
+
+// ─── Ballet FAQs ──────────────────────────────────────────────────────────────
+
+router.get("/admin/ballet/faqs", requireAdminAuth, requireAdminPermission("ballet.settings", "view"), async (_req, res): Promise<void> => {
+  try {
+    const faqs = await db
+      .select()
+      .from(balletFaqsTable)
+      .orderBy(asc(balletFaqsTable.sortOrder), asc(balletFaqsTable.id));
+    res.json({ faqs });
+  } catch (err) {
+    logger.error({ err }, "GET /admin/ballet/faqs failed");
+    res.status(500).json({ error: "Failed to load Ballet FAQs" });
+  }
+});
+
+const CreateFaqBody = z.object({
+  question:  z.string().min(1, "Question is required"),
+  answer:    z.string().min(1, "Answer is required"),
+  sortOrder: z.number().int().optional(),
+  isActive:  z.boolean().optional(),
+});
+
+router.post("/admin/ballet/faqs", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const parsed = CreateFaqBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  try {
+    const [faq] = await db.insert(balletFaqsTable).values({
+      question: parsed.data.question.trim(),
+      answer: parsed.data.answer.trim(),
+      sortOrder: parsed.data.sortOrder ?? 0,
+      isActive: parsed.data.isActive ?? true,
+    }).returning();
+
+    await logActivity(req, {
+      action: "create",
+      module: "ballet.settings",
+      entityType: "ballet_faq",
+      entityId: faq.id,
+      entityLabel: faq.question,
+      after: Object.fromEntries(BALLET_FAQ_ACTIVITY_FIELDS.map((key) => [key, faq[key]])),
+      summary: `Created Ballet FAQ ${faq.question}`,
+    });
+
+    res.status(201).json({ faq });
+  } catch (err) {
+    logger.error({ err }, "POST /admin/ballet/faqs failed");
+    res.status(500).json({ error: "Failed to create Ballet FAQ" });
+  }
+});
+
+const UpdateFaqBody = CreateFaqBody.partial();
+
+router.patch("/admin/ballet/faqs/:id", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid FAQ ID" }); return; }
+
+  const parsed = UpdateFaqBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.question !== undefined) updates["question"] = parsed.data.question.trim();
+  if (parsed.data.answer !== undefined) updates["answer"] = parsed.data.answer.trim();
+  if (parsed.data.sortOrder !== undefined) updates["sortOrder"] = parsed.data.sortOrder;
+  if (parsed.data.isActive !== undefined) updates["isActive"] = parsed.data.isActive;
+  if (Object.keys(updates).length === 0) {
+    res.json({ success: true, message: "No changes" });
+    return;
+  }
+  updates["updatedAt"] = new Date().toISOString();
+
+  try {
+    const [existing] = await db.select().from(balletFaqsTable).where(eq(balletFaqsTable.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Ballet FAQ not found" }); return; }
+    const [faq] = await db
+      .update(balletFaqsTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(balletFaqsTable.id, id))
+      .returning();
+    if (!faq) { res.status(404).json({ error: "Ballet FAQ not found" }); return; }
+
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_FAQ_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(BALLET_FAQ_ACTIVITY_FIELDS.map((key) => [key, faq[key]])),
+      BALLET_FAQ_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      await logActivity(req, {
+        action: "update",
+        module: "ballet.settings",
+        entityType: "ballet_faq",
+        entityId: faq.id,
+        entityLabel: faq.question,
+        before,
+        after,
+        summary: `Updated Ballet FAQ ${faq.question}: ${changedKeys.join(", ")}`,
+      });
+    }
+
+    res.json({ faq });
+  } catch (err) {
+    logger.error({ err }, "PATCH /admin/ballet/faqs/:id failed");
+    res.status(500).json({ error: "Failed to update Ballet FAQ" });
+  }
+});
+
 // ─── GET /api/admin/ballet/settings ───────────────────────────────────────────
 
-router.get("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.pricing", "view"), async (_req, res): Promise<void> => {
+router.get("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.settings", "view"), async (_req, res): Promise<void> => {
   try {
     const [row] = await db.select().from(balletSettingsTable).where(eq(balletSettingsTable.id, 1)).limit(1);
     if (!row) { res.status(404).json({ error: "Settings not found" }); return; }
@@ -1741,17 +2257,14 @@ router.get("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("b
 // ─── PATCH /api/admin/ballet/settings ─────────────────────────────────────────
 
 const UpdateSettingsBody = z.object({
-  preBalletPriceEgp:         z.number().int().positive().optional(),
-  preBalletHoursMonthly:     z.number().int().positive().optional(),
-  levelsPriceEgp:            z.number().int().positive().optional(),
-  levelsHoursMonthly:        z.number().int().positive().optional(),
-  fewSeatsThreshold:         z.number().int().min(1).max(20).optional(),
-  assessmentInstructions:    z.string().nullable().optional(),
-  requirements:              z.string().nullable().optional(),
-  acceptanceMessageTemplate: z.string().nullable().optional(),
+  homeCardImageUrl:  z.string().nullable().optional(),
+  whatsappNumber:   z.string().nullable().optional(),
+  phoneNumber:      z.string().nullable().optional(),
+  email:            z.string().nullable().optional(),
+  studioLocationUrl: z.string().nullable().optional(),
 });
 
-router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.pricing", "edit"), async (req: AdminRequest, res): Promise<void> => {
+router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = UpdateSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -1759,8 +2272,45 @@ router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission(
   }
 
   const updates: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(parsed.data)) {
-    if (v !== undefined) updates[k] = v;
+  if (parsed.data.homeCardImageUrl !== undefined) {
+    try {
+      updates["homeCardImageUrl"] = normalizeBalletImageUrl(parsed.data.homeCardImageUrl, "Home card image");
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid home card image URL" });
+      return;
+    }
+  }
+  if (parsed.data.whatsappNumber !== undefined) {
+    try {
+      updates["whatsappNumber"] = normalizePhoneNumber(parsed.data.whatsappNumber, "WhatsApp number");
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid WhatsApp number" });
+      return;
+    }
+  }
+  if (parsed.data.phoneNumber !== undefined) {
+    try {
+      updates["phoneNumber"] = normalizePhoneNumber(parsed.data.phoneNumber, "Phone number");
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid phone number" });
+      return;
+    }
+  }
+  if (parsed.data.email !== undefined) {
+    try {
+      updates["email"] = normalizeEmail(parsed.data.email);
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid email" });
+      return;
+    }
+  }
+  if (parsed.data.studioLocationUrl !== undefined) {
+    try {
+      updates["studioLocationUrl"] = normalizeHttpsUrl(parsed.data.studioLocationUrl, "Studio location link");
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid studio location link" });
+      return;
+    }
   }
   updates["updatedAt"] = new Date().toISOString();
 
@@ -1783,13 +2333,13 @@ router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission(
     if (changedKeys.length > 0) {
       await logActivity(req, {
         action: "update",
-        module: "ballet.pricing",
+        module: "ballet.settings",
         entityType: "ballet_settings",
         entityId: row.id,
-        entityLabel: "Ballet pricing and settings",
+        entityLabel: "Ballet general settings",
         before,
         after,
-        summary: `Updated ballet pricing/settings: ${changedKeys.join(", ")}`,
+        summary: `Updated ballet general settings: ${changedKeys.join(", ")}`,
       });
     }
     res.json({ settings: row });

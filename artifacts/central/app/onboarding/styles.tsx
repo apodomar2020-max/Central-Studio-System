@@ -8,7 +8,7 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -53,6 +53,7 @@ function hexToRgb(hex?: string | null): string {
 }
 
 export default function StylesPickerScreen() {
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const insets = useSafeAreaInsets();
   const { setUser, user } = useAppContext();
   const { data: danceTypesRaw } = useListDanceTypes();
@@ -89,7 +90,13 @@ export default function StylesPickerScreen() {
       const chosenSlugs = styles_.filter((dt) => selected.has(dt.id)).map((dt) => dt.slug);
       await AsyncStorage.setItem(STORAGE_KEYS.danceStyles, JSON.stringify(chosenSlugs));
       const nextStep = updated.profileCompletion?.nextStep ?? "done";
-      router.replace(nextStepRoute(nextStep) as never);
+      const destination = nextStep === "done" && returnTo
+        ? returnTo
+        : {
+            pathname: nextStepRoute(nextStep) as never,
+            params: returnTo ? { returnTo } : undefined,
+          };
+      router.replace(destination as never);
     } finally {
       setSaving(false);
     }

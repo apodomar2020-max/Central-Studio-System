@@ -42,9 +42,9 @@ const STATUSES = ["pending", "rejected", "paid", "refunded"] as const;
 type PaymentStatus = (typeof STATUSES)[number];
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  bankTransfer: "Bank Transfer",
-  kashier: "Kashier",
-  inPerson: "In Person",
+  bankTransfer: "Legacy Bank Transfer",
+  kashier: "Online Payment",
+  inPerson: "Pay at Studio",
 };
 
 function statusBadgeClass(status: string | null | undefined) {

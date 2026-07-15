@@ -1,4 +1,4 @@
 export * from './generated/api';
-export * from './qr-attendance';
-export * from './permissions';
 export * from './ballet';
+export * from './permissions';
+export * from './qr-attendance';

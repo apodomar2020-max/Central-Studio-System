@@ -34,13 +34,14 @@ export const attendanceTable = pgTable("attendance", {
   // check-in — the level assignment, not the raw student, since a child's
   // ballet identity is their active enrollment. classDate is the calendar
   // day the class occurred (distinct from checkedInAt, which is when it was
-  // recorded). onDelete "cascade" (not "set null"): the level assignment IS
-  // this row's Ballet identity, unlike balletClassId/balletScheduleId above
-  // which are optional cross-references — a ballet attendance row has no
-  // meaning once its assignment is gone. classDate stays nullable at the
-  // column level so every pre-existing/non-ballet attendance row is
-  // unaffected; only ballet rows ever populate this pair.
-  balletLevelAssignmentId: integer("ballet_level_assignment_id").references(() => balletLevelAssignmentsTable.id, { onDelete: "cascade" }),
+  // recorded). onDelete "restrict" protects historical Ballet attendance:
+  // the level assignment IS this row's Ballet identity, unlike balletClassId/
+  // balletScheduleId above which are optional cross-references. Assignment
+  // withdrawal/cancellation must update assignment status/metadata, never
+  // delete the assignment and silently remove attendance history. classDate
+  // stays nullable at the column level so every pre-existing/non-ballet
+  // attendance row is unaffected; only ballet rows ever populate this pair.
+  balletLevelAssignmentId: integer("ballet_level_assignment_id").references(() => balletLevelAssignmentsTable.id, { onDelete: "restrict" }),
   classDate: date("class_date"),
   // D1: snapshot of the class's duration (in minutes) AT THE TIME attendance
   // was recorded. Nullable for legacy/non-Ballet rows. Deliberately a

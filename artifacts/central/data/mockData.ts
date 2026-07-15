@@ -543,19 +543,6 @@ export const BALLET_LEVELS = [
   "Ballet Level 9",
 ];
 
-export const BALLET_PRICING = [
-  {
-    level: "Pre-Ballet",
-    hours: "8 hours monthly",
-    price: 1950,
-  },
-  {
-    level: "Levels 1–9",
-    hours: "12 hours monthly",
-    price: 2650,
-  },
-];
-
 export const BALLET_ASSESSMENT_SLOTS: BalletAssessmentSlot[] = [
   {
     id: "bs1",

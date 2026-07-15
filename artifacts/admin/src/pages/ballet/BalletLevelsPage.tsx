@@ -6,9 +6,10 @@
  * and toggle active/inactive.
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, ToggleLeft, ToggleRight, Loader2, AlertCircle, GripVertical } from "lucide-react";
+import { Plus, Pencil, ToggleLeft, ToggleRight, Loader2, AlertCircle, GripVertical, Image as ImageIcon, Trash2 } from "lucide-react";
+import { normalizeMediaUrl } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -53,6 +54,7 @@ interface Level {
   isActive: boolean;
   description: string | null;
   requirements: string | null;
+  imageUrl: string | null;
   ageMin: number | null;
   ageMax: number | null;
   totalStudents: number;
@@ -65,15 +67,39 @@ interface LevelForm {
   isActive: boolean;
   description: string;
   requirements: string;
+  imageUrl: string;
   ageMin: string;
   ageMax: string;
 }
 
-const EMPTY_FORM: LevelForm = { name: "", sortOrder: "0", isActive: true, description: "", requirements: "", ageMin: "", ageMax: "" };
+const EMPTY_FORM: LevelForm = { name: "", sortOrder: "0", isActive: true, description: "", requirements: "", imageUrl: "", ageMin: "", ageMax: "" };
 
 function formatAgeRange(level: Level) {
   if (level.ageMin == null || level.ageMax == null) return "Not Set";
   return `${level.ageMin} - ${level.ageMax} years`;
+}
+
+function normalizeLevelImageUrlInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const normalized = normalizeMediaUrl(trimmed, "image");
+  if (!normalized) {
+    throw new Error("Enter a direct image URL or a supported public Google Drive sharing URL.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error("Enter a valid image URL.");
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error("Level image URL must use HTTPS.");
+  }
+
+  return parsed.toString();
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -87,6 +113,8 @@ export default function BalletLevelsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingLevel, setEditingLevel] = useState<Level | null>(null);
   const [form, setForm] = useState<LevelForm>(EMPTY_FORM);
+  const [imageValidationMessage, setImageValidationMessage] = useState<string | null>(null);
+  const [imagePreviewFailed, setImagePreviewFailed] = useState(false);
 
   // ── Data ────────────────────────────────────────────────────────────────────
 
@@ -139,6 +167,8 @@ export default function BalletLevelsPage() {
     const maxSort = levels.reduce((m, l) => Math.max(m, l.sortOrder), 0);
     setEditingLevel(null);
     setForm({ ...EMPTY_FORM, sortOrder: String(maxSort + 10) });
+    setImageValidationMessage(null);
+    setImagePreviewFailed(false);
     setDialogOpen(true);
   }
 
@@ -150,9 +180,12 @@ export default function BalletLevelsPage() {
       isActive:     level.isActive,
       description:  level.description ?? "",
       requirements: level.requirements ?? "",
+      imageUrl:     level.imageUrl ?? "",
       ageMin:       level.ageMin != null ? String(level.ageMin) : "",
       ageMax:       level.ageMax != null ? String(level.ageMax) : "",
     });
+    setImageValidationMessage(null);
+    setImagePreviewFailed(false);
     setDialogOpen(true);
   }
 
@@ -160,7 +193,21 @@ export default function BalletLevelsPage() {
     setDialogOpen(false);
     setEditingLevel(null);
     setForm(EMPTY_FORM);
+    setImageValidationMessage(null);
+    setImagePreviewFailed(false);
   }
+
+  const imagePreviewUrl = useMemo(() => {
+    try {
+      return normalizeLevelImageUrlInput(form.imageUrl);
+    } catch {
+      return null;
+    }
+  }, [form.imageUrl]);
+
+  useEffect(() => {
+    setImagePreviewFailed(false);
+  }, [imagePreviewUrl]);
 
   function handleSubmit() {
     if (!form.name.trim()) {
@@ -174,12 +221,23 @@ export default function BalletLevelsPage() {
       toast({ title: "Invalid age range", description: "Age Min cannot be greater than Age Max.", variant: "destructive" });
       return;
     }
+    let imageUrl: string | null = null;
+    try {
+      imageUrl = normalizeLevelImageUrlInput(form.imageUrl);
+      setImageValidationMessage(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid level image URL.";
+      setImageValidationMessage(message);
+      toast({ title: "Invalid image URL", description: message, variant: "destructive" });
+      return;
+    }
     const body = {
       name:      form.name.trim(),
       sortOrder: isNaN(sortOrder) ? 0 : sortOrder,
       isActive:  form.isActive,
       description:  form.description.trim(),
       requirements: form.requirements.trim(),
+      imageUrl,
       // Age fields are optional — omit when blank so they aren't sent as 0.
       ...(isNaN(ageMin) ? {} : { ageMin }),
       ...(isNaN(ageMax) ? {} : { ageMax }),
@@ -245,6 +303,7 @@ export default function BalletLevelsPage() {
             <thead className="border-b border-border bg-muted/30">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground w-16">Order</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground w-20">Image</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Level Name</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Age Range</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Total Students</th>
@@ -256,6 +315,15 @@ export default function BalletLevelsPage() {
               {levels.map((level) => (
                 <tr key={level.id} className="border-b border-border last:border-0 hover:bg-muted/10 transition-colors">
                   <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{level.sortOrder}</td>
+                  <td className="px-4 py-3">
+                    {level.imageUrl ? (
+                      <img src={level.imageUrl} alt="" className="h-10 w-14 rounded-md object-cover border border-border bg-muted" />
+                    ) : (
+                      <div className="flex h-10 w-14 items-center justify-center rounded-md border border-border bg-muted/30">
+                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`font-medium ${level.isActive ? "text-white" : "text-muted-foreground line-through"}`}>
                       {level.name}
@@ -349,6 +417,74 @@ export default function BalletLevelsPage() {
                 placeholder="Prerequisites or expectations for this level"
                 className="bg-[#1A2535] border-border text-white min-h-[70px]"
               />
+            </div>
+
+            <div className="space-y-2">
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">Level Image</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={form.imageUrl}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, imageUrl: e.target.value }));
+                      setImageValidationMessage(null);
+                      setImagePreviewFailed(false);
+                    }}
+                    onBlur={() => {
+                      try {
+                        normalizeLevelImageUrlInput(form.imageUrl);
+                        setImageValidationMessage(null);
+                      } catch (err) {
+                        setImageValidationMessage(err instanceof Error ? err.message : "Invalid level image URL.");
+                      }
+                    }}
+                    placeholder="https://example.com/level.jpg or public Google Drive share link"
+                    className="bg-[#1A2535] border-border text-white"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={!form.imageUrl.trim()}
+                    onClick={() => {
+                      setForm((f) => ({ ...f, imageUrl: "" }));
+                      setImageValidationMessage(null);
+                      setImagePreviewFailed(false);
+                    }}
+                    className="shrink-0 border-border text-muted-foreground hover:text-white"
+                    title="Clear level image"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use a public HTTPS image URL or a public Google Drive sharing link.
+                </p>
+                {imageValidationMessage && (
+                  <p className="text-xs text-red-400">{imageValidationMessage}</p>
+                )}
+                {!imageValidationMessage && imagePreviewUrl && imagePreviewUrl !== form.imageUrl.trim() && (
+                  <p className="text-xs text-muted-foreground">Google Drive link will be saved as: {imagePreviewUrl}</p>
+                )}
+              </div>
+
+              <div className="overflow-hidden rounded-lg border border-border bg-[#1A2535]">
+                {imagePreviewUrl && !imagePreviewFailed ? (
+                  <img
+                    src={imagePreviewUrl}
+                    alt="Ballet level preview"
+                    className="h-32 w-full object-cover"
+                    onError={() => setImagePreviewFailed(true)}
+                  />
+                ) : (
+                  <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
+                    <ImageIcon className="h-6 w-6" />
+                    <span className="text-xs">
+                      {form.imageUrl.trim() && imagePreviewFailed ? "Image preview failed." : "Image preview will appear here."}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

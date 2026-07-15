@@ -122,10 +122,14 @@ export const NAV_TREE: NavNode[] = [
       link("Groups", "/ballet/groups", [["ballet.groups", "view"]], UsersRound, { pageTitle: "Ballet Groups" }),
       link("Packages", "/ballet/packages", [["ballet.packages", "view"]], Wallet, { pageTitle: "Ballet Packages" }),
       link("Payments", "/ballet/payments", [["ballet.payments", "view"]], Receipt, { pageTitle: "Ballet Payments" }),
+      link("Cancellation Requests", "/ballet/cancellation-requests", [["ballet.applications", "view"]], FileClock, {
+        pageTitle: "Ballet Cancellation Requests",
+      }),
+      link("Refunds", "/ballet/refunds", [["ballet.payments", "view"]], Receipt, { pageTitle: "Ballet Refunds" }),
       link("Performances", "/ballet/performances", [["ballet.performances", "view"]], Sparkles, {
         pageTitle: "Ballet Performance Opportunities",
       }),
-      link("General Settings", "/ballet/settings", [["ballet.pricing", "view"]], Settings2),
+      link("General Settings", "/ballet/settings", [["ballet.settings", "view"]], Settings2),
     ]),
   ]),
 

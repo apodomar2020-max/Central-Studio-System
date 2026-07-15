@@ -5,9 +5,6 @@ import { z } from "zod/v4";
 /**
  * ballet_packages — admin-managed pricing packages for the Ballet system.
  *
- * Will eventually replace the flat preBallet/levels pricing fields on
- * ballet_settings (those fields are kept for now and removed in a later step).
- *
  * Which levels a package applies to is tracked via the ballet_package_levels
  * join table (many-to-many).
  */

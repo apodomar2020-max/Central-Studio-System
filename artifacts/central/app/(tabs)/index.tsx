@@ -64,7 +64,7 @@ import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
-import { ACTIVE_APPLICATION_STATUSES, fetchMyApplications } from "@/services/balletAssessmentService";
+import { ACTIVE_APPLICATION_STATUSES, fetchBalletSettings, fetchMyApplications } from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 const { width: SW } = Dimensions.get("window");
@@ -855,6 +855,16 @@ export default function StudioHomeScreen() {
     const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
     return active?.status ?? apps[0]?.status ?? null;
   }, [balletApplications]);
+  const {
+    data: balletSettings,
+    refetch: refetchBalletSettings,
+    isRefetching: refetchingBalletSettings,
+  } = useQuery({
+    queryKey: ["ballet-settings"],
+    queryFn: ({ signal }) => fetchBalletSettings(signal),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
 
   // ── Instructors ───────────────────────────────────────────────────────────
   const { data: apiInst, refetch: refetchInst, isRefetching: refetchingInst, isLoading: instLoading, isError: instError, error: instErr } = useListInstructors();
@@ -912,11 +922,12 @@ export default function StudioHomeScreen() {
     ).slice(0, 5);
   }, [apiScheds, apiClasses, singlePrice, classCapacityEnabled]);
 
-  const isRefreshing = refetchingInst || refetchingScheds || refetchingClasses || refetchingBalletApplications;
+  const isRefreshing = refetchingInst || refetchingScheds || refetchingClasses || refetchingBalletApplications || refetchingBalletSettings;
   const onRefresh = useCallback(() => {
     refetchHero(); refetchInst(); refetchScheds(); refetchClasses();
+    refetchBalletSettings();
     if (user) refetchBalletApplications();
-  }, [refetchHero, refetchInst, refetchScheds, refetchClasses, user, refetchBalletApplications]);
+  }, [refetchHero, refetchInst, refetchScheds, refetchClasses, refetchBalletSettings, user, refetchBalletApplications]);
 
   const topPad = Platform.OS === "web" ? 20 : insets.top + 6;
 
@@ -1001,6 +1012,7 @@ export default function StudioHomeScreen() {
           </View>
           <BalletFeaturedProgramCard
             balletStatus={balletStatus}
+            homeCardImageUrl={balletSettings?.homeCardImageUrl ?? null}
             onView={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.push("/ballet" as any);

@@ -22,14 +22,20 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   ActivityIndicator,
+  Modal,
+  KeyboardAvoidingView,
 } from "react-native";
 
 import {
   fetchMyApplications,
+  fetchBalletApplicationDetail,
   cancelBalletApplication,
+  requestBalletEnrollmentCancellation,
+  withdrawBalletEnrollmentCancellationRequest,
   fetchBalletLevels,
   fetchBalletGroups,
   fetchBalletClasses,
@@ -37,6 +43,7 @@ import {
   EDITABLE_APPLICATION_STATUSES,
   ACTIVE_APPLICATION_STATUSES,
   type BalletApplication,
+  type BalletApplicationDetail,
   type BalletClassSchedule,
   isOfflineError,
 } from "@/services/balletAssessmentService";
@@ -131,6 +138,14 @@ function getStatusMeta(status: string, levelName?: string | null, groupName?: st
         icon: "ban-outline",
         color: "#6B7280",
       };
+    case "withdrawn":
+      return {
+        label: "Enrollment Ended",
+        description:
+          "This Ballet enrollment has ended. You may submit a new application when you are ready.",
+        icon: "exit-outline",
+        color: "#6B7280",
+      };
     default:
       return {
         label: status,
@@ -148,7 +163,23 @@ export default function ApplicationStatusScreen() {
 
   const [loadState, setLoadState] = useState<"loading" | "success" | "empty" | "offline" | "error">("loading");
   const [application, setApplication] = useState<BalletApplication | null>(null);
+  const [applicationDetail, setApplicationDetail] = useState<BalletApplicationDetail | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [requestingCancellation, setRequestingCancellation] = useState(false);
+  const [reasonModal, setReasonModal] = useState<null | {
+    kind: "cancelApplication" | "requestEnrollmentCancellation";
+    requestedTiming?: "immediate" | "endOfPeriod";
+    requestRefund?: boolean;
+  }>(null);
+  const [reasonText, setReasonText] = useState("");
+  const trimmedReason = reasonText.trim();
+  const reasonError = trimmedReason.length === 0
+    ? "Reason is required."
+    : trimmedReason.length < 5
+      ? "Reason must be at least 5 characters."
+      : trimmedReason.length > 500
+        ? "Reason must be at most 500 characters."
+        : null;
 
   // Level id → name lookup (mirrors the levelNameById pattern in
   // app/ballet/classes.tsx) so "assignedToLevel"/"active" cards can show the
@@ -226,7 +257,14 @@ export default function ApplicationStatusScreen() {
       // Fall back to apps[0] (most recent overall) if all are terminal,
       // so the parent can still see their most recent history.
       const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
-      setApplication(active ?? apps[0]!);
+      const selected = active ?? apps[0]!;
+      setApplication(selected);
+      try {
+        const detail = await fetchBalletApplicationDetail(selected.id, signal);
+        if (!signal?.aborted) setApplicationDetail(detail);
+      } catch {
+        if (!signal?.aborted) setApplicationDetail(null);
+      }
       setLoadState("success");
     } catch (e) {
       if ((e as any)?.name === "AbortError") return;
@@ -251,20 +289,42 @@ export default function ApplicationStatusScreen() {
         {
           text: "Yes, Cancel",
           style: "destructive",
-          onPress: doCancel,
+          onPress: () => openReasonModal({ kind: "cancelApplication" }),
         },
       ]
     );
   }
 
-  async function doCancel() {
+  function openReasonModal(next: NonNullable<typeof reasonModal>) {
+    setReasonText("");
+    setReasonModal(next);
+  }
+
+  function closeReasonModal() {
+    if (cancelling || requestingCancellation) return;
+    setReasonModal(null);
+    setReasonText("");
+  }
+
+  async function submitReasonModal() {
+    if (!reasonModal || reasonError) return;
+    if (reasonModal.kind === "cancelApplication") {
+      await doCancel(trimmedReason);
+      return;
+    }
+    if (!reasonModal.requestedTiming) return;
+    await submitCancellationRequest(reasonModal.requestedTiming, reasonModal.requestRefund === true, trimmedReason);
+  }
+
+  async function doCancel(reason: string) {
     if (!application || cancelling) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setCancelling(true);
     try {
-      await cancelBalletApplication(application.id);
+      await cancelBalletApplication(application.id, { reason });
       // Refresh to show updated status
       await load();
+      closeReasonModal();
     } catch (err) {
       if (isOfflineError(err)) {
         Alert.alert("No Connection", "Please check your internet connection and try again.");
@@ -277,6 +337,78 @@ export default function ApplicationStatusScreen() {
       }
     } finally {
       setCancelling(false);
+    }
+  }
+
+  function requestCancellationFlow() {
+    if (!applicationDetail?.activeAssignment || requestingCancellation) return;
+    Alert.alert(
+      "Request Ballet Cancellation",
+      "When would you like the enrollment cancellation to take effect?",
+      [
+        { text: "Keep Enrollment", style: "cancel" },
+        { text: "End of Period", onPress: () => confirmCancellationRefund("endOfPeriod") },
+        { text: "Immediate", style: "destructive", onPress: () => confirmCancellationRefund("immediate") },
+      ],
+    );
+  }
+
+  function confirmCancellationRefund(requestedTiming: "immediate" | "endOfPeriod") {
+    const eligiblePayment = applicationDetail?.currentPayment;
+    const canRequestRefund =
+      eligiblePayment?.status === "paid" &&
+      eligiblePayment.paymentMethod === "inPerson" &&
+      Boolean(eligiblePayment.paidAt);
+
+    if (!canRequestRefund) {
+      openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false });
+      return;
+    }
+
+    Alert.alert(
+      "Request Cash Refund?",
+      "This will ask the studio to review a cash refund. You cannot choose or approve the amount from the app.",
+      [
+        { text: "No Refund", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false }) },
+        { text: "Request Cash Refund", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: true }) },
+      ],
+    );
+  }
+
+  async function submitCancellationRequest(requestedTiming: "immediate" | "endOfPeriod", requestRefund: boolean, reason: string) {
+    const assignmentId = applicationDetail?.activeAssignment?.id;
+    if (!assignmentId) return;
+    setRequestingCancellation(true);
+    try {
+      await requestBalletEnrollmentCancellation(assignmentId, {
+        requestedTiming,
+        requestRefund,
+        reason,
+      });
+      Alert.alert("Request Submitted", "Your Ballet cancellation request has been sent to the studio.");
+      await load();
+      closeReasonModal();
+    } catch (err) {
+      const msg = (err as any)?.data?.error ?? (err as any)?.message ?? "Unable to submit cancellation request.";
+      Alert.alert(isOfflineError(err) ? "No Connection" : "Error", msg);
+    } finally {
+      setRequestingCancellation(false);
+    }
+  }
+
+  async function withdrawCancellationRequest() {
+    const requestId = applicationDetail?.openCancellationRequest?.id;
+    if (!requestId || requestingCancellation) return;
+    setRequestingCancellation(true);
+    try {
+      await withdrawBalletEnrollmentCancellationRequest(requestId);
+      Alert.alert("Request Withdrawn", "Your cancellation request has been withdrawn.");
+      await load();
+    } catch (err) {
+      const msg = (err as any)?.data?.error ?? (err as any)?.message ?? "Unable to withdraw cancellation request.";
+      Alert.alert(isOfflineError(err) ? "No Connection" : "Error", msg);
+    } finally {
+      setRequestingCancellation(false);
     }
   }
 
@@ -346,6 +478,10 @@ export default function ApplicationStatusScreen() {
         const isCancellable = CANCELLABLE_APPLICATION_STATUSES.has(application.status);
         const isEditable    = EDITABLE_APPLICATION_STATUSES.has(application.status);
         const isTerminal    = !ACTIVE_APPLICATION_STATUSES.has(application.status);
+        const activeAssignment = applicationDetail?.activeAssignment;
+        const openCancellationRequest = applicationDetail?.openCancellationRequest;
+        const canRequestEnrollmentCancellation = application.status === "active" && activeAssignment?.status === "active" && !openCancellationRequest;
+        const canWithdrawCancellationRequest = openCancellationRequest?.status === "pendingReview";
 
         return (
           <ScrollView
@@ -472,6 +608,38 @@ export default function ApplicationStatusScreen() {
                 />
               )}
 
+              {canRequestEnrollmentCancellation && (
+                <AppButton
+                  title={requestingCancellation ? "Submitting…" : "Request Ballet Cancellation"}
+                  variant="ghost"
+                  onPress={requestCancellationFlow}
+                  disabled={requestingCancellation}
+                  fullWidth
+                  style={{ borderColor: "#EF444440", borderWidth: 1 }}
+                />
+              )}
+
+              {openCancellationRequest && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>
+                    {openCancellationRequest.status === "approved" ? "Cancellation Scheduled" : "Cancellation Request"}
+                  </Text>
+                  <InfoRow label="Status" value={openCancellationRequest.status} />
+                  <InfoRow label="Timing" value={openCancellationRequest.approvedTiming ?? openCancellationRequest.requestedTiming} />
+                  {openCancellationRequest.approvedEffectiveDate ? <InfoRow label="Effective Date" value={openCancellationRequest.approvedEffectiveDate} /> : null}
+                  {canWithdrawCancellationRequest && (
+                    <AppButton
+                      title={requestingCancellation ? "Withdrawing…" : "Withdraw Cancellation Request"}
+                      variant="ghost"
+                      onPress={withdrawCancellationRequest}
+                      disabled={requestingCancellation}
+                      fullWidth
+                      style={{ borderColor: "#EF444440", borderWidth: 1, marginTop: 12 }}
+                    />
+                  )}
+                </View>
+              )}
+
               {isTerminal && (
                 <AppButton
                   title="Submit New Application"
@@ -491,6 +659,48 @@ export default function ApplicationStatusScreen() {
           </ScrollView>
         );
       })()}
+
+      <Modal visible={reasonModal != null} transparent animationType="fade" onRequestClose={closeReasonModal}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
+          <View style={styles.reasonSheet}>
+            <Text style={styles.reasonTitle}>
+              {reasonModal?.kind === "cancelApplication" ? "Cancel Application" : "Request Ballet Cancellation"}
+            </Text>
+            <Text style={styles.reasonSubtitle}>
+              Please tell the studio why you are making this request. This reason is shared with the Ballet admin team.
+            </Text>
+            <Text style={styles.reasonLabel}>
+              Reason <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              value={reasonText}
+              onChangeText={(value) => setReasonText(value.slice(0, 500))}
+              placeholder="Write your reason…"
+              placeholderTextColor="#6B7280"
+              multiline
+              textAlignVertical="top"
+              style={[styles.reasonInput, reasonError && trimmedReason.length > 0 ? styles.reasonInputError : null]}
+              editable={!cancelling && !requestingCancellation}
+              maxLength={500}
+            />
+            <View style={styles.reasonMetaRow}>
+              <Text style={[styles.reasonError, !reasonError || trimmedReason.length === 0 ? styles.reasonHint : null]}>
+                {trimmedReason.length === 0 ? "Minimum 5 characters." : reasonError ?? "Looks good."}
+              </Text>
+              <Text style={styles.reasonCount}>{reasonText.length}/500</Text>
+            </View>
+            <View style={styles.reasonActions}>
+              <AppButton title="Close" variant="ghost" onPress={closeReasonModal} disabled={cancelling || requestingCancellation} style={{ flex: 1 }} />
+              <AppButton
+                title={cancelling || requestingCancellation ? "Submitting…" : "Submit"}
+                onPress={submitReasonModal}
+                disabled={Boolean(reasonError) || cancelling || requestingCancellation}
+                style={{ flex: 1, backgroundColor: BALLET_COLOR }}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -649,4 +859,77 @@ const styles = StyleSheet.create({
 
   // Actions
   actions: { gap: 10, marginTop: 4 },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.72)",
+    padding: 16,
+  },
+  reasonSheet: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#1E2E38",
+    backgroundColor: colors.studio.card,
+    padding: 20,
+    gap: 12,
+  },
+  reasonTitle: {
+    fontSize: 20,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+  },
+  reasonSubtitle: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: "#9CA3AF",
+    lineHeight: 19,
+  },
+  reasonLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+    color: "#E5E7EB",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  required: { color: "#EF4444" },
+  reasonInput: {
+    minHeight: 132,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#243645",
+    backgroundColor: "#080C11",
+    padding: 14,
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 20,
+  },
+  reasonInputError: {
+    borderColor: "#EF4444",
+  },
+  reasonMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  reasonError: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: "#EF4444",
+  },
+  reasonHint: {
+    color: "#9CA3AF",
+  },
+  reasonCount: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: "#6B7280",
+  },
+  reasonActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
 });

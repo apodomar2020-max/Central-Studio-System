@@ -5,8 +5,10 @@ import {
   defaultJobOptions,
   getQueue,
   getQueueConnection,
+  BALLET_CANCELLATION_FINALIZATION_SCHEDULES,
   NOTIFICATION_AUTOMATION_SCHEDULES,
   QUEUE_NAMES,
+  type BalletCancellationFinalizationJob,
   type NotificationAutomationJob,
   workerEnabled,
   type ReportJob,
@@ -19,6 +21,7 @@ import {
   runPackageReminderAutomation,
   runPostClassReminderAutomation,
 } from "./lib/notificationReminders";
+import { processBalletCancellationFinalizationJob } from "./lib/balletCancellationFinalization";
 
 await initErrorMonitoring();
 
@@ -71,10 +74,44 @@ const notificationAutomationWorker = new Worker<NotificationAutomationJob>(
   { connection, concurrency: Number.parseInt(process.env["NOTIFICATION_AUTOMATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
 );
 
-for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker]) {
+const balletCancellationFinalizationWorker = new Worker<BalletCancellationFinalizationJob>(
+  QUEUE_NAMES.balletCancellationFinalization,
+  async (job) => {
+    logger.info({ jobId: job.id, type: job.data.type }, "Processing Ballet cancellation finalization job");
+    return processBalletCancellationFinalizationJob(job.data);
+  },
+  { connection, concurrency: Number.parseInt(process.env["BALLET_CANCELLATION_FINALIZATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
+);
+
+for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker]) {
   worker.on("failed", (job, err) => {
     captureError(err, { component: "queue-worker", queue: worker.name, jobId: job?.id });
   });
+}
+
+async function registerBalletCancellationFinalizationSchedulers(): Promise<void> {
+  const queue = getQueue(QUEUE_NAMES.balletCancellationFinalization);
+  if (!queue) {
+    logger.warn("Ballet cancellation finalization queue unavailable; skipping scheduler registration");
+    return;
+  }
+  for (const schedule of BALLET_CANCELLATION_FINALIZATION_SCHEDULES) {
+    try {
+      await queue.upsertJobScheduler(
+        schedule.schedulerId,
+        { pattern: schedule.pattern },
+        {
+          name: "reconcile_due_cancellations",
+          data: { type: "reconcile_due_cancellations", source: "scheduler" } satisfies BalletCancellationFinalizationJob,
+          opts: defaultJobOptions(),
+        },
+      );
+      logger.info({ schedulerId: schedule.schedulerId, pattern: schedule.pattern }, "Registered Ballet cancellation finalization scheduler");
+    } catch (err) {
+      captureError(err, { component: "queue-worker", phase: "ballet-cancellation-scheduler-registration", schedulerId: schedule.schedulerId });
+      logger.error({ err, schedulerId: schedule.schedulerId, pattern: schedule.pattern }, "Failed to register Ballet cancellation finalization scheduler");
+    }
+  }
 }
 
 // ── Production scheduling (Option B) ─────────────────────────────────────────
@@ -122,13 +159,14 @@ async function registerNotificationAutomationSchedulers(): Promise<void> {
 }
 
 await registerNotificationAutomationSchedulers();
+await registerBalletCancellationFinalizationSchedulers();
 
 logger.info("Queue worker started");
 
 async function shutdown() {
   logger.info("Queue worker shutting down");
   const connectionQuit = connection ? connection.quit() : Promise.resolve();
-  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), connectionQuit]);
+  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), connectionQuit]);
   process.exit(0);
 }
 

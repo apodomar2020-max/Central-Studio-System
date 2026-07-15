@@ -5,7 +5,7 @@
  * as reviewed; only a field the parent never touched is "missing".
  */
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +17,7 @@ import { BackBtn, CS, Eyebrow, PrimaryCTA, ScreenTitle } from "@/components/sign
 import { iosTextInputStyle } from "@/utils/iosTypography";
 
 export default function OnboardingMedicalScreen() {
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const insets = useSafeAreaInsets();
   const { children, updateChild, setUser } = useAppContext();
   const topPad = (Platform.OS === "web" ? 40 : insets.top) + 24;
@@ -36,7 +37,13 @@ export default function OnboardingMedicalScreen() {
       const { user } = await fetchCurrentUser();
       await setUser(user);
       const nextStep = user.profileCompletion?.nextStep ?? "styles";
-      router.replace(nextStepRoute(nextStep) as never);
+      const destination = nextStep === "done" && returnTo
+        ? returnTo
+        : {
+            pathname: nextStepRoute(nextStep) as never,
+            params: returnTo ? { returnTo } : undefined,
+          };
+      router.replace(destination as never);
     } finally {
       setSaving(false);
     }

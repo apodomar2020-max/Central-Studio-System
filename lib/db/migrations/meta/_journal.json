@@ -421,6 +421,62 @@
       "when": 1784462414000,
       "tag": "0060_ballet_schedule_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1784462415000,
+      "tag": "0061_ballet_home_card_settings_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784462416000,
+      "tag": "0062_ballet_level_image",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1784462417000,
+      "tag": "0063_ballet_performance_mobile_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1784462418000,
+      "tag": "0064_ballet_program_requirements",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1784462419000,
+      "tag": "0065_ballet_faqs",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784462420000,
+      "tag": "0066_ballet_contact_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1784462421000,
+      "tag": "0067_ballet_application_preferred_package",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1784462422000,
+      "tag": "0068_ballet_cancellations_refunds",
+      "breakpoints": true
     }
   ]
 }

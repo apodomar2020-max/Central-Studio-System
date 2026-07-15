@@ -6,6 +6,7 @@ import { studentsTable } from "./students";
 import { balletLevelsTable } from "./balletLevels";
 import { balletSchedulesTable } from "./balletSchedules";
 import { childrenTable } from "./children";
+import { balletPackagesTable } from "./balletPackages";
 
 // Canonical source of truth moved to @workspace/api-zod (Phase A / P0-2b) so
 // frontend packages can import the same literals instead of retyping them.
@@ -23,9 +24,10 @@ export type { BalletApplicationStatus };
  * if the parent links their account.
  *
  * Status machine:
- *   pending → accepted → assignedToLevel → active
+ *   pending → accepted → assignedToLevel → active → withdrawn
  *           ↘ rejected
  *           ↘ needsFollowUp
+ *           ↘ cancelled (pre-activation terminal)
  *
  * (Old values "submitted"/"pendingAssessment" merged into "pending" and
  * "activeBallet" renamed to "active" — data migrated in migration 0047.)
@@ -55,6 +57,7 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   // preference only — it never creates or touches a ballet_payments row; it is
   // consumed as a prefill convenience when admin staff later record a payment.
   preferredPaymentMethod: text("preferred_payment_method"),
+  preferredPackageId:     integer("preferred_package_id").references(() => balletPackagesTable.id, { onDelete: "set null" }),
   status:                text("status").notNull().default("pending"),
   adminNotes:            text("admin_notes"),
   assignedLevelId:       integer("assigned_level_id").references(() => balletLevelsTable.id, { onDelete: "set null" }),
@@ -63,17 +66,17 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 }, (table) => ([
-  // Phase A / P0-8a: a linked child can have at most one open (non-rejected,
-  // non-cancelled) application at a time.
+  // Phase A / P0-8a: a linked child can have at most one open application at
+  // a time. Terminal statuses allow reapplication.
   uniqueIndex("ballet_applications_active_per_child")
     .on(table.childId)
-    .where(sql`${table.childId} is not null and ${table.status} not in ('rejected','cancelled')`),
+    .where(sql`${table.childId} is not null and ${table.status} in ('pending','needsFollowUp','accepted','assignedToLevel','active')`),
   // Phase A / P0-8b: same guarantee for manual (walk-in/phone) submissions
   // that have no linked child record yet — identity is the best available
   // proxy (parent account + normalised child name + birthday).
   uniqueIndex("ballet_applications_active_per_manual_identity")
     .on(table.parentStudentId, sql`lower(trim(${table.childName}))`, table.childBirthday)
-    .where(sql`${table.childId} is null and ${table.status} not in ('rejected','cancelled')`),
+    .where(sql`${table.childId} is null and ${table.status} in ('pending','needsFollowUp','accepted','assignedToLevel','active')`),
   index("ballet_applications_assessment_schedule_idx").on(table.assessmentScheduleId),
   index("ballet_applications_assessment_date_idx").on(table.assessmentDate),
 ]));
@@ -96,6 +99,7 @@ export const insertBalletApplicationSchema = z.object({
   notes:                 z.string().optional(),
   assessmentScheduleId:  z.number().int().positive().optional(),
   assessmentDate:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  preferredPackageId:    z.number().int().positive().optional(),
 });
 
 export type BalletApplication = typeof balletApplicationsTable.$inferSelect;

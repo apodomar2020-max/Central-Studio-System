@@ -1,8 +1,8 @@
 import { LinearGradient } from "expo-linear-gradient";
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ImageBackground, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { iosDisplayTextStyle } from "@/utils/iosTypography";
+import { BalletProgramLockup } from "@/components/ballet/BalletProgramLockup";
 
 const INK_900 = "#0A0B0D";
 const INK_300 = "#8E97A2";
@@ -51,23 +51,39 @@ function getStatusBadgeColor(status: string) {
 
 export default function BalletFeaturedProgramCard({
   balletStatus,
+  homeCardImageUrl,
   onView,
   onApply,
 }: {
   balletStatus: string | null;
+  homeCardImageUrl?: string | null;
   onView: () => void;
   onApply: () => void;
 }) {
   const isDetailMode = balletStatus !== null && DETAIL_MODE_STATUSES.has(balletStatus);
   const statusColor = balletStatus ? getStatusBadgeColor(balletStatus) : null;
+  const [remoteImageFailed, setRemoteImageFailed] = useState(false);
+  const remoteImageUri = homeCardImageUrl?.trim() || null;
+
+  useEffect(() => {
+    setRemoteImageFailed(false);
+  }, [remoteImageUri]);
+
+  const imageSource = useMemo(
+    () => remoteImageUri && !remoteImageFailed
+      ? { uri: remoteImageUri }
+      : require("@/assets/images/ballet_hero.png"),
+    [remoteImageUri, remoteImageFailed],
+  );
 
   return (
     <View style={styles.container}>
       <View style={styles.card}>
         <ImageBackground
-          source={require("@/assets/images/ballet_hero.png")}
+          source={imageSource}
           style={StyleSheet.absoluteFill}
           imageStyle={{ borderRadius: R_LG }}
+          onError={() => setRemoteImageFailed(true)}
         />
         <LinearGradient
           colors={["rgba(5,6,8,0.22)", "rgba(5,6,8,0.30)", "rgba(5,6,8,0.97)"]}
@@ -86,7 +102,7 @@ export default function BalletFeaturedProgramCard({
           )}
         </View>
         <View style={styles.bottom}>
-          <Text style={styles.name}>{"Ballet Intensive\nProgram"}</Text>
+          <BalletProgramLockup variant="card" style={styles.cardLockup} />
           <Text style={styles.sub}>12 weeks · Fundamentals to performance stage</Text>
           <View style={{ flexDirection: "row", gap: 9 }}>
             <TouchableOpacity onPress={onView} style={styles.primaryButton} activeOpacity={0.85}>
@@ -125,15 +141,7 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: R_PILL, borderWidth: 1 },
   statusText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold" },
   bottom: { position: "absolute", left: 16, right: 16, bottom: 14 },
-  name: {
-    fontSize: 26,
-    fontFamily: "Anton_400Regular",
-    color: "#fff",
-    lineHeight: 24,
-    ...iosDisplayTextStyle(26, 24),
-    textTransform: "uppercase",
-    marginBottom: 6,
-  },
+  cardLockup: { marginBottom: 7 },
   sub: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, marginBottom: 12 },
   primaryButton: {
     flex: 1,

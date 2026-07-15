@@ -128,7 +128,7 @@ async function insertNotification(
           studentId,
           title,
           body,
-          data: { type: input.type ?? "notification" },
+          data: { type: input.type ?? "notification", ...(input.metadata ?? {}) },
           notificationId: row.id,
         });
       }, 0);
@@ -137,7 +137,7 @@ async function insertNotification(
         void sendBroadcastPushNotification({
           title,
           body,
-          data: { type: input.type ?? "notification" },
+          data: { type: input.type ?? "notification", ...(input.metadata ?? {}) },
           notificationId: row.id,
         });
       }, 0);

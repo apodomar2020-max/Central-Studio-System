@@ -1,8 +1,10 @@
-import { index, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, serial, text, timestamp, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { balletApplicationsTable } from "./balletApplications";
 import { childrenTable } from "./children";
 import { balletLevelsTable } from "./balletLevels";
 import { balletGroupsTable } from "./balletGroups";
+import { systemUsersTable } from "./systemUsers";
+import { balletEnrollmentCancellationRequestsTable } from "./balletEnrollmentCancellations";
 import {
   BALLET_LEVEL_ASSIGNMENT_STATUSES,
   type BalletLevelAssignmentStatus,
@@ -28,7 +30,7 @@ export type { BalletLevelAssignmentStatus };
  */
 export const balletLevelAssignmentsTable = pgTable("ballet_level_assignments", {
   id:            serial("id").primaryKey(),
-  applicationId: integer("application_id").notNull().references(() => balletApplicationsTable.id, { onDelete: "cascade" }),
+  applicationId: integer("application_id").notNull().references(() => balletApplicationsTable.id, { onDelete: "restrict" }),
   childId:       integer("child_id").references(() => childrenTable.id, { onDelete: "set null" }),
   levelId:       integer("level_id").notNull().references(() => balletLevelsTable.id, { onDelete: "restrict" }),
   groupId:       integer("group_id").references(() => balletGroupsTable.id, { onDelete: "set null" }),
@@ -36,6 +38,11 @@ export const balletLevelAssignmentsTable = pgTable("ballet_level_assignments", {
   billingStart:  text("billing_start"),   // e.g. "2026-08"
   status:        text("status").notNull().default("active"),
   notes:         text("notes"),
+  withdrawnAt:   timestamp("withdrawn_at", { withTimezone: true, mode: "string" }),
+  withdrawalEffectiveDate: text("withdrawal_effective_date"),
+  withdrawalReason: text("withdrawal_reason"),
+  withdrawnByAdminId: integer("withdrawn_by_admin_id").references(() => systemUsersTable.id, { onDelete: "set null" }),
+  withdrawnByCancellationRequestId: integer("withdrawn_by_cancellation_request_id").references((): AnyPgColumn => balletEnrollmentCancellationRequestsTable.id, { onDelete: "set null" }),
   createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 }, (table) => ({

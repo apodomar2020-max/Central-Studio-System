@@ -10,7 +10,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ImageBackground,
   Platform,
@@ -23,13 +23,17 @@ import {
 
 import {
   fetchMyApplications,
+  fetchBalletSettings,
+  fetchBalletSummary,
   fetchBalletClasses,
   ACTIVE_APPLICATION_STATUSES,
+  type BalletSummary,
   type BalletClass,
 } from "@/services/balletAssessmentService";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
+import { BalletProgramLockup, BallerinaShoesIcon } from "@/components/ballet/BalletProgramLockup";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 // Base/card/border values taken from the explicit task spec (override the
@@ -42,12 +46,11 @@ const INK_200 = "#D1D5DB";
 const CYAN    = "#00B6D7";
 const R_MD    = 12;
 const R_LG    = 16;
-const R_PILL  = 999;
 
 /* ─── Nav card data ──────────────────────────────────────────────── */
 const NAV_CARDS = [
   {
-    icon: "star-outline" as const,
+    icon: "ballerina-shoes" as const,
     title: "Ballet Levels",
     sub: "Pre Ballet → Professional — 6 levels",
     route: "/ballet/levels",
@@ -90,14 +93,6 @@ const NAV_CARDS = [
   },
 ] as const;
 
-/* ─── Stats data ─────────────────────────────────────────────────── */
-const STATS = [
-  { value: "48", label: "Active students" },
-  { value: "3",  label: "Instructors" },
-  { value: "6",  label: "Levels" },
-  { value: "12", label: "Classes/week" },
-];
-
 /* ─── BStat atom ─────────────────────────────────────────────────── */
 function BStat({ value, label }: { value: string; label: string }) {
   return (
@@ -115,7 +110,7 @@ function BNavCard({
   sub,
   onPress,
 }: {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
+  icon: React.ComponentProps<typeof Ionicons>["name"] | "ballerina-shoes";
   title: string;
   sub?: string;
   onPress: () => void;
@@ -123,7 +118,9 @@ function BNavCard({
   return (
     <TouchableOpacity onPress={onPress} style={s.navCard} activeOpacity={0.82}>
       <View style={s.navCardIcon}>
-        <Ionicons name={icon} size={22} color={CYAN} />
+        {icon === "ballerina-shoes"
+          ? <BallerinaShoesIcon size={22} color={CYAN} />
+          : <Ionicons name={icon} size={22} color={CYAN} />}
       </View>
       <View style={s.navCardText}>
         <Text style={s.navCardTitle}>{title}</Text>
@@ -150,6 +147,7 @@ export default function BalletProgramScreen() {
       setHasActiveApplication(false);
       return;
     }
+    setHasActiveApplication(null);
     const ctrl = new AbortController();
     fetchMyApplications(ctrl.signal)
       .then((apps) => {
@@ -158,10 +156,63 @@ export default function BalletProgramScreen() {
       })
       .catch(() => {
         if (ctrl.signal.aborted) return;
-        setHasActiveApplication(false);
+        setHasActiveApplication(null);
       });
     return () => ctrl.abort();
   }, [user]);
+
+  const [summary, setSummary] = useState<BalletSummary | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchBalletSummary(ctrl.signal)
+      .then((data) => {
+        if (ctrl.signal.aborted) return;
+        setSummary(data);
+      })
+      .catch(() => {
+        if (ctrl.signal.aborted) return;
+        setSummary(null);
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  const stats = useMemo(() => [
+    { value: summary ? String(summary.activeStudents) : "—", label: "Active students" },
+    { value: summary ? String(summary.instructors) : "—", label: "Instructors" },
+    { value: summary ? String(summary.levels) : "—", label: "Levels" },
+    { value: summary ? String(summary.classes) : "—", label: "Classes/week" },
+  ], [summary]);
+
+  const [homeCardImageUrl, setHomeCardImageUrl] = useState<string | null>(null);
+  const [heroImageFailed, setHeroImageFailed] = useState(false);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchBalletSettings(ctrl.signal)
+      .then((settings) => {
+        if (ctrl.signal.aborted) return;
+        setHomeCardImageUrl(settings.homeCardImageUrl);
+      })
+      .catch(() => {
+        if (ctrl.signal.aborted) return;
+        setHomeCardImageUrl(null);
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  const heroImageUri = homeCardImageUrl?.trim() || null;
+
+  useEffect(() => {
+    setHeroImageFailed(false);
+  }, [heroImageUri]);
+
+  const heroImageSource = useMemo(
+    () => heroImageUri && !heroImageFailed
+      ? { uri: heroImageUri }
+      : require("@/assets/images/ballet_hero.png"),
+    [heroImageUri, heroImageFailed],
+  );
 
   /* Live ballet-class count for the "Ballet Classes" nav card subtitle.
      Uses the dedicated public GET /api/ballet/classes endpoint (Phase 4a) —
@@ -232,31 +283,37 @@ export default function BalletProgramScreen() {
       />
 
       {/* ── Sticky Header ── */}
-      <View style={[s.header, { paddingTop: topPad + 14 }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={s.backBtn}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="chevron-back" size={20} color={CYAN} />
-          <Text style={s.backText}>Back</Text>
-        </TouchableOpacity>
+      <View style={s.headerWrap}>
+        <LinearGradient
+          colors={["rgba(0,0,0,0.92)", "rgba(0,0,0,0.58)", "rgba(0,0,0,0)"]}
+          locations={[0, 0.58, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        <View style={[s.header, { paddingTop: topPad + 14 }]}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={s.backBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="chevron-back" size={20} color={CYAN} />
+            <Text style={s.backText}>Back</Text>
+          </TouchableOpacity>
 
-        <Text style={s.headerTitle}>Ballet Program</Text>
-
-        <TouchableOpacity onPress={handleApply} style={s.headerApplyBtn} activeOpacity={0.85}>
-          <Text style={s.headerApplyText}>Apply ✦</Text>
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Scrollable content ── */}
       <ScrollView showsVerticalScrollIndicator={false} bounces>
         {/* ── Hero section ── */}
-        <View style={s.heroSection}>
+        <View style={[s.heroSection, { minHeight: topPad + 370 }]}>
           <ImageBackground
-            source={require("@/assets/images/ballet_hero.png")}
+            source={heroImageSource}
             style={StyleSheet.absoluteFill}
             imageStyle={{ resizeMode: "cover" }}
+            onError={() => setHeroImageFailed(true)}
           />
           {/* 4-stop gradient overlay matching design */}
           <LinearGradient
@@ -272,12 +329,12 @@ export default function BalletProgramScreen() {
             style={StyleSheet.absoluteFill}
           />
 
-          <View style={s.heroContent}>
+          <View style={[s.heroContent, { paddingTop: topPad + 76 }]}>
             {/* Eyebrow */}
             <Text style={s.heroEyebrow}>Central Studio</Text>
 
-            {/* Display title */}
-            <Text style={s.heroTitle}>{"Ballet\nProgram"}</Text>
+            {/* Display title lockup */}
+            <BalletProgramLockup variant="hero" style={s.heroLockup} />
 
             {/* Description */}
             <Text style={s.heroDesc}>
@@ -287,7 +344,7 @@ export default function BalletProgramScreen() {
 
             {/* Stats card */}
             <View style={s.statsCard}>
-              {STATS.map((st, i) => (
+              {stats.map((st, i) => (
                 <React.Fragment key={st.label}>
                   {i > 0 && <View style={s.statDivider} />}
                   <BStat value={st.value} label={st.label} />
@@ -296,9 +353,11 @@ export default function BalletProgramScreen() {
             </View>
 
             {/* Apply CTA */}
-            <TouchableOpacity onPress={handleApply} style={s.applyCTA} activeOpacity={0.88}>
-              <Text style={s.applyCTAText}>✦ Apply Now</Text>
-            </TouchableOpacity>
+            {(!user || hasActiveApplication === false) && (
+              <TouchableOpacity onPress={handleApply} style={s.applyCTA} activeOpacity={0.88}>
+                <Text style={s.applyCTAText}>✦ Apply Now</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -338,16 +397,20 @@ const s = StyleSheet.create({
   },
 
   /* header */
+  headerWrap: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,182,215,0.15)",
-    backgroundColor: BASE,
-    zIndex: 10,
+    backgroundColor: "transparent",
   },
   backBtn: {
     flexDirection: "row",
@@ -358,27 +421,12 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Archivo_600SemiBold",
     color: CYAN,
+    textShadowColor: "rgba(0,0,0,0.85)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
-  headerTitle: {
-    fontSize: 17,
-    fontFamily: "Archivo_800ExtraBold",
-    color: "#fff",
-  },
-  headerApplyBtn: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    borderRadius: R_PILL,
-    backgroundColor: CYAN,
-  },
-  headerApplyText: {
-    fontSize: 12.5,
-    fontFamily: "Archivo_800ExtraBold",
-    color: "#fff",
-  },
-
   /* hero */
   heroSection: {
-    minHeight: 320,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,182,215,0.12)",
     overflow: "hidden",
@@ -396,15 +444,7 @@ const s = StyleSheet.create({
     color: CYAN,
     marginBottom: 8,
   },
-  heroTitle: {
-    fontSize: 52,
-    fontFamily: "Anton_400Regular",
-    textTransform: "uppercase",
-    color: "#fff",
-    lineHeight: 52,
-    ...iosDisplayTextStyle(52, 52),
-    marginBottom: 12 - iosCapGuard(52, 52),
-  },
+  heroLockup: { marginBottom: 12 },
   heroDesc: {
     fontSize: 15,
     fontFamily: "Archivo_400Regular",

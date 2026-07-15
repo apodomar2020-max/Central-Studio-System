@@ -1,8 +1,9 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from "react-native";
 
 import { DanceClass, Instructor } from "@/data/mockData";
 import { classCapacityDisplay, getScheduleLabel, isClassCapacityDisplayEnabled } from "@/data/apiAdapters";
@@ -17,6 +18,12 @@ interface ClassCardProps {
   compact?: boolean;
   purchaseMode?: "single" | "package";
   packageCreditsRemaining?: number;
+  variant?: "default" | "ballet";
+  displayOnly?: boolean;
+  imageUrl?: string | null;
+  levelLabel?: string;
+  scheduleLabelOverride?: string;
+  style?: ViewStyle;
 }
 
 function getStatusConfig(status: DanceClass["status"]) {
@@ -42,6 +49,12 @@ export default function ClassCard({
   compact = false,
   purchaseMode = "single",
   packageCreditsRemaining = 0,
+  variant = "default",
+  displayOnly = false,
+  imageUrl,
+  levelLabel,
+  scheduleLabelOverride,
+  style,
 }: ClassCardProps) {
   const c = useColors();
   const { user } = useAppContext();
@@ -70,11 +83,98 @@ export default function ClassCard({
     ? `Package • ${packageCreditsRemaining} left`
     : "No package credits";
 
+  if (variant === "ballet") {
+    const balletImageUrl = imageUrl ?? item.photoUrl;
+    const balletScheduleLabel = scheduleLabelOverride ?? scheduleLabel;
+    const CardShell = displayOnly ? View : TouchableOpacity;
+
+    return (
+      <CardShell
+        {...(!displayOnly ? { onPress: handlePress, activeOpacity: 0.88 } : {})}
+        style={[styles.balletCard, { backgroundColor: c.card, borderColor: c.border }, style]}
+      >
+        <View style={styles.balletImageWrap}>
+          {balletImageUrl ? (
+            <Image source={{ uri: balletImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: "#22262C" }]} />
+          )}
+          <LinearGradient
+            colors={["rgba(5,6,8,0.08)", "rgba(5,6,8,0.72)"]}
+            locations={[0, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.balletImageChips}>
+            <View style={[styles.balletChip, { backgroundColor: colors.studio.primary + "22" }]}>
+              <Text style={[styles.balletChipText, { color: colors.studio.primary }]}>Ballet</Text>
+            </View>
+            {!!levelLabel && (
+              <View style={styles.balletChipDark}>
+                <Text style={styles.balletChipDarkText} numberOfLines={1}>{levelLabel}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.balletBody}>
+          <Text style={[styles.balletTitle, { color: c.foreground }]} numberOfLines={2}>
+            {item.title}
+          </Text>
+
+          {!!item.description && (
+            <Text style={[styles.balletDescription, { color: c.mutedForeground }]} numberOfLines={2}>
+              {item.description}
+            </Text>
+          )}
+
+          <View style={styles.balletMetaWrap}>
+            <View style={styles.balletMetaItemWide}>
+              <Ionicons name="calendar-outline" size={14} color={colors.studio.primary} />
+              <Text style={[styles.balletMetaText, { color: c.mutedForeground }]} numberOfLines={2}>
+                {balletScheduleLabel}
+              </Text>
+            </View>
+            {!!item.duration && (
+              <View style={styles.balletMetaItem}>
+                <Ionicons name="timer-outline" size={14} color={c.mutedForeground} />
+                <Text style={[styles.balletMetaText, { color: c.mutedForeground }]} numberOfLines={1}>
+                  {item.duration}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {instructor && (
+            <View style={styles.balletInstructorRow}>
+              <View style={[styles.avatar, { backgroundColor: colors.studio.primary + "33" }]}>
+                {instructor.photoUrl ? (
+                  <Image source={{ uri: instructor.photoUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Text style={[styles.avatarText, { color: colors.studio.primary }]}>
+                    {instructor.initials}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.balletInstructorName, { color: c.foreground }]} numberOfLines={1}>
+                  {instructor.name}
+                </Text>
+                <Text style={[styles.balletInstructorRole, { color: c.mutedForeground }]} numberOfLines={1}>
+                  Ballet Instructor
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </CardShell>
+    );
+  }
+
   return (
     <TouchableOpacity
       onPress={handlePress}
       activeOpacity={0.85}
-      style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}
+      style={[styles.card, { backgroundColor: c.card, borderColor: c.border }, style]}
     >
       <View style={[styles.categoryStrip, { backgroundColor: colors.studio.primary + "22" }]}>
         <Text style={[styles.categoryLabel, { color: colors.studio.primary }]}>
@@ -332,6 +432,104 @@ const styles = StyleSheet.create({
   },
   disabledBtn: {
     opacity: 0.5,
+  },
+  balletCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  balletImageWrap: {
+    height: 154,
+    backgroundColor: "#22262C",
+  },
+  balletImageChips: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    right: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  balletChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  balletChipText: {
+    fontSize: 10,
+    fontFamily: "Inter_700Bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  balletChipDark: {
+    flexShrink: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(5,6,8,0.68)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+  balletChipDarkText: {
+    fontSize: 10,
+    fontFamily: "Inter_700Bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: "#FFFFFF",
+  },
+  balletBody: {
+    padding: 14,
+    gap: 9,
+  },
+  balletTitle: {
+    fontSize: 17,
+    fontFamily: "Inter_700Bold",
+    lineHeight: 23,
+  },
+  balletDescription: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 18,
+  },
+  balletMetaWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  balletMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  balletMetaItemWide: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 5,
+    maxWidth: "100%",
+  },
+  balletMetaText: {
+    flexShrink: 1,
+    fontSize: 12.5,
+    fontFamily: "Inter_500Medium",
+    lineHeight: 17,
+  },
+  balletInstructorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 2,
+  },
+  balletInstructorName: {
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+  },
+  balletInstructorRole: {
+    fontSize: 11.5,
+    fontFamily: "Inter_400Regular",
+    marginTop: 1,
   },
   seatsRow: {
     flexDirection: "row",

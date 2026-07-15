@@ -7,13 +7,15 @@ import {
   classesTable,
   instructorsTable,
   packageOrdersTable,
-  pricePackagesTable,
   schedulesTable,
   attendanceTable,
-  classPricingSettingsTable,
+  balletEnrollmentCancellationRequestsTable,
+  balletLevelAssignmentsTable,
+  balletRefundsTable,
 } from "@workspace/db";
 import { GetDashboardResponse } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { getFinancialAggregates } from "../lib/financialAggregates";
 
 const router: IRouter = Router();
 
@@ -57,10 +59,11 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     [instructorStats],
     [attendanceStats],
     [packageStats],
+    [balletCancellationStats],
+    [balletEnrollmentStats],
+    [balletRefundStats],
     scheduleRows,
-    paidBookingRows,
-    paidPackageRows,
-    [classPricing],
+    financial,
   ] = await Promise.all([
     db.select({
       totalUsers: count(),
@@ -89,6 +92,43 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
       pendingPackageOrders: sql<number>`count(*) filter (where ${packageOrdersTable.status} = 'pendingPayment')`,
     }).from(packageOrdersTable),
     db.select({
+      pendingCancellationRequests: sql<number>`count(*) filter (where ${balletEnrollmentCancellationRequestsTable.status} = 'pendingReview')`,
+    }).from(balletEnrollmentCancellationRequestsTable),
+    db.select({
+      activeBalletEnrollments: sql<number>`count(*) filter (where ${balletLevelAssignmentsTable.status} = 'active')`,
+      withdrawnBalletEnrollments: sql<number>`count(*) filter (where ${balletLevelAssignmentsTable.status} = 'withdrawn')`,
+    }).from(balletLevelAssignmentsTable),
+	    db.select({
+	      refundsUnderReview: sql<number>`count(*) filter (where ${balletRefundsTable.status} = 'underReview')`,
+	      approvedProcessingRefundExposure: sql<number>`coalesce(sum(${balletRefundsTable.approvedAmountEgp}) filter (where ${balletRefundsTable.status} in ('approved','processing') and ${balletRefundsTable.approvedAmountEgp} > 0), 0)::int`,
+	      completedFullRefunds: sql<number>`
+	        (
+	          select count(*)::int
+	          from (
+	            select br.payment_id, sum(br.refunded_amount_egp) as completed_refund_total, max(bp.amount_egp) as original_amount
+	            from ballet_refunds br
+	            inner join ballet_payments bp on bp.id = br.payment_id
+	            where br.status = 'refunded' and br.processed_at is not null and br.refunded_amount_egp > 0
+	            group by br.payment_id
+	          ) totals
+	          where totals.completed_refund_total >= totals.original_amount
+	        )
+	      `,
+	      completedPartialRefunds: sql<number>`
+	        (
+	          select count(*)::int
+	          from (
+	            select br.payment_id, sum(br.refunded_amount_egp) as completed_refund_total, max(bp.amount_egp) as original_amount
+	            from ballet_refunds br
+	            inner join ballet_payments bp on bp.id = br.payment_id
+	            where br.status = 'refunded' and br.processed_at is not null and br.refunded_amount_egp > 0
+	            group by br.payment_id
+	          ) totals
+	          where totals.completed_refund_total > 0 and totals.completed_refund_total < totals.original_amount
+	        )
+	      `,
+	    }).from(balletRefundsTable),
+    db.select({
       type: schedulesTable.type,
       date: schedulesTable.date,
       dayOfWeek: schedulesTable.dayOfWeek,
@@ -98,20 +138,7 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
       .from(schedulesTable)
       .innerJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
       .where(eq(classesTable.isActive, true)),
-    db.select({
-      schedulePriceEgp: schedulesTable.priceEgp,
-    })
-      .from(bookingsTable)
-      .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
-      .where(sql`${bookingsTable.paymentStatus} = 'paid' and ${bookingsTable.paymentMode} in ('pay_at_studio', 'online_payment')`),
-    db.select({ priceEgp: pricePackagesTable.priceEgp })
-      .from(packageOrdersTable)
-      .leftJoin(pricePackagesTable, eq(packageOrdersTable.packageId, pricePackagesTable.id))
-      .where(inArray(packageOrdersTable.status, ["active", "fullyUsed", "expired"])),
-    db.select({ singleClassPriceEgp: classPricingSettingsTable.singleClassPriceEgp })
-      .from(classPricingSettingsTable)
-      .where(eq(classPricingSettingsTable.id, 1))
-      .limit(1),
+    getFinancialAggregates(),
   ]);
 
   const today = cairoDayInfo(new Date());
@@ -125,24 +152,6 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     (total, day) => total + scheduleRows.filter((schedule) => occursOn(schedule, day)).length,
     0,
   );
-
-  const defaultClassPrice = classPricing?.singleClassPriceEgp ?? null;
-  let unknownRevenueItems = 0;
-  const bookingRevenue = paidBookingRows.reduce((total, booking) => {
-    const price = booking.schedulePriceEgp ?? defaultClassPrice;
-    if (price == null) {
-      unknownRevenueItems += 1;
-      return total;
-    }
-    return total + price;
-  }, 0);
-  const packageRevenue = paidPackageRows.reduce((total, order) => {
-    if (order.priceEgp == null) {
-      unknownRevenueItems += 1;
-      return total;
-    }
-    return total + order.priceEgp;
-  }, 0);
 
   res.json(GetDashboardResponse.parse({
     totalUsers: Number(userStats.totalUsers),
@@ -158,8 +167,32 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     refundedBookings: Number(bookingStats.refundedBookings),
     activeClasses: Number(classStats.activeClasses),
     activeInstructors: Number(instructorStats.activeInstructors),
-    totalRevenue: bookingRevenue + packageRevenue,
-    revenueTrackingComplete: unknownRevenueItems === 0,
+    // Backward-compatible legacy field: existing Admin Dashboard consumers still
+    // expect "paid classes + activated generic packages". New explicit financial
+    // fields below expose Ballet-aware gross/net values without changing this
+    // field's meaning during Phase 1.
+    totalRevenue: financial.grossGenericBookingRevenueEgp + financial.grossGenericPackageRevenueEgp,
+    revenueTrackingComplete: financial.revenueTrackingComplete,
+    grossGenericBookingRevenueEgp: financial.grossGenericBookingRevenueEgp,
+    grossGenericPackageRevenueEgp: financial.grossGenericPackageRevenueEgp,
+    grossBalletRevenueEgp: financial.grossBalletRevenueEgp,
+    balletCompletedRefundsEgp: financial.balletCompletedRefundsEgp,
+    legacyBalletRefundedPaymentsEgp: financial.legacyBalletRefundedPaymentsEgp,
+    balletPendingRefundExposureEgp: financial.balletPendingRefundExposureEgp,
+    balletNetRevenueEgp: financial.balletNetRevenueEgp,
+    totalGrossRevenueEgp: financial.totalGrossRevenueEgp,
+    totalNetRevenueEgp: financial.totalNetRevenueEgp,
+    balletPayAtStudioRevenueEgp: financial.balletPayAtStudioRevenueEgp,
+    balletOnlineRevenueEgp: financial.balletOnlineRevenueEgp,
+    balletLegacyBankTransferRevenueEgp: financial.balletLegacyBankTransferRevenueEgp,
+    legacyRevenueTrackingLimitations: financial.legacyRevenueTrackingLimitations,
+    pendingCancellationRequests: Number(balletCancellationStats.pendingCancellationRequests),
+    activeBalletEnrollments: Number(balletEnrollmentStats.activeBalletEnrollments),
+    withdrawnBalletEnrollments: Number(balletEnrollmentStats.withdrawnBalletEnrollments),
+    refundsUnderReview: Number(balletRefundStats.refundsUnderReview),
+    approvedProcessingRefundExposureEgp: Number(balletRefundStats.approvedProcessingRefundExposure),
+    completedFullRefunds: Number(balletRefundStats.completedFullRefunds),
+    completedPartialRefunds: Number(balletRefundStats.completedPartialRefunds),
     activePackages: Number(packageStats.activePackages),
     pendingPackageOrders: Number(packageStats.pendingPackageOrders),
     totalCheckIns: Number(attendanceStats.totalCheckIns),

@@ -47,6 +47,8 @@ import BalletGroupsPage from "@/pages/ballet/BalletGroupsPage";
 import BalletPackagesPage from "@/pages/ballet/BalletPackagesPage";
 import BalletPerformancesPage from "@/pages/ballet/BalletPerformancesPage";
 import BalletPaymentsPage from "@/pages/ballet/BalletPaymentsPage";
+import BalletCancellationRequestsPage from "@/pages/ballet/BalletCancellationRequestsPage";
+import BalletRefundsPage from "@/pages/ballet/BalletRefundsPage";
 import DesignLabPage from "@/pages/DesignLabPage";
 import SettingsPage from "@/pages/settings";
 import LogsPage from "@/pages/logs";
@@ -123,7 +125,7 @@ const ROUTE_PERMS = {
   systemUsers: [["adminUsers", "view"], ["roles", "view"]],
   balletApplications: [["ballet.applications", "view"]],
   balletStudents: [["ballet.applications", "view"]],
-  balletSettings: [["ballet.pricing", "view"]],
+  balletSettings: [["ballet.settings", "view"]],
   balletLevels: [["ballet.levels", "view"]],
   balletInstructors: [["ballet.instructors", "view"]],
   balletClasses: [["ballet.classes", "view"]],
@@ -132,6 +134,8 @@ const ROUTE_PERMS = {
   balletPackages: [["ballet.packages", "view"]],
   balletPerformances: [["ballet.performances", "view"]],
   balletPayments: [["ballet.payments", "view"]],
+  balletCancellationRequests: [["ballet.applications", "view"]],
+  balletRefunds: [["ballet.payments", "view"]],
   settings: [["settings", "view"]],
   logs: [["auditLogs", "view"]],
 } satisfies Record<string, PermRequirement>;
@@ -184,6 +188,8 @@ function ProtectedRouter() {
         <Route path="/ballet/packages">{guarded(ROUTE_PERMS.balletPackages, <BalletPackagesPage />)}</Route>
         <Route path="/ballet/performances">{guarded(ROUTE_PERMS.balletPerformances, <BalletPerformancesPage />)}</Route>
         <Route path="/ballet/payments">{guarded(ROUTE_PERMS.balletPayments, <BalletPaymentsPage />)}</Route>
+        <Route path="/ballet/cancellation-requests">{guarded(ROUTE_PERMS.balletCancellationRequests, <BalletCancellationRequestsPage />)}</Route>
+        <Route path="/ballet/refunds">{guarded(ROUTE_PERMS.balletRefunds, <BalletRefundsPage />)}</Route>
         <Route path="/settings">{guarded(ROUTE_PERMS.settings, <SettingsPage />)}</Route>
         <Route path="/logs">{guarded(ROUTE_PERMS.logs, <LogsPage />)}</Route>
         {/* DEV-ONLY: component preview — not in sidebar */}

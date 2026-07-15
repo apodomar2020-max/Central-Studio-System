@@ -29,7 +29,11 @@ export * from "./balletSchedules";
 export * from "./balletGroups";
 export * from "./balletPackages";
 export * from "./balletPerformanceOpportunities";
+export * from "./balletProgramRequirements";
+export * from "./balletFaqs";
 export * from "./balletPayments";
+export * from "./balletEnrollmentCancellations";
+export * from "./balletRefunds";
 // Many-to-many join tables for the ballet catalogue (migration 0047)
 export * from "./balletClassGroups";
 export * from "./balletClassLevels";

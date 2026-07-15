@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   XCircle,
   CircleDollarSign,
+  CreditCard,
   PackageCheck,
   UserRound,
   CalendarClock,
@@ -25,6 +26,7 @@ import {
   RotateCcw,
   ArrowUpRight,
   Activity,
+  FileText,
 } from "lucide-react";
 import {
   PieChart,
@@ -148,6 +150,10 @@ function formatRefreshTime(date: Date): string {
   }).format(date);
 }
 
+function money(value: number | undefined): string {
+  return `EGP ${(value ?? 0).toLocaleString()}`;
+}
+
 export default function Dashboard() {
   const { theme } = useAdminTheme();
   const [attendancePeriod, setAttendancePeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
@@ -199,6 +205,31 @@ export default function Dashboard() {
     { title: "Active Packages", value: dashboard?.activePackages ?? 0, icon: PackageCheck, accent: GREEN },
     { title: "Pending Package Orders", value: dashboard?.pendingPackageOrders ?? 0, icon: ShoppingBag, accent: AMBER },
     { title: "Missed Attendance", value: dashboard?.missedAttendance ?? 0, icon: AlertTriangle, accent: RED },
+  ];
+
+  const financialMetrics: StatCardProps[] = [
+    { title: "Total Net Revenue", value: money(dashboard?.totalNetRevenueEgp), icon: CircleDollarSign, accent: CYAN, note: "Legacy generic revenue + Ballet net" },
+    { title: "Gross Revenue", value: money(dashboard?.totalGrossRevenueEgp), icon: TrendingUp, accent: GREEN, note: "Before completed Ballet refunds" },
+    { title: "Ballet Gross Revenue", value: money(dashboard?.grossBalletRevenueEgp), icon: Activity, accent: PURPLE, note: "Original collected receipts, including historical refunded receipts" },
+    { title: "Ballet Net Revenue", value: money(dashboard?.balletNetRevenueEgp), icon: CircleDollarSign, accent: CYAN, note: "Gross receipts minus completed refunds" },
+    { title: "Completed Refunds", value: money(dashboard?.balletCompletedRefundsEgp), icon: RotateCcw, accent: RED, note: "Ledger refunds plus unmatched legacy refunded payments" },
+    { title: "Pending Refund Exposure", value: money(dashboard?.balletPendingRefundExposureEgp), icon: AlertTriangle, accent: AMBER, note: "Approved and processing cash refunds not yet completed" },
+  ];
+
+  const balletMethodSplit: StatCardProps[] = [
+    { title: "Pay at Studio", value: money(dashboard?.balletPayAtStudioRevenueEgp), icon: CircleDollarSign, accent: GREEN },
+    { title: "Online Payment", value: money(dashboard?.balletOnlineRevenueEgp), icon: CreditCard, accent: CYAN, note: "Historical/future verified Kashier receipts; checkout not active yet" },
+    { title: "Legacy Bank Transfer", value: money(dashboard?.balletLegacyBankTransferRevenueEgp), icon: RotateCcw, accent: MUTED, note: "Historical reporting only" },
+  ];
+
+  const balletLifecycleMetrics: StatCardProps[] = [
+    { title: "Pending Cancellation Requests", value: dashboard?.pendingCancellationRequests ?? 0, icon: AlertTriangle, accent: AMBER },
+    { title: "Active Ballet Enrollments", value: dashboard?.activeBalletEnrollments ?? 0, icon: CheckCircle2, accent: GREEN },
+    { title: "Withdrawn Ballet Enrollments", value: dashboard?.withdrawnBalletEnrollments ?? 0, icon: XCircle, accent: MUTED },
+    { title: "Refunds Under Review", value: dashboard?.refundsUnderReview ?? 0, icon: FileText, accent: PURPLE },
+    { title: "Approved/Processing Exposure", value: money(dashboard?.approvedProcessingRefundExposureEgp), icon: AlertTriangle, accent: AMBER },
+    { title: "Completed Full Refunds", value: dashboard?.completedFullRefunds ?? 0, icon: RotateCcw, accent: RED },
+    { title: "Completed Partial Refunds", value: dashboard?.completedPartialRefunds ?? 0, icon: RotateCcw, accent: CYAN },
   ];
 
   const tooltipStyle = {
@@ -255,13 +286,20 @@ export default function Dashboard() {
               <div>
                 {isLoading ? <Skeleton className="h-12 w-56" /> : (
                   <p className="text-3xl font-semibold text-foreground sm:text-5xl">
-                    {dashboard?.revenueTrackingComplete ? <><span className="mr-2 text-primary">EGP</span>{(dashboard.totalRevenue ?? 0).toLocaleString()}</> : "Not configured"}
+                    <><span className="mr-2 text-primary">EGP</span>{(dashboard?.totalNetRevenueEgp ?? dashboard?.totalRevenue ?? 0).toLocaleString()}</>
                   </p>
                 )}
                 <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
                   <TrendingUp className="h-4 w-4 text-emerald-500" />
-                  {dashboard?.revenueTrackingComplete ? "Verified paid operational activity" : "Revenue tracking not fully configured"}
+                  {dashboard?.revenueTrackingComplete ? "Ballet-aware net revenue; generic revenue remains legacy operational tracking" : "Revenue tracking has known limitations"}
                 </div>
+                {dashboard?.legacyRevenueTrackingLimitations?.length ? (
+                  <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                    {dashboard.legacyRevenueTrackingLimitations.slice(0, 2).map((item) => (
+                      <p key={item.code}>• {item.message}</p>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           </article>
@@ -273,6 +311,27 @@ export default function Dashboard() {
               { title: "Today's Check-ins", value: dashboard?.todayCheckIns ?? 0, icon: ScanLine, accent: GREEN },
             ].map((metric) => <StatCard key={metric.title} {...metric} />)}
           </div>
+        </div>
+      </section>
+
+      <section className="space-y-5">
+        <SectionHeader title="Financial Overview" description="Explicit gross/net revenue and Ballet refund exposure." />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {isLoading ? [...Array(6)].map((_, index) => <SkeletonCard key={index} />) : financialMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
+        </div>
+      </section>
+
+      <section className="space-y-5">
+        <SectionHeader title="Ballet Payment Method Split" description="Current methods plus historical Bank Transfer reporting." />
+        <div className="grid gap-4 md:grid-cols-3">
+          {isLoading ? [...Array(3)].map((_, index) => <SkeletonCard key={index} />) : balletMethodSplit.map((metric) => <StatCard key={metric.title} {...metric} />)}
+        </div>
+      </section>
+
+      <section className="space-y-5">
+        <SectionHeader title="Ballet Cancellation & Refunds" description="Enrollment lifecycle and refund-ledger workflow indicators." />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {isLoading ? [...Array(7)].map((_, index) => <SkeletonCard key={index} />) : balletLifecycleMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
       </section>
 

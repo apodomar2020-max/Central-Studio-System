@@ -98,6 +98,38 @@ export interface ActivityLogEntry {
   summary: string;
 }
 
+type ActivityClient = Pick<typeof db, "insert">;
+
+export interface ActivityActorSnapshot {
+  actorId?: number | null;
+  actorName: string;
+  actorEmail: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+async function writeActivityLog(
+  client: ActivityClient,
+  actor: ActivityActorSnapshot,
+  entry: ActivityLogEntry,
+): Promise<void> {
+  await client.insert(adminActivityLogsTable).values({
+    actorId: actor.actorId ?? null,
+    actorName: actor.actorName,
+    actorEmail: actor.actorEmail,
+    action: entry.action,
+    module: entry.module,
+    entityType: entry.entityType,
+    entityId: entry.entityId != null ? String(entry.entityId) : null,
+    entityLabel: entry.entityLabel ?? null,
+    before: sanitize(entry.before),
+    after: sanitize(entry.after),
+    summary: entry.summary,
+    ipAddress: actor.ipAddress ?? null,
+    userAgent: actor.userAgent ? actor.userAgent.slice(0, MAX_USER_AGENT_CHARS) : null,
+  });
+}
+
 /**
  * Record an admin action. Actor identity comes from req.adminUser (attached
  * by requireAdminAuth, DB-authoritative). Safe to call unconditionally —
@@ -107,22 +139,48 @@ export async function logActivity(req: AdminRequest, entry: ActivityLogEntry): P
   try {
     const actor = req.adminUser;
     const userAgentHeader = req.headers["user-agent"];
-    await db.insert(adminActivityLogsTable).values({
+    await writeActivityLog(db, {
       actorId: actor?.id ?? null,
       actorName: actor?.fullName ?? "unknown",
       actorEmail: actor?.email ?? "unknown",
-      action: entry.action,
-      module: entry.module,
-      entityType: entry.entityType,
-      entityId: entry.entityId != null ? String(entry.entityId) : null,
-      entityLabel: entry.entityLabel ?? null,
-      before: sanitize(entry.before),
-      after: sanitize(entry.after),
-      summary: entry.summary,
       ipAddress: req.ip ?? null,
-      userAgent: typeof userAgentHeader === "string" ? userAgentHeader.slice(0, MAX_USER_AGENT_CHARS) : null,
-    });
+      userAgent: typeof userAgentHeader === "string" ? userAgentHeader : null,
+    }, entry);
   } catch (error) {
     logger.error({ error, action: entry.action, module: entry.module }, "Failed to write admin activity log");
   }
+}
+
+export async function logActivityWithActor(
+  client: ActivityClient,
+  actor: ActivityActorSnapshot,
+  entry: ActivityLogEntry,
+): Promise<void> {
+  try {
+    await writeActivityLog(client, actor, entry);
+  } catch (error) {
+    logger.error({ error, action: entry.action, module: entry.module }, "Failed to write admin activity log");
+  }
+}
+
+export function adminActivityActor(req: AdminRequest): ActivityActorSnapshot {
+  const actor = req.adminUser;
+  const userAgentHeader = req.headers["user-agent"];
+  return {
+    actorId: actor?.id ?? null,
+    actorName: actor?.fullName ?? "unknown",
+    actorEmail: actor?.email ?? "unknown",
+    ipAddress: req.ip ?? null,
+    userAgent: typeof userAgentHeader === "string" ? userAgentHeader : null,
+  };
+}
+
+export function systemActivityActor(name = "Ballet Cancellation Worker"): ActivityActorSnapshot {
+  return {
+    actorId: null,
+    actorName: name,
+    actorEmail: "system@central-studio.local",
+    ipAddress: null,
+    userAgent: "system",
+  };
 }

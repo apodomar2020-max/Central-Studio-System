@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "start:worker": "node --enable-source-maps ./dist/worker.mjs",
     "migrate": "node --enable-source-maps ./dist/migrate.mjs",
+    "test:financial": "../../lib/db/node_modules/.bin/tsx --test src/lib/financialAggregates.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

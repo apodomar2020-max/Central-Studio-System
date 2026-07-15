@@ -36,6 +36,29 @@ export interface DashboardSummary {
   missedAttendance: number;
   todayClasses: number;
   upcomingClasses: number;
+  grossGenericBookingRevenueEgp: number;
+  grossGenericPackageRevenueEgp: number;
+  grossBalletRevenueEgp: number;
+  balletCompletedRefundsEgp: number;
+  legacyBalletRefundedPaymentsEgp: number;
+  balletPendingRefundExposureEgp: number;
+  balletNetRevenueEgp: number;
+  totalGrossRevenueEgp: number;
+  totalNetRevenueEgp: number;
+  balletPayAtStudioRevenueEgp: number;
+  balletOnlineRevenueEgp: number;
+  balletLegacyBankTransferRevenueEgp: number;
+  legacyRevenueTrackingLimitations: Array<{
+    code: string;
+    message: string;
+  }>;
+  pendingCancellationRequests: number;
+  activeBalletEnrollments: number;
+  withdrawnBalletEnrollments: number;
+  refundsUnderReview: number;
+  approvedProcessingRefundExposureEgp: number;
+  completedFullRefunds: number;
+  completedPartialRefunds: number;
 }
 
 export interface Instructor {

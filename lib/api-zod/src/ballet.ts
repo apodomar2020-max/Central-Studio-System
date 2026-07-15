@@ -23,6 +23,7 @@ export const BALLET_APPLICATION_STATUSES = [
   "active",
   "rejected",
   "cancelled",
+  "withdrawn",
 ] as const;
 
 export type BalletApplicationStatus = (typeof BALLET_APPLICATION_STATUSES)[number];
@@ -35,15 +36,17 @@ export const BALLET_APPLICATION_STATUS_LABELS: Record<BalletApplicationStatus, s
   active: "Active",
   rejected: "Rejected",
   cancelled: "Cancelled",
+  withdrawn: "Withdrawn",
 };
 
 export const BALLET_ACTIVE_APPLICATION_STATUSES = BALLET_APPLICATION_STATUSES.filter(
-  (status) => status !== "rejected" && status !== "cancelled",
+  (status) => status !== "rejected" && status !== "cancelled" && status !== "withdrawn",
 );
 
 export const BALLET_TERMINAL_APPLICATION_STATUSES = [
   "rejected",
   "cancelled",
+  "withdrawn",
 ] as const satisfies readonly BalletApplicationStatus[];
 
 /**
@@ -169,10 +172,11 @@ export const BALLET_STATUS_TRANSITIONS: Record<BalletApplicationStatus, readonly
   pending:         ["accepted", "rejected", "needsFollowUp", "cancelled"],
   needsFollowUp:   ["accepted", "rejected", "cancelled"],
   accepted:        ["cancelled"],
-  assignedToLevel: ["active"],
+  assignedToLevel: ["active", "cancelled"],
   active:          [],
   rejected:        [],
   cancelled:       [],
+  withdrawn:       [],
 };
 
 export function isTransitionAllowed(from: BalletApplicationStatus, to: BalletApplicationStatus): boolean {
