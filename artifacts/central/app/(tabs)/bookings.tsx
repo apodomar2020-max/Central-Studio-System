@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   FlatList,
   Platform,
   RefreshControl,
@@ -39,6 +38,7 @@ import {
 } from "@/services/balletAssessmentService";
 import { isOfflineError } from "@/services/connectivity";
 import { BALLET_APPLICATION_STATUSES, type BalletApplicationStatus } from "@workspace/api-zod";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 // Terminal statuses (assessment concluded) — derived from the canonical enum
 // rather than hand-typed, so the Upcoming/Past/Cancelled tab partition below
@@ -421,6 +421,7 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function BookingsScreen() {
   const { user, bookings: localBookings, refreshUserPackages, refreshBookings, children: childProfiles, cancelBooking } = useAppContext();
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Upcoming");
   const [studentFilter, setStudentFilter] = useState("All");
@@ -710,30 +711,36 @@ export default function BookingsScreen() {
               item={item.data}
               onPress={() => setSelectedItem(item)}
               onCancel={() => {
-                Alert.alert(
-                  "Cancel booking?",
-                  `Cancel your booking for ${item.data.className}? This frees up your seat.`,
-                  [
-                    { text: "Keep booking", style: "cancel" },
+                alert.show({
+                  tone: "destructive",
+                  title: "Cancel booking?",
+                  message: `Cancel your booking for ${item.data.className}? This frees up your seat.`,
+                  actions: [
+                    { label: "Keep booking", tone: "neutral" },
                     {
-                      text: "Cancel booking",
-                      style: "destructive",
+                      label: "Cancel booking",
+                      tone: "danger",
                       onPress: async () => {
                         try {
                           await cancelBooking(item.data.id);
                         } catch (e) {
-                          Alert.alert("Couldn't cancel", e instanceof Error ? e.message : "Please try again.");
+                          alert.show({
+                            tone: "error",
+                            title: "Couldn't cancel",
+                            message: e instanceof Error ? e.message : "Please try again.",
+                          });
                         }
                       },
                     },
                   ],
-                );
+                });
               }}
               onPayNow={() => {
-                Alert.alert(
-                  "Pay at the studio",
-                  "Your booking is pending. Please complete payment at the studio — your booking is confirmed once payment is received.",
-                );
+                alert.show({
+                  tone: "info",
+                  title: "Pay at the studio",
+                  message: "Your booking is pending. Please complete payment at the studio — your booking is confirmed once payment is received.",
+                });
               }}
             />
           )

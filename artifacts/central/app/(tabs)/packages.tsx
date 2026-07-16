@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
   Platform,
   RefreshControl,
   ScrollView,
@@ -27,6 +26,7 @@ import { isOfflineError } from "@/services/connectivity";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import { showProfileIncompletePrompt } from "@/utils/profileCompletionRequired";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 function PackageCard({
   pkg,
@@ -120,6 +120,7 @@ function PackageCard({
 
 export default function PackagesScreen() {
   const { user, userPackages, purchasePackage, refreshUserPackages } = useAppContext();
+  const alert = useCentralAlert();
   const {
     data: packages,
     isLoading: packagesLoading,
@@ -183,14 +184,19 @@ export default function PackagesScreen() {
       });
       setConfirmPkg(null);
       router.push("/package-center");
-      Alert.alert(
-        "Request Submitted!",
-        `Your ${confirmPkg.name} request has been submitted. Our team will confirm payment and activate it shortly.`,
-      );
+      alert.show({
+        tone: "success",
+        title: "Request Submitted!",
+        message: `Your ${confirmPkg.name} request has been submitted. Our team will confirm payment and activate it shortly.`,
+      });
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Unknown error";
-      Alert.alert("Request Failed", `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`);
+      alert.show({
+        tone: "error",
+        title: "Request Failed",
+        message: `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`,
+      });
     } finally {
       setPurchasing(false);
     }

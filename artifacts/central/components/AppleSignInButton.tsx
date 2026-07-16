@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TouchableOpacity } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity } from "react-native";
+
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 /**
  * Apple Sign-In button — design parity with the redesign's Apple option on the
@@ -25,6 +27,8 @@ export default function AppleSignInButton({
   loading?: boolean;
   disabled?: boolean;
 }) {
+  const alert = useCentralAlert();
+
   // Sign in with Apple is an iOS-only affordance.
   if (Platform.OS !== "ios") return null;
 
@@ -33,10 +37,10 @@ export default function AppleSignInButton({
       onPress();
       return;
     }
-    Alert.alert(
-      "Coming soon",
-      "Sign in with Apple is on the way. For now, please use Google, Facebook, or email.",
-    );
+    alert.show({
+      title: "Coming soon",
+      message: "Sign in with Apple is on the way. For now, please use Google, Facebook, or email.",
+    });
   }
 
   return (

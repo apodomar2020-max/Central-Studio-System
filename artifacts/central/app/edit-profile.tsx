@@ -5,7 +5,6 @@ import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useMemo, useState } from "react";
 import {
-  Alert,
   Platform,
   StyleSheet,
   Text,
@@ -20,6 +19,7 @@ import colors from "@/constants/colors";
 import { useAppContext, type User } from "@/contexts/AppContext";
 import { iosTextInputStyle } from "@/utils/iosTypography";
 import { mapStudentToUser, type AccountType, type AuthStudent } from "@/services/authProfile";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const ACCOUNT_TYPES: { value: AccountType; label: string; icon: React.ComponentProps<typeof Ionicons>["name"] }[] = [
   { value: "student", label: "Student", icon: "person-outline" },
@@ -47,6 +47,7 @@ function validPhone(phone: string) {
 
 export default function EditProfileScreen() {
   const { user, setUser } = useAppContext();
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(user?.fullName ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
@@ -104,9 +105,12 @@ export default function EditProfileScreen() {
       });
       const updated: User = mapStudentToUser(data.student);
       await setUser(updated);
-      Alert.alert("Profile Updated", "Your profile details have been saved.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)/profile" as never) },
-      ]);
+      alert.show({
+        tone: "success",
+        title: "Profile Updated",
+        message: "Your profile details have been saved.",
+        actions: [{ label: "OK", tone: "primary", onPress: () => router.replace("/(tabs)/profile" as never) }],
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save your profile.");
     } finally {

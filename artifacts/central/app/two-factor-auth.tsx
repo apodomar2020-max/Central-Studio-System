@@ -4,7 +4,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
-  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
 import { iosTextInputStyle } from "@/utils/iosTypography";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const INK = { bg: "#0A0B0D", card: "#15171B", border: "rgba(255,255,255,0.08)", text3: "#8E97A2", text4: "#6B747F" };
 const OTP_LEN = 6;
@@ -34,6 +34,7 @@ type Method = "email" | "sms";
  * endpoint when available.
  */
 export default function TwoFactorAuthScreen() {
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
   const [enabled, setEnabled] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -66,7 +67,7 @@ export default function TwoFactorAuthScreen() {
 
   function enable() {
     if (digits.some((d) => !d)) {
-      Alert.alert("Enter the code", "Please enter the 6-digit verification code.");
+      alert.show({ tone: "warning", title: "Enter the code", message: "Please enter the 6-digit verification code." });
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -161,7 +162,7 @@ export default function TwoFactorAuthScreen() {
         {/* Recovery codes (enabled) */}
         {enabled && (
           <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); Alert.alert("Recovery codes", "Recovery codes downloaded. Keep them somewhere safe."); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); alert.show({ tone: "success", title: "Recovery codes", message: "Recovery codes downloaded. Keep them somewhere safe." }); }}
             style={styles.recoveryBtn}
             activeOpacity={0.85}
           >

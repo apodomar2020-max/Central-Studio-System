@@ -38,6 +38,7 @@ import { BackgroundMusicProvider } from "@/components/BackgroundMusicProvider";
 import { AppContextProvider } from "@/contexts/AppContext";
 import { useAppContext } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
+import { CentralAlertProvider } from "@/providers/CentralAlertProvider";
 import { NotificationRoute, resolveNotificationRoute } from "@/services/notificationNavigation";
 
 type ExpoManifestWithUpdateMetadata = {
@@ -265,20 +266,22 @@ function RootLayout() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <AppContextProvider>
-          <QueryClientProvider client={queryClient}>
-            <GestureHandlerRootView>
-              <KeyboardProvider>
-                <BackgroundMusicProvider>
-                  <FeedbackGate />
-                  <PushRegistrationGate />
-                  <NotificationRoutingGate />
-                  <RootLayoutNav />
-                </BackgroundMusicProvider>
-              </KeyboardProvider>
-            </GestureHandlerRootView>
-          </QueryClientProvider>
-        </AppContextProvider>
+        <CentralAlertProvider>
+          <AppContextProvider>
+            <QueryClientProvider client={queryClient}>
+              <GestureHandlerRootView>
+                <KeyboardProvider>
+                  <BackgroundMusicProvider>
+                    <FeedbackGate />
+                    <PushRegistrationGate />
+                    <NotificationRoutingGate />
+                    <RootLayoutNav />
+                  </BackgroundMusicProvider>
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </QueryClientProvider>
+          </AppContextProvider>
+        </CentralAlertProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );

@@ -1,8 +1,8 @@
-import { Alert } from "react-native";
 import { router } from "expo-router";
 
 import type { ProfileCompletionStep } from "@/contexts/AppContext";
 import { nextStepRoute } from "@/services/authProfile";
+import { presentCentralAlert } from "@/providers/CentralAlertProvider";
 
 /**
  * Profile Completion Engine (Phase 4) — shown when an incomplete-profile
@@ -10,12 +10,12 @@ import { nextStepRoute } from "@/services/authProfile";
  * membership, ...). Mirrors utils/authRequired.ts's showAuthRequiredPrompt().
  */
 export function showProfileIncompletePrompt(nextStep: ProfileCompletionStep | "done") {
-  Alert.alert(
-    "Complete your profile first",
-    "Finish setting up your profile to unlock this feature.",
-    [
-      { text: "Complete Profile", onPress: () => router.push(nextStepRoute(nextStep) as never) },
-      { text: "Not Now", style: "cancel" },
+  presentCentralAlert({
+    title: "Complete your profile first",
+    message: "Finish setting up your profile to unlock this feature.",
+    actions: [
+      { label: "Complete Profile", tone: "primary", onPress: () => router.push(nextStepRoute(nextStep) as never) },
+      { label: "Not Now", tone: "neutral" },
     ],
-  );
+  });
 }

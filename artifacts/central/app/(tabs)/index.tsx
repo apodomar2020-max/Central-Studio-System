@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -66,6 +65,7 @@ import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/cl
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { ACTIVE_APPLICATION_STATUSES, fetchBalletSettings, fetchMyApplications } from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -656,6 +656,7 @@ function PackageCard({ pkg, onChoose }: { pkg: PricePackage; onChoose: (pkg: Pri
 
 function PackagesSection() {
   const { user, purchasePackage } = useAppContext();
+  const alert = useCentralAlert();
   const { data: raw, isLoading, isError } = useListPricePackages();
   const [confirmPkg, setConfirmPkg] = useState<PricePackage | null>(null);
   const [purchasing, setPurchasing] = useState(false);
@@ -686,17 +687,22 @@ function PackagesSection() {
       const packageName = confirmPkg.name;
       setConfirmPkg(null);
       router.push("/package-center");
-      Alert.alert(
-        "Request Submitted!",
-        `Your ${packageName} request has been submitted. Our team will confirm payment and activate it shortly.`,
-      );
+      alert.show({
+        tone: "success",
+        title: "Request Submitted!",
+        message: `Your ${packageName} request has been submitted. Our team will confirm payment and activate it shortly.`,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      Alert.alert("Request Failed", `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`);
+      alert.show({
+        tone: "error",
+        title: "Request Failed",
+        message: `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`,
+      });
     } finally {
       setPurchasing(false);
     }
-  }, [confirmPkg, purchasePackage]);
+  }, [confirmPkg, purchasePackage, alert]);
 
   if (isError || (!isLoading && pkgs.length === 0)) {
     return (

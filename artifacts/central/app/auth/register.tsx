@@ -22,7 +22,7 @@ let draftFirstName = "";
 let draftLastName = "";
 let draftEmail = "";
 let draftPassword = "";
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -30,6 +30,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { STORAGE_KEYS } from "@/constants/danceStyles";
 import { continueAfterAuth, postAuthDestination } from "@/services/authProfile";
 import ProgressDots from "@/components/ProgressDots";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import {
   BackBtn, CS, Divider, Eyebrow, FacebookLogo, GhostBtn, GoogleLogo, Icon, PrimaryCTA, ScreenTitle,
@@ -124,6 +125,7 @@ export function clearSignupDrafts() {
 }
 export default function RegisterScreen() {
   const { setUser, user } = useAppContext();
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
   const google = useGoogleSignIn("social-signup");
   const facebook = useFacebookSignIn("social-signup");
@@ -189,14 +191,15 @@ export default function RegisterScreen() {
         return;
       } else {
         setLoading(false);
-        Alert.alert(
-          "Restart Signup?",
-          "Changing your email will restart signup. Continue?",
-          [
-            { text: "Cancel", style: "cancel" },
+        alert.show({
+          tone: "destructive",
+          title: "Restart Signup?",
+          message: "Changing your email will restart signup. Continue?",
+          actions: [
+            { label: "Cancel", tone: "neutral" },
             {
-              text: "Continue",
-              style: "destructive",
+              label: "Continue",
+              tone: "danger",
               onPress: async () => {
                 await setUser(null);
                 clearSignupDrafts();
@@ -206,10 +209,10 @@ export default function RegisterScreen() {
                 setPassword("");
                 // We don't automatically resubmit because fields are now empty.
                 // Just clear the state and let user type again.
-              }
-            }
-          ]
-        );
+              },
+            },
+          ],
+        });
         return;
       }
     }
@@ -227,14 +230,15 @@ export default function RegisterScreen() {
       if (!response.ok) {
         if (response.status === 409 || data.error?.toLowerCase().includes("exists")) {
           setLoading(false);
-          Alert.alert(
-            "Email Registered",
-            "This email is already registered. Please sign in or use another email.",
-            [
-              { text: "Sign In", onPress: () => router.push("/auth/login") },
-              { text: "Cancel", style: "cancel" }
-            ]
-          );
+          alert.show({
+            tone: "warning",
+            title: "Email Registered",
+            message: "This email is already registered. Please sign in or use another email.",
+            actions: [
+              { label: "Sign In", tone: "primary", onPress: () => router.push("/auth/login") },
+              { label: "Cancel", tone: "neutral" },
+            ],
+          });
           return;
         }
         setApiError(data.error ?? "Registration failed. Please try again.");

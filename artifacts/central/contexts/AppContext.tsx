@@ -1,9 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
 import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/utils/bookingStatus";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 /** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
 export type ProfileCompletionStep = "email" | "profile" | "children" | "medical" | "styles";
@@ -292,6 +292,7 @@ async function clearAuthScopedStorage() {
 }
 
 export function AppContextProvider({ children: childrenNodes }: { children: React.ReactNode }) {
+  const alert = useCentralAlert();
   const [language, setLanguageState] = useState<"en" | "ar">("en");
   const [isOnboarded, setIsOnboardedState] = useState(false);
   const [user, setUserState] = useState<User | null>(null);
@@ -579,10 +580,15 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       return mappedChild;
     } catch (err) {
       console.error("addChild error:", err);
-      Alert.alert("Error", err instanceof Error ? err.message : "Failed to add child profile. Please check your connection.");
+      alert.show({
+        tone: "error",
+        title: "Error",
+        message: err instanceof Error ? err.message : "Failed to add child profile. Please check your connection.",
+        actions: [{ label: "OK", tone: "primary" }],
+      });
       return null;
     }
-  }, []);
+  }, [alert]);
 
   const updateChild = useCallback(async (child: ChildProfile) => {
     try {
@@ -627,9 +633,14 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       });
     } catch (err) {
       console.error("updateChild error:", err);
-      Alert.alert("Error", err instanceof Error ? err.message : "Failed to update child profile. Please check your connection.");
+      alert.show({
+        tone: "error",
+        title: "Error",
+        message: err instanceof Error ? err.message : "Failed to update child profile. Please check your connection.",
+        actions: [{ label: "OK", tone: "primary" }],
+      });
     }
-  }, []);
+  }, [alert]);
 
   const removeChild = useCallback(async (childId: string) => {
     try {
@@ -647,9 +658,14 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       });
     } catch (err) {
       console.error("removeChild error:", err);
-      Alert.alert("Error", err instanceof Error ? err.message : "Failed to delete child profile. Please check your connection.");
+      alert.show({
+        tone: "error",
+        title: "Error",
+        message: err instanceof Error ? err.message : "Failed to delete child profile. Please check your connection.",
+        actions: [{ label: "OK", tone: "primary" }],
+      });
     }
-  }, []);
+  }, [alert]);
 
   const addBooking = useCallback(async (booking: Booking) => {
     setBookings((prev) => {

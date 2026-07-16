@@ -5,7 +5,6 @@ import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useState } from "react";
 import {
-  Alert,
   Modal,
   Platform,
   ScrollView,
@@ -28,6 +27,7 @@ import AppButton from "@/components/AppButton";
 import { useBackgroundMusic } from "@/components/BackgroundMusicProvider";
 import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 /**
  * PIcon — exact replica of the design's `PIcon` (home-profile.jsx) rendered
@@ -382,6 +382,7 @@ function AddChildModal({
   onSave: (c: Omit<ChildProfile, "id">) => void;
   initial?: ChildProfile;
 }) {
+  const alert = useCentralAlert();
   const [fullName, setFullName] = useState(initial?.fullName ?? "");
   const [birthday, setBirthday] = useState(initial?.birthday ?? "");
   const [gender, setGender] = useState<"male" | "female">(initial?.gender ?? "female");
@@ -410,16 +411,16 @@ function AddChildModal({
 
   function handleSave() {
     if (!fullName.trim()) {
-      Alert.alert("Required", "Please enter the child's full name.");
+      alert.show({ tone: "warning", title: "Required", message: "Please enter the child's full name." });
       return;
     }
     if (!birthday.trim()) {
-      Alert.alert("Required", "Please select a date of birth.");
+      alert.show({ tone: "warning", title: "Required", message: "Please select a date of birth." });
       return;
     }
     const ageVal = calculateAgeFromBirthday(birthday);
     if (ageVal === null) {
-      Alert.alert("Required", "Please select a valid date of birth.");
+      alert.show({ tone: "warning", title: "Required", message: "Please select a valid date of birth." });
       return;
     }
 
@@ -602,6 +603,7 @@ const dpStyles = StyleSheet.create({
 
 export default function ProfileScreen() {
   const { user, setUser, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications } = useAppContext();
+  const alert = useCentralAlert();
   const { localEnabled: backgroundMusicEnabled, setLocalEnabled: setBackgroundMusicEnabled } = useBackgroundMusic();
   const insets = useSafeAreaInsets();
   const navigatingRef = React.useRef(false);
@@ -657,29 +659,39 @@ export default function ProfileScreen() {
     if (__DEV__) {
       console.log("[AUTH_NAV] signOut pressed", { destination: "/onboarding/welcome" });
     }
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: () => {
-          void (async () => {
-            await setUser(null);
-            if (__DEV__) {
-              console.log("[AUTH_NAV] signOut auth cleared", { destination: "/onboarding/welcome" });
-            }
-            router.replace("/onboarding/welcome" as never);
-          })();
+    alert.show({
+      tone: "destructive",
+      title: "Sign Out",
+      message: "Are you sure you want to sign out?",
+      actions: [
+        { label: "Cancel", tone: "neutral" },
+        {
+          label: "Sign Out",
+          tone: "danger",
+          onPress: () => {
+            void (async () => {
+              await setUser(null);
+              if (__DEV__) {
+                console.log("[AUTH_NAV] signOut auth cleared", { destination: "/onboarding/welcome" });
+              }
+              router.replace("/onboarding/welcome" as never);
+            })();
+          },
         },
-      },
-    ]);
+      ],
+    });
   }
 
   function handleDeleteChild(id: string) {
-    Alert.alert("Remove Child", "Are you sure you want to remove this child profile?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: () => removeChild(id) },
-    ]);
+    alert.show({
+      tone: "destructive",
+      title: "Remove Child",
+      message: "Are you sure you want to remove this child profile?",
+      actions: [
+        { label: "Cancel", tone: "neutral" },
+        { label: "Remove", tone: "danger", onPress: () => removeChild(id) },
+      ],
+    });
   }
 
   if (!user) {

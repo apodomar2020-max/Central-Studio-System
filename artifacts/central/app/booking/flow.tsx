@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,6 +17,7 @@ import {
 import { useGetClass, useGetInstructor, useCreateBooking, useListSchedules } from "@workspace/api-client-react";
 
 import { useAppContext, type Booking } from "@/contexts/AppContext";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { nextStepRoute } from "@/services/authProfile";
 import { compareSchedulesByNextOccurrence, getScheduleLabel, isBookableScheduleStatus, isMobileVisibleSchedule, mapApiClassWithScheduleToMobile, mapApiInstructorToMobile } from "@/data/apiAdapters";
 import colors from "@/constants/colors";
@@ -48,6 +48,7 @@ const NEW_MEMBER_OFFER_TITLE = "New Member Welcome";
 export default function BookingFlowScreen() {
   const { classId, scheduleId, usePackage } = useLocalSearchParams<{ classId: string; scheduleId?: string; usePackage?: string }>();
   const { user, addBooking, children, bookings, userPackages } = useAppContext();
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
 
   // ── Fetch class and instructor from the live API ──
@@ -206,35 +207,39 @@ export default function BookingFlowScreen() {
   async function handleConfirm() {
     if (!cls || !user) return;
     if (!hasSchedule) {
-      Alert.alert(
-        "Schedule not set",
-        "This class cannot be booked until the studio adds a day and time.",
-      );
+      alert.show({
+        tone: "warning",
+        title: "Schedule not set",
+        message: "This class cannot be booked until the studio adds a day and time.",
+      });
       return;
     }
     if (!canBookSchedule) {
       const isCancelled = cls.scheduleStatus === "cancelled";
-      Alert.alert(
-        isCancelled ? "Class cancelled" : "Class unavailable",
-        isCancelled
+      alert.show({
+        tone: "warning",
+        title: isCancelled ? "Class cancelled" : "Class unavailable",
+        message: isCancelled
           ? "This class schedule has been cancelled and cannot be booked."
           : "This class schedule is not currently accepting bookings.",
-      );
+      });
       return;
     }
     if (paymentMethod === "packageCredit" && !canUsePackageCredits) {
-      Alert.alert(
-        "Package credits unavailable",
-        "This class is not eligible for package credits. Please choose Pay at Studio.",
-      );
+      alert.show({
+        tone: "warning",
+        title: "Package credits unavailable",
+        message: "This class is not eligible for package credits. Please choose Pay at Studio.",
+      });
       setPaymentMethod("cash");
       return;
     }
     if (participantType === "child" && (!participantChildId || !Number.isInteger(participantChildId))) {
-      Alert.alert(
-        "Child profile unavailable",
-        "Please choose a saved child profile before booking.",
-      );
+      alert.show({
+        tone: "warning",
+        title: "Child profile unavailable",
+        message: "Please choose a saved child profile before booking.",
+      });
       return;
     }
     setLoading(true);
@@ -321,18 +326,20 @@ export default function BookingFlowScreen() {
       const code = (err as { data?: { code?: string } })?.data?.code;
       const msg = err instanceof Error ? err.message : "";
       if (code === "booking_attempt_limit_reached" || /booking_attempt_limit_reached/i.test(msg)) {
-        Alert.alert(
-          "Booking limit reached",
-          "You have reached the daily booking limit for this class. Please contact the studio if you need help.",
-        );
+        alert.show({
+          tone: "warning",
+          title: "Booking limit reached",
+          message: "You have reached the daily booking limit for this class. Please contact the studio if you need help.",
+        });
         return;
       }
       if (status === 409 || /duplicate_booking|already have an active booking/i.test(msg)) {
-        Alert.alert(
-          "Already booked",
-          "You already have an active booking for this class. You can cancel it from the Classes screen first.",
-          [{ text: "OK", onPress: () => router.back() }],
-        );
+        alert.show({
+          tone: "warning",
+          title: "Already booked",
+          message: "You already have an active booking for this class. You can cancel it from the Classes screen first.",
+          actions: [{ label: "OK", tone: "primary", onPress: () => router.back() }],
+        });
         return;
       }
       setBookingFailed(true);

@@ -7,7 +7,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Alert,
   Image,
   Linking,
   Platform,
@@ -43,6 +42,7 @@ import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/cl
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 import type { AgeGroup, DanceClass, Instructor } from "@/data/mockData";
 
 const INK_900 = "#0A0B0D";
@@ -138,6 +138,7 @@ export default function ClassDetailScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { user, bookings, cancelBooking, userPackages } = useAppContext();
+  const alert = useCentralAlert();
   const [heroImageFailed, setHeroImageFailed] = useState(false);
   const [instructorImageFailed, setInstructorImageFailed] = useState(false);
 
@@ -198,14 +199,15 @@ export default function ClassDetailScreen() {
 
   const handleCancel = useCallback(() => {
     if (!activeBooking || !cls) return;
-    Alert.alert(
-      "Cancel booking?",
-      `Cancel your booking for ${cls.title}? This frees up your seat.`,
-      [
-        { text: "Keep booking", style: "cancel" },
+    alert.show({
+      tone: "destructive",
+      title: "Cancel booking?",
+      message: `Cancel your booking for ${cls.title}? This frees up your seat.`,
+      actions: [
+        { label: "Keep booking", tone: "neutral" },
         {
-          text: "Cancel booking",
-          style: "destructive",
+          label: "Cancel booking",
+          tone: "danger",
           onPress: async () => {
             try {
               await cancelBooking(activeBooking.id);
@@ -213,13 +215,13 @@ export default function ClassDetailScreen() {
               await schedulesQuery.refetch();
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (error) {
-              Alert.alert("Couldn't cancel", error instanceof Error ? error.message : "Please try again.");
+              alert.show({ tone: "error", title: "Couldn't cancel", message: error instanceof Error ? error.message : "Please try again." });
             }
           },
         },
       ],
-    );
-  }, [activeBooking, cancelBooking, cls, queryClient, schedulesQuery]);
+    });
+  }, [activeBooking, cancelBooking, cls, queryClient, schedulesQuery, alert]);
 
   if (classQuery.isLoading || schedulesQuery.isLoading) {
     return <DetailSkeleton />;

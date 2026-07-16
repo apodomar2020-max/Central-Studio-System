@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert,
   Platform,
   StyleSheet,
   Text,
@@ -24,6 +23,7 @@ import ProgressDots from "@/components/ProgressDots";
 import { enterApp, fetchCurrentUser, nextStepRoute } from "@/services/authProfile";
 import { clearSignupDrafts } from "./auth/register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const VerifyGlow = React.memo(function VerifyGlow() {
   return (
@@ -58,6 +58,7 @@ function otpErrorData(error: unknown): OtpErrorData {
 
 export default function VerifyEmailScreen() {
   const { user, setUser } = useAppContext();
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
@@ -73,32 +74,34 @@ export default function VerifyEmailScreen() {
   }
 
   function confirmStartOver() {
-    Alert.alert(
-      "Start over with another email?",
-      "This will sign you out on this device. The unverified account will remain until Central Studio removes it.",
-      [
-        { text: "Cancel", style: "cancel" },
+    alert.show({
+      tone: "destructive",
+      title: "Start over with another email?",
+      message: "This will sign you out on this device. The unverified account will remain until Central Studio removes it.",
+      actions: [
+        { label: "Cancel", tone: "neutral" },
         {
-          text: "Start Over",
-          style: "destructive",
+          label: "Start Over",
+          tone: "danger",
           onPress: () => { void leaveVerification("/auth/register"); },
         },
       ],
-    );
+    });
   }
 
   function confirmSignIn() {
-    Alert.alert(
-      "Sign in with another account?",
-      "This will clear the current session on this device.",
-      [
-        { text: "Cancel", style: "cancel" },
+    alert.show({
+      title: "Sign in with another account?",
+      message: "This will clear the current session on this device.",
+      actions: [
+        { label: "Cancel", tone: "neutral" },
         {
-          text: "Sign In",
+          label: "Sign In",
+          tone: "primary",
           onPress: () => { void leaveVerification("/auth/login"); },
         },
       ],
-    );
+    });
   }
 
   useEffect(() => {
@@ -159,8 +162,8 @@ export default function VerifyEmailScreen() {
 
   async function handleVerify() {
     const full = code.join("");
-    if (full.length < CODE_LENGTH) { Alert.alert("Incomplete", "Please enter all 6 digits."); return; }
-    if (!user?.id) { Alert.alert("Error", "You must be signed in to verify your email."); return; }
+    if (full.length < CODE_LENGTH) { alert.show({ tone: "warning", title: "Incomplete", message: "Please enter all 6 digits." }); return; }
+    if (!user?.id) { alert.show({ tone: "error", title: "Error", message: "You must be signed in to verify your email." }); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try {
@@ -175,27 +178,34 @@ export default function VerifyEmailScreen() {
       await setUser(refreshed.user);
       clearSignupDrafts();
       const nextStep = refreshed.user.profileCompletion?.nextStep ?? "done";
-      Alert.alert("Email Verified!", "Your email has been verified successfully.", [
-        {
-          text: "Continue",
-          onPress: () => {
-            if (nextStep === "done") {
-              void enterApp();
-            } else {
-              router.replace(nextStepRoute(nextStep) as never);
-            }
+      alert.show({
+        tone: "success",
+        title: "Email Verified!",
+        message: "Your email has been verified successfully.",
+        actions: [
+          {
+            label: "Continue",
+            tone: "primary",
+            onPress: () => {
+              if (nextStep === "done") {
+                void enterApp();
+              } else {
+                router.replace(nextStepRoute(nextStep) as never);
+              }
+            },
           },
-        },
-      ]);
+        ],
+      });
     } catch (err: unknown) {
       const data = otpErrorData(err);
       const attempts = typeof data.attemptsLeft === "number"
         ? ` ${data.attemptsLeft} attempt${data.attemptsLeft === 1 ? "" : "s"} remaining.`
         : "";
-      Alert.alert(
-        "Verification Failed",
-        `${data.error ?? "Invalid or expired verification code."}${attempts}`,
-      );
+      alert.show({
+        tone: "error",
+        title: "Verification Failed",
+        message: `${data.error ?? "Invalid or expired verification code."}${attempts}`,
+      });
     } finally {
       setLoading(false);
     }
@@ -212,12 +222,12 @@ export default function VerifyEmailScreen() {
       setResendCountdown(60);
       setSent(true);
       setSendError("");
-      Alert.alert("Email Sent", `A new verification code has been sent to ${user?.email}.`);
+      alert.show({ tone: "success", title: "Email Sent", message: `A new verification code has been sent to ${user?.email}.` });
     } catch (err: unknown) {
       const data = otpErrorData(err);
       const retryAfter = typeof data.retryAfter === "number" ? data.retryAfter : 0;
       if (retryAfter > 0) setResendCountdown(retryAfter);
-      Alert.alert("Failed to Send", data.error ?? "We couldn't resend the code. Please try again in a few moments.");
+      alert.show({ tone: "error", title: "Failed to Send", message: data.error ?? "We couldn't resend the code. Please try again in a few moments." });
     }
   }
 

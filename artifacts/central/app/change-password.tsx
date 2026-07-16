@@ -5,7 +5,6 @@ import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
 import {
-  Alert,
   Platform,
   StyleSheet,
   Text,
@@ -18,9 +17,11 @@ import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { iosTextInputStyle } from "@/utils/iosTypography";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 export default function ChangePasswordScreen() {
   const { user } = useAppContext();
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -32,9 +33,9 @@ export default function ChangePasswordScreen() {
   const [success, setSuccess] = useState(false);
 
   async function handleSubmit() {
-    if (!current.trim()) { Alert.alert("Required", "Please enter your current password."); return; }
-    if (next.length < 8) { Alert.alert("Too short", "New password must be at least 8 characters."); return; }
-    if (next !== confirm) { Alert.alert("Mismatch", "New passwords don't match."); return; }
+    if (!current.trim()) { alert.show({ tone: "warning", title: "Required", message: "Please enter your current password." }); return; }
+    if (next.length < 8) { alert.show({ tone: "warning", title: "Too short", message: "New password must be at least 8 characters." }); return; }
+    if (next !== confirm) { alert.show({ tone: "warning", title: "Mismatch", message: "New passwords don't match." }); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     await new Promise((r) => setTimeout(r, 1400));

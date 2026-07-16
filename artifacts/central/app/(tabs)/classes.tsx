@@ -9,7 +9,6 @@ import React, {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Alert,
   Animated,
   FlatList,
   Image,
@@ -57,6 +56,7 @@ import {
 } from "@/services/classCapacityService";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 const INK_900 = "#0A0B0D";
@@ -385,6 +385,7 @@ function ExploreClassCard({
   onSelect: (c: DanceClass) => void;
 }) {
   const { bookings, cancelBooking } = useAppContext();
+  const alert = useCentralAlert();
   const queryClient = useQueryClient();
 
   // The current user's ACTIVE booking for THIS occurrence (drives Cancel CTA).
@@ -405,14 +406,15 @@ function ExploreClassCard({
 
   const handleCancel = useCallback(() => {
     if (!activeBooking) return;
-    Alert.alert(
-      "Cancel booking?",
-      `Cancel your booking for ${item.title}? This frees up your seat.`,
-      [
-        { text: "Keep booking", style: "cancel" },
+    alert.show({
+      tone: "destructive",
+      title: "Cancel booking?",
+      message: `Cancel your booking for ${item.title}? This frees up your seat.`,
+      actions: [
+        { label: "Keep booking", tone: "neutral" },
         {
-          text: "Cancel booking",
-          style: "destructive",
+          label: "Cancel booking",
+          tone: "danger",
           onPress: async () => {
             try {
               await cancelBooking(activeBooking.id);
@@ -420,13 +422,13 @@ function ExploreClassCard({
               await queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() });
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (e) {
-              Alert.alert("Couldn't cancel", e instanceof Error ? e.message : "Please try again.");
+              alert.show({ tone: "error", title: "Couldn't cancel", message: e instanceof Error ? e.message : "Please try again." });
             }
           },
         },
       ],
-    );
-  }, [activeBooking, cancelBooking, item.title, queryClient]);
+    });
+  }, [activeBooking, cancelBooking, item.title, queryClient, alert]);
 
   // Display-only capacity. Reflects the current canonical occurrence; completed
   // schedules are treated as unavailable, not capacity-full.
