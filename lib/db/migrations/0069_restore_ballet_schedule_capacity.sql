@@ -1,0 +1,23 @@
+-- Migration 0069: Restore ballet_schedules.capacity (forward-only corrective)
+--
+-- Migration 0060_ballet_schedule_capacity.sql already contains the correct
+-- statement below and was NEVER modified, replayed, or renumbered. The
+-- column simply never reached production: journal entries 0059 and 0060
+-- share the identical `when` value (1784462414000). The installed Drizzle
+-- Postgres migrator tracks only a single high-water-mark `created_at` in
+-- drizzle.__drizzle_migrations and applies a migration only when
+-- `lastDbMigration.created_at < migration.folderMillis` (strict `<`). Once
+-- 0059 ran and recorded created_at = 1784462414000, 0060's own folderMillis
+-- (also 1784462414000) permanently failed that check — its ADD COLUMN
+-- statement was skipped, silently and without error, on every subsequent
+-- deploy. This migration is the forward-only fix: same statement, a fresh
+-- and strictly-greater timestamp, so it will actually run.
+--
+-- Nullable integer, no default, no backfill needed (ADD COLUMN with no
+-- default on a nullable column always reads NULL for existing rows — that
+-- is not a gap to fill, it is the correct value for "no capacity recorded
+-- yet"). No CHECK constraint. Entirely unrelated to the separate, already-
+-- removed Ballet Assessment capacity feature (ballet_assessment_slots was
+-- dropped in migration 0059; this column belongs to ballet_schedules, the
+-- regular Ballet class/schedule capacity).
+ALTER TABLE "ballet_schedules" ADD COLUMN IF NOT EXISTS "capacity" integer;

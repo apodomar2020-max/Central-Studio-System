@@ -8,7 +8,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -34,11 +34,12 @@ import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import { BalletProgramLockup, BallerinaShoesIcon } from "@/components/ballet/BalletProgramLockup";
+import BalletProgramDangerZone from "@/components/ballet/BalletProgramDangerZone";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 // Base/card/border values taken from the explicit task spec (override the
 // design-source ink-800/0.15 variants).
-const BASE    = "#0A0B0D"; // dark ambient base
+const BASE    = "#000000"; // true black page background
 const CARD    = "#15171B"; // nav card surface
 const NAV_BORDER = "rgba(0,182,215,0.35)";
 const INK_400 = "#4B5563";
@@ -163,19 +164,30 @@ export default function BalletProgramScreen() {
 
   const [summary, setSummary] = useState<BalletSummary | null>(null);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    fetchBalletSummary(ctrl.signal)
-      .then((data) => {
-        if (ctrl.signal.aborted) return;
-        setSummary(data);
-      })
-      .catch(() => {
-        if (ctrl.signal.aborted) return;
-        setSummary(null);
-      });
-    return () => ctrl.abort();
-  }, []);
+  // Refetch the summary on every focus, not just first mount. This screen is a
+  // Stack route: pushing to a sub-route (/ballet/instructors, …) keeps it
+  // mounted underneath, so returning pops back WITHOUT remounting and a plain
+  // useEffect([]) would never re-run. useFocusEffect fires once on first focus
+  // (== first mount, so no duplicate initial request) and again on each return,
+  // so an instructor added/activated/deactivated/deleted in Admin is reflected
+  // when the user comes back. Cleanup aborts the in-flight request on blur/
+  // unmount to avoid setting state after unmount. Loading/error behavior is
+  // unchanged (shows "—" until resolved; clears to null on error).
+  useFocusEffect(
+    useCallback(() => {
+      const ctrl = new AbortController();
+      fetchBalletSummary(ctrl.signal)
+        .then((data) => {
+          if (ctrl.signal.aborted) return;
+          setSummary(data);
+        })
+        .catch(() => {
+          if (ctrl.signal.aborted) return;
+          setSummary(null);
+        });
+      return () => ctrl.abort();
+    }, []),
+  );
 
   const stats = useMemo(() => [
     { value: summary ? String(summary.activeStudents) : "—", label: "Active students" },
@@ -361,9 +373,6 @@ export default function BalletProgramScreen() {
           </View>
         </View>
 
-        {/* ── Cyan divider line ── */}
-        <View style={s.heroDivider} />
-
         {/* ── Navigation cards ── */}
         <View style={s.navSection}>
           {NAV_CARDS.map((card) => (
@@ -376,6 +385,12 @@ export default function BalletProgramScreen() {
             />
           ))}
         </View>
+
+        {/* Danger zone — full-width destructive cancellation action, gated on
+            authoritative server state. Only meaningful for a signed-in parent
+            who has a Ballet application; renders nothing otherwise. Placed
+            after the normal program sections, before the final safe-area pad. */}
+        {user?.accountType === "parent" && <BalletProgramDangerZone />}
 
         {/* Footer spacing */}
         <View style={{ height: Platform.OS === "web" ? 120 : 80 }} />
@@ -427,14 +442,12 @@ const s = StyleSheet.create({
   },
   /* hero */
   heroSection: {
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,182,215,0.12)",
     overflow: "hidden",
   },
   heroContent: {
     paddingHorizontal: 20,
     paddingTop: 26,
-    paddingBottom: 22,
+    paddingBottom: 8,
   },
   heroEyebrow: {
     fontSize: 10,
@@ -461,7 +474,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
     borderRadius: R_LG,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   statCol: {
     flex: 1,
@@ -507,17 +520,13 @@ const s = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  /* divider below hero */
-  heroDivider: {
-    height: 1,
-    backgroundColor: "rgba(0,182,215,0.12)",
-    marginHorizontal: 0,
-  },
-
   /* nav section */
   navSection: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 20,
     gap: 10,
+    backgroundColor: BASE,
   },
   navCard: {
     flexDirection: "row",

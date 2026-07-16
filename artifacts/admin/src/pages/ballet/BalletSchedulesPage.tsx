@@ -28,28 +28,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Trash2, Edit, Loader2 } from "lucide-react";
+import { adminFetch, scheduleErrorMessage } from "./balletScheduleApiClient";
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
-
-function makeHeaders(token: string | null): HeadersInit {
-  return {
-    "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
-    ...(token ? { "x-admin-token": token } : {}),
-  };
-}
-
-async function adminFetch<T>(url: string, init: RequestInit, token: string | null): Promise<T> {
-  const res = await fetch(url, { ...init, headers: makeHeaders(token) });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw { data };
-  }
-  return res.json() as Promise<T>;
-}
 
 const CATALOG_LIMIT = 100;
 
@@ -81,13 +65,22 @@ interface BalletSchedule {
 interface BalletClass { id: number; title: string; }
 interface ListResponse<T> { data: T[]; total: number; page: number; limit: number; totalPages: number; }
 
+// Canonical optional-duration contract (matches the backend): a truly blank
+// or never-touched field is undefined (omitted from the request entirely);
+// an existing value the admin explicitly clears back to "" normalizes to
+// null (explicitly clears it on the backend, rather than being silently
+// dropped). Zero, negative, decimal, and non-numeric values are rejected —
+// "" is never coerced to 0.
 const formSchema = z.object({
   classId: z.number({ required_error: "Class is required" }).int().positive(),
   dayOfWeek: z.number({ required_error: "Day of week is required" }).int().min(0).max(6),
   startTime: z.string().min(1, "Start time is required"),
   endTime: z.string().min(1, "End time is required"),
   status: z.enum(STATUSES).default("active"),
-  durationMins: z.coerce.number().int().positive().nullish(),
+  durationMins: z.preprocess(
+    (val) => (val === "" ? null : val),
+    z.coerce.number().int().positive().nullable().optional(),
+  ),
 });
 
 type FormValues = z.input<typeof formSchema>;
@@ -114,14 +107,14 @@ export default function BalletSchedulesPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-ballet-schedules", token],
-    queryFn: () => adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?limit=${CATALOG_LIMIT}`, {}, token),
+    queryFn: () => adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?limit=${CATALOG_LIMIT}`, {}, token, API_KEY),
     refetchOnWindowFocus: false,
   });
   const schedules = data?.data ?? [];
 
   const { data: classesData } = useQuery({
     queryKey: ["admin-ballet-classes-ref", token],
-    queryFn: () => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?limit=${CATALOG_LIMIT}`, {}, token),
+    queryFn: () => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?limit=${CATALOG_LIMIT}`, {}, token, API_KEY),
     refetchOnWindowFocus: false,
   });
   const classes = classesData?.data ?? [];
@@ -129,15 +122,15 @@ export default function BalletSchedulesPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-ballet-schedules"] });
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => adminFetch(`${API_BASE}/api/admin/ballet/schedules`, { method: "POST", body: JSON.stringify(body) }, token),
+    mutationFn: (body: object) => adminFetch(`${API_BASE}/api/admin/ballet/schedules`, { method: "POST", body: JSON.stringify(body) }, token, API_KEY),
     onSuccess: () => { invalidate(); toast({ title: "Schedule created" }); setOpen(false); },
-    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to create schedule", variant: "destructive" }),
+    onError: (e: unknown) => toast({ title: "Error", description: scheduleErrorMessage(e, "Failed to create schedule."), variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, body }: { id: number; body: object }) => adminFetch(`${API_BASE}/api/admin/ballet/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
+    mutationFn: ({ id, body }: { id: number; body: object }) => adminFetch(`${API_BASE}/api/admin/ballet/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token, API_KEY),
     onSuccess: () => { invalidate(); toast({ title: "Schedule updated" }); setOpen(false); },
-    onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update schedule", variant: "destructive" }),
+    onError: (e: unknown) => toast({ title: "Error", description: scheduleErrorMessage(e, "Failed to update schedule."), variant: "destructive" }),
   });
 
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES });
@@ -163,7 +156,12 @@ export default function BalletSchedulesPage() {
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
-    const body = { ...parsed, durationMins: parsed.durationMins ?? null };
+    // durationMins is left exactly as parsed: undefined when blank/untouched
+    // (JSON.stringify drops the key entirely — omitted, not sent as null),
+    // or null when the admin explicitly cleared an existing value (PATCH
+    // then clears it; POST just inserts null either way). Never forced to
+    // null, never coerced to 0, never NaN.
+    const body = parsed;
     if (editing) {
       updateMutation.mutate({ id: editing.id, body });
     } else {

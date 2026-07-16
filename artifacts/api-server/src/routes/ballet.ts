@@ -75,6 +75,7 @@ import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/stude
 import { logger } from "../lib/logger";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth } from "../lib/balletAttendance";
 import { normalizeInstructorPhotoUrlForResponse } from "../lib/instructorPhotoUrl";
+import { buildActiveBalletInstructorCountQuery } from "../lib/balletInstructorCountQuery";
 
 const router: IRouter = Router();
 
@@ -412,16 +413,10 @@ router.get("/ballet/summary", async (_req, res): Promise<void> => {
         .select({ total: sql<number>`count(distinct coalesce(${balletApplicationsTable.childId}::text, 'application:' || ${balletApplicationsTable.id}::text))::int` })
         .from(balletApplicationsTable)
         .where(eq(balletApplicationsTable.status, "active")),
-      db
-        .select({ total: sql<number>`count(distinct ${balletInstructorsTable.id})::int` })
-        .from(balletInstructorsTable)
-        .innerJoin(balletClassesTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
-        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
-        .where(and(
-          eq(balletInstructorsTable.isActive, true),
-          eq(balletClassesTable.isActive, true),
-          eq(balletSchedulesTable.status, "active"),
-        )),
+      // See buildActiveBalletInstructorCountQuery's doc comment: this used to
+      // INNER JOIN through ballet_classes/ballet_schedules, which silently
+      // excluded any active instructor without a fully wired class+schedule.
+      buildActiveBalletInstructorCountQuery(),
       db
         .select({ total: sql<number>`count(*)::int` })
         .from(balletLevelsTable)
