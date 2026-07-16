@@ -21,7 +21,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -42,6 +41,7 @@ import {
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import OfflineState from "@/components/OfflineState";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const BALLET_COLOR = "#00B6D6";
 
@@ -93,6 +93,7 @@ function Field({
 
 export default function EditApplicationScreen() {
   const insets = useSafeAreaInsets();
+  const alert = useCentralAlert();
   const { id } = useLocalSearchParams<{ id: string }>();
   const applicationId = parseInt(id ?? "", 10);
 
@@ -157,7 +158,7 @@ export default function EditApplicationScreen() {
 
   async function openSlotPicker() {
     if (!application?.childBirthday) {
-      Alert.alert("Birthday Required", "A child birthday is required to choose a new assessment date.");
+      alert.show({ tone: "warning", title: "Birthday Required", message: "A child birthday is required to choose a new assessment date." });
       return;
     }
     setShowSlotPicker(true);
@@ -194,7 +195,7 @@ export default function EditApplicationScreen() {
     }
 
     if (Object.keys(payload).length === 0) {
-      Alert.alert("No Changes", "You haven't changed anything.");
+      alert.show({ tone: "info", title: "No Changes", message: "You haven't changed anything." });
       return;
     }
 
@@ -207,18 +208,18 @@ export default function EditApplicationScreen() {
     } catch (err: unknown) {
       const typed = err as { status?: number; data?: { error?: string }; message?: string };
       if (typed.status === 422) {
-        Alert.alert("Cannot Edit", typed.data?.error ?? "This application can no longer be edited.");
+        alert.show({ tone: "warning", title: "Cannot Edit", message: typed.data?.error ?? "This application can no longer be edited." });
         return;
       }
       if (typed.status === 409) {
-        Alert.alert("Cannot Save", typed.data?.error ?? "The selected assessment can no longer be used.");
+        alert.show({ tone: "warning", title: "Cannot Save", message: typed.data?.error ?? "The selected assessment can no longer be used." });
         return;
       }
       if (isOfflineError(err)) {
-        Alert.alert("No Connection", "Please check your internet connection and try again.");
+        alert.show({ tone: "error", title: "No Connection", message: "Please check your internet connection and try again." });
         return;
       }
-      Alert.alert("Error", typed.data?.error ?? typed.message ?? "Failed to save changes. Please try again.");
+      alert.show({ tone: "error", title: "Error", message: typed.data?.error ?? typed.message ?? "Failed to save changes. Please try again." });
     } finally {
       setSaving(false);
     }

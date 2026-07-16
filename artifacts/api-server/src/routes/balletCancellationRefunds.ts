@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Response } from "express";
-import { and, count, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -19,6 +19,7 @@ import { adminActivityActor, logActivity } from "../lib/activityLog";
 import { currentSubscription, getPaymentCyclesForApplication } from "../lib/balletSubscriptions";
 import { logger } from "../lib/logger";
 import { finalizeBalletCancellationRequest } from "../lib/balletCancellationFinalization";
+import { resolveApplicationCurrentCycle, eligiblePaymentForContext, refundableRemainingEgp, todayDateOnly, type BalletRefundEligibilityContext, type ResolvedCurrentBalletCycle } from "../lib/balletRefundEligibility";
 
 const router: IRouter = Router();
 
@@ -101,53 +102,22 @@ function refundAuditPayload(input: {
   return input;
 }
 
-async function latestRefundableInPersonPayment(applicationId: number, client: typeof db = db) {
-  const [payment] = await client
-    .select()
-    .from(balletPaymentsTable)
-    .where(and(
-      eq(balletPaymentsTable.applicationId, applicationId),
-      eq(balletPaymentsTable.status, "paid"),
-      eq(balletPaymentsTable.paymentMethod, "inPerson"),
-      isNotNull(balletPaymentsTable.paidAt),
-      sql`${balletPaymentsTable.amountEgp} > 0`,
-    ))
-    .orderBy(desc(balletPaymentsTable.paidAt), desc(balletPaymentsTable.id))
-    .limit(1);
-  return payment ?? null;
-}
-
-async function refundableRemainingEgp(paymentId: number, originalAmountEgp: number, client: typeof db = db, excludeRefundId?: number): Promise<number> {
-  const conditions = [eq(balletRefundsTable.paymentId, paymentId)];
-  if (excludeRefundId != null) conditions.push(ne(balletRefundsTable.id, excludeRefundId));
-  const [{ total }] = await client
-    .select({
-      total: sql<number>`
-        coalesce(sum(coalesce(${balletRefundsTable.refundedAmountEgp}, ${balletRefundsTable.approvedAmountEgp}, 0)) filter (
-          where ${balletRefundsTable.status} in ('approved','processing','refunded')
-        ), 0)::int
-      `,
-    })
-    .from(balletRefundsTable)
-    .where(and(...conditions));
-  return originalAmountEgp - Number(total ?? 0);
-}
-
 async function maybeCreateCashRefundRequest(client: typeof db, input: {
   cancellationRequestId: number | null;
   applicationId: number;
   levelAssignmentId: number | null;
   parentStudentId: number | null;
   reason: string;
+  eligibilityContext: BalletRefundEligibilityContext;
 }) {
-  const payment = await latestRefundableInPersonPayment(input.applicationId, client);
+  const payment = await eligiblePaymentForContext(input.applicationId, input.eligibilityContext, client);
   if (!payment) return null;
 
   const remaining = await refundableRemainingEgp(payment.id, payment.amountEgp, client);
   if (remaining <= 0) return null;
 
   const [existing] = await client
-    .select({ id: balletRefundsTable.id })
+    .select()
     .from(balletRefundsTable)
     .where(and(
       eq(balletRefundsTable.paymentId, payment.id),
@@ -288,6 +258,8 @@ async function cancelPreActivationApplication(input: {
           levelAssignmentId: assignment?.id ?? null,
           parentStudentId: app.parentStudentId,
           reason,
+          // Pre-activation cancellation — never a subscription-cycle payment.
+          eligibilityContext: { kind: "preActivation" },
         })
       : null;
 
@@ -383,6 +355,28 @@ router.post("/ballet/enrollments/:levelAssignmentId/cancellation-requests", requ
       .for("update");
     if (open) return { kind: "duplicate" as const, id: open.id };
 
+    const isImmediate = parsed.data.requestedTiming === "immediate";
+    const today = todayIso();
+    // Resolve the current paid subscription cycle ONCE, anchored to today,
+    // and reuse that SAME identity for both the effective-date derivation
+    // and the refund-eligibility check below — never two independent
+    // lookups. Deliberately NOT currentSubscription(getPaymentCyclesForApplication(...)):
+    // that helper has no concept of "today" — it just sorts by latest
+    // subscriptionStartDate — so given both a current cycle and an
+    // already-paid future renewal, it returns the RENEWAL, not the cycle
+    // actually active now.
+    const resolvedCycle = await resolveApplicationCurrentCycle(app.id, today, tx as typeof db);
+    // Effective cancellation date — today for immediate; for end-of-period,
+    // the resolved cycle's own expiry. Persisted on requestedEffectiveDate
+    // below (when a cycle was resolved) so this identity is ESTABLISHED once,
+    // at creation time, and an admin approving this request later reads it
+    // straight back rather than re-resolving anything — a renewal created
+    // AFTER this request cannot retroactively change it (see
+    // approve-end-of-period's handling of requestedEffectiveDate).
+    const effectiveDate = isImmediate
+      ? today
+      : resolvedCycle?.subscriptionExpiresAt ?? today;
+
     const [request] = await tx
       .insert(balletEnrollmentCancellationRequestsTable)
       .values({
@@ -390,9 +384,11 @@ router.post("/ballet/enrollments/:levelAssignmentId/cancellation-requests", requ
         levelAssignmentId: assignment.id,
         childId: assignment.childId ?? app.childId ?? null,
         parentStudentId: app.parentStudentId,
+        initiatedByType: "parent",
+        initiatedByAdminId: null,
         status: "pendingReview",
         requestedTiming: parsed.data.requestedTiming,
-        requestedEffectiveDate: parsed.data.requestedTiming === "immediate" ? todayIso() : null,
+        requestedEffectiveDate: isImmediate ? today : resolvedCycle?.subscriptionExpiresAt ?? null,
         reason: parsed.data.reason,
         requestRefund: parsed.data.requestRefund === true,
       })
@@ -404,6 +400,13 @@ router.post("/ballet/enrollments/:levelAssignmentId/cancellation-requests", requ
           applicationId: app.id,
           levelAssignmentId: assignment.id,
           parentStudentId: app.parentStudentId,
+          // Refund eligibility evaluates against the SAME resolvedCycle used
+          // to derive effectiveDate above — no second, independent lookup.
+          // This is what avoids the circular-boundary bug: reusing a cycle's
+          // own (derived, possibly future) expiry as a NEW search key could
+          // ambiguously match a back-to-back renewal starting that same day;
+          // reusing the already-resolved identity directly cannot.
+          eligibilityContext: { kind: "activeEnrollment", resolvedCycle },
           reason: parsed.data.reason,
         })
       : null;
@@ -533,6 +536,200 @@ router.post("/admin/ballet/applications/:id/cancel", requireAdminAuth, requireAd
   res.json({ success: true, application: result.application, refund: result.refund ?? null });
 });
 
+// ─── Admin-initiated ACTIVE enrollment cancellation ─────────────────────────────
+//
+// Reuses the exact same cancellation-request + finalization workflow as the
+// parent path — it does NOT touch assignment/application rows directly from the
+// caller. The admin action creates a request row (attributed to the admin) and
+// immediately approves it: "immediate" is created, approved, and finalized in
+// one transaction; "endOfPeriod" is created and approved, staying active until
+// the scheduled finalizer runs. Either way exactly one cancellation-request
+// record and one Audit Log are produced, and refunds stay separate (cash-only,
+// underReview) — never auto-completed.
+
+const AdminInitiateCancellationBody = z.object({
+  requestedTiming: z.enum(["immediate", "endOfPeriod"]),
+  reason: ParentReason,
+  adminNotes: z.string().max(2000).optional(),
+  requestRefund: z.boolean().optional(),
+  approvedEffectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+router.post("/admin/ballet/applications/:id/request-cancellation", requireAdminAuth, requireAdminPermission("ballet.applications", "cancel"), async (req: AdminRequest, res): Promise<void> => {
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid application ID" }); return; }
+  const parsed = AdminInitiateCancellationBody.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" }); return; }
+  const adminId = getAdminId(req);
+  const now = new Date().toISOString();
+
+  const result = await db.transaction(async (tx) => {
+    const [app] = await tx
+      .select()
+      .from(balletApplicationsTable)
+      .where(eq(balletApplicationsTable.id, id))
+      .limit(1)
+      .for("update");
+    if (!app) return { kind: "not_found" as const };
+    if (app.status !== "active") return { kind: "app_not_active" as const, status: app.status };
+
+    const [assignment] = await tx
+      .select()
+      .from(balletLevelAssignmentsTable)
+      .where(and(eq(balletLevelAssignmentsTable.applicationId, id), eq(balletLevelAssignmentsTable.status, "active")))
+      .orderBy(desc(balletLevelAssignmentsTable.id))
+      .limit(1)
+      .for("update");
+    if (!assignment) return { kind: "no_active_assignment" as const };
+
+    const [open] = await tx
+      .select({ id: balletEnrollmentCancellationRequestsTable.id })
+      .from(balletEnrollmentCancellationRequestsTable)
+      .where(and(
+        eq(balletEnrollmentCancellationRequestsTable.levelAssignmentId, assignment.id),
+        inArray(balletEnrollmentCancellationRequestsTable.status, [...OPEN_CANCELLATION_REQUEST_STATUSES]),
+      ))
+      .limit(1)
+      .for("update");
+    if (open) return { kind: "duplicate" as const, id: open.id };
+
+    const isImmediate = parsed.data.requestedTiming === "immediate";
+    const initiationDate = todayIso();
+    // Resolve the current paid subscription cycle ONCE, anchored to the
+    // initiation date (today), and reuse that SAME identity for both the
+    // stored effective date and refund eligibility below — same shared
+    // resolver and same rules as the Parent path. Deliberately NOT
+    // currentSubscription(getPaymentCyclesForApplication(...)): that helper
+    // has no concept of "today" and would return a paid future renewal
+    // instead of the cycle actually active now.
+    const resolvedCycle = await resolveApplicationCurrentCycle(id, initiationDate, tx as typeof db);
+    // Stored effective date: an explicit admin-supplied date always takes
+    // precedence (unchanged, for storage purposes only); otherwise the
+    // resolved cycle's own expiry, anchored to the initiation date — never a
+    // future renewal's expiry.
+    const effectiveDate = isImmediate
+      ? initiationDate
+      : parsed.data.approvedEffectiveDate
+        ?? resolvedCycle?.subscriptionExpiresAt
+        ?? initiationDate;
+
+    const [request] = await tx
+      .insert(balletEnrollmentCancellationRequestsTable)
+      .values({
+        applicationId: app.id,
+        levelAssignmentId: assignment.id,
+        childId: assignment.childId ?? app.childId ?? null,
+        parentStudentId: app.parentStudentId,
+        initiatedByType: "admin",
+        initiatedByAdminId: adminId,
+        status: "approved",
+        requestedTiming: parsed.data.requestedTiming,
+        approvedTiming: parsed.data.requestedTiming,
+        requestedEffectiveDate: isImmediate ? todayIso() : null,
+        approvedEffectiveDate: effectiveDate,
+        reason: parsed.data.reason,
+        requestRefund: parsed.data.requestRefund === true,
+        adminNotes: parsed.data.adminNotes ?? null,
+        reviewedByAdminId: adminId,
+        reviewedAt: now,
+      })
+      .returning();
+
+    const refund = parsed.data.requestRefund === true
+      ? await maybeCreateCashRefundRequest(tx as typeof db, {
+          cancellationRequestId: request.id,
+          applicationId: app.id,
+          levelAssignmentId: assignment.id,
+          parentStudentId: app.parentStudentId,
+          reason: parsed.data.reason,
+          // Refund eligibility always evaluates against resolvedCycle (the
+          // cycle active on the initiation date) — deliberately NOT the
+          // (possibly admin-overridden) `effectiveDate` above, so an
+          // arbitrary admin-supplied storage date never becomes a second,
+          // independent payment-selection search key. A future renewal
+          // cannot define this result regardless of what effectiveDate ends
+          // up stored.
+          eligibilityContext: { kind: "activeEnrollment", resolvedCycle },
+        })
+      : null;
+
+    if (isImmediate) {
+      // Create → approve → finalize in one transaction. finalizeBallet…
+      // withdraws the active assignment (with metadata), sets the application
+      // to withdrawn, preserves attendance/history, completes the request,
+      // notifies the parent, and emits exactly one Audit Log.
+      const finalized = await finalizeBalletCancellationRequest(tx as typeof db, {
+        requestId: request.id,
+        adminId,
+        adminNotes: parsed.data.adminNotes ?? null,
+        forceImmediate: true,
+        auditActor: adminActivityActor(req),
+        auditAction: "approveImmediate",
+      });
+      if (finalized.kind !== "completed") return { kind: "finalize_failed" as const, detail: finalized.kind };
+      return { kind: "immediate" as const, request: finalized.request, refund };
+    }
+
+    // End-of-period: keep the enrollment active until the scheduled finalizer
+    // runs on/after the effective date. Approve now, notify, one Audit Log.
+    await notifyParent(tx as typeof db, {
+      parentStudentId: app.parentStudentId,
+      title: "Ballet cancellation scheduled",
+      body: `${app.childName}'s Ballet enrollment cancellation has been approved for ${effectiveDate}.`,
+      type: "ballet_cancellation_scheduled",
+      relatedEntityType: "ballet_enrollment_cancellation_request",
+      relatedEntityId: request.id,
+      metadata: { applicationId: app.id, transition: "approved" },
+    });
+    return { kind: "endOfPeriod" as const, request, refund, application: app, assignment, effectiveDate };
+  });
+
+  if (result.kind === "not_found") { res.status(404).json({ error: "Application not found" }); return; }
+  if (result.kind === "app_not_active") { res.status(422).json({ error: `Application status "${result.status}" is not an active enrollment. Use Cancel Application for pre-activation statuses.`, code: "BALLET_APPLICATION_NOT_ACTIVE" }); return; }
+  if (result.kind === "no_active_assignment") { res.status(422).json({ error: "This application has no active level assignment to cancel." }); return; }
+  if (result.kind === "duplicate") { res.status(409).json({ error: "An open cancellation request already exists for this enrollment.", cancellationRequestId: result.id }); return; }
+  if (result.kind === "finalize_failed") { res.status(422).json({ error: `Immediate cancellation could not be finalized: ${result.detail}.` }); return; }
+
+  if (result.kind === "endOfPeriod") {
+    await logActivity(req, {
+      action: "approveEndOfPeriod",
+      module: "ballet.applications",
+      entityType: "ballet_enrollment_cancellation_request",
+      entityId: result.request.id,
+      entityLabel: result.application.childName,
+      before: cancellationAuditPayload({
+        applicationId: result.application.id,
+        levelAssignmentId: result.assignment.id,
+        cancellationRequestId: result.request.id,
+        beforeApplicationStatus: result.application.status,
+        beforeAssignmentStatus: result.assignment.status,
+        parentReason: result.request.reason,
+        timestamp: now,
+      }),
+      after: cancellationAuditPayload({
+        applicationId: result.application.id,
+        levelAssignmentId: result.assignment.id,
+        cancellationRequestId: result.request.id,
+        afterCancellationRequestStatus: "approved",
+        approvedTiming: "endOfPeriod",
+        approvedEffectiveDate: result.effectiveDate,
+        refundId: result.refund?.id ?? null,
+        paymentId: result.refund?.paymentId ?? null,
+        parentReason: result.request.reason,
+        timestamp: now,
+      }),
+      summary: `Admin-initiated end-of-period Ballet cancellation request ${result.request.id}`,
+    });
+  }
+
+  res.status(201).json({
+    cancellationRequest: result.request,
+    refund: result.refund ?? null,
+    refundCreated: Boolean(result.refund),
+    timing: result.kind,
+  });
+});
+
 const ListCancellationRequestsQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -556,6 +753,10 @@ router.get("/admin/ballet/cancellation-requests", requireAdminAuth, requireAdmin
       approvedEffectiveDate: balletEnrollmentCancellationRequestsTable.approvedEffectiveDate,
       requestRefund: balletEnrollmentCancellationRequestsTable.requestRefund,
       reason: balletEnrollmentCancellationRequestsTable.reason,
+      initiatedByType: balletEnrollmentCancellationRequestsTable.initiatedByType,
+      initiatedByAdminId: balletEnrollmentCancellationRequestsTable.initiatedByAdminId,
+      initiatedByAdminName: systemUsersTable.fullName,
+      initiatedByAdminUsername: systemUsersTable.username,
       createdAt: balletEnrollmentCancellationRequestsTable.createdAt,
       updatedAt: balletEnrollmentCancellationRequestsTable.updatedAt,
       childName: balletApplicationsTable.childName,
@@ -563,6 +764,7 @@ router.get("/admin/ballet/cancellation-requests", requireAdminAuth, requireAdmin
     })
       .from(balletEnrollmentCancellationRequestsTable)
       .leftJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletEnrollmentCancellationRequestsTable.applicationId))
+      .leftJoin(systemUsersTable, eq(systemUsersTable.id, balletEnrollmentCancellationRequestsTable.initiatedByAdminId))
       .where(where)
       .orderBy(desc(balletEnrollmentCancellationRequestsTable.createdAt))
       .limit(limit)
@@ -583,8 +785,17 @@ router.get("/admin/ballet/cancellation-requests/:id", requireAdminAuth, requireA
   const [assignment] = request.levelAssignmentId
     ? await db.select().from(balletLevelAssignmentsTable).where(eq(balletLevelAssignmentsTable.id, request.levelAssignmentId)).limit(1)
     : [];
+  const [initiatingAdmin] = request.initiatedByAdminId != null
+    ? await db.select({ id: systemUsersTable.id, fullName: systemUsersTable.fullName, username: systemUsersTable.username }).from(systemUsersTable).where(eq(systemUsersTable.id, request.initiatedByAdminId)).limit(1)
+    : [];
   const refunds = await db.select().from(balletRefundsTable).where(eq(balletRefundsTable.cancellationRequestId, id)).orderBy(desc(balletRefundsTable.createdAt));
-  res.json({ cancellationRequest: request, application: application ?? null, assignment: assignment ?? null, refunds });
+  res.json({
+    cancellationRequest: request,
+    application: application ?? null,
+    assignment: assignment ?? null,
+    refunds,
+    initiatedByAdmin: initiatingAdmin ? { id: initiatingAdmin.id, name: initiatingAdmin.fullName ?? initiatingAdmin.username } : null,
+  });
 });
 
 const AdminDecisionBody = z.object({
@@ -638,8 +849,26 @@ router.post("/admin/ballet/cancellation-requests/:id/approve-end-of-period", req
     const [request] = await tx.select().from(balletEnrollmentCancellationRequestsTable).where(eq(balletEnrollmentCancellationRequestsTable.id, id)).limit(1).for("update");
     if (!request) return { kind: "not_found" as const };
     if (request.status !== "pendingReview") return { kind: "invalid_status" as const, status: request.status };
+    // Identity preservation, never "latest payment": prefer an explicit admin
+    // override, then whatever effective date was ALREADY established when
+    // the parent created this request (requestedEffectiveDate, set once at
+    // creation time from the cycle resolved then — see the parent route
+    // above). Only if NEITHER is available does this fall back to resolving
+    // a cycle at all, and even then it resolves against the REQUEST's own
+    // creation date, never approval-day "today" — a renewal created after
+    // this request was submitted (but before an admin got to it) must never
+    // retroactively change an older request's effective date.
+    //
+    // This endpoint never creates or touches a refund row, so the payment
+    // identity already linked via any existing ballet_refunds.paymentId (set
+    // at request-creation time, see maybeCreateCashRefundRequest) is left
+    // completely untouched here — nothing to preserve-by-code beyond simply
+    // not recomputing it, which this endpoint already never did.
     const effectiveDate = parsed.data.approvedEffectiveDate
-      ?? (request.applicationId ? currentSubscription(await getPaymentCyclesForApplication(request.applicationId))?.subscriptionExpiresAt : null)
+      ?? request.requestedEffectiveDate
+      ?? (request.applicationId
+          ? (await resolveApplicationCurrentCycle(request.applicationId, todayDateOnly(new Date(request.createdAt)), tx as typeof db))?.subscriptionExpiresAt
+          : null)
       ?? todayIso();
     const [updated] = await tx.update(balletEnrollmentCancellationRequestsTable).set({
       status: "approved",

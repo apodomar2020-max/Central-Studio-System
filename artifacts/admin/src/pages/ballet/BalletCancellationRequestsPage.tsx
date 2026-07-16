@@ -34,6 +34,9 @@ interface CancellationRow {
   approvedEffectiveDate: string | null;
   requestRefund: boolean;
   reason: string;
+  initiatedByType?: string | null;
+  initiatedByAdminName?: string | null;
+  initiatedByAdminUsername?: string | null;
   createdAt: string;
 }
 
@@ -80,11 +83,11 @@ export default function BalletCancellationRequestsPage() {
       </Select>
       <div className="overflow-x-auto rounded-md border">
         <Table>
-          <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Child</TableHead><TableHead>Parent</TableHead><TableHead>Status</TableHead><TableHead>Timing</TableHead><TableHead>Refund?</TableHead><TableHead>Reason</TableHead><TableHead>Created</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Child</TableHead><TableHead>Parent</TableHead><TableHead>Status</TableHead><TableHead>Timing</TableHead><TableHead>Initiated By</TableHead><TableHead>Refund?</TableHead><TableHead>Reason</TableHead><TableHead>Created</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
           <TableBody>
-            {isLoading ? <TableRow><TableCell colSpan={9} className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></TableCell></TableRow>
-              : isError ? <TableRow><TableCell colSpan={9} className="py-8 text-center text-destructive">Failed to load cancellation requests.</TableCell></TableRow>
-              : rows.length === 0 ? <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">No cancellation requests.</TableCell></TableRow>
+            {isLoading ? <TableRow><TableCell colSpan={10} className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></TableCell></TableRow>
+              : isError ? <TableRow><TableCell colSpan={10} className="py-8 text-center text-destructive">Failed to load cancellation requests.</TableCell></TableRow>
+              : rows.length === 0 ? <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">No cancellation requests.</TableCell></TableRow>
               : rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>#{row.id}</TableCell>
@@ -92,6 +95,7 @@ export default function BalletCancellationRequestsPage() {
                   <TableCell>{row.parentName ?? "—"}</TableCell>
                   <TableCell><Badge variant="outline" className={badgeClass(row.status)}>{row.status}</Badge></TableCell>
                   <TableCell>{row.approvedTiming ?? row.requestedTiming}{row.approvedEffectiveDate ? ` · ${row.approvedEffectiveDate}` : ""}</TableCell>
+                  <TableCell>{row.initiatedByType === "admin" ? (row.initiatedByAdminName ?? row.initiatedByAdminUsername ?? "Admin") : "Parent"}</TableCell>
                   <TableCell>{row.requestRefund ? "Yes" : "No"}</TableCell>
                   <TableCell className="max-w-xs truncate">{row.reason}</TableCell>
                   <TableCell>{new Date(row.createdAt).toLocaleString()}</TableCell>

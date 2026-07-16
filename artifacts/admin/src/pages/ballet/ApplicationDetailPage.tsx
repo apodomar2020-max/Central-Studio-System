@@ -23,9 +23,15 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, CreditCard } from "lucide-react";
+import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, CreditCard, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { isTransitionAllowed, type BalletApplicationStatus } from "@workspace/api-zod";
+import {
+  isTransitionAllowed,
+  resolveBalletDangerAction,
+  BALLET_CANCELLATION_INITIATOR_LABELS,
+  type BalletApplicationStatus,
+  type BalletCancellationInitiatorType,
+} from "@workspace/api-zod";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,9 +152,21 @@ interface CancellationRequest {
   approvedEffectiveDate: string | null;
   reason: string;
   requestRefund: boolean;
+  initiatedByType?: string | null;
+  initiatedByAdminId?: number | null;
+  initiatedByAdminName?: string | null;
   adminNotes: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface EligibleRefund {
+  eligible: boolean;
+  paymentId: number | null;
+  paymentMethod: string | null;
+  originalAmountEgp: number | null;
+  alreadyRefundedEgp: number;
+  remainingRefundableEgp: number;
 }
 
 interface BalletRefund {
@@ -231,6 +249,7 @@ interface DetailResponse {
   attendanceSummary: AttendanceSummary | null;
   cancellationRequests?: CancellationRequest[];
   refunds?: BalletRefund[];
+  eligibleRefund?: EligibleRefund;
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -394,6 +413,7 @@ export default function ApplicationDetailPage() {
   const canReview = can("ballet.applications", "review");
   const canApprove = can("ballet.applications", "approve");
   const canReject = can("ballet.applications", "reject");
+  const canCancel = can("ballet.applications", "cancel");
   const canCheckIn = can("attendance", "checkIn");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -431,6 +451,13 @@ export default function ApplicationDetailPage() {
   const [confirmExpiredExtension, setConfirmExpiredExtension] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [subscriptionDialog, setSubscriptionDialog] = useState<"create" | "status" | "renew" | "extend" | null>(null);
+
+  // Danger Zone (cancellation initiation) state.
+  const [dangerDialog, setDangerDialog] = useState<"cancelApplication" | "cancelProgram" | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelAdminNotes, setCancelAdminNotes] = useState("");
+  const [cancelTiming, setCancelTiming] = useState<"immediate" | "endOfPeriod">("immediate");
+  const [cancelRequestRefund, setCancelRequestRefund] = useState(false);
 
   // D1: inline correction state for an existing attendance history row.
   const [editingAttendanceId, setEditingAttendanceId] = useState<number | null>(null);
@@ -705,6 +732,71 @@ export default function ApplicationDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  // ── Danger Zone mutations ──────────────────────────────────────────────────
+  // Both reuse the existing cancellation workflow endpoints — the React page
+  // never writes assignment/application rows directly.
+
+  function closeDangerDialog() {
+    setDangerDialog(null);
+    setCancelReason("");
+    setCancelAdminNotes("");
+    setCancelTiming("immediate");
+    setCancelRequestRefund(false);
+  }
+
+  const cancelApplicationMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/cancel`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify({ reason: cancelReason.trim(), requestRefund: cancelRequestRefund }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to cancel application");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Application cancelled" });
+      closeDangerDialog();
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-cancellation-requests"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const initiateCancellationMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/request-cancellation`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify({
+          requestedTiming: cancelTiming,
+          reason: cancelReason.trim(),
+          adminNotes: cancelAdminNotes.trim() || undefined,
+          requestRefund: cancelRequestRefund,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to cancel program");
+      }
+      return res.json();
+    },
+    onSuccess: (result: { timing?: string }) => {
+      toast({ title: result.timing === "immediate" ? "Enrollment cancelled" : "Cancellation scheduled" });
+      closeDangerDialog();
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-cancellation-requests"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   async function handleExportPdf() {
     setIsExportingPdf(true);
     try {
@@ -853,6 +945,17 @@ export default function ApplicationDetailPage() {
   const { application: app, assessmentSchedule, level, group, events, groupSchedules, attendanceSummary, currentPayment, payments } = data;
   const cancellationRequests = data.cancellationRequests ?? [];
   const refunds = data.refunds ?? [];
+  const eligibleRefund = data.eligibleRefund;
+  const openCancellationRequest = cancellationRequests.find((r) => r.status === "pendingReview" || r.status === "approved") ?? null;
+  // Admin viewer: reapplyAllowed is false — admins never "Apply Again" on a
+  // parent's behalf; terminal states resolve to no destructive action.
+  const dangerAction = resolveBalletDangerAction({
+    applicationStatus: app.status,
+    assignmentStatus: data.assignmentId != null ? "active" : null,
+    openCancellationRequestStatus: openCancellationRequest?.status ?? null,
+    viewer: "admin",
+    reapplyAllowed: false,
+  });
   const currentSubscription = data.currentSubscription ?? currentPayment;
   const activeSchedules = (groupSchedules ?? []).filter((s) => s.status === "active");
   const levels = levelsData?.levels ?? [];
@@ -1082,6 +1185,11 @@ export default function ApplicationDetailPage() {
                       {request.approvedTiming ? ` · approved ${request.approvedTiming}` : ""}
                       {request.approvedEffectiveDate ? ` · effective ${request.approvedEffectiveDate}` : ""}
                       {request.requestRefund ? " · refund requested" : ""}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Initiated by: {request.initiatedByType === "admin"
+                        ? (request.initiatedByAdminName ?? "Admin")
+                        : (BALLET_CANCELLATION_INITIATOR_LABELS[(request.initiatedByType as BalletCancellationInitiatorType) ?? "parent"] ?? "Parent")}
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground">{request.reason}</p>
                   </div>
@@ -1602,6 +1710,159 @@ export default function ApplicationDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Danger Zone ──────────────────────────────────────────────────────
+          Visually separated from routine subscription/level/group actions.
+          Reuses the existing cancellation workflow endpoints. */}
+      {canCancel && (
+        <Card className="border-red-500/40">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm text-red-400">
+              <AlertTriangle className="h-4 w-4" /> Danger Zone
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {dangerAction.kind === "cancelApplication" && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Cancel this pre-activation application. Any assigned level becomes <em>withdrawn</em> (never deleted); attendance and history are preserved.
+                </p>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => { setDangerDialog("cancelApplication"); }}
+                >
+                  Cancel Application
+                </Button>
+              </>
+            )}
+            {dangerAction.kind === "cancelProgram" && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Cancel this active enrollment. This creates a cancellation request in the shared workflow (never edits the enrollment rows directly) and writes an audit log.
+                </p>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => { setCancelTiming("immediate"); setDangerDialog("cancelProgram"); }}
+                >
+                  Cancel Program
+                </Button>
+              </>
+            )}
+            {dangerAction.kind === "viewCancellationRequest" && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  An open cancellation request already exists for this enrollment ({openCancellationRequest?.status}). Manage it from the Cancellation Requests workflow.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => navigate("/ballet/cancellation-requests")}>
+                  Manage Cancellation Request
+                </Button>
+              </>
+            )}
+            {dangerAction.kind === "none" && (
+              <p className="text-sm text-muted-foreground italic">
+                No cancellation action is available for an application in status “{app.status}”.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cancel Application (pre-activation) dialog */}
+      <Dialog open={dangerDialog === "cancelApplication"} onOpenChange={(open) => (open ? setDangerDialog("cancelApplication") : closeDangerDialog())}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle className="text-red-400">Cancel Application</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              This cancels the application using the existing admin cancellation transaction. An assigned level (if any) becomes withdrawn; attendance/history is preserved.
+            </p>
+            <Textarea
+              className="text-sm min-h-[72px] resize-none"
+              placeholder="Cancellation reason (required, min 5 characters)"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+            {eligibleRefund?.eligible && (
+              <>
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground space-y-1">
+                  <div>Eligible payment #{eligibleRefund.paymentId} · Pay at Studio (cash refund only)</div>
+                  <div>Original amount: {eligibleRefund.originalAmountEgp} EGP</div>
+                  <div>Already refunded: {eligibleRefund.alreadyRefundedEgp} EGP</div>
+                  <div>Remaining refundable: {eligibleRefund.remainingRefundableEgp} EGP</div>
+                </div>
+                <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={cancelRequestRefund} onChange={(e) => setCancelRequestRefund(e.target.checked)} />
+                  Request a cash refund (an underReview refund record; the amount is decided later — no Bank Transfer / Online refund).
+                </label>
+              </>
+            )}
+            <Button
+              variant="destructive"
+              size="sm"
+              className="w-full"
+              disabled={cancelReason.trim().length < 5 || cancelApplicationMutation.isPending}
+              onClick={() => cancelApplicationMutation.mutate()}
+            >
+              {cancelApplicationMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Cancelling…</> : "Confirm Cancel Application"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Program (active enrollment) dialog */}
+      <Dialog open={dangerDialog === "cancelProgram"} onOpenChange={(open) => (open ? setDangerDialog("cancelProgram") : closeDangerDialog())}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle className="text-red-400">Cancel Program</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Creates and approves a cancellation request in the shared workflow. “Immediate” withdraws the enrollment now; “End of Current Period” keeps it active until the effective date. Cancellation is separate from any refund.
+            </p>
+            <Select value={cancelTiming} onValueChange={(v) => setCancelTiming(v as "immediate" | "endOfPeriod")}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="immediate">Immediate</SelectItem>
+                <SelectItem value="endOfPeriod">End of Current Period</SelectItem>
+              </SelectContent>
+            </Select>
+            <Textarea
+              className="text-sm min-h-[64px] resize-none"
+              placeholder="Cancellation reason (required, min 5 characters)"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+            <Textarea
+              className="text-sm min-h-[48px] resize-none"
+              placeholder="Internal admin notes (optional)"
+              value={cancelAdminNotes}
+              onChange={(e) => setCancelAdminNotes(e.target.value)}
+            />
+            {eligibleRefund?.eligible && (
+              <>
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground space-y-1">
+                  <div>Eligible payment #{eligibleRefund.paymentId} · Pay at Studio (cash refund only)</div>
+                  <div>Original amount: {eligibleRefund.originalAmountEgp} EGP</div>
+                  <div>Already refunded: {eligibleRefund.alreadyRefundedEgp} EGP</div>
+                  <div>Remaining refundable: {eligibleRefund.remainingRefundableEgp} EGP</div>
+                </div>
+                <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={cancelRequestRefund} onChange={(e) => setCancelRequestRefund(e.target.checked)} />
+                  Request a cash refund (an underReview refund record; the amount is decided later — no Bank Transfer / Online refund).
+                </label>
+              </>
+            )}
+            <Button
+              variant="destructive"
+              size="sm"
+              className="w-full"
+              disabled={cancelReason.trim().length < 5 || initiateCancellationMutation.isPending}
+              onClick={() => initiateCancellationMutation.mutate()}
+            >
+              {initiateCancellationMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Submitting…</> : (cancelTiming === "immediate" ? "Confirm Immediate Cancellation" : "Confirm End-of-Period Cancellation")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

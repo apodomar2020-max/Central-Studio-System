@@ -5,7 +5,6 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Modal,
   Platform,
@@ -48,6 +47,7 @@ import {
 } from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
 import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const RETURN_TO_ASSESSMENT = "/ballet/assessment";
 const BLOCKING_CHILD_APPLICATION_STATUSES = new Set([
@@ -158,6 +158,7 @@ function ScreenTitle({ title, subtitle }: { title: string; subtitle: string }) {
 export default function BalletAssessmentScreen() {
   const insets = useSafeAreaInsets();
   const { user, children, addChild } = useAppContext();
+  const alert = useCentralAlert();
 
   const [step, setStep] = useState<Step>("child");
   const [selectedChild, setSelectedChild] = useState<ChildProfile | null>(null);
@@ -299,15 +300,15 @@ export default function BalletAssessmentScreen() {
 
   function goNext() {
     if (step === "child" && !selectedChild) {
-      Alert.alert("Select Child", "Choose the child applying for Ballet Assessment.");
+      alert.show({ tone: "warning", title: "Select Child", message: "Choose the child applying for Ballet Assessment." });
       return;
     }
     if (step === "appointment" && !selectedAppointment) {
-      Alert.alert("Select Appointment", "Choose an available assessment appointment.");
+      alert.show({ tone: "warning", title: "Select Appointment", message: "Choose an available assessment appointment." });
       return;
     }
     if (step === "package" && !selectedPackage) {
-      Alert.alert("Select Package", "Choose a Ballet package.");
+      alert.show({ tone: "warning", title: "Select Package", message: "Choose a Ballet package." });
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -316,7 +317,7 @@ export default function BalletAssessmentScreen() {
 
   async function handleAddChild() {
     if (!newChildName.trim()) {
-      Alert.alert("Child Name", "Please enter the child's full name.");
+      alert.show({ tone: "warning", title: "Child Name", message: "Please enter the child's full name." });
       return;
     }
     const birthday = newChildDay && newChildMonth && newChildYear
@@ -324,7 +325,7 @@ export default function BalletAssessmentScreen() {
       : "";
     const age = calculateAge(birthday);
     if (!birthday || age <= 0) {
-      Alert.alert("Birthday", "Please enter a valid child birthday.");
+      alert.show({ tone: "warning", title: "Birthday", message: "Please enter a valid child birthday." });
       return;
     }
     const created = await addChild({
@@ -348,7 +349,7 @@ export default function BalletAssessmentScreen() {
     if (!user || !selectedChild || !selectedAppointment || !selectedPackage || submitting) return;
     const selectedChildId = Number(selectedChild.id);
     if (!Number.isInteger(selectedChildId) || selectedChildId <= 0) {
-      Alert.alert("Invalid Child", "Please select a saved child profile before submitting.");
+      alert.show({ tone: "warning", title: "Invalid Child", message: "Please select a saved child profile before submitting." });
       return;
     }
     setSubmitting(true);
@@ -419,14 +420,15 @@ export default function BalletAssessmentScreen() {
     } catch (err) {
       const typed = err as { status?: number; data?: { error?: string; code?: string }; message?: string };
       if (typed.status === 409) {
-        Alert.alert("Already Applied", typed.data?.error ?? "This child already has a Ballet application.");
+        alert.show({ tone: "warning", title: "Already Applied", message: typed.data?.error ?? "This child already has a Ballet application." });
         await loadApplications();
         return;
       }
-      Alert.alert(
-        isOfflineError(err) ? "No Connection" : "Submission Failed",
-        typed.data?.error ?? typed.message ?? "We couldn't submit the application. Please try again.",
-      );
+      alert.show({
+        tone: "error",
+        title: isOfflineError(err) ? "No Connection" : "Submission Failed",
+        message: typed.data?.error ?? typed.message ?? "We couldn't submit the application. Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -444,21 +446,22 @@ export default function BalletAssessmentScreen() {
 
   function confirmCancel() {
     if (submittedApplicationId == null) return;
-    Alert.alert(
-      "Cancel Application?",
-      "This will cancel the submitted Ballet Assessment application. You can apply again afterwards.",
-      [
-        { text: "Keep Application", style: "cancel" },
+    alert.show({
+      tone: "destructive",
+      title: "Cancel Application?",
+      message: "This will cancel the submitted Ballet Assessment application. You can apply again afterwards.",
+      actions: [
+        { label: "Keep Application", tone: "neutral" },
         {
-          text: "Cancel Application",
-          style: "destructive",
+          label: "Cancel Application",
+          tone: "danger",
           onPress: () => {
             setCancelReason("");
             setCancelReasonOpen(true);
           },
         },
       ],
-    );
+    });
   }
 
   async function submitCancelApplication() {
@@ -467,21 +470,22 @@ export default function BalletAssessmentScreen() {
     try {
       const latest = await fetchBalletApplicationDetail(submittedApplicationId);
       if (!["pending", "needsFollowUp", "accepted", "assignedToLevel"].includes(latest.application.status)) {
-        Alert.alert(
-          "Cannot Cancel Here",
-          latest.application.status === "active"
+        alert.show({
+          tone: "warning",
+          title: "Cannot Cancel Here",
+          message: latest.application.status === "active"
             ? "This application is now an active enrollment. Please use Request Ballet Cancellation from the application status screen."
             : "This application can no longer be cancelled from this screen.",
-        );
+        });
         router.replace("/ballet/application-status" as any);
         return;
       }
       await cancelBalletApplication(submittedApplicationId, { reason: trimmedCancelReason });
-      Alert.alert("Application Cancelled", "The application has been cancelled.");
+      alert.show({ tone: "success", title: "Application Cancelled", message: "The application has been cancelled." });
       setCancelReasonOpen(false);
       resetForAnotherChild();
     } catch (err) {
-      Alert.alert("Could Not Cancel", err instanceof Error ? err.message : "Please try again.");
+      alert.show({ tone: "error", title: "Could Not Cancel", message: err instanceof Error ? err.message : "Please try again." });
     } finally {
       setCancelLoading(false);
     }

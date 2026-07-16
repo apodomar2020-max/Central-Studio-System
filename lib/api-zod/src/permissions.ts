@@ -181,9 +181,9 @@ const permissionCatalog = [
   {
     key: "ballet.applications",
     label: "Ballet Applications",
-    description: "Application review and admission decisions.",
+    description: "Application review, admission decisions, and cancellations.",
     group: "Ballet",
-    actions: actions(["view", "View"], ["review", "Review"], ["approve", "Approve"], ["reject", "Reject"]),
+    actions: actions(["view", "View"], ["review", "Review"], ["approve", "Approve"], ["reject", "Reject"], ["cancel", "Cancel"]),
   },
   {
     key: "ballet.settings",

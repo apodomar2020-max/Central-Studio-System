@@ -7,6 +7,12 @@ CREATE TABLE IF NOT EXISTS ballet_enrollment_cancellation_requests (
   level_assignment_id integer NOT NULL REFERENCES ballet_level_assignments(id) ON DELETE RESTRICT,
   child_id integer REFERENCES children(id) ON DELETE SET NULL,
   parent_student_id integer REFERENCES students(id) ON DELETE SET NULL,
+  initiated_by_type text NOT NULL DEFAULT 'parent',
+  -- RESTRICT (not SET NULL): an admin-initiated row's admin id must stay
+  -- non-null per the combination check below, so nulling it on admin-user
+  -- deletion would just make the DELETE fail with a confusing constraint
+  -- error instead of a clear "this admin has cancellation history" signal.
+  initiated_by_admin_id integer REFERENCES system_users(id) ON DELETE RESTRICT,
   status text NOT NULL DEFAULT 'pendingReview',
   requested_timing text NOT NULL,
   approved_timing text,
@@ -23,7 +29,16 @@ CREATE TABLE IF NOT EXISTS ballet_enrollment_cancellation_requests (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ballet_enrollment_cancellation_status_check CHECK (status IN ('pendingReview','approved','rejected','withdrawnByParent','completed')),
   CONSTRAINT ballet_enrollment_cancellation_requested_timing_check CHECK (requested_timing IN ('immediate','endOfPeriod')),
-  CONSTRAINT ballet_enrollment_cancellation_approved_timing_check CHECK (approved_timing IS NULL OR approved_timing IN ('immediate','endOfPeriod'))
+  CONSTRAINT ballet_enrollment_cancellation_approved_timing_check CHECK (approved_timing IS NULL OR approved_timing IN ('immediate','endOfPeriod')),
+  -- Combination check: a parent-initiated row must carry a null admin id, an
+  -- admin-initiated row must carry a non-null admin id. Any other
+  -- initiated_by_type value fails both OR branches, so this subsumes a plain
+  -- "IN ('parent','admin')" enum check too.
+  CONSTRAINT ballet_enrollment_cancellation_initiator_combination_check CHECK (
+    (initiated_by_type = 'parent' AND initiated_by_admin_id IS NULL)
+    OR
+    (initiated_by_type = 'admin' AND initiated_by_admin_id IS NOT NULL)
+  )
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS ballet_enrollment_cancellation_open_assignment_idx

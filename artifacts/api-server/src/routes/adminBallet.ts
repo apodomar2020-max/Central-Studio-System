@@ -46,6 +46,7 @@ import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./a
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth, isValidBillingMonth } from "../lib/balletAttendance";
+import { balletRefundEligibilitySummary, resolveApplicationCurrentCycle, todayDateOnly, type BalletRefundEligibilityContext } from "../lib/balletRefundEligibility";
 import { buildBalletApplicationPdfBuffer, balletApplicationPdfFilename } from "./balletApplicationPdf";
 import {
   currentSubscription,
@@ -527,6 +528,34 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     ? await computeBalletMonthlyAttendanceSummary(activeAssignment.id, id, billingMonth)
     : null;
 
+  // Resolve initiator (parent/admin) names for cancellation-request records so
+  // the admin detail page can attribute each request without an extra call.
+  const initiatorAdminIds = [...new Set(cancellationRequests.map((r) => r.initiatedByAdminId).filter((v): v is number => v != null))];
+  const initiatorAdmins = initiatorAdminIds.length > 0
+    ? await db.select({ id: systemUsersTable.id, fullName: systemUsersTable.fullName, username: systemUsersTable.username })
+        .from(systemUsersTable)
+        .where(inArray(systemUsersTable.id, initiatorAdminIds))
+    : [];
+  const initiatorNameById = new Map(initiatorAdmins.map((a) => [a.id, a.fullName ?? a.username]));
+  const cancellationRequestsWithInitiator = cancellationRequests.map((r) => ({
+    ...r,
+    initiatedByAdminName: r.initiatedByAdminId != null ? initiatorNameById.get(r.initiatedByAdminId) ?? null : null,
+  }));
+
+  // Refund-eligibility summary for the Danger Zone (cash refunds against a paid
+  // inPerson payment only). Admin sees the amounts; the refund itself stays a
+  // separate, admin-decided underReview record. This is a read-only display,
+  // not a cancellation submission, so there is no chosen timing yet — an
+  // active enrollment's eligibility is shown as of today (what an immediate
+  // cancellation right now would see); a pre-activation application uses the
+  // flat-payment rule. Matches the same activeEnrollment/preActivation split
+  // resolveBalletDangerAction() already uses for which button to show.
+  const refundEligibilityContext: BalletRefundEligibilityContext =
+    app.status === "active" && activeAssignment != null
+      ? { kind: "activeEnrollment", resolvedCycle: await resolveApplicationCurrentCycle(id, todayDateOnly()) }
+      : { kind: "preActivation" };
+  const eligibleRefund = await balletRefundEligibilitySummary(id, refundEligibilityContext);
+
   res.json({
     application:  {
       ...app,
@@ -542,8 +571,9 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     currentPayment,
     currentSubscription: currentPayment,
     attendanceSummary,
-    cancellationRequests,
+    cancellationRequests: cancellationRequestsWithInitiator,
     refunds,
+    eligibleRefund,
   });
 });
 

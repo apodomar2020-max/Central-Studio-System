@@ -360,6 +360,8 @@ export interface BalletCancellationRequest {
   approvedEffectiveDate: string | null;
   reason: string;
   requestRefund: boolean;
+  initiatedByType?: "parent" | "admin";
+  initiatedByAdminId?: number | null;
   adminNotes: string | null;
   createdAt: string;
   updatedAt: string;

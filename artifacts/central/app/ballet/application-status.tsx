@@ -17,7 +17,6 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -50,6 +49,7 @@ import {
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import OfflineState from "@/components/OfflineState";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const BALLET_COLOR = "#00B6D6";
 
@@ -160,6 +160,7 @@ function getStatusMeta(status: string, levelName?: string | null, groupName?: st
 
 export default function ApplicationStatusScreen() {
   const insets = useSafeAreaInsets();
+  const alert = useCentralAlert();
 
   const [loadState, setLoadState] = useState<"loading" | "success" | "empty" | "offline" | "error">("loading");
   const [application, setApplication] = useState<BalletApplication | null>(null);
@@ -281,18 +282,19 @@ export default function ApplicationStatusScreen() {
   // ── Cancel handler ─────────────────────────────────────────────────────────
 
   function promptCancel() {
-    Alert.alert(
-      "Cancel Application",
-      "Are you sure you want to cancel your ballet application? You will be able to submit a new application afterwards.",
-      [
-        { text: "Keep Application", style: "cancel" },
+    alert.show({
+      tone: "destructive",
+      title: "Cancel Application",
+      message: "Are you sure you want to cancel your ballet application? You will be able to submit a new application afterwards.",
+      actions: [
+        { label: "Keep Application", tone: "neutral" },
         {
-          text: "Yes, Cancel",
-          style: "destructive",
+          label: "Yes, Cancel",
+          tone: "danger",
           onPress: () => openReasonModal({ kind: "cancelApplication" }),
         },
-      ]
-    );
+      ],
+    });
   }
 
   function openReasonModal(next: NonNullable<typeof reasonModal>) {
@@ -327,13 +329,13 @@ export default function ApplicationStatusScreen() {
       closeReasonModal();
     } catch (err) {
       if (isOfflineError(err)) {
-        Alert.alert("No Connection", "Please check your internet connection and try again.");
+        alert.show({ tone: "error", title: "No Connection", message: "Please check your internet connection and try again." });
       } else {
         const msg =
           (err as any)?.data?.error ??
           (err as any)?.message ??
           "Unable to cancel. Please try again.";
-        Alert.alert("Error", msg);
+        alert.show({ tone: "error", title: "Error", message: msg });
       }
     } finally {
       setCancelling(false);
@@ -342,15 +344,15 @@ export default function ApplicationStatusScreen() {
 
   function requestCancellationFlow() {
     if (!applicationDetail?.activeAssignment || requestingCancellation) return;
-    Alert.alert(
-      "Request Ballet Cancellation",
-      "When would you like the enrollment cancellation to take effect?",
-      [
-        { text: "Keep Enrollment", style: "cancel" },
-        { text: "End of Period", onPress: () => confirmCancellationRefund("endOfPeriod") },
-        { text: "Immediate", style: "destructive", onPress: () => confirmCancellationRefund("immediate") },
+    alert.show({
+      title: "Request Ballet Cancellation",
+      message: "When would you like the enrollment cancellation to take effect?",
+      actions: [
+        { label: "Keep Enrollment", tone: "neutral" },
+        { label: "End of Period", tone: "primary", onPress: () => confirmCancellationRefund("endOfPeriod") },
+        { label: "Immediate", tone: "danger", onPress: () => confirmCancellationRefund("immediate") },
       ],
-    );
+    });
   }
 
   function confirmCancellationRefund(requestedTiming: "immediate" | "endOfPeriod") {
@@ -365,14 +367,18 @@ export default function ApplicationStatusScreen() {
       return;
     }
 
-    Alert.alert(
-      "Request Cash Refund?",
-      "This will ask the studio to review a cash refund. You cannot choose or approve the amount from the app.",
-      [
-        { text: "No Refund", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false }) },
-        { text: "Request Cash Refund", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: true }) },
+    // Neither option here is a "safe/cancel" choice — both proceed with the
+    // cancellation, just with a different refund request — so unlike a
+    // standard confirm/cancel pair this alert requires an explicit tap
+    // (matches how it behaved on iOS, which has no backdrop-dismiss).
+    alert.show({
+      title: "Request Cash Refund?",
+      message: "This will ask the studio to review a cash refund. You cannot choose or approve the amount from the app.",
+      actions: [
+        { label: "No Refund", tone: "primary", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false }) },
+        { label: "Request Cash Refund", tone: "primary", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: true }) },
       ],
-    );
+    });
   }
 
   async function submitCancellationRequest(requestedTiming: "immediate" | "endOfPeriod", requestRefund: boolean, reason: string) {
@@ -385,12 +391,12 @@ export default function ApplicationStatusScreen() {
         requestRefund,
         reason,
       });
-      Alert.alert("Request Submitted", "Your Ballet cancellation request has been sent to the studio.");
+      alert.show({ tone: "success", title: "Request Submitted", message: "Your Ballet cancellation request has been sent to the studio." });
       await load();
       closeReasonModal();
     } catch (err) {
       const msg = (err as any)?.data?.error ?? (err as any)?.message ?? "Unable to submit cancellation request.";
-      Alert.alert(isOfflineError(err) ? "No Connection" : "Error", msg);
+      alert.show({ tone: "error", title: isOfflineError(err) ? "No Connection" : "Error", message: msg });
     } finally {
       setRequestingCancellation(false);
     }
@@ -402,11 +408,11 @@ export default function ApplicationStatusScreen() {
     setRequestingCancellation(true);
     try {
       await withdrawBalletEnrollmentCancellationRequest(requestId);
-      Alert.alert("Request Withdrawn", "Your cancellation request has been withdrawn.");
+      alert.show({ tone: "success", title: "Request Withdrawn", message: "Your cancellation request has been withdrawn." });
       await load();
     } catch (err) {
       const msg = (err as any)?.data?.error ?? (err as any)?.message ?? "Unable to withdraw cancellation request.";
-      Alert.alert(isOfflineError(err) ? "No Connection" : "Error", msg);
+      alert.show({ tone: "error", title: isOfflineError(err) ? "No Connection" : "Error", message: msg });
     } finally {
       setRequestingCancellation(false);
     }
