@@ -19,12 +19,13 @@
  * If Facebook does not release an email, the backend responds { requiresEmail }
  * — surfaced here as a clear message (full email-collection UI is a follow-up).
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoginManager, AccessToken } from "react-native-fbsdk-next";
 
 import { useAppContext } from "@/contexts/AppContext";
 import { FACEBOOK_APP_ID } from "@/constants/facebook";
 import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
+import { setOAuthFlowState } from "@/services/oauthFlowState";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
@@ -36,11 +37,20 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
   const authInFlightRef = useRef(false);
   const exchangingRef = useRef(false);
 
+  useEffect(() => {
+    return () => {
+      if (authInFlightRef.current || exchangingRef.current) {
+        setOAuthFlowState("idle");
+      }
+    };
+  }, []);
+
   // Send the Facebook access token to the backend, which validates it and
   // returns a Central Studio JWT, then hand off to the shared post-auth flow.
   async function exchange(accessToken: string) {
     if (exchangingRef.current) return;
     exchangingRef.current = true;
+    setOAuthFlowState("exchanging");
     try {
       if (__DEV__) {
         console.log("[AUTH_NAV] facebook exchange start", { source });
@@ -81,6 +91,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
         console.log("[AUTH_NAV] facebook exchange success", { source });
         console.log("[AUTH_NAV] facebook continueAfterAuth", { source });
       }
+      setOAuthFlowState("resolving");
       await continueAfterAuth(data.accessToken, setUser, { source });
     } catch {
       if (__DEV__) {
@@ -91,6 +102,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
       setLoading(false);
       authInFlightRef.current = false;
       exchangingRef.current = false;
+      setOAuthFlowState("idle");
     }
   }
 
@@ -108,6 +120,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
       return;
     }
     authInFlightRef.current = true;
+    setOAuthFlowState("starting");
     if (__DEV__) {
       console.log("[AUTH_NAV] facebook auth start", { source });
     }
@@ -115,6 +128,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
     setLoading(true);
     try {
       // Native Facebook login (FB app if installed, else in-app browser).
+      setOAuthFlowState("pending");
       const result = await LoginManager.logInWithPermissions(["public_profile", "email"]);
       if (__DEV__) {
         console.log("[AUTH_NAV] facebook response", {
@@ -127,6 +141,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
         // User backed out — not an error.
         setLoading(false);
         authInFlightRef.current = false;
+        setOAuthFlowState("idle");
         return;
       }
 
@@ -138,12 +153,14 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
         setError("Facebook did not return an access token. Please try again.");
         setLoading(false);
         authInFlightRef.current = false;
+        setOAuthFlowState("idle");
         return;
       }
 
       await exchange(tokenData.accessToken);
     } catch {
       authInFlightRef.current = false;
+      setOAuthFlowState("idle");
       setError("Could not start Facebook sign-in. Please try again.");
       setLoading(false);
     }

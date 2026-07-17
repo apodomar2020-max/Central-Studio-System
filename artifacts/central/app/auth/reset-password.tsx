@@ -124,7 +124,7 @@ export default function ResetPasswordScreen() {
         end={{ x: 0.5, y: 1 }}
       />
       <TouchableOpacity
-        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/auth/login"); }}
+        onPress={() => router.replace("/auth/login")}
         style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
       >
         <Ionicons name="close" size={22} color="#9CA3AF" />

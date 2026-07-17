@@ -20,7 +20,7 @@ import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { router, Stack, usePathname, useRootNavigationState } from "expo-router";
+import { router, Stack, usePathname, useRootNavigationState, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Sentry from "@sentry/react-native";
 import * as Updates from "expo-updates";
@@ -40,6 +40,8 @@ import { useAppContext } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
 import { CentralAlertProvider } from "@/providers/CentralAlertProvider";
 import { NotificationRoute, resolveNotificationRoute } from "@/services/notificationNavigation";
+import { useAndroidHardwareBackGuard } from "@/hooks/useAndroidHardwareBackGuard";
+import { useOAuthFlowState } from "@/services/oauthFlowState";
 
 type ExpoManifestWithUpdateMetadata = {
   extra?: {
@@ -122,6 +124,23 @@ setAuthTokenGetter(async () => {
 
 const queryClient = new QueryClient();
 
+const ANDROID_HARDWARE_BACK_PROTECTED_ROUTES = new Set([
+  "auth/login",
+  "auth/register",
+  "auth/complete-profile",
+  "auth/forgot-password",
+  "auth/reset-password",
+  "verify-email",
+  "onboarding/children",
+  "onboarding/medical",
+  "onboarding/styles",
+  "onboarding/success",
+]);
+
+function routeKeyFromSegments(segments: string[]) {
+  return segments.join("/") || "index";
+}
+
 function notificationResponseKey(response: Notifications.NotificationResponse): string {
   const notificationId = response.notification.request.identifier;
   const action = response.actionIdentifier;
@@ -178,12 +197,27 @@ function NotificationRoutingGate() {
   return null;
 }
 
+function AndroidHardwareBackGuard() {
+  const segments = useSegments();
+  const oauthFlowState = useOAuthFlowState();
+  const routeKey = routeKeyFromSegments([...segments]);
+  const oauthInProgress = oauthFlowState !== "idle";
+  const shouldBlock = ANDROID_HARDWARE_BACK_PROTECTED_ROUTES.has(routeKey) || oauthInProgress;
+
+  // Android hardware Back is independent from stack gesture prevention; consume
+  // it only for auth/OAuth/onboarding routes whose exits are explicit in-app CTAs.
+  useAndroidHardwareBackGuard(shouldBlock);
+
+  return null;
+}
+
 function RootLayoutNav() {
   const pathname = usePathname();
   const hideBottomTabs = pathname.startsWith("/class/");
 
   return (
     <TabVisibilityProvider hideBottomTabs={hideBottomTabs}>
+      <AndroidHardwareBackGuard />
       <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding/welcome" options={{ animation: "fade" }} />

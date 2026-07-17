@@ -235,7 +235,7 @@ export default function RegisterScreen() {
             title: "Email Registered",
             message: "This email is already registered. Please sign in or use another email.",
             actions: [
-              { label: "Sign In", tone: "primary", onPress: () => router.push("/auth/login") },
+              { label: "Sign In", tone: "primary", onPress: () => router.replace("/auth/login") },
               { label: "Cancel", tone: "neutral" },
             ],
           });
@@ -263,11 +263,7 @@ export default function RegisterScreen() {
       <View style={[styles.topRow, { paddingTop: topPad }]} pointerEvents="box-none">
         <BackBtn onPress={() => {
           draftPassword = "";
-          if (router.canGoBack()) {
-            router.back();
-          } else {
-            router.replace("/onboarding/welcome");
-          }
+          router.replace("/onboarding/welcome");
         }} />
         <ProgressDots total={5} current={0} />
         <View style={{ width: 42 }} />

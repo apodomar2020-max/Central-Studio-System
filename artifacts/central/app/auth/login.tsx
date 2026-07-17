@@ -116,11 +116,7 @@ export default function LoginScreen() {
 
       <View style={{ position: "absolute", top: (Platform.OS === "web" ? 67 : insets.top) + 12, left: 24, zIndex: 50 }} pointerEvents="box-none">
         <BackBtn onPress={() => {
-          if (router.canGoBack()) {
-            router.back();
-          } else {
-            router.replace("/onboarding/welcome");
-          }
+          router.replace("/onboarding/welcome");
         }} />
       </View>
 

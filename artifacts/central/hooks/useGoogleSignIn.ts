@@ -16,6 +16,7 @@ import * as Google from "expo-auth-session/providers/google";
 import { useAppContext } from "@/contexts/AppContext";
 import { GOOGLE_CLIENT_IDS } from "@/constants/google";
 import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
+import { setOAuthFlowState } from "@/services/oauthFlowState";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
@@ -37,6 +38,14 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
   });
 
   useEffect(() => {
+    return () => {
+      if (authInFlightRef.current || exchangingRef.current) {
+        setOAuthFlowState("idle");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!response) return;
 
     if (__DEV__) {
@@ -55,6 +64,7 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
         setError("Google did not return an ID token. Please try again.");
         setLoading(false);
         authInFlightRef.current = false;
+        setOAuthFlowState("idle");
       }
     } else if (response.type === "error") {
       if (__DEV__) {
@@ -63,16 +73,19 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
       setError(response.error?.message ?? "Google sign-in failed. Please try again.");
       setLoading(false);
       authInFlightRef.current = false;
+      setOAuthFlowState("idle");
     } else if (response.type === "cancel" || response.type === "dismiss") {
       // User backed out — not an error.
       setLoading(false);
       authInFlightRef.current = false;
+      setOAuthFlowState("idle");
     } else if (response.type === "locked") {
       if (__DEV__) {
         console.log("[AUTH_NAV] google response locked", { source });
       }
       setLoading(false);
       authInFlightRef.current = false;
+      setOAuthFlowState("idle");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
@@ -80,6 +93,7 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
   async function exchange(idToken: string) {
     if (exchangingRef.current) return;
     exchangingRef.current = true;
+    setOAuthFlowState("exchanging");
     try {
       if (__DEV__) {
         console.log("[AUTH_NAV] google exchange start", { source });
@@ -106,6 +120,7 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
         console.log("[AUTH_NAV] google exchange success", { source });
         console.log("[AUTH_NAV] google continueAfterAuth", { source });
       }
+      setOAuthFlowState("resolving");
       await continueAfterAuth(data.accessToken, setUser, { source });
     } catch {
       if (__DEV__) {
@@ -116,6 +131,7 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
       setLoading(false);
       authInFlightRef.current = false;
       exchangingRef.current = false;
+      setOAuthFlowState("idle");
     }
   }
 
@@ -127,15 +143,18 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
       return;
     }
     authInFlightRef.current = true;
+    setOAuthFlowState("starting");
     if (__DEV__) {
       console.log("[AUTH_NAV] google auth start", { source, ready: !!request });
     }
     setError("");
     setLoading(true);
     try {
+      setOAuthFlowState("pending");
       await promptAsync();
     } catch {
       authInFlightRef.current = false;
+      setOAuthFlowState("idle");
       setError("Could not start Google sign-in. Please try again.");
       setLoading(false);
     }
