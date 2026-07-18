@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import {
+  APPLICATION_DETAIL_TABS,
+  buildApplicationDetailTabUrl,
+  parseApplicationTab,
+} from "../../../admin/src/pages/ballet/application-detail/tabState.ts";
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8");
 
@@ -18,6 +23,7 @@ const adminDetailTabFiles = [
   "artifacts/admin/src/pages/ballet/application-detail/shared.tsx",
   "artifacts/admin/src/pages/ballet/application-detail/index.tsx",
   "artifacts/admin/src/pages/ballet/application-detail/types.ts",
+  "artifacts/admin/src/pages/ballet/application-detail/tabState.ts",
 ];
 const adminDetailTabs = adminDetailTabFiles.map(read).join("\n");
 const adminDetailSource = `${adminDetailPage}\n${adminDetailTabs}`;
@@ -177,26 +183,61 @@ test("admin application detail exposes initial-payment actions without restoring
 });
 
 test("admin application detail renders the approved six tabs in order with URL-backed tab state", () => {
-  assert.match(adminDetailPage, /APPLICATION_DETAIL_TABS = \[/);
-  const tabOrder = [
-    /value: "overview", label: "Overview"/,
-    /value: "application", label: "Application"/,
-    /value: "enrollment", label: "Enrollment"/,
-    /value: "payments", label: "Payments & Subscription"/,
-    /value: "cancellation", label: "Cancellation & Refunds"/,
-    /value: "activity", label: "Activity"/,
-  ];
-  let cursor = 0;
-  for (const pattern of tabOrder) {
-    const match = pattern.exec(adminDetailPage.slice(cursor));
-    assert.ok(match, `missing tab pattern ${pattern}`);
-    cursor += match.index + match[0].length;
-  }
-  assert.match(adminDetailPage, /const activeTab = APPLICATION_DETAIL_TABS\.some/);
-  assert.match(adminDetailPage, /const queryTab = new URLSearchParams/);
-  assert.match(adminDetailPage, /: "overview"/);
-  assert.match(adminDetailPage, /navigate\(`\/ballet\/applications\/\$\{appId\}\?tab=\$\{nextTab\}`\)/);
+  assert.deepEqual(APPLICATION_DETAIL_TABS, [
+    { value: "overview", label: "Overview" },
+    { value: "application", label: "Application" },
+    { value: "enrollment", label: "Enrollment" },
+    { value: "payments", label: "Payments & Subscription" },
+    { value: "cancellation", label: "Cancellation & Refunds" },
+    { value: "activity", label: "Activity" },
+  ]);
+  assert.match(adminDetailPage, /const search = useSearch\(\)/);
+  assert.match(adminDetailPage, /const activeTab = parseApplicationTab\(search\)/);
+  assert.match(adminDetailPage, /navigate\(buildApplicationDetailTabUrl\(\{/);
+  assert.match(adminDetailPage, /hash: window\.location\.hash/);
+  assert.match(adminDetailPage, /<Tabs value=\{activeTab\} onValueChange=\{setActiveTab\}/);
   assert.match(adminDetailPage, /overflow-x-auto/);
+});
+
+test("application detail tab parser defaults safely and recognizes direct links", () => {
+  const cases = [
+    ["", "overview"],
+    ["?tab=payments", "payments"],
+    ["tab=enrollment", "enrollment"],
+    ["?tab=cancellation", "cancellation"],
+    ["?tab=invalid", "overview"],
+    ["?other=kept&tab=activity", "activity"],
+  ];
+  for (const [search, expected] of cases) {
+    assert.equal(parseApplicationTab(search), expected);
+  }
+});
+
+test("application detail tab URLs preserve pathname, unrelated params and hash", () => {
+  assert.equal(
+    buildApplicationDetailTabUrl({
+      pathname: "/ballet/applications/17",
+      search: "?filter=open&tab=application",
+      hash: "#history",
+      tab: "payments",
+    }),
+    "/ballet/applications/17?filter=open&tab=payments#history",
+  );
+  assert.equal(
+    buildApplicationDetailTabUrl({
+      pathname: "/ballet/applications/17",
+      search: "?filter=open&tab=payments",
+      hash: "#history",
+      tab: "overview",
+    }),
+    "/ballet/applications/17?filter=open#history",
+  );
+});
+
+test("application detail tab selection follows browser history search values without reloads", () => {
+  const historySearches = ["", "?tab=payments", "?tab=enrollment", "?tab=payments"];
+  assert.deepEqual(historySearches.map(parseApplicationTab), ["overview", "payments", "enrollment", "payments"]);
+  assert.doesNotMatch(adminDetailPage, /window\.location\.(assign|replace)|window\.location\.reload/);
 });
 
 test("admin application detail Next Required Action uses the corrected status matrix", () => {

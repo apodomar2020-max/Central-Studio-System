@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { PageHeader } from "@/components/layout/page-header";
@@ -38,6 +38,11 @@ import {
   StatusBadge,
   SubscriptionBadge,
 } from "./application-detail";
+import {
+  APPLICATION_DETAIL_TABS,
+  buildApplicationDetailTabUrl,
+  parseApplicationTab,
+} from "./application-detail/tabState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -301,16 +306,6 @@ const EXPIRY_ADJUSTMENT_REASONS = [
   { value: "other", label: "Other" },
 ] as const;
 
-const APPLICATION_DETAIL_TABS = [
-  { value: "overview", label: "Overview" },
-  { value: "application", label: "Application" },
-  { value: "enrollment", label: "Enrollment" },
-  { value: "payments", label: "Payments & Subscription" },
-  { value: "cancellation", label: "Cancellation & Refunds" },
-  { value: "activity", label: "Activity" },
-] as const;
-
-type ApplicationDetailTab = (typeof APPLICATION_DETAIL_TABS)[number]["value"];
 type NextRequiredAction =
   | "Review Application"
   | "Assign Level"
@@ -362,6 +357,7 @@ function parseSubscriptionDate(value?: string | null) {
 export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [location, navigate] = useLocation();
+  const search = useSearch();
   const { token, can } = useAdminAuth();
   const canReview = can("ballet.applications", "review");
   const canApprove = can("ballet.applications", "approve");
@@ -415,13 +411,14 @@ export default function ApplicationDetailPage() {
   const [editNote, setEditNote]         = useState("");
 
   const appId = parseInt(id ?? "", 10);
-  const queryTab = new URLSearchParams(location.split("?")[1] ?? "").get("tab");
-  const activeTab = APPLICATION_DETAIL_TABS.some((tab) => tab.value === queryTab)
-    ? (queryTab as ApplicationDetailTab)
-    : "overview";
+  const activeTab = parseApplicationTab(search);
   const setActiveTab = (tab: string) => {
-    const nextTab = APPLICATION_DETAIL_TABS.some((item) => item.value === tab) ? tab : "overview";
-    navigate(`/ballet/applications/${appId}?tab=${nextTab}`);
+    navigate(buildApplicationDetailTabUrl({
+      pathname: location,
+      search,
+      hash: window.location.hash,
+      tab,
+    }));
   };
 
   // ── Fetch detail ────────────────────────────────────────────────────────────
