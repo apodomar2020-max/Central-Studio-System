@@ -8,6 +8,19 @@ const read = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8");
 const dangerZone = read("artifacts/central/components/ballet/BalletProgramDangerZone.tsx");
 const programScreen = read("artifacts/central/app/ballet/index.tsx");
 const adminDetailPage = read("artifacts/admin/src/pages/ballet/ApplicationDetailPage.tsx");
+const adminDetailTabFiles = [
+  "artifacts/admin/src/pages/ballet/application-detail/OverviewTab.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/ApplicationTab.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/EnrollmentTab.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/PaymentsSubscriptionTab.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/CancellationRefundsTab.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/ActivityTab.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/shared.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/index.tsx",
+  "artifacts/admin/src/pages/ballet/application-detail/types.ts",
+];
+const adminDetailTabs = adminDetailTabFiles.map(read).join("\n");
+const adminDetailSource = `${adminDetailPage}\n${adminDetailTabs}`;
 const cancellationListPage = read("artifacts/admin/src/pages/ballet/BalletCancellationRequestsPage.tsx");
 const adminPaymentsPage = read("artifacts/admin/src/pages/ballet/BalletPaymentsPage.tsx");
 const adminPaymentsRoute = read("artifacts/api-server/src/routes/adminBalletPayments.ts");
@@ -70,20 +83,20 @@ test("main Ballet program screen mounts the Danger Zone for a parent, after prog
 // ─── Admin Danger Zone (spec §5, §10) ────────────────────────────────────────────
 
 test("admin detail page renders a visually-separated Danger Zone card", () => {
-  assert.match(adminDetailPage, /Danger Zone/);
-  assert.match(adminDetailPage, /border-red-500\/40/);
-  assert.match(adminDetailPage, /AlertTriangle/);
+  assert.match(adminDetailSource, /Danger Zone/);
+  assert.match(adminDetailSource, /border-red-500\/40/);
+  assert.match(adminDetailSource, /AlertTriangle/);
 });
 
 test("admin Danger Zone is gated on ballet.applications cancel and derives the shared action", () => {
   assert.match(adminDetailPage, /const canCancel = can\("ballet\.applications", "cancel"\)/);
   assert.match(adminDetailPage, /resolveBalletDangerAction\(\{[\s\S]*?viewer: "admin"/);
-  assert.match(adminDetailPage, /\{canCancel && \(/);
+  assert.match(adminDetailTabs, /\{canCancel && \(/);
 });
 
 test("admin pre-activation Cancel Application calls the existing admin cancel transaction", () => {
   assert.match(adminDetailPage, /applications\/\$\{appId\}\/cancel/);
-  assert.match(adminDetailPage, /Cancel Application/);
+  assert.match(adminDetailSource, /Cancel Application/);
 });
 
 test("admin active Cancel Program modal offers Immediate + End of Current Period, reason and internal notes", () => {
@@ -106,8 +119,8 @@ test("admin refund toggle is cash-only — no Bank Transfer / Online Payment ref
 });
 
 test("admin open-request state shows Manage Cancellation Request (no duplicate Cancel button)", () => {
-  assert.match(adminDetailPage, /Manage Cancellation Request/);
-  assert.match(adminDetailPage, /dangerAction\.kind === "viewCancellationRequest"/);
+  assert.match(adminDetailSource, /Manage Cancellation Request/);
+  assert.match(adminDetailSource, /dangerAction\.kind === "viewCancellationRequest"/);
 });
 
 test("admin reason requires min 5 characters before submit is enabled", () => {
@@ -121,8 +134,8 @@ test("admin cancellation mutations refetch (invalidate) server state on success"
 // ─── Initiator attribution surfaced in admin UI (spec §6) ────────────────────────
 
 test("admin detail page attributes each cancellation request to Parent or the Admin name", () => {
-  assert.match(adminDetailPage, /Initiated by:/);
-  assert.match(adminDetailPage, /request\.initiatedByType === "admin"/);
+  assert.match(adminDetailSource, /Initiated by:/);
+  assert.match(adminDetailSource, /request\.initiatedByType === "admin"/);
 });
 
 test("admin cancellation list page shows an Initiated By column", () => {
@@ -133,34 +146,145 @@ test("admin cancellation list page shows an Initiated By column", () => {
 // ─── Ballet subscription/payment lifecycle cleanup ───────────────────────────
 
 test("admin application detail no longer exposes Subscription Actions", () => {
-  assert.doesNotMatch(adminDetailPage, /Subscription Actions/);
-  assert.doesNotMatch(adminDetailPage, /Extend Subscription/);
-  assert.doesNotMatch(adminDetailPage, /Renew Subscription/);
-  assert.doesNotMatch(adminDetailPage, /subscriptions\/renew/);
-  assert.doesNotMatch(adminDetailPage, /payments\/\$\{payment\.id\}\/extend/);
+  assert.doesNotMatch(adminDetailSource, /Subscription Actions/);
+  assert.doesNotMatch(adminDetailSource, /Extend Subscription/);
+  assert.doesNotMatch(adminDetailSource, /Renew Subscription/);
+  assert.doesNotMatch(adminDetailSource, /subscriptions\/renew/);
+  assert.doesNotMatch(adminDetailSource, /payments\/\$\{payment\.id\}\/extend/);
 });
 
 test("admin application detail keeps read-only payment/subscription summary and compact management actions", () => {
-  assert.match(adminDetailPage, /<SummaryCard label="Payment Status"/);
-  assert.match(adminDetailPage, /<SummaryCard label="Subscription"/);
-  assert.match(adminDetailPage, /<Section title="Payment">/);
-  assert.match(adminDetailPage, /<Section title="Activation Readiness">/);
-  assert.match(adminDetailPage, /<Section title="Subscription Management">/);
-  assert.match(adminDetailPage, /Adjust Expiry/);
-  assert.match(adminDetailPage, /Open Payment History/);
-  assert.doesNotMatch(adminDetailPage, /Create Pending Renewal/);
-  assert.doesNotMatch(adminDetailPage, /Renew Subscription/);
+  assert.match(adminDetailTabs, /<SummaryCard label="Payment Status"/);
+  assert.match(adminDetailTabs, /<SummaryCard label="Subscription"/);
+  assert.match(adminDetailTabs, /<Section title="Payment">/);
+  assert.match(adminDetailTabs, /<Section title="Activation Readiness">/);
+  assert.match(adminDetailTabs, /<Section title="Subscription Management">/);
+  assert.match(adminDetailTabs, /Adjust Expiry/);
+  assert.match(adminDetailTabs, /Open Payment History/);
+  assert.doesNotMatch(adminDetailSource, /Create Pending Renewal/);
+  assert.doesNotMatch(adminDetailSource, /Renew Subscription/);
 });
 
 test("admin application detail exposes initial-payment actions without restoring renewal actions", () => {
-  assert.match(adminDetailPage, /Create Initial Payment/);
-  assert.match(adminDetailPage, /Initial payment recorded/);
-  assert.match(adminDetailPage, /Payment confirmed/);
-  assert.match(adminDetailPage, /Subscription period active/);
+  assert.match(adminDetailSource, /Create Initial Payment/);
+  assert.match(adminDetailSource, /Initial payment recorded/);
+  assert.match(adminDetailSource, /Payment confirmed/);
+  assert.match(adminDetailSource, /Subscription period active/);
   assert.match(adminDetailPage, /api\/admin\/ballet\/payments/);
-  assert.match(adminDetailPage, /Confirm Payment/);
-  assert.doesNotMatch(adminDetailPage, /subscriptions\/renew/);
-  assert.doesNotMatch(adminDetailPage, /Extend Subscription/);
+  assert.match(adminDetailSource, /Confirm Payment/);
+  assert.doesNotMatch(adminDetailSource, /subscriptions\/renew/);
+  assert.doesNotMatch(adminDetailSource, /Extend Subscription/);
+});
+
+test("admin application detail renders the approved six tabs in order with URL-backed tab state", () => {
+  assert.match(adminDetailPage, /APPLICATION_DETAIL_TABS = \[/);
+  const tabOrder = [
+    /value: "overview", label: "Overview"/,
+    /value: "application", label: "Application"/,
+    /value: "enrollment", label: "Enrollment"/,
+    /value: "payments", label: "Payments & Subscription"/,
+    /value: "cancellation", label: "Cancellation & Refunds"/,
+    /value: "activity", label: "Activity"/,
+  ];
+  let cursor = 0;
+  for (const pattern of tabOrder) {
+    const match = pattern.exec(adminDetailPage.slice(cursor));
+    assert.ok(match, `missing tab pattern ${pattern}`);
+    cursor += match.index + match[0].length;
+  }
+  assert.match(adminDetailPage, /const activeTab = APPLICATION_DETAIL_TABS\.some/);
+  assert.match(adminDetailPage, /const queryTab = new URLSearchParams/);
+  assert.match(adminDetailPage, /: "overview"/);
+  assert.match(adminDetailPage, /navigate\(`\/ballet\/applications\/\$\{appId\}\?tab=\$\{nextTab\}`\)/);
+  assert.match(adminDetailPage, /overflow-x-auto/);
+});
+
+test("admin application detail Next Required Action uses the corrected status matrix", () => {
+  assert.match(adminDetailPage, /const REVIEW_ACTION_STATUSES = new Set<BalletApplicationStatus>\(\["pending", "needsFollowUp"\]\)/);
+  assert.match(adminDetailPage, /const TERMINAL_ACTION_STATUSES = new Set<BalletApplicationStatus>\(\["rejected", "cancelled", "withdrawn"\]\)/);
+  assert.match(adminDetailPage, /const applicationStatus = app\.status as BalletApplicationStatus/);
+  assert.match(adminDetailPage, /REVIEW_ACTION_STATUSES\.has\(applicationStatus\) \? "Review Application"/);
+  assert.match(adminDetailPage, /TERMINAL_ACTION_STATUSES\.has\(applicationStatus\) \? "Application closed"/);
+  assert.match(adminDetailPage, /app\.status === "active" \? "No action required"/);
+  assert.match(adminDetailPage, /app\.status === "accepted" && !levelAssigned \? "Assign Level"/);
+  assert.match(adminDetailPage, /app\.status === "assignedToLevel" && !groupAssigned \? "Assign Group"/);
+  assert.match(adminDetailPage, /!initialPaymentRecorded \? "Create Initial Payment"/);
+  assert.match(adminDetailPage, /pendingInitialPayment \? "Confirm Payment"/);
+  assert.match(adminDetailPage, /paidInitialPaymentRequiresReview \? "Payment data requires review"/);
+  assert.match(adminDetailPage, /canActivateApplication \? "Activate Application"/);
+});
+
+test("admin application detail warns on paid payment with missing subscription dates instead of confirming again", () => {
+  assert.match(adminDetailPage, /const paidInitialPaymentRequiresReview = Boolean/);
+  assert.match(adminDetailPage, /parseSubscriptionDate\(paidInitialPayment\?\.subscriptionStartDate\)/);
+  assert.match(adminDetailPage, /parseSubscriptionDate\(paidInitialPayment\?\.subscriptionExpiresAt\)/);
+  assert.match(adminDetailPage, /!hasValidPaidInitialSubscriptionDates/);
+  assert.match(adminDetailPage, /Confirm Payment only supports pending payments/);
+  assert.match(adminDetailTabs, /nextRequiredAction === "Payment data requires review"/);
+  assert.doesNotMatch(adminDetailPage, /subscriptionReadinessState !== "complete" \? "Confirm Payment"/);
+});
+
+test("admin application detail treats malformed or invalid paid subscription date ranges as review-required data", () => {
+  assert.match(adminDetailPage, /function parseSubscriptionDate/);
+  assert.match(adminDetailPage, /Number\.isNaN\(parsed\.getTime\(\)\) \? null : parsed/);
+  assert.match(adminDetailPage, /paidInitialExpiryDate\.getTime\(\) > paidInitialStartDate\.getTime\(\)/);
+  assert.match(adminDetailPage, /paidInitialPaymentRequiresReview \? "Payment data requires review"/);
+});
+
+test("admin application detail treats valid expired paid subscriptions as renewal-required, not confirmable", () => {
+  assert.match(adminDetailPage, /const paidInitialSubscriptionExpired = Boolean/);
+  assert.match(adminDetailPage, /hasValidPaidInitialSubscriptionDates/);
+  assert.match(adminDetailPage, /paidInitialPayment\.subscriptionStatus === "expired"/);
+  assert.match(adminDetailPage, /paidInitialSubscriptionExpired \? "Subscription expired — renewal required"/);
+  assert.match(adminDetailTabs, /nextRequiredAction === "Subscription expired — renewal required"/);
+  assert.match(adminDetailTabs, /Open Payment History/);
+  assert.match(adminDetailSource, /Renewal remains in Ballet Payments/);
+  const expiredActionBlock = adminDetailTabs.slice(
+    adminDetailTabs.indexOf('nextRequiredAction === "Subscription expired — renewal required"'),
+    adminDetailTabs.indexOf('nextRequiredAction === "Activate Application"'),
+  );
+  assert.doesNotMatch(expiredActionBlock, /Confirm Payment/);
+  assert.doesNotMatch(expiredActionBlock, /Create Initial Payment/);
+});
+
+test("admin application detail keeps valid active paid subscriptions eligible for explicit activation", () => {
+  assert.match(adminDetailPage, /currentSubscription\?\.hasActiveSubscription \? "complete"/);
+  assert.match(adminDetailPage, /subscriptionReadinessState === "complete" && canActivateApplication \? "Activate Application"/);
+  assert.match(adminDetailTabs, /nextRequiredAction === "Activate Application"/);
+  assert.match(adminDetailTabs, /Activate Application/);
+});
+
+test("admin application detail places business areas in their tab homes", () => {
+  assert.match(adminDetailTabs, /<TabsContent value="overview"/);
+  assert.match(adminDetailTabs, /<TabsContent value="application"/);
+  assert.match(adminDetailTabs, /<TabsContent value="enrollment"/);
+  assert.match(adminDetailTabs, /<TabsContent value="payments"/);
+  assert.match(adminDetailTabs, /<TabsContent value="cancellation"/);
+  assert.match(adminDetailTabs, /<TabsContent value="activity"/);
+  assert.match(adminDetailTabs, /<Section title="Next Required Action">/);
+  assert.match(adminDetailTabs, /<Section title="Payment Actions">/);
+  assert.match(adminDetailTabs, /<Section title="Payment Cycle History">/);
+  assert.match(adminDetailTabs, /<Section title="Event History">/);
+});
+
+test("admin application detail keeps activation explicit and localized to Enrollment", () => {
+  const confirmPaymentBlock = adminDetailPage.slice(
+    adminDetailPage.indexOf("const confirmPaymentMutation"),
+    adminDetailPage.indexOf("async function handleExportPdf"),
+  );
+  assert.match(adminDetailTabs, /<TabsContent value="enrollment"/);
+  assert.match(adminDetailTabs, /<Section title="Activation">/);
+  assert.match(adminDetailTabs, /statusMutation\.mutate\(\{ status: "active"/);
+  assert.match(adminDetailTabs, /Activation remains explicit and uses the existing backend gate/);
+  assert.doesNotMatch(confirmPaymentBlock, /status: "active"/);
+});
+
+test("admin application detail keeps cancellation and refund actions in the cancellation tab", () => {
+  assert.match(adminDetailTabs, /<TabsContent value="cancellation"/);
+  assert.match(adminDetailSource, /Danger Zone/);
+  assert.match(adminDetailSource, /Cancel Application/);
+  assert.match(adminDetailSource, /Cancel Program/);
+  assert.match(adminDetailTabs, /<Section title="Cancellation & Refunds">/);
 });
 
 test("old extend subscription endpoint is removed and replaced with one canonical expiry-adjustment route", () => {

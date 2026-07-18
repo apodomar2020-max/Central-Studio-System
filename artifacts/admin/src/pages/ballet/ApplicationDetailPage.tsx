@@ -14,8 +14,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -24,15 +24,20 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, AlertTriangle } from "lucide-react";
+import { Loader2, ChevronLeft, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   isTransitionAllowed,
   resolveBalletDangerAction,
-  BALLET_CANCELLATION_INITIATOR_LABELS,
   type BalletApplicationStatus,
-  type BalletCancellationInitiatorType,
 } from "@workspace/api-zod";
+import {
+  ApplicationDetailTabPanels,
+  Field,
+  PaymentStatusBadge,
+  StatusBadge,
+  SubscriptionBadge,
+} from "./application-detail";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -288,37 +293,6 @@ const ALL_STATUSES = [
   { value: "withdrawn",       label: "Withdrawn" },
 ];
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending:           { label: "Pending",            className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-  accepted:          { label: "Accepted",           className: "bg-green-500/15 text-green-400 border-green-500/30" },
-  rejected:          { label: "Rejected",           className: "bg-red-500/15 text-red-400 border-red-500/30" },
-  needsFollowUp:     { label: "Needs Follow-up",    className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
-  assignedToLevel:   { label: "Assigned to Level",  className: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
-  active:            { label: "Active",             className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-  cancelled:         { label: "Cancelled",           className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
-  withdrawn:         { label: "Withdrawn",           className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
-};
-
-const PAYMENT_STATUSES = [
-  { value: "pending", label: "Pending" },
-  { value: "paid", label: "Paid" },
-  { value: "rejected", label: "Rejected" },
-  { value: "refunded", label: "Refunded" },
-];
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  bankTransfer: "Legacy Bank Transfer",
-  kashier: "Online Payment",
-  inPerson: "Pay at Studio",
-};
-
-const PAYMENT_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending:  { label: "Pending",  className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
-  paid:     { label: "Paid",     className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-  rejected: { label: "Rejected", className: "bg-red-500/15 text-red-400 border-red-500/30" },
-  refunded: { label: "Refunded", className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
-};
-
 const EXPIRY_ADJUSTMENT_REASONS = [
   { value: "studioHoliday", label: "Studio holiday" },
   { value: "classSuspension", label: "Class suspension" },
@@ -327,30 +301,30 @@ const EXPIRY_ADJUSTMENT_REASONS = [
   { value: "other", label: "Other" },
 ] as const;
 
-function formatPaymentMethod(method?: string | null) {
-  return method ? PAYMENT_METHOD_LABELS[method] ?? method : null;
-}
+const APPLICATION_DETAIL_TABS = [
+  { value: "overview", label: "Overview" },
+  { value: "application", label: "Application" },
+  { value: "enrollment", label: "Enrollment" },
+  { value: "payments", label: "Payments & Subscription" },
+  { value: "cancellation", label: "Cancellation & Refunds" },
+  { value: "activity", label: "Activity" },
+] as const;
 
-function PaymentStatusBadge({ status }: { status?: string | null }) {
-  if (!status) return <span className="italic text-muted-foreground">—</span>;
-  const cfg = PAYMENT_STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
-  return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;
-}
+type ApplicationDetailTab = (typeof APPLICATION_DETAIL_TABS)[number]["value"];
+type NextRequiredAction =
+  | "Review Application"
+  | "Assign Level"
+  | "Assign Group"
+  | "Create Initial Payment"
+  | "Confirm Payment"
+  | "Payment data requires review"
+  | "Subscription expired — renewal required"
+  | "Activate Application"
+  | "Application closed"
+  | "No action required";
 
-function SubscriptionBadge({ payment }: { payment?: BalletPayment | null }) {
-  if (!payment) return <Badge variant="outline" className="bg-yellow-500/15 text-yellow-400 border-yellow-500/30">Pending Payment</Badge>;
-  const className =
-    payment.subscriptionStatus === "expired" ? "bg-red-500/15 text-red-400 border-red-500/30"
-    : payment.subscriptionStatus === "renewed" ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
-    : payment.subscriptionStatus === "active" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-    : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
-  return <Badge variant="outline" className={className}>{payment.subscriptionDisplayStatus}</Badge>;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
-  return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;
-}
+const REVIEW_ACTION_STATUSES = new Set<BalletApplicationStatus>(["pending", "needsFollowUp"]);
+const TERMINAL_ACTION_STATUSES = new Set<BalletApplicationStatus>(["rejected", "cancelled", "withdrawn"]);
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -365,62 +339,6 @@ function makeHeaders(token: string | null): HeadersInit {
   };
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">{children}</CardContent>
-    </Card>
-  );
-}
-
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm text-foreground">{value ?? <span className="italic text-muted-foreground">—</span>}</div>
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="mt-1 text-lg font-semibold text-white">{value ?? "—"}</div>
-        {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ReadinessItem({ label, state, detail }: { label: string; state: "complete" | "pending" | "missing" | "expired"; detail?: React.ReactNode }) {
-  const cfg = {
-    complete: { text: "Complete", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-    pending: { text: "Pending", className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
-    missing: { text: "Missing", className: "bg-red-500/15 text-red-400 border-red-500/30" },
-    expired: { text: "Expired", className: "bg-red-500/15 text-red-400 border-red-500/30" },
-  }[state];
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-md border bg-muted/10 px-3 py-2">
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-foreground">{label}</div>
-        {detail && <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>}
-      </div>
-      <Badge variant="outline" className={cfg.className}>{cfg.text}</Badge>
-    </div>
-  );
-}
-
-function formatDateTime(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : "—";
-}
-
 function addOneDay(dateOnly: string) {
   const value = new Date(`${dateOnly}T00:00:00.000Z`);
   value.setUTCDate(value.getUTCDate() + 1);
@@ -433,11 +351,17 @@ function addDays(dateOnly: string, days: number) {
   return value.toISOString().slice(0, 10);
 }
 
+function parseSubscriptionDate(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { token, can } = useAdminAuth();
   const canReview = can("ballet.applications", "review");
   const canApprove = can("ballet.applications", "approve");
@@ -491,6 +415,14 @@ export default function ApplicationDetailPage() {
   const [editNote, setEditNote]         = useState("");
 
   const appId = parseInt(id ?? "", 10);
+  const queryTab = new URLSearchParams(location.split("?")[1] ?? "").get("tab");
+  const activeTab = APPLICATION_DETAIL_TABS.some((tab) => tab.value === queryTab)
+    ? (queryTab as ApplicationDetailTab)
+    : "overview";
+  const setActiveTab = (tab: string) => {
+    const nextTab = APPLICATION_DETAIL_TABS.some((item) => item.value === tab) ? tab : "overview";
+    navigate(`/ballet/applications/${appId}?tab=${nextTab}`);
+  };
 
   // ── Fetch detail ────────────────────────────────────────────────────────────
 
@@ -547,11 +479,13 @@ export default function ApplicationDetailPage() {
   // ── Status mutation ─────────────────────────────────────────────────────────
 
   const statusMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (vars?: { status?: string; note?: string }) => {
+      const targetStatus = vars?.status ?? newStatus;
+      const targetNote = vars?.note ?? (statusNote || undefined);
       const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/status`, {
         method: "PATCH",
         headers: makeHeaders(token),
-        body: JSON.stringify({ status: newStatus, note: statusNote || undefined }),
+        body: JSON.stringify({ status: targetStatus, note: targetNote }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -979,9 +913,30 @@ export default function ApplicationDetailPage() {
   const groupAssigned = group != null;
   const initialPaymentRecorded = initialPayments.length > 0;
   const paymentConfirmed = paidInitialPayment != null;
-  const subscriptionReadinessState: "complete" | "pending" | "missing" | "expired" =
+  const paidInitialStartDate = parseSubscriptionDate(paidInitialPayment?.subscriptionStartDate);
+  const paidInitialExpiryDate = parseSubscriptionDate(paidInitialPayment?.subscriptionExpiresAt);
+  const hasValidPaidInitialSubscriptionDates = Boolean(
+    paidInitialPayment
+      && paidInitialStartDate
+      && paidInitialExpiryDate
+      && paidInitialExpiryDate.getTime() > paidInitialStartDate.getTime(),
+  );
+  const paidInitialPaymentRequiresReview = Boolean(paidInitialPayment && !hasValidPaidInitialSubscriptionDates);
+  const paidInitialSubscriptionExpired = Boolean(
+    paidInitialPayment
+      && hasValidPaidInitialSubscriptionDates
+      && paidInitialPayment.subscriptionStatus === "expired",
+  );
+  const paymentDataWarning = paidInitialPaymentRequiresReview
+    ? "A paid initial payment exists, but it does not currently provide an active subscription period. Confirm Payment only supports pending payments; review the payment dates/status before activation."
+    : null;
+  const subscriptionExpiredWarning = paidInitialSubscriptionExpired
+    ? "The initial payment is paid and has a valid subscription period, but that period has expired. Renewal remains in Ballet Payments."
+    : null;
+  const subscriptionReadinessState: "complete" | "pending" | "missing" | "expired" | "warning" =
     currentSubscription?.hasActiveSubscription ? "complete"
-    : currentSubscription?.subscriptionStatus === "expired" ? "expired"
+    : paidInitialPaymentRequiresReview ? "warning"
+    : paidInitialSubscriptionExpired || currentSubscription?.subscriptionStatus === "expired" ? "expired"
     : paymentConfirmed ? "pending"
     : "missing";
   const levels = levelsData?.levels ?? [];
@@ -996,6 +951,32 @@ export default function ApplicationDetailPage() {
   }).filter((status) =>
     isTransitionAllowed(app.status as BalletApplicationStatus, status.value as BalletApplicationStatus)
   );
+  const reviewStatuses = permittedStatuses.filter((status) => status.value !== "active");
+  const canActivateApplication = permittedStatuses.some((status) => status.value === "active");
+  const applicationStatus = app.status as BalletApplicationStatus;
+  const nextRequiredAction: NextRequiredAction =
+    REVIEW_ACTION_STATUSES.has(applicationStatus) ? "Review Application"
+    : TERMINAL_ACTION_STATUSES.has(applicationStatus) ? "Application closed"
+    : app.status === "active" ? "No action required"
+    : app.status === "accepted" && !levelAssigned ? "Assign Level"
+    : app.status === "assignedToLevel" && !groupAssigned ? "Assign Group"
+    : ["accepted", "assignedToLevel"].includes(app.status) && !initialPaymentRecorded ? "Create Initial Payment"
+    : pendingInitialPayment ? "Confirm Payment"
+    : paidInitialPaymentRequiresReview ? "Payment data requires review"
+    : paidInitialSubscriptionExpired ? "Subscription expired — renewal required"
+    : subscriptionReadinessState === "complete" && canActivateApplication ? "Activate Application"
+    : "No action required";
+  const openInitialPaymentDialog = () => {
+    const preferredActive = activePackages.find((pkg) => pkg.id === app.preferredPackageId);
+    setInitialPaymentPackageId(preferredActive ? String(preferredActive.id) : "");
+    setCreateInitialPaymentOpen(true);
+  };
+  const openConfirmPaymentDialog = (payment: BalletPayment) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setConfirmStartDate(today);
+    setConfirmExpiresAt(addDays(today, 30));
+    setConfirmingPayment(payment);
+  };
 
   return (
     <div className="space-y-6">
@@ -1019,21 +1000,14 @@ export default function ApplicationDetailPage() {
       </div>
 
       <Card>
-        <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-2">
+        <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-lg font-semibold text-white">{app.childName}</span>
+              <span className="text-sm text-muted-foreground">Application #{app.id}</span>
               <StatusBadge status={app.status} />
-              <SubscriptionBadge payment={currentSubscription} />
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <span>Parent: {app.parentName}</span>
-              <span>Application #{app.id}</span>
-              {app.childId != null && <span>Child profile #{app.childId}</span>}
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>Submitted {formatDateTime(app.createdAt)}</span>
-              <span>Last updated {formatDateTime(app.updatedAt)}</span>
+              {currentPayment && <PaymentStatusBadge status={currentPayment.status} />}
+              {currentSubscription && <SubscriptionBadge payment={currentSubscription} />}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1045,696 +1019,101 @@ export default function ApplicationDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard label="Application Status" value={<StatusBadge status={app.status} />} sub={`Updated ${new Date(app.updatedAt).toLocaleDateString()}`} />
-        <SummaryCard label="Assigned Level" value={level?.name ?? "Not assigned"} sub={group?.name ? `Group: ${group.name}` : "No group yet"} />
-        <SummaryCard label="Payment Status" value={<PaymentStatusBadge status={currentPayment?.status} />} sub={currentPayment ? `${currentPayment.amountEgp} EGP` : "No payment recorded"} />
-        <SummaryCard label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} sub={currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "No active period"} />
-      </div>
-
-      <Section title="Activation Readiness">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          <ReadinessItem
-            label="Application accepted/assigned"
-            state={appAcceptedOrAssigned ? "complete" : "missing"}
-            detail={<StatusBadge status={app.status} />}
-          />
-          <ReadinessItem
-            label="Level assigned"
-            state={levelAssigned ? "complete" : "missing"}
-            detail={level?.name ?? "Assign a level before activation."}
-          />
-          <ReadinessItem
-            label="Group assigned"
-            state={groupAssigned ? "complete" : "missing"}
-            detail={group?.name ?? "Assign a group before activation."}
-          />
-          <ReadinessItem
-            label="Initial payment recorded"
-            state={initialPaymentRecorded ? "complete" : "missing"}
-            detail={pendingInitialPayment ? `Pending payment #${pendingInitialPayment.id}` : paidInitialPayment ? `Paid payment #${paidInitialPayment.id}` : "Create the first pending payment cycle."}
-          />
-          <ReadinessItem
-            label="Payment confirmed"
-            state={paymentConfirmed ? "complete" : pendingInitialPayment ? "pending" : "missing"}
-            detail={paidInitialPayment?.paidAt ? `Paid ${new Date(paidInitialPayment.paidAt).toLocaleString()}` : pendingInitialPayment ? "Confirm after Pay at Studio collection." : "No paid initial payment yet."}
-          />
-          <ReadinessItem
-            label="Subscription period active"
-            state={subscriptionReadinessState}
-            detail={currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "Confirm payment to establish dates."}
-          />
-        </div>
-        <div className="flex flex-wrap gap-2 pt-2">
-          {canCreateInitialPayment && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const preferredActive = activePackages.find((pkg) => pkg.id === app.preferredPackageId);
-                setInitialPaymentPackageId(preferredActive ? String(preferredActive.id) : "");
-                setCreateInitialPaymentOpen(true);
-              }}
-            >
-              Create Initial Payment
-            </Button>
-          )}
-          {canConfirmInitialPayment && pendingInitialPayment && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date().toISOString().slice(0, 10);
-                setConfirmStartDate(today);
-                setConfirmExpiresAt(addDays(today, 30));
-                setConfirmingPayment(pendingInitialPayment);
-              }}
-            >
-              Confirm Payment
-            </Button>
-          )}
-          {canViewPayments && (
-            <Button variant="ghost" size="sm" onClick={() => navigate(`/ballet/payments?applicationId=${appId}`)}>
-              Open Payment History
-            </Button>
-          )}
-        </div>
-        {initialPayments.some((payment) => payment.status === "refunded") && (
-          <p className="text-xs text-muted-foreground">
-            The initial payment on this application is refunded. This hotfix does not introduce a replacement-payment workflow; handle recovery through a separate approved payment workflow.
-          </p>
-        )}
-      </Section>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column — application data */}
-        <div className="lg:col-span-2 space-y-4">
-
-          {/* Parent info */}
-          <Section title="Parent / Guardian">
-            <Field label="Name"  value={app.parentName} />
-            <Field label="Phone" value={app.parentPhone} />
-            <Field label="Email" value={app.parentEmail} />
-            {app.parentStudentId && (
-              <Field label="Student ID" value={`#${app.parentStudentId}`} />
-            )}
-          </Section>
-
-          {/* Emergency contact */}
-          {(app.emergencyContactName || app.emergencyContactPhone) && (
-            <Section title="Emergency Contact">
-              <Field label="Name"  value={app.emergencyContactName} />
-              <Field label="Phone" value={app.emergencyContactPhone} />
-            </Section>
-          )}
-
-          {/* Child info */}
-          <Section title="Child Information">
-            <Field label="Name"     value={app.childName} />
-            <Field label="Birthday" value={app.childBirthday} />
-            <Field label="Age"      value={app.childAge !== null ? `${app.childAge} years` : null} />
-            <Field label="Gender"   value={app.childGender} />
-            {app.childId !== null && (
-              <Field label="Linked Child Profile" value={`#${app.childId}`} />
-            )}
-          </Section>
-
-          {/* Experience */}
-          <Section title="Dance Experience">
-            <Field
-              label="Previous experience"
-              value={app.previousExperience ? "Yes" : "No"}
-            />
-            {app.experienceDetails && (
-              <Field label="Details" value={app.experienceDetails} />
-            )}
-          </Section>
-
-          {/* Medical */}
-          {app.medicalNotes && (
-            <Section title="Medical Notes">
-              <p className="text-sm text-foreground whitespace-pre-wrap">{app.medicalNotes}</p>
-            </Section>
-          )}
-
-          {/* Notes from parent */}
-          {app.notes && (
-            <Section title="Additional Notes (from parent)">
-              <p className="text-sm text-foreground whitespace-pre-wrap">{app.notes}</p>
-            </Section>
-          )}
-
-          {/* Assessment */}
-          <Section title="Assessment">
-            {assessmentSchedule ? (
-              <>
-                <Field label="Class" value={assessmentSchedule.classTitle} />
-                <Field label="Level" value={assessmentSchedule.levelName} />
-                <Field label="Schedule" value={`${DAY_NAMES[assessmentSchedule.dayOfWeek] ?? assessmentSchedule.dayOfWeek} ${assessmentSchedule.startTime} – ${assessmentSchedule.endTime}`} />
-                <Field label="Selected date" value={app.assessmentDate} />
-                {assessmentSchedule.instructorName && (
-                  <Field label="Instructor" value={assessmentSchedule.instructorName} />
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                No assessment schedule selected
-              </p>
-            )}
-          </Section>
-
-          <Section title="Payment">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Current status" value={<PaymentStatusBadge status={currentPayment?.status} />} />
-              <Field label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} />
-              <Field label="Amount" value={currentPayment ? `${currentPayment.amountEgp} EGP` : null} />
-              <Field
-                label="Preferred package"
-                value={
-                  app.preferredPackageName
-                    ? `${app.preferredPackageName}${app.preferredPackageId ? ` (#${app.preferredPackageId})` : ""}`
-                    : "No preferred package selected (legacy application)"
-                }
-              />
-              <Field label="Package" value={currentPayment?.packageName ?? (currentPayment?.packageId ? `#${currentPayment.packageId}` : null)} />
-              <Field label="Billing month" value={currentPayment?.billingMonth} />
-              <Field label="Preferred method" value={formatPaymentMethod(app.preferredPaymentMethod)} />
-              <Field label="Recorded method" value={formatPaymentMethod(currentPayment?.paymentMethod)} />
-              <Field label="Start date" value={currentSubscription?.subscriptionStartDate} />
-              <Field label="Original expiry" value={currentSubscription?.originalExpiresAt} />
-              <Field label="Current expiry" value={currentSubscription?.subscriptionExpiresAt} />
-              <Field label="Days remaining" value={currentSubscription?.daysRemaining != null ? `${currentSubscription.daysRemaining}` : null} />
-              <Field label="Renewal" value={currentSubscription?.isRenewal ? `Renewed from #${currentSubscription.renewedFromId}` : "Initial subscription"} />
-              <Field label="Last update" value={currentPayment?.updatedAt ? new Date(currentPayment.updatedAt).toLocaleString() : null} />
-            </div>
-            {currentSubscription?.subscriptionStatus === "expired" && (
-              <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                Subscription renewal is required. Expired on {currentSubscription.subscriptionExpiresAt}.
-              </p>
-            )}
-          </Section>
-
-          <Section title="Subscription Management">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Current cycle" value={currentSubscription ? `Payment #${currentSubscription.id}` : null} />
-              <Field label="Package" value={currentSubscription?.packageName ?? (currentSubscription?.packageId ? `#${currentSubscription.packageId}` : null)} />
-              <Field label="Payment state" value={<PaymentStatusBadge status={currentSubscription?.status} />} />
-              <Field label="Subscription state" value={<SubscriptionBadge payment={currentSubscription} />} />
-              <Field label="Expiry date" value={currentSubscription?.subscriptionExpiresAt} />
-              <Field
-                label="Latest adjustment"
-                value={currentSubscription?.extensionHistory?.length
-                  ? `${currentSubscription.extensionHistory[currentSubscription.extensionHistory.length - 1]?.previousExpiresAt} → ${currentSubscription.extensionHistory[currentSubscription.extensionHistory.length - 1]?.newExpiresAt}`
-                  : null}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2 pt-1">
-              {canEditPayments && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!canAdjustExpiry}
-                  onClick={() => setAdjustExpiryOpen(true)}
-                >
-                  Adjust Expiry
-                </Button>
-              )}
-              {canViewPayments && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate(`/ballet/payments?applicationId=${appId}`)}
-                >
-                  Open Payment History
-                </Button>
-              )}
-            </div>
-            {!canAdjustExpiry && currentSubscription?.subscriptionStatus === "expired" && (
-              <p className="text-xs text-muted-foreground">
-                Expired cycles are not adjusted here. Create a pending renewal from Ballet Payments, then confirm payment when collected.
-              </p>
-            )}
-          </Section>
-
-          {/* Assigned level (if any) */}
-          {(level || app.assignedLevelId) && (
-            <Section title="Assigned Level">
-              <Field label="Level"       value={level?.name ?? `ID ${app.assignedLevelId}`} />
-              <Field label="Group"       value={group?.name} />
-              <Field label="Assigned at" value={app.assignedAt ? new Date(app.assignedAt).toLocaleString() : null} />
-            </Section>
-          )}
-
-          <Section title="Cancellation & Refunds">
-            {cancellationRequests.length === 0 && refunds.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No cancellation or refund workflow records.</p>
-            ) : (
-              <div className="space-y-3">
-                {cancellationRequests.map((request) => (
-                  <div key={`cancel-${request.id}`} className="rounded-md border p-3 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">Cancellation #{request.id}</span>
-                      <Badge variant="outline">{request.status}</Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Requested {request.requestedTiming}
-                      {request.approvedTiming ? ` · approved ${request.approvedTiming}` : ""}
-                      {request.approvedEffectiveDate ? ` · effective ${request.approvedEffectiveDate}` : ""}
-                      {request.requestRefund ? " · refund requested" : ""}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Initiated by: {request.initiatedByType === "admin"
-                        ? (request.initiatedByAdminName ?? "Admin")
-                        : (BALLET_CANCELLATION_INITIATOR_LABELS[(request.initiatedByType as BalletCancellationInitiatorType) ?? "parent"] ?? "Parent")}
-                    </p>
-                    <p className="mt-2 text-xs text-muted-foreground">{request.reason}</p>
-                  </div>
-                ))}
-                {refunds.map((refund) => (
-                  <div key={`refund-${refund.id}`} className="rounded-md border p-3 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">Refund #{refund.id} · Payment #{refund.paymentId}</span>
-                      <Badge variant="outline">{refund.status}</Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {refund.refundMethod === "cash" ? "Cash refund" : refund.refundMethod}
-                      {refund.approvedAmountEgp ? ` · approved ${refund.approvedAmountEgp} EGP` : ""}
-                      {refund.refundedAmountEgp ? ` · refunded ${refund.refundedAmountEgp} EGP` : ""}
-                      {refund.transactionReference ? ` · ref ${refund.transactionReference}` : ""}
-                    </p>
-                    <p className="mt-2 text-xs text-muted-foreground">{refund.requestedReason}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
-
-          {/* Attendance hours — this month (C4). Only meaningful once a level
-              is assigned; the backend returns null otherwise. */}
-          {app.assignedLevelId != null && (
-            <Section title={`Attendance — ${attendanceSummary?.billingMonth ?? "this month"}`}>
-              {attendanceSummary && attendanceSummary.hasActiveSubscription ? (
-                <>
-                  <Field label="Monthly hours"  value={`${attendanceSummary.monthlyHours}h`} />
-                  <Field label="Attended"        value={`${attendanceSummary.attendedHours}h`} />
-                  <Field label="Absent"          value={`${attendanceSummary.absentHours}h`} />
-                  <Field label="Consumed"        value={`${attendanceSummary.consumedHours}h`} />
-                  <Field label="Remaining"       value={`${attendanceSummary.remainingHours}h`} />
-                </>
-              ) : attendanceSummary ? (
-                <>
-                  <p className="text-sm text-muted-foreground italic">
-                    No active monthly subscription for {attendanceSummary.billingMonth}.
-                  </p>
-                  {/* Attendance facts still shown even without a subscription. */}
-                  <Field label="Attended" value={`${attendanceSummary.attendedHours}h`} />
-                  <Field label="Absent"   value={`${attendanceSummary.absentHours}h`} />
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">No attendance data.</p>
-              )}
-            </Section>
-          )}
-
-          {/* Metadata */}
-          <Section title="Metadata">
-            <Field label="Application ID" value={`#${app.id}`} />
-            <Field label="Submitted"       value={new Date(app.createdAt).toLocaleString()} />
-            <Field label="Last updated"    value={new Date(app.updatedAt).toLocaleString()} />
-          </Section>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="inline-flex w-max min-w-full justify-start md:min-w-0" aria-label="Ballet application detail sections">
+            {APPLICATION_DETAIL_TABS.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
+            ))}
+          </TabsList>
         </div>
 
-        {/* Right column — actions + timeline */}
-        <div className="space-y-4">
-
-          {/* Status change */}
-          {permittedStatuses.length > 0 && <div className="rounded-lg border bg-card p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Change Status
-            </h3>
-            <div className="flex items-center gap-2">
-              <StatusBadge status={app.status} />
-              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">new status</span>
-            </div>
-            <Select value={newStatus} onValueChange={setNewStatus}>
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue placeholder="Select new status…" />
-              </SelectTrigger>
-              <SelectContent>
-                {permittedStatuses.filter((s) => s.value !== app.status).map((s) => (
-                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Textarea
-              className="text-sm min-h-[64px] resize-none"
-              placeholder="Note (optional)"
-              value={statusNote}
-              onChange={(e) => setStatusNote(e.target.value)}
-            />
-            <Button
-              size="sm"
-              disabled={!newStatus || statusMutation.isPending}
-              onClick={() => statusMutation.mutate()}
-              style={{ background: "#00B6D6", color: "#000" }}
-              className="w-full"
-            >
-              {statusMutation.isPending ? (
-                <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</>
-              ) : "Update Status"}
-            </Button>
-          </div>}
-
-          {/* Level assignment */}
-          {canApprove && levels.length > 0 && (
-            <div className="rounded-lg border bg-card p-5 space-y-4">
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Assign to Level
-              </h3>
-              <Select value={newLevelId} onValueChange={setNewLevelId}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Select level…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {levels.map((l) => (
-                    <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Textarea
-                className="text-sm min-h-[64px] resize-none"
-                placeholder="Note (optional)"
-                value={levelNote}
-                onChange={(e) => setLevelNote(e.target.value)}
-              />
-              <Button
-                size="sm"
-                disabled={!newLevelId || levelMutation.isPending}
-                onClick={() => levelMutation.mutate()}
-                style={{ background: "#00B6D6", color: "#000" }}
-                className="w-full"
-              >
-                {levelMutation.isPending ? (
-                  <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
-                ) : "Assign Level"}
-              </Button>
-            </div>
-          )}
-
-          {/* Group assignment — only once a level is assigned; supports
-              reassignment the same way the level section does. */}
-          {canApprove && app.assignedLevelId != null && groups.length > 0 && (
-            <div className="rounded-lg border bg-card p-5 space-y-4">
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Assign to Group
-              </h3>
-              <Select value={newGroupId} onValueChange={setNewGroupId}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Select group…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => (
-                    <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Textarea
-                className="text-sm min-h-[64px] resize-none"
-                placeholder="Note (optional)"
-                value={groupNote}
-                onChange={(e) => setGroupNote(e.target.value)}
-              />
-              <Button
-                size="sm"
-                disabled={!newGroupId || groupMutation.isPending}
-                onClick={() => groupMutation.mutate()}
-                style={{ background: "#00B6D6", color: "#000" }}
-                className="w-full"
-              >
-                {groupMutation.isPending ? (
-                  <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
-                ) : "Assign Group"}
-              </Button>
-            </div>
-          )}
-
-          {/* Mark attendance (C3) — minimal admin-recorded path. Shown only when
-              this student has an active level assignment with a group that has
-              schedules, and the admin holds attendance:checkIn. The schedule
-              picker is scoped to the group's own schedules (what the endpoint
-              will accept). */}
-          {canCheckIn && data.assignmentId != null && activeSchedules.length > 0 && (
-            <div className="rounded-lg border bg-card p-5 space-y-4">
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Mark Attendance
-              </h3>
-              <Select value={attScheduleId} onValueChange={setAttScheduleId}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Select class schedule…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeSchedules.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      {DAY_NAMES[s.dayOfWeek] ?? "?"} {s.startTime}–{s.endTime}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input
-                type="date"
-                className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                value={attDate}
-                onChange={(e) => setAttDate(e.target.value)}
-              />
-              <Select value={attStatus} onValueChange={setAttStatus}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ATTENDANCE_STATUSES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* D1: optional — defaults server-side to the schedule's own duration. */}
-              <input
-                type="number"
-                min={0}
-                className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                placeholder="Duration in minutes (optional — defaults to schedule length)"
-                value={attDuration}
-                onChange={(e) => setAttDuration(e.target.value)}
-              />
-              <Textarea
-                className="text-sm min-h-[56px] resize-none"
-                placeholder="Note (optional)"
-                value={attNote}
-                onChange={(e) => setAttNote(e.target.value)}
-              />
-              <Button
-                size="sm"
-                disabled={!attScheduleId || !attDate || attendanceMutation.isPending}
-                onClick={() => attendanceMutation.mutate()}
-                style={{ background: "#00B6D6", color: "#000" }}
-                className="w-full"
-              >
-                {attendanceMutation.isPending ? (
-                  <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Recording…</>
-                ) : "Record Attendance"}
-              </Button>
-            </div>
-          )}
-
-          {/* Attendance history + correction (D1) — shown alongside Mark
-              Attendance whenever this student has an active level assignment. */}
-          {canCheckIn && data.assignmentId != null && (
-            <div className="rounded-lg border bg-card p-5 space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Attendance History
-              </h3>
-              {!attendanceHistoryData || attendanceHistoryData.history.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">No attendance recorded yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {attendanceHistoryData.history.map((row) => (
-                    <div key={row.id} className="rounded-md border p-3 text-sm space-y-2">
-                      {editingAttendanceId === row.id ? (
-                        <>
-                          <Select value={editStatus} onValueChange={setEditStatus}>
-                            <SelectTrigger className="h-8 text-sm">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {ATTENDANCE_STATUSES.map((s) => (
-                                <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <input
-                            type="number"
-                            min={0}
-                            className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                            placeholder="Duration in minutes"
-                            value={editDuration}
-                            onChange={(e) => setEditDuration(e.target.value)}
-                          />
-                          <Textarea
-                            className="text-sm min-h-[48px] resize-none"
-                            placeholder="Note (optional)"
-                            value={editNote}
-                            onChange={(e) => setEditNote(e.target.value)}
-                          />
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              disabled={patchAttendanceMutation.isPending}
-                              onClick={() => patchAttendanceMutation.mutate({ id: row.id, status: editStatus, durationMinutes: editDuration, note: editNote })}
-                              style={{ background: "#00B6D6", color: "#000" }}
-                            >
-                              {patchAttendanceMutation.isPending ? (
-                                <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</>
-                              ) : "Save Correction"}
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditingAttendanceId(null)}>
-                              Cancel
-                            </Button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium">{row.classDate ?? "—"}</span>
-                              <Badge variant="outline" className="text-xs">
-                                {ATTENDANCE_STATUSES.find((s) => s.value === row.status)?.label ?? row.status}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {row.durationMinutes != null ? `${row.durationMinutes} min` : "no duration"}
-                              </span>
-                            </div>
-                            {row.notes && <p className="mt-1 text-xs text-muted-foreground">{row.notes}</p>}
-                          </div>
-                          <Button size="sm" variant="ghost" onClick={() => startEditAttendance(row)}>
-                            Correct
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Event timeline */}
-          <div className="rounded-lg border bg-card p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Event History
-            </h3>
-            {events.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No events yet.</p>
-            ) : (
-              <div className="relative space-y-4">
-                {/* Vertical line */}
-                <div className="absolute left-3 top-2 bottom-2 w-px bg-border" aria-hidden />
-                {events.map((ev) => (
-                  <div key={ev.id} className="flex gap-3 pl-7 relative">
-                    {/* Dot */}
-                    <div
-                      className="absolute left-1.5 top-1.5 h-3 w-3 rounded-full border-2 border-background"
-                      style={{ background: "#00B6D6" }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {ev.fromStatus ? (
-                          <>
-                            <StatusBadge status={ev.fromStatus} />
-                            <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                          </>
-                        ) : null}
-                        <StatusBadge status={ev.toStatus} />
-                      </div>
-                      {ev.note && (
-                        <p className="mt-1 text-xs text-muted-foreground">{ev.note}</p>
-                      )}
-                      <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground/60">
-                        <Clock className="h-2.5 w-2.5" />
-                        {new Date(ev.createdAt).toLocaleString()}
-                        {ev.changedByFullName && (
-                          <>
-                            <User className="h-2.5 w-2.5" />
-                            {ev.changedByFullName}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Danger Zone ──────────────────────────────────────────────────────
-          Visually separated from routine subscription/level/group actions.
-          Reuses the existing cancellation workflow endpoints. */}
-      {canCancel && (
-        <Card className="border-red-500/40">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm text-red-400">
-              <AlertTriangle className="h-4 w-4" /> Danger Zone
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {dangerAction.kind === "cancelApplication" && (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Cancel this pre-activation application. Any assigned level becomes <em>withdrawn</em> (never deleted); attendance and history are preserved.
-                </p>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => { setDangerDialog("cancelApplication"); }}
-                >
-                  Cancel Application
-                </Button>
-              </>
-            )}
-            {dangerAction.kind === "cancelProgram" && (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Cancel this active enrollment. This creates a cancellation request in the shared workflow (never edits the enrollment rows directly) and writes an audit log.
-                </p>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => { setCancelTiming("immediate"); setDangerDialog("cancelProgram"); }}
-                >
-                  Cancel Program
-                </Button>
-              </>
-            )}
-            {dangerAction.kind === "viewCancellationRequest" && (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  An open cancellation request already exists for this enrollment ({openCancellationRequest?.status}). Manage it from the Cancellation Requests workflow.
-                </p>
-                <Button variant="outline" size="sm" onClick={() => navigate("/ballet/cancellation-requests")}>
-                  Manage Cancellation Request
-                </Button>
-              </>
-            )}
-            {dangerAction.kind === "none" && (
-              <p className="text-sm text-muted-foreground italic">
-                No cancellation action is available for an application in status “{app.status}”.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
+        <ApplicationDetailTabPanels
+          app={app}
+          level={level}
+          group={group}
+          currentPayment={currentPayment}
+          currentSubscription={currentSubscription}
+          appAcceptedOrAssigned={appAcceptedOrAssigned}
+          levelAssigned={levelAssigned}
+          groupAssigned={groupAssigned}
+          initialPaymentRecorded={initialPaymentRecorded}
+          pendingInitialPayment={pendingInitialPayment}
+          paidInitialPayment={paidInitialPayment}
+          initialPayments={initialPayments}
+          subscriptionReadinessState={subscriptionReadinessState}
+          paymentDataWarning={paymentDataWarning}
+          subscriptionExpiredWarning={subscriptionExpiredWarning}
+          nextRequiredAction={nextRequiredAction}
+          setActiveTab={setActiveTab}
+          canCreateInitialPayment={canCreateInitialPayment}
+          openInitialPaymentDialog={openInitialPaymentDialog}
+          canConfirmInitialPayment={canConfirmInitialPayment}
+          openConfirmPaymentDialog={openConfirmPaymentDialog}
+          canActivateApplication={canActivateApplication}
+          statusMutation={statusMutation}
+          statusNote={statusNote}
+          assessmentSchedule={assessmentSchedule}
+          reviewStatuses={reviewStatuses}
+          newStatus={newStatus}
+          setNewStatus={setNewStatus}
+          setStatusNote={setStatusNote}
+          payments={payments}
+          canAdjustExpiry={canAdjustExpiry}
+          canEditPayments={canEditPayments}
+          setAdjustExpiryOpen={setAdjustExpiryOpen}
+          canViewPayments={canViewPayments}
+          navigate={navigate}
+          appId={appId}
+          data={data}
+          activeSchedules={activeSchedules}
+          canCheckIn={canCheckIn}
+          attendanceSummary={attendanceSummary}
+          attendanceHistoryData={attendanceHistoryData}
+          editingAttendanceId={editingAttendanceId}
+          setEditingAttendanceId={setEditingAttendanceId}
+          editStatus={editStatus}
+          setEditStatus={setEditStatus}
+          editDuration={editDuration}
+          setEditDuration={setEditDuration}
+          editNote={editNote}
+          setEditNote={setEditNote}
+          patchAttendanceMutation={patchAttendanceMutation}
+          startEditAttendance={startEditAttendance}
+          attScheduleId={attScheduleId}
+          setAttScheduleId={setAttScheduleId}
+          attDate={attDate}
+          setAttDate={setAttDate}
+          attStatus={attStatus}
+          setAttStatus={setAttStatus}
+          attDuration={attDuration}
+          setAttDuration={setAttDuration}
+          attNote={attNote}
+          setAttNote={setAttNote}
+          attendanceMutation={attendanceMutation}
+          canApprove={canApprove}
+          levels={levels}
+          newLevelId={newLevelId}
+          setNewLevelId={setNewLevelId}
+          levelNote={levelNote}
+          setLevelNote={setLevelNote}
+          levelMutation={levelMutation}
+          groups={groups}
+          newGroupId={newGroupId}
+          setNewGroupId={setNewGroupId}
+          groupNote={groupNote}
+          setGroupNote={setGroupNote}
+          groupMutation={groupMutation}
+          canCancel={canCancel}
+          dangerAction={dangerAction}
+          openCancellationRequest={openCancellationRequest}
+          setDangerDialog={setDangerDialog}
+          setCancelTiming={setCancelTiming}
+          cancellationRequests={cancellationRequests}
+          refunds={refunds}
+          events={events}
+        />
+      </Tabs>
       <Dialog open={createInitialPaymentOpen} onOpenChange={(open) => (open ? setCreateInitialPaymentOpen(true) : closeCreateInitialPaymentDialog())}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Create Initial Payment</DialogTitle></DialogHeader>
