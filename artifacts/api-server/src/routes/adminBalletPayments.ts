@@ -15,22 +15,22 @@
  *   payment to "refunded" is rejected so refunds never withdraw enrollments
  *   implicitly. Historical rows with status="refunded" remain readable.
  *
- * POST create-time validation (Phase A / P0-7 — deliberately narrow scope,
- * two related checks are explicitly withheld pending separate business
- * decisions: no unique-paid-payment constraint, no amount-vs-package-price
- * validation):
+ * POST create-time validation:
  *   (a) levelAssignmentId, if given, must belong to this same application.
- *   (b) packageId, if given, must exist and be active.
+ *   (b) packageId must exist and be active; amountEgp is derived from that
+ *       package server-side so clients cannot override the package price.
  *   (c) packageOrderId, if given, must exist; its studentId is checked
  *       against the application's parentStudentId ONLY when the application
  *       has a linked parent account (package_orders has no child/application
  *       column, only an account-level studentId) — a manual/walk-in
  *       application (parentStudentId null) skips this specific check, with
  *       an explicit log line so the skip is visible rather than silent.
+ *   (d) initial payments are serialized by locking the application row and
+ *       rejecting any existing non-renewal pending/paid/refunded payment.
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, count, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -59,6 +59,8 @@ import { isSupportedManualBalletPaymentMethod } from "../lib/financialAggregates
 
 const router: IRouter = Router();
 const BALLET_PAYMENT_ACTIVITY_FIELDS = ["applicationId", "levelAssignmentId", "packageId", "packageOrderId", "amountEgp", "status", "paymentMethod", "billingMonth", "subscriptionStartDate", "subscriptionExpiresAt", "originalExpiresAt", "isRenewal", "renewedFromId", "extensionHistory", "paidAt", "refundedAt", "notes"] as const;
+const INITIAL_PAYMENT_APPLICATION_STATUSES = ["accepted", "assignedToLevel"] as const;
+const BLOCKING_INITIAL_PAYMENT_STATUSES = ["pending", "paid", "refunded"] as const;
 
 const VALID_PAYMENT_STATUSES = new Set(BALLET_PAYMENT_STATUSES);
 
@@ -153,8 +155,8 @@ router.get("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("b
 
 const CreatePaymentBody = z.object({
   applicationId:     z.number({ required_error: "applicationId is required" }).int().positive(),
-  amountEgp:         z.number({ required_error: "amountEgp is required" }).int().positive(),
-  packageId:         z.number().int().positive().optional(),
+  amountEgp:         z.number().int().positive().optional(),
+  packageId:         z.number({ required_error: "packageId is required" }).int().positive(),
   packageOrderId:    z.number().int().positive().optional(),
   levelAssignmentId: z.number().int().positive().optional(),
   paymentMethod:     z.enum(BALLET_PAYMENT_METHODS).optional(),
@@ -176,7 +178,7 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
     return;
   }
 
-  const { applicationId, amountEgp, packageId, packageOrderId, levelAssignmentId, paymentMethod, status, billingMonth, notes } = parsed.data;
+  const { applicationId, packageId, packageOrderId, levelAssignmentId, paymentMethod, status, billingMonth, notes } = parsed.data;
   const requestedStatus = status ?? "pending";
   if (requestedStatus !== "pending") {
     res.status(422).json({
@@ -186,104 +188,119 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
     return;
   }
 
-  const [app] = await db
-    .select({
-      id: balletApplicationsTable.id,
-      childName: balletApplicationsTable.childName,
-      parentStudentId: balletApplicationsTable.parentStudentId,
-      preferredPaymentMethod: balletApplicationsTable.preferredPaymentMethod,
-    })
-    .from(balletApplicationsTable)
-    .where(eq(balletApplicationsTable.id, applicationId))
-    .limit(1);
-
-  if (!app) { res.status(404).json({ error: "Application not found" }); return; }
-
-  const effectivePaymentMethod = paymentMethod ?? app.preferredPaymentMethod ?? null;
-  if (!isSupportedManualBalletPaymentMethod(effectivePaymentMethod)) {
-    res.status(422).json({
-      error: "Manual Ballet payment creation currently supports Pay at Studio only. Online payment must be created by the future verified Kashier gateway flow; Bank Transfer is legacy display-only.",
-      code: "BALLET_PAYMENT_METHOD_NOT_SUPPORTED",
-    });
-    return;
-  }
-
-  // (a) A given levelAssignmentId must belong to THIS application — never
-  // let a payment be recorded against another application's assignment row.
-  if (levelAssignmentId != null) {
-    const [assignment] = await db
-      .select({ id: balletLevelAssignmentsTable.id, applicationId: balletLevelAssignmentsTable.applicationId })
-      .from(balletLevelAssignmentsTable)
-      .where(eq(balletLevelAssignmentsTable.id, levelAssignmentId))
-      .limit(1);
-    if (!assignment) { res.status(404).json({ error: "Level assignment not found" }); return; }
-    if (assignment.applicationId !== applicationId) {
-      res.status(422).json({ error: "levelAssignmentId does not belong to this application." });
-      return;
-    }
-  }
-
-  // (b) A given packageId must exist and be active.
-  if (packageId != null) {
-    const [pkg] = await db
-      .select({ id: balletPackagesTable.id, isActive: balletPackagesTable.isActive })
-      .from(balletPackagesTable)
-      .where(eq(balletPackagesTable.id, packageId))
-      .limit(1);
-    if (!pkg) { res.status(404).json({ error: "Package not found" }); return; }
-    if (!pkg.isActive) { res.status(422).json({ error: "Package is inactive and cannot be used for a payment." }); return; }
-  }
-
-  // (c) A given packageOrderId must exist. Ownership (package_orders.studentId
-  // === this application's parentStudentId) is only checked when the
-  // application actually has a linked parent account — package_orders has no
-  // childId/applicationId column at all (only an account-level studentId), so
-  // for a manual/walk-in application (parentStudentId null) there is no
-  // reliable identity to check ownership against. That case is intentionally
-  // skipped rather than silently passing — logged so it's visible, not silent.
-  if (packageOrderId != null) {
-    const [packageOrder] = await db
-      .select({ id: packageOrdersTable.id, studentId: packageOrdersTable.studentId })
-      .from(packageOrdersTable)
-      .where(eq(packageOrdersTable.id, packageOrderId))
-      .limit(1);
-    if (!packageOrder) { res.status(404).json({ error: "Package order not found" }); return; }
-
-    if (app.parentStudentId != null) {
-      if (packageOrder.studentId !== app.parentStudentId) {
-        res.status(422).json({ error: "This package order does not belong to the same account as this application's parent." });
-        return;
-      }
-    } else {
-      logger.info(
-        { applicationId, packageOrderId },
-        "Skipped packageOrderId ownership check — application has no linked parent account (manual/walk-in submission), and package_orders has no child-level identity to check against",
-      );
-    }
-  }
-
   try {
-    const [payment] = await db
-      .insert(balletPaymentsTable)
-      .values({
-        applicationId,
-        amountEgp,
-        packageId: packageId ?? null,
-        packageOrderId: packageOrderId ?? null,
-        levelAssignmentId: levelAssignmentId ?? null,
-        status: "pending",
-        // C1: prefill the method from the application's intake preference when
-        // the admin didn't explicitly choose one. Explicit body value always wins.
-        paymentMethod: effectivePaymentMethod,
-        billingMonth: billingMonth ?? null,
-        subscriptionStartDate: null,
-        subscriptionExpiresAt: null,
-        originalExpiresAt: null,
-        paidAt: null,
-        refundedAt: null,
-        notes: notes ?? null,
-      })
-      .returning();
+    const { app, payment } = await db.transaction(async (tx) => {
+      const [lockedApp] = await tx
+        .select({
+          id: balletApplicationsTable.id,
+          status: balletApplicationsTable.status,
+          childName: balletApplicationsTable.childName,
+          parentStudentId: balletApplicationsTable.parentStudentId,
+          preferredPaymentMethod: balletApplicationsTable.preferredPaymentMethod,
+        })
+        .from(balletApplicationsTable)
+        .where(eq(balletApplicationsTable.id, applicationId))
+        .limit(1)
+        .for("update");
+
+      if (!lockedApp) throw Object.assign(new Error("Application not found"), { status: 404 });
+      if (!INITIAL_PAYMENT_APPLICATION_STATUSES.includes(lockedApp.status as typeof INITIAL_PAYMENT_APPLICATION_STATUSES[number])) {
+        throw Object.assign(new Error("Initial Ballet payment can only be created for accepted or assigned applications."), {
+          status: 422,
+          code: "BALLET_INITIAL_PAYMENT_APPLICATION_STATUS_INVALID",
+        });
+      }
+
+      const effectivePaymentMethod = paymentMethod ?? lockedApp.preferredPaymentMethod ?? null;
+      if (!isSupportedManualBalletPaymentMethod(effectivePaymentMethod)) {
+        throw Object.assign(
+          new Error("Manual Ballet payment creation currently supports Pay at Studio only. Online payment must be created by the future verified Kashier gateway flow; Bank Transfer is legacy display-only."),
+          { status: 422, code: "BALLET_PAYMENT_METHOD_NOT_SUPPORTED" },
+        );
+      }
+
+      const [existingInitial] = await tx
+        .select({ id: balletPaymentsTable.id, status: balletPaymentsTable.status })
+        .from(balletPaymentsTable)
+        .where(and(
+          eq(balletPaymentsTable.applicationId, applicationId),
+          eq(balletPaymentsTable.isRenewal, false),
+          inArray(balletPaymentsTable.status, [...BLOCKING_INITIAL_PAYMENT_STATUSES]),
+        ))
+        .orderBy(desc(balletPaymentsTable.id))
+        .limit(1)
+        .for("update");
+      if (existingInitial) {
+        throw Object.assign(new Error(`Initial Ballet payment already exists for this application in status "${existingInitial.status}".`), {
+          status: 409,
+          code: "BALLET_INITIAL_PAYMENT_EXISTS",
+        });
+      }
+
+      if (levelAssignmentId != null) {
+        const [assignment] = await tx
+          .select({ id: balletLevelAssignmentsTable.id, applicationId: balletLevelAssignmentsTable.applicationId })
+          .from(balletLevelAssignmentsTable)
+          .where(eq(balletLevelAssignmentsTable.id, levelAssignmentId))
+          .limit(1);
+        if (!assignment) throw Object.assign(new Error("Level assignment not found"), { status: 404 });
+        if (assignment.applicationId !== applicationId) {
+          throw Object.assign(new Error("levelAssignmentId does not belong to this application."), { status: 422 });
+        }
+      }
+
+      const [pkg] = await tx
+        .select({ id: balletPackagesTable.id, isActive: balletPackagesTable.isActive, priceEgp: balletPackagesTable.priceEgp })
+        .from(balletPackagesTable)
+        .where(eq(balletPackagesTable.id, packageId))
+        .limit(1);
+      if (!pkg) throw Object.assign(new Error("Package not found"), { status: 404 });
+      if (!pkg.isActive) throw Object.assign(new Error("Package is inactive and cannot be used for a payment."), { status: 422 });
+
+      if (packageOrderId != null) {
+        const [packageOrder] = await tx
+          .select({ id: packageOrdersTable.id, studentId: packageOrdersTable.studentId })
+          .from(packageOrdersTable)
+          .where(eq(packageOrdersTable.id, packageOrderId))
+          .limit(1);
+        if (!packageOrder) throw Object.assign(new Error("Package order not found"), { status: 404 });
+
+        if (lockedApp.parentStudentId != null) {
+          if (packageOrder.studentId !== lockedApp.parentStudentId) {
+            throw Object.assign(new Error("This package order does not belong to the same account as this application's parent."), { status: 422 });
+          }
+        } else {
+          logger.info(
+            { applicationId, packageOrderId },
+            "Skipped packageOrderId ownership check — application has no linked parent account (manual/walk-in submission), and package_orders has no child-level identity to check against",
+          );
+        }
+      }
+
+      const [created] = await tx
+        .insert(balletPaymentsTable)
+        .values({
+          applicationId,
+          amountEgp: pkg.priceEgp,
+          packageId: pkg.id,
+          packageOrderId: packageOrderId ?? null,
+          levelAssignmentId: levelAssignmentId ?? null,
+          status: "pending",
+          paymentMethod: effectivePaymentMethod,
+          billingMonth: billingMonth ?? null,
+          subscriptionStartDate: null,
+          subscriptionExpiresAt: null,
+          originalExpiresAt: null,
+          isRenewal: false,
+          renewedFromId: null,
+          paidAt: null,
+          refundedAt: null,
+          notes: notes ?? null,
+        })
+        .returning();
+
+      return { app: lockedApp, payment: created };
+    });
 
     await logActivity(req, {
       action: "create",
@@ -292,11 +309,15 @@ router.post("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("
       entityId: payment.id,
       entityLabel: app.childName,
       after: Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, payment[key]])),
-      summary: `Created ballet payment of ${amountEgp} EGP for ${app.childName}`,
+      summary: `Created pending initial ballet payment of ${payment.amountEgp} EGP for ${app.childName}`,
     });
 
     res.status(201).json({ payment });
   } catch (err) {
+    const typed = err as { status?: number; code?: string; message?: string };
+    if (typed.status === 404) { res.status(404).json({ error: typed.message ?? "Not found" }); return; }
+    if (typed.status === 409) { res.status(409).json({ error: typed.message, code: typed.code }); return; }
+    if (typed.status === 422) { res.status(422).json({ error: typed.message, code: typed.code }); return; }
     logger.error({ err }, "POST /admin/ballet/payments failed");
     res.status(500).json({ error: "Failed to create payment" });
   }

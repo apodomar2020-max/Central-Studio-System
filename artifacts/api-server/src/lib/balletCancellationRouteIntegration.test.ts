@@ -210,6 +210,24 @@ async function insertBalletPackage(priceEgp = 2500): Promise<number> {
   return rows[0].id;
 }
 
+async function insertBalletGroup(): Promise<number> {
+  const token = Math.random().toString(36).slice(2, 8);
+  const { rows } = await pool.query(
+    `INSERT INTO ballet_groups (name, level_id, is_active) VALUES ($1, $2, true) RETURNING id`,
+    [`Route Test Group ${token}`, levelId],
+  );
+  return rows[0].id;
+}
+
+async function makeAssignedGroupedApplication(): Promise<{ appId: number; assignmentId: number; groupId: number }> {
+  const appId = await insertApplication({ status: "assignedToLevel" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const groupId = await insertBalletGroup();
+  await pool.query(`UPDATE ballet_applications SET assigned_level_id = $2 WHERE id = $1`, [appId, levelId]);
+  await pool.query(`UPDATE ballet_level_assignments SET group_id = $2 WHERE id = $1`, [assignmentId, groupId]);
+  return { appId, assignmentId, groupId };
+}
+
 async function countRows(table: string, where: string, params: unknown[] = []): Promise<number> {
   const { rows } = await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`, params);
   return rows[0].n;
@@ -223,6 +241,7 @@ before(async () => {
   const { requireAuth } = await import("../middlewares/auth.ts");
   const cancellationRouter = (await import("../routes/balletCancellationRefunds.ts")).default;
   const paymentsRouter = (await import("../routes/adminBalletPayments.ts")).default;
+  const adminBalletRouter = (await import("../routes/adminBallet.ts")).default;
   const dbModule = await import("@workspace/db");
   pool = dbModule.pool;
 
@@ -231,6 +250,7 @@ before(async () => {
   app.use(requireAuth);
   app.use(cancellationRouter);
   app.use(paymentsRouter);
+  app.use(adminBalletRouter);
   await new Promise<void>((resolve) => {
     server = app.listen(0, "127.0.0.1", resolve);
   });
@@ -679,6 +699,159 @@ test("pre-activation cancellation: an active/future subscription-cycle payment i
 });
 
 // ─── Admin payment-cycle lifecycle ───────────────────────────────────────────────
+
+test("admin payments: initial payment creation derives package price server-side and starts pending without subscription dates", async () => {
+  const appId = await insertApplication({ status: "accepted" });
+  const packageId = await insertBalletPackage(2600);
+
+  const res = await asAdmin(superAdminId, "route-test-super", "/admin/ballet/payments", {
+    method: "POST",
+    body: JSON.stringify({
+      applicationId: appId,
+      packageId,
+      paymentMethod: "inPerson",
+      amountEgp: 1,
+      status: "pending",
+      startDate: TODAY,
+      expiresAt: addDays(TODAY, 30),
+    }),
+  });
+  assert.equal(res.status, 201);
+  const body = await res.json() as { payment: { id: number; amountEgp: number; status: string; isRenewal: boolean; renewedFromId: number | null } };
+  assert.equal(body.payment.amountEgp, 2600);
+  assert.equal(body.payment.status, "pending");
+  assert.equal(body.payment.isRenewal, false);
+  assert.equal(body.payment.renewedFromId, null);
+
+  const row = await pool.query(
+    `SELECT amount_egp, status, is_renewal, renewed_from_id, paid_at, subscription_start_date, subscription_expires_at
+     FROM ballet_payments WHERE id = $1`,
+    [body.payment.id],
+  );
+  assert.equal(row.rows[0].amount_egp, 2600);
+  assert.equal(row.rows[0].status, "pending");
+  assert.equal(row.rows[0].is_renewal, false);
+  assert.equal(row.rows[0].renewed_from_id, null);
+  assert.equal(row.rows[0].paid_at, null);
+  assert.equal(row.rows[0].subscription_start_date, null);
+  assert.equal(row.rows[0].subscription_expires_at, null);
+});
+
+test("admin payments: duplicate and concurrent initial payment creation produce one row only", async () => {
+  const appId = await insertApplication({ status: "assignedToLevel" });
+  const packageId = await insertBalletPackage(2600);
+  const body = { applicationId: appId, packageId, paymentMethod: "inPerson" };
+
+  const [one, two] = await Promise.all([
+    asAdmin(superAdminId, "route-test-super", "/admin/ballet/payments", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+    asAdmin(superAdminId, "route-test-super", "/admin/ballet/payments", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  ]);
+  assert.deepEqual([one.status, two.status].sort(), [201, 409]);
+  assert.equal(await countRows("ballet_payments", "application_id = $1 AND is_renewal = false AND status = 'pending'", [appId]), 1);
+
+  const third = await asAdmin(superAdminId, "route-test-super", "/admin/ballet/payments", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  assert.equal(third.status, 409);
+  const thirdBody = await third.json() as { code: string };
+  assert.equal(thirdBody.code, "BALLET_INITIAL_PAYMENT_EXISTS");
+});
+
+test("admin payments: application 17 equivalent can progress no payment → pending → paid → explicit activation", async () => {
+  const { appId, assignmentId } = await makeAssignedGroupedApplication();
+  const packageId = await insertBalletPackage(2600);
+
+  const blockedBeforePayment = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "active", note: "Activation readiness check before payment" }),
+  });
+  assert.equal(blockedBeforePayment.status, 422);
+  const blockedBeforeBody = await blockedBeforePayment.json() as { error: string };
+  assert.match(blockedBeforeBody.error, /no active paid Ballet subscription period/i);
+
+  const created = await asAdmin(superAdminId, "route-test-super", "/admin/ballet/payments", {
+    method: "POST",
+    body: JSON.stringify({
+      applicationId: appId,
+      packageId,
+      levelAssignmentId: assignmentId,
+      paymentMethod: "inPerson",
+      amountEgp: 1,
+    }),
+  });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json() as { payment: { id: number; status: string } };
+  assert.equal(createdBody.payment.status, "pending");
+
+  const blockedPending = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "active", note: "Activation readiness check while payment pending" }),
+  });
+  assert.equal(blockedPending.status, 422);
+
+  const beforeConfirm = await pool.query(`SELECT status FROM ballet_applications WHERE id = $1`, [appId]);
+  assert.equal(beforeConfirm.rows[0].status, "assignedToLevel");
+
+  const confirmed = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/payments/${createdBody.payment.id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "paid", startDate: TODAY, expiresAt: addDays(TODAY, 30) }),
+  });
+  assert.equal(confirmed.status, 200);
+
+  const afterConfirm = await pool.query(
+    `SELECT a.status AS application_status, p.status AS payment_status, p.paid_at, p.subscription_start_date, p.subscription_expires_at
+     FROM ballet_applications a
+     JOIN ballet_payments p ON p.application_id = a.id
+     WHERE a.id = $1 AND p.id = $2`,
+    [appId, createdBody.payment.id],
+  );
+  assert.equal(afterConfirm.rows[0].application_status, "assignedToLevel", "confirming payment must not auto-activate the application");
+  assert.equal(afterConfirm.rows[0].payment_status, "paid");
+  assert.notEqual(afterConfirm.rows[0].paid_at, null);
+  assert.equal(afterConfirm.rows[0].subscription_start_date, TODAY);
+  assert.equal(afterConfirm.rows[0].subscription_expires_at, addDays(TODAY, 30));
+
+  const activated = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "active", note: "Explicit activation after payment confirmation" }),
+  });
+  assert.equal(activated.status, 200);
+  const finalApp = await pool.query(`SELECT status FROM ballet_applications WHERE id = $1`, [appId]);
+  assert.equal(finalApp.rows[0].status, "active");
+});
+
+test("admin payments: pending initial payment is not counted as Ballet revenue, but confirmed paid initial payment is counted", async () => {
+  const appId = await insertApplication({ status: "accepted" });
+  const packageId = await insertBalletPackage(3100);
+  const { getFinancialAggregates } = await import("./financialAggregates.ts");
+
+  const before = await getFinancialAggregates();
+  const created = await asAdmin(superAdminId, "route-test-super", "/admin/ballet/payments", {
+    method: "POST",
+    body: JSON.stringify({ applicationId: appId, packageId, paymentMethod: "inPerson" }),
+  });
+  assert.equal(created.status, 201);
+  const { payment } = await created.json() as { payment: { id: number } };
+
+  const afterPending = await getFinancialAggregates();
+  assert.equal(afterPending.grossBalletRevenueEgp, before.grossBalletRevenueEgp, "pending initial payments must not count as collected revenue");
+
+  const confirmed = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/payments/${payment.id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "paid", startDate: TODAY, expiresAt: addDays(TODAY, 30) }),
+  });
+  assert.equal(confirmed.status, 200);
+
+  const afterPaid = await getFinancialAggregates();
+  assert.equal(afterPaid.grossBalletRevenueEgp, before.grossBalletRevenueEgp + 3100, "paid initial payment revenue uses the stored package-derived amount");
+});
 
 test("admin payments: renewal creation always creates a pending payment cycle with package price and no paid/subscription dates, even if the client sends paid fields", async () => {
   const appId = await insertApplication({ status: "active" });

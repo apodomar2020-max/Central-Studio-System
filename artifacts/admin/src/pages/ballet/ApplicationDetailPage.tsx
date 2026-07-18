@@ -264,6 +264,17 @@ interface GroupsResponse {
   data: Group[];
 }
 
+interface BalletPackage {
+  id: number;
+  name: string;
+  priceEgp: number;
+  isActive: boolean;
+}
+
+interface PackagesResponse {
+  data: BalletPackage[];
+}
+
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const ALL_STATUSES = [
@@ -388,6 +399,24 @@ function SummaryCard({ label, value, sub }: { label: string; value: React.ReactN
   );
 }
 
+function ReadinessItem({ label, state, detail }: { label: string; state: "complete" | "pending" | "missing" | "expired"; detail?: React.ReactNode }) {
+  const cfg = {
+    complete: { text: "Complete", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+    pending: { text: "Pending", className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
+    missing: { text: "Missing", className: "bg-red-500/15 text-red-400 border-red-500/30" },
+    expired: { text: "Expired", className: "bg-red-500/15 text-red-400 border-red-500/30" },
+  }[state];
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-md border bg-muted/10 px-3 py-2">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        {detail && <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>}
+      </div>
+      <Badge variant="outline" className={cfg.className}>{cfg.text}</Badge>
+    </div>
+  );
+}
+
 function formatDateTime(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "—";
 }
@@ -395,6 +424,12 @@ function formatDateTime(value?: string | null) {
 function addOneDay(dateOnly: string) {
   const value = new Date(`${dateOnly}T00:00:00.000Z`);
   value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
+function addDays(dateOnly: string, days: number) {
+  const value = new Date(`${dateOnly}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 }
 
@@ -409,6 +444,7 @@ export default function ApplicationDetailPage() {
   const canReject = can("ballet.applications", "reject");
   const canCancel = can("ballet.applications", "cancel");
   const canViewPayments = can("ballet.payments", "view");
+  const canCreatePayments = can("ballet.payments", "create");
   const canEditPayments = can("ballet.payments", "edit");
   const canCheckIn = can("attendance", "checkIn");
   const { toast } = useToast();
@@ -440,6 +476,13 @@ export default function ApplicationDetailPage() {
   const [expiryReason, setExpiryReason] = useState<(typeof EXPIRY_ADJUSTMENT_REASONS)[number]["value"]>("studioHoliday");
   const [expiryOtherReason, setExpiryOtherReason] = useState("");
   const [expiryNote, setExpiryNote] = useState("");
+  const [createInitialPaymentOpen, setCreateInitialPaymentOpen] = useState(false);
+  const [initialPaymentPackageId, setInitialPaymentPackageId] = useState("");
+  const [initialPaymentBillingMonth, setInitialPaymentBillingMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [initialPaymentNotes, setInitialPaymentNotes] = useState("");
+  const [confirmingPayment, setConfirmingPayment] = useState<BalletPayment | null>(null);
+  const [confirmStartDate, setConfirmStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [confirmExpiresAt, setConfirmExpiresAt] = useState(() => addDays(new Date().toISOString().slice(0, 10), 30));
 
   // D1: inline correction state for an existing attendance history row.
   const [editingAttendanceId, setEditingAttendanceId] = useState<number | null>(null);
@@ -487,6 +530,18 @@ export default function ApplicationDetailPage() {
       if (!res.ok) throw new Error("Failed to load groups");
       return res.json();
     },
+  });
+
+  const { data: packagesData } = useQuery<PackagesResponse>({
+    queryKey: ["admin-ballet-packages-active", token],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/packages?limit=100`, {
+        headers: makeHeaders(token),
+      });
+      if (!res.ok) throw new Error("Failed to load packages");
+      return res.json();
+    },
+    enabled: canCreatePayments,
   });
 
   // ── Status mutation ─────────────────────────────────────────────────────────
@@ -673,6 +728,71 @@ export default function ApplicationDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  function closeCreateInitialPaymentDialog() {
+    setCreateInitialPaymentOpen(false);
+    setInitialPaymentPackageId("");
+    setInitialPaymentBillingMonth(new Date().toISOString().slice(0, 7));
+    setInitialPaymentNotes("");
+  }
+
+  const createInitialPaymentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/payments`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify({
+          applicationId: appId,
+          packageId: Number(initialPaymentPackageId),
+          levelAssignmentId: data?.assignmentId ?? undefined,
+          paymentMethod: "inPerson",
+          billingMonth: initialPaymentBillingMonth || undefined,
+          notes: initialPaymentNotes.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to create initial payment");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Initial payment created", description: "A pending Pay at Studio payment is now ready to confirm after collection." });
+      closeCreateInitialPaymentDialog();
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-ballet-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async () => {
+      if (!confirmingPayment) throw new Error("No pending payment selected.");
+      const res = await fetch(`${API_BASE}/api/admin/ballet/payments/${confirmingPayment.id}/status`, {
+        method: "PATCH",
+        headers: makeHeaders(token),
+        body: JSON.stringify({
+          status: "paid",
+          startDate: confirmStartDate,
+          expiresAt: confirmExpiresAt,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to confirm payment");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Payment confirmed", description: "Payment confirmed. This application is ready for activation." });
+      setConfirmingPayment(null);
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-ballet-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   async function handleExportPdf() {
     setIsExportingPdf(true);
     try {
@@ -842,6 +962,28 @@ export default function ApplicationDetailPage() {
       : Boolean(expiryNewDate && currentSubscription?.subscriptionExpiresAt && expiryNewDate > currentSubscription.subscriptionExpiresAt)
   );
   const activeSchedules = (groupSchedules ?? []).filter((s) => s.status === "active");
+  const activePackages = (packagesData?.data ?? []).filter((pkg) => pkg.isActive);
+  const selectedInitialPackage = activePackages.find((pkg) => String(pkg.id) === initialPaymentPackageId) ?? null;
+  const initialPayments = payments.filter((payment) => !payment.isRenewal && payment.renewedFromId == null);
+  const pendingInitialPayment = initialPayments.find((payment) => payment.status === "pending") ?? null;
+  const paidInitialPayment = initialPayments.find((payment) => payment.status === "paid") ?? null;
+  const hasBlockingInitialPayment = initialPayments.some((payment) => ["pending", "paid", "refunded"].includes(payment.status));
+  const canCreateInitialPayment = Boolean(
+    canCreatePayments
+      && ["accepted", "assignedToLevel"].includes(app.status)
+      && !hasBlockingInitialPayment,
+  );
+  const canConfirmInitialPayment = Boolean(canEditPayments && pendingInitialPayment);
+  const appAcceptedOrAssigned = ["accepted", "assignedToLevel", "active"].includes(app.status);
+  const levelAssigned = app.assignedLevelId != null;
+  const groupAssigned = group != null;
+  const initialPaymentRecorded = initialPayments.length > 0;
+  const paymentConfirmed = paidInitialPayment != null;
+  const subscriptionReadinessState: "complete" | "pending" | "missing" | "expired" =
+    currentSubscription?.hasActiveSubscription ? "complete"
+    : currentSubscription?.subscriptionStatus === "expired" ? "expired"
+    : paymentConfirmed ? "pending"
+    : "missing";
   const levels = levelsData?.levels ?? [];
   // Groups are only offered for the level actually assigned to this
   // application — mirrors the existing level-filter pattern used elsewhere
@@ -909,6 +1051,80 @@ export default function ApplicationDetailPage() {
         <SummaryCard label="Payment Status" value={<PaymentStatusBadge status={currentPayment?.status} />} sub={currentPayment ? `${currentPayment.amountEgp} EGP` : "No payment recorded"} />
         <SummaryCard label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} sub={currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "No active period"} />
       </div>
+
+      <Section title="Activation Readiness">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <ReadinessItem
+            label="Application accepted/assigned"
+            state={appAcceptedOrAssigned ? "complete" : "missing"}
+            detail={<StatusBadge status={app.status} />}
+          />
+          <ReadinessItem
+            label="Level assigned"
+            state={levelAssigned ? "complete" : "missing"}
+            detail={level?.name ?? "Assign a level before activation."}
+          />
+          <ReadinessItem
+            label="Group assigned"
+            state={groupAssigned ? "complete" : "missing"}
+            detail={group?.name ?? "Assign a group before activation."}
+          />
+          <ReadinessItem
+            label="Initial payment recorded"
+            state={initialPaymentRecorded ? "complete" : "missing"}
+            detail={pendingInitialPayment ? `Pending payment #${pendingInitialPayment.id}` : paidInitialPayment ? `Paid payment #${paidInitialPayment.id}` : "Create the first pending payment cycle."}
+          />
+          <ReadinessItem
+            label="Payment confirmed"
+            state={paymentConfirmed ? "complete" : pendingInitialPayment ? "pending" : "missing"}
+            detail={paidInitialPayment?.paidAt ? `Paid ${new Date(paidInitialPayment.paidAt).toLocaleString()}` : pendingInitialPayment ? "Confirm after Pay at Studio collection." : "No paid initial payment yet."}
+          />
+          <ReadinessItem
+            label="Subscription period active"
+            state={subscriptionReadinessState}
+            detail={currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "Confirm payment to establish dates."}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2 pt-2">
+          {canCreateInitialPayment && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const preferredActive = activePackages.find((pkg) => pkg.id === app.preferredPackageId);
+                setInitialPaymentPackageId(preferredActive ? String(preferredActive.id) : "");
+                setCreateInitialPaymentOpen(true);
+              }}
+            >
+              Create Initial Payment
+            </Button>
+          )}
+          {canConfirmInitialPayment && pendingInitialPayment && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const today = new Date().toISOString().slice(0, 10);
+                setConfirmStartDate(today);
+                setConfirmExpiresAt(addDays(today, 30));
+                setConfirmingPayment(pendingInitialPayment);
+              }}
+            >
+              Confirm Payment
+            </Button>
+          )}
+          {canViewPayments && (
+            <Button variant="ghost" size="sm" onClick={() => navigate(`/ballet/payments?applicationId=${appId}`)}>
+              Open Payment History
+            </Button>
+          )}
+        </div>
+        {initialPayments.some((payment) => payment.status === "refunded") && (
+          <p className="text-xs text-muted-foreground">
+            The initial payment on this application is refunded. This hotfix does not introduce a replacement-payment workflow; handle recovery through a separate approved payment workflow.
+          </p>
+        )}
+      </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column — application data */}
@@ -1518,6 +1734,88 @@ export default function ApplicationDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={createInitialPaymentOpen} onOpenChange={(open) => (open ? setCreateInitialPaymentOpen(true) : closeCreateInitialPaymentDialog())}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Create Initial Payment</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Creates the first pending Pay at Studio payment for this Ballet application. The amount is taken from the selected package on the server.
+            </p>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Package</div>
+              <Select value={initialPaymentPackageId} onValueChange={setInitialPaymentPackageId}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select active package…" /></SelectTrigger>
+                <SelectContent>
+                  {activePackages.map((pkg) => (
+                    <SelectItem key={pkg.id} value={String(pkg.id)}>
+                      {pkg.name} · {pkg.priceEgp.toLocaleString()} EGP
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Field label="Method" value="Pay at Studio" />
+              <Field label="Status" value="Pending" />
+              <Field label="Amount" value={selectedInitialPackage ? `${selectedInitialPackage.priceEgp.toLocaleString()} EGP` : null} />
+              <Field label="Cycle" value="Initial payment" />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Billing month</div>
+              <Input type="month" value={initialPaymentBillingMonth} onChange={(event) => setInitialPaymentBillingMonth(event.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal note</div>
+              <Textarea
+                className="text-sm min-h-[64px] resize-none"
+                value={initialPaymentNotes}
+                onChange={(event) => setInitialPaymentNotes(event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={closeCreateInitialPaymentDialog} disabled={createInitialPaymentMutation.isPending}>Cancel</Button>
+              <Button size="sm" onClick={() => createInitialPaymentMutation.mutate()} disabled={!initialPaymentPackageId || createInitialPaymentMutation.isPending}>
+                {createInitialPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating…</> : "Create Pending Payment"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(confirmingPayment)} onOpenChange={(open) => { if (!open) setConfirmingPayment(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Confirm Payment</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Confirm only after the customer has paid at the studio. This starts the subscription period; activation remains a separate explicit action.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Start date</div>
+                <Input type="date" className="h-8 text-sm" value={confirmStartDate} onChange={(event) => {
+                  setConfirmStartDate(event.target.value);
+                  setConfirmExpiresAt(addDays(event.target.value, 30));
+                }} />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Expiry date</div>
+                <Input type="date" className="h-8 text-sm" value={confirmExpiresAt} onChange={(event) => setConfirmExpiresAt(event.target.value)} />
+              </div>
+            </div>
+            <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+              Payment #{confirmingPayment?.id} · Pay at Studio · {confirmingPayment?.amountEgp.toLocaleString()} EGP
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setConfirmingPayment(null)} disabled={confirmPaymentMutation.isPending}>Cancel</Button>
+              <Button size="sm" onClick={() => confirmPaymentMutation.mutate()} disabled={!confirmStartDate || !confirmExpiresAt || confirmPaymentMutation.isPending}>
+                {confirmPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Confirming…</> : "Confirm Paid"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={adjustExpiryOpen} onOpenChange={(open) => (open ? setAdjustExpiryOpen(true) : closeAdjustExpiryDialog())}>
         <DialogContent className="max-w-md">

@@ -144,11 +144,23 @@ test("admin application detail keeps read-only payment/subscription summary and 
   assert.match(adminDetailPage, /<SummaryCard label="Payment Status"/);
   assert.match(adminDetailPage, /<SummaryCard label="Subscription"/);
   assert.match(adminDetailPage, /<Section title="Payment">/);
+  assert.match(adminDetailPage, /<Section title="Activation Readiness">/);
   assert.match(adminDetailPage, /<Section title="Subscription Management">/);
   assert.match(adminDetailPage, /Adjust Expiry/);
   assert.match(adminDetailPage, /Open Payment History/);
   assert.doesNotMatch(adminDetailPage, /Create Pending Renewal/);
-  assert.doesNotMatch(adminDetailPage, /Confirm Paid/);
+  assert.doesNotMatch(adminDetailPage, /Renew Subscription/);
+});
+
+test("admin application detail exposes initial-payment actions without restoring renewal actions", () => {
+  assert.match(adminDetailPage, /Create Initial Payment/);
+  assert.match(adminDetailPage, /Initial payment recorded/);
+  assert.match(adminDetailPage, /Payment confirmed/);
+  assert.match(adminDetailPage, /Subscription period active/);
+  assert.match(adminDetailPage, /api\/admin\/ballet\/payments/);
+  assert.match(adminDetailPage, /Confirm Payment/);
+  assert.doesNotMatch(adminDetailPage, /subscriptions\/renew/);
+  assert.doesNotMatch(adminDetailPage, /Extend Subscription/);
 });
 
 test("old extend subscription endpoint is removed and replaced with one canonical expiry-adjustment route", () => {
