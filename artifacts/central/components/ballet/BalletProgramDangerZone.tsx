@@ -55,13 +55,7 @@ type ReasonModalState =
   | { kind: "cancelProgram"; requestedTiming: "immediate" | "endOfPeriod" };
 
 function isRefundEligible(detail: BalletApplicationDetail | null): boolean {
-  const payment = detail?.currentPayment;
-  return Boolean(
-    payment &&
-      payment.status === "paid" &&
-      payment.paymentMethod === "inPerson" &&
-      payment.paidAt,
-  );
+  return detail?.eligibleRefund?.eligible === true;
 }
 
 export default function BalletProgramDangerZone({ bottomInset = 0 }: { bottomInset?: number }) {

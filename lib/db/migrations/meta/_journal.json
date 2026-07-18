@@ -491,6 +491,13 @@
       "when": 1784462424000,
       "tag": "0070_reconcile_ballet_cancellation_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1784462425000,
+      "tag": "0071_ballet_pending_renewal_uniqueness",
+      "breakpoints": true
     }
   ]
 }

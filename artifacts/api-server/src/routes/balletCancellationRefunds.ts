@@ -19,7 +19,7 @@ import { adminActivityActor, logActivity } from "../lib/activityLog";
 import { currentSubscription, getPaymentCyclesForApplication } from "../lib/balletSubscriptions";
 import { logger } from "../lib/logger";
 import { finalizeBalletCancellationRequest } from "../lib/balletCancellationFinalization";
-import { resolveApplicationCurrentCycle, eligiblePaymentForContext, refundableRemainingEgp, todayDateOnly, type BalletRefundEligibilityContext, type ResolvedCurrentBalletCycle } from "../lib/balletRefundEligibility";
+import { balletRefundEligibilitySummary, resolveApplicationCurrentCycle, eligiblePaymentForContext, refundableRemainingEgp, todayDateOnly, type BalletRefundEligibilityContext, type ResolvedCurrentBalletCycle } from "../lib/balletRefundEligibility";
 
 const router: IRouter = Router();
 
@@ -180,12 +180,18 @@ async function loadApplicationDetailForParent(applicationId: number, parentStude
     .orderBy(desc(balletRefundsTable.createdAt));
 
   const payments = await getPaymentCyclesForApplication(applicationId);
+  const refundEligibilityContext: BalletRefundEligibilityContext =
+    application.status === "active" && activeAssignment
+      ? { kind: "activeEnrollment", resolvedCycle: await resolveApplicationCurrentCycle(application.id, todayDateOnly()) }
+      : { kind: "preActivation" };
+  const eligibleRefund = await balletRefundEligibilitySummary(applicationId, refundEligibilityContext);
   return {
     application,
     activeAssignment: activeAssignment ?? null,
     openCancellationRequest: openCancellationRequest ?? null,
     currentPayment: currentSubscription(payments),
     refunds,
+    eligibleRefund,
   };
 }
 

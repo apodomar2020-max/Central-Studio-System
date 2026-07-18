@@ -9,6 +9,10 @@ const dangerZone = read("artifacts/central/components/ballet/BalletProgramDanger
 const programScreen = read("artifacts/central/app/ballet/index.tsx");
 const adminDetailPage = read("artifacts/admin/src/pages/ballet/ApplicationDetailPage.tsx");
 const cancellationListPage = read("artifacts/admin/src/pages/ballet/BalletCancellationRequestsPage.tsx");
+const adminPaymentsPage = read("artifacts/admin/src/pages/ballet/BalletPaymentsPage.tsx");
+const adminPaymentsRoute = read("artifacts/api-server/src/routes/adminBalletPayments.ts");
+const balletPaymentsSchema = read("lib/db/src/schema/balletPayments.ts");
+const pendingRenewalMigration = read("lib/db/migrations/0071_ballet_pending_renewal_uniqueness.sql");
 
 // ─── Mobile Danger Zone (spec §2–4, §10) ────────────────────────────────────────
 
@@ -42,8 +46,8 @@ test("mobile Danger Zone prevents duplicate submissions via a busy guard", () =>
   assert.match(dangerZone, /disabled=\{Boolean\(reasonError\) \|\| busy\}/);
 });
 
-test("mobile refund option is shown only for an eligible paid inPerson payment, with no amount input", () => {
-  assert.match(dangerZone, /payment\.status === "paid" &&\s*\n?\s*payment\.paymentMethod === "inPerson"/);
+test("mobile refund option is shown only from backend refund eligibility, with no amount input", () => {
+  assert.match(dangerZone, /detail\?\.eligibleRefund\?\.eligible === true/);
   assert.match(dangerZone, /Request Cash Refund/);
   assert.doesNotMatch(dangerZone, /amountEgp.*TextInput|TextInput.*amount/i);
 });
@@ -124,4 +128,75 @@ test("admin detail page attributes each cancellation request to Parent or the Ad
 test("admin cancellation list page shows an Initiated By column", () => {
   assert.match(cancellationListPage, /<TableHead>Initiated By<\/TableHead>/);
   assert.match(cancellationListPage, /row\.initiatedByType === "admin" \? \(row\.initiatedByAdminName/);
+});
+
+// ─── Ballet subscription/payment lifecycle cleanup ───────────────────────────
+
+test("admin application detail no longer exposes Subscription Actions", () => {
+  assert.doesNotMatch(adminDetailPage, /Subscription Actions/);
+  assert.doesNotMatch(adminDetailPage, /Extend Subscription/);
+  assert.doesNotMatch(adminDetailPage, /Renew Subscription/);
+  assert.doesNotMatch(adminDetailPage, /subscriptions\/renew/);
+  assert.doesNotMatch(adminDetailPage, /payments\/\$\{payment\.id\}\/extend/);
+});
+
+test("admin application detail keeps read-only payment/subscription summary and compact management actions", () => {
+  assert.match(adminDetailPage, /<SummaryCard label="Payment Status"/);
+  assert.match(adminDetailPage, /<SummaryCard label="Subscription"/);
+  assert.match(adminDetailPage, /<Section title="Payment">/);
+  assert.match(adminDetailPage, /<Section title="Subscription Management">/);
+  assert.match(adminDetailPage, /Adjust Expiry/);
+  assert.match(adminDetailPage, /Open Payment History/);
+  assert.doesNotMatch(adminDetailPage, /Create Pending Renewal/);
+  assert.doesNotMatch(adminDetailPage, /Confirm Paid/);
+});
+
+test("old extend subscription endpoint is removed and replaced with one canonical expiry-adjustment route", () => {
+  assert.doesNotMatch(adminPaymentsRoute, /payments\/:id\/extend/);
+  assert.doesNotMatch(adminPaymentsRoute, /ExtendSubscriptionBody/);
+  assert.match(adminPaymentsRoute, /applications\/:applicationId\/subscription\/expiry/);
+  assert.match(adminPaymentsRoute, /BALLET_NO_ADJUSTABLE_SUBSCRIPTION/);
+  assert.match(adminPaymentsRoute, /adjustmentMethod/);
+  assert.match(adminPaymentsRoute, /extensionHistory: \[\.\.\.history, historyEntry/);
+  assert.match(adminPaymentsRoute, /logActivityWithActor\(tx, adminActivityActor\(req\)/);
+});
+
+test("renewal creation is pending-only and ignores client paid state/dates", () => {
+  assert.match(adminPaymentsRoute, /status: "pending"/);
+  assert.match(adminPaymentsRoute, /subscriptionStartDate: null/);
+  assert.match(adminPaymentsRoute, /subscriptionExpiresAt: null/);
+  assert.match(adminPaymentsRoute, /paidAt: null/);
+  assert.match(adminPaymentsRoute, /amountEgp: pkg\.priceEgp/);
+  assert.doesNotMatch(adminPaymentsRoute, /status === "paid" \? startDate : null/);
+});
+
+test("payment confirmation is the only supported payment status action and requires a pending row", () => {
+  assert.match(adminPaymentsRoute, /BALLET_PAYMENT_STATUS_ACTION_NOT_SUPPORTED/);
+  assert.match(adminPaymentsRoute, /BALLET_PAYMENT_NOT_PENDING/);
+  assert.match(adminPaymentsRoute, /\.for\("update"\)/);
+  assert.match(adminPaymentsRoute, /status: "paid"/);
+  assert.match(adminPaymentsRoute, /paidAt: now/);
+});
+
+test("pending renewal uniqueness is enforced in schema and migration", () => {
+  assert.match(balletPaymentsSchema, /ballet_payments_open_pending_renewal_idx/);
+  assert.match(balletPaymentsSchema, /status.*'pending'/);
+  assert.match(pendingRenewalMigration, /CREATE UNIQUE INDEX IF NOT EXISTS "ballet_payments_open_pending_renewal_idx"/);
+  assert.match(pendingRenewalMigration, /"is_renewal" = true/);
+  assert.match(pendingRenewalMigration, /"status" = 'pending'/);
+});
+
+test("Ballet Payments page owns pending renewal and confirmation actions only", () => {
+  assert.match(adminPaymentsPage, /Create Pending Renewal/);
+  assert.match(adminPaymentsPage, /Confirm Paid/);
+  assert.match(adminPaymentsPage, /status: "paid"/);
+  assert.match(adminPaymentsPage, /payment\.status === "pending"/);
+  assert.doesNotMatch(adminPaymentsPage, /Extend Subscription/);
+  assert.doesNotMatch(adminPaymentsPage, /paymentStatus.*refunded|status: "refunded"/);
+});
+
+test("mobile Danger Zone uses backend refund eligibility instead of duplicating payment/date rules", () => {
+  assert.match(dangerZone, /detail\?\.eligibleRefund\?\.eligible === true/);
+  assert.doesNotMatch(dangerZone, /payment\.status === "paid"/);
+  assert.doesNotMatch(dangerZone, /payment\.paymentMethod === "inPerson"/);
 });

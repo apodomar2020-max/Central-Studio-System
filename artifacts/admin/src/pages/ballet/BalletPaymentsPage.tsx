@@ -1,13 +1,14 @@
 /**
  * Ballet -> Payments - /ballet/payments
  *
- * Read-only financial history for Ballet applications. Payment creation,
- * status changes, renewals, and extensions are owned by Application Detail.
+ * Financial history and payment-cycle management for Ballet applications.
+ * Application Detail displays subscription state only; new cycles start here
+ * as pending rows and are activated only after payment is confirmed.
  */
 
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, ChevronLeft, ChevronRight, FileText, RefreshCw, CheckCircle2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
@@ -40,6 +43,13 @@ async function adminFetch<T>(url: string, init: RequestInit, token: string | nul
 
 const STATUSES = ["pending", "rejected", "paid", "refunded"] as const;
 type PaymentStatus = (typeof STATUSES)[number];
+
+interface BalletPackage {
+  id: number;
+  name: string;
+  priceEgp: number;
+  isActive: boolean;
+}
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   bankTransfer: "Legacy Bank Transfer",
@@ -92,6 +102,8 @@ interface BalletPayment {
   subscriptionDisplayStatus?: string | null;
   subscriptionStartDate?: string | null;
   subscriptionExpiresAt?: string | null;
+  isRenewal: boolean;
+  renewedFromId: number | null;
   paidAt: string | null;
   refundedAt: string | null;
   notes: string | null;
@@ -107,12 +119,33 @@ interface ListResponse {
   totalPages: number;
 }
 
+interface PackagesResponse {
+  data: BalletPackage[];
+}
+
+function addDays(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 export default function BalletPaymentsPage() {
   const { token } = useAdminAuth();
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState("");
-  const [applicationIdFilter, setApplicationIdFilter] = useState("");
+  const [applicationIdFilter, setApplicationIdFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("applicationId") ?? "";
+  });
   const [page, setPage] = useState(1);
+  const [renewingPayment, setRenewingPayment] = useState<BalletPayment | null>(null);
+  const [renewPackageId, setRenewPackageId] = useState("");
+  const [renewBillingMonth, setRenewBillingMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [confirmingPayment, setConfirmingPayment] = useState<BalletPayment | null>(null);
+  const [confirmStartDate, setConfirmStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [confirmExpiresAt, setConfirmExpiresAt] = useState(() => addDays(new Date().toISOString().slice(0, 10), 30));
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ballet-payments", page, statusFilter, applicationIdFilter, token],
@@ -127,12 +160,78 @@ export default function BalletPaymentsPage() {
     },
     refetchOnWindowFocus: false,
   });
+
+  const { data: packagesData } = useQuery<PackagesResponse>({
+    queryKey: ["admin-ballet-packages-active", token],
+    queryFn: () => adminFetch<PackagesResponse>(`${API_BASE}/api/admin/ballet/packages?limit=100`, {}, token),
+  });
+
+  const createRenewalMutation = useMutation({
+    mutationFn: async () => {
+      if (!renewingPayment || !renewPackageId) throw new Error("Select a package first.");
+      return adminFetch<{ payment: BalletPayment }>(
+        `${API_BASE}/api/admin/ballet/applications/${renewingPayment.applicationId}/subscriptions/renew`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            renewedFromId: renewingPayment.id,
+            packageId: Number(renewPackageId),
+            paymentMethod: "inPerson",
+            billingMonth: renewBillingMonth || undefined,
+          }),
+        },
+        token,
+      );
+    },
+    onSuccess: () => {
+      toast({ title: "Pending renewal created" });
+      setRenewingPayment(null);
+      setRenewPackageId("");
+      queryClient.invalidateQueries({ queryKey: ["admin-ballet-payments"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to create renewal", variant: "destructive" });
+    },
+  });
+
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async () => {
+      if (!confirmingPayment) throw new Error("No payment selected.");
+      return adminFetch<{ payment: BalletPayment }>(
+        `${API_BASE}/api/admin/ballet/payments/${confirmingPayment.id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "paid",
+            startDate: confirmStartDate,
+            expiresAt: confirmExpiresAt,
+          }),
+        },
+        token,
+      );
+    },
+    onSuccess: () => {
+      toast({ title: "Payment confirmed" });
+      setConfirmingPayment(null);
+      queryClient.invalidateQueries({ queryKey: ["admin-ballet-payments"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to confirm payment", variant: "destructive" });
+    },
+  });
+
   const payments = data?.data ?? [];
+  const packages = (packagesData?.data ?? []).filter((pkg) => pkg.isActive);
+  const openPendingRenewalSourceIds = new Set(
+    payments
+      .filter((payment) => payment.isRenewal && payment.status === "pending" && payment.renewedFromId != null)
+      .map((payment) => payment.renewedFromId),
+  );
   const dash = <span className="italic text-muted-foreground">-</span>;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Ballet Payments" description="Read-only payment and subscription history for Ballet applications" mode="stage" />
+      <PageHeader title="Ballet Payments" description="Payment-cycle history and pending renewal management for Ballet applications" mode="stage" />
 
       <div className="flex items-center gap-3 flex-wrap">
         <Select value={statusFilter || "all"} onValueChange={(value) => { setStatusFilter(value === "all" ? "" : value); setPage(1); }}>
@@ -170,7 +269,7 @@ export default function BalletPaymentsPage() {
               <TableHead>Start Date</TableHead>
               <TableHead>Expiry Date</TableHead>
               <TableHead>Last Update</TableHead>
-              <TableHead className="text-right">View</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -183,7 +282,10 @@ export default function BalletPaymentsPage() {
             ) : (
               payments.map((payment) => (
                 <TableRow key={payment.id} data-testid={`row-ballet-payment-${payment.id}`}>
-                  <TableCell className="font-medium">#{payment.applicationId}</TableCell>
+                  <TableCell className="font-medium">
+                    <div>#{payment.applicationId}</div>
+                    <div className="text-xs font-normal text-muted-foreground">{payment.isRenewal ? "Renewal" : "Initial"}</div>
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{payment.studentName ?? payment.childName ?? dash}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{payment.parentName ?? dash}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{payment.packageName ?? (payment.packageId ? `Package #${payment.packageId}` : dash)}</TableCell>
@@ -204,10 +306,33 @@ export default function BalletPaymentsPage() {
                   <TableCell className="text-sm text-muted-foreground">{payment.subscriptionExpiresAt ?? dash}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{payment.updatedAt ? new Date(payment.updatedAt).toLocaleString() : new Date(payment.createdAt).toLocaleString()}</TableCell>
                   <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                    {payment.status === "pending" && (
+                      <Button variant="outline" size="sm" onClick={() => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        setConfirmStartDate(today);
+                        setConfirmExpiresAt(addDays(today, 30));
+                        setConfirmingPayment(payment);
+                      }}>
+                        <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
+                        Confirm Paid
+                      </Button>
+                    )}
+                    {payment.status === "paid" && payment.subscriptionStatus === "expired" && !openPendingRenewalSourceIds.has(payment.id) && (
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setRenewingPayment(payment);
+                        setRenewPackageId(payment.packageId ? String(payment.packageId) : "");
+                        setRenewBillingMonth(new Date().toISOString().slice(0, 7));
+                      }}>
+                        <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                        Create Pending Renewal
+                      </Button>
+                    )}
                     <Button variant="ghost" size="sm" onClick={() => navigate(`/ballet/applications/${payment.applicationId}`)}>
                       <FileText className="mr-2 h-3.5 w-3.5" />
                       Open
                     </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -232,6 +357,51 @@ export default function BalletPaymentsPage() {
           </div>
         </div>
       )}
+
+      <Dialog open={Boolean(renewingPayment)} onOpenChange={(open) => { if (!open) setRenewingPayment(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Create Pending Renewal</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Creates a pending renewal cycle. The subscription becomes active only after payment is confirmed.
+            </p>
+            <Select value={renewPackageId} onValueChange={setRenewPackageId}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select package…" /></SelectTrigger>
+              <SelectContent>
+                {packages.map((pkg) => <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input type="month" className="h-8 text-sm" value={renewBillingMonth} onChange={(event) => setRenewBillingMonth(event.target.value)} />
+            <div className="rounded-md border p-3 text-xs text-muted-foreground">
+              Method: Pay at Studio · Status: Pending
+            </div>
+            <Button size="sm" className="w-full" disabled={!renewPackageId || createRenewalMutation.isPending} onClick={() => createRenewalMutation.mutate()}>
+              {createRenewalMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating…</> : "Create Pending Renewal"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(confirmingPayment)} onOpenChange={(open) => { if (!open) setConfirmingPayment(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Confirm Payment</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Confirm only after the customer has paid. This sets the payment to paid and starts the subscription period.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Input type="date" className="h-8 text-sm" value={confirmStartDate} onChange={(event) => {
+                setConfirmStartDate(event.target.value);
+                setConfirmExpiresAt(addDays(event.target.value, 30));
+              }} />
+              <Input type="date" className="h-8 text-sm" value={confirmExpiresAt} onChange={(event) => setConfirmExpiresAt(event.target.value)} />
+            </div>
+            <Button size="sm" className="w-full" disabled={!confirmStartDate || !confirmExpiresAt || confirmPaymentMutation.isPending} onClick={() => confirmPaymentMutation.mutate()}>
+              {confirmPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Confirming…</> : "Confirm Paid"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

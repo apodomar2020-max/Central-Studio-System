@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -23,7 +24,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, CreditCard, AlertTriangle } from "lucide-react";
+import { Loader2, ChevronLeft, Clock, User, ArrowRight, Download, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   isTransitionAllowed,
@@ -190,18 +191,13 @@ interface SubscriptionExtension {
   previousExpiresAt: string;
   newExpiresAt: string;
   daysAdded: number;
+  adjustmentMethod?: string;
+  additionalDays?: number | null;
+  reasonKey?: string;
   reason: string;
   note: string | null;
   actorId: number | null;
   extendedAt: string;
-}
-
-interface BalletPackage {
-  id: number;
-  name: string;
-  priceEgp: number;
-  monthlyHours: number;
-  isActive: boolean;
 }
 
 interface AttendanceSummary {
@@ -268,10 +264,6 @@ interface GroupsResponse {
   data: Group[];
 }
 
-interface PackagesResponse {
-  data: BalletPackage[];
-}
-
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const ALL_STATUSES = [
@@ -303,12 +295,6 @@ const PAYMENT_STATUSES = [
   { value: "refunded", label: "Refunded" },
 ];
 
-const NEW_PAYMENT_STATUSES = PAYMENT_STATUSES.filter((status) => status.value !== "refunded");
-
-const MANUAL_PAYMENT_METHODS = [
-  { value: "inPerson", label: "Pay at Studio" },
-];
-
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   bankTransfer: "Legacy Bank Transfer",
   kashier: "Online Payment",
@@ -321,6 +307,14 @@ const PAYMENT_STATUS_CONFIG: Record<string, { label: string; className: string }
   rejected: { label: "Rejected", className: "bg-red-500/15 text-red-400 border-red-500/30" },
   refunded: { label: "Refunded", className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
 };
+
+const EXPIRY_ADJUSTMENT_REASONS = [
+  { value: "studioHoliday", label: "Studio holiday" },
+  { value: "classSuspension", label: "Class suspension" },
+  { value: "medicalAccommodation", label: "Medical accommodation" },
+  { value: "administrativeCorrection", label: "Administrative correction" },
+  { value: "other", label: "Other" },
+] as const;
 
 function formatPaymentMethod(method?: string | null) {
   return method ? PAYMENT_METHOD_LABELS[method] ?? method : null;
@@ -340,12 +334,6 @@ function SubscriptionBadge({ payment }: { payment?: BalletPayment | null }) {
     : payment.subscriptionStatus === "active" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
     : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
   return <Badge variant="outline" className={className}>{payment.subscriptionDisplayStatus}</Badge>;
-}
-
-function addDays(date: string, days: number) {
-  const value = new Date(`${date}T00:00:00.000Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -404,6 +392,12 @@ function formatDateTime(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "—";
 }
 
+function addOneDay(dateOnly: string) {
+  const value = new Date(`${dateOnly}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ApplicationDetailPage() {
@@ -414,6 +408,8 @@ export default function ApplicationDetailPage() {
   const canApprove = can("ballet.applications", "approve");
   const canReject = can("ballet.applications", "reject");
   const canCancel = can("ballet.applications", "cancel");
+  const canViewPayments = can("ballet.payments", "view");
+  const canEditPayments = can("ballet.payments", "edit");
   const canCheckIn = can("attendance", "checkIn");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -429,28 +425,7 @@ export default function ApplicationDetailPage() {
   const [attStatus, setAttStatus]         = useState("checked_in");
   const [attDuration, setAttDuration]     = useState("");
   const [attNote, setAttNote]             = useState("");
-  const [paymentPackageId, setPaymentPackageId] = useState("");
-  const [paymentBillingMonth, setPaymentBillingMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [paymentInitialStatus, setPaymentInitialStatus] = useState("pending");
-  const [paymentStatus, setPaymentStatus] = useState("");
-  const [paymentStartDate, setPaymentStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [paymentExpiresAt, setPaymentExpiresAt] = useState(() => addDays(new Date().toISOString().slice(0, 10), 30));
-  const [renewPackageId, setRenewPackageId] = useState("");
-  const [renewAmount, setRenewAmount] = useState("");
-  const [renewMethod, setRenewMethod] = useState("");
-  const [renewStatus, setRenewStatus] = useState("pending");
-  const [renewStartDate, setRenewStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [renewExpiresAt, setRenewExpiresAt] = useState(() => addDays(new Date().toISOString().slice(0, 10), 30));
-  const [extendMode, setExtendMode] = useState<"date" | "days">("days");
-  const [extensionDays, setExtensionDays] = useState("");
-  const [extensionDate, setExtensionDate] = useState("");
-  const [extensionReason, setExtensionReason] = useState("studio_holiday");
-  const [extensionNote, setExtensionNote] = useState("");
-  const [confirmExpiredExtension, setConfirmExpiredExtension] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [subscriptionDialog, setSubscriptionDialog] = useState<"create" | "status" | "renew" | "extend" | null>(null);
 
   // Danger Zone (cancellation initiation) state.
   const [dangerDialog, setDangerDialog] = useState<"cancelApplication" | "cancelProgram" | null>(null);
@@ -458,6 +433,13 @@ export default function ApplicationDetailPage() {
   const [cancelAdminNotes, setCancelAdminNotes] = useState("");
   const [cancelTiming, setCancelTiming] = useState<"immediate" | "endOfPeriod">("immediate");
   const [cancelRequestRefund, setCancelRequestRefund] = useState(false);
+  const [adjustExpiryOpen, setAdjustExpiryOpen] = useState(false);
+  const [expiryAdjustmentMethod, setExpiryAdjustmentMethod] = useState<"addDays" | "setDate">("addDays");
+  const [expiryAdditionalDays, setExpiryAdditionalDays] = useState("");
+  const [expiryNewDate, setExpiryNewDate] = useState("");
+  const [expiryReason, setExpiryReason] = useState<(typeof EXPIRY_ADJUSTMENT_REASONS)[number]["value"]>("studioHoliday");
+  const [expiryOtherReason, setExpiryOtherReason] = useState("");
+  const [expiryNote, setExpiryNote] = useState("");
 
   // D1: inline correction state for an existing attendance history row.
   const [editingAttendanceId, setEditingAttendanceId] = useState<number | null>(null);
@@ -503,17 +485,6 @@ export default function ApplicationDetailPage() {
         headers: makeHeaders(token),
       });
       if (!res.ok) throw new Error("Failed to load groups");
-      return res.json();
-    },
-  });
-
-  const { data: packagesData } = useQuery<PackagesResponse>({
-    queryKey: ["ballet-packages"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/packages?limit=100`, {
-        headers: makeHeaders(token),
-      });
-      if (!res.ok) throw new Error("Failed to load packages");
       return res.json();
     },
   });
@@ -596,142 +567,6 @@ export default function ApplicationDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  // ── Payment mutations ──────────────────────────────────────────────────────
-
-  const createPaymentMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/payments`, {
-        method: "POST",
-        headers: makeHeaders(token),
-        body: JSON.stringify({
-          applicationId: appId,
-          packageId: parseInt(paymentPackageId, 10),
-          billingMonth: paymentBillingMonth,
-          amountEgp: parseInt(paymentAmount, 10),
-          paymentMethod: paymentMethod || "inPerson",
-          status: paymentInitialStatus,
-          startDate: paymentInitialStatus === "paid" ? paymentStartDate : undefined,
-          expiresAt: paymentInitialStatus === "paid" ? paymentExpiresAt : undefined,
-          levelAssignmentId: data?.assignmentId ?? undefined,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "Failed to create payment");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Payment created" });
-      setPaymentPackageId("");
-      setPaymentAmount("");
-      setPaymentInitialStatus("pending");
-      setPaymentMethod("");
-      setPaymentStartDate(new Date().toISOString().slice(0, 10));
-      setPaymentExpiresAt(addDays(new Date().toISOString().slice(0, 10), 30));
-      setSubscriptionDialog(null);
-      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const updatePaymentStatusMutation = useMutation({
-    mutationFn: async (payment: BalletPayment) => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/payments/${payment.id}/status`, {
-        method: "PATCH",
-        headers: makeHeaders(token),
-        body: JSON.stringify({
-          status: paymentStatus,
-          startDate: paymentStatus === "paid" ? paymentStartDate : undefined,
-          expiresAt: paymentStatus === "paid" ? paymentExpiresAt : undefined,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "Failed to update payment status");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Payment status updated" });
-      setPaymentStatus("");
-      setSubscriptionDialog(null);
-      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const renewSubscriptionMutation = useMutation({
-    mutationFn: async (payment: BalletPayment) => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/subscriptions/renew`, {
-        method: "POST",
-        headers: makeHeaders(token),
-        body: JSON.stringify({
-          renewedFromId: payment.id,
-          packageId: parseInt(renewPackageId, 10),
-          amountEgp: parseInt(renewAmount, 10),
-          paymentMethod: renewMethod || "inPerson",
-          status: renewStatus,
-          startDate: renewStartDate,
-          expiresAt: renewExpiresAt,
-          billingMonth: paymentBillingMonth || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "Failed to renew subscription");
-      }
-      return res.json();
-    },
-    onSuccess: (result: { duplicatePrevented?: boolean }) => {
-      toast({ title: result.duplicatePrevented ? "Renewal already exists" : "Subscription renewed" });
-      setRenewPackageId("");
-      setRenewAmount("");
-      setRenewStatus("pending");
-      setSubscriptionDialog(null);
-      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const extendSubscriptionMutation = useMutation({
-    mutationFn: async (payment: BalletPayment) => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/payments/${payment.id}/extend`, {
-        method: "PATCH",
-        headers: makeHeaders(token),
-        body: JSON.stringify({
-          ...(extendMode === "days" ? { additionalDays: parseInt(extensionDays, 10) } : { newExpiresAt: extensionDate }),
-          reason: extensionReason,
-          note: extensionNote || null,
-          confirmExpiredExtension,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "Failed to extend subscription");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Subscription extended" });
-      setExtensionDays("");
-      setExtensionDate("");
-      setExtensionNote("");
-      setConfirmExpiredExtension(false);
-      setSubscriptionDialog(null);
-      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
-      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
   // ── Danger Zone mutations ──────────────────────────────────────────────────
   // Both reuse the existing cancellation workflow endpoints — the React page
   // never writes assignment/application rows directly.
@@ -793,6 +628,47 @@ export default function ApplicationDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-cancellation-requests"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  function closeAdjustExpiryDialog() {
+    setAdjustExpiryOpen(false);
+    setExpiryAdjustmentMethod("addDays");
+    setExpiryAdditionalDays("");
+    setExpiryNewDate("");
+    setExpiryReason("studioHoliday");
+    setExpiryOtherReason("");
+    setExpiryNote("");
+  }
+
+  const adjustExpiryMutation = useMutation({
+    mutationFn: async () => {
+      const body = {
+        adjustmentMethod: expiryAdjustmentMethod,
+        additionalDays: expiryAdjustmentMethod === "addDays" ? Number(expiryAdditionalDays) : undefined,
+        newExpiresAt: expiryAdjustmentMethod === "setDate" ? expiryNewDate : undefined,
+        reason: expiryReason,
+        otherReason: expiryReason === "other" ? expiryOtherReason.trim() : undefined,
+        note: expiryNote.trim() || undefined,
+      };
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/subscription/expiry`, {
+        method: "PATCH",
+        headers: makeHeaders(token),
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to adjust subscription expiry");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Subscription expiry adjusted" });
+      closeAdjustExpiryDialog();
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-ballet-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -957,13 +833,20 @@ export default function ApplicationDetailPage() {
     reapplyAllowed: false,
   });
   const currentSubscription = data.currentSubscription ?? currentPayment;
+  const canAdjustExpiry = Boolean(canEditPayments && currentSubscription?.status === "paid" && currentSubscription.hasActiveSubscription && currentSubscription.subscriptionExpiresAt);
+  const expiryAdditionalDaysNumber = Number(expiryAdditionalDays);
+  const isExpiryFormValid = expiryReason !== "other" || expiryOtherReason.trim().length >= 3;
+  const canSubmitExpiryAdjustment = isExpiryFormValid && (
+    expiryAdjustmentMethod === "addDays"
+      ? Number.isInteger(expiryAdditionalDaysNumber) && expiryAdditionalDaysNumber > 0
+      : Boolean(expiryNewDate && currentSubscription?.subscriptionExpiresAt && expiryNewDate > currentSubscription.subscriptionExpiresAt)
+  );
   const activeSchedules = (groupSchedules ?? []).filter((s) => s.status === "active");
   const levels = levelsData?.levels ?? [];
   // Groups are only offered for the level actually assigned to this
   // application — mirrors the existing level-filter pattern used elsewhere
   // in this admin app (client-side filter, no backend query param).
   const groups = (groupsData?.data ?? []).filter((g) => g.levelId === app.assignedLevelId);
-  const packages = (packagesData?.data ?? []).filter((pkg) => pkg.isActive);
   const permittedStatuses = ALL_STATUSES.filter((status) => {
     if (status.value === "rejected") return canReject;
     if (["accepted", "assignedToLevel", "active"].includes(status.value)) return canApprove;
@@ -1133,30 +1016,47 @@ export default function ApplicationDetailPage() {
                 Subscription renewal is required. Expired on {currentSubscription.subscriptionExpiresAt}.
               </p>
             )}
-            {payments.length > 1 && (
-              <div className="mt-4 space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Payment History</h4>
-                <div className="space-y-2">
-                  {payments.map((payment) => (
-                    <div key={payment.id} className="rounded-md border p-3 text-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium">#{payment.id} · {payment.packageName ?? (payment.packageId ? `Package #${payment.packageId}` : "No package")}</span>
-                        <div className="flex flex-wrap gap-2"><PaymentStatusBadge status={payment.status} /><SubscriptionBadge payment={payment} /></div>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {payment.amountEgp} EGP · {payment.billingMonth ?? "No billing month"} · {formatPaymentMethod(payment.paymentMethod) ?? "No method"} · {payment.subscriptionStartDate ?? "No start"} → {payment.subscriptionExpiresAt ?? "No expiry"} · {new Date(payment.updatedAt).toLocaleString()}
-                      </p>
-                      {payment.extensionHistory.length > 0 && (
-                        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                          {payment.extensionHistory.map((extension, index) => (
-                            <p key={`${payment.id}-ext-${index}`}>Extended {extension.previousExpiresAt} → {extension.newExpiresAt} (+{extension.daysAdded}d) · {extension.reason.replaceAll("_", " ")}</p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+          </Section>
+
+          <Section title="Subscription Management">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Current cycle" value={currentSubscription ? `Payment #${currentSubscription.id}` : null} />
+              <Field label="Package" value={currentSubscription?.packageName ?? (currentSubscription?.packageId ? `#${currentSubscription.packageId}` : null)} />
+              <Field label="Payment state" value={<PaymentStatusBadge status={currentSubscription?.status} />} />
+              <Field label="Subscription state" value={<SubscriptionBadge payment={currentSubscription} />} />
+              <Field label="Expiry date" value={currentSubscription?.subscriptionExpiresAt} />
+              <Field
+                label="Latest adjustment"
+                value={currentSubscription?.extensionHistory?.length
+                  ? `${currentSubscription.extensionHistory[currentSubscription.extensionHistory.length - 1]?.previousExpiresAt} → ${currentSubscription.extensionHistory[currentSubscription.extensionHistory.length - 1]?.newExpiresAt}`
+                  : null}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {canEditPayments && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canAdjustExpiry}
+                  onClick={() => setAdjustExpiryOpen(true)}
+                >
+                  Adjust Expiry
+                </Button>
+              )}
+              {canViewPayments && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/ballet/payments?applicationId=${appId}`)}
+                >
+                  Open Payment History
+                </Button>
+              )}
+            </div>
+            {!canAdjustExpiry && currentSubscription?.subscriptionStatus === "expired" && (
+              <p className="text-xs text-muted-foreground">
+                Expired cycles are not adjusted here. Create a pending renewal from Ballet Payments, then confirm payment when collected.
+              </p>
             )}
           </Section>
 
@@ -1250,156 +1150,6 @@ export default function ApplicationDetailPage() {
 
         {/* Right column — actions + timeline */}
         <div className="space-y-4">
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-sm"><CreditCard className="h-4 w-4" /> Subscription Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <PaymentStatusBadge status={currentSubscription?.status ?? currentPayment?.status} />
-                <SubscriptionBadge payment={currentSubscription} />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Manage the payment cycle from this application file. Updating subscription state does not change the application status automatically.
-              </p>
-              {currentSubscription?.subscriptionStatus === "expired" && (
-                <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                  Subscription renewal is required. Expired on {currentSubscription.subscriptionExpiresAt}.
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
-              {!currentPayment ? (
-                <Button size="sm" onClick={() => setSubscriptionDialog("create")} style={{ background: "#00B6D6", color: "#000" }}>Create Subscription</Button>
-              ) : (
-                <>
-                  {currentPayment.status !== "paid" && <Button size="sm" onClick={() => setSubscriptionDialog("status")} style={{ background: "#00B6D6", color: "#000" }}>Confirm Payment</Button>}
-                  {currentSubscription?.subscriptionExpiresAt && currentSubscription.subscriptionStatus !== "expired" && <Button size="sm" variant="outline" onClick={() => setSubscriptionDialog("extend")}>Extend Subscription</Button>}
-                  {currentSubscription && <Button size="sm" variant="outline" onClick={() => {
-                    setRenewPackageId(String(currentSubscription.packageId ?? ""));
-                    setRenewAmount(String(currentSubscription.amountEgp));
-                    setRenewMethod("inPerson");
-                    setSubscriptionDialog("renew");
-                  }}>Renew Subscription</Button>}
-                </>
-              )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Dialog open={subscriptionDialog === "create"} onOpenChange={(open) => setSubscriptionDialog(open ? "create" : null)}>
-            <DialogContent className="max-w-md">
-              <DialogHeader><DialogTitle>Create Subscription</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <Select value={paymentPackageId} onValueChange={(value) => {
-                  setPaymentPackageId(value);
-                  const selected = packages.find((pkg) => String(pkg.id) === value);
-                  if (selected) setPaymentAmount(String(selected.priceEgp));
-                }}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select package…" /></SelectTrigger>
-                  <SelectContent>{packages.map((pkg) => <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>)}</SelectContent>
-                </Select>
-                <input type="month" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentBillingMonth} onChange={(e) => setPaymentBillingMonth(e.target.value)} />
-                <input type="number" min={1} className="w-full h-8 rounded-md border bg-background px-2 text-sm" placeholder="Amount EGP" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
-                <Select value={paymentMethod || "inPerson"} onValueChange={setPaymentMethod}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Payment method…" /></SelectTrigger>
-                  <SelectContent>{MANUAL_PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
-                </Select>
-                <Select value={paymentInitialStatus} onValueChange={setPaymentInitialStatus}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>{NEW_PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
-                </Select>
-                {paymentInitialStatus === "paid" && <div className="grid grid-cols-2 gap-2">
-                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentStartDate} onChange={(e) => { setPaymentStartDate(e.target.value); setPaymentExpiresAt(addDays(e.target.value, 30)); }} />
-                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentExpiresAt} onChange={(e) => setPaymentExpiresAt(e.target.value)} />
-                </div>}
-                <Button size="sm" disabled={!paymentPackageId || !paymentBillingMonth || !paymentAmount || createPaymentMutation.isPending} onClick={() => createPaymentMutation.mutate()} style={{ background: "#00B6D6", color: "#000" }} className="w-full">
-                  {createPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating…</> : "Create Subscription"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {currentPayment && <Dialog open={subscriptionDialog === "status"} onOpenChange={(open) => setSubscriptionDialog(open ? "status" : null)}>
-            <DialogContent className="max-w-md">
-              <DialogHeader><DialogTitle>Confirm Payment</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2"><PaymentStatusBadge status={currentPayment.status} /><ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs text-muted-foreground">new status</span></div>
-                <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select payment status…" /></SelectTrigger>
-                  <SelectContent>{NEW_PAYMENT_STATUSES.filter((s) => s.value !== currentPayment.status).map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
-                </Select>
-                {paymentStatus === "paid" && <div className="grid grid-cols-2 gap-2">
-                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentStartDate} onChange={(e) => { setPaymentStartDate(e.target.value); setPaymentExpiresAt(addDays(e.target.value, 30)); }} />
-                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={paymentExpiresAt} onChange={(e) => setPaymentExpiresAt(e.target.value)} />
-                </div>}
-                <Button size="sm" disabled={!paymentStatus || updatePaymentStatusMutation.isPending} onClick={() => updatePaymentStatusMutation.mutate(currentPayment)} style={{ background: "#00B6D6", color: "#000" }} className="w-full">
-                  {updatePaymentStatusMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</> : "Update Payment Status"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>}
-
-          {currentSubscription && <Dialog open={subscriptionDialog === "renew"} onOpenChange={(open) => setSubscriptionDialog(open ? "renew" : null)}>
-            <DialogContent className="max-w-md">
-              <DialogHeader><DialogTitle>Renew Subscription</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <Select value={renewPackageId} onValueChange={(value) => {
-                  setRenewPackageId(value);
-                  const selected = packages.find((pkg) => String(pkg.id) === value);
-                  if (selected) setRenewAmount(String(selected.priceEgp));
-                }}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Package…" /></SelectTrigger>
-                  <SelectContent>{packages.map((pkg) => <SelectItem key={pkg.id} value={String(pkg.id)}>{pkg.name} · {pkg.priceEgp} EGP</SelectItem>)}</SelectContent>
-                </Select>
-                <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="number" min={1} placeholder="Amount EGP" value={renewAmount} onChange={(e) => setRenewAmount(e.target.value)} />
-                <Select value={renewMethod || "inPerson"} onValueChange={setRenewMethod}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Method…" /></SelectTrigger>
-                  <SelectContent>{MANUAL_PAYMENT_METHODS.map((method) => <SelectItem key={method.value} value={method.value}>{method.label}</SelectItem>)}</SelectContent>
-                </Select>
-                <Select value={renewStatus} onValueChange={setRenewStatus}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>{NEW_PAYMENT_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
-                </Select>
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewStartDate} onChange={(e) => { setRenewStartDate(e.target.value); setRenewExpiresAt(addDays(e.target.value, 30)); }} />
-                  <input type="date" className="w-full h-8 rounded-md border bg-background px-2 text-sm" value={renewExpiresAt} onChange={(e) => setRenewExpiresAt(e.target.value)} />
-                </div>
-                <Button size="sm" variant="outline" className="w-full" disabled={!renewPackageId || !renewAmount || renewSubscriptionMutation.isPending} onClick={() => renewSubscriptionMutation.mutate(currentSubscription)}>
-                  {renewSubscriptionMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Renewing…</> : "Renew Subscription"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>}
-
-          {currentSubscription?.subscriptionExpiresAt && <Dialog open={subscriptionDialog === "extend"} onOpenChange={(open) => setSubscriptionDialog(open ? "extend" : null)}>
-            <DialogContent className="max-w-md">
-              <DialogHeader><DialogTitle>Extend Subscription</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <Field label="Current expiry" value={currentSubscription.subscriptionExpiresAt} />
-                <Select value={extendMode} onValueChange={(value) => setExtendMode(value as "date" | "days")}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="days">Additional days</SelectItem><SelectItem value="date">New date</SelectItem></SelectContent>
-                </Select>
-                {extendMode === "days" ? <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="number" min={1} placeholder="Additional days" value={extensionDays} onChange={(e) => setExtensionDays(e.target.value)} /> : <input className="w-full h-8 rounded-md border bg-background px-2 text-sm" type="date" value={extensionDate} onChange={(e) => setExtensionDate(e.target.value)} />}
-                <Select value={extensionReason} onValueChange={setExtensionReason}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="studio_holiday">Studio holiday</SelectItem>
-                    <SelectItem value="emergency_closure">Emergency closure</SelectItem>
-                    <SelectItem value="class_suspension">Class suspension</SelectItem>
-                    <SelectItem value="instructor_unavailability">Instructor unavailability</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Textarea className="text-sm min-h-[58px] resize-none" placeholder="Internal note (optional)" value={extensionNote} onChange={(e) => setExtensionNote(e.target.value)} />
-                {currentSubscription.subscriptionStatus === "expired" && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={confirmExpiredExtension} onChange={(e) => setConfirmExpiredExtension(e.target.checked)} />Confirm extending an expired subscription</label>}
-                <Button size="sm" variant="outline" className="w-full" disabled={(extendMode === "days" ? !extensionDays : !extensionDate) || extendSubscriptionMutation.isPending} onClick={() => extendSubscriptionMutation.mutate(currentSubscription)}>
-                  {extendSubscriptionMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Extending…</> : "Extend Subscription"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>}
 
           {/* Status change */}
           {permittedStatuses.length > 0 && <div className="rounded-lg border bg-card p-5 space-y-4">
@@ -1768,6 +1518,94 @@ export default function ApplicationDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={adjustExpiryOpen} onOpenChange={(open) => (open ? setAdjustExpiryOpen(true) : closeAdjustExpiryDialog())}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Adjust Subscription Expiry</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border bg-muted/20 p-3 text-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current expiry</div>
+              <div className="mt-1 text-foreground">{currentSubscription?.subscriptionExpiresAt ?? "—"}</div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Adjustment</div>
+              <Select value={expiryAdjustmentMethod} onValueChange={(value) => setExpiryAdjustmentMethod(value as "addDays" | "setDate")}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="addDays">Add days</SelectItem>
+                  <SelectItem value="setDate">Set new expiry date</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {expiryAdjustmentMethod === "addDays" ? (
+              <div className="space-y-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Additional days</div>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={expiryAdditionalDays}
+                  onChange={(event) => setExpiryAdditionalDays(event.target.value)}
+                  placeholder="e.g. 7"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">New expiry date</div>
+                <Input
+                  type="date"
+                  value={expiryNewDate}
+                  min={currentSubscription?.subscriptionExpiresAt ? addOneDay(currentSubscription.subscriptionExpiresAt) : undefined}
+                  onChange={(event) => setExpiryNewDate(event.target.value)}
+                />
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reason</div>
+              <Select value={expiryReason} onValueChange={(value) => setExpiryReason(value as typeof expiryReason)}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {EXPIRY_ADJUSTMENT_REASONS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {expiryReason === "other" && (
+              <div className="space-y-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Written reason</div>
+                <Textarea
+                  className="text-sm min-h-[64px] resize-none"
+                  value={expiryOtherReason}
+                  onChange={(event) => setExpiryOtherReason(event.target.value)}
+                  placeholder="Describe the reason"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal note</div>
+              <Textarea
+                className="text-sm min-h-[64px] resize-none"
+                value={expiryNote}
+                onChange={(event) => setExpiryNote(event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={closeAdjustExpiryDialog} disabled={adjustExpiryMutation.isPending}>Cancel</Button>
+              <Button size="sm" onClick={() => adjustExpiryMutation.mutate()} disabled={!canSubmitExpiryAdjustment || adjustExpiryMutation.isPending}>
+                {adjustExpiryMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</> : "Save Adjustment"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel Application (pre-activation) dialog */}
       <Dialog open={dangerDialog === "cancelApplication"} onOpenChange={(open) => (open ? setDangerDialog("cancelApplication") : closeDangerDialog())}>

@@ -1,4 +1,5 @@
-import { boolean, integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import {
@@ -54,6 +55,9 @@ export const balletPaymentsTable = pgTable("ballet_payments", {
     previousExpiresAt: string;
     newExpiresAt: string;
     daysAdded: number;
+    adjustmentMethod?: string;
+    additionalDays?: number | null;
+    reasonKey?: string;
     reason: string;
     note: string | null;
     actorId: number | null;
@@ -64,7 +68,11 @@ export const balletPaymentsTable = pgTable("ballet_payments", {
   notes:             text("notes"),
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
-});
+}, (table) => ([
+  uniqueIndex("ballet_payments_open_pending_renewal_idx")
+    .on(table.applicationId, table.renewedFromId)
+    .where(sql`${table.isRenewal} = true and ${table.renewedFromId} is not null and ${table.status} = 'pending'`),
+]));
 
 export const insertBalletPaymentSchema = createInsertSchema(balletPaymentsTable).omit({
   id: true, createdAt: true, updatedAt: true,

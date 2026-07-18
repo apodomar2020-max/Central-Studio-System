@@ -200,6 +200,16 @@ async function insertFlatPayment(applicationId: number, amountEgp = 1000): Promi
   return rows[0].id;
 }
 
+async function insertBalletPackage(priceEgp = 2500): Promise<number> {
+  const token = Math.random().toString(36).slice(2, 8);
+  const { rows } = await pool.query(
+    `INSERT INTO ballet_packages (name, monthly_classes, monthly_hours, price_egp, is_active)
+     VALUES ($1, 8, 12, $2, true) RETURNING id`,
+    [`Route Test Package ${token}`, priceEgp],
+  );
+  return rows[0].id;
+}
+
 async function countRows(table: string, where: string, params: unknown[] = []): Promise<number> {
   const { rows } = await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`, params);
   return rows[0].n;
@@ -212,6 +222,7 @@ before(async () => {
   jwtSign = jwtModule.default.sign;
   const { requireAuth } = await import("../middlewares/auth.ts");
   const cancellationRouter = (await import("../routes/balletCancellationRefunds.ts")).default;
+  const paymentsRouter = (await import("../routes/adminBalletPayments.ts")).default;
   const dbModule = await import("@workspace/db");
   pool = dbModule.pool;
 
@@ -219,6 +230,7 @@ before(async () => {
   app.use(express.json());
   app.use(requireAuth);
   app.use(cancellationRouter);
+  app.use(paymentsRouter);
   await new Promise<void>((resolve) => {
     server = app.listen(0, "127.0.0.1", resolve);
   });
@@ -639,6 +651,18 @@ test("pre-activation cancellation: a flat paid inPerson payment (no subscription
   assert.equal(await countRows("ballet_refunds", "application_id = $1", [appId]), 1);
 });
 
+test("mobile detail: accepted application with paid initial inPerson payment and no subscription dates reports refund eligibility without expiry initialization", async () => {
+  const appId = await insertApplication({ status: "accepted" });
+  const paymentId = await insertFlatPayment(appId, 900);
+
+  const res = await asParent(parentId, "route-test-parent@example.com", `/ballet/applications/${appId}`);
+  assert.equal(res.status, 200);
+  const body = await res.json() as { eligibleRefund: { eligible: boolean; paymentId: number | null; remainingRefundableEgp: number } };
+  assert.equal(body.eligibleRefund.eligible, true);
+  assert.equal(body.eligibleRefund.paymentId, paymentId);
+  assert.equal(body.eligibleRefund.remainingRefundableEgp, 900);
+});
+
 test("pre-activation cancellation: an active/future subscription-cycle payment is never substituted for a missing application fee", async () => {
   const appId = await insertApplication({ status: "accepted" });
   await insertCurrentCyclePayment(appId, null, 1200);
@@ -652,6 +676,336 @@ test("pre-activation cancellation: an active/future subscription-cycle payment i
   const body = await res.json() as { refund: unknown };
   assert.equal(body.refund, null, "subscription-cycle payments must never be substituted for a pre-activation application fee");
   assert.equal(await countRows("ballet_refunds", "application_id = $1", [appId]), 0);
+});
+
+// ─── Admin payment-cycle lifecycle ───────────────────────────────────────────────
+
+test("admin payments: renewal creation always creates a pending payment cycle with package price and no paid/subscription dates, even if the client sends paid fields", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const previousPaymentId = await insertExpiredCyclePayment(appId, assignmentId, 1700);
+  const packageId = await insertBalletPackage(2600);
+
+  const res = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscriptions/renew`, {
+    method: "POST",
+    body: JSON.stringify({
+      renewedFromId: previousPaymentId,
+      packageId,
+      paymentMethod: "inPerson",
+      billingMonth: "2026-08",
+      status: "paid",
+      amountEgp: 999999,
+      startDate: TODAY,
+      expiresAt: addDays(TODAY, 30),
+    }),
+  });
+  assert.equal(res.status, 201);
+  const body = await res.json() as { payment: { id: number; status: string; amountEgp: number; isRenewal: boolean; renewedFromId: number } };
+  assert.equal(body.payment.status, "pending");
+  assert.equal(body.payment.amountEgp, 2600);
+  assert.equal(body.payment.isRenewal, true);
+  assert.equal(body.payment.renewedFromId, previousPaymentId);
+
+  const row = await pool.query(
+    `SELECT status, amount_egp, is_renewal, renewed_from_id, paid_at, subscription_start_date, subscription_expires_at, original_expires_at
+     FROM ballet_payments WHERE id = $1`,
+    [body.payment.id],
+  );
+  assert.equal(row.rows[0].status, "pending");
+  assert.equal(row.rows[0].amount_egp, 2600);
+  assert.equal(row.rows[0].is_renewal, true);
+  assert.equal(row.rows[0].renewed_from_id, previousPaymentId);
+  assert.equal(row.rows[0].paid_at, null);
+  assert.equal(row.rows[0].subscription_start_date, null);
+  assert.equal(row.rows[0].subscription_expires_at, null);
+  assert.equal(row.rows[0].original_expires_at, null);
+
+  const previous = await pool.query(
+    `SELECT status, subscription_start_date, subscription_expires_at FROM ballet_payments WHERE id = $1`,
+    [previousPaymentId],
+  );
+  assert.equal(previous.rows[0].status, "paid", "creating a renewal must preserve the previous cycle");
+  assert.equal(previous.rows[0].subscription_expires_at, addDays(TODAY, -10));
+});
+
+test("admin payments: duplicate pending renewal for the same application/source cycle is rejected and only one row exists", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const previousPaymentId = await insertExpiredCyclePayment(appId, assignmentId, 1700);
+  const packageId = await insertBalletPackage(2600);
+  const body = { renewedFromId: previousPaymentId, packageId, paymentMethod: "inPerson", billingMonth: "2026-08" };
+
+  const first = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscriptions/renew`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  assert.equal(first.status, 201);
+
+  const second = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscriptions/renew`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  assert.equal(second.status, 409);
+  const secondBody = await second.json() as { code: string };
+  assert.equal(secondBody.code, "BALLET_PENDING_RENEWAL_EXISTS");
+
+  assert.equal(
+    await countRows("ballet_payments", "application_id = $1 AND renewed_from_id = $2 AND is_renewal = true AND status = 'pending'", [appId, previousPaymentId]),
+    1,
+  );
+});
+
+test("admin payments: concurrent duplicate renewal attempts produce one pending row and one conflict", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const previousPaymentId = await insertExpiredCyclePayment(appId, assignmentId, 1700);
+  const packageId = await insertBalletPackage(2600);
+  const body = { renewedFromId: previousPaymentId, packageId, paymentMethod: "inPerson", billingMonth: "2026-08" };
+
+  const [one, two] = await Promise.all([
+    asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscriptions/renew`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+    asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscriptions/renew`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  ]);
+  const statuses = [one.status, two.status].sort();
+  assert.deepEqual(statuses, [201, 409]);
+  assert.equal(
+    await countRows("ballet_payments", "application_id = $1 AND renewed_from_id = $2 AND is_renewal = true AND status = 'pending'", [appId, previousPaymentId]),
+    1,
+  );
+});
+
+test("admin payments: confirming a pending renewal marks only that row paid and establishes subscription dates; previous cycle remains unchanged", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const previousPaymentId = await insertExpiredCyclePayment(appId, assignmentId, 1700);
+  const previousBefore = await pool.query(
+    `SELECT status, subscription_start_date, subscription_expires_at FROM ballet_payments WHERE id = $1`,
+    [previousPaymentId],
+  );
+  const packageId = await insertBalletPackage(2600);
+
+  const created = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscriptions/renew`, {
+    method: "POST",
+    body: JSON.stringify({ renewedFromId: previousPaymentId, packageId, paymentMethod: "inPerson", billingMonth: "2026-08" }),
+  });
+  assert.equal(created.status, 201);
+  const { payment } = await created.json() as { payment: { id: number } };
+
+  const startDate = addDays(TODAY, 1);
+  const expiresAt = addDays(TODAY, 31);
+  const confirmed = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/payments/${payment.id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "paid", startDate, expiresAt }),
+  });
+  assert.equal(confirmed.status, 200);
+
+  const renewal = await pool.query(
+    `SELECT status, paid_at, subscription_start_date, subscription_expires_at, original_expires_at FROM ballet_payments WHERE id = $1`,
+    [payment.id],
+  );
+  assert.equal(renewal.rows[0].status, "paid");
+  assert.notEqual(renewal.rows[0].paid_at, null);
+  assert.equal(renewal.rows[0].subscription_start_date, startDate);
+  assert.equal(renewal.rows[0].subscription_expires_at, expiresAt);
+  assert.equal(renewal.rows[0].original_expires_at, expiresAt);
+
+  const previousAfter = await pool.query(
+    `SELECT status, subscription_start_date, subscription_expires_at FROM ballet_payments WHERE id = $1`,
+    [previousPaymentId],
+  );
+  assert.deepEqual(previousAfter.rows[0], previousBefore.rows[0], "confirming a renewal must not overwrite the prior cycle");
+
+  const repeated = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/payments/${payment.id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "paid", startDate, expiresAt }),
+  });
+  assert.equal(repeated.status, 422);
+  const repeatedBody = await repeated.json() as { code: string };
+  assert.equal(repeatedBody.code, "BALLET_PAYMENT_NOT_PENDING");
+});
+
+test("admin payments: pending renewal is not counted as Ballet revenue, but confirmed paid renewal is counted", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const previousPaymentId = await insertExpiredCyclePayment(appId, assignmentId, 1700);
+  const packageId = await insertBalletPackage(2600);
+  const { getFinancialAggregates } = await import("./financialAggregates.ts");
+
+  const before = await getFinancialAggregates();
+  const created = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscriptions/renew`, {
+    method: "POST",
+    body: JSON.stringify({ renewedFromId: previousPaymentId, packageId, paymentMethod: "inPerson", billingMonth: "2026-08" }),
+  });
+  assert.equal(created.status, 201);
+  const { payment } = await created.json() as { payment: { id: number } };
+
+  const afterPending = await getFinancialAggregates();
+  assert.equal(afterPending.grossBalletRevenueEgp, before.grossBalletRevenueEgp, "pending renewals must not count as collected revenue");
+
+  const confirmed = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/payments/${payment.id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "paid", startDate: TODAY, expiresAt: addDays(TODAY, 30) }),
+  });
+  assert.equal(confirmed.status, 200);
+
+  const afterPaid = await getFinancialAggregates();
+  assert.equal(afterPaid.grossBalletRevenueEgp, before.grossBalletRevenueEgp + 2600, "paid renewal revenue uses the stored payment amount");
+});
+
+test("admin payments: active paid current cycle expiry can be adjusted with structured history and audit log, without changing payment/app/assignment state", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const paymentId = await insertCurrentCyclePayment(appId, assignmentId, 1700);
+  const before = await pool.query(
+    `SELECT status, paid_at, subscription_expires_at, original_expires_at FROM ballet_payments WHERE id = $1`,
+    [paymentId],
+  );
+  const oldExpiry = before.rows[0].subscription_expires_at as string;
+
+  const res = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscription/expiry`, {
+    method: "PATCH",
+    body: JSON.stringify({ adjustmentMethod: "addDays", additionalDays: 3, reason: "studioHoliday", note: "Studio closed" }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json() as { previousExpiresAt: string; newExpiresAt: string; adjustment: { adjustmentMethod: string; additionalDays: number; reason: string } };
+  assert.equal(body.previousExpiresAt, oldExpiry);
+  assert.equal(body.newExpiresAt, addDays(oldExpiry, 3));
+  assert.equal(body.adjustment.adjustmentMethod, "addDays");
+  assert.equal(body.adjustment.additionalDays, 3);
+  assert.equal(body.adjustment.reason, "Studio holiday");
+
+  const after = await pool.query(
+    `SELECT status, paid_at, subscription_expires_at, original_expires_at, extension_history FROM ballet_payments WHERE id = $1`,
+    [paymentId],
+  );
+  assert.equal(after.rows[0].status, "paid");
+  assert.equal(after.rows[0].paid_at.toISOString(), before.rows[0].paid_at.toISOString(), "paidAt must not change");
+  assert.equal(after.rows[0].subscription_expires_at, addDays(oldExpiry, 3));
+  assert.equal(after.rows[0].original_expires_at, oldExpiry, "original expiry is preserved on first adjustment");
+  assert.equal(after.rows[0].extension_history.length, 1);
+  assert.equal(after.rows[0].extension_history[0].previousExpiresAt, oldExpiry);
+  assert.equal(after.rows[0].extension_history[0].newExpiresAt, addDays(oldExpiry, 3));
+
+  assert.equal(await countRows("ballet_applications", "id = $1 AND status = 'active'", [appId]), 1, "application status unchanged");
+  assert.equal(await countRows("ballet_level_assignments", "id = $1 AND status = 'active'", [assignmentId]), 1, "assignment status unchanged");
+  assert.equal(
+    await countRows("admin_activity_logs", "module = 'ballet.payments' AND action = 'adjustExpiry' AND entity_id = $1", [String(paymentId)]),
+    1,
+    "one audit log is written for the expiry adjustment",
+  );
+});
+
+test("admin payments: pending, refunded, and expired cycles cannot be adjusted by the application-level expiry endpoint", async () => {
+  const pendingAppId = await insertApplication({ status: "active" });
+  await pool.query(
+    `INSERT INTO ballet_payments (application_id, amount_egp, status, payment_method, subscription_start_date, subscription_expires_at)
+     VALUES ($1, 1000, 'pending', 'inPerson', $2, $3)`,
+    [pendingAppId, addDays(TODAY, -1), addDays(TODAY, 10)],
+  );
+  const pending = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${pendingAppId}/subscription/expiry`, {
+    method: "PATCH",
+    body: JSON.stringify({ adjustmentMethod: "addDays", additionalDays: 3, reason: "studioHoliday" }),
+  });
+  assert.equal(pending.status, 422);
+
+  const refundedAppId = await insertApplication({ status: "active" });
+  await pool.query(
+    `INSERT INTO ballet_payments (application_id, amount_egp, status, payment_method, paid_at, subscription_start_date, subscription_expires_at)
+     VALUES ($1, 1000, 'refunded', 'inPerson', now(), $2, $3)`,
+    [refundedAppId, addDays(TODAY, -1), addDays(TODAY, 10)],
+  );
+  const refunded = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${refundedAppId}/subscription/expiry`, {
+    method: "PATCH",
+    body: JSON.stringify({ adjustmentMethod: "addDays", additionalDays: 3, reason: "studioHoliday" }),
+  });
+  assert.equal(refunded.status, 422);
+
+  const expiredAppId = await insertApplication({ status: "active" });
+  await insertExpiredCyclePayment(expiredAppId, null, 1000);
+  const expired = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${expiredAppId}/subscription/expiry`, {
+    method: "PATCH",
+    body: JSON.stringify({ adjustmentMethod: "addDays", additionalDays: 3, reason: "studioHoliday" }),
+  });
+  assert.equal(expired.status, 422);
+  const expiredBody = await expired.json() as { code: string };
+  assert.equal(expiredBody.code, "BALLET_NO_ADJUSTABLE_SUBSCRIPTION");
+});
+
+test("admin payments: expiry adjustment rejects invalid days, non-extension dates, and missing Other reason", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const paymentId = await insertCurrentCyclePayment(appId, assignmentId, 1700);
+  const row = await pool.query(`SELECT subscription_expires_at FROM ballet_payments WHERE id = $1`, [paymentId]);
+  const currentExpiry = row.rows[0].subscription_expires_at as string;
+
+  for (const body of [
+    { adjustmentMethod: "addDays", additionalDays: 0, reason: "studioHoliday" },
+    { adjustmentMethod: "addDays", additionalDays: -1, reason: "studioHoliday" },
+    { adjustmentMethod: "addDays", additionalDays: 1.5, reason: "studioHoliday" },
+    { adjustmentMethod: "setDate", newExpiresAt: currentExpiry, reason: "studioHoliday" },
+    { adjustmentMethod: "setDate", newExpiresAt: addDays(currentExpiry, -1), reason: "studioHoliday" },
+    { adjustmentMethod: "setDate", newExpiresAt: addDays(currentExpiry, 1), reason: "other" },
+  ]) {
+    const res = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscription/expiry`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    assert.ok(res.status === 400 || res.status === 422, `expected rejection for ${JSON.stringify(body)}, got ${res.status}`);
+  }
+});
+
+test("admin payments: application-level expiry adjustment cannot select an unrelated historical cycle", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const historicalPaymentId = await insertExpiredCyclePayment(appId, assignmentId, 1700);
+  const currentPaymentId = await insertCurrentCyclePayment(appId, assignmentId, 1700);
+  const historicalBefore = await pool.query(`SELECT subscription_expires_at, extension_history FROM ballet_payments WHERE id = $1`, [historicalPaymentId]);
+
+  const res = await asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscription/expiry`, {
+    method: "PATCH",
+    body: JSON.stringify({ adjustmentMethod: "addDays", additionalDays: 2, reason: "administrativeCorrection" }),
+  });
+  assert.equal(res.status, 200);
+
+  const historicalAfter = await pool.query(`SELECT subscription_expires_at, extension_history FROM ballet_payments WHERE id = $1`, [historicalPaymentId]);
+  assert.deepEqual(historicalAfter.rows[0], historicalBefore.rows[0], "historical cycle must remain untouched");
+  const currentAfter = await pool.query(`SELECT extension_history FROM ballet_payments WHERE id = $1`, [currentPaymentId]);
+  assert.equal(currentAfter.rows[0].extension_history.length, 1, "only the authoritative current cycle receives the adjustment");
+});
+
+test("admin payments: concurrent expiry adjustments append both history entries without losing either update", async () => {
+  const appId = await insertApplication({ status: "active" });
+  const assignmentId = await insertAssignment(appId, "active");
+  const paymentId = await insertCurrentCyclePayment(appId, assignmentId, 1700);
+  const before = await pool.query(`SELECT subscription_expires_at FROM ballet_payments WHERE id = $1`, [paymentId]);
+  const oldExpiry = before.rows[0].subscription_expires_at as string;
+
+  const [one, two] = await Promise.all([
+    asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscription/expiry`, {
+      method: "PATCH",
+      body: JSON.stringify({ adjustmentMethod: "addDays", additionalDays: 1, reason: "studioHoliday" }),
+    }),
+    asAdmin(superAdminId, "route-test-super", `/admin/ballet/applications/${appId}/subscription/expiry`, {
+      method: "PATCH",
+      body: JSON.stringify({ adjustmentMethod: "addDays", additionalDays: 2, reason: "classSuspension" }),
+    }),
+  ]);
+  assert.equal(one.status, 200);
+  assert.equal(two.status, 200);
+
+  const after = await pool.query(`SELECT subscription_expires_at, extension_history FROM ballet_payments WHERE id = $1`, [paymentId]);
+  assert.equal(after.rows[0].extension_history.length, 2);
+  assert.equal(after.rows[0].subscription_expires_at, addDays(oldExpiry, 3));
+  assert.equal(
+    await countRows("admin_activity_logs", "module = 'ballet.payments' AND action = 'adjustExpiry' AND entity_id = $1", [String(paymentId)]),
+    2,
+  );
 });
 
 // ─── Admin active program ────────────────────────────────────────────────────────

@@ -14,6 +14,9 @@ export interface BalletSubscriptionExtension {
   previousExpiresAt: string;
   newExpiresAt: string;
   daysAdded: number;
+  adjustmentMethod?: string;
+  additionalDays?: number | null;
+  reasonKey?: string;
   reason: string;
   note: string | null;
   actorId: number | null;

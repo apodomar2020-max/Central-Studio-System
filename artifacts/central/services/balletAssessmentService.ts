@@ -392,6 +392,14 @@ export interface BalletApplicationDetail {
     paymentMethod: string | null;
     paidAt: string | null;
   } | null;
+  eligibleRefund?: {
+    eligible: boolean;
+    paymentId: number | null;
+    paymentMethod: string | null;
+    originalAmountEgp: number | null;
+    alreadyRefundedEgp: number;
+    remainingRefundableEgp: number;
+  };
   refunds: BalletRefundSummary[];
 }
 
