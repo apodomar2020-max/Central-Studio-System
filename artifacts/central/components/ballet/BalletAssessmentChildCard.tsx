@@ -16,19 +16,21 @@ export default function BalletAssessmentChildCard({
   child,
   selected,
   disabled,
+  locked,
   unavailableLabel,
   onPress,
 }: {
   child: ChildProfile;
   selected?: boolean;
   disabled?: boolean;
+  locked?: boolean;
   unavailableLabel?: string;
   onPress: () => void;
 }) {
   return (
     <TouchableOpacity
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || locked}
       activeOpacity={0.82}
       style={[
         styles.card,

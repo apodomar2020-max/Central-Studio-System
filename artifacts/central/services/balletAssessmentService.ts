@@ -391,6 +391,11 @@ export interface BalletApplicationDetail {
     status: string;
     paymentMethod: string | null;
     paidAt: string | null;
+    subscriptionStartDate: string | null;
+    subscriptionExpiresAt: string | null;
+    subscriptionStatus: string;
+    subscriptionDisplayStatus: string;
+    hasActiveSubscription: boolean;
   } | null;
   eligibleRefund?: {
     eligible: boolean;

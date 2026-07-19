@@ -26,7 +26,11 @@ import {
   fetchBalletSettings,
   fetchBalletSummary,
   fetchBalletClasses,
+  fetchBalletApplicationDetail,
+  fetchBalletGroups,
+  fetchBalletLevels,
   ACTIVE_APPLICATION_STATUSES,
+  type BalletApplicationDetail,
   type BalletSummary,
   type BalletClass,
 } from "@/services/balletAssessmentService";
@@ -35,6 +39,12 @@ import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import { BalletProgramLockup, BallerinaShoesIcon } from "@/components/ballet/BalletProgramLockup";
 import BalletProgramDangerZone from "@/components/ballet/BalletProgramDangerZone";
+import { BalletStudentPreviewSection } from "@/components/ballet/BalletStudentPreviewCard";
+import {
+  selectActiveBalletStudents,
+  selectEligibleBalletChildren,
+  type BalletStudentPreview,
+} from "@/components/ballet/balletStudentPreviewModel";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 // Base/card/border values taken from the explicit task spec (override the
@@ -138,29 +148,82 @@ function BNavCard({
 export default function BalletProgramScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const { user } = useAppContext();
+  const { user, children } = useAppContext();
 
   /* Fetch ballet status for apply-routing (non-blocking — page shows immediately) */
   const [hasActiveApplication, setHasActiveApplication] = useState<boolean | null>(null);
+  const [balletStudents, setBalletStudents] = useState<BalletStudentPreview[]>([]);
+  const [eligibleBalletChildIds, setEligibleBalletChildIds] = useState<number[]>([]);
+  const [balletStudentsLoading, setBalletStudentsLoading] = useState(false);
 
-  useEffect(() => {
-    if (!user) {
-      setHasActiveApplication(false);
-      return;
-    }
-    setHasActiveApplication(null);
-    const ctrl = new AbortController();
-    fetchMyApplications(ctrl.signal)
-      .then((apps) => {
-        if (ctrl.signal.aborted) return;
-        setHasActiveApplication(apps.some((a) => ACTIVE_APPLICATION_STATUSES.has(a.status)));
-      })
-      .catch(() => {
-        if (ctrl.signal.aborted) return;
-        setHasActiveApplication(null);
-      });
-    return () => ctrl.abort();
-  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) {
+        setHasActiveApplication(false);
+        setBalletStudents([]);
+        setEligibleBalletChildIds([]);
+        setBalletStudentsLoading(false);
+        return undefined;
+      }
+
+      const ctrl = new AbortController();
+      setHasActiveApplication(null);
+      setBalletStudents([]);
+      setBalletStudentsLoading(user.accountType === "parent");
+
+      fetchMyApplications(ctrl.signal)
+        .then(async (apps) => {
+          if (ctrl.signal.aborted) return;
+          setHasActiveApplication(apps.some((application) => ACTIVE_APPLICATION_STATUSES.has(application.status)));
+          setEligibleBalletChildIds(selectEligibleBalletChildren({
+            children,
+            applications: apps,
+            blockingStatuses: ACTIVE_APPLICATION_STATUSES,
+          })
+            .map((child) => Number(child.id))
+            .filter((childId) => Number.isInteger(childId) && childId > 0));
+
+          const activeApplications = apps.filter((application) => application.status === "active");
+          if (user.accountType !== "parent" || activeApplications.length === 0) {
+            setBalletStudents([]);
+            return;
+          }
+
+          const [detailResults, levelsResult, groupsResult] = await Promise.all([
+            Promise.allSettled(activeApplications.map((application) => fetchBalletApplicationDetail(application.id, ctrl.signal))),
+            fetchBalletLevels(ctrl.signal).then((levels) => levels).catch(() => []),
+            fetchBalletGroups(ctrl.signal).then((groups) => groups).catch(() => []),
+          ]);
+          if (ctrl.signal.aborted) return;
+
+          const detailsByApplicationId = new Map<number, BalletApplicationDetail | null>();
+          detailResults.forEach((result, index) => {
+            detailsByApplicationId.set(
+              activeApplications[index]!.id,
+              result.status === "fulfilled" ? result.value : null,
+            );
+          });
+
+          setBalletStudents(selectActiveBalletStudents({
+            applications: activeApplications,
+            detailsByApplicationId,
+            levelNameById: new Map(levelsResult.map((level) => [level.id, level.name])),
+            groupNameById: new Map(groupsResult.map((group) => [group.id, group.name])),
+          }));
+        })
+        .catch(() => {
+          if (ctrl.signal.aborted) return;
+          setHasActiveApplication(null);
+          setBalletStudents([]);
+          setEligibleBalletChildIds([]);
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setBalletStudentsLoading(false);
+        });
+
+      return () => ctrl.abort();
+    }, [children, user]),
+  );
 
   const [summary, setSummary] = useState<BalletSummary | null>(null);
 
@@ -282,6 +345,15 @@ export default function BalletProgramScreen() {
     if (route) router.push(route as any);
   }
 
+  function handleAddAnotherChild() {
+    if (eligibleBalletChildIds.length === 0) return;
+    Haptics.selectionAsync();
+    router.push({
+      pathname: "/ballet/assessment" as any,
+      params: { eligibleChildIds: eligibleBalletChildIds.join(",") },
+    });
+  }
+
   return (
     <View style={s.screen}>
       {/* ── Ambient cyan atmospheric glow (behind hero) ── */}
@@ -372,6 +444,15 @@ export default function BalletProgramScreen() {
             )}
           </View>
         </View>
+
+        {user?.accountType === "parent" && (
+          <BalletStudentPreviewSection
+            students={balletStudents}
+            loading={balletStudentsLoading}
+            eligibleChildCount={eligibleBalletChildIds.length}
+            onAddAnotherChild={handleAddAnotherChild}
+          />
+        )}
 
         {/* ── Navigation cards ── */}
         <View style={s.navSection}>

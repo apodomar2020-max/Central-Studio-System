@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +26,7 @@ import BalletAssessmentSuccessActions from "@/components/ballet/BalletAssessment
 import BalletAssessmentSummaryCard from "@/components/ballet/BalletAssessmentSummaryCard";
 import BalletStepIndicator from "@/components/ballet/BalletStepIndicator";
 import { BA, BA_RADIUS } from "@/components/ballet/assessmentTokens";
+import { parseEligibleBalletChildIds } from "@/components/ballet/balletStudentPreviewModel";
 import ErrorState from "@/components/ErrorState";
 import OfflineState from "@/components/OfflineState";
 import { SkeletonBox } from "@/components/SkeletonLoader";
@@ -157,6 +158,9 @@ function ScreenTitle({ title, subtitle }: { title: string; subtitle: string }) {
 
 export default function BalletAssessmentScreen() {
   const insets = useSafeAreaInsets();
+  const { eligibleChildIds: eligibleChildIdsParam } = useLocalSearchParams<{
+    eligibleChildIds?: string | string[];
+  }>();
   const { user, children, addChild } = useAppContext();
   const alert = useCentralAlert();
 
@@ -196,6 +200,36 @@ export default function BalletAssessmentScreen() {
 
   const stepIndex = STEP_ORDER.indexOf(step);
   const profileComplete = user?.profileCompletion?.isComplete ?? user?.profileCompleted ?? false;
+  const routedEligibleChildIds = useMemo(
+    () => parseEligibleBalletChildIds(eligibleChildIdsParam),
+    [eligibleChildIdsParam],
+  );
+  const visibleChildren = useMemo(() => {
+    if (routedEligibleChildIds == null) return children;
+    const allowedIds = new Set(routedEligibleChildIds);
+    return children.filter((child) => {
+      const childId = Number(child.id);
+      if (!Number.isInteger(childId) || !allowedIds.has(childId)) return false;
+      if (applicationsState !== "ready") return true;
+      const status = getChildApplicationStatus(child, applications);
+      return status == null || !BLOCKING_CHILD_APPLICATION_STATUSES.has(status);
+    });
+  }, [applications, applicationsState, children, routedEligibleChildIds]);
+  const routedChildLocked = routedEligibleChildIds != null
+    && applicationsState === "ready"
+    && visibleChildren.length === 1;
+
+  useEffect(() => {
+    if (routedEligibleChildIds == null || applicationsState !== "ready") return;
+    if (visibleChildren.length === 1) {
+      const onlyChild = visibleChildren[0]!;
+      if (selectedChild?.id !== onlyChild.id) setSelectedChild(onlyChild);
+      return;
+    }
+    if (selectedChild && !visibleChildren.some((child) => child.id === selectedChild.id)) {
+      setSelectedChild(null);
+    }
+  }, [applicationsState, routedEligibleChildIds, selectedChild, visibleChildren]);
 
   useEffect(() => {
     if (!user) {
@@ -595,13 +629,17 @@ export default function BalletAssessmentScreen() {
             {applicationsState === "loading" ? <LoadingCards /> : null}
             {applicationsState === "offline" ? <OfflineState variant="compact" onRetry={() => loadApplications()} /> : null}
             {applicationsState === "error" ? <ErrorState variant="compact" message="Couldn't load existing applications." onRetry={() => loadApplications()} /> : null}
-            {applicationsState === "ready" && children.length === 0 ? (
+            {applicationsState === "ready" && visibleChildren.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyTitle}>No children found</Text>
-                <Text style={styles.emptyText}>Add a child profile before starting the Ballet Assessment application.</Text>
+                <Text style={styles.emptyTitle}>{routedEligibleChildIds == null ? "No children found" : "No eligible children found"}</Text>
+                <Text style={styles.emptyText}>
+                  {routedEligibleChildIds == null
+                    ? "Add a child profile before starting the Ballet Assessment application."
+                    : "Each selected child already has an open Ballet application."}
+                </Text>
               </View>
             ) : null}
-            {applicationsState === "ready" && children.map((child) => {
+            {applicationsState === "ready" && visibleChildren.map((child) => {
               const status = getChildApplicationStatus(child, applications);
               const disabled = status != null && BLOCKING_CHILD_APPLICATION_STATUSES.has(status);
               const label = status === "pending" || status === "needsFollowUp"
@@ -615,19 +653,22 @@ export default function BalletAssessmentScreen() {
                   child={child}
                   selected={selectedChild?.id === child.id}
                   disabled={disabled}
+                  locked={routedChildLocked}
                   unavailableLabel={label}
                   onPress={() => {
-                    if (disabled) return;
+                    if (disabled || routedChildLocked) return;
                     Haptics.selectionAsync();
                     setSelectedChild(child);
                   }}
                 />
               );
             })}
-            <TouchableOpacity style={styles.addChildButton} onPress={() => setAddChildOpen(true)} activeOpacity={0.82}>
-              <Ionicons name="add-circle-outline" size={19} color={BA.cyan500} />
-              <Text style={styles.addChildText}>+ Add New Child</Text>
-            </TouchableOpacity>
+            {routedEligibleChildIds == null ? (
+              <TouchableOpacity style={styles.addChildButton} onPress={() => setAddChildOpen(true)} activeOpacity={0.82}>
+                <Ionicons name="add-circle-outline" size={19} color={BA.cyan500} />
+                <Text style={styles.addChildText}>+ Add New Child</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
 
