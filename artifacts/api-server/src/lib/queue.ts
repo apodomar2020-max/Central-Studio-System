@@ -35,6 +35,12 @@ export type NotificationAutomationJob = {
    * informational.
    */
   source?: "admin" | "scheduler" | "system";
+  /**
+   * Bypass reminder-category settings (Phase 6). Only ever set by the admin
+   * enqueue route, which has already verified isSuperAdmin before setting
+   * it — the scheduler never sets this field.
+   */
+  force?: boolean;
 };
 
 export type BalletCancellationFinalizationJob =
@@ -47,8 +53,17 @@ export type BalletCancellationFinalizationJob =
  * schedulerId: BullMQ keys a repeatable job by this id, so re-registering on
  * every worker restart (or from multiple worker replicas) upserts the same
  * scheduler instead of creating duplicates. Cron patterns are evaluated in UTC;
- * the cadence is timezone-agnostic (hourly / 6-hourly) and the actual
- * time-window logic lives inside each automation runner, not here.
+ * the cadence is timezone-agnostic and the actual time-window logic lives
+ * inside each automation runner, not here.
+ *
+ * class_reminders runs every 15 minutes (not hourly): the 1h pre-class
+ * window is only 15-60 minutes before class start, and an hourly scheduler
+ * cannot reliably land inside that window for every class start time. Every
+ * 15 minutes is the smallest cadence that guarantees at least one run falls
+ * inside any 15-60m window, and reminder idempotency (migration 0072) makes
+ * repeated selection across runs safe. post_class_reminders and
+ * package_reminders keep their prior cadence — their windows are hours wide,
+ * so hourly/6-hourly already lands inside them reliably.
  */
 export type NotificationAutomationSchedule = {
   schedulerId: string;
@@ -57,7 +72,7 @@ export type NotificationAutomationSchedule = {
 };
 
 export const NOTIFICATION_AUTOMATION_SCHEDULES: readonly NotificationAutomationSchedule[] = [
-  { schedulerId: "notification-automation:class-reminders", type: "class_reminders", pattern: "0 * * * *" },
+  { schedulerId: "notification-automation:class-reminders", type: "class_reminders", pattern: "*/15 * * * *" },
   { schedulerId: "notification-automation:post-class-reminders", type: "post_class_reminders", pattern: "20 * * * *" },
   { schedulerId: "notification-automation:package-reminders", type: "package_reminders", pattern: "0 */6 * * *" },
 ] as const;

@@ -1,12 +1,9 @@
 /**
  * Ballet → Groups — /ballet/groups
  *
- * A cohort of children within one level. A group can be assigned to more
- * than one weekly schedule slot — but only AFTER creation, and only to
- * schedules whose class this group is already linked to (via the Classes
- * page's Groups multi-select). The backend rejects `scheduleIds` on POST
- * with a 422 by design, so the create form intentionally omits it; the
- * schedule multi-select only appears when editing an existing group.
+ * A cohort of children within one required level. Weekly schedules belong
+ * to the separate classes owned by this group; this page never manages
+ * schedule relationships directly.
  *
  * Uses the raw-fetch pattern established by the other Ballet admin pages
  * rather than the generated @workspace/api-client-react hooks.
@@ -29,7 +26,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -66,24 +62,22 @@ interface BalletGroup {
   name: string;
   levelId: number;
   isActive: boolean;
-  scheduleIds: number[];
+  classCount: number;
+  /** Count of Classes satisfying the shared assignment-ready invariant. */
+  assignmentReadyClassCount: number;
   /** Null = uncapped (no enforced limit). */
   capacity: number | null;
   /** Count of status="active" ballet_level_assignments rows currently pointed at this group. */
   activeAssignmentCount: number;
 }
 
-interface BalletLevel { id: number; name: string; }
-interface BalletSchedule { id: number; classId: number; dayOfWeek: number; startTime: string; endTime: string; }
+interface BalletLevel { id: number; name: string; isActive: boolean; }
 interface ListResponse<T> { data: T[]; total: number; page: number; limit: number; totalPages: number; }
-
-const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
   levelId: z.number({ required_error: "Level is required" }).int().positive(),
   isActive: z.boolean().default(true),
-  scheduleIds: z.array(z.number().int().positive()).default([]),
   // Null = uncapped. A set value is enforced server-side against the count
   // of active ballet_level_assignments rows pointed at this group.
   capacity: z.number().int().positive().nullable().default(null),
@@ -92,7 +86,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 const EMPTY_VALUES: FormValues = {
-  name: "", levelId: undefined as unknown as number, isActive: true, scheduleIds: [], capacity: null,
+  name: "", levelId: undefined as unknown as number, isActive: true, capacity: null,
 };
 
 export default function BalletGroupsPage() {
@@ -120,13 +114,6 @@ export default function BalletGroupsPage() {
   });
   const levels = levelsData?.levels ?? [];
 
-  const { data: schedulesData } = useQuery({
-    queryKey: ["admin-ballet-schedules-ref", token],
-    queryFn: () => adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?limit=${CATALOG_LIMIT}`, {}, token),
-    refetchOnWindowFocus: false,
-  });
-  const schedules = schedulesData?.data ?? [];
-
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-ballet-groups"] });
 
   const createMutation = useMutation({
@@ -138,8 +125,6 @@ export default function BalletGroupsPage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: number; body: object }) => adminFetch(`${API_BASE}/api/admin/ballet/groups/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
     onSuccess: () => { invalidate(); toast({ title: "Group updated" }); setOpen(false); },
-    // Surface the backend's message verbatim — e.g. the 422 "This group is not
-    // linked to the class that owns schedule <id>" is already admin-readable.
     onError: (e: any) => toast({ title: "Error", description: e?.data?.error ?? "Failed to update group", variant: "destructive" }),
   });
 
@@ -157,7 +142,6 @@ export default function BalletGroupsPage() {
       name: group.name,
       levelId: group.levelId,
       isActive: group.isActive,
-      scheduleIds: group.scheduleIds ?? [],
       capacity: group.capacity,
     });
     setOpen(true);
@@ -167,19 +151,12 @@ export default function BalletGroupsPage() {
     if (editing) {
       updateMutation.mutate({ id: editing.id, body: values });
     } else {
-      // Create body intentionally omits scheduleIds — the backend rejects it
-      // with a 422 on POST by design (a brand-new group can't yet be linked
-      // to any class).
-      const { scheduleIds: _scheduleIds, ...createBody } = values;
-      createMutation.mutate(createBody);
+      createMutation.mutate(values);
     }
   };
 
   const getLevelName = (id: number) => levels.find((l) => l.id === id)?.name ?? `#${id}`;
-  const getScheduleLabel = (id: number) => {
-    const s = schedules.find((sc) => sc.id === id);
-    return s ? `${DAY_SHORT[s.dayOfWeek] ?? "?"} ${s.startTime}–${s.endTime}` : `#${id}`;
-  };
+  const selectableLevels = levels.filter((level) => level.isActive || (editing != null && level.id === editing.levelId));
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
@@ -192,7 +169,7 @@ export default function BalletGroupsPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Level</TableHead>
-              <TableHead>Schedules</TableHead>
+              <TableHead>Classes</TableHead>
               <TableHead>Capacity</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -209,10 +186,10 @@ export default function BalletGroupsPage() {
                   <TableCell className="font-medium">{group.name}</TableCell>
                   <TableCell>{getLevelName(group.levelId)}</TableCell>
                   <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      {group.scheduleIds.map((id) => <Badge variant="secondary" key={id}>{getScheduleLabel(id)}</Badge>)}
-                      {group.scheduleIds.length === 0 && <span className="text-sm text-muted-foreground">—</span>}
-                    </div>
+                    {group.classCount} class{group.classCount === 1 ? "" : "es"}
+                    {group.assignmentReadyClassCount === 0 && (
+                      <span className="ml-2"><Badge variant="outline">Not assignment-ready</Badge></span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {group.capacity == null
@@ -271,7 +248,7 @@ export default function BalletGroupsPage() {
                   <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value ? String(field.value) : ""}>
                     <FormControl><SelectTrigger data-testid="select-ballet-group-level"><SelectValue placeholder="Select level" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {levels.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+                      {selectableLevels.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}{l.isActive ? "" : " (Inactive — historical)"}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -299,42 +276,6 @@ export default function BalletGroupsPage() {
                   <FormMessage />
                 </FormItem>
               )} />
-
-              {/* Schedules — edit only. A brand-new group can't be linked to
-                  any class yet, so the backend always rejects scheduleIds on
-                  create; link the group to a class's Groups field first, then
-                  come back here to assign its schedule slots. */}
-              {editing && (
-                <FormField control={form.control} name="scheduleIds" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Schedules</FormLabel>
-                    <FormControl>
-                      <div className="max-h-36 overflow-y-auto rounded-md border p-3 space-y-2">
-                        {schedules.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">No schedules yet.</p>
-                        ) : schedules.map((s) => (
-                          <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                            <Checkbox
-                              checked={field.value?.includes(s.id) ?? false}
-                              onCheckedChange={(checked) => {
-                                const next = checked
-                                  ? [...(field.value ?? []), s.id]
-                                  : (field.value ?? []).filter((id) => id !== s.id);
-                                field.onChange(next);
-                              }}
-                            />
-                            {getScheduleLabel(s.id)}
-                          </label>
-                        ))}
-                      </div>
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">
-                      Only schedules whose class this group is already linked to (via the Classes page) can be saved.
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              )}
 
               <FormField control={form.control} name="isActive" render={({ field }) => (
                 <FormItem className="flex items-center gap-3">

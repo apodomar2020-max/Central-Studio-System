@@ -319,6 +319,7 @@ export interface BalletApplication {
   assessmentScheduleId: number | null;
   assessmentDate: string | null;
   preferredPackageId: number | null;
+  preferredPaymentMethod: BalletPaymentMethod | null;
   status: string;
   adminNotes: string | null;
   assignedLevelId: number | null;
@@ -610,9 +611,9 @@ export interface BalletClass {
   classImageUrl: string | null;
   classVideoUrl: string | null;
   instructor: { id: number; name: string; photoUrl: string | null } | null;
-  groupIds: number[];
-  levelIds: number[];
-  schedules: BalletClassSchedule[];
+  groupId: number;
+  levelId: number;
+  schedule: BalletClassSchedule | null;
 }
 
 export async function fetchBalletClasses(signal?: AbortSignal): Promise<BalletClass[]> {

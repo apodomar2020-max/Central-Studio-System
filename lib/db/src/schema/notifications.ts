@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { boolean, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -14,9 +15,18 @@ export const notificationsTable = pgTable("notifications", {
   metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
   sentAt: timestamp("sent_at", { withTimezone: true, mode: "string" }),
   isDraft: boolean("is_draft").notNull().default(true),
+  // Reminder-automation-only dedupe key (migration 0072). Nullable so ordinary
+  // (non-reminder) notifications are never subject to this constraint — only
+  // rows written by the reminder automation set this column. Format:
+  // "booking:{bookingId}:{reminderType}:{occurrenceDate}".
+  reminderIdempotencyKey: text("reminder_idempotency_key"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
-});
+}, (table) => ([
+  uniqueIndex("notifications_reminder_idempotency_key_unique")
+    .on(table.reminderIdempotencyKey)
+    .where(sql`${table.reminderIdempotencyKey} is not null`),
+]));
 
 export const insertNotificationSchema = createInsertSchema(notificationsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;

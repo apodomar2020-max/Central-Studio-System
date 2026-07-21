@@ -13,7 +13,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -161,10 +161,14 @@ function getStatusMeta(status: string, levelName?: string | null, groupName?: st
 export default function ApplicationStatusScreen() {
   const insets = useSafeAreaInsets();
   const alert = useCentralAlert();
+  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
+  const requestedApplicationIdParam = Array.isArray(id) ? id[0] : id;
+  const requestedApplicationId = Number(requestedApplicationIdParam);
 
   const [loadState, setLoadState] = useState<"loading" | "success" | "empty" | "offline" | "error">("loading");
   const [application, setApplication] = useState<BalletApplication | null>(null);
   const [applicationDetail, setApplicationDetail] = useState<BalletApplicationDetail | null>(null);
+  const [hasExplicitApplicationContext, setHasExplicitApplicationContext] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [requestingCancellation, setRequestingCancellation] = useState(false);
   const [reasonModal, setReasonModal] = useState<null | {
@@ -204,7 +208,7 @@ export default function ApplicationStatusScreen() {
   // Group id → name lookup, and group id → aggregated (deduped) weekly
   // schedules, built client-side from the two existing public catalogue
   // endpoints (no new endpoint needed — GET /api/ballet/groups has no
-  // schedule data, but GET /api/ballet/classes does, keyed by groupIds).
+  // schedule data, but GET /api/ballet/classes does, keyed by groupId).
   // Best-effort — if either fetch fails, the group/schedule line is simply
   // omitted from the status card.
   const [groupNameById, setGroupNameById] = useState<Map<number, string>>(new Map());
@@ -217,15 +221,13 @@ export default function ApplicationStatusScreen() {
         if (ctrl.signal.aborted) return;
         setGroupNameById(new Map(groups.map((g) => [g.id, g.name])));
 
-        // groupId -> (scheduleId -> schedule), deduped in case a group
-        // appears across more than one class.
+        // groupId -> (scheduleId -> schedule), accumulated across the
+        // separate classes owned by that group.
         const byGroup = new Map<number, Map<number, BalletClassSchedule>>();
         for (const cls of classes) {
-          for (const groupId of cls.groupIds) {
-            const schedMap = byGroup.get(groupId) ?? new Map<number, BalletClassSchedule>();
-            for (const sch of cls.schedules) schedMap.set(sch.id, sch);
-            byGroup.set(groupId, schedMap);
-          }
+          const schedMap = byGroup.get(cls.groupId) ?? new Map<number, BalletClassSchedule>();
+          if (cls.schedule) schedMap.set(cls.schedule.id, cls.schedule);
+          byGroup.set(cls.groupId, schedMap);
         }
         const result = new Map<number, BalletClassSchedule[]>();
         for (const [groupId, schedMap] of byGroup) {
@@ -253,12 +255,25 @@ export default function ApplicationStatusScreen() {
         return;
       }
 
-      // Prefer the latest ACTIVE application (API returns newest-first,
-      // so find() picks the most recently created active one).
-      // Fall back to apps[0] (most recent overall) if all are terminal,
-      // so the parent can still see their most recent history.
-      const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
-      const selected = active ?? apps[0]!;
+      const requested = Number.isInteger(requestedApplicationId) && requestedApplicationId > 0
+        ? apps.find((candidate) => candidate.id === requestedApplicationId) ?? null
+        : null;
+      if (requestedApplicationIdParam != null && requested == null) {
+        setApplication(null);
+        setApplicationDetail(null);
+        setHasExplicitApplicationContext(false);
+        setLoadState("error");
+        return;
+      }
+      const onlyApplication = apps.length === 1 ? apps.at(0) ?? null : null;
+      const selected = requested ?? onlyApplication ?? apps.at(0) ?? null;
+      if (!selected) {
+        setLoadState("empty");
+        return;
+      }
+      // Multiple applications may still show the newest read-only history,
+      // but destructive actions require an exact route-selected application.
+      setHasExplicitApplicationContext(requested != null || onlyApplication != null);
       setApplication(selected);
       try {
         const detail = await fetchBalletApplicationDetail(selected.id, signal);
@@ -271,7 +286,7 @@ export default function ApplicationStatusScreen() {
       if ((e as any)?.name === "AbortError") return;
       setLoadState(isOfflineError(e) ? "offline" : "error");
     }
-  }, []);
+  }, [requestedApplicationId, requestedApplicationIdParam]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -282,10 +297,11 @@ export default function ApplicationStatusScreen() {
   // ── Cancel handler ─────────────────────────────────────────────────────────
 
   function promptCancel() {
+    if (!application || !hasExplicitApplicationContext) return;
     alert.show({
       tone: "destructive",
-      title: "Cancel Application",
-      message: "Are you sure you want to cancel your ballet application? You will be able to submit a new application afterwards.",
+      title: `Cancel ${application.childName}'s Application?`,
+      message: `This cancels only ${application.childName}'s Ballet application. You will be able to submit a new application afterwards.`,
       actions: [
         { label: "Keep Application", tone: "neutral" },
         {
@@ -319,11 +335,21 @@ export default function ApplicationStatusScreen() {
   }
 
   async function doCancel(reason: string) {
-    if (!application || cancelling) return;
+    if (!application || !hasExplicitApplicationContext || cancelling) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setCancelling(true);
     try {
-      await cancelBalletApplication(application.id, { reason });
+      const fresh = await fetchBalletApplicationDetail(application.id);
+      if (!CANCELLABLE_APPLICATION_STATUSES.has(fresh.application.status)) {
+        await load();
+        alert.show({
+          tone: "warning",
+          title: "Application Changed",
+          message: `${application.childName}'s application is no longer eligible for cancellation. Nothing was cancelled.`,
+        });
+        return;
+      }
+      await cancelBalletApplication(fresh.application.id, { reason });
       // Refresh to show updated status
       await load();
       closeReasonModal();
@@ -343,10 +369,10 @@ export default function ApplicationStatusScreen() {
   }
 
   function requestCancellationFlow() {
-    if (!applicationDetail?.activeAssignment || requestingCancellation) return;
+    if (!application || !hasExplicitApplicationContext || !applicationDetail?.activeAssignment || requestingCancellation) return;
     alert.show({
-      title: "Request Ballet Cancellation",
-      message: "When would you like the enrollment cancellation to take effect?",
+      title: `Cancel ${application.childName}'s Ballet Program?`,
+      message: `When should ${application.childName}'s enrollment cancellation take effect?`,
       actions: [
         { label: "Keep Enrollment", tone: "neutral" },
         { label: "End of Period", tone: "primary", onPress: () => confirmCancellationRefund("endOfPeriod") },
@@ -382,10 +408,27 @@ export default function ApplicationStatusScreen() {
   }
 
   async function submitCancellationRequest(requestedTiming: "immediate" | "endOfPeriod", requestRefund: boolean, reason: string) {
-    const assignmentId = applicationDetail?.activeAssignment?.id;
-    if (!assignmentId) return;
+    if (!application || !hasExplicitApplicationContext) return;
+    const expectedAssignmentId = applicationDetail?.activeAssignment?.id;
+    if (!expectedAssignmentId) return;
     setRequestingCancellation(true);
     try {
+      const fresh = await fetchBalletApplicationDetail(application.id);
+      const assignmentId = fresh.activeAssignment?.id;
+      if (
+        fresh.application.status !== "active"
+        || fresh.activeAssignment?.status !== "active"
+        || assignmentId !== expectedAssignmentId
+        || fresh.openCancellationRequest != null
+      ) {
+        await load();
+        alert.show({
+          tone: "warning",
+          title: "Enrollment Changed",
+          message: `${application.childName}'s enrollment is no longer eligible for this request. Nothing was cancelled.`,
+        });
+        return;
+      }
       await requestBalletEnrollmentCancellation(assignmentId, {
         requestedTiming,
         requestRefund,
@@ -481,13 +524,13 @@ export default function ApplicationStatusScreen() {
         const groupName = application.assignedGroupId != null ? groupNameById.get(application.assignedGroupId) : null;
         const groupSchedules = application.assignedGroupId != null ? schedulesByGroupId.get(application.assignedGroupId) : undefined;
         const meta = getStatusMeta(application.status, levelName, groupName, groupSchedules);
-        const isCancellable = CANCELLABLE_APPLICATION_STATUSES.has(application.status);
+        const isCancellable = hasExplicitApplicationContext && CANCELLABLE_APPLICATION_STATUSES.has(application.status);
         const isEditable    = EDITABLE_APPLICATION_STATUSES.has(application.status);
         const isTerminal    = !ACTIVE_APPLICATION_STATUSES.has(application.status);
         const activeAssignment = applicationDetail?.activeAssignment;
         const openCancellationRequest = applicationDetail?.openCancellationRequest;
-        const canRequestEnrollmentCancellation = application.status === "active" && activeAssignment?.status === "active" && !openCancellationRequest;
-        const canWithdrawCancellationRequest = openCancellationRequest?.status === "pendingReview";
+        const canRequestEnrollmentCancellation = hasExplicitApplicationContext && application.status === "active" && activeAssignment?.status === "active" && !openCancellationRequest;
+        const canWithdrawCancellationRequest = hasExplicitApplicationContext && openCancellationRequest?.status === "pendingReview";
 
         return (
           <ScrollView
@@ -588,6 +631,20 @@ export default function ApplicationStatusScreen() {
 
             {/* Actions */}
             <View style={styles.actions}>
+              {!hasExplicitApplicationContext && (
+                <View style={styles.contextWarning}>
+                  <Text style={styles.contextWarningTitle}>Choose the child first</Text>
+                  <Text style={styles.contextWarningText}>
+                    This account has multiple Ballet applications. Use Manage Enrollment on the Ballet Program page to select the exact child before cancelling.
+                  </Text>
+                  <AppButton
+                    title="Open Ballet Program"
+                    variant="ghost"
+                    onPress={() => router.replace("/ballet" as any)}
+                    fullWidth
+                  />
+                </View>
+              )}
               {isEditable && (
                 <AppButton
                   title="Edit Application"
@@ -670,7 +727,9 @@ export default function ApplicationStatusScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
           <View style={styles.reasonSheet}>
             <Text style={styles.reasonTitle}>
-              {reasonModal?.kind === "cancelApplication" ? "Cancel Application" : "Request Ballet Cancellation"}
+              {reasonModal?.kind === "cancelApplication"
+                ? `Cancel ${application?.childName ?? "Child"}'s Application`
+                : `Cancel ${application?.childName ?? "Child"}'s Ballet Program`}
             </Text>
             <Text style={styles.reasonSubtitle}>
               Please tell the studio why you are making this request. This reason is shared with the Ballet admin team.
@@ -865,6 +924,16 @@ const styles = StyleSheet.create({
 
   // Actions
   actions: { gap: 10, marginTop: 4 },
+  contextWarning: {
+    gap: 9,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0,182,214,0.28)",
+    backgroundColor: "rgba(0,182,214,0.07)",
+    padding: 14,
+  },
+  contextWarningTitle: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  contextWarningText: { color: "#9CA3AF", fontFamily: "Inter_400Regular", fontSize: 12.5, lineHeight: 18 },
   modalBackdrop: {
     flex: 1,
     justifyContent: "flex-end",

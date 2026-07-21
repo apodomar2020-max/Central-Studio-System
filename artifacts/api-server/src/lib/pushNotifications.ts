@@ -155,7 +155,11 @@ async function sendToDevices(args: SendPushInput, devices: PushDevice[]) {
   }
 }
 
-export async function sendPushNotification(input: SendPushInput): Promise<{ sent: number; failed: number; skipped: boolean }> {
+export type SendPushReason = "sent" | "push_disabled" | "no_active_device" | "failed";
+
+export type SendPushResult = { sent: number; failed: number; skipped: boolean; reason: SendPushReason };
+
+export async function sendPushNotification(input: SendPushInput): Promise<SendPushResult> {
   logger.info({
     notificationId: input.notificationId ?? null,
     studentId: input.studentId,
@@ -163,7 +167,19 @@ export async function sendPushNotification(input: SendPushInput): Promise<{ sent
   }, "[PUSH_DIAG] sendPushNotification start");
   if (!pushEnabled()) {
     logger.info({ studentId: input.studentId, notificationId: input.notificationId ?? null }, "Push notification skipped: push disabled");
-    return { sent: 0, failed: 0, skipped: true };
+    // Operational/delivery result so a reminder notification row is never
+    // left with no explanation for why no push arrived (Phase 7). No token,
+    // no PII — just the reason.
+    await db.insert(notificationDeliveryLogsTable).values({
+      notificationId: input.notificationId ?? null,
+      studentId: input.studentId,
+      channel: "push",
+      provider: "expo",
+      status: "skipped",
+      errorCode: "push_disabled",
+      errorMessage: "Push notifications are disabled for this environment.",
+    });
+    return { sent: 0, failed: 0, skipped: true, reason: "push_disabled" };
   }
   try {
     const devices = await db
@@ -186,12 +202,22 @@ export async function sendPushNotification(input: SendPushInput): Promise<{ sent
     }, "[PUSH_DIAG] active push devices loaded");
     if (devices.length === 0) {
       logger.info({ studentId: input.studentId, notificationId: input.notificationId ?? null }, "Push notification skipped: no active devices");
+      await db.insert(notificationDeliveryLogsTable).values({
+        notificationId: input.notificationId ?? null,
+        studentId: input.studentId,
+        channel: "push",
+        provider: "expo",
+        status: "skipped",
+        errorCode: "no_active_device",
+        errorMessage: "No active push device registered for this student.",
+      });
+      return { sent: 0, failed: 0, skipped: false, reason: "no_active_device" };
     }
     const result = await sendToDevices(input, devices);
-    return { ...result, skipped: false };
+    return { ...result, skipped: false, reason: result.sent > 0 ? "sent" : "failed" };
   } catch (error) {
     logger.warn({ err: error, studentId: input.studentId }, "Push notification failed safely");
-    return { sent: 0, failed: 0, skipped: false };
+    return { sent: 0, failed: 0, skipped: false, reason: "failed" };
   }
 }
 

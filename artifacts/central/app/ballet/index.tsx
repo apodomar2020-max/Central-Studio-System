@@ -29,6 +29,7 @@ import {
   fetchBalletApplicationDetail,
   fetchBalletGroups,
   fetchBalletLevels,
+  fetchBalletPackages,
   ACTIVE_APPLICATION_STATUSES,
   type BalletApplicationDetail,
   type BalletSummary,
@@ -41,7 +42,8 @@ import { BalletProgramLockup, BallerinaShoesIcon } from "@/components/ballet/Bal
 import BalletProgramDangerZone from "@/components/ballet/BalletProgramDangerZone";
 import { BalletStudentPreviewSection } from "@/components/ballet/BalletStudentPreviewCard";
 import {
-  selectActiveBalletStudents,
+  selectAuthoritativeBalletApplications,
+  selectCurrentBalletStudents,
   selectEligibleBalletChildren,
   type BalletStudentPreview,
 } from "@/components/ballet/balletStudentPreviewModel";
@@ -155,6 +157,7 @@ export default function BalletProgramScreen() {
   const [balletStudents, setBalletStudents] = useState<BalletStudentPreview[]>([]);
   const [eligibleBalletChildIds, setEligibleBalletChildIds] = useState<number[]>([]);
   const [balletStudentsLoading, setBalletStudentsLoading] = useState(false);
+  const [balletEnrollmentRevision, setBalletEnrollmentRevision] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -183,32 +186,34 @@ export default function BalletProgramScreen() {
             .map((child) => Number(child.id))
             .filter((childId) => Number.isInteger(childId) && childId > 0));
 
-          const activeApplications = apps.filter((application) => application.status === "active");
-          if (user.accountType !== "parent" || activeApplications.length === 0) {
+          const currentApplications = selectAuthoritativeBalletApplications(apps);
+          if (user.accountType !== "parent" || currentApplications.length === 0) {
             setBalletStudents([]);
             return;
           }
 
-          const [detailResults, levelsResult, groupsResult] = await Promise.all([
-            Promise.allSettled(activeApplications.map((application) => fetchBalletApplicationDetail(application.id, ctrl.signal))),
+          const [detailResults, levelsResult, groupsResult, packagesResult] = await Promise.all([
+            Promise.allSettled(currentApplications.map((application) => fetchBalletApplicationDetail(application.id, ctrl.signal))),
             fetchBalletLevels(ctrl.signal).then((levels) => levels).catch(() => []),
             fetchBalletGroups(ctrl.signal).then((groups) => groups).catch(() => []),
+            fetchBalletPackages(ctrl.signal).then((packages) => packages).catch(() => []),
           ]);
           if (ctrl.signal.aborted) return;
 
           const detailsByApplicationId = new Map<number, BalletApplicationDetail | null>();
           detailResults.forEach((result, index) => {
             detailsByApplicationId.set(
-              activeApplications[index]!.id,
+              currentApplications[index]!.id,
               result.status === "fulfilled" ? result.value : null,
             );
           });
 
-          setBalletStudents(selectActiveBalletStudents({
-            applications: activeApplications,
+          setBalletStudents(selectCurrentBalletStudents({
+            applications: currentApplications,
             detailsByApplicationId,
             levelNameById: new Map(levelsResult.map((level) => [level.id, level.name])),
             groupNameById: new Map(groupsResult.map((group) => [group.id, group.name])),
+            packageNameById: new Map(packagesResult.map((pkg) => [pkg.id, pkg.name])),
           }));
         })
         .catch(() => {
@@ -222,7 +227,7 @@ export default function BalletProgramScreen() {
         });
 
       return () => ctrl.abort();
-    }, [children, user]),
+    }, [balletEnrollmentRevision, children, user]),
   );
 
   const [summary, setSummary] = useState<BalletSummary | null>(null);
@@ -471,7 +476,11 @@ export default function BalletProgramScreen() {
             authoritative server state. Only meaningful for a signed-in parent
             who has a Ballet application; renders nothing otherwise. Placed
             after the normal program sections, before the final safe-area pad. */}
-        {user?.accountType === "parent" && <BalletProgramDangerZone />}
+        {user?.accountType === "parent" && (
+          <BalletProgramDangerZone
+            onChanged={() => setBalletEnrollmentRevision((revision) => revision + 1)}
+          />
+        )}
 
         {/* Footer spacing */}
         <View style={{ height: Platform.OS === "web" ? 120 : 80 }} />

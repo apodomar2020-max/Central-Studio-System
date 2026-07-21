@@ -35,9 +35,10 @@ const pendingRenewalMigration = read("lib/db/migrations/0071_ballet_pending_rene
 
 // ─── Mobile Danger Zone (spec §2–4, §10) ────────────────────────────────────────
 
-test("mobile Danger Zone derives its action from the shared authoritative rule", () => {
-  assert.match(dangerZone, /import \{ resolveBalletDangerAction,[^}]*\} from "@workspace\/api-zod"/);
-  assert.match(dangerZone, /resolveBalletDangerAction\(\{[\s\S]*?viewer: "parent"/);
+test("mobile Danger Zone derives child-specific actions from authoritative application details", () => {
+  assert.match(dangerZone, /buildBalletCancellationTargets/);
+  assert.match(dangerZone, /Promise\.allSettled\(apps\.map\(\(application\) => fetchBalletApplicationDetail\(application\.id/);
+  assert.doesNotMatch(dangerZone, /apps\[0\]|active \?\? apps/);
 });
 
 test("mobile Danger Zone refetches authoritative server state on focus (no polling)", () => {
@@ -50,7 +51,7 @@ test("mobile Danger Zone renders each status-gated action label", () => {
   assert.match(dangerZone, /label="Cancel Application"/);
   assert.match(dangerZone, /label="Cancel Program"/);
   assert.match(dangerZone, /View Cancellation Request/);
-  assert.match(dangerZone, /Withdraw Cancellation Request/);
+  assert.match(dangerZone, /BalletCancellationTargetSelector/);
   assert.match(dangerZone, /Apply Again/);
 });
 
@@ -66,7 +67,7 @@ test("mobile Danger Zone prevents duplicate submissions via a busy guard", () =>
 });
 
 test("mobile refund option is shown only from backend refund eligibility, with no amount input", () => {
-  assert.match(dangerZone, /detail\?\.eligibleRefund\?\.eligible === true/);
+  assert.match(dangerZone, /reasonModal\?\.target\.refundEligible === true/);
   assert.match(dangerZone, /Request Cash Refund/);
   assert.doesNotMatch(dangerZone, /amountEgp.*TextInput|TextInput.*amount/i);
 });
@@ -83,7 +84,7 @@ test("mobile Danger Zone handles 409/422 by refetching and showing a safe messag
 
 test("main Ballet program screen mounts the Danger Zone for a parent, after program content", () => {
   assert.match(programScreen, /import BalletProgramDangerZone from "@\/components\/ballet\/BalletProgramDangerZone"/);
-  assert.match(programScreen, /user\?\.accountType === "parent" && <BalletProgramDangerZone \/>/);
+  assert.match(programScreen, /user\?\.accountType === "parent" && \([\s\S]*<BalletProgramDangerZone[\s\S]*onChanged=/);
 });
 
 // ─── Admin Danger Zone (spec §5, §10) ────────────────────────────────────────────
@@ -373,7 +374,7 @@ test("Ballet Payments page owns pending renewal and confirmation actions only", 
 });
 
 test("mobile Danger Zone uses backend refund eligibility instead of duplicating payment/date rules", () => {
-  assert.match(dangerZone, /detail\?\.eligibleRefund\?\.eligible === true/);
+  assert.match(dangerZone, /reasonModal\?\.target\.refundEligible === true/);
   assert.doesNotMatch(dangerZone, /payment\.status === "paid"/);
   assert.doesNotMatch(dangerZone, /payment\.paymentMethod === "inPerson"/);
 });

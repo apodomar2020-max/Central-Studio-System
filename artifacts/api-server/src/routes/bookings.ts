@@ -1071,6 +1071,35 @@ router.patch(
       : parsed.data;
     const normalized = normalizeBookingWrite(data, existing);
 
+    // ── Occurrence integrity ─────────────────────────────────────────────────
+    // If this update moves the booking to a different schedule, the stored
+    // occurrenceDate is stale — it was resolved against the OLD schedule's
+    // date/weekday. Recompute it from the new schedule's canonical current
+    // occurrence (same resolution the create-booking route already uses)
+    // so reminder automation and anything else keyed on occurrenceDate never
+    // reads stale metadata. Clearing scheduleId clears occurrenceDate too.
+    const scheduleIdProvided = Object.prototype.hasOwnProperty.call(req.body ?? {}, "scheduleId");
+    if (scheduleIdProvided && normalized.scheduleId !== existing.scheduleId) {
+      if (normalized.scheduleId == null) {
+        normalized.occurrenceDate = null;
+      } else {
+        const [newSchedule] = await tx
+          .select({
+            type: schedulesTable.type,
+            date: schedulesTable.date,
+            dayOfWeek: schedulesTable.dayOfWeek,
+            startTime: schedulesTable.startTime,
+          })
+          .from(schedulesTable)
+          .where(eq(schedulesTable.id, normalized.scheduleId))
+          .limit(1);
+        if (!newSchedule) {
+          return { kind: "forbidden" as const, message: "Target schedule not found." };
+        }
+        normalized.occurrenceDate = currentOccurrenceDate(newSchedule);
+      }
+    }
+
     // ── State-machine guard (Phase D) ───────────────────────────────────────
     // "attended" is a CHECK-IN outcome, not an admin-editable label. It must be
     // produced only by the attendance flow (/check-in/qr or POST /attendance),

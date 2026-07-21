@@ -22,6 +22,12 @@ import {
   runPostClassReminderAutomation,
 } from "./lib/notificationReminders";
 import { processBalletCancellationFinalizationJob } from "./lib/balletCancellationFinalization";
+import { recordReminderWorkerRun } from "./lib/reminderWorkerHeartbeat";
+import { getPushStatus } from "./lib/pushNotifications";
+
+function deployedVersion(): string | null {
+  return process.env["RAILWAY_GIT_COMMIT_SHA"] ?? process.env["VERCEL_GIT_COMMIT_SHA"] ?? null;
+}
 
 await initErrorMonitoring();
 
@@ -60,16 +66,40 @@ const notificationAutomationWorker = new Worker<NotificationAutomationJob>(
   QUEUE_NAMES.notificationAutomation,
   async (job) => {
     logger.info({ jobId: job.id, type: job.data.type }, "Processing notification automation job");
-    switch (job.data.type) {
-      case "class_reminders":
-        return runClassReminderAutomation();
-      case "post_class_reminders":
-        return runPostClassReminderAutomation();
-      case "package_reminders":
-        return runPackageReminderAutomation();
-      default:
-        throw new Error(`Unsupported notification automation job type: ${(job.data as { type?: string }).type}`);
+    const heartbeatBase = {
+      pushNotificationsEnabled: getPushStatus().enabled,
+      queueWorkerEnabled: workerEnabled(),
+      deployedVersion: deployedVersion(),
+    };
+    let result;
+    try {
+      switch (job.data.type) {
+        case "class_reminders":
+          result = await runClassReminderAutomation({ force: job.data.force });
+          break;
+        case "post_class_reminders":
+          result = await runPostClassReminderAutomation({ force: job.data.force });
+          break;
+        case "package_reminders":
+          result = await runPackageReminderAutomation();
+          break;
+        default:
+          throw new Error(`Unsupported notification automation job type: ${(job.data as { type?: string }).type}`);
+      }
+    } catch (err) {
+      await recordReminderWorkerRun({
+        ...heartbeatBase,
+        status: "error",
+        summary: { jobType: job.data.type, error: err instanceof Error ? err.message : "unknown error" },
+      }).catch((heartbeatErr) => captureError(heartbeatErr, { component: "queue-worker", phase: "reminder-heartbeat-after-failure" }));
+      throw err;
     }
+    await recordReminderWorkerRun({
+      ...heartbeatBase,
+      status: "ok",
+      summary: { jobType: job.data.type, ...result },
+    }).catch((heartbeatErr) => captureError(heartbeatErr, { component: "queue-worker", phase: "reminder-heartbeat-after-success" }));
+    return result;
   },
   { connection, concurrency: Number.parseInt(process.env["NOTIFICATION_AUTOMATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
 );

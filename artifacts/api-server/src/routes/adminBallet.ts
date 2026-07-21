@@ -23,7 +23,6 @@ import {
   balletSettingsTable,
   balletLevelAssignmentsTable,
   balletGroupsTable,
-  balletGroupSchedulesTable,
   balletSchedulesTable,
   balletPackagesTable,
   balletPaymentsTable,
@@ -48,6 +47,7 @@ import { diffFields, logActivity } from "../lib/activityLog";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth, isValidBillingMonth } from "../lib/balletAttendance";
 import { balletRefundEligibilitySummary, resolveApplicationCurrentCycle, todayDateOnly, type BalletRefundEligibilityContext } from "../lib/balletRefundEligibility";
 import { buildBalletApplicationPdfBuffer, balletApplicationPdfFilename } from "./balletApplicationPdf";
+import { isAssignmentReadyClass, scheduleShapeCondition } from "../lib/balletClassEntitlement";
 import {
   currentSubscription,
   getCurrentSubscriptionForApplication,
@@ -475,7 +475,8 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
 
   // C3: the active group's schedule slots, so the "Mark Attendance" control on
   // the detail page can offer a picker scoped to exactly the schedules the
-  // attendance endpoint will accept (same group→ballet_group_schedules join).
+  // attendance endpoint will accept (canonical Class → Group, direct join —
+  // no legacy ballet_group_schedules involvement for operational data).
   const groupSchedules = activeAssignment?.groupId != null
     ? await db
         .select({
@@ -489,11 +490,10 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
           instructorId: balletInstructorsTable.id,
           instructorName: balletInstructorsTable.name,
         })
-        .from(balletGroupSchedulesTable)
-        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
-        .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+        .from(balletClassesTable)
+        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
         .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
-        .where(eq(balletGroupSchedulesTable.groupId, activeAssignment.groupId))
+        .where(eq(balletClassesTable.groupId, activeAssignment.groupId))
         .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
     : [];
 
@@ -652,11 +652,10 @@ router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requir
           instructorId: balletInstructorsTable.id,
           instructorName: balletInstructorsTable.name,
         })
-        .from(balletGroupSchedulesTable)
-        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
-        .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+        .from(balletClassesTable)
+        .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
         .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
-        .where(eq(balletGroupSchedulesTable.groupId, activeAssignment.groupId))
+        .where(eq(balletClassesTable.groupId, activeAssignment.groupId))
         .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
     : [];
 
@@ -755,14 +754,45 @@ router.patch(
       }
 
       const [activeAssignment] = await db
-        .select({ id: balletLevelAssignmentsTable.id, groupId: balletLevelAssignmentsTable.groupId })
+        .select({
+          id: balletLevelAssignmentsTable.id,
+          levelId: balletLevelAssignmentsTable.levelId,
+          groupId: balletLevelAssignmentsTable.groupId,
+          levelIsActive: balletLevelsTable.isActive,
+          groupLevelId: balletGroupsTable.levelId,
+          groupIsActive: balletGroupsTable.isActive,
+        })
         .from(balletLevelAssignmentsTable)
+        .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
+        .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
         .where(and(eq(balletLevelAssignmentsTable.applicationId, id), eq(balletLevelAssignmentsTable.status, "active")))
         .orderBy(desc(balletLevelAssignmentsTable.id))
         .limit(1);
 
       if (!activeAssignment || activeAssignment.groupId == null) {
         res.status(422).json({ error: "Cannot activate: assign a group first." });
+        return;
+      }
+      if (activeAssignment.levelId !== app.assignedLevelId || activeAssignment.groupLevelId !== activeAssignment.levelId) {
+        res.status(422).json({ error: "Cannot activate: assigned level and group are inconsistent." });
+        return;
+      }
+      if (!activeAssignment.levelIsActive || !activeAssignment.groupIsActive) {
+        res.status(422).json({ error: "Cannot activate: assigned level and group must both be active." });
+        return;
+      }
+
+      const [activeClassSchedule] = await db
+        .select({ classId: balletClassesTable.id })
+        .from(balletClassesTable)
+        .where(and(
+          eq(balletClassesTable.levelId, activeAssignment.levelId),
+          eq(balletClassesTable.groupId, activeAssignment.groupId),
+          isAssignmentReadyClass(),
+        ))
+        .limit(1);
+      if (!activeClassSchedule) {
+        res.status(422).json({ error: "Cannot activate: the assigned group has no active Ballet Class with a valid active schedule and instructor." });
         return;
       }
 
@@ -897,9 +927,16 @@ router.post(
     if (!app) { res.status(404).json({ error: "Application not found" }); return; }
 
     const fromStatus = app.status as BalletApplicationStatus;
-    if (fromStatus === "pending" || fromStatus === "needsFollowUp") {
+    // Allowlist, not a blocklist: only "accepted" (first level assignment)
+    // and "assignedToLevel" (re-assigning before a group/activation) may
+    // call this endpoint. Without this, calling assign-level on an "active"
+    // application would silently supersede its live assignment and reset
+    // the application's status back to "assignedToLevel" — an inappropriate
+    // downgrade of an already-active student that must never happen through
+    // this endpoint.
+    if (fromStatus !== "accepted" && fromStatus !== "assignedToLevel") {
       res.status(422).json({
-        error: `Cannot assign level to application in status "${fromStatus}". Review and accept the application first.`,
+        error: `Cannot assign level to application in status "${fromStatus}". Only accepted or assigned applications can be assigned a level.`,
       });
       return;
     }
@@ -1056,6 +1093,10 @@ router.post(
       .limit(1);
 
     if (!app) { res.status(404).json({ error: "Application not found" }); return; }
+    if (app.status !== "assignedToLevel" && app.status !== "active") {
+      res.status(422).json({ error: `Cannot assign a group to application in status "${app.status}".` });
+      return;
+    }
 
     // Find the current active level assignment — never set a group on a
     // withdrawn/graduated/paused row.
@@ -1082,6 +1123,19 @@ router.post(
     if (!group.isActive) { res.status(422).json({ error: `Group "${group.name}" is inactive and cannot be assigned` }); return; }
     if (group.levelId !== assignment.levelId) {
       res.status(422).json({ error: `Group "${group.name}" belongs to a different level than this application's assigned level.` });
+      return;
+    }
+    const [activeClassSchedule] = await db
+      .select({ classId: balletClassesTable.id })
+      .from(balletClassesTable)
+      .where(and(
+        eq(balletClassesTable.groupId, group.id),
+        eq(balletClassesTable.levelId, assignment.levelId),
+        isAssignmentReadyClass(),
+      ))
+      .limit(1);
+    if (!activeClassSchedule) {
+      res.status(422).json({ error: `Group "${group.name}" has no active Ballet Class with a valid active schedule and instructor.` });
       return;
     }
 
@@ -1378,11 +1432,10 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
             instructorId: balletInstructorsTable.id,
             instructorName: balletInstructorsTable.name,
           })
-          .from(balletGroupSchedulesTable)
-          .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
-          .leftJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
+          .from(balletClassesTable)
+          .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
           .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
-          .where(eq(balletGroupSchedulesTable.groupId, row.groupId))
+          .where(eq(balletClassesTable.groupId, row.groupId))
           .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
       : Promise.resolve([]),
     computeBalletMonthlyAttendanceSummary(row.assignmentId, row.applicationId, currentBillingMonth()),
@@ -1520,6 +1573,7 @@ router.post("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission
     .select({
       id:            balletLevelAssignmentsTable.id,
       status:        balletLevelAssignmentsTable.status,
+      levelId:       balletLevelAssignmentsTable.levelId,
       groupId:       balletLevelAssignmentsTable.groupId,
       applicationId: balletLevelAssignmentsTable.applicationId,
       childName:     balletApplicationsTable.childName,
@@ -1540,19 +1594,27 @@ router.post("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission
     return;
   }
 
-  // The schedule must belong to the assignment's current group, and we derive
-  // the class from the schedule itself (never trust a client-supplied classId).
+  // The schedule must belong to the assignment's current group AND level,
+  // resolve through an assignment-ready canonical Class (active, non-legacy,
+  // active Instructor, exactly one well-formed active Schedule — see
+  // balletClassEntitlement.ts), and the submitted schedule row itself must
+  // independently satisfy scheduleShapeCondition. We derive the class from
+  // the schedule itself (never trust a client-supplied classId). Legacy
+  // Classes and cancelled/malformed Schedules can never satisfy this.
   const [scheduleLink] = await db
     .select({
       scheduleId:   balletSchedulesTable.id,
       classId:      balletSchedulesTable.classId,
       durationMins: balletSchedulesTable.durationMins,
     })
-    .from(balletGroupSchedulesTable)
-    .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+    .from(balletSchedulesTable)
+    .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
     .where(and(
-      eq(balletGroupSchedulesTable.groupId, assignment.groupId),
-      eq(balletGroupSchedulesTable.scheduleId, balletScheduleId),
+      eq(balletClassesTable.groupId, assignment.groupId),
+      eq(balletClassesTable.levelId, assignment.levelId),
+      eq(balletSchedulesTable.id, balletScheduleId),
+      scheduleShapeCondition(),
+      isAssignmentReadyClass(),
     ))
     .limit(1);
 

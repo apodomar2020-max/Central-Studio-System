@@ -12,9 +12,9 @@
  */
 
 import { Router, type IRouter } from "express";
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, balletInstructorsTable } from "@workspace/db";
+import { db, balletClassesTable, balletInstructorsTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
@@ -130,6 +130,15 @@ router.patch("/admin/ballet/instructors/:id", requireAdminAuth, requireAdminPerm
   try {
     const [existing] = await db.select().from(balletInstructorsTable).where(eq(balletInstructorsTable.id, id)).limit(1);
     if (!existing) { res.status(404).json({ error: "Instructor not found" }); return; }
+    if (updates["isActive"] === false && existing.isActive) {
+      const [{ activeClassCount }] = await db.select({ activeClassCount: count(balletClassesTable.id) })
+        .from(balletClassesTable)
+        .where(and(eq(balletClassesTable.instructorId, id), eq(balletClassesTable.isActive, true)));
+      if (Number(activeClassCount) > 0) {
+        res.status(422).json({ error: `Cannot deactivate this instructor while ${Number(activeClassCount)} active Ballet class(es) depend on them.` });
+        return;
+      }
+    }
     const [instructor] = await db
       .update(balletInstructorsTable)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -61,12 +61,10 @@ import {
   balletGroupsTable,
   balletPackagesTable,
   balletPackageLevelsTable,
-  balletClassGroupsTable,
   balletClassLevelsTable,
   balletLevelAssignmentsTable,
   balletPaymentsTable,
   balletRefundsTable,
-  balletGroupSchedulesTable,
   BALLET_PAYMENT_METHODS,
   studentsTable,
 } from "@workspace/db";
@@ -711,12 +709,14 @@ router.get("/ballet/performances", async (_req, res): Promise<void> => {
 
 // ─── GET /api/ballet/classes ───────────────────────────────────────────────────
 //
-// Public read-only class catalogue. Active classes only, each enriched with:
-//   - schedules: its active (status="active") ballet_schedules rows
-//   - groupIds / levelIds: resolved via the ballet_class_groups /
-//     ballet_class_levels join tables (mirrors adminBalletClasses.ts's
-//     getClassGroupIds/getClassLevelIds pattern)
+// Public read-only class catalogue. Active canonical (non-legacy) classes
+// only, each enriched with:
+//   - schedule: its one active weekly ballet_schedules row, or null
+//   - groupId / levelId: direct required relationships on ballet_classes
 //   - instructor: { id, name, photoUrl } resolved via instructorId, or null
+//
+// Legacy (is_legacy=true) rows are never surfaced here — they are retired
+// historical Classes, not part of the live public catalogue.
 //
 // Response: { classes: [...] }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -732,51 +732,37 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
         instructorId:       balletClassesTable.instructorId,
         instructorName:     balletInstructorsTable.name,
         instructorPhotoUrl: balletInstructorsTable.photoUrl,
+        groupId:            balletClassesTable.groupId,
+        levelId:            balletClassesTable.levelId,
       })
       .from(balletClassesTable)
       .leftJoin(balletInstructorsTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
-      .where(eq(balletClassesTable.isActive, true))
+      .where(and(eq(balletClassesTable.isActive, true), eq(balletClassesTable.isLegacy, false)))
       .orderBy(asc(balletClassesTable.title));
 
     const classIds = classRows.map((c) => c.id);
 
-    const [scheduleRows, groupRows, levelRows] = classIds.length > 0
-      ? await Promise.all([
-          db
-            .select({
-              id:           balletSchedulesTable.id,
-              classId:      balletSchedulesTable.classId,
-              dayOfWeek:    balletSchedulesTable.dayOfWeek,
-              startTime:    balletSchedulesTable.startTime,
-              endTime:      balletSchedulesTable.endTime,
-              durationMins: balletSchedulesTable.durationMins,
-            })
-            .from(balletSchedulesTable)
-            .where(and(inArray(balletSchedulesTable.classId, classIds), eq(balletSchedulesTable.status, "active")))
-            .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime)),
-          db
-            .select({ classId: balletClassGroupsTable.classId, groupId: balletClassGroupsTable.groupId })
-            .from(balletClassGroupsTable)
-            .where(inArray(balletClassGroupsTable.classId, classIds)),
-          db
-            .select({ classId: balletClassLevelsTable.classId, levelId: balletClassLevelsTable.levelId })
-            .from(balletClassLevelsTable)
-            .where(inArray(balletClassLevelsTable.classId, classIds)),
-        ])
-      : [[], [], []];
+    const scheduleRows = classIds.length > 0
+      ? await db
+          .select({
+            id:           balletSchedulesTable.id,
+            classId:      balletSchedulesTable.classId,
+            dayOfWeek:    balletSchedulesTable.dayOfWeek,
+            startTime:    balletSchedulesTable.startTime,
+            endTime:      balletSchedulesTable.endTime,
+            durationMins: balletSchedulesTable.durationMins,
+          })
+          .from(balletSchedulesTable)
+          .where(and(inArray(balletSchedulesTable.classId, classIds), eq(balletSchedulesTable.status, "active")))
+          .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
+      : [];
 
-    const schedulesByClass = new Map<number, Array<{ id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null }>>();
+    const scheduleByClass = new Map<number, { id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null }>();
     for (const s of scheduleRows) {
-      const list = schedulesByClass.get(s.classId) ?? [];
-      list.push({ id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null });
-      schedulesByClass.set(s.classId, list);
+      if (!scheduleByClass.has(s.classId)) {
+        scheduleByClass.set(s.classId, { id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null });
+      }
     }
-
-    const groupIdsByClass = new Map<number, number[]>();
-    for (const g of groupRows) groupIdsByClass.set(g.classId, [...(groupIdsByClass.get(g.classId) ?? []), g.groupId]);
-
-    const levelIdsByClass = new Map<number, number[]>();
-    for (const l of levelRows) levelIdsByClass.set(l.classId, [...(levelIdsByClass.get(l.classId) ?? []), l.levelId]);
 
     const classes = classRows.map((c) => ({
       id:            c.id,
@@ -784,9 +770,9 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
       classImageUrl: c.classImageUrl,
       classVideoUrl: c.classVideoUrl,
       instructor:    c.instructorId != null ? { id: c.instructorId, name: c.instructorName, photoUrl: normalizeInstructorPhotoUrlForResponse(c.instructorPhotoUrl) } : null,
-      groupIds:      groupIdsByClass.get(c.id) ?? [],
-      levelIds:      levelIdsByClass.get(c.id) ?? [],
-      schedules:     schedulesByClass.get(c.id) ?? [],
+      groupId:       c.groupId,
+      levelId:       c.levelId,
+      schedule:      scheduleByClass.get(c.id) ?? null,
     }));
 
     res.json({ classes });
@@ -863,45 +849,52 @@ router.get(
       const instructorsByGroupId = new Map<number, string[]>();
 
       if (activeGroupIds.length > 0) {
-        // group → ballet_group_schedules → ballet_schedules (day/start/end).
-        // Only active schedule rows are surfaced; a deactivated/cancelled slot
-        // must not show as a real class time.
+        // group → ballet_classes → ballet_schedules (day/start/end). Only
+        // active, non-legacy Classes with an active Schedule are surfaced —
+        // a deactivated/cancelled slot, or a retired legacy Class, must
+        // never show as a real class time.
         const scheduleRows = await db
           .select({
-            groupId:   balletGroupSchedulesTable.groupId,
+            groupId:   balletClassesTable.groupId,
             dayOfWeek: balletSchedulesTable.dayOfWeek,
             startTime: balletSchedulesTable.startTime,
             endTime:   balletSchedulesTable.endTime,
           })
-          .from(balletGroupSchedulesTable)
-          .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.id, balletGroupSchedulesTable.scheduleId))
+          .from(balletClassesTable)
+          .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
           .where(and(
-            inArray(balletGroupSchedulesTable.groupId, activeGroupIds),
+            inArray(balletClassesTable.groupId, activeGroupIds),
+            eq(balletClassesTable.isActive, true),
+            eq(balletClassesTable.isLegacy, false),
             eq(balletSchedulesTable.status, "active"),
           ))
           .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime));
         for (const row of scheduleRows) {
+          if (row.groupId == null) continue;
           const list = schedulesByGroupId.get(row.groupId) ?? [];
           list.push({ dayOfWeek: row.dayOfWeek, startTime: row.startTime, endTime: row.endTime });
           schedulesByGroupId.set(row.groupId, list);
         }
 
-        // group → ballet_class_groups → ballet_classes → ballet_instructors
-        // (per A4's stated join path). Only active classes with a named
-        // instructor contribute. Names are de-duplicated per group.
+        // group → ballet_classes → ballet_instructors (direct canonical
+        // relationship — no join table). Only active, non-legacy classes
+        // with an active instructor contribute. Names are de-duplicated per
+        // group.
         const instructorRows = await db
           .select({
-            groupId:        balletClassGroupsTable.groupId,
+            groupId:        balletClassesTable.groupId,
             instructorName: balletInstructorsTable.name,
           })
-          .from(balletClassGroupsTable)
-          .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletClassGroupsTable.classId))
+          .from(balletClassesTable)
           .innerJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
           .where(and(
-            inArray(balletClassGroupsTable.groupId, activeGroupIds),
+            inArray(balletClassesTable.groupId, activeGroupIds),
             eq(balletClassesTable.isActive, true),
+            eq(balletClassesTable.isLegacy, false),
+            eq(balletInstructorsTable.isActive, true),
           ));
         for (const row of instructorRows) {
+          if (row.groupId == null) continue;
           const list = instructorsByGroupId.get(row.groupId) ?? [];
           if (!list.includes(row.instructorName)) list.push(row.instructorName);
           instructorsByGroupId.set(row.groupId, list);
