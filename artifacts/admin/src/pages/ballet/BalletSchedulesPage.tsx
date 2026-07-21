@@ -24,6 +24,7 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -207,7 +208,7 @@ export default function BalletSchedulesPage() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormItem><FormLabel>Class</FormLabel><FormControl><Input readOnly value={editing ? getClassTitle(editing.classId) : ""} /></FormControl></FormItem>
+              <div className="space-y-2"><Label>Class</Label><Input readOnly value={editing ? getClassTitle(editing.classId) : ""} /></div>
 
               <FormField control={form.control} name="dayOfWeek" render={({ field }) => (
                 <FormItem>
@@ -254,7 +255,7 @@ export default function BalletSchedulesPage() {
                 </FormItem>
               )} />
 
-              <FormItem><FormLabel>Duration</FormLabel><FormControl><Input readOnly value={editing?.durationMins ? `${editing.durationMins} minutes (recalculated on save)` : "Derived from start and end time"} /></FormControl></FormItem>
+              <div className="space-y-2"><Label>Duration</Label><Input readOnly value={editing?.durationMins ? `${editing.durationMins} minutes (recalculated on save)` : "Derived from start and end time"} /></div>
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
