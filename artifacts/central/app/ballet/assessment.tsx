@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Animated,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -26,7 +27,11 @@ import BalletAssessmentSuccessActions from "@/components/ballet/BalletAssessment
 import BalletAssessmentSummaryCard from "@/components/ballet/BalletAssessmentSummaryCard";
 import BalletStepIndicator from "@/components/ballet/BalletStepIndicator";
 import { BA, BA_RADIUS } from "@/components/ballet/assessmentTokens";
-import { parseEligibleBalletChildIds } from "@/components/ballet/balletStudentPreviewModel";
+import {
+  buildEffectiveEligibleBalletChildIds,
+  parseEligibleBalletChildIds,
+  shouldLockSingleRoutedBalletChild,
+} from "@/components/ballet/balletStudentPreviewModel";
 import ErrorState from "@/components/ErrorState";
 import OfflineState from "@/components/OfflineState";
 import { SkeletonBox } from "@/components/SkeletonLoader";
@@ -105,6 +110,7 @@ function Field({
   keyboardType,
   multiline,
   style,
+  error,
 }: {
   label: string;
   value: string;
@@ -113,6 +119,7 @@ function Field({
   keyboardType?: "default" | "number-pad";
   multiline?: boolean;
   style?: object;
+  error?: string | null;
 }) {
   return (
     <View style={styles.field}>
@@ -127,6 +134,7 @@ function Field({
         textAlignVertical={multiline ? "top" : "center"}
         style={[styles.input, style]}
       />
+      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
     </View>
   );
 }
@@ -186,6 +194,9 @@ export default function BalletAssessmentScreen() {
   const [newChildMonth, setNewChildMonth] = useState("");
   const [newChildYear, setNewChildYear] = useState("");
   const [newChildGender, setNewChildGender] = useState<"female" | "male">("female");
+  const [sessionCreatedChildIds, setSessionCreatedChildIds] = useState<Set<number>>(() => new Set());
+  const [addChildErrors, setAddChildErrors] = useState<{ name?: string; birthday?: string }>({});
+  const [addingChild, setAddingChild] = useState(false);
   const authPromptShownRef = useRef(false);
   const parentPromptShownRef = useRef(false);
   const successScale = useRef(new Animated.Value(0)).current;
@@ -204,23 +215,30 @@ export default function BalletAssessmentScreen() {
     () => parseEligibleBalletChildIds(eligibleChildIdsParam),
     [eligibleChildIdsParam],
   );
+  const effectiveEligibleChildIds = useMemo(() => {
+    return buildEffectiveEligibleBalletChildIds(routedEligibleChildIds, sessionCreatedChildIds);
+  }, [routedEligibleChildIds, sessionCreatedChildIds]);
   const visibleChildren = useMemo(() => {
-    if (routedEligibleChildIds == null) return children;
-    const allowedIds = new Set(routedEligibleChildIds);
+    if (effectiveEligibleChildIds == null) return children;
     return children.filter((child) => {
       const childId = Number(child.id);
-      if (!Number.isInteger(childId) || !allowedIds.has(childId)) return false;
+      if (!Number.isInteger(childId) || !effectiveEligibleChildIds.has(childId)) return false;
+      if (sessionCreatedChildIds.has(childId)) return true;
       if (applicationsState !== "ready") return true;
       const status = getChildApplicationStatus(child, applications);
       return status == null || !BLOCKING_CHILD_APPLICATION_STATUSES.has(status);
     });
-  }, [applications, applicationsState, children, routedEligibleChildIds]);
-  const routedChildLocked = routedEligibleChildIds != null
-    && applicationsState === "ready"
-    && visibleChildren.length === 1;
+  }, [applications, applicationsState, children, effectiveEligibleChildIds, sessionCreatedChildIds]);
+  const routedChildLocked = shouldLockSingleRoutedBalletChild({
+    hasRoutedAllowList: routedEligibleChildIds != null,
+    applicationsReady: applicationsState === "ready",
+    visibleChildCount: visibleChildren.length,
+    sessionCreatedChildCount: sessionCreatedChildIds.size,
+  });
 
   useEffect(() => {
     if (routedEligibleChildIds == null || applicationsState !== "ready") return;
+    if (selectedChild && sessionCreatedChildIds.has(Number(selectedChild.id))) return;
     if (visibleChildren.length === 1) {
       const onlyChild = visibleChildren[0]!;
       if (selectedChild?.id !== onlyChild.id) setSelectedChild(onlyChild);
@@ -229,7 +247,7 @@ export default function BalletAssessmentScreen() {
     if (selectedChild && !visibleChildren.some((child) => child.id === selectedChild.id)) {
       setSelectedChild(null);
     }
-  }, [applicationsState, routedEligibleChildIds, selectedChild, visibleChildren]);
+  }, [applicationsState, routedEligibleChildIds, selectedChild, sessionCreatedChildIds, visibleChildren]);
 
   useEffect(() => {
     if (!user) {
@@ -350,33 +368,46 @@ export default function BalletAssessmentScreen() {
   }
 
   async function handleAddChild() {
-    if (!newChildName.trim()) {
-      alert.show({ tone: "warning", title: "Child Name", message: "Please enter the child's full name." });
-      return;
-    }
+    if (addingChild) return;
+    const errors: { name?: string; birthday?: string } = {};
+    if (!newChildName.trim()) errors.name = "Please enter the child's full name.";
     const birthday = newChildDay && newChildMonth && newChildYear
       ? `${newChildYear}-${newChildMonth.padStart(2, "0")}-${newChildDay.padStart(2, "0")}`
       : "";
     const age = calculateAge(birthday);
-    if (!birthday || age <= 0) {
-      alert.show({ tone: "warning", title: "Birthday", message: "Please enter a valid child birthday." });
-      return;
+    const parsedBirthday = birthday ? new Date(`${birthday}T12:00:00Z`) : null;
+    const calendarMatches = parsedBirthday != null
+      && !Number.isNaN(parsedBirthday.getTime())
+      && parsedBirthday.toISOString().slice(0, 10) === birthday;
+    if (!birthday || !calendarMatches || age <= 0) errors.birthday = "Enter a valid Day, Month, and Year.";
+    setAddChildErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    setAddingChild(true);
+    try {
+      const created = await addChild({
+        id: "",
+        fullName: newChildName.trim(),
+        birthday,
+        age,
+        gender: newChildGender,
+      });
+      if (!created) return;
+      const createdId = Number(created.id);
+      if (Number.isInteger(createdId) && createdId > 0) {
+        setSessionCreatedChildIds((current) => new Set(current).add(createdId));
+      }
+      setSelectedChild(created);
+      setAddChildOpen(false);
+      setAddChildErrors({});
+      setNewChildName("");
+      setNewChildDay("");
+      setNewChildMonth("");
+      setNewChildYear("");
+      setNewChildGender("female");
+    } finally {
+      setAddingChild(false);
     }
-    const created = await addChild({
-      id: "",
-      fullName: newChildName.trim(),
-      birthday,
-      age,
-      gender: newChildGender,
-    });
-    if (!created) return;
-    setSelectedChild(created);
-    setAddChildOpen(false);
-    setNewChildName("");
-    setNewChildDay("");
-    setNewChildMonth("");
-    setNewChildYear("");
-    setNewChildGender("female");
   }
 
   async function handleSubmit() {
@@ -439,6 +470,7 @@ export default function BalletAssessmentScreen() {
           assessmentScheduleId: selectedAppointment.scheduleId,
           assessmentDate: selectedAppointment.date,
           preferredPackageId: selectedPackage.id,
+          preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
           status: result.application.status,
           adminNotes: null,
           assignedLevelId: null,
@@ -451,6 +483,7 @@ export default function BalletAssessmentScreen() {
         },
         ...prev,
       ]);
+      void loadApplications();
     } catch (err) {
       const typed = err as { status?: number; data?: { error?: string; code?: string }; message?: string };
       if (typed.status === 409) {
@@ -479,11 +512,11 @@ export default function BalletAssessmentScreen() {
   }
 
   function confirmCancel() {
-    if (submittedApplicationId == null) return;
+    if (submittedApplicationId == null || !selectedChild) return;
     alert.show({
       tone: "destructive",
-      title: "Cancel Application?",
-      message: "This will cancel the submitted Ballet Assessment application. You can apply again afterwards.",
+      title: `Cancel ${selectedChild.fullName}'s Application?`,
+      message: `This cancels only ${selectedChild.fullName}'s submitted Ballet Assessment application. You can apply again afterwards.`,
       actions: [
         { label: "Keep Application", tone: "neutral" },
         {
@@ -663,12 +696,17 @@ export default function BalletAssessmentScreen() {
                 />
               );
             })}
-            {routedEligibleChildIds == null ? (
-              <TouchableOpacity style={styles.addChildButton} onPress={() => setAddChildOpen(true)} activeOpacity={0.82}>
-                <Ionicons name="add-circle-outline" size={19} color={BA.cyan500} />
-                <Text style={styles.addChildText}>+ Add New Child</Text>
-              </TouchableOpacity>
-            ) : null}
+            <TouchableOpacity
+              style={styles.addChildButton}
+              onPress={() => {
+                setAddChildErrors({});
+                setAddChildOpen(true);
+              }}
+              activeOpacity={0.82}
+            >
+              <Ionicons name="add-circle-outline" size={19} color={BA.cyan500} />
+              <Text style={styles.addChildText}>+ Add New Child</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -768,35 +806,77 @@ export default function BalletAssessmentScreen() {
       </View>
 
       <Modal visible={addChildOpen} animationType="slide" transparent onRequestClose={() => setAddChildOpen(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add New Child</Text>
-              <TouchableOpacity onPress={() => setAddChildOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Close Add New Child"
+                onPress={() => setAddChildOpen(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <Ionicons name="close" size={22} color={BA.ink300} />
               </TouchableOpacity>
             </View>
-            <Field label="Child Full Name" value={newChildName} onChangeText={setNewChildName} placeholder="Sara Ahmed" />
-            <View style={styles.birthRow}>
-              <Field label="Day" value={newChildDay} onChangeText={setNewChildDay} placeholder="12" keyboardType="number-pad" />
-              <Field label="Month" value={newChildMonth} onChangeText={setNewChildMonth} placeholder="03" keyboardType="number-pad" />
-              <Field label="Year" value={newChildYear} onChangeText={setNewChildYear} placeholder="2021" keyboardType="number-pad" />
-            </View>
-            <View style={styles.genderRow}>
-              {(["female", "male"] as const).map((gender) => {
-                const selected = newChildGender === gender;
-                return (
-                  <TouchableOpacity key={gender} onPress={() => setNewChildGender(gender)} style={[styles.genderButton, selected && styles.genderButtonSelected]}>
-                    <Text style={[styles.genderText, selected && styles.genderTextSelected]}>{gender === "female" ? "Girl" : "Boy"}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TouchableOpacity onPress={handleAddChild} activeOpacity={0.86} style={[styles.primaryButton, { minHeight: 50 }]}>
-              <Text style={styles.primaryButtonText}>Save Child</Text>
-            </TouchableOpacity>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={[styles.modalForm, { paddingBottom: Math.max(insets.bottom, 18) }]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.formSection}>
+                <Field
+                  label="Child Name"
+                  value={newChildName}
+                  onChangeText={(value) => {
+                    setNewChildName(value);
+                    if (addChildErrors.name) setAddChildErrors((current) => ({ ...current, name: undefined }));
+                  }}
+                  placeholder="Sara Ahmed"
+                  error={addChildErrors.name}
+                />
+              </View>
+
+              <View style={styles.formSection}>
+                <Text style={styles.groupLabel}>Date of Birth</Text>
+                <View style={styles.birthRow}>
+                  <View style={styles.birthField}><Field label="Day" value={newChildDay} onChangeText={(value) => { setNewChildDay(value); setAddChildErrors((current) => ({ ...current, birthday: undefined })); }} placeholder="12" keyboardType="number-pad" /></View>
+                  <View style={styles.birthField}><Field label="Month" value={newChildMonth} onChangeText={(value) => { setNewChildMonth(value); setAddChildErrors((current) => ({ ...current, birthday: undefined })); }} placeholder="03" keyboardType="number-pad" /></View>
+                  <View style={styles.birthField}><Field label="Year" value={newChildYear} onChangeText={(value) => { setNewChildYear(value); setAddChildErrors((current) => ({ ...current, birthday: undefined })); }} placeholder="2021" keyboardType="number-pad" /></View>
+                </View>
+                {addChildErrors.birthday ? <Text style={styles.fieldError}>{addChildErrors.birthday}</Text> : null}
+              </View>
+
+              <View style={styles.formSection}>
+                <Text style={styles.groupLabel}>Gender</Text>
+                <View style={styles.genderRow}>
+                  {(["female", "male"] as const).map((gender) => {
+                    const selected = newChildGender === gender;
+                    return (
+                      <TouchableOpacity key={gender} onPress={() => setNewChildGender(gender)} style={[styles.genderButton, selected && styles.genderButtonSelected]}>
+                        <Text style={[styles.genderText, selected && styles.genderTextSelected]}>{gender === "female" ? "Girl" : "Boy"}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleAddChild}
+                disabled={addingChild}
+                activeOpacity={0.86}
+                style={[styles.primaryButton, styles.saveChildButton, addingChild && { opacity: 0.6 }]}
+              >
+                {addingChild ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Save Child</Text>}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -929,15 +1009,15 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderTopWidth: 1,
     borderTopColor: "rgba(0,182,215,0.28)",
-    paddingHorizontal: 20,
+    maxHeight: "90%",
     paddingTop: 18,
-    paddingBottom: 28,
-    gap: 14,
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
   },
   modalTitle: {
     color: BA.white,
@@ -950,7 +1030,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  field: { flex: 1, gap: 6 },
+  modalScroll: { flexGrow: 0 },
+  modalForm: { paddingHorizontal: 20, gap: 18 },
+  formSection: { gap: 9 },
+  field: { gap: 6 },
   fieldLabel: {
     color: BA.ink300,
     fontFamily: "SpaceMono_700Bold",
@@ -970,7 +1053,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     ...iosTextInputStyle(14, 18),
   },
+  fieldError: {
+    color: BA.danger,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  groupLabel: {
+    color: BA.white,
+    fontFamily: "Archivo_700Bold",
+    fontSize: 13,
+  },
   birthRow: { flexDirection: "row", gap: 8 },
+  birthField: { flex: 1, minWidth: 0 },
   genderRow: { flexDirection: "row", gap: 8 },
   genderButton: {
     flex: 1,
@@ -992,6 +1087,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   genderTextSelected: { color: BA.cyan400 },
+  saveChildButton: { minHeight: 50, marginTop: 2 },
   reasonMetaRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -4,10 +4,13 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import {
+  buildEffectiveEligibleBalletChildIds,
   parseEligibleBalletChildIds,
-  selectActiveBalletStudents,
+  selectAuthoritativeBalletApplications,
+  selectCurrentBalletStudents,
   selectEligibleBalletChildren,
   shouldShowAddBalletChildCard,
+  shouldLockSingleRoutedBalletChild,
   type BalletStudentPreviewApplicationSource,
 // @ts-expect-error Node's native TypeScript test runner requires the explicit extension.
 } from "./balletStudentPreviewModel.ts";
@@ -60,19 +63,25 @@ function application(overrides: Partial<BalletStudentPreviewApplicationSource> =
     assignedLevelId: 3,
     assignedGroupId: 7,
     resolvedSchedules: [{ id: 1 }, { id: 2 }],
+    assessmentDate: "2026-08-04",
+    preferredPackageId: 12,
+    preferredPaymentMethod: "inPerson",
+    createdAt: "2026-07-01T10:00:00.000Z",
+    updatedAt: "2026-07-01T10:00:00.000Z",
     ...overrides,
   };
 }
 
 function select(applications: BalletStudentPreviewApplicationSource[]) {
-  return selectActiveBalletStudents({
+  return selectCurrentBalletStudents({
     applications,
     detailsByApplicationId: new Map([
-      [20, { currentPayment: { subscriptionDisplayStatus: "Active" } }],
-      [21, { currentPayment: { subscriptionDisplayStatus: "Renewed" } }],
+      [20, { currentPayment: { status: "paid", subscriptionDisplayStatus: "Active" } }],
+      [21, { currentPayment: { status: "paid", subscriptionDisplayStatus: "Renewed" } }],
     ]),
     levelNameById: new Map([[3, "Primary Ballet"]]),
     groupNameById: new Map([[7, "Cyan Group"]]),
+    packageNameById: new Map([[12, "Eight Classes"]]),
   });
 }
 
@@ -81,6 +90,102 @@ const children = [
   { id: "9", fullName: "Nour Ali", birthday: "2017-06-08" },
 ];
 const blockingStatuses = new Set(["pending", "needsFollowUp", "accepted", "assignedToLevel", "active"]);
+
+test("every non-terminal Ballet application lifecycle status renders a card with the correct label", () => {
+  const cases = [
+    ["pending", "Application Pending"],
+    ["needsFollowUp", "Needs Follow-Up"],
+    ["accepted", "Application Accepted"],
+    ["assignedToLevel", "Assigned to Level"],
+    ["active", "Active Student"],
+  ] as const;
+
+  for (const [status, expectedLabel] of cases) {
+    const [student] = select([application({ status })]);
+    assert.equal(student?.statusLabel, expectedLabel);
+  }
+});
+
+test("terminal Ballet application records do not render student journey cards", () => {
+  for (const status of ["rejected", "cancelled", "withdrawn"]) {
+    assert.deepEqual(select([application({ status })]), []);
+  }
+});
+
+test("non-active applications are never labelled Active Student", () => {
+  for (const status of ["pending", "needsFollowUp", "accepted", "assignedToLevel"]) {
+    const [student] = select([application({ status })]);
+    assert.notEqual(student?.statusLabel, "Active Student");
+  }
+});
+
+test("one child with several application records renders one authoritative card", () => {
+  const records = [
+    application({ id: 31, status: "cancelled", updatedAt: "2026-01-01T00:00:00.000Z" }),
+    application({ id: 32, status: "pending", updatedAt: "2026-07-01T00:00:00.000Z" }),
+    application({ id: 33, status: "accepted", updatedAt: "2026-07-03T00:00:00.000Z" }),
+  ];
+  const selected = selectAuthoritativeBalletApplications(records);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.id, 33);
+});
+
+test("an active record wins over a newer non-terminal record for the same child", () => {
+  const selected = selectAuthoritativeBalletApplications([
+    application({ id: 41, status: "active", updatedAt: "2026-06-01T00:00:00.000Z" }),
+    application({ id: 42, status: "needsFollowUp", updatedAt: "2026-07-10T00:00:00.000Z" }),
+  ]);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.id, 41);
+});
+
+test("latest updated non-terminal record wins when a child has no active record", () => {
+  const selected = selectAuthoritativeBalletApplications([
+    application({ id: 51, status: "pending", updatedAt: "2026-07-01T00:00:00.000Z" }),
+    application({ id: 52, status: "accepted", updatedAt: "2026-07-11T00:00:00.000Z" }),
+  ]);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.id, 52);
+});
+
+test("canonical child id is primary while legacy identity falls back to name and birthday", () => {
+  const distinctChildIds = selectAuthoritativeBalletApplications([
+    application({ id: 61, childId: 8, childName: "Same Name", status: "pending" }),
+    application({ id: 62, childId: 9, childName: "Same Name", status: "accepted" }),
+  ]);
+  assert.equal(distinctChildIds.length, 2);
+
+  const legacy = selectAuthoritativeBalletApplications([
+    application({ id: 63, childId: null, childName: "Legacy Child", childBirthday: "2015-04-12", status: "pending", updatedAt: "2026-07-01T00:00:00.000Z" }),
+    application({ id: 64, childId: null, childName: "Legacy Child", childBirthday: "2015-04-12", status: "accepted", updatedAt: "2026-07-02T00:00:00.000Z" }),
+  ]);
+  assert.equal(legacy.length, 1);
+  assert.equal(legacy[0]?.id, 64);
+});
+
+test("pre-activation cards use application information and omit active-only rows", () => {
+  const [student] = select([application({ status: "accepted", resolvedSchedules: null, assignedGroupId: null })]);
+  assert.deepEqual(student?.detailRows.map((row) => row.label), ["Assessment", "Package", "Payment"]);
+  assert.equal(student?.detailRows.some((row) => row.label === "Subscription" || row.label === "Classes"), false);
+});
+
+test("assigned-to-level cards show only available placement, payment, and subscription state", () => {
+  const [student] = select([application({ status: "assignedToLevel", assignedGroupId: null })]);
+  assert.deepEqual(student?.detailRows.map((row) => row.label), ["Level", "Payment", "Subscription"]);
+});
+
+test("a newly returned non-terminal application immediately becomes a landing journey card", () => {
+  assert.deepEqual(select([]), []);
+  const [student] = select([application({ id: 71, childId: 19, childName: "New Child", status: "pending" })]);
+  assert.equal(student?.childId, 19);
+  assert.equal(student?.statusLabel, "Application Pending");
+});
+
+test("application submission and landing focus both trigger an authoritative applications refresh", () => {
+  assert.match(assessmentSource, /void loadApplications\(\);/);
+  assert.match(landingSource, /useFocusEffect\([\s\S]*fetchMyApplications\(ctrl\.signal\)/);
+  assert.match(landingSource, /selectAuthoritativeBalletApplications\(apps\)/);
+});
 
 test("the real student card uses one unified two-column premium surface", () => {
   assert.match(realCardSource, /style=\{styles\.cardMain\}/);
@@ -204,6 +309,12 @@ test("no eligible child hides the CTA card", () => {
 
 test("one routed eligible child is preselected and locked in the existing assessment flow", () => {
   assert.deepEqual(parseEligibleBalletChildIds("9"), [9]);
+  assert.equal(shouldLockSingleRoutedBalletChild({
+    hasRoutedAllowList: true,
+    applicationsReady: true,
+    visibleChildCount: 1,
+    sessionCreatedChildCount: 0,
+  }), true);
   assert.match(assessmentSource, /visibleChildren\.length === 1[\s\S]*setSelectedChild\(onlyChild\)/);
   assert.match(assessmentSource, /locked=\{routedChildLocked\}/);
   assert.match(landingSource, /pathname: "\/ballet\/assessment"/);
@@ -211,7 +322,8 @@ test("one routed eligible child is preselected and locked in the existing assess
 
 test("multiple routed children remain limited to the eligible identifier list", () => {
   assert.deepEqual(parseEligibleBalletChildIds("9,10,9,invalid"), [9, 10]);
-  assert.match(assessmentSource, /allowedIds\.has\(childId\)/);
+  assert.deepEqual([...buildEffectiveEligibleBalletChildIds([9, 10], new Set())!], [9, 10]);
+  assert.match(assessmentSource, /effectiveEligibleChildIds\.has\(childId\)/);
   assert.match(assessmentSource, /BLOCKING_CHILD_APPLICATION_STATUSES\.has\(status\)/);
 });
 
@@ -240,7 +352,7 @@ test("the real card no longer uses the previous oversized fixed or minimum heigh
 test("an empty resolved schedule is unavailable instead of misleading zero classes", () => {
   const [student] = select([application({ resolvedSchedules: [] })]);
   assert.equal(student?.weeklyClassCount, null);
-  assert.match(realCardSource, /Schedule unavailable/);
+  assert.equal(student?.detailRows.find((row) => row.kind === "classes")?.value, "Schedule unavailable");
   assert.doesNotMatch(realCardSource, /0 weekly classes/);
 });
 

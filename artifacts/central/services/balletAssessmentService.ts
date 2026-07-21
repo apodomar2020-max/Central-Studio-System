@@ -319,6 +319,7 @@ export interface BalletApplication {
   assessmentScheduleId: number | null;
   assessmentDate: string | null;
   preferredPackageId: number | null;
+  preferredPaymentMethod: BalletPaymentMethod | null;
   status: string;
   adminNotes: string | null;
   assignedLevelId: number | null;

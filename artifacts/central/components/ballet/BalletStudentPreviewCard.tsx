@@ -18,10 +18,29 @@ import { BA, BA_RADIUS } from "./assessmentTokens";
 import {
   shouldShowAddBalletChildCard,
   type BalletStudentPreview,
+  type BalletStudentPreviewDetailKind,
 } from "./balletStudentPreviewModel";
 
 const CARD_GAP = 12;
 const BALLERINA_ARTWORK = require("../../assets/images/ballerina-card.png");
+
+const STATUS_TONE_COLORS = {
+  pending: BA.ink300,
+  warning: BA.amber,
+  accepted: BA.success,
+  progress: BA.cyan400,
+  active: BA.cyan400,
+} as const;
+
+const DETAIL_ICONS: Record<BalletStudentPreviewDetailKind, React.ComponentProps<typeof Ionicons>["name"]> = {
+  assessment: "calendar-outline",
+  package: "cube-outline",
+  payment: "wallet-outline",
+  level: "ribbon-outline",
+  group: "people-outline",
+  classes: "calendar-outline",
+  subscription: "checkmark-circle-outline",
+};
 
 type CarouselItem =
   | { kind: "student"; key: string; student: BalletStudentPreview }
@@ -54,14 +73,13 @@ export function BalletStudentPreviewCard({
   student: BalletStudentPreview;
   width: number;
 }) {
-  const weeklyClassLabel = student.weeklyClassCount == null
-    ? "Schedule unavailable"
-    : `${student.weeklyClassCount} class${student.weeklyClassCount === 1 ? "" : "es"} / week`;
+  const statusColor = STATUS_TONE_COLORS[student.statusTone];
+  const detailSummary = student.detailRows.map((row) => `${row.label} ${row.value}`).join(". ");
 
   return (
     <View
       style={[styles.card, { width }]}
-      accessibilityLabel={`${student.childName}, Active Student. ${student.levelName}. ${student.groupName}. ${weeklyClassLabel}. Subscription ${student.subscriptionState}.`}
+      accessibilityLabel={`${student.childName}, ${student.statusLabel}. ${detailSummary}`}
     >
       <View style={styles.cardMain}>
         <View style={styles.visualPanel}>
@@ -77,17 +95,22 @@ export function BalletStudentPreviewCard({
           <View style={styles.identity}>
             <Text style={styles.name}>{student.childName}</Text>
             <View style={styles.statusRow}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Active Student</Text>
+              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusText, { color: statusColor }]}>{student.statusLabel}</Text>
             </View>
             <Text style={styles.identitySubtitle}>Central Studio Ballet Program</Text>
           </View>
 
           <View style={styles.details}>
-            <DetailRow icon="ribbon-outline" label="Level" value={student.levelName} />
-            <DetailRow icon="people-outline" label="Group" value={student.groupName} />
-            <DetailRow icon="calendar-outline" label="Classes" value={weeklyClassLabel} />
-            <DetailRow icon="checkmark-circle-outline" label="Subscription" value={student.subscriptionState} last />
+            {student.detailRows.map((row, index) => (
+              <DetailRow
+                key={`${row.kind}:${row.label}`}
+                icon={DETAIL_ICONS[row.kind]}
+                label={row.label}
+                value={row.value}
+                last={index === student.detailRows.length - 1}
+              />
+            ))}
           </View>
         </View>
       </View>
