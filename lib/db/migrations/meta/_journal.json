@@ -498,6 +498,13 @@
       "when": 1784462425000,
       "tag": "0071_ballet_pending_renewal_uniqueness",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784462426000,
+      "tag": "0072_ballet_class_canonical_relationships",
+      "breakpoints": true
     }
   ]
 }

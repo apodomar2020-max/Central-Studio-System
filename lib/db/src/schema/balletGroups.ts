@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { balletLevelsTable } from "./balletLevels";
@@ -6,9 +6,9 @@ import { balletLevelsTable } from "./balletLevels";
 /**
  * ballet_groups — a cohort of children within one level.
  *
- * A group can be tied to more than one weekly schedule slot (e.g. Monday 5pm
- * AND Wednesday 5pm) — that many-to-many relationship is tracked via the
- * ballet_group_schedules join table, not a scalar column here.
+ * A group can own multiple separate ballet_classes. Each class owns exactly
+ * one weekly schedule, so no group/schedule join is needed for the
+ * canonical model — see migration 0072.
  *
  * level_id uses ON DELETE RESTRICT: a level with groups cannot be deleted,
  * matching the ballet_level_assignments convention.
@@ -25,7 +25,11 @@ export const balletGroupsTable = pgTable("ballet_groups", {
   capacity:   integer("capacity"),
   createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:  timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
-});
+}, (table) => ([
+  // Supports the composite Class(group_id, level_id) FK that makes a
+  // cross-level Class impossible even when writes bypass the API.
+  unique("ballet_groups_id_level_id_unique").on(table.id, table.levelId),
+]));
 
 export const insertBalletGroupSchema = createInsertSchema(balletGroupsTable).omit({
   id: true, createdAt: true, updatedAt: true,
