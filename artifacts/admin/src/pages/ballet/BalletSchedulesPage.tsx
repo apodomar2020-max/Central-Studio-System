@@ -1,8 +1,8 @@
 /**
  * Ballet → Schedules — /ballet/schedules
  *
- * Weekly time slots for ballet classes, independent of the generic Schedules
- * page / `schedules` table.
+ * Read/edit view of the single weekly schedule owned by each Ballet Class.
+ * New schedules are created atomically from the Ballet Classes page.
  *
  * Uses the raw-fetch pattern established by the other Ballet admin pages
  * rather than the generated @workspace/api-client-react hooks.
@@ -62,43 +62,29 @@ interface BalletSchedule {
   durationMins?: number | null;
 }
 
-interface BalletClass { id: number; title: string; }
+interface BalletClass { id: number; title: string; isLegacy: boolean; }
 interface ListResponse<T> { data: T[]; total: number; page: number; limit: number; totalPages: number; }
 
-// Canonical optional-duration contract (matches the backend): a truly blank
-// or never-touched field is undefined (omitted from the request entirely);
-// an existing value the admin explicitly clears back to "" normalizes to
-// null (explicitly clears it on the backend, rather than being silently
-// dropped). Zero, negative, decimal, and non-numeric values are rejected —
-// "" is never coerced to 0.
 const formSchema = z.object({
-  classId: z.number({ required_error: "Class is required" }).int().positive(),
   dayOfWeek: z.number({ required_error: "Day of week is required" }).int().min(0).max(6),
   startTime: z.string().min(1, "Start time is required"),
   endTime: z.string().min(1, "End time is required"),
   status: z.enum(STATUSES).default("active"),
-  durationMins: z.preprocess(
-    (val) => (val === "" ? null : val),
-    z.coerce.number().int().positive().nullable().optional(),
-  ),
 });
 
 type FormValues = z.input<typeof formSchema>;
 
 const EMPTY_VALUES: FormValues = {
-  classId: undefined as unknown as number,
   dayOfWeek: 1,
   startTime: "16:00",
   endTime: "17:00",
   status: "active",
-  durationMins: undefined,
 };
 
 export default function BalletSchedulesPage() {
   const { token, can } = useAdminAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const canCreate = can("ballet.schedules", "create");
   const canEdit = can("ballet.schedules", "edit");
   const canDelete = can("ballet.schedules", "delete");
 
@@ -121,12 +107,6 @@ export default function BalletSchedulesPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-ballet-schedules"] });
 
-  const createMutation = useMutation({
-    mutationFn: (body: object) => adminFetch(`${API_BASE}/api/admin/ballet/schedules`, { method: "POST", body: JSON.stringify(body) }, token, API_KEY),
-    onSuccess: () => { invalidate(); toast({ title: "Schedule created" }); setOpen(false); },
-    onError: (e: unknown) => toast({ title: "Error", description: scheduleErrorMessage(e, "Failed to create schedule."), variant: "destructive" }),
-  });
-
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: number; body: object }) => adminFetch(`${API_BASE}/api/admin/ballet/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token, API_KEY),
     onSuccess: () => { invalidate(); toast({ title: "Schedule updated" }); setOpen(false); },
@@ -135,46 +115,34 @@ export default function BalletSchedulesPage() {
 
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES });
 
-  const openCreate = () => {
-    setEditing(null);
-    form.reset(EMPTY_VALUES);
-    setOpen(true);
-  };
+  const isLegacySchedule = (s: BalletSchedule) => classes.find((c) => c.id === s.classId)?.isLegacy ?? false;
 
   const openEdit = (s: BalletSchedule) => {
+    if (isLegacySchedule(s)) {
+      toast({ title: "Historical Schedule", description: "This Class uses the retired Ballet Class model. Create a new Class to resume the program.", variant: "destructive" });
+      return;
+    }
     setEditing(s);
     form.reset({
-      classId: s.classId,
       dayOfWeek: s.dayOfWeek,
       startTime: s.startTime,
       endTime: s.endTime,
       status: s.status,
-      durationMins: s.durationMins ?? undefined,
     });
     setOpen(true);
   };
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
-    // durationMins is left exactly as parsed: undefined when blank/untouched
-    // (JSON.stringify drops the key entirely — omitted, not sent as null),
-    // or null when the admin explicitly cleared an existing value (PATCH
-    // then clears it; POST just inserts null either way). Never forced to
-    // null, never coerced to 0, never NaN.
-    const body = parsed;
-    if (editing) {
-      updateMutation.mutate({ id: editing.id, body });
-    } else {
-      createMutation.mutate(body);
-    }
+    if (editing) updateMutation.mutate({ id: editing.id, body: parsed });
   };
 
   const getClassTitle = (id: number) => classes.find((c) => c.id === id)?.title ?? `Class #${id}`;
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isSaving = updateMutation.isPending;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Ballet Schedules" description="Weekly time slots for ballet classes" mode="stage" addLabel="Add Schedule" addTestId="button-add-ballet-schedule" onAdd={canCreate ? openCreate : undefined} />
+      <PageHeader title="Ballet Schedules" description="Read and edit the one weekly schedule owned by each Ballet Class. Create schedules from Add Class." mode="stage" />
 
       <div className="border rounded-md">
         <Table>
@@ -196,7 +164,10 @@ export default function BalletSchedulesPage() {
             ) : (
               schedules.map((s) => (
                 <TableRow key={s.id} data-testid={`row-ballet-schedule-${s.id}`}>
-                  <TableCell className="font-medium">{getClassTitle(s.classId)}</TableCell>
+                  <TableCell className="font-medium">
+                    {getClassTitle(s.classId)}
+                    {isLegacySchedule(s) && <div className="mt-1"><Badge variant="secondary" data-testid={`badge-legacy-schedule-${s.id}`}>Historical Class</Badge></div>}
+                  </TableCell>
                   <TableCell>{DAY_SHORT[s.dayOfWeek] ?? "—"}</TableCell>
                   <TableCell>{s.startTime} – {s.endTime}</TableCell>
                   <TableCell>{s.durationMins != null ? `${s.durationMins} min` : "—"}</TableCell>
@@ -206,12 +177,12 @@ export default function BalletSchedulesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {canEdit && (
+                    {!isLegacySchedule(s) && canEdit && (
                       <Button variant="ghost" size="icon" data-testid={`button-edit-ballet-schedule-${s.id}`} onClick={() => openEdit(s)}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
-                    {canDelete && (
+                    {!isLegacySchedule(s) && canDelete && (
                       <Button
                         variant="ghost" size="icon"
                         data-testid={`button-cancel-ballet-schedule-${s.id}`}
@@ -232,22 +203,11 @@ export default function BalletSchedulesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Ballet Schedule" : "Add Ballet Schedule"}</DialogTitle>
+            <DialogTitle>Edit Ballet Schedule</DialogTitle>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField control={form.control} name="classId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Class</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value ? String(field.value) : ""}>
-                    <FormControl><SelectTrigger data-testid="select-ballet-schedule-class"><SelectValue placeholder="Select class" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {classes.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormItem><FormLabel>Class</FormLabel><FormControl><Input readOnly value={editing ? getClassTitle(editing.classId) : ""} /></FormControl></FormItem>
 
               <FormField control={form.control} name="dayOfWeek" render={({ field }) => (
                 <FormItem>
@@ -294,27 +254,13 @@ export default function BalletSchedulesPage() {
                 </FormItem>
               )} />
 
-              <FormField control={form.control} name="durationMins" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Duration (minutes, optional)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      data-testid="input-ballet-schedule-duration"
-                      {...field}
-                      value={field.value == null ? "" : String(field.value)}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormItem><FormLabel>Duration</FormLabel><FormControl><Input readOnly value={editing?.durationMins ? `${editing.durationMins} minutes (recalculated on save)` : "Derived from start and end time"} /></FormControl></FormItem>
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button type="submit" data-testid="button-submit-ballet-schedule" disabled={isSaving}>
                   {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  {editing ? "Save Changes" : "Add Schedule"}
+                  Save Changes
                 </Button>
               </DialogFooter>
             </form>

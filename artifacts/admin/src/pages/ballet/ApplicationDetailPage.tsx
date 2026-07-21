@@ -102,6 +102,8 @@ interface Group {
   name: string;
   levelId: number;
   isActive: boolean;
+  classCount: number;
+  assignmentReadyClassCount: number;
 }
 
 interface Event {
@@ -520,6 +522,10 @@ export default function ApplicationDetailPage() {
       toast({ title: `Assigned to ${result.levelName}` });
       setNewLevelId("");
       setLevelNote("");
+      // Changing Level supersedes the assignment's group (adminBallet.ts
+      // clears it server-side too) — the picker must not keep offering a
+      // stale Group selection from the previous Level.
+      setNewGroupId("");
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
@@ -936,11 +942,16 @@ export default function ApplicationDetailPage() {
     : paidInitialSubscriptionExpired || currentSubscription?.subscriptionStatus === "expired" ? "expired"
     : paymentConfirmed ? "pending"
     : "missing";
-  const levels = levelsData?.levels ?? [];
+  const levels = (levelsData?.levels ?? []).filter((item) => item.isActive);
   // Groups are only offered for the level actually assigned to this
   // application — mirrors the existing level-filter pattern used elsewhere
-  // in this admin app (client-side filter, no backend query param).
-  const groups = (groupsData?.data ?? []).filter((g) => g.levelId === app.assignedLevelId);
+  // in this admin app (client-side filter, no backend query param). Also
+  // require active + assignment-ready (at least one Class satisfying the
+  // shared entitlement invariant) so the picker never offers a Group the
+  // assign-group endpoint would reject.
+  const groups = (groupsData?.data ?? []).filter((g) =>
+    g.isActive && g.levelId === app.assignedLevelId && g.assignmentReadyClassCount > 0
+  );
   const permittedStatuses = ALL_STATUSES.filter((status) => {
     if (status.value === "rejected") return canReject;
     if (["accepted", "assignedToLevel", "active"].includes(status.value)) return canApprove;

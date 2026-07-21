@@ -610,9 +610,9 @@ export interface BalletClass {
   classImageUrl: string | null;
   classVideoUrl: string | null;
   instructor: { id: number; name: string; photoUrl: string | null } | null;
-  groupIds: number[];
-  levelIds: number[];
-  schedules: BalletClassSchedule[];
+  groupId: number;
+  levelId: number;
+  schedule: BalletClassSchedule | null;
 }
 
 export async function fetchBalletClasses(signal?: AbortSignal): Promise<BalletClass[]> {
