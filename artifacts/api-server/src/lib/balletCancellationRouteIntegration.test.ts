@@ -225,6 +225,24 @@ async function makeAssignedGroupedApplication(): Promise<{ appId: number; assign
   const groupId = await insertBalletGroup();
   await pool.query(`UPDATE ballet_applications SET assigned_level_id = $2 WHERE id = $1`, [appId, levelId]);
   await pool.query(`UPDATE ballet_level_assignments SET group_id = $2 WHERE id = $1`, [assignmentId, groupId]);
+  // The activation gate now also requires an assignment-ready canonical
+  // Class for this level+group (see balletClassEntitlement.ts) — seed one
+  // so tests that activate through this helper aren't blocked on that.
+  const token = Math.random().toString(36).slice(2, 8);
+  const instructor = await pool.query(
+    `INSERT INTO ballet_instructors (name, is_active) VALUES ($1, true) RETURNING id`,
+    [`Route Test Instructor ${token}`],
+  );
+  const balletClass = await pool.query(
+    `INSERT INTO ballet_classes (title, is_legacy, level_id, group_id, instructor_id, is_active)
+     VALUES ($1, false, $2, $3, $4, true) RETURNING id`,
+    [`Route Test Class ${token}`, levelId, groupId, instructor.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO ballet_schedules (class_id, day_of_week, start_time, end_time, duration_mins, status)
+     VALUES ($1, 1, '16:00', '17:00', 60, 'active')`,
+    [balletClass.rows[0].id],
+  );
   return { appId, assignmentId, groupId };
 }
 

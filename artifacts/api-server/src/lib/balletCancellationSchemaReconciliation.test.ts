@@ -33,22 +33,22 @@ test("migration 0070 remains the next unique journal entry after 0069", () => {
   assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0070Entry!.tag}.sql`)));
 });
 
-test("migration 0071 is the newest unique journal entry for pending renewal uniqueness", () => {
-  const newest = journal.entries.at(-1);
-  const previous = journal.entries.at(-2);
+test("migration 0071 remains a unique tracked entry before 0072", () => {
+  const migration0071Entry = journal.entries.find((entry) => entry.tag === "0071_ballet_pending_renewal_uniqueness");
+  const migration0072Entry = journal.entries.find((entry) => entry.tag === "0072_ballet_class_canonical_relationships");
 
-  assert.deepEqual(newest, {
+  assert.deepEqual(migration0071Entry, {
     idx: 71,
     version: "7",
     when: 1784462425000,
     tag: "0071_ballet_pending_renewal_uniqueness",
     breakpoints: true,
   });
-  assert.equal(previous?.idx, 70);
-  assert.ok(newest!.when > previous!.when);
+  assert.equal(migration0072Entry?.idx, 72);
+  assert.ok(migration0072Entry!.when > migration0071Entry!.when);
   assert.equal(journal.entries.filter((entry) => entry.tag === "0071_ballet_pending_renewal_uniqueness").length, 1);
-  assert.equal(journal.entries.filter((entry) => entry.when === newest!.when).length, 1);
-  assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${newest!.tag}.sql`)));
+  assert.equal(journal.entries.filter((entry) => entry.when === migration0071Entry!.when).length, 1);
+  assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0071Entry!.tag}.sql`)));
 });
 
 test("migration 0070 documents a narrow forward-only initiator reconciliation", () => {
