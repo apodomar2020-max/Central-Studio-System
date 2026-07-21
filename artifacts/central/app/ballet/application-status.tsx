@@ -208,7 +208,7 @@ export default function ApplicationStatusScreen() {
   // Group id → name lookup, and group id → aggregated (deduped) weekly
   // schedules, built client-side from the two existing public catalogue
   // endpoints (no new endpoint needed — GET /api/ballet/groups has no
-  // schedule data, but GET /api/ballet/classes does, keyed by groupIds).
+  // schedule data, but GET /api/ballet/classes does, keyed by groupId).
   // Best-effort — if either fetch fails, the group/schedule line is simply
   // omitted from the status card.
   const [groupNameById, setGroupNameById] = useState<Map<number, string>>(new Map());
@@ -221,15 +221,13 @@ export default function ApplicationStatusScreen() {
         if (ctrl.signal.aborted) return;
         setGroupNameById(new Map(groups.map((g) => [g.id, g.name])));
 
-        // groupId -> (scheduleId -> schedule), deduped in case a group
-        // appears across more than one class.
+        // groupId -> (scheduleId -> schedule), accumulated across the
+        // separate classes owned by that group.
         const byGroup = new Map<number, Map<number, BalletClassSchedule>>();
         for (const cls of classes) {
-          for (const groupId of cls.groupIds) {
-            const schedMap = byGroup.get(groupId) ?? new Map<number, BalletClassSchedule>();
-            for (const sch of cls.schedules) schedMap.set(sch.id, sch);
-            byGroup.set(groupId, schedMap);
-          }
+          const schedMap = byGroup.get(cls.groupId) ?? new Map<number, BalletClassSchedule>();
+          if (cls.schedule) schedMap.set(cls.schedule.id, cls.schedule);
+          byGroup.set(cls.groupId, schedMap);
         }
         const result = new Map<number, BalletClassSchedule[]>();
         for (const [groupId, schedMap] of byGroup) {

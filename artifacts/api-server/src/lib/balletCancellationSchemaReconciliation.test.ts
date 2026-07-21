@@ -51,11 +51,11 @@ test("migration 0071 remains a unique journal entry for pending renewal uniquene
   assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0071Entry!.tag}.sql`)));
 });
 
-test("migration 0074 is the newest unique journal entry after the reminder-automation migrations", () => {
-  const newest = journal.entries.at(-1);
-  const previous = journal.entries.at(-2);
+test("migration 0074 remains a unique journal entry for the reminder worker heartbeat", () => {
+  const migration0074Entry = journal.entries.find((entry) => entry.tag === "0074_reminder_worker_heartbeat");
+  const previous = journal.entries.find((entry) => entry.idx === 73);
 
-  assert.deepEqual(newest, {
+  assert.deepEqual(migration0074Entry, {
     idx: 74,
     version: "7",
     when: 1784462428000,
@@ -63,8 +63,26 @@ test("migration 0074 is the newest unique journal entry after the reminder-autom
     breakpoints: true,
   });
   assert.equal(previous?.idx, 73);
-  assert.ok(newest!.when > previous!.when);
+  assert.ok(migration0074Entry!.when > previous!.when);
   assert.equal(journal.entries.filter((entry) => entry.tag === "0074_reminder_worker_heartbeat").length, 1);
+  assert.equal(journal.entries.filter((entry) => entry.when === migration0074Entry!.when).length, 1);
+  assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0074Entry!.tag}.sql`)));
+});
+
+test("migration 0075 (Ballet Class canonical relationships) is the newest unique journal entry, after the reminder-automation migrations", () => {
+  const newest = journal.entries.at(-1);
+  const previous = journal.entries.at(-2);
+
+  assert.deepEqual(newest, {
+    idx: 75,
+    version: "7",
+    when: 1784462429000,
+    tag: "0075_ballet_class_canonical_relationships",
+    breakpoints: true,
+  });
+  assert.equal(previous?.idx, 74);
+  assert.ok(newest!.when > previous!.when);
+  assert.equal(journal.entries.filter((entry) => entry.tag === "0075_ballet_class_canonical_relationships").length, 1);
   assert.equal(journal.entries.filter((entry) => entry.when === newest!.when).length, 1);
   assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${newest!.tag}.sql`)));
 });

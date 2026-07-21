@@ -54,29 +54,22 @@ function formatTime(timeStr: string): string {
   return `${h}:${minsStr} ${ampm}`;
 }
 
-function scheduleSummary(schedules: BalletClassSchedule[]): string {
-  if (schedules.length === 0) return "Schedule TBC";
-  if (schedules.length === 1) {
-    const s = schedules[0]!;
-    return `${DAY_NAMES[s.dayOfWeek] ?? "Weekly"} · ${formatTime(s.startTime)} - ${formatTime(s.endTime)}`;
-  }
-  return `${schedules.length} weekly schedule entries`;
+function scheduleSummary(schedule: BalletClassSchedule | null): string {
+  if (!schedule) return "Schedule TBC";
+  return `${DAY_NAMES[schedule.dayOfWeek] ?? "Weekly"} · ${formatTime(schedule.startTime)} - ${formatTime(schedule.endTime)}`;
 }
 
-function durationLabel(schedules: BalletClassSchedule[]): string {
-  const mins = schedules.find((s) => s.durationMins != null)?.durationMins;
+function durationLabel(schedule: BalletClassSchedule | null): string {
+  const mins = schedule?.durationMins;
   return mins != null ? `${mins} min` : "";
 }
 
 function levelLabelForClass(item: BalletClass, levelNameById: Map<number, string>): string {
-  const names = item.levelIds
-    .map((id) => levelNameById.get(id))
-    .filter((name): name is string => Boolean(name));
-  return names.length > 0 ? names.join(", ") : "Ballet";
+  return levelNameById.get(item.levelId) ?? "Ballet";
 }
 
 function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): DanceClass {
-  const firstSchedule = item.schedules[0];
+  const firstSchedule = item.schedule;
   return {
     id: `ballet-${item.id}`,
     scheduleId: firstSchedule ? `ballet-schedule-${firstSchedule.id}` : undefined,
@@ -94,8 +87,8 @@ function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): Da
     dayOfWeek: firstSchedule ? DAY_NAMES[firstSchedule.dayOfWeek] ?? "" : "",
     startTime: firstSchedule ? formatTime(firstSchedule.startTime) : "",
     endTime: firstSchedule ? formatTime(firstSchedule.endTime) : "",
-    scheduleLabel: scheduleSummary(item.schedules),
-    duration: durationLabel(item.schedules),
+    scheduleLabel: scheduleSummary(item.schedule),
+    duration: durationLabel(item.schedule),
     location: "",
     room: "",
     price: 0,
@@ -179,7 +172,7 @@ export default function BalletClassesScreen() {
 
   const visibleClasses = useMemo(() => {
     if (selectedLevelId === "all") return classes;
-    return classes.filter((item) => item.levelIds.includes(selectedLevelId));
+    return classes.filter((item) => item.levelId === selectedLevelId);
   }, [classes, selectedLevelId]);
 
   return (
@@ -316,7 +309,7 @@ export default function BalletClassesScreen() {
                   displayOnly
                   imageUrl={mappedClass.photoUrl}
                   levelLabel={levelLabelForClass(item, levelNameById)}
-                  scheduleLabelOverride={scheduleSummary(item.schedules)}
+                  scheduleLabelOverride={scheduleSummary(item.schedule)}
                 />
               );
             })

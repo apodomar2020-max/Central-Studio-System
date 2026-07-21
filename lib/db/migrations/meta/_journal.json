@@ -519,6 +519,13 @@
       "when": 1784462428000,
       "tag": "0074_reminder_worker_heartbeat",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1784462429000,
+      "tag": "0075_ballet_class_canonical_relationships",
+      "breakpoints": true
     }
   ]
 }

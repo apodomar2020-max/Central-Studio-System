@@ -150,6 +150,11 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
       </Button>
     </div>
   )}
+  {canApprove && app.assignedLevelId != null && groups.length === 0 && (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+      No active group in this level currently has a valid Ballet Class. Create the Class and weekly Schedule before assigning a group.
+    </div>
+  )}
 
   {/* Mark attendance (C3) — minimal admin-recorded path. Shown only when
       this student has an active level assignment with a group that has

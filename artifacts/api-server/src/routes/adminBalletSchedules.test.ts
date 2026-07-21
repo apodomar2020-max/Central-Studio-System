@@ -1,89 +1,52 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
-// Pure zod-schema tests — no DB connection, matching this project's existing
-// approach (see routes/classCapacity.test.ts). A fake DATABASE_URL is enough
-// to satisfy @workspace/db's module-load-time check; nothing here queries.
 process.env["DATABASE_URL"] ??= "postgres://localhost:1/central_studio_test";
 
-test("blank duration (key omitted) passes validation and is not sent to the DB as a value", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active",
+test("canonical class payload requires one level, group, instructor, day and time range", async () => {
+  const { ClassScheduleBody } = await import("./adminBalletClasses");
+  const valid = ClassScheduleBody.safeParse({
+    title: "Ballet Level 1 Monday",
+    levelId: 1,
+    groupId: 2,
+    instructorId: 3,
+    dayOfWeek: 1,
+    startTime: "16:00",
+    endTime: "17:15",
+    isActive: true,
+    scheduleStatus: "active",
   });
-  assert.equal(result.success, true);
-  if (result.success) {
-    assert.equal("durationMins" in result.data, false, "omitted key must not appear in parsed output");
+  assert.equal(valid.success, true);
+
+  for (const key of ["levelId", "groupId", "instructorId", "dayOfWeek", "startTime", "endTime"] as const) {
+    const body: Record<string, unknown> = { ...valid.data };
+    delete body[key];
+    assert.equal(ClassScheduleBody.safeParse(body).success, false, `${key} must be required`);
   }
 });
 
-test("durationMins: null is accepted and normalized to null (explicit clear)", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: null,
-  });
-  assert.equal(result.success, true);
-  if (result.success) assert.equal(result.data.durationMins, null);
+test("legacy relationship arrays and client duration are rejected", async () => {
+  const { ClassScheduleBody } = await import("./adminBalletClasses");
+  const base = { title: "Class", levelId: 1, groupId: 2, instructorId: 3, dayOfWeek: 1, startTime: "16:00", endTime: "17:00" };
+  assert.equal(ClassScheduleBody.safeParse({ ...base, levelIds: [1] }).success, false);
+  assert.equal(ClassScheduleBody.safeParse({ ...base, groupIds: [2] }).success, false);
+  assert.equal(ClassScheduleBody.safeParse({ ...base, scheduleIds: [4] }).success, false);
+  assert.equal(ClassScheduleBody.safeParse({ ...base, durationMins: 60 }).success, false);
 });
 
-test("durationMins: '' (empty string) is accepted and normalized to null, never coerced to 0", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: "",
-  });
-  assert.equal(result.success, true);
-  if (result.success) assert.equal(result.data.durationMins, null);
+test("duration is derived from the time range", async () => {
+  const { deriveBalletClassDuration } = await import("./adminBalletClasses");
+  assert.equal(deriveBalletClassDuration("16:00", "17:15"), 75);
+  assert.throws(() => deriveBalletClassDuration("17:00", "17:00"), /END_TIME/);
+  assert.throws(() => deriveBalletClassDuration("18:00", "17:00"), /END_TIME/);
 });
 
-test("positive integer duration is accepted", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: 60,
-  });
-  assert.equal(result.success, true);
-  if (result.success) assert.equal(result.data.durationMins, 60);
-});
-
-test("zero duration is rejected", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: 0,
-  });
-  assert.equal(result.success, false);
-});
-
-test("negative duration is rejected", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: -5,
-  });
-  assert.equal(result.success, false);
-});
-
-test("decimal duration is rejected", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: 1.5,
-  });
-  assert.equal(result.success, false);
-});
-
-test("non-numeric duration is rejected", async () => {
-  const { CreateScheduleBody } = await import("./adminBalletSchedules");
-  const result = CreateScheduleBody.safeParse({
-    classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: "abc",
-  });
-  assert.equal(result.success, false);
-});
-
-test("a row with null duration round-trips through the JSON response unchanged (list contract)", () => {
-  // The GET list route returns Drizzle rows via res.json() directly with no
-  // output schema — this proves that pass-through preserves an explicit
-  // null (never omits it, never coerces it), which is the documented
-  // contract for what the list response looks like for a schedule with no
-  // recorded duration.
-  const row = { id: 1, classId: 12, dayOfWeek: 1, startTime: "16:00", endTime: "17:00", status: "active", durationMins: null };
-  const roundTripped = JSON.parse(JSON.stringify(row));
-  assert.equal("durationMins" in roundTripped, true);
-  assert.equal(roundTripped.durationMins, null);
+test("standalone schedule creation is disabled and edit cannot change class or duration", () => {
+  const source = readFileSync(resolve(process.cwd(), "artifacts/api-server/src/routes/adminBalletSchedules.ts"), "utf8");
+  assert.match(source, /CREATE_CLASS_REQUIRED/);
+  assert.match(source, /status\(405\)/);
+  assert.doesNotMatch(source, /classId:\s*z\.number/);
+  assert.doesNotMatch(source, /durationMins:\s*z\./);
 });
