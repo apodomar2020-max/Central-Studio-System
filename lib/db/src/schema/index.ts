@@ -55,3 +55,6 @@ export * from "./instagramToken";
 export * from "./studentDanceInterests";
 // Admin Activity Logs — unified admin audit trail (Phase 7B, migration 0045)
 export * from "./adminActivityLogs";
+// Booked-class reminder settings + Worker health (migrations 0072-0074)
+export * from "./classReminderSettings";
+export * from "./reminderWorkerHeartbeats";

@@ -33,11 +33,11 @@ test("migration 0070 remains the next unique journal entry after 0069", () => {
   assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0070Entry!.tag}.sql`)));
 });
 
-test("migration 0071 is the newest unique journal entry for pending renewal uniqueness", () => {
-  const newest = journal.entries.at(-1);
-  const previous = journal.entries.at(-2);
+test("migration 0071 remains a unique journal entry for pending renewal uniqueness", () => {
+  const migration0071Entry = journal.entries.find((entry) => entry.tag === "0071_ballet_pending_renewal_uniqueness");
+  const previous = journal.entries.find((entry) => entry.idx === 70);
 
-  assert.deepEqual(newest, {
+  assert.deepEqual(migration0071Entry, {
     idx: 71,
     version: "7",
     when: 1784462425000,
@@ -45,8 +45,26 @@ test("migration 0071 is the newest unique journal entry for pending renewal uniq
     breakpoints: true,
   });
   assert.equal(previous?.idx, 70);
-  assert.ok(newest!.when > previous!.when);
+  assert.ok(migration0071Entry!.when > previous!.when);
   assert.equal(journal.entries.filter((entry) => entry.tag === "0071_ballet_pending_renewal_uniqueness").length, 1);
+  assert.equal(journal.entries.filter((entry) => entry.when === migration0071Entry!.when).length, 1);
+  assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0071Entry!.tag}.sql`)));
+});
+
+test("migration 0074 is the newest unique journal entry after the reminder-automation migrations", () => {
+  const newest = journal.entries.at(-1);
+  const previous = journal.entries.at(-2);
+
+  assert.deepEqual(newest, {
+    idx: 74,
+    version: "7",
+    when: 1784462428000,
+    tag: "0074_reminder_worker_heartbeat",
+    breakpoints: true,
+  });
+  assert.equal(previous?.idx, 73);
+  assert.ok(newest!.when > previous!.when);
+  assert.equal(journal.entries.filter((entry) => entry.tag === "0074_reminder_worker_heartbeat").length, 1);
   assert.equal(journal.entries.filter((entry) => entry.when === newest!.when).length, 1);
   assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${newest!.tag}.sql`)));
 });

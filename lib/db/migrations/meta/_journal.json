@@ -498,6 +498,27 @@
       "when": 1784462425000,
       "tag": "0071_ballet_pending_renewal_uniqueness",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784462426000,
+      "tag": "0072_reminder_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1784462427000,
+      "tag": "0073_class_reminder_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1784462428000,
+      "tag": "0074_reminder_worker_heartbeat",
+      "breakpoints": true
     }
   ]
 }

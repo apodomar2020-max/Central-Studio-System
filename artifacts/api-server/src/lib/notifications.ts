@@ -33,7 +33,7 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-async function resolveStudentTarget(
+export async function resolveStudentTarget(
   client: NotificationClient,
   studentId?: number | null,
   studentEmail?: string | null,

@@ -21,6 +21,7 @@ import {
   runPostClassReminderAutomation,
   type AutomationRunSummary,
   type AutomationSummary,
+  type RunOptions,
 } from "../lib/notificationReminders";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { enqueueJob, QUEUE_NAMES, type NotificationAutomationJob } from "../lib/queue";
@@ -60,6 +61,10 @@ const AutomationType = z.enum(["all", "class_reminders", "post_class_reminders",
 const AutomationRunBody = z.object({
   mode: z.enum(["run", "enqueue"]).default("run"),
   type: AutomationType.default("all"),
+  // Bypasses reminder-category settings (Phase 6). Gated below on
+  // isSuperAdmin — this replaces the previous undocumented behavior where a
+  // manual run always ignored settings entirely.
+  force: z.boolean().default(false),
 });
 
 type AutomationTypeValue = z.infer<typeof AutomationType>;
@@ -68,15 +73,17 @@ function tokenPrefix(token: string): string {
   return token.slice(0, 12);
 }
 
-async function runAutomationByType(type: AutomationTypeValue): Promise<AutomationRunSummary | AutomationSummary> {
+async function runAutomationByType(type: AutomationTypeValue, options: RunOptions = {}): Promise<AutomationRunSummary | AutomationSummary> {
   switch (type) {
     case "all":
-      return runNotificationAutomation();
+      return runNotificationAutomation(options);
     case "class_reminders":
-      return runClassReminderAutomation();
+      return runClassReminderAutomation(options);
     case "post_class_reminders":
-      return runPostClassReminderAutomation();
+      return runPostClassReminderAutomation(options);
     case "package_reminders":
+      // Package reminders are not gated by class-reminder settings (out of
+      // Phase 6 scope) — force has no effect here.
       return runPackageReminderAutomation();
   }
 }
@@ -89,10 +96,17 @@ function automationAuditSummary(type: string, result: AutomationRunSummary | Aut
   const total = isAutomationRunSummary(result) ? result.total : result;
   return {
     automationType: type,
+    selected: total.selected,
+    eligible: total.eligible,
     created: total.created,
+    duplicateSkipped: total.duplicateSkipped,
+    disabledSkipped: total.disabledSkipped,
+    inactiveScheduleSkipped: total.inactiveScheduleSkipped,
+    missingOccurrence: total.missingOccurrence,
+    unresolvedTarget: total.unresolvedTarget,
     pushed: total.pushed,
-    skipped: total.skipped,
-    failed: total.failed,
+    pushFailed: total.pushFailed,
+    noActiveDevice: total.noActiveDevice,
     pushDisabled: total.pushDisabled,
   };
 }
@@ -234,7 +248,16 @@ router.post(
       return;
     }
 
-    const { mode, type } = parsed.data;
+    const { mode, type, force } = parsed.data;
+    // Phase 6: manual admin runs respect category settings by default. A
+    // force run — bypassing settings entirely — requires Super Admin, not
+    // just the base "notifications:send" permission this route is already
+    // gated on.
+    if (force && !req.adminUser?.isSuperAdmin) {
+      res.status(403).json({ error: "Forcing reminder automation past disabled settings requires Super Admin." });
+      return;
+    }
+
     if (mode === "enqueue") {
       const jobTypes: NotificationAutomationJob["type"][] = type === "all"
         ? ["class_reminders", "post_class_reminders", "package_reminders"]
@@ -244,7 +267,7 @@ router.post(
         const job = await enqueueJob<NotificationAutomationJob>(
           QUEUE_NAMES.notificationAutomation,
           jobType,
-          { type: jobType, triggeredBy: "admin" },
+          { type: jobType, triggeredBy: "admin", force },
           { jobId: `notification-automation:${jobType}:${new Date().toISOString().slice(0, 13)}` },
         );
         if (!job) {
@@ -258,25 +281,27 @@ router.post(
         module: "notifications",
         entityType: "notification_automation",
         entityLabel: type,
-        after: { automationType: type, queuedJobs: jobs.length },
+        after: { automationType: type, queuedJobs: jobs.length, force },
         summary: `Enqueued notification automation ${type}`,
       });
       res.status(202).json({ mode, type, queued: jobs });
       return;
     }
 
-    const result = await runAutomationByType(type);
+    const result = await runAutomationByType(type, { force });
     await logActivity(req, {
       action: "send",
       module: "notifications",
       entityType: "notification_automation",
       entityLabel: type,
-      after: automationAuditSummary(type, result),
+      after: { ...automationAuditSummary(type, result), force },
       summary: `Ran notification automation ${type}`,
     });
     res.json({ mode, type, result });
   },
 );
+
+const ClassRemindersRunBody = z.object({ force: z.boolean().default(false) });
 
 router.post(
   "/notifications/automation/class-reminders/run",
@@ -284,13 +309,22 @@ router.post(
   requireAdminAuth,
   requireAdminPermission("notifications", "send"),
   async (req: AdminRequest, res): Promise<void> => {
-    const result = await runClassReminder24h();
+    const parsed = ClassRemindersRunBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    if (parsed.data.force && !req.adminUser?.isSuperAdmin) {
+      res.status(403).json({ error: "Forcing reminder automation past disabled settings requires Super Admin." });
+      return;
+    }
+    const result = await runClassReminder24h({ force: parsed.data.force });
     await logActivity(req, {
       action: "send",
       module: "notifications",
       entityType: "notification_automation",
       entityLabel: "24h class reminders",
-      after: automationAuditSummary("class_reminders", result),
+      after: { ...automationAuditSummary("class_reminders", result), force: parsed.data.force },
       summary: "Ran 24h class reminder automation",
     });
     res.json(result);
