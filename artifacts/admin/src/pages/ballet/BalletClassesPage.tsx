@@ -67,7 +67,7 @@ export default function BalletClassesPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletClass | null>(null);
-  const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES });
+  const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES, mode: "onChange", reValidateMode: "onChange" });
   const selectedLevelId = form.watch("levelId");
   const startTime = form.watch("startTime");
   const endTime = form.watch("endTime");
