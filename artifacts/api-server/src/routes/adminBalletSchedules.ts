@@ -6,12 +6,11 @@
  *
  * Routes:
  *   GET   /api/admin/ballet/schedules       — paginated list
- *   POST  /api/admin/ballet/schedules       — create schedule
  *   PATCH /api/admin/ballet/schedules/:id   — update schedule
  *
- * durationMins is optional and nullable — see OptionalDurationMins below for
- * the canonical contract (omitted/undefined/""/null all normalize cleanly;
- * zero, negative, decimal, and non-numeric values are rejected).
+ * Schedule creation is intentionally disabled: a schedule is created only
+ * with its owning class by adminBalletClasses.ts. This route remains an
+ * operational list/edit view of that single schedule.
  *
  * Every error response is `{ error, code, ...(requestId for 5xx) }` — 5xx
  * bodies never carry raw SQL/driver text (see respondWithScheduleError);
@@ -19,38 +18,27 @@
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { asc, count, eq } from "drizzle-orm";
+import { asc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, balletSchedulesTable, balletClassesTable, BALLET_SCHEDULE_STATUSES } from "@workspace/db";
+import { db, balletClassesTable, balletSchedulesTable, BALLET_SCHEDULE_STATUSES } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 
 const router: IRouter = Router();
 const BALLET_SCHEDULE_ACTIVITY_FIELDS = ["classId", "dayOfWeek", "startTime", "endTime", "status", "durationMins"] as const;
-const VALID_SCHEDULE_STATUSES = new Set(BALLET_SCHEDULE_STATUSES);
 
-/**
- * Canonical optional-duration contract: durationMins is nullable in the DB
- * (no duration recorded) and genuinely optional on the wire. This accepts
- * every representation a well-behaved client might send for "no value" —
- * an omitted key, `undefined`, an empty string, or explicit `null` — and
- * normalizes all of them the same way:
- *   - omitted / undefined → stays `undefined` (PATCH: leave unchanged)
- *   - "" or null          → normalized to `null` (PATCH: explicitly clear it)
- * Any other value must be a positive whole number; zero, negative numbers,
- * decimals, and non-numeric values are all rejected with a specific message
- * rather than silently coerced.
- */
-export const OptionalDurationMins = z.preprocess(
-  (val) => (val === "" ? null : val),
-  z
-    .number({ invalid_type_error: "durationMins must be a number" })
-    .int("durationMins must be a whole number")
-    .positive("durationMins must be a positive number")
-    .nullable()
-    .optional(),
-);
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function deriveDuration(startTime: string, endTime: string): number {
+  const toMinutes = (value: string) => {
+    const [hours, minutes] = value.split(":").map(Number);
+    return hours * 60 + minutes;
+  };
+  const duration = toMinutes(endTime) - toMinutes(startTime);
+  if (duration <= 0) throw new Error("END_TIME_MUST_FOLLOW_START_TIME");
+  return duration;
+}
 
 const ListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
@@ -75,19 +63,12 @@ router.get("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("
   }
 });
 
-export const CreateScheduleBody = z.object({
-  classId:      z.number({ required_error: "classId is required" }).int().positive(),
-  dayOfWeek:    z.number({ required_error: "dayOfWeek is required" }).int().min(0).max(6),
-  startTime:    z.string().min(1, "startTime is required"),
-  endTime:      z.string().min(1, "endTime is required"),
-  status:       z.string().optional(),
-  durationMins: OptionalDurationMins,
-});
-
-async function validateClassId(classId: number): Promise<boolean> {
-  const [row] = await db.select({ id: balletClassesTable.id }).from(balletClassesTable).where(eq(balletClassesTable.id, classId)).limit(1);
-  return !!row;
-}
+const UpdateScheduleBody = z.object({
+  dayOfWeek: z.number().int().min(0).max(6).optional(),
+  startTime: z.string().regex(TIME_PATTERN, "startTime must use HH:MM").optional(),
+  endTime: z.string().regex(TIME_PATTERN, "endTime must use HH:MM").optional(),
+  status: z.enum(BALLET_SCHEDULE_STATUSES).optional(),
+}).strict();
 
 /**
  * Translates a caught exception from an insert/update into a safe HTTP
@@ -114,39 +95,9 @@ function respondWithScheduleError(req: AdminRequest, res: Response, err: unknown
   });
 }
 
-router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("ballet.schedules", "create"), async (req: AdminRequest, res): Promise<void> => {
-  const parsed = CreateScheduleBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body", code: "VALIDATION_ERROR" });
-    return;
-  }
-  if (parsed.data.status && !VALID_SCHEDULE_STATUSES.has(parsed.data.status as (typeof BALLET_SCHEDULE_STATUSES)[number])) {
-    res.status(400).json({ error: `Invalid status: ${parsed.data.status}. Must be one of: ${BALLET_SCHEDULE_STATUSES.join(", ")}`, code: "VALIDATION_ERROR" });
-    return;
-  }
-  if (!(await validateClassId(parsed.data.classId))) {
-    res.status(404).json({ error: "The selected Ballet class no longer exists.", code: "CLASS_NOT_FOUND" });
-    return;
-  }
-
-  try {
-    const [schedule] = await db.insert(balletSchedulesTable).values(parsed.data).returning();
-    await logActivity(req, {
-      action: "create",
-      module: "ballet.schedules",
-      entityType: "ballet_schedule",
-      entityId: schedule.id,
-      entityLabel: `${schedule.startTime}-${schedule.endTime}`,
-      after: Object.fromEntries(BALLET_SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, schedule[key]])),
-      summary: `Created ballet schedule ${schedule.startTime}-${schedule.endTime}`,
-    });
-    res.status(201).json({ schedule });
-  } catch (err) {
-    respondWithScheduleError(req, res, err, "POST /admin/ballet/schedules");
-  }
+router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("ballet.schedules", "create"), (_req, res): void => {
+  res.status(405).json({ error: "Create the Ballet Class to create its weekly schedule.", code: "CREATE_CLASS_REQUIRED" });
 });
-
-const UpdateScheduleBody = CreateScheduleBody.partial();
 
 router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermission("ballet.schedules", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
@@ -157,35 +108,35 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body", code: "VALIDATION_ERROR" });
     return;
   }
-  if (parsed.data.status && !VALID_SCHEDULE_STATUSES.has(parsed.data.status as (typeof BALLET_SCHEDULE_STATUSES)[number])) {
-    res.status(400).json({ error: `Invalid status: ${parsed.data.status}. Must be one of: ${BALLET_SCHEDULE_STATUSES.join(", ")}`, code: "VALIDATION_ERROR" });
-    return;
-  }
-  if (parsed.data.classId != null && !(await validateClassId(parsed.data.classId))) {
-    res.status(404).json({ error: "The selected Ballet class no longer exists.", code: "CLASS_NOT_FOUND" });
-    return;
-  }
-
-  const updates: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(parsed.data)) {
-    if (v !== undefined) updates[k] = v;
-  }
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(parsed.data).length === 0) {
     res.json({ success: true, message: "No changes" });
     return;
   }
-  updates["updatedAt"] = new Date().toISOString();
-
   try {
-    const [existing] = await db.select().from(balletSchedulesTable).where(eq(balletSchedulesTable.id, id)).limit(1);
-    if (!existing) { res.status(404).json({ error: "Schedule not found", code: "SCHEDULE_NOT_FOUND" }); return; }
-    const [schedule] = await db
-      .update(balletSchedulesTable)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .set(updates as any)
-      .where(eq(balletSchedulesTable.id, id))
-      .returning();
-    if (!schedule) { res.status(404).json({ error: "Schedule not found", code: "SCHEDULE_NOT_FOUND" }); return; }
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from ballet_schedules where id = ${id} for update`);
+      const [existing] = await tx.select().from(balletSchedulesTable).where(eq(balletSchedulesTable.id, id)).limit(1);
+      if (!existing) return null;
+      const [owningClass] = await tx.select({ isLegacy: balletClassesTable.isLegacy }).from(balletClassesTable).where(eq(balletClassesTable.id, existing.classId)).limit(1);
+      if (owningClass?.isLegacy) throw new Error("LEGACY_SCHEDULE");
+      const startTime = parsed.data.startTime ?? existing.startTime;
+      const endTime = parsed.data.endTime ?? existing.endTime;
+      const durationMins = deriveDuration(startTime, endTime);
+      const now = new Date().toISOString();
+      const [schedule] = await tx
+        .update(balletSchedulesTable)
+        .set({ ...parsed.data, startTime, endTime, durationMins, updatedAt: now })
+        .where(eq(balletSchedulesTable.id, id))
+        .returning();
+      if (parsed.data.status != null) {
+        await tx.update(balletClassesTable)
+          .set({ isActive: parsed.data.status === "active", updatedAt: now })
+          .where(eq(balletClassesTable.id, existing.classId));
+      }
+      return { existing, schedule };
+    });
+    if (!result) { res.status(404).json({ error: "Schedule not found", code: "SCHEDULE_NOT_FOUND" }); return; }
+    const { existing, schedule } = result;
 
     const { before, after } = diffFields(
       Object.fromEntries(BALLET_SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
@@ -207,6 +158,17 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
     }
     res.json({ schedule });
   } catch (err) {
+    if (err instanceof Error && err.message === "END_TIME_MUST_FOLLOW_START_TIME") {
+      res.status(422).json({ error: "End time must be later than start time", code: "INVALID_TIME_RANGE" });
+      return;
+    }
+    if (err instanceof Error && err.message === "LEGACY_SCHEDULE") {
+      res.status(422).json({
+        error: "This Class uses the retired Ballet Class model. Create a new Class to resume the program.",
+        code: "LEGACY_CLASS_SCHEDULE",
+      });
+      return;
+    }
     respondWithScheduleError(req, res, err, "PATCH /admin/ballet/schedules/:id");
   }
 });
