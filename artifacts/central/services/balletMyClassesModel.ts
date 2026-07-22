@@ -1,3 +1,5 @@
+import { BALLET_ACTIVE_APPLICATION_STATUSES } from "@workspace/api-zod";
+
 import {
   countActiveBalletWeeklySchedules,
   normalizeBalletClasses,
@@ -40,6 +42,7 @@ const ENTITLEMENT_STATES = new Set<BalletMyClassesEntitlementState>([
   "payment_pending", "activation_pending", "schedule_pending", "active",
   "rejected", "cancelled", "withdrawn",
 ]);
+const CURRENT_APPLICATION_STATUSES = new Set<string>(BALLET_ACTIVE_APPLICATION_STATUSES);
 
 function asRecord(value: unknown): UnknownRecord | null {
   return value != null && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : null;
@@ -63,7 +66,11 @@ export function normalizeMyBalletClassesResponse(value: unknown): BalletMyClasse
   for (const value of rows) {
     const row = asRecord(value);
     const childId = positiveInteger(row?.childId);
-    if (!row || childId == null || typeof row.childName !== "string") continue;
+    const applicationId = positiveInteger(row?.applicationId);
+    const applicationStatus = typeof row?.applicationStatus === "string" ? row.applicationStatus : null;
+    if (!row || childId == null || applicationId == null || applicationStatus == null
+      || !CURRENT_APPLICATION_STATUSES.has(applicationStatus)
+      || typeof row.childName !== "string") continue;
     const entitlementState = ENTITLEMENT_STATES.has(row.entitlementState as BalletMyClassesEntitlementState)
       ? row.entitlementState as BalletMyClassesEntitlementState
       : "no_application";
@@ -72,9 +79,9 @@ export function normalizeMyBalletClassesResponse(value: unknown): BalletMyClasse
     byChildId.set(childId, {
       selectorKey: `child:${childId}`,
       childId,
-      applicationId: positiveInteger(row.applicationId),
+      applicationId,
       childName: row.childName,
-      applicationStatus: typeof row.applicationStatus === "string" ? row.applicationStatus : null,
+      applicationStatus,
       entitlementState,
       level: relation(row.level),
       group: relation(row.group),

@@ -311,29 +311,27 @@ export default function BalletClassesScreen() {
 
         <View style={s.content}>
           {!isLoading && !errorMessage && children.length > 0 ? (
-            <>
-              <Text style={s.selectorLabel}>SELECT CHILD</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={s.tabsContent}
-              >
-                {children.map((child) => (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterScroll}>
+              {children.map((child) => {
+                const isActive = selectedChildKey === child.selectorKey;
+                return (
                   <TouchableOpacity
                     key={child.selectorKey}
+                    style={[s.filterChip, isActive && s.filterChipActive]}
                     onPress={() => setSelectedChildKey(child.selectorKey)}
-                    style={[s.levelTab, selectedChildKey === child.selectorKey && s.levelTabActive]}
-                    activeOpacity={0.85}
                     accessibilityRole="tab"
-                    accessibilityState={{ selected: selectedChildKey === child.selectorKey }}
+                    accessibilityState={{ selected: isActive }}
                   >
-                    <Text style={[s.levelTabText, selectedChildKey === child.selectorKey && s.levelTabTextActive]} numberOfLines={1}>
+                    <View style={s.filterAvatar}>
+                      <Text style={s.filterAvatarText}>{child.childName.slice(0, 2).toUpperCase()}</Text>
+                    </View>
+                    <Text style={[s.filterChipText, isActive && s.filterChipTextActive]} numberOfLines={1}>
                       {child.childName}
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
+                );
+              })}
+            </ScrollView>
           ) : null}
 
           {!isLoading && !errorMessage && selectedChild ? (
@@ -405,7 +403,6 @@ export default function BalletClassesScreen() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BASE },
   weeklySessionCount: { color: INK_200, fontSize: 13, marginBottom: 14 },
-  selectorLabel: { color: INK_400, fontSize: 10, fontFamily: "SpaceMono_700Bold", marginBottom: 8 },
   atmosphericGlow: {
     position: "absolute",
     top: 0,
@@ -484,31 +481,13 @@ const s = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 16,
   },
-  tabsContent: {
-    gap: 8,
-    paddingBottom: 14,
-  },
-  levelTab: {
-    paddingHorizontal: 13,
-    paddingVertical: 8,
-    borderRadius: R_MD,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    maxWidth: 170,
-  },
-  levelTabActive: {
-    backgroundColor: "rgba(0,182,215,0.14)",
-    borderColor: "rgba(0,182,215,0.42)",
-  },
-  levelTabText: {
-    fontSize: 12,
-    fontFamily: "Archivo_700Bold",
-    color: INK_400,
-  },
-  levelTabTextActive: {
-    color: CYAN,
-  },
+  filterScroll: { gap: 8, paddingBottom: 20 },
+  filterChip: { flexDirection: "row", alignItems: "center", gap: 7, paddingRight: 13, paddingLeft: 7, paddingVertical: 7, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", marginRight: 8 },
+  filterChipActive: { backgroundColor: "#0A0B0D", borderColor: "rgba(0,182,215,0.5)" },
+  filterAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
+  filterAvatarText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10, color: "#FFFFFF" },
+  filterChipText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" },
+  filterChipTextActive: { color: "#FFFFFF" },
   center: {
     paddingVertical: 54,
     alignItems: "center",

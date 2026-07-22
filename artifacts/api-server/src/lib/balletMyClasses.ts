@@ -1,3 +1,5 @@
+import { BALLET_ACTIVE_APPLICATION_STATUSES } from "@workspace/api-zod";
+
 export type BalletMyClassesEntitlementState =
   | "no_application"
   | "application_pending"
@@ -121,7 +123,7 @@ interface BuildInput {
   schedules: BalletMyClassesScheduleRow[];
 }
 
-const OPEN_APPLICATION_STATUSES = new Set(["pending", "needsFollowUp", "accepted", "assignedToLevel", "active"]);
+const OPEN_APPLICATION_STATUSES = new Set<string>(BALLET_ACTIVE_APPLICATION_STATUSES);
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function timestamp(value: string): number {
@@ -232,25 +234,11 @@ function operationalClasses(
     .sort((a, b) => a.title.localeCompare(b.title) || a.id - b.id);
 }
 
-function terminalState(status: string): BalletMyClassesEntitlementState | null {
-  if (status === "rejected" || status === "cancelled" || status === "withdrawn") return status;
-  return null;
-}
-
 function buildChild(
   child: { selectorKey: string; childId: number; childName: string },
-  application: BalletMyClassesApplicationRow | null,
+  application: BalletMyClassesApplicationRow,
   input: BuildInput,
 ): BalletMyClassesChild {
-  if (!application) {
-    return { ...child, applicationId: null, applicationStatus: null, entitlementState: "no_application", level: null, group: null, weeklyScheduleCount: 0, classes: [] };
-  }
-
-  const terminal = terminalState(application.status);
-  if (terminal) {
-    return { ...child, applicationId: application.id, applicationStatus: application.status, entitlementState: terminal, level: null, group: null, weeklyScheduleCount: 0, classes: [] };
-  }
-
   const assignment = validAssignment(application, input.assignments);
   const level = assignment ? { id: assignment.levelId, name: assignment.levelName } : null;
   const group = assignment?.groupId != null && assignment.groupName
@@ -293,10 +281,19 @@ export function buildMyBalletClassesResponse(input: BuildInput): { children: Bal
     applicationsByChildId.set(application.childId, applications);
   }
 
+  const participatingChildren: Array<{ child: BalletMyClassesChildRow; application: BalletMyClassesApplicationRow }> = [];
+  for (const [childId, applications] of applicationsByChildId) {
+    const child = ownedChildrenById.get(childId);
+    const application = selectAuthoritativeBalletApplication(applications);
+    if (!child || !application || !OPEN_APPLICATION_STATUSES.has(application.status)) continue;
+    participatingChildren.push({ child, application });
+  }
+  participatingChildren.sort((a, b) => a.child.fullName.localeCompare(b.child.fullName) || a.child.id - b.child.id);
+
   return {
-    children: [...ownedChildrenById.values()].map((child) => buildChild(
+    children: participatingChildren.map(({ child, application }) => buildChild(
       { selectorKey: `child:${child.id}`, childId: child.id, childName: child.fullName },
-      selectAuthoritativeBalletApplication(applicationsByChildId.get(child.id) ?? []),
+      application,
       input,
     )),
   };

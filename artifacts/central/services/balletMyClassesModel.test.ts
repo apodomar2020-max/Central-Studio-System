@@ -87,12 +87,32 @@ test("cancelled and invalid Schedules are removed before the selected-child coun
   assert.equal(response.children[0].weeklyScheduleCount, 1);
 });
 
-test("non-active lifecycle states never retain downloaded Class data", () => {
-  for (const entitlementState of ["no_application", "application_pending", "assessment_pending", "assignment_pending", "payment_pending", "activation_pending", "schedule_pending", "rejected", "cancelled", "withdrawn"]) {
-    const response = normalizeMyBalletClassesResponse({ children: [child("child:1", 30, { entitlementState })] });
+test("current non-active lifecycle states remain selectable without downloaded Class data", () => {
+  const cases = [
+    ["pending", "application_pending"],
+    ["needsFollowUp", "assessment_pending"],
+    ["accepted", "assignment_pending"],
+    ["assignedToLevel", "payment_pending"],
+    ["assignedToLevel", "activation_pending"],
+    ["active", "schedule_pending"],
+  ] as const;
+  for (const [applicationStatus, entitlementState] of cases) {
+    const response = normalizeMyBalletClassesResponse({ children: [child("child:1", 30, { applicationStatus, entitlementState })] });
+    assert.equal(response.children.length, 1);
     assert.deepEqual(response.children[0].classes, []);
     assert.equal(response.children[0].weeklyScheduleCount, 0);
   }
+});
+
+test("stale general-account and terminal rows cannot populate the selector", () => {
+  const response = normalizeMyBalletClassesResponse({ children: [
+    child("child:1", 30, { applicationId: null, applicationStatus: null, entitlementState: "no_application" }),
+    child("child:2", 30, { applicationStatus: "rejected", entitlementState: "rejected" }),
+    child("child:3", 30, { applicationStatus: "cancelled", entitlementState: "cancelled" }),
+    child("child:4", 30, { applicationStatus: "withdrawn", entitlementState: "withdrawn" }),
+    child("child:5", 30, { applicationStatus: "pending", entitlementState: "application_pending", classes: [] }),
+  ] });
+  assert.deepEqual(response.children.map((item) => item.selectorKey), ["child:5"]);
 });
 
 test("selection is preserved after refresh and falls back deterministically", () => {
@@ -137,8 +157,8 @@ test("selector identity is derived only from childId", () => {
 
 test("same-name children remain separate when their canonical IDs differ", () => {
   const response = normalizeMyBalletClassesResponse({ children: [
-    child("ignored", 30, { childId: 1, childName: "Omar" }),
-    child("also-ignored", 31, { childId: 2, childName: "Omar" }),
+    child("ignored", 30, { childId: 1, applicationId: 101, childName: "Omar" }),
+    child("also-ignored", 31, { childId: 2, applicationId: 102, childName: "Omar" }),
   ] });
   assert.deepEqual(response.children.map((item) => item.selectorKey), ["child:1", "child:2"]);
 });

@@ -7,6 +7,13 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8"
 const landing = read("artifacts/central/app/ballet/index.tsx");
 const classes = read("artifacts/central/app/ballet/classes.tsx");
 const status = read("artifacts/central/app/ballet/application-status.tsx");
+const bookings = read("artifacts/central/app/(tabs)/bookings.tsx");
+
+function inlineStyle(source: string, name: string): string {
+  const match = source.match(new RegExp(`\\n\\s*${name}: (\\{[^\\n]+\\}),`));
+  assert.ok(match, `missing inline style ${name}`);
+  return match[1];
+}
 
 test("landing uses the authoritative weekly Schedule metric, not Class-card length", () => {
   assert.match(landing, /activeWeeklySessionsCount/);
@@ -44,9 +51,28 @@ test("child selector uses stable keys and preserves selection across refresh", (
   assert.doesNotMatch(classes, /children\[0\]|applications\[0\]/);
 });
 
-test("child selector uses the exact SELECT CHILD section label", () => {
-  assert.match(classes, />SELECT CHILD<|\{"SELECT CHILD"\}/);
-  assert.doesNotMatch(classes, />CHILD<|\{"CHILD"\}/);
+test("My Ballet Classes child pills match the My Bookings filter source values", () => {
+  for (const styleName of [
+    "filterScroll",
+    "filterChip",
+    "filterChipActive",
+    "filterAvatar",
+    "filterAvatarText",
+    "filterChipText",
+    "filterChipTextActive",
+  ]) {
+    assert.equal(inlineStyle(classes, styleName), inlineStyle(bookings, styleName), `${styleName} must match My Bookings`);
+  }
+  assert.match(classes, /child\.childName\.slice\(0, 2\)\.toUpperCase\(\)/);
+  assert.match(bookings, /st\.slice\(0, 2\)\.toUpperCase\(\)/);
+});
+
+test("Ballet selector remains single-child only with Bookings press behavior", () => {
+  const selector = classes.slice(classes.indexOf("{children.map((child)"), classes.indexOf("</ScrollView>", classes.indexOf("{children.map((child)")));
+  assert.doesNotMatch(selector, /activeOpacity/);
+  assert.doesNotMatch(classes, /SELECT CHILD|All Students/);
+  assert.match(classes, /key=\{child\.selectorKey\}/);
+  assert.match(bookings, /st === "All" \? "All Students" : st/);
 });
 
 test("non-entitled lifecycle states render explicit empty states without a public fallback", () => {

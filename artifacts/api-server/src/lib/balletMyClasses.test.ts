@@ -127,11 +127,36 @@ test("response is minimal and excludes application contact, medical, and payment
   }
 });
 
-test("children with no application remain selectable with no Classes", () => {
-  const [child] = build({ applications: [], assignments: [], activeSubscriptionApplicationIds: new Set() }).children;
-  assert.equal(child.entitlementState, "no_application");
-  assert.equal(child.weeklyScheduleCount, 0);
-  assert.deepEqual(child.classes, []);
+test("owned account children with no Ballet application are excluded", () => {
+  const result = build({ applications: [], assignments: [], activeSubscriptionApplicationIds: new Set() });
+  assert.deepEqual(result.children, []);
+});
+
+test("only children with canonical current Ballet application statuses are included", () => {
+  const statuses = ["pending", "needsFollowUp", "accepted", "assignedToLevel", "active"] as const;
+  for (const status of statuses) {
+    const result = build({ applications: [application(11, 1, { status })] });
+    assert.equal(result.children.length, 1, `${status} should remain selectable`);
+    assert.equal(result.children[0].applicationStatus, status);
+  }
+});
+
+test("children whose authoritative application is terminal are excluded", () => {
+  for (const status of ["rejected", "cancelled", "withdrawn"] as const) {
+    const result = build({ applications: [application(11, 1, { status })] });
+    assert.deepEqual(result.children, [], `${status} must not produce a selector entry`);
+  }
+});
+
+test("unrelated account children are excluded while Ballet workflow children remain", () => {
+  const result = build({
+    children: [
+      { id: 1, parentId: 10, fullName: "Maya" },
+      { id: 2, parentId: 10, fullName: "General Account Child" },
+    ],
+    applications: [application(11, 1, { status: "pending" })],
+  });
+  assert.deepEqual(result.children.map((child) => child.childId), [1]);
 });
 
 test("one canonical child remains one selector entry across repeated applications", () => {
@@ -152,6 +177,15 @@ test("authoritative application prioritizes active, then latest open, then lates
   assert.equal(selectAuthoritativeBalletApplication([latestTerminal, latestOpen, active])?.id, active.id);
   assert.equal(selectAuthoritativeBalletApplication([latestTerminal, latestOpen])?.id, latestOpen.id);
   assert.equal(selectAuthoritativeBalletApplication([latestTerminal])?.id, latestTerminal.id);
+});
+
+test("a newer pending reapplication is authoritative over terminal history", () => {
+  const olderRejected = application(11, 1, { status: "rejected", updatedAt: "2026-01-01T00:00:00.000Z" });
+  const newerPending = application(12, 1, { status: "pending", updatedAt: "2026-07-01T00:00:00.000Z" });
+  const result = build({ applications: [olderRejected, newerPending] });
+  assert.equal(result.children.length, 1);
+  assert.equal(result.children[0].applicationId, newerPending.id);
+  assert.equal(result.children[0].entitlementState, "application_pending");
 });
 
 test("duplicate source rows for one owned childId collapse to one canonical selector", () => {
@@ -197,14 +231,12 @@ test("selected-child application flow reuses the canonical child instead of inse
   assert.match(mobileSource, /childId: selectedChildId/);
 });
 
-test("pending, assessment, placement, and terminal lifecycle states never receive current Classes", () => {
+test("current non-active lifecycle states never receive Classes", () => {
   const cases = [
     ["pending", "application_pending"],
     ["needsFollowUp", "assessment_pending"],
     ["accepted", "assignment_pending"],
-    ["rejected", "rejected"],
-    ["cancelled", "cancelled"],
-    ["withdrawn", "withdrawn"],
+    ["assignedToLevel", "activation_pending"],
   ] as const;
   for (const [status, expected] of cases) {
     const [child] = build({ applications: [application(11, 1, { status })] }).children;

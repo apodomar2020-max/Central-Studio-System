@@ -96,6 +96,7 @@ let accountB: Account;
  * this column. */
 let hostileAssignmentId: number;
 let childlessApplicationId: number;
+let unrelatedOwnedChildId: number;
 
 before(async () => {
   const expressModule = await import("express");
@@ -187,6 +188,12 @@ before(async () => {
 
   accountA = await buildAccount("a");
   accountB = await buildAccount("b");
+
+  const unrelatedOwnedChild = await pool.query(
+    `INSERT INTO children (parent_id, full_name, birthday) VALUES ($1, 'General Account Child', '2019-06-01') RETURNING id`,
+    [accountA.parentId],
+  );
+  unrelatedOwnedChildId = unrelatedOwnedChild.rows[0].id;
 
   const childlessApplication = await pool.query(
     `INSERT INTO ballet_applications
@@ -295,6 +302,14 @@ test("childId-less applications never become selector entries", async () => {
   const children = (body as any).children as any[];
   assert.deepEqual(children.map((child) => child.selectorKey), [`child:${accountA.childId}`]);
   assert.equal(children.some((child) => child.applicationId === childlessApplicationId), false);
+});
+
+test("owned general-account children without Ballet applications are not returned", async () => {
+  const { status, body } = await getMyClasses(studentToken(accountA.parentId, accountA.email));
+  assert.equal(status, 200);
+  const children = (body as any).children as any[];
+  assert.equal(children.some((child) => child.childId === unrelatedOwnedChildId), false);
+  assert.deepEqual(children.map((child) => child.selectorKey), [`child:${accountA.childId}`]);
 });
 
 test("Account B token resolves only Account B's data", async () => {
