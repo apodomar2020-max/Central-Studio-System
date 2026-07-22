@@ -138,6 +138,10 @@ async function postSchedule(body: { classId: number; dayOfWeek: number; startTim
   return asAdmin("/api/admin/ballet/schedules", { method: "POST", body: JSON.stringify({ status: "active", ...body }) });
 }
 
+async function patchSchedule(id: number, body: { dayOfWeek?: number; startTime?: string; endTime?: string; status?: string }): Promise<Response> {
+  return asAdmin(`/api/admin/ballet/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
 async function postAttendance(body: { levelAssignmentId: number; balletScheduleId: number; classDate: string; status?: string }): Promise<Response> {
   return asAdmin("/api/admin/ballet/attendance", {
     method: "POST",
@@ -308,4 +312,75 @@ test("historical attendance stays linked to Schedule A after editing and cancell
     [assignmentId],
   );
   assert.deepEqual(rows.rows, [{ ballet_schedule_id: scheduleA, ballet_class_id: classId, class_date: "2026-07-06" }]);
+});
+
+// ─── Regression: PATCH must enforce the same duplicate-slot rule as POST ──────
+//
+// Confirmed Production-like defect: PATCH /admin/ballet/schedules/:id applied
+// day/time changes with no duplicate check at all. Editing a sibling Schedule
+// into an already-occupied classId+dayOfWeek+startTime+endTime slot silently
+// succeeded (200), producing two visually-identical rows for the same Class —
+// same Level/Group/Instructor (guaranteed, since it is literally one Class),
+// same Day, same Time, same Status — exactly the symptom observed in Admin.
+
+test("editing a sibling Schedule into an existing Schedule's exact slot is rejected with 409 DUPLICATE_BALLET_SCHEDULE_SLOT", async () => {
+  const run = `edit-collision-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "edit-collision");
+
+  const a = await postSchedule({ classId, dayOfWeek: 0, startTime: "16:00", endTime: "17:00" });
+  const b = await postSchedule({ classId, dayOfWeek: 2, startTime: "09:00", endTime: "10:00" });
+  assert.equal(a.status, 201);
+  assert.equal(b.status, 201);
+  const bId = ((await jsonBody(b)).schedule as { id: number }).id;
+
+  const collide = await patchSchedule(bId, { dayOfWeek: 0, startTime: "16:00", endTime: "17:00" });
+  assert.equal(collide.status, 409);
+  assert.equal((await jsonBody(collide)).code, "DUPLICATE_BALLET_SCHEDULE_SLOT");
+
+  // The sibling must be untouched (still at its original day/time) and no
+  // second row must exist in A's slot.
+  assert.equal(await countMatchingSchedules(classId, 0, "16:00", "17:00"), 1);
+  assert.equal(await countMatchingSchedules(classId, 2, "09:00", "10:00"), 1);
+});
+
+test("editing a Schedule while keeping its own day/time unchanged still succeeds", async () => {
+  const run = `edit-self-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "edit-self");
+  const created = await postSchedule({ classId, dayOfWeek: 4, startTime: "11:00", endTime: "12:00" });
+  const id = ((await jsonBody(created)).schedule as { id: number }).id;
+
+  const sameSlot = await patchSchedule(id, { dayOfWeek: 4, startTime: "11:00", endTime: "12:00", status: "active" });
+  assert.equal(sameSlot.status, 200);
+
+  const statusOnly = await patchSchedule(id, { status: "deactivated" });
+  assert.equal(statusOnly.status, 200);
+  assert.equal(await countMatchingSchedules(classId, 4, "11:00", "12:00"), 1);
+});
+
+test("duplicate detection trims whitespace so equivalent time strings collide, and stores the canonical trimmed value", async () => {
+  const run = `whitespace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "whitespace");
+
+  const first = await postSchedule({ classId, dayOfWeek: 1, startTime: " 16:00", endTime: "17:00 " } as unknown as { classId: number; dayOfWeek: number; startTime: string; endTime: string });
+  assert.equal(first.status, 201);
+  const stored = ((await jsonBody(first)).schedule as { startTime: string; endTime: string });
+  assert.equal(stored.startTime, "16:00");
+  assert.equal(stored.endTime, "17:00");
+
+  const duplicate = await postSchedule({ classId, dayOfWeek: 1, startTime: "16:00", endTime: "17:00" });
+  assert.equal(duplicate.status, 409);
+  assert.equal(await countMatchingSchedules(classId, 1, "16:00", "17:00"), 1);
+});
+
+test("two different Classes sharing an identical title may each be scheduled at the same day/time independently (not a duplicate — different classId)", async () => {
+  const run = `same-title-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const shared = await insertCanonicalBalletClass(run, "shared-a");
+  const other = await insertCanonicalBalletClass(run, "shared-b");
+
+  const r1 = await postSchedule({ classId: shared.classId, dayOfWeek: 5, startTime: "13:00", endTime: "14:00" });
+  const r2 = await postSchedule({ classId: other.classId, dayOfWeek: 5, startTime: "13:00", endTime: "14:00" });
+  assert.equal(r1.status, 201);
+  assert.equal(r2.status, 201);
+  assert.equal(await countMatchingSchedules(shared.classId, 5, "13:00", "14:00"), 1);
+  assert.equal(await countMatchingSchedules(other.classId, 5, "13:00", "14:00"), 1);
 });

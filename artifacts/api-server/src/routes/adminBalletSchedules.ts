@@ -18,7 +18,7 @@
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -57,10 +57,42 @@ const ListQuerySchema = z.object({
 const CreateScheduleBody = z.object({
   classId: z.number({ required_error: "classId is required" }).int().positive(),
   dayOfWeek: z.number({ required_error: "dayOfWeek is required" }).int().min(0).max(6),
-  startTime: z.string().regex(TIME_PATTERN, "startTime must use HH:MM"),
-  endTime: z.string().regex(TIME_PATTERN, "endTime must use HH:MM"),
+  startTime: z.string().trim().regex(TIME_PATTERN, "startTime must use HH:MM"),
+  endTime: z.string().trim().regex(TIME_PATTERN, "endTime must use HH:MM"),
   status: z.enum(BALLET_SCHEDULE_STATUSES).default("active"),
 }).strict();
+
+/**
+ * Single source of truth for "is this classId+dayOfWeek+startTime+endTime
+ * slot already taken by another Schedule row" — used identically by POST
+ * (excludeId omitted) and PATCH (excludeId = the row being edited), so the
+ * two routes can never drift apart on what counts as a duplicate. Callers
+ * must pass already-normalized (trimmed, canonical HH:MM) values — this
+ * function does no normalization of its own, matching the same values that
+ * get written to the row.
+ */
+async function findDuplicateScheduleId(
+  client: DbClient,
+  classId: number,
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
+  excludeId?: number,
+): Promise<number | null> {
+  const conditions = [
+    eq(balletSchedulesTable.classId, classId),
+    eq(balletSchedulesTable.dayOfWeek, dayOfWeek),
+    eq(balletSchedulesTable.startTime, startTime),
+    eq(balletSchedulesTable.endTime, endTime),
+  ];
+  if (excludeId != null) conditions.push(ne(balletSchedulesTable.id, excludeId));
+  const [duplicate] = await client
+    .select({ id: balletSchedulesTable.id })
+    .from(balletSchedulesTable)
+    .where(and(...conditions))
+    .limit(1);
+  return duplicate?.id ?? null;
+}
 
 async function validateScheduleClass(client: DbClient, classId: number): Promise<string | null> {
   const [row] = await client
@@ -113,8 +145,8 @@ router.get("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("
 
 const UpdateScheduleBody = z.object({
   dayOfWeek: z.number().int().min(0).max(6).optional(),
-  startTime: z.string().regex(TIME_PATTERN, "startTime must use HH:MM").optional(),
-  endTime: z.string().regex(TIME_PATTERN, "endTime must use HH:MM").optional(),
+  startTime: z.string().trim().regex(TIME_PATTERN, "startTime must use HH:MM").optional(),
+  endTime: z.string().trim().regex(TIME_PATTERN, "endTime must use HH:MM").optional(),
   status: z.enum(BALLET_SCHEDULE_STATUSES).optional(),
 }).strict();
 
@@ -160,17 +192,8 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
       const classError = await validateScheduleClass(tx, parsed.data.classId);
       if (classError) throw new Error(classError);
 
-      const [duplicate] = await tx
-        .select({ id: balletSchedulesTable.id })
-        .from(balletSchedulesTable)
-        .where(and(
-          eq(balletSchedulesTable.classId, parsed.data.classId),
-          eq(balletSchedulesTable.dayOfWeek, parsed.data.dayOfWeek),
-          eq(balletSchedulesTable.startTime, parsed.data.startTime),
-          eq(balletSchedulesTable.endTime, parsed.data.endTime),
-        ))
-        .limit(1);
-      if (duplicate) throw new Error("DUPLICATE_BALLET_SCHEDULE_SLOT");
+      const duplicateId = await findDuplicateScheduleId(tx, parsed.data.classId, parsed.data.dayOfWeek, parsed.data.startTime, parsed.data.endTime);
+      if (duplicateId) throw new Error("DUPLICATE_BALLET_SCHEDULE_SLOT");
 
       const [created] = await tx.insert(balletSchedulesTable).values({
         classId: parsed.data.classId,
@@ -235,15 +258,24 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
       await tx.execute(sql`select id from ballet_schedules where id = ${id} for update`);
       const [existing] = await tx.select().from(balletSchedulesTable).where(eq(balletSchedulesTable.id, id)).limit(1);
       if (!existing) return null;
+      // Lock the owning Class row too — the same lock POST takes — so a
+      // concurrent POST for this Class and this PATCH can never race past
+      // each other's duplicate check.
+      await tx.execute(sql`select id from ballet_classes where id = ${existing.classId} for update`);
       const [owningClass] = await tx.select({ isLegacy: balletClassesTable.isLegacy }).from(balletClassesTable).where(eq(balletClassesTable.id, existing.classId)).limit(1);
       if (owningClass?.isLegacy) throw new Error("LEGACY_SCHEDULE");
+      const dayOfWeek = parsed.data.dayOfWeek ?? existing.dayOfWeek;
       const startTime = parsed.data.startTime ?? existing.startTime;
       const endTime = parsed.data.endTime ?? existing.endTime;
       const durationMins = deriveBalletScheduleDuration(startTime, endTime);
+
+      const duplicateId = await findDuplicateScheduleId(tx, existing.classId, dayOfWeek, startTime, endTime, id);
+      if (duplicateId) throw new Error("DUPLICATE_BALLET_SCHEDULE_SLOT");
+
       const now = new Date().toISOString();
       const [schedule] = await tx
         .update(balletSchedulesTable)
-        .set({ ...parsed.data, startTime, endTime, durationMins, updatedAt: now })
+        .set({ ...parsed.data, dayOfWeek, startTime, endTime, durationMins, updatedAt: now })
         .where(eq(balletSchedulesTable.id, id))
         .returning();
       return { existing, schedule };
@@ -279,6 +311,13 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
       res.status(422).json({
         error: "This Class uses the retired Ballet Class model. Create a new Class to resume the program.",
         code: "LEGACY_CLASS_SCHEDULE",
+      });
+      return;
+    }
+    if (err instanceof Error && err.message === "DUPLICATE_BALLET_SCHEDULE_SLOT") {
+      res.status(409).json({
+        error: "This Class already has a Schedule with the same day, start time, and end time.",
+        code: "DUPLICATE_BALLET_SCHEDULE_SLOT",
       });
       return;
     }
