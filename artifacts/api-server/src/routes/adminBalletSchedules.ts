@@ -6,11 +6,11 @@
  *
  * Routes:
  *   GET   /api/admin/ballet/schedules       — paginated list
+ *   POST  /api/admin/ballet/schedules       — create one weekly schedule row
  *   PATCH /api/admin/ballet/schedules/:id   — update schedule
  *
- * Schedule creation is intentionally disabled: a schedule is created only
- * with its owning class by adminBalletClasses.ts. This route remains an
- * operational list/edit view of that single schedule.
+ * Schedule creation is independent from class creation. One Ballet Class may
+ * own multiple weekly schedule rows.
  *
  * Every error response is `{ error, code, ...(requestId for 5xx) }` — 5xx
  * bodies never carry raw SQL/driver text (see respondWithScheduleError);
@@ -18,19 +18,28 @@
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, balletClassesTable, balletSchedulesTable, BALLET_SCHEDULE_STATUSES } from "@workspace/db";
+import {
+  db,
+  balletClassesTable,
+  balletGroupsTable,
+  balletInstructorsTable,
+  balletLevelsTable,
+  balletSchedulesTable,
+  BALLET_SCHEDULE_STATUSES,
+} from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
+import type { DbClient } from "../lib/dbTypes";
 
 const router: IRouter = Router();
 const BALLET_SCHEDULE_ACTIVITY_FIELDS = ["classId", "dayOfWeek", "startTime", "endTime", "status", "durationMins"] as const;
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-function deriveDuration(startTime: string, endTime: string): number {
+export function deriveBalletScheduleDuration(startTime: string, endTime: string): number {
   const toMinutes = (value: string) => {
     const [hours, minutes] = value.split(":").map(Number);
     return hours * 60 + minutes;
@@ -44,6 +53,45 @@ const ListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+const CreateScheduleBody = z.object({
+  classId: z.number({ required_error: "classId is required" }).int().positive(),
+  dayOfWeek: z.number({ required_error: "dayOfWeek is required" }).int().min(0).max(6),
+  startTime: z.string().regex(TIME_PATTERN, "startTime must use HH:MM"),
+  endTime: z.string().regex(TIME_PATTERN, "endTime must use HH:MM"),
+  status: z.enum(BALLET_SCHEDULE_STATUSES).default("active"),
+}).strict();
+
+async function validateScheduleClass(client: DbClient, classId: number): Promise<string | null> {
+  const [row] = await client
+    .select({
+      id: balletClassesTable.id,
+      isLegacy: balletClassesTable.isLegacy,
+      isActive: balletClassesTable.isActive,
+      levelId: balletClassesTable.levelId,
+      groupId: balletClassesTable.groupId,
+      instructorId: balletClassesTable.instructorId,
+      levelIsActive: balletLevelsTable.isActive,
+      groupLevelId: balletGroupsTable.levelId,
+      groupIsActive: balletGroupsTable.isActive,
+      instructorIsActive: balletInstructorsTable.isActive,
+    })
+    .from(balletClassesTable)
+    .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassesTable.levelId))
+    .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletClassesTable.groupId))
+    .leftJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
+    .where(eq(balletClassesTable.id, classId))
+    .limit(1);
+
+  if (!row) return "NOT_FOUND";
+  if (row.isLegacy) return "LEGACY_CLASS";
+  if (!row.isActive) return "CLASS_INACTIVE";
+  if (row.levelId == null || row.levelIsActive !== true) return "LEVEL_INACTIVE";
+  if (row.groupId == null || row.groupIsActive !== true) return "GROUP_INACTIVE";
+  if (row.groupLevelId !== row.levelId) return "GROUP_LEVEL_MISMATCH";
+  if (row.instructorId == null || row.instructorIsActive !== true) return "INSTRUCTOR_INACTIVE";
+  return null;
+}
 
 router.get("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("ballet.schedules", "view"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = ListQuerySchema.safeParse(req.query);
@@ -95,8 +143,78 @@ function respondWithScheduleError(req: AdminRequest, res: Response, err: unknown
   });
 }
 
-router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("ballet.schedules", "create"), (_req, res): void => {
-  res.status(405).json({ error: "Create the Ballet Class to create its weekly schedule.", code: "CREATE_CLASS_REQUIRED" });
+router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("ballet.schedules", "create"), async (req: AdminRequest, res): Promise<void> => {
+  const parsed = CreateScheduleBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body", code: "VALIDATION_ERROR" });
+    return;
+  }
+
+  let durationMins: number;
+  try { durationMins = deriveBalletScheduleDuration(parsed.data.startTime, parsed.data.endTime); }
+  catch { res.status(422).json({ error: "End time must be later than start time", code: "INVALID_TIME_RANGE" }); return; }
+
+  try {
+    const schedule = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from ballet_classes where id = ${parsed.data.classId} for update`);
+      const classError = await validateScheduleClass(tx, parsed.data.classId);
+      if (classError) throw new Error(classError);
+
+      const [duplicate] = await tx
+        .select({ id: balletSchedulesTable.id })
+        .from(balletSchedulesTable)
+        .where(and(
+          eq(balletSchedulesTable.classId, parsed.data.classId),
+          eq(balletSchedulesTable.dayOfWeek, parsed.data.dayOfWeek),
+          eq(balletSchedulesTable.startTime, parsed.data.startTime),
+          eq(balletSchedulesTable.endTime, parsed.data.endTime),
+        ))
+        .limit(1);
+      if (duplicate) throw new Error("DUPLICATE_BALLET_SCHEDULE_SLOT");
+
+      const [created] = await tx.insert(balletSchedulesTable).values({
+        classId: parsed.data.classId,
+        dayOfWeek: parsed.data.dayOfWeek,
+        startTime: parsed.data.startTime,
+        endTime: parsed.data.endTime,
+        durationMins,
+        status: parsed.data.status,
+      }).returning();
+      return created;
+    });
+
+    await logActivity(req, {
+      action: "create",
+      module: "ballet.schedules",
+      entityType: "ballet_schedule",
+      entityId: schedule.id,
+      entityLabel: `${schedule.startTime}-${schedule.endTime}`,
+      after: Object.fromEntries(BALLET_SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, schedule[key]])),
+      summary: `Created ballet schedule ${schedule.startTime}-${schedule.endTime}`,
+    });
+    res.status(201).json({ schedule });
+  } catch (err) {
+    if (err instanceof Error) {
+      if (err.message === "NOT_FOUND") { res.status(404).json({ error: "Class not found", code: "CLASS_NOT_FOUND" }); return; }
+      if (err.message === "LEGACY_CLASS") {
+        res.status(422).json({ error: "This Class uses the retired Ballet Class model. Create a new Class to resume the program.", code: "LEGACY_CLASS" });
+        return;
+      }
+      if (err.message === "CLASS_INACTIVE") { res.status(422).json({ error: "The selected Class is inactive.", code: "CLASS_INACTIVE" }); return; }
+      if (err.message === "LEVEL_INACTIVE") { res.status(422).json({ error: "The selected Class has no active Level.", code: "LEVEL_INACTIVE" }); return; }
+      if (err.message === "GROUP_INACTIVE") { res.status(422).json({ error: "The selected Class has no active Group.", code: "GROUP_INACTIVE" }); return; }
+      if (err.message === "GROUP_LEVEL_MISMATCH") { res.status(422).json({ error: "The selected Class Group does not belong to its Level.", code: "GROUP_LEVEL_MISMATCH" }); return; }
+      if (err.message === "INSTRUCTOR_INACTIVE") { res.status(422).json({ error: "The selected Class has no active Instructor.", code: "INSTRUCTOR_INACTIVE" }); return; }
+      if (err.message === "DUPLICATE_BALLET_SCHEDULE_SLOT") {
+        res.status(409).json({
+          error: "This Class already has a Schedule with the same day, start time, and end time.",
+          code: "DUPLICATE_BALLET_SCHEDULE_SLOT",
+        });
+        return;
+      }
+    }
+    respondWithScheduleError(req, res, err, "POST /admin/ballet/schedules");
+  }
 });
 
 router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermission("ballet.schedules", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -121,18 +239,13 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
       if (owningClass?.isLegacy) throw new Error("LEGACY_SCHEDULE");
       const startTime = parsed.data.startTime ?? existing.startTime;
       const endTime = parsed.data.endTime ?? existing.endTime;
-      const durationMins = deriveDuration(startTime, endTime);
+      const durationMins = deriveBalletScheduleDuration(startTime, endTime);
       const now = new Date().toISOString();
       const [schedule] = await tx
         .update(balletSchedulesTable)
         .set({ ...parsed.data, startTime, endTime, durationMins, updatedAt: now })
         .where(eq(balletSchedulesTable.id, id))
         .returning();
-      if (parsed.data.status != null) {
-        await tx.update(balletClassesTable)
-          .set({ isActive: parsed.data.status === "active", updatedAt: now })
-          .where(eq(balletClassesTable.id, existing.classId));
-      }
       return { existing, schedule };
     });
     if (!result) { res.status(404).json({ error: "Schedule not found", code: "SCHEDULE_NOT_FOUND" }); return; }

@@ -226,7 +226,8 @@ export default function ApplicationStatusScreen() {
         const byGroup = new Map<number, Map<number, BalletClassSchedule>>();
         for (const cls of classes) {
           const schedMap = byGroup.get(cls.groupId) ?? new Map<number, BalletClassSchedule>();
-          if (cls.schedule) schedMap.set(cls.schedule.id, cls.schedule);
+          const classSchedules = cls.schedules ?? (cls.schedule ? [cls.schedule] : []);
+          for (const schedule of classSchedules) schedMap.set(schedule.id, schedule);
           byGroup.set(cls.groupId, schedMap);
         }
         const result = new Map<number, BalletClassSchedule[]>();

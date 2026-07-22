@@ -43,6 +43,15 @@ function isReady(classId: number): boolean {
     select (
       c.is_active = true
       and c.is_legacy = false
+      and exists (
+        select 1
+        from ballet_groups g
+        inner join ballet_levels l on l.id = c.level_id
+        where g.id = c.group_id
+          and g.level_id = c.level_id
+          and g.is_active = true
+          and l.is_active = true
+      )
       and exists (select 1 from ballet_instructors i where i.id = c.instructor_id and i.is_active = true)
       and (
         select count(*) from ballet_schedules s
@@ -58,7 +67,7 @@ function isReady(classId: number): boolean {
             (substring(s.end_time from 1 for 2)::int * 60 + substring(s.end_time from 4 for 2)::int)
             - (substring(s.start_time from 1 for 2)::int * 60 + substring(s.start_time from 4 for 2)::int)
           )
-      ) = 1
+      ) >= 1
     ) from ballet_classes c where c.id = ${classId}`);
   return result === 't';
 }
@@ -160,11 +169,11 @@ test("8. start >= end -> not ready", () => {
   assert.equal(isReady(reversedTimes), false);
 });
 
-test("9. two active Schedules for one Class -> not ready", () => {
+test("9. two active Schedules for one Class -> ready", () => {
   const classId = makeClass();
   addSchedule(classId, { dayOfWeek: "1", startTime: "'16:00'", endTime: "'17:00'" });
   addSchedule(classId, { dayOfWeek: "3", startTime: "'09:00'", endTime: "'10:00'" });
-  assert.equal(isReady(classId), false);
+  assert.equal(isReady(classId), true);
 });
 
 test("10. Group/Level mismatch -> not ready (a fully-ready Class attached to a DIFFERENT Group/Level never satisfies THIS Group's readiness check)", () => {
@@ -183,6 +192,15 @@ test("10. Group/Level mismatch -> not ready (a fully-ready Class attached to a D
       where c.group_id = ${otherGroupId}
         and c.level_id = ${otherLevelId}
         and c.is_active = true and c.is_legacy = false
+        and exists (
+          select 1
+          from ballet_groups g
+          inner join ballet_levels l on l.id = c.level_id
+          where g.id = c.group_id
+            and g.level_id = c.level_id
+            and g.is_active = true
+            and l.is_active = true
+        )
         and exists (select 1 from ballet_instructors i where i.id = c.instructor_id and i.is_active = true)
         and (
           select count(*) from ballet_schedules s
@@ -196,7 +214,7 @@ test("10. Group/Level mismatch -> not ready (a fully-ready Class attached to a D
               (substring(s.end_time from 1 for 2)::int * 60 + substring(s.end_time from 4 for 2)::int)
               - (substring(s.start_time from 1 for 2)::int * 60 + substring(s.start_time from 4 for 2)::int)
             )
-        ) = 1
+        ) >= 1
     )`);
   assert.equal(readyForOtherGroup, 'f');
 });

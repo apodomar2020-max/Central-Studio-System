@@ -22,9 +22,8 @@ async function getLevel(levelId: number) {
  * isAssignmentReadyClass predicate (balletClassEntitlement.ts) — the same
  * definition adminBallet.ts uses for Group assignment, Activation, and
  * Attendance. No join against ballet_schedules here: isAssignmentReadyClass
- * proves "exactly one" via a correlated subquery, so a Class with two active
- * Schedules (a data-integrity edge case, since that uniqueness is only
- * enforced by the API today, not the DB) can never be double-counted.
+ * proves "at least one valid active Schedule" via a correlated subquery, so
+ * a Class with multiple weekly sessions can never be double-counted.
  */
 function assignmentReadyClassCountQuery(groupIdFilter: SQL) {
   return db.select({ groupId: balletClassesTable.groupId, value: count(balletClassesTable.id) })

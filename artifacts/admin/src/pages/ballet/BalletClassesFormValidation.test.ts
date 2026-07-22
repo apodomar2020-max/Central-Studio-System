@@ -71,10 +71,10 @@ test("opening Edit Class resets the form with the Class's real levelId/groupId, 
 });
 
 // 7. closing/reopening does not retain validation errors or touched state
-test("both dialog entry points call the bare form.reset (no keepErrors/keepTouched), so state never leaks between sessions", () => {
+test("dialog entry and close paths call bare form.reset (no keepErrors/keepTouched), so state never leaks between sessions", () => {
   assert.doesNotMatch(source, /form\.reset\([^)]*keepErrors/);
   assert.doesNotMatch(source, /form\.reset\([^)]*keepTouched/);
-  assert.equal((source.match(/form\.reset\(/g) ?? []).length, 2);
+  assert.equal((source.match(/form\.reset\(/g) ?? []).length, 3);
 });
 
 // 8. no regression to filtered Group options (Group is scoped to the selected Level, active-only + editing exception)
@@ -91,10 +91,9 @@ test("Level, Group, and Instructor remain single-select scalars, not multi-selec
   assert.doesNotMatch(source, /levelIds|groupIds|scheduleIds/);
 });
 
-// 10. no regression to derived Duration
-test("Duration stays server/client-derived read-only from start/end time, unaffected by the validation-mode fix", () => {
-  assert.match(source, /function deriveDuration\(start: string, end: string\): number \| null/);
-  assert.match(source, /const duration = useMemo\(\(\) => deriveDuration\(startTime, endTime\), \[startTime, endTime\]\)/);
-  assert.match(source, /data-testid="input-ballet-class-duration"/);
-  assert.match(source, /disabled=\{isSaving \|\| duration == null\}/);
+// 10. no regression to the split Class/Schedule workflow
+test("Class form contains no timing or Duration fields because schedules are created separately", () => {
+  assert.doesNotMatch(source, /name="dayOfWeek"|name="startTime"|name="endTime"/);
+  assert.doesNotMatch(source, /function deriveDuration|input-ballet-class-duration|scheduleStatus/);
+  assert.match(source, /Create Class/);
 });

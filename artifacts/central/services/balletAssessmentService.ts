@@ -613,6 +613,8 @@ export interface BalletClass {
   instructor: { id: number; name: string; photoUrl: string | null } | null;
   groupId: number;
   levelId: number;
+  schedules: BalletClassSchedule[];
+  /** @deprecated Compatibility alias for older clients. Use schedules[]. */
   schedule: BalletClassSchedule | null;
 }
 
@@ -622,7 +624,10 @@ export async function fetchBalletClasses(signal?: AbortSignal): Promise<BalletCl
     `${apiUrl}/api/ballet/classes`,
     { method: "GET", signal }
   );
-  return res.classes;
+  return res.classes.map((item) => ({
+    ...item,
+    schedules: Array.isArray(item.schedules) ? item.schedules : item.schedule ? [item.schedule] : [],
+  }));
 }
 
 /** Shape of a single row from GET /api/ballet/levels. */

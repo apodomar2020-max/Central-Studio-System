@@ -13,6 +13,7 @@ const scheduleRoute = read("artifacts/api-server/src/routes/adminBalletSchedules
 const groupRoute = read("artifacts/api-server/src/routes/adminBalletGroups.ts");
 const instructorRoute = read("artifacts/api-server/src/routes/adminBalletInstructors.ts");
 const applicationRoute = read("artifacts/api-server/src/routes/adminBallet.ts");
+const publicBalletRoute = read("artifacts/api-server/src/routes/ballet.ts");
 const classPage = read("artifacts/admin/src/pages/ballet/BalletClassesPage.tsx");
 const schedulePage = read("artifacts/admin/src/pages/ballet/BalletSchedulesPage.tsx");
 
@@ -51,7 +52,7 @@ test("0075 does not drop any legacy relationship table", () => {
   }
 });
 
-test("0075 defers the one-schedule-per-class unique index and Schedule shape CHECK constraints", () => {
+test("0075 preserves multiple schedules per class and defers Schedule shape CHECK constraints", () => {
   assert.doesNotMatch(migration, /CREATE UNIQUE INDEX "ballet_schedules_class_id_unique"/);
   assert.doesNotMatch(migration, /ballet_schedules_day_of_week_check/);
   assert.doesNotMatch(migration, /ballet_schedules_time_format_check/);
@@ -85,13 +86,15 @@ test("legacy join tables remain exported from the schema barrel", () => {
 
 // ─── API enforces canonical vs legacy at the application layer ────────────
 
-test("class create and edit are transactional, canonical create is explicitly non-legacy", () => {
+test("class create and edit are transactional, class create is class-only, and canonical create is explicitly non-legacy", () => {
   assert.match(classRoute, /db\.transaction/);
   assert.match(classRoute, /tx\.insert\(balletClassesTable\)/);
-  assert.match(classRoute, /tx\.insert\(balletSchedulesTable\)/);
+  assert.doesNotMatch(classRoute, /tx\.insert\(balletSchedulesTable\)/);
   assert.match(classRoute, /isLegacy:\s*false/);
   assert.match(classRoute, /for update/);
-  assert.match(classRoute, /tx\.update\(balletSchedulesTable\)/);
+  assert.doesNotMatch(classRoute, /tx\.update\(balletSchedulesTable\)/);
+  assert.match(classRoute, /schedules:\s*\[\]/);
+  assert.match(classRoute, /schedule:\s*null/);
 });
 
 test("legacy Classes are rejected from the canonical edit form with the documented message", () => {
@@ -117,11 +120,13 @@ test("backend enforces active and matching relationships", () => {
 
 test("balletClassEntitlement.ts is the single source of the assignment-ready predicate, imported (not reimplemented) at every gate", () => {
   const entitlementModule = read("artifacts/api-server/src/lib/balletClassEntitlement.ts");
-  // The "exactly one" invariant must be a correlated COUNT subquery, never a
+  // The "at least one" invariant must be a correlated COUNT subquery, never a
   // join — a join against ballet_schedules would multiply a Class with 2+
-  // active Schedules into 2+ output rows instead of correctly excluding it.
+  // active Schedules into 2+ output rows instead of preserving one Class as
+  // one readiness signal.
   assert.match(entitlementModule, /select count\(\*\) from ballet_schedules s/);
-  assert.match(entitlementModule, /\)\s*=\s*1`/);
+  assert.match(entitlementModule, /\)\s*>=\s*1`/);
+  assert.match(entitlementModule, /hasActiveLevelAndGroup/);
   assert.doesNotMatch(entitlementModule, /\.innerJoin\(/);
   for (const clause of [
     "day_of_week between 0 and 6",
@@ -154,22 +159,36 @@ test("assign-group is bounded to assignedToLevel/active applications and require
   assert.match(applicationRoute, /app\.status !== "assignedToLevel" && app\.status !== "active"/);
 });
 
-// ─── Admin UI reflects legacy vs canonical ─────────────────────────────────
-
-test("Admin Class form is single-select, owns schedule fields, and marks legacy rows read-only", () => {
-  assert.doesNotMatch(classPage, /Checkbox/);
-  assert.doesNotMatch(classPage, /name="levelIds"|name="groupIds"/);
-  for (const name of ["levelId", "groupId", "instructorId", "dayOfWeek", "startTime", "endTime"]) assert.match(classPage, new RegExp(`name="${name}"`));
-  assert.match(classPage, /selectableGroups.*levelId === selectedLevelId/);
-  assert.match(classPage, /Duration/);
-  assert.match(classPage, /Historical Class/);
-  assert.match(classPage, /item\.isLegacy/);
+test("public Ballet class response returns all schedules plus a deterministic deprecated alias", () => {
+  assert.match(publicBalletRoute, /schedulesByClass/);
+  assert.match(publicBalletRoute, /schedules,/);
+  assert.match(publicBalletRoute, /schedule:\s+schedules\[0\] \?\? null/);
+  assert.match(publicBalletRoute, /orderBy\(asc\(balletSchedulesTable\.dayOfWeek\), asc\(balletSchedulesTable\.startTime\), asc\(balletSchedulesTable\.id\)\)/);
+  assert.doesNotMatch(publicBalletRoute, /const scheduleByClass/);
+  assert.doesNotMatch(publicBalletRoute, /if \(!scheduleByClass\.has/);
 });
 
-test("Schedules page has no create action, no orphan-capable class selector, and marks legacy schedules read-only", () => {
-  assert.doesNotMatch(schedulePage, /button-add-ballet-schedule|openCreate|createMutation/);
-  assert.doesNotMatch(schedulePage, /name="classId"/);
-  assert.match(schedulePage, /Create schedules from Add Class/);
+// ─── Admin UI reflects legacy vs canonical ─────────────────────────────────
+
+test("Admin Class form is single-select, class-owned only, and marks legacy rows read-only", () => {
+  assert.doesNotMatch(classPage, /Checkbox/);
+  assert.doesNotMatch(classPage, /name="levelIds"|name="groupIds"/);
+  for (const name of ["levelId", "groupId", "instructorId"]) assert.match(classPage, new RegExp(`name="${name}"`));
+  for (const name of ["dayOfWeek", "startTime", "endTime"]) assert.doesNotMatch(classPage, new RegExp(`name="${name}"`));
+  assert.match(classPage, /selectableGroups.*levelId === selectedLevelId/);
+  assert.doesNotMatch(classPage, /input-ballet-class-duration/);
+  assert.match(classPage, /Historical Class/);
+  assert.match(classPage, /item\.isLegacy/);
+  assert.match(classPage, /No schedules/);
+  assert.match(classPage, /schedules\.length === 1/);
+});
+
+test("Schedules page creates one schedule at a time and keeps already-scheduled classes selectable", () => {
+  assert.match(schedulePage, /button-add-ballet-schedule|openCreate|createMutation/);
+  assert.match(schedulePage, /name="classId"/);
+  assert.match(schedulePage, /eligibleClasses/);
+  assert.doesNotMatch(schedulePage, /schedulesFor\(item\)\.length === 0/);
+  assert.match(schedulePage, /count === 0 \? "No schedules"/);
   assert.match(schedulePage, /isLegacySchedule/);
   assert.match(schedulePage, /Historical Class/);
 });

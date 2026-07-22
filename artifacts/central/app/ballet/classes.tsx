@@ -54,14 +54,26 @@ function formatTime(timeStr: string): string {
   return `${h}:${minsStr} ${ampm}`;
 }
 
-function scheduleSummary(schedule: BalletClassSchedule | null): string {
-  if (!schedule) return "Schedule TBC";
-  return `${DAY_NAMES[schedule.dayOfWeek] ?? "Weekly"} · ${formatTime(schedule.startTime)} - ${formatTime(schedule.endTime)}`;
+function activeSchedules(item: BalletClass): BalletClassSchedule[] {
+  return (item.schedules ?? (item.schedule ? [item.schedule] : []))
+    .filter((schedule) => schedule.dayOfWeek >= 0 && schedule.dayOfWeek <= 6 && schedule.startTime < schedule.endTime)
+    .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime) || a.id - b.id);
 }
 
-function durationLabel(schedule: BalletClassSchedule | null): string {
-  const mins = schedule?.durationMins;
-  return mins != null ? `${mins} min` : "";
+function scheduleSummary(item: BalletClass): string {
+  const schedules = activeSchedules(item);
+  if (schedules.length === 0) return "Schedule TBC";
+  return schedules
+    .map((schedule) => `${DAY_NAMES[schedule.dayOfWeek] ?? "Weekly"} · ${formatTime(schedule.startTime)} - ${formatTime(schedule.endTime)}`)
+    .join("\n");
+}
+
+function durationLabel(item: BalletClass): string {
+  const schedules = activeSchedules(item);
+  if (schedules.length === 0) return "";
+  const uniqueDurations = [...new Set(schedules.map((schedule) => schedule.durationMins).filter((mins): mins is number => mins != null))];
+  if (uniqueDurations.length === 1) return `${uniqueDurations[0]} min`;
+  return schedules.length === 1 ? "" : `${schedules.length} weekly sessions`;
 }
 
 function levelLabelForClass(item: BalletClass, levelNameById: Map<number, string>): string {
@@ -69,7 +81,8 @@ function levelLabelForClass(item: BalletClass, levelNameById: Map<number, string
 }
 
 function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): DanceClass {
-  const firstSchedule = item.schedule;
+  const schedules = activeSchedules(item);
+  const firstSchedule = schedules[0];
   return {
     id: `ballet-${item.id}`,
     scheduleId: firstSchedule ? `ballet-schedule-${firstSchedule.id}` : undefined,
@@ -87,8 +100,8 @@ function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): Da
     dayOfWeek: firstSchedule ? DAY_NAMES[firstSchedule.dayOfWeek] ?? "" : "",
     startTime: firstSchedule ? formatTime(firstSchedule.startTime) : "",
     endTime: firstSchedule ? formatTime(firstSchedule.endTime) : "",
-    scheduleLabel: scheduleSummary(item.schedule),
-    duration: durationLabel(item.schedule),
+    scheduleLabel: scheduleSummary(item),
+    duration: durationLabel(item),
     location: "",
     room: "",
     price: 0,
@@ -309,7 +322,7 @@ export default function BalletClassesScreen() {
                   displayOnly
                   imageUrl={mappedClass.photoUrl}
                   levelLabel={levelLabelForClass(item, levelNameById)}
-                  scheduleLabelOverride={scheduleSummary(item.schedule)}
+                  scheduleLabelOverride={scheduleSummary(item)}
                 />
               );
             })

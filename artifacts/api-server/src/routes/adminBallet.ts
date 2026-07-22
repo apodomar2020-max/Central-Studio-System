@@ -1596,7 +1596,7 @@ router.post("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission
 
   // The schedule must belong to the assignment's current group AND level,
   // resolve through an assignment-ready canonical Class (active, non-legacy,
-  // active Instructor, exactly one well-formed active Schedule — see
+  // active relationships, at least one well-formed active Schedule — see
   // balletClassEntitlement.ts), and the submitted schedule row itself must
   // independently satisfy scheduleShapeCondition. We derive the class from
   // the schedule itself (never trust a client-supplied classId). Legacy

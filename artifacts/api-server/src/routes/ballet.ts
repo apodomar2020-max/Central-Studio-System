@@ -711,7 +711,8 @@ router.get("/ballet/performances", async (_req, res): Promise<void> => {
 //
 // Public read-only class catalogue. Active canonical (non-legacy) classes
 // only, each enriched with:
-//   - schedule: its one active weekly ballet_schedules row, or null
+//   - schedules: all active weekly ballet_schedules rows, ordered deterministically
+//   - schedule: deprecated compatibility alias for the first active row, or null
 //   - groupId / levelId: direct required relationships on ballet_classes
 //   - instructor: { id, name, photoUrl } resolved via instructorId, or null
 //
@@ -754,26 +755,32 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
           })
           .from(balletSchedulesTable)
           .where(and(inArray(balletSchedulesTable.classId, classIds), eq(balletSchedulesTable.status, "active")))
-          .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime))
+          .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime), asc(balletSchedulesTable.id))
       : [];
 
-    const scheduleByClass = new Map<number, { id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null }>();
+    type PublicSchedule = { id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null };
+    const schedulesByClass = new Map<number, PublicSchedule[]>();
     for (const s of scheduleRows) {
-      if (!scheduleByClass.has(s.classId)) {
-        scheduleByClass.set(s.classId, { id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null });
-      }
+      const schedules = schedulesByClass.get(s.classId) ?? [];
+      schedules.push({ id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null });
+      schedulesByClass.set(s.classId, schedules);
     }
 
-    const classes = classRows.map((c) => ({
-      id:            c.id,
-      title:         c.title,
-      classImageUrl: c.classImageUrl,
-      classVideoUrl: c.classVideoUrl,
-      instructor:    c.instructorId != null ? { id: c.instructorId, name: c.instructorName, photoUrl: normalizeInstructorPhotoUrlForResponse(c.instructorPhotoUrl) } : null,
-      groupId:       c.groupId,
-      levelId:       c.levelId,
-      schedule:      scheduleByClass.get(c.id) ?? null,
-    }));
+    const classes = classRows.map((c) => {
+      const schedules = schedulesByClass.get(c.id) ?? [];
+      return {
+        id:            c.id,
+        title:         c.title,
+        classImageUrl: c.classImageUrl,
+        classVideoUrl: c.classVideoUrl,
+        instructor:    c.instructorId != null ? { id: c.instructorId, name: c.instructorName, photoUrl: normalizeInstructorPhotoUrlForResponse(c.instructorPhotoUrl) } : null,
+        groupId:       c.groupId,
+        levelId:       c.levelId,
+        schedules,
+        /** @deprecated Use schedules[] instead. */
+        schedule:      schedules[0] ?? null,
+      };
+    });
 
     res.json({ classes });
   } catch (err) {

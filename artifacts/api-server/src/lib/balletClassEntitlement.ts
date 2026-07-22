@@ -9,8 +9,7 @@
  * filters on top of it.
  *
  * Because migration 0075 intentionally defers the final DB-level
- * constraints (day/time/duration CHECKs on ballet_schedules, one-schedule-
- * per-class uniqueness — see its header comment for the full Expand
+ * constraints (day/time/duration CHECKs on ballet_schedules — see its header comment for the full Expand
  * rationale), there is currently nothing stopping a Schedule row from being
  * malformed except application-layer write-time validation. These runtime
  * predicates are therefore the ONLY thing standing between a malformed or
@@ -32,11 +31,11 @@ const TIME_FORMAT_PATTERN = "^([01][0-9]|2[0-3]):[0-5][0-9]$";
  * status, a valid day, correctly formatted start/end times with
  * start < end, and a duration_mins that is not null, positive, and
  * arithmetically consistent with start/end — exactly what
- * deriveBalletClassDuration (adminBalletClasses.ts) computes at write time.
+ * deriveBalletScheduleDuration (adminBalletSchedules.ts) computes at write time.
  *
  * Use this when the query needs to validate one SPECIFIC, already-selected
  * Schedule row (e.g. Attendance's client-submitted balletScheduleId) — not
- * for counting/existence, which is what hasExactlyOneValidActiveSchedule is
+ * for counting/existence, which is what hasAtLeastOneValidActiveSchedule is
  * for.
  */
 export function scheduleShapeCondition(): SQL {
@@ -57,23 +56,22 @@ export function scheduleShapeCondition(): SQL {
 
 /**
  * True when the correlated ballet_classes row (balletClassesTable, already
- * in scope from the outer query) owns EXACTLY ONE Schedule satisfying every
+ * in scope from the outer query) owns at least one Schedule satisfying every
  * condition in scheduleShapeCondition above.
  *
  * Deliberately a correlated COUNT subquery, not a join: a join against
  * ballet_schedules would either drop the Class entirely (0 matches) or
- * multiply it into several output rows (2+ matches) — both wrong for a
- * boolean/count readiness signal, and the second case would silently
+ * multiply it into several output rows (2+ matches), which would silently
  * inflate a Group's assignmentReadyClassCount. Counting sibling rows and
- * requiring count = 1 is the only way to reject "zero" and "more than one"
- * alike.
+ * requiring count >= 1 preserves one Class as one readiness signal while
+ * allowing multiple weekly sessions.
  *
  * The condition list is intentionally duplicated as raw SQL text here
  * (a correlated subquery alias can't reference a drizzle Column bound to
  * the outer, unaliased balletSchedulesTable) — kept in lockstep with
  * scheduleShapeCondition by balletClassEntitlement.test.ts.
  */
-export function hasExactlyOneValidActiveSchedule(): SQL {
+export function hasAtLeastOneValidActiveSchedule(): SQL {
   return sql`(
     select count(*) from ballet_schedules s
     where s.class_id = ${balletClassesTable.id}
@@ -88,7 +86,7 @@ export function hasExactlyOneValidActiveSchedule(): SQL {
         (substring(s.end_time from 1 for 2)::int * 60 + substring(s.end_time from 4 for 2)::int)
         - (substring(s.start_time from 1 for 2)::int * 60 + substring(s.start_time from 4 for 2)::int)
       )
-  ) = 1`;
+  ) >= 1`;
 }
 
 /** True when the correlated ballet_classes row has an active Instructor. */
@@ -96,9 +94,22 @@ export function hasActiveInstructor(): SQL {
   return sql`exists (select 1 from ballet_instructors i where i.id = ${balletClassesTable.instructorId} and i.is_active = true)`;
 }
 
+/** True when the Class owns an active Level and active Group, and the Group belongs to the Level. */
+export function hasActiveLevelAndGroup(): SQL {
+  return sql`exists (
+    select 1
+    from ballet_groups g
+    inner join ballet_levels l on l.id = ${balletClassesTable.levelId}
+    where g.id = ${balletClassesTable.groupId}
+      and g.level_id = ${balletClassesTable.levelId}
+      and g.is_active = true
+      and l.is_active = true
+  )`;
+}
+
 /**
  * The full "assignment-ready canonical Class" predicate: active, non-legacy,
- * an active Instructor, and exactly one well-formed active Schedule.
+ * active canonical relationships, and at least one well-formed active Schedule.
  * Compose with groupId/levelId (and, for Attendance, a specific scheduleId
  * plus scheduleShapeCondition) at each call site — this only proves the
  * Class itself qualifies.
@@ -107,7 +118,8 @@ export function isAssignmentReadyClass(): SQL {
   return sql`(
     ${balletClassesTable.isActive} = true
     and ${balletClassesTable.isLegacy} = false
+    and ${hasActiveLevelAndGroup()}
     and ${hasActiveInstructor()}
-    and ${hasExactlyOneValidActiveSchedule()}
+    and ${hasAtLeastOneValidActiveSchedule()}
   )`;
 }

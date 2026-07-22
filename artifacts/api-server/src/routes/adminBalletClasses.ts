@@ -1,8 +1,8 @@
 /**
  * Canonical Admin Ballet Class routes.
  *
- * One class owns one active level, one active group, one active instructor,
- * and exactly one weekly schedule. Class and schedule writes are atomic.
+ * A Ballet Class owns catalogue metadata and canonical relationships only.
+ * Weekly timing rows are managed independently by adminBalletSchedules.ts.
  */
 import { Router, type IRouter } from "express";
 import { asc, count, eq, inArray, sql } from "drizzle-orm";
@@ -14,7 +14,6 @@ import {
   balletInstructorsTable,
   balletGroupsTable,
   balletLevelsTable,
-  BALLET_SCHEDULE_STATUSES,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
@@ -22,48 +21,48 @@ import { diffFields, logActivity } from "../lib/activityLog";
 import type { DbClient } from "../lib/dbTypes";
 
 const router: IRouter = Router();
-const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const ACTIVITY_FIELDS = ["title", "levelId", "groupId", "instructorId", "classImageUrl", "classVideoUrl", "isActive"] as const;
-const SCHEDULE_ACTIVITY_FIELDS = ["dayOfWeek", "startTime", "endTime", "status", "durationMins"] as const;
 
 const ListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-const ClassScheduleFields = z.object({
+const BalletClassFields = z.object({
   title: z.string().trim().min(1, "Title is required"),
   levelId: z.number({ required_error: "levelId is required" }).int().positive(),
   groupId: z.number({ required_error: "groupId is required" }).int().positive(),
   instructorId: z.number({ required_error: "instructorId is required" }).int().positive(),
-  dayOfWeek: z.number({ required_error: "dayOfWeek is required" }).int().min(0).max(6),
-  startTime: z.string().regex(TIME_PATTERN, "startTime must use HH:MM"),
-  endTime: z.string().regex(TIME_PATTERN, "endTime must use HH:MM"),
   isActive: z.boolean().default(true),
-  scheduleStatus: z.enum(BALLET_SCHEDULE_STATUSES).default("active"),
   classImageUrl: z.string().url().nullable().optional(),
   classVideoUrl: z.string().url().nullable().optional(),
 }).strict();
 
-function validateOperationalState(data: { isActive?: boolean; scheduleStatus?: string }, ctx: z.RefinementCtx): void {
-  if (data.isActive != null && data.scheduleStatus != null
-    && data.isActive !== (data.scheduleStatus === "active")) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Class and schedule operational states must match" });
-  }
-}
+export const BalletClassBody = BalletClassFields;
+export const UpdateBalletClassBody = BalletClassFields.partial();
 
-export const ClassScheduleBody = ClassScheduleFields.superRefine(validateOperationalState);
-export const UpdateClassScheduleBody = ClassScheduleFields.partial().superRefine(validateOperationalState);
+type BalletScheduleRow = typeof balletSchedulesTable.$inferSelect;
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function minuteOfDay(value: string): number {
   const [hours, minutes] = value.split(":").map(Number);
   return hours * 60 + minutes;
 }
 
-export function deriveBalletClassDuration(startTime: string, endTime: string): number {
-  const duration = minuteOfDay(endTime) - minuteOfDay(startTime);
-  if (duration <= 0) throw new Error("END_TIME_MUST_FOLLOW_START_TIME");
-  return duration;
+function isValidActiveSchedule(schedule: BalletScheduleRow): boolean {
+  return schedule.status === "active"
+    && schedule.dayOfWeek >= 0
+    && schedule.dayOfWeek <= 6
+    && TIME_PATTERN.test(schedule.startTime)
+    && TIME_PATTERN.test(schedule.endTime)
+    && minuteOfDay(schedule.startTime) < minuteOfDay(schedule.endTime)
+    && schedule.durationMins != null
+    && schedule.durationMins > 0;
+}
+
+function primarySchedule(schedules: BalletScheduleRow[]): BalletScheduleRow | null {
+  return schedules.find(isValidActiveSchedule) ?? null;
 }
 
 async function validateCanonicalRelations(client: DbClient, levelId: number, groupId: number, instructorId: number, requireActive = true): Promise<string | null> {
@@ -82,11 +81,25 @@ async function validateCanonicalRelations(client: DbClient, levelId: number, gro
   return null;
 }
 
-async function attachSchedules<T extends { id: number }>(rows: T[]): Promise<Array<T & { schedule: typeof balletSchedulesTable.$inferSelect | null }>> {
+async function attachSchedules<T extends { id: number }>(
+  rows: T[],
+): Promise<Array<T & { schedules: BalletScheduleRow[]; /** @deprecated Use schedules[] instead. */ schedule: BalletScheduleRow | null }>> {
   if (rows.length === 0) return [];
-  const schedules = await db.select().from(balletSchedulesTable).where(inArray(balletSchedulesTable.classId, rows.map((row) => row.id)));
-  const scheduleByClass = new Map(schedules.map((schedule) => [schedule.classId, schedule]));
-  return rows.map((row) => ({ ...row, schedule: scheduleByClass.get(row.id) ?? null }));
+  const schedules = await db
+    .select()
+    .from(balletSchedulesTable)
+    .where(inArray(balletSchedulesTable.classId, rows.map((row) => row.id)))
+    .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime), asc(balletSchedulesTable.id));
+  const schedulesByClass = new Map<number, BalletScheduleRow[]>();
+  for (const schedule of schedules) {
+    const existing = schedulesByClass.get(schedule.classId) ?? [];
+    existing.push(schedule);
+    schedulesByClass.set(schedule.classId, existing);
+  }
+  return rows.map((row) => {
+    const classSchedules = schedulesByClass.get(row.id) ?? [];
+    return { ...row, schedules: classSchedules, schedule: primarySchedule(classSchedules) };
+  });
 }
 
 router.get("/admin/ballet/classes", requireAdminAuth, requireAdminPermission("ballet.classes", "view"), async (req, res): Promise<void> => {
@@ -103,17 +116,14 @@ router.get("/admin/ballet/classes", requireAdminAuth, requireAdminPermission("ba
 });
 
 router.post("/admin/ballet/classes", requireAdminAuth, requireAdminPermission("ballet.classes", "create"), async (req: AdminRequest, res): Promise<void> => {
-  const parsed = ClassScheduleBody.safeParse(req.body);
+  const parsed = BalletClassBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" }); return; }
-  let durationMins: number;
-  try { durationMins = deriveBalletClassDuration(parsed.data.startTime, parsed.data.endTime); }
-  catch { res.status(422).json({ error: "End time must be later than start time" }); return; }
 
   try {
-    const result = await db.transaction(async (tx) => {
+    const balletClass = await db.transaction(async (tx) => {
       const relationError = await validateCanonicalRelations(tx, parsed.data.levelId, parsed.data.groupId, parsed.data.instructorId);
       if (relationError) throw new Error(`VALIDATION:${relationError}`);
-      const [balletClass] = await tx.insert(balletClassesTable).values({
+      const [created] = await tx.insert(balletClassesTable).values({
         title: parsed.data.title,
         isLegacy: false,
         levelId: parsed.data.levelId,
@@ -123,36 +133,28 @@ router.post("/admin/ballet/classes", requireAdminAuth, requireAdminPermission("b
         classVideoUrl: parsed.data.classVideoUrl ?? null,
         isActive: parsed.data.isActive,
       }).returning();
-      const [schedule] = await tx.insert(balletSchedulesTable).values({
-        classId: balletClass.id,
-        dayOfWeek: parsed.data.dayOfWeek,
-        startTime: parsed.data.startTime,
-        endTime: parsed.data.endTime,
-        durationMins,
-        status: parsed.data.scheduleStatus,
-      }).returning();
-      return { balletClass, schedule };
+      return created;
     });
 
     await logActivity(req, {
-      action: "create", module: "ballet.classes", entityType: "ballet_class", entityId: result.balletClass.id,
-      entityLabel: result.balletClass.title,
-      after: { ...Object.fromEntries(ACTIVITY_FIELDS.map((key) => [key, result.balletClass[key]])), schedule: Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, result.schedule[key]])) },
-      summary: `Created ballet class ${result.balletClass.title} with its weekly schedule`,
+      action: "create", module: "ballet.classes", entityType: "ballet_class", entityId: balletClass.id,
+      entityLabel: balletClass.title,
+      after: Object.fromEntries(ACTIVITY_FIELDS.map((key) => [key, balletClass[key]])),
+      summary: `Created ballet class ${balletClass.title}`,
     });
-    res.status(201).json({ class: { ...result.balletClass, schedule: result.schedule } });
+    res.status(201).json({ class: { ...balletClass, schedules: [], schedule: null } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message.startsWith("VALIDATION:")) { res.status(422).json({ error: message.slice(11) }); return; }
     logger.error({ err }, "POST /admin/ballet/classes failed");
-    res.status(500).json({ error: "Failed to create class and schedule" });
+    res.status(500).json({ error: "Failed to create class" });
   }
 });
 
 router.patch("/admin/ballet/classes/:id", requireAdminAuth, requireAdminPermission("ballet.classes", "edit"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid class ID" }); return; }
-  const parsed = UpdateClassScheduleBody.safeParse(req.body);
+  const parsed = UpdateBalletClassBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" }); return; }
   if (Object.keys(parsed.data).length === 0) { res.json({ success: true, message: "No changes" }); return; }
 
@@ -164,19 +166,7 @@ router.patch("/admin/ballet/classes/:id", requireAdminAuth, requireAdminPermissi
       if (existingClass.isLegacy) {
         throw new Error("LEGACY:This Class uses the retired Ballet Class model. Create a new Class to resume the program.");
       }
-      if (existingClass.levelId == null || existingClass.groupId == null || existingClass.instructorId == null) {
-        throw new Error("INVALID_STATE:Canonical class is missing a required relationship");
-      }
-      const [existingSchedule] = await tx.select().from(balletSchedulesTable).where(eq(balletSchedulesTable.classId, id)).limit(1);
-      if (!existingSchedule) throw new Error("INVALID_STATE:Class has no schedule");
 
-      const nextIsActive = parsed.data.isActive
-        ?? (parsed.data.scheduleStatus != null ? parsed.data.scheduleStatus === "active" : existingClass.isActive);
-      const nextScheduleStatus = parsed.data.scheduleStatus
-        ?? (parsed.data.isActive != null ? parsed.data.isActive ? "active" : "deactivated" : existingSchedule.status);
-      if (nextIsActive !== (nextScheduleStatus === "active")) {
-        throw new Error("VALIDATION:Class and schedule operational states must match");
-      }
       const merged = {
         title: parsed.data.title ?? existingClass.title,
         levelId: parsed.data.levelId ?? existingClass.levelId,
@@ -184,12 +174,11 @@ router.patch("/admin/ballet/classes/:id", requireAdminAuth, requireAdminPermissi
         instructorId: parsed.data.instructorId ?? existingClass.instructorId,
         classImageUrl: parsed.data.classImageUrl === undefined ? existingClass.classImageUrl : parsed.data.classImageUrl,
         classVideoUrl: parsed.data.classVideoUrl === undefined ? existingClass.classVideoUrl : parsed.data.classVideoUrl,
-        isActive: nextIsActive,
-        dayOfWeek: parsed.data.dayOfWeek ?? existingSchedule.dayOfWeek,
-        startTime: parsed.data.startTime ?? existingSchedule.startTime,
-        endTime: parsed.data.endTime ?? existingSchedule.endTime,
-        scheduleStatus: nextScheduleStatus,
+        isActive: parsed.data.isActive ?? existingClass.isActive,
       };
+      if (merged.levelId == null || merged.groupId == null || merged.instructorId == null) {
+        throw new Error("INVALID_STATE:Canonical class is missing a required relationship");
+      }
       const relationshipChanged = merged.levelId !== existingClass.levelId
         || merged.groupId !== existingClass.groupId
         || merged.instructorId !== existingClass.instructorId;
@@ -201,39 +190,39 @@ router.patch("/admin/ballet/classes/:id", requireAdminAuth, requireAdminPermissi
         relationshipChanged || merged.isActive,
       );
       if (relationError) throw new Error(`VALIDATION:${relationError}`);
-      const durationMins = deriveBalletClassDuration(merged.startTime, merged.endTime);
       const now = new Date().toISOString();
       const [balletClass] = await tx.update(balletClassesTable).set({
-        title: merged.title, levelId: merged.levelId, groupId: merged.groupId, instructorId: merged.instructorId,
-        classImageUrl: merged.classImageUrl, classVideoUrl: merged.classVideoUrl, isActive: merged.isActive, updatedAt: now,
+        title: merged.title,
+        levelId: merged.levelId,
+        groupId: merged.groupId,
+        instructorId: merged.instructorId,
+        classImageUrl: merged.classImageUrl,
+        classVideoUrl: merged.classVideoUrl,
+        isActive: merged.isActive,
+        updatedAt: now,
       }).where(eq(balletClassesTable.id, id)).returning();
-      const [schedule] = await tx.update(balletSchedulesTable).set({
-        dayOfWeek: merged.dayOfWeek, startTime: merged.startTime, endTime: merged.endTime,
-        durationMins, status: merged.scheduleStatus, updatedAt: now,
-      }).where(eq(balletSchedulesTable.classId, id)).returning();
-      return { existingClass, existingSchedule, balletClass, schedule };
+      return { existingClass, balletClass };
     });
 
     const classDiff = diffFields(result.existingClass, result.balletClass, ACTIVITY_FIELDS);
-    const scheduleDiff = diffFields(result.existingSchedule, result.schedule, SCHEDULE_ACTIVITY_FIELDS);
-    if (Object.keys(classDiff.after).length || Object.keys(scheduleDiff.after).length) {
+    if (Object.keys(classDiff.after).length) {
       await logActivity(req, {
         action: result.existingClass.isActive !== result.balletClass.isActive ? result.balletClass.isActive ? "activate" : "deactivate" : "update",
         module: "ballet.classes", entityType: "ballet_class", entityId: id, entityLabel: result.balletClass.title,
-        before: { ...classDiff.before, schedule: scheduleDiff.before }, after: { ...classDiff.after, schedule: scheduleDiff.after },
-        summary: `Updated ballet class ${result.balletClass.title} and its weekly schedule`,
+        before: classDiff.before, after: classDiff.after,
+        summary: `Updated ballet class ${result.balletClass.title}`,
       });
     }
-    res.json({ class: { ...result.balletClass, schedule: result.schedule } });
+    const [withSchedules] = await attachSchedules([result.balletClass]);
+    res.json({ class: withSchedules });
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message.startsWith("NOT_FOUND:")) { res.status(404).json({ error: message.slice(10) + " not found" }); return; }
     if (message.startsWith("LEGACY:")) { res.status(422).json({ error: message.slice(7) }); return; }
     if (message.startsWith("VALIDATION:")) { res.status(422).json({ error: message.slice(11) }); return; }
-    if (message === "END_TIME_MUST_FOLLOW_START_TIME") { res.status(422).json({ error: "End time must be later than start time" }); return; }
     if (message.startsWith("INVALID_STATE:")) { res.status(409).json({ error: message.slice(14) }); return; }
     logger.error({ err, classId: id }, "PATCH /admin/ballet/classes/:id failed");
-    res.status(500).json({ error: "Failed to update class and schedule" });
+    res.status(500).json({ error: "Failed to update class" });
   }
 });
 
