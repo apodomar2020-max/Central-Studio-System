@@ -1,14 +1,11 @@
 /**
- * app/ballet/classes.tsx — Ballet Classes
+ * app/ballet/classes.tsx — My Ballet Classes
  *
  * Source of truth:
- *   GET /api/ballet/classes → active ballet_classes with instructor, levels,
- *   groups, and active weekly schedules.
- *   GET /api/ballet/levels → active ballet_levels used for dynamic level tabs.
+ *   GET /api/ballet/classes/my → authenticated account children, lifecycle
+ *   state, and operational Classes/Schedules for each entitled child.
  *
- * This screen is display-only. Ballet classes belong to the fixed Ballet
- * program, so generic search, age filters, capacity, booking, and package
- * actions are intentionally omitted.
+ * The public programme catalogue is intentionally not used here.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -29,14 +26,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import ClassCard from "@/components/ClassCard";
+import { useAppContext } from "@/contexts/AppContext";
 import {
-  fetchBalletClasses,
-  fetchBalletLevels,
-  countActiveBalletWeeklySchedules,
-  selectOperationalBalletClasses,
+  fetchMyBalletClasses,
+  resolveBalletChildSelection,
+  selectedBalletChild,
   type BalletClass,
-  type BalletClassSchedule,
-  type BalletLevel,
+  type BalletMyClassesChild,
+  type BalletMyClassesEntitlementState,
 } from "@/services/balletAssessmentService";
 import type { DanceClass, Instructor } from "@/data/mockData";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
@@ -73,11 +70,13 @@ function durationLabel(item: BalletClass): string {
   return schedules.length === 1 ? "" : `${schedules.length} weekly sessions`;
 }
 
-function levelLabelForClass(item: BalletClass, levelNameById: Map<number, string>): string {
-  return levelNameById.get(item.levelId) ?? "Ballet";
+function levelLabelForClass(item: BalletClass, child: BalletMyClassesChild): string {
+  const levelName = item.level?.name ?? child.level?.name ?? "Ballet";
+  const groupName = item.group?.name ?? child.group?.name;
+  return groupName ? `${levelName} · ${groupName}` : levelName;
 }
 
-function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): DanceClass {
+function toDanceClass(item: BalletClass, child: BalletMyClassesChild): DanceClass {
   const firstScheduleForCard = item.schedules[0];
   return {
     id: `ballet-${item.id}`,
@@ -86,7 +85,7 @@ function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): Da
     scheduleStatus: firstScheduleForCard ? "active" : undefined,
     packageEligible: false,
     categoryId: "ballet",
-    categoryName: levelLabelForClass(item, levelNameById),
+    categoryName: levelLabelForClass(item, child),
     instructorId: item.instructor ? `ballet-instructor-${item.instructor.id}` : "",
     title: item.title,
     description: "",
@@ -111,6 +110,40 @@ function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): Da
     featured: false,
     isBallet: true,
   };
+}
+
+type EmptyStateCopy = { title: string; body: string; actionLabel?: string; action: "login" | "apply" | "status" | null };
+
+function lifecycleCopy(state: BalletMyClassesEntitlementState): EmptyStateCopy {
+  switch (state) {
+    case "no_application":
+      return {
+        title: "No Ballet Classes Yet",
+        body: "Your child's classes will appear here after submitting a Ballet application, completing the assessment, receiving a Level and Group assignment, completing payment, and becoming active.",
+        actionLabel: "Apply for Ballet",
+        action: "apply",
+      };
+    case "application_pending":
+      return { title: "Application Pending", body: "This application is being reviewed. Follow its progress in Application Status.", actionLabel: "Application Status", action: "status" };
+    case "assessment_pending":
+      return { title: "Assessment In Progress", body: "Classes will appear after the assessment and placement process is complete.", actionLabel: "Application Status", action: "status" };
+    case "assignment_pending":
+      return { title: "Placement In Progress", body: "A Level and Group must be assigned before this child's classes can appear.", actionLabel: "Application Status", action: "status" };
+    case "payment_pending":
+      return { title: "Payment Pending", body: "Classes will appear after the Ballet subscription payment is active.", actionLabel: "Application Status", action: "status" };
+    case "activation_pending":
+      return { title: "Activation Pending", body: "Placement and payment are ready. The enrollment must be activated before classes appear.", actionLabel: "Application Status", action: "status" };
+    case "schedule_pending":
+      return { title: "Schedule Not Assigned Yet", body: "This child is active, but their weekly Ballet schedule has not been configured yet. It will appear here automatically once assigned.", actionLabel: "Application Status", action: "status" };
+    case "rejected":
+      return { title: "Application Not Accepted", body: "This application is no longer active. You can review its status or apply again when appropriate.", actionLabel: "Application Status", action: "status" };
+    case "cancelled":
+      return { title: "Application Cancelled", body: "This child does not currently have an active Ballet entitlement.", actionLabel: "Apply for Ballet", action: "apply" };
+    case "withdrawn":
+      return { title: "Enrollment Ended", body: "This child's Ballet enrollment is no longer active.", actionLabel: "Apply for Ballet", action: "apply" };
+    case "active":
+      return { title: "Schedule Not Assigned Yet", body: "No active weekly Ballet schedule is currently available for this child.", action: null };
+  }
 }
 
 function toInstructor(item: BalletClass): Instructor | undefined {
@@ -139,30 +172,35 @@ function toInstructor(item: BalletClass): Instructor | undefined {
 export default function BalletClassesScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const { user, isLoading: authLoading } = useAppContext();
 
-  const [classes, setClasses] = useState<BalletClass[]>([]);
-  const [levels, setLevels] = useState<BalletLevel[]>([]);
-  const [selectedLevelId, setSelectedLevelId] = useState<number | "all">("all");
+  const [children, setChildren] = useState<BalletMyClassesChild[]>([]);
+  const [selectedChildKey, setSelectedChildKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal, refreshing = false) => {
+    if (authLoading) return;
     if (refreshing) setIsRefreshing(true);
     else setIsLoading(true);
     setErrorMessage(null);
+    if (!user) {
+      setChildren([]);
+      setSelectedChildKey(null);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
     try {
-      const [classesData, levelsData] = await Promise.all([
-        fetchBalletClasses(signal),
-        fetchBalletLevels(signal),
-      ]);
+      const response = await fetchMyBalletClasses(signal);
       if (signal?.aborted) return;
-      setClasses(classesData);
-      setLevels(levelsData);
+      setChildren(response.children);
+      setSelectedChildKey((current) => resolveBalletChildSelection(response.children, current));
     } catch (err) {
       if ((err as any)?.name === "AbortError") return;
-      setClasses([]);
-      setLevels([]);
+      setChildren([]);
+      setSelectedChildKey(null);
       setErrorMessage("Unable to load Ballet classes right now.");
     } finally {
       if (!signal?.aborted) {
@@ -170,7 +208,7 @@ export default function BalletClassesScreen() {
         setIsRefreshing(false);
       }
     }
-  }, []);
+  }, [authLoading, user]);
 
   useFocusEffect(useCallback(() => {
     const ctrl = new AbortController();
@@ -183,19 +221,26 @@ export default function BalletClassesScreen() {
     void load(ctrl.signal, true);
   }, [load]);
 
-  const levelNameById = useMemo(() => {
-    const m = new Map<number, string>();
-    levels.forEach((level) => m.set(level.id, level.name));
-    return m;
-  }, [levels]);
-
-  const visibleClasses = useMemo(() => {
-    return selectOperationalBalletClasses(classes, selectedLevelId === "all" ? {} : { levelId: selectedLevelId });
-  }, [classes, selectedLevelId]);
-  const visibleWeeklyScheduleCount = useMemo(
-    () => countActiveBalletWeeklySchedules(visibleClasses),
-    [visibleClasses],
+  const selectedChild = useMemo(
+    () => selectedBalletChild(children, selectedChildKey),
+    [children, selectedChildKey],
   );
+  const visibleClasses = selectedChild?.entitlementState === "active" ? selectedChild.classes : [];
+  const visibleWeeklyScheduleCount = selectedChild?.entitlementState === "active" ? selectedChild.weeklyScheduleCount : 0;
+
+  const runEmptyAction = useCallback((copy: EmptyStateCopy, child: BalletMyClassesChild | null) => {
+    if (copy.action === "login") router.push("/auth/login");
+    else if (copy.action === "apply") router.push("/ballet/assessment" as any);
+    else if (copy.action === "status" && child?.applicationId != null) {
+      router.push({ pathname: "/ballet/application-status" as any, params: { id: String(child.applicationId) } });
+    }
+  }, []);
+
+  const emptyCopy: EmptyStateCopy = !user
+    ? { title: "Sign In to View Classes", body: "My Ballet Classes is available to authenticated Central Studio accounts.", actionLabel: "Sign In", action: "login" }
+    : selectedChild
+      ? lifecycleCopy(selectedChild.entitlementState)
+      : lifecycleCopy("no_application");
 
   return (
     <View style={s.screen}>
@@ -255,9 +300,9 @@ export default function BalletClassesScreen() {
 
           <View style={[s.heroContent, { paddingTop: topPad + 54 }]}>
             <Text style={s.heroEyebrow}>Central Studio</Text>
-            <Text style={s.heroTitle}>{"BALLET\nCLASSES"}</Text>
+            <Text style={s.heroTitle}>{"MY BALLET\nCLASSES"}</Text>
             <Text style={s.heroDesc}>
-              Browse the weekly Ballet program classes assigned to each level.
+              Weekly classes and schedules for each child on your account.
             </Text>
           </View>
         </View>
@@ -265,39 +310,39 @@ export default function BalletClassesScreen() {
         <View style={s.heroDivider} />
 
         <View style={s.content}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.tabsContent}
-          >
-            <TouchableOpacity
-              onPress={() => setSelectedLevelId("all")}
-              style={[s.levelTab, selectedLevelId === "all" && s.levelTabActive]}
-              activeOpacity={0.85}
-            >
-              <Text style={[s.levelTabText, selectedLevelId === "all" && s.levelTabTextActive]}>All</Text>
-            </TouchableOpacity>
-            {levels.map((level) => (
-              <TouchableOpacity
-                key={level.id}
-                onPress={() => setSelectedLevelId(level.id)}
-                style={[s.levelTab, selectedLevelId === level.id && s.levelTabActive]}
-                activeOpacity={0.85}
+          {!isLoading && !errorMessage && children.length > 0 ? (
+            <>
+              <Text style={s.selectorLabel}>CHILD</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.tabsContent}
               >
-                <Text style={[s.levelTabText, selectedLevelId === level.id && s.levelTabTextActive]} numberOfLines={1}>
-                  {level.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+                {children.map((child) => (
+                  <TouchableOpacity
+                    key={child.selectorKey}
+                    onPress={() => setSelectedChildKey(child.selectorKey)}
+                    style={[s.levelTab, selectedChildKey === child.selectorKey && s.levelTabActive]}
+                    activeOpacity={0.85}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: selectedChildKey === child.selectorKey }}
+                  >
+                    <Text style={[s.levelTabText, selectedChildKey === child.selectorKey && s.levelTabTextActive]} numberOfLines={1}>
+                      {child.childName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
 
-          {!isLoading && !errorMessage ? (
+          {!isLoading && !errorMessage && selectedChild ? (
             <Text style={s.weeklySessionCount} testID="ballet-weekly-session-count">
               {visibleWeeklyScheduleCount} weekly session{visibleWeeklyScheduleCount === 1 ? "" : "s"}
             </Text>
           ) : null}
 
-          {isLoading ? (
+          {isLoading || authLoading ? (
             <View style={s.center}>
               <ActivityIndicator color={CYAN} />
             </View>
@@ -324,14 +369,17 @@ export default function BalletClassesScreen() {
               <View style={s.emptyIcon}>
                 <Ionicons name="calendar-outline" size={28} color={INK_400} />
               </View>
-              <Text style={s.emptyTitle}>No Ballet classes available.</Text>
-              <Text style={s.emptyDesc}>
-                Classes will appear here when they are added for the selected level.
-              </Text>
+              <Text style={s.emptyTitle}>{emptyCopy.title}</Text>
+              <Text style={s.emptyDesc}>{emptyCopy.body}</Text>
+              {emptyCopy.actionLabel ? (
+                <TouchableOpacity onPress={() => runEmptyAction(emptyCopy, selectedChild)} style={s.retryButton} activeOpacity={0.82}>
+                  <Text style={s.retryText}>{emptyCopy.actionLabel}</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : (
             visibleClasses.map((item) => {
-              const mappedClass = toDanceClass(item, levelNameById);
+              const mappedClass = toDanceClass(item, selectedChild!);
               return (
                 <ClassCard
                   key={item.id}
@@ -340,7 +388,7 @@ export default function BalletClassesScreen() {
                   variant="ballet"
                   displayOnly
                   imageUrl={mappedClass.photoUrl}
-                  levelLabel={levelLabelForClass(item, levelNameById)}
+                  levelLabel={levelLabelForClass(item, selectedChild!)}
                   scheduleLabelOverride={scheduleSummary(item)}
                 />
               );
@@ -357,6 +405,7 @@ export default function BalletClassesScreen() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BASE },
   weeklySessionCount: { color: INK_200, fontSize: 13, marginBottom: 14 },
+  selectorLabel: { color: INK_400, fontSize: 10, fontFamily: "SpaceMono_700Bold", marginBottom: 8 },
   atmosphericGlow: {
     position: "absolute",
     top: 0,

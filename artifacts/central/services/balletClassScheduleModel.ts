@@ -14,6 +14,8 @@ export interface BalletClass {
   classImageUrl: string | null;
   classVideoUrl: string | null;
   instructor: { id: number; name: string; photoUrl: string | null; isActive?: boolean };
+  level?: { id: number; name: string };
+  group?: { id: number; name: string; levelId?: number };
   groupId: number;
   levelId: number;
   schedules: BalletClassSchedule[];
@@ -129,6 +131,16 @@ function normalizeClass(value: unknown): BalletClass | null {
       photoUrl: typeof instructor?.photoUrl === "string" ? instructor.photoUrl : null,
       isActive: instructor?.isActive !== false,
     },
+    ...(level && positiveInteger(level.id) != null && typeof level.name === "string"
+      ? { level: { id: positiveInteger(level.id)!, name: level.name } }
+      : {}),
+    ...(group && positiveInteger(group.id) != null && typeof group.name === "string"
+      ? { group: {
+          id: positiveInteger(group.id)!,
+          name: group.name,
+          ...(positiveInteger(group.levelId) != null ? { levelId: positiveInteger(group.levelId)! } : {}),
+        } }
+      : {}),
     groupId,
     levelId,
     schedules,

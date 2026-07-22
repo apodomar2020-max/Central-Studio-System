@@ -32,6 +32,17 @@ export {
   type BalletClassSchedule,
 } from "./balletClassScheduleModel";
 import type { BalletClass } from "./balletClassScheduleModel";
+import {
+  normalizeMyBalletClassesResponse,
+  type BalletMyClassesResponse,
+} from "./balletMyClassesModel";
+export {
+  resolveBalletChildSelection,
+  selectedBalletChild,
+  type BalletMyClassesChild,
+  type BalletMyClassesEntitlementState,
+  type BalletMyClassesResponse,
+} from "./balletMyClassesModel";
 
 // ─── Static programme config ──────────────────────────────────────────────────
 
@@ -615,6 +626,13 @@ export async function fetchBalletClasses(signal?: AbortSignal): Promise<BalletCl
     { method: "GET", signal }
   );
   return normalizeBalletClasses(res.classes);
+}
+
+/** Authenticated, parent-scoped source for the mobile My Ballet Classes page. */
+export async function fetchMyBalletClasses(signal?: AbortSignal): Promise<BalletMyClassesResponse> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const response = await customFetch<unknown>(`${apiUrl}/api/ballet/classes/my`, { method: "GET", signal });
+  return normalizeMyBalletClassesResponse(response);
 }
 
 /** Shape of a single row from GET /api/ballet/levels. */

@@ -19,6 +19,7 @@
  *                                                   assignedGroupId, resolved from the
  *                                                   application's current active
  *                                                   ballet_level_assignments row)
+ *   GET  /api/ballet/classes/my                  — owned children and entitled weekly Classes
  *   PATCH  /api/ballet/applications/:id          — edit editable fields (status-gated)
  *   POST /api/ballet/applications/:id/cancel     — cancel an application (status-gated)
  *
@@ -76,6 +77,8 @@ import { normalizeInstructorPhotoUrlForResponse } from "../lib/instructorPhotoUr
 import { buildActiveBalletInstructorCountQuery } from "../lib/balletInstructorCountQuery";
 import { isAssignmentReadyClass, isOperationalBalletClass, isOperationalBalletSchedule, scheduleShapeCondition } from "../lib/balletClassEntitlement";
 import { buildActiveBalletWeeklyScheduleCountQuery } from "../lib/balletWeeklyScheduleCountQuery";
+import { currentSubscription, getPaymentCyclesForApplications } from "../lib/balletSubscriptions";
+import { buildMyBalletClassesResponse } from "../lib/balletMyClasses";
 
 const router: IRouter = Router();
 
@@ -782,6 +785,158 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
     res.status(500).json({ error: "Failed to load classes" });
   }
 });
+
+// ─── GET /api/ballet/classes/my ──────────────────────────────────────────────
+//
+// Minimal authenticated entitlement response for the mobile "My Ballet
+// Classes" screen. Account identity is always derived from the verified JWT;
+// no parent/child/application identifier from the request controls this query.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/ballet/classes/my",
+  requireStudentAuth,
+  requireVerifiedStudent,
+  async (req, res): Promise<void> => {
+    const parentStudentId = req.studentId!;
+
+    try {
+      const [children, applications] = await Promise.all([
+        db
+          .select({
+            id: childrenTable.id,
+            parentId: childrenTable.parentId,
+            fullName: childrenTable.fullName,
+          })
+          .from(childrenTable)
+          .where(eq(childrenTable.parentId, parentStudentId))
+          .orderBy(asc(childrenTable.fullName), asc(childrenTable.id)),
+        db
+          .select({
+            id: balletApplicationsTable.id,
+            parentStudentId: balletApplicationsTable.parentStudentId,
+            childId: balletApplicationsTable.childId,
+            childName: balletApplicationsTable.childName,
+            childBirthday: balletApplicationsTable.childBirthday,
+            status: balletApplicationsTable.status,
+            assignedLevelId: balletApplicationsTable.assignedLevelId,
+            createdAt: balletApplicationsTable.createdAt,
+            updatedAt: balletApplicationsTable.updatedAt,
+          })
+          .from(balletApplicationsTable)
+          .where(eq(balletApplicationsTable.parentStudentId, parentStudentId))
+          .orderBy(desc(balletApplicationsTable.updatedAt), desc(balletApplicationsTable.id)),
+      ]);
+
+      const applicationIds = applications.map((application) => application.id);
+      const assignments = applicationIds.length > 0
+        ? await db
+            .select({
+              id: balletLevelAssignmentsTable.id,
+              applicationId: balletLevelAssignmentsTable.applicationId,
+              childId: balletLevelAssignmentsTable.childId,
+              levelId: balletLevelAssignmentsTable.levelId,
+              groupId: balletLevelAssignmentsTable.groupId,
+              status: balletLevelAssignmentsTable.status,
+              levelName: balletLevelsTable.name,
+              levelIsActive: balletLevelsTable.isActive,
+              groupName: balletGroupsTable.name,
+              groupLevelId: balletGroupsTable.levelId,
+              groupIsActive: balletGroupsTable.isActive,
+            })
+            .from(balletLevelAssignmentsTable)
+            .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
+            .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
+            .where(and(
+              inArray(balletLevelAssignmentsTable.applicationId, applicationIds),
+              eq(balletLevelAssignmentsTable.status, "active"),
+            ))
+            .orderBy(desc(balletLevelAssignmentsTable.id))
+        : [];
+
+      const paymentCycles = await getPaymentCyclesForApplications(applicationIds);
+      const activeSubscriptionApplicationIds = new Set<number>();
+      for (const applicationId of applicationIds) {
+        if (currentSubscription(paymentCycles.get(applicationId) ?? [])?.hasActiveSubscription) {
+          activeSubscriptionApplicationIds.add(applicationId);
+        }
+      }
+
+      const assignedGroupIds = [...new Set(
+        assignments.map((assignment) => assignment.groupId).filter((id): id is number => id != null),
+      )];
+      const classes = assignedGroupIds.length > 0
+        ? await db
+            .select({
+              id: balletClassesTable.id,
+              title: balletClassesTable.title,
+              levelId: balletClassesTable.levelId,
+              groupId: balletClassesTable.groupId,
+              classImageUrl: balletClassesTable.classImageUrl,
+              classVideoUrl: balletClassesTable.classVideoUrl,
+              isActive: balletClassesTable.isActive,
+              isLegacy: balletClassesTable.isLegacy,
+              levelName: balletLevelsTable.name,
+              levelIsActive: balletLevelsTable.isActive,
+              groupName: balletGroupsTable.name,
+              groupLevelId: balletGroupsTable.levelId,
+              groupIsActive: balletGroupsTable.isActive,
+              instructorId: balletInstructorsTable.id,
+              instructorName: balletInstructorsTable.name,
+              instructorPhotoUrl: balletInstructorsTable.photoUrl,
+              instructorIsActive: balletInstructorsTable.isActive,
+            })
+            .from(balletClassesTable)
+            .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassesTable.levelId))
+            .innerJoin(balletGroupsTable, eq(balletGroupsTable.id, balletClassesTable.groupId))
+            .innerJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
+            .where(and(
+              inArray(balletClassesTable.groupId, assignedGroupIds),
+              isOperationalBalletClass(),
+            ))
+            .orderBy(asc(balletClassesTable.title), asc(balletClassesTable.id))
+        : [];
+
+      const classIds = classes.map((item) => item.id);
+      const schedules = classIds.length > 0
+        ? await db
+            .select({
+              id: balletSchedulesTable.id,
+              classId: balletSchedulesTable.classId,
+              dayOfWeek: balletSchedulesTable.dayOfWeek,
+              startTime: balletSchedulesTable.startTime,
+              endTime: balletSchedulesTable.endTime,
+              durationMins: balletSchedulesTable.durationMins,
+              status: balletSchedulesTable.status,
+            })
+            .from(balletSchedulesTable)
+            .where(and(inArray(balletSchedulesTable.classId, classIds), scheduleShapeCondition()))
+            .orderBy(
+              asc(balletSchedulesTable.dayOfWeek),
+              asc(balletSchedulesTable.startTime),
+              asc(balletSchedulesTable.endTime),
+              asc(balletSchedulesTable.id),
+            )
+        : [];
+
+      res.json(buildMyBalletClassesResponse({
+        parentStudentId,
+        children,
+        applications,
+        assignments,
+        activeSubscriptionApplicationIds,
+        classes: classes.map((item) => ({
+          ...item,
+          instructorPhotoUrl: normalizeInstructorPhotoUrlForResponse(item.instructorPhotoUrl),
+        })),
+        schedules,
+      }));
+    } catch (err) {
+      logger.error({ err, parentStudentId }, "GET /ballet/classes/my failed");
+      res.status(500).json({ error: "Failed to load your Ballet classes" });
+    }
+  },
+);
 
 // ─── GET /api/ballet/applications/my ─────────────────────────────────────────
 //
