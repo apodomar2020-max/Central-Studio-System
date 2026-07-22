@@ -41,8 +41,8 @@ test("legacy relationship arrays are rejected from class creation", async () => 
 test("duration is derived from the schedule time range", async () => {
   const { deriveBalletScheduleDuration } = await import("./adminBalletSchedules");
   assert.equal(deriveBalletScheduleDuration("16:00", "17:15"), 75);
-  assert.throws(() => deriveBalletScheduleDuration("17:00", "17:00"), /END_TIME/);
-  assert.throws(() => deriveBalletScheduleDuration("18:00", "17:00"), /END_TIME/);
+  assert.throws(() => deriveBalletScheduleDuration("17:00", "17:00"), /INVALID_BALLET_SCHEDULE_TIME_RANGE/);
+  assert.throws(() => deriveBalletScheduleDuration("18:00", "17:00"), /INVALID_BALLET_SCHEDULE_TIME_RANGE/);
 });
 
 test("class creation inserts no schedule and class edit never updates schedules", () => {
@@ -63,6 +63,15 @@ test("standalone schedule creation is enabled and exact duplicate slots return 4
   assert.match(source, /status\(409\)/);
   assert.doesNotMatch(source, /status\(405\)/);
   assert.doesNotMatch(source, /CREATE_CLASS_REQUIRED/);
+});
+
+test("schedule writes expose stable invalid-range and overlap conflict responses", () => {
+  const source = scheduleRouteSource();
+  assert.match(source, /INVALID_BALLET_SCHEDULE_TIME_RANGE/);
+  assert.match(source, /BALLET_SCHEDULE_TIME_CONFLICT/);
+  assert.match(source, /lt\(balletSchedulesTable\.startTime/);
+  assert.match(source, /gt\(balletSchedulesTable\.endTime/);
+  assert.match(source, /ne\(balletSchedulesTable\.status, "cancelled"\)/);
 });
 
 test("schedule status changes do not alter the owning class or sibling schedules", () => {

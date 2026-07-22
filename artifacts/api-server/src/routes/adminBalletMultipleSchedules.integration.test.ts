@@ -134,6 +134,23 @@ async function countMatchingSchedules(classId: number, dayOfWeek: number, startT
   return rows[0].n as number;
 }
 
+async function schedulesForClassDay(classId: number, dayOfWeek: number): Promise<Array<{
+  id: number;
+  start_time: string;
+  end_time: string;
+  duration_mins: number;
+  status: string;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT id, start_time, end_time, duration_mins, status
+     FROM ballet_schedules
+     WHERE class_id = $1 AND day_of_week = $2
+     ORDER BY start_time, end_time, id`,
+    [classId, dayOfWeek],
+  );
+  return rows;
+}
+
 async function postSchedule(body: { classId: number; dayOfWeek: number; startTime: string; endTime: string; status?: string }): Promise<Response> {
   return asAdmin("/api/admin/ballet/schedules", { method: "POST", body: JSON.stringify({ status: "active", ...body }) });
 }
@@ -383,4 +400,149 @@ test("two different Classes sharing an identical title may each be scheduled at 
   assert.equal(r2.status, 201);
   assert.equal(await countMatchingSchedules(shared.classId, 5, "13:00", "14:00"), 1);
   assert.equal(await countMatchingSchedules(other.classId, 5, "13:00", "14:00"), 1);
+});
+
+test("POST rejects equal start and end times with the stable invalid-range response", async () => {
+  const run = `post-equal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "post-equal");
+
+  const response = await postSchedule({ classId, dayOfWeek: 1, startTime: "16:00", endTime: "16:00" });
+  assert.equal(response.status, 422);
+  assert.deepEqual(await jsonBody(response), {
+    error: "End time must be later than start time.",
+    code: "INVALID_BALLET_SCHEDULE_TIME_RANGE",
+  });
+  assert.deepEqual(await schedulesForClassDay(classId, 1), []);
+});
+
+test("POST rejects an end time earlier than the start time", async () => {
+  const run = `post-reversed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "post-reversed");
+
+  const response = await postSchedule({ classId, dayOfWeek: 2, startTime: "16:00", endTime: "15:00" });
+  assert.equal(response.status, 422);
+  assert.equal((await jsonBody(response)).code, "INVALID_BALLET_SCHEDULE_TIME_RANGE");
+  assert.deepEqual(await schedulesForClassDay(classId, 2), []);
+});
+
+test("PATCH rejects equal and reversed ranges without changing the stored Schedule", async () => {
+  const run = `patch-range-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "patch-range");
+  const created = await postSchedule({ classId, dayOfWeek: 3, startTime: "16:00", endTime: "17:00" });
+  const id = ((await jsonBody(created)).schedule as { id: number }).id;
+
+  for (const body of [
+    { startTime: "16:00", endTime: "16:00" },
+    { startTime: "16:00", endTime: "15:00" },
+  ]) {
+    const response = await patchSchedule(id, body);
+    assert.equal(response.status, 422);
+    assert.equal((await jsonBody(response)).code, "INVALID_BALLET_SCHEDULE_TIME_RANGE");
+  }
+
+  assert.deepEqual(await schedulesForClassDay(classId, 3), [{
+    id,
+    start_time: "16:00",
+    end_time: "17:00",
+    duration_mins: 60,
+    status: "active",
+  }]);
+});
+
+test("POST stores a positive server-derived duration", async () => {
+  const run = `duration-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "duration");
+  const response = await postSchedule({ classId, dayOfWeek: 4, startTime: "16:10", endTime: "17:25" });
+  assert.equal(response.status, 201);
+
+  const [stored] = await schedulesForClassDay(classId, 4);
+  assert.equal(stored.duration_mins, 75);
+  assert.ok(stored.duration_mins > 0);
+});
+
+test("POST rejects every non-exact overlap shape for the same Class and day", async () => {
+  const cases = [
+    { label: "overlap-left", startTime: "15:30", endTime: "16:30" },
+    { label: "overlap-right", startTime: "16:30", endTime: "17:30" },
+    { label: "contains", startTime: "15:00", endTime: "18:00" },
+    { label: "contained", startTime: "16:15", endTime: "16:45" },
+  ];
+
+  for (const item of cases) {
+    const run = `${item.label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const { classId } = await insertCanonicalBalletClass(run, item.label);
+    assert.equal((await postSchedule({ classId, dayOfWeek: 0, startTime: "16:00", endTime: "17:00" })).status, 201);
+
+    const conflict = await postSchedule({ classId, dayOfWeek: 0, startTime: item.startTime, endTime: item.endTime });
+    assert.equal(conflict.status, 409, item.label);
+    assert.equal((await jsonBody(conflict)).code, "BALLET_SCHEDULE_TIME_CONFLICT", item.label);
+    assert.equal((await schedulesForClassDay(classId, 0)).length, 1, item.label);
+  }
+});
+
+test("adjacent earlier and later ranges are allowed", async () => {
+  const run = `adjacent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "adjacent");
+
+  const responses = await Promise.all([
+    postSchedule({ classId, dayOfWeek: 1, startTime: "16:00", endTime: "17:00" }),
+    postSchedule({ classId, dayOfWeek: 1, startTime: "15:00", endTime: "16:00" }),
+    postSchedule({ classId, dayOfWeek: 1, startTime: "17:00", endTime: "18:00" }),
+  ]);
+  assert.deepEqual(responses.map((response) => response.status), [201, 201, 201]);
+  assert.equal((await schedulesForClassDay(classId, 1)).length, 3);
+});
+
+test("the same range on another day for the same Class is allowed", async () => {
+  const run = `other-day-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "other-day");
+  const first = await postSchedule({ classId, dayOfWeek: 2, startTime: "16:00", endTime: "17:00" });
+  const second = await postSchedule({ classId, dayOfWeek: 3, startTime: "16:00", endTime: "17:00" });
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 201);
+});
+
+test("a cancelled slot permits replacement while a deactivated overlap blocks it", async () => {
+  const run = `status-overlap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "status-overlap");
+  await insertSchedule(classId, 4, "16:00", "17:00", "cancelled");
+
+  const replacement = await postSchedule({ classId, dayOfWeek: 4, startTime: "16:00", endTime: "17:00" });
+  assert.equal(replacement.status, 201);
+
+  await insertSchedule(classId, 5, "16:00", "17:00", "deactivated");
+  const blocked = await postSchedule({ classId, dayOfWeek: 5, startTime: "16:30", endTime: "17:30" });
+  assert.equal(blocked.status, 409);
+  assert.equal((await jsonBody(blocked)).code, "BALLET_SCHEDULE_TIME_CONFLICT");
+});
+
+test("PATCH into a sibling non-exact overlap is rejected and neither Schedule changes", async () => {
+  const run = `patch-overlap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "patch-overlap");
+  const first = await postSchedule({ classId, dayOfWeek: 5, startTime: "16:00", endTime: "17:00" });
+  const second = await postSchedule({ classId, dayOfWeek: 5, startTime: "18:00", endTime: "19:00" });
+  const firstId = ((await jsonBody(first)).schedule as { id: number }).id;
+  const secondId = ((await jsonBody(second)).schedule as { id: number }).id;
+
+  const conflict = await patchSchedule(secondId, { startTime: "16:30", endTime: "17:30" });
+  assert.equal(conflict.status, 409);
+  assert.equal((await jsonBody(conflict)).code, "BALLET_SCHEDULE_TIME_CONFLICT");
+  assert.deepEqual(await schedulesForClassDay(classId, 5), [
+    { id: firstId, start_time: "16:00", end_time: "17:00", duration_mins: 60, status: "active" },
+    { id: secondId, start_time: "18:00", end_time: "19:00", duration_mins: 60, status: "active" },
+  ]);
+});
+
+test("concurrent overlapping POST requests cannot both create conflicting rows", async () => {
+  const run = `concurrent-overlap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { classId } = await insertCanonicalBalletClass(run, "concurrent-overlap");
+  const responses = await Promise.all([
+    postSchedule({ classId, dayOfWeek: 6, startTime: "16:00", endTime: "17:00" }),
+    postSchedule({ classId, dayOfWeek: 6, startTime: "16:30", endTime: "17:30" }),
+  ]);
+  assert.deepEqual(responses.map((response) => response.status).sort((a, b) => a - b), [201, 409]);
+  const conflict = responses.find((response) => response.status === 409);
+  assert.ok(conflict);
+  assert.equal((await jsonBody(conflict)).code, "BALLET_SCHEDULE_TIME_CONFLICT");
+  assert.equal((await schedulesForClassDay(classId, 6)).length, 1);
 });

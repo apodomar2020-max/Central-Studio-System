@@ -8,7 +8,6 @@
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +26,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Trash2, Edit, Loader2 } from "lucide-react";
 import { adminFetch, scheduleErrorMessage } from "./balletScheduleApiClient";
+import {
+  BALLET_SCHEDULE_FORM_STATUSES,
+  balletScheduleFormSchema,
+  type BalletScheduleFormValues,
+} from "./balletScheduleFormSchema";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
@@ -35,7 +39,7 @@ const CATALOG_LIMIT = 100;
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const STATUSES = ["active", "deactivated", "cancelled"] as const;
+const STATUSES = BALLET_SCHEDULE_FORM_STATUSES;
 
 function statusBadgeClass(status: string) {
   switch (status) {
@@ -73,15 +77,7 @@ interface BalletGroup { id: number; name: string; levelId: number; isActive: boo
 interface BalletLevel { id: number; name: string; isActive: boolean; }
 interface ListResponse<T> { data: T[]; total: number; page: number; limit: number; totalPages: number; }
 
-const formSchema = z.object({
-  classId: z.number({ required_error: "Class is required" }).int().positive("Class is required"),
-  dayOfWeek: z.number({ required_error: "Day of week is required" }).int().min(0).max(6),
-  startTime: z.string().min(1, "Start time is required"),
-  endTime: z.string().min(1, "End time is required"),
-  status: z.enum(STATUSES).default("active"),
-});
-
-type FormValues = z.input<typeof formSchema>;
+type FormValues = BalletScheduleFormValues;
 
 const EMPTY_VALUES: FormValues = {
   classId: 0,
@@ -172,7 +168,7 @@ export default function BalletSchedulesPage() {
     onError: (e: unknown) => toast({ title: "Error", description: scheduleErrorMessage(e, "Failed to update schedule."), variant: "destructive" }),
   });
 
-  const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES, mode: "onChange", reValidateMode: "onChange" });
+  const form = useForm<FormValues>({ resolver: zodResolver(balletScheduleFormSchema), defaultValues: EMPTY_VALUES, mode: "onChange", reValidateMode: "onChange" });
 
   const isLegacySchedule = (s: BalletSchedule) => classById.get(s.classId)?.isLegacy ?? false;
 
@@ -208,7 +204,7 @@ export default function BalletSchedulesPage() {
   };
 
   const onSubmit = (values: FormValues) => {
-    const parsed = formSchema.parse(values);
+    const parsed = balletScheduleFormSchema.parse(values);
     if (editing) {
       updateMutation.mutate({
         id: editing.id,

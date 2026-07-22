@@ -18,7 +18,7 @@
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, count, eq, ne, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -45,7 +45,7 @@ export function deriveBalletScheduleDuration(startTime: string, endTime: string)
     return hours * 60 + minutes;
   };
   const duration = toMinutes(endTime) - toMinutes(startTime);
-  if (duration <= 0) throw new Error("END_TIME_MUST_FOLLOW_START_TIME");
+  if (duration <= 0) throw new Error("INVALID_BALLET_SCHEDULE_TIME_RANGE");
   return duration;
 }
 
@@ -84,6 +84,7 @@ async function findDuplicateScheduleId(
     eq(balletSchedulesTable.dayOfWeek, dayOfWeek),
     eq(balletSchedulesTable.startTime, startTime),
     eq(balletSchedulesTable.endTime, endTime),
+    ne(balletSchedulesTable.status, "cancelled"),
   ];
   if (excludeId != null) conditions.push(ne(balletSchedulesTable.id, excludeId));
   const [duplicate] = await client
@@ -92,6 +93,48 @@ async function findDuplicateScheduleId(
     .where(and(...conditions))
     .limit(1);
   return duplicate?.id ?? null;
+}
+
+async function findOverlappingScheduleId(
+  client: DbClient,
+  classId: number,
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
+  excludeId?: number,
+): Promise<number | null> {
+  const conditions = [
+    eq(balletSchedulesTable.classId, classId),
+    eq(balletSchedulesTable.dayOfWeek, dayOfWeek),
+    ne(balletSchedulesTable.status, "cancelled"),
+    lt(balletSchedulesTable.startTime, endTime),
+    gt(balletSchedulesTable.endTime, startTime),
+  ];
+  if (excludeId != null) conditions.push(ne(balletSchedulesTable.id, excludeId));
+  const [overlap] = await client
+    .select({ id: balletSchedulesTable.id })
+    .from(balletSchedulesTable)
+    .where(and(...conditions))
+    .limit(1);
+  return overlap?.id ?? null;
+}
+
+async function assertScheduleSlotAvailable(
+  client: DbClient,
+  classId: number,
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
+  status: string,
+  excludeId?: number,
+): Promise<void> {
+  if (status === "cancelled") return;
+
+  const duplicateId = await findDuplicateScheduleId(client, classId, dayOfWeek, startTime, endTime, excludeId);
+  if (duplicateId) throw new Error("DUPLICATE_BALLET_SCHEDULE_SLOT");
+
+  const overlapId = await findOverlappingScheduleId(client, classId, dayOfWeek, startTime, endTime, excludeId);
+  if (overlapId) throw new Error("BALLET_SCHEDULE_TIME_CONFLICT");
 }
 
 async function validateScheduleClass(client: DbClient, classId: number): Promise<string | null> {
@@ -182,18 +225,21 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
     return;
   }
 
-  let durationMins: number;
-  try { durationMins = deriveBalletScheduleDuration(parsed.data.startTime, parsed.data.endTime); }
-  catch { res.status(422).json({ error: "End time must be later than start time", code: "INVALID_TIME_RANGE" }); return; }
-
   try {
     const schedule = await db.transaction(async (tx) => {
       await tx.execute(sql`select id from ballet_classes where id = ${parsed.data.classId} for update`);
       const classError = await validateScheduleClass(tx, parsed.data.classId);
       if (classError) throw new Error(classError);
 
-      const duplicateId = await findDuplicateScheduleId(tx, parsed.data.classId, parsed.data.dayOfWeek, parsed.data.startTime, parsed.data.endTime);
-      if (duplicateId) throw new Error("DUPLICATE_BALLET_SCHEDULE_SLOT");
+      const durationMins = deriveBalletScheduleDuration(parsed.data.startTime, parsed.data.endTime);
+      await assertScheduleSlotAvailable(
+        tx,
+        parsed.data.classId,
+        parsed.data.dayOfWeek,
+        parsed.data.startTime,
+        parsed.data.endTime,
+        parsed.data.status,
+      );
 
       const [created] = await tx.insert(balletSchedulesTable).values({
         classId: parsed.data.classId,
@@ -218,6 +264,10 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
     res.status(201).json({ schedule });
   } catch (err) {
     if (err instanceof Error) {
+      if (err.message === "INVALID_BALLET_SCHEDULE_TIME_RANGE") {
+        res.status(422).json({ error: "End time must be later than start time.", code: "INVALID_BALLET_SCHEDULE_TIME_RANGE" });
+        return;
+      }
       if (err.message === "NOT_FOUND") { res.status(404).json({ error: "Class not found", code: "CLASS_NOT_FOUND" }); return; }
       if (err.message === "LEGACY_CLASS") {
         res.status(422).json({ error: "This Class uses the retired Ballet Class model. Create a new Class to resume the program.", code: "LEGACY_CLASS" });
@@ -232,6 +282,13 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
         res.status(409).json({
           error: "This Class already has a Schedule with the same day, start time, and end time.",
           code: "DUPLICATE_BALLET_SCHEDULE_SLOT",
+        });
+        return;
+      }
+      if (err.message === "BALLET_SCHEDULE_TIME_CONFLICT") {
+        res.status(409).json({
+          error: "This Class already has an overlapping Schedule on this day.",
+          code: "BALLET_SCHEDULE_TIME_CONFLICT",
         });
         return;
       }
@@ -265,12 +322,12 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
       const [owningClass] = await tx.select({ isLegacy: balletClassesTable.isLegacy }).from(balletClassesTable).where(eq(balletClassesTable.id, existing.classId)).limit(1);
       if (owningClass?.isLegacy) throw new Error("LEGACY_SCHEDULE");
       const dayOfWeek = parsed.data.dayOfWeek ?? existing.dayOfWeek;
-      const startTime = parsed.data.startTime ?? existing.startTime;
-      const endTime = parsed.data.endTime ?? existing.endTime;
+      const startTime = (parsed.data.startTime ?? existing.startTime).trim();
+      const endTime = (parsed.data.endTime ?? existing.endTime).trim();
+      const status = parsed.data.status ?? existing.status;
       const durationMins = deriveBalletScheduleDuration(startTime, endTime);
 
-      const duplicateId = await findDuplicateScheduleId(tx, existing.classId, dayOfWeek, startTime, endTime, id);
-      if (duplicateId) throw new Error("DUPLICATE_BALLET_SCHEDULE_SLOT");
+      await assertScheduleSlotAvailable(tx, existing.classId, dayOfWeek, startTime, endTime, status, id);
 
       const now = new Date().toISOString();
       const [schedule] = await tx
@@ -303,8 +360,8 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
     }
     res.json({ schedule });
   } catch (err) {
-    if (err instanceof Error && err.message === "END_TIME_MUST_FOLLOW_START_TIME") {
-      res.status(422).json({ error: "End time must be later than start time", code: "INVALID_TIME_RANGE" });
+    if (err instanceof Error && err.message === "INVALID_BALLET_SCHEDULE_TIME_RANGE") {
+      res.status(422).json({ error: "End time must be later than start time.", code: "INVALID_BALLET_SCHEDULE_TIME_RANGE" });
       return;
     }
     if (err instanceof Error && err.message === "LEGACY_SCHEDULE") {
@@ -318,6 +375,13 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
       res.status(409).json({
         error: "This Class already has a Schedule with the same day, start time, and end time.",
         code: "DUPLICATE_BALLET_SCHEDULE_SLOT",
+      });
+      return;
+    }
+    if (err instanceof Error && err.message === "BALLET_SCHEDULE_TIME_CONFLICT") {
+      res.status(409).json({
+        error: "This Class already has an overlapping Schedule on this day.",
+        code: "BALLET_SCHEDULE_TIME_CONFLICT",
       });
       return;
     }
