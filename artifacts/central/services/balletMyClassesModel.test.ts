@@ -108,5 +108,37 @@ test("selection is preserved after refresh and falls back deterministically", ()
 test("duplicate selector rows collapse without combining two children", () => {
   const response = normalizeMyBalletClassesResponse({ children: [child("child:1", 30), child("child:1", 31)] });
   assert.equal(response.children.length, 1);
-  assert.deepEqual(response.children[0].classes.map((item) => item.groupId), [31]);
+  assert.deepEqual(response.children[0].classes.map((item) => item.groupId), [30]);
+});
+
+test("duplicate API rows collapse by childId even when their supplied selector keys differ", () => {
+  const response = normalizeMyBalletClassesResponse({ children: [
+    child("child:1", 30),
+    child("application:999", 31, { childId: 1 }),
+  ] });
+  assert.equal(response.children.length, 1);
+  assert.equal(response.children[0].selectorKey, "child:1");
+  assert.equal(response.children[0].weeklyScheduleCount, 1);
+});
+
+test("childId-less application compatibility rows are excluded", () => {
+  const response = normalizeMyBalletClassesResponse({ children: [
+    child("application:999", 30, { childId: null, childName: "Omar" }),
+  ] });
+  assert.deepEqual(response.children, []);
+});
+
+test("selector identity is derived only from childId", () => {
+  const response = normalizeMyBalletClassesResponse({ children: [
+    child("application:999", 30, { childId: 1, childName: "Omar" }),
+  ] });
+  assert.equal(response.children[0].selectorKey, "child:1");
+});
+
+test("same-name children remain separate when their canonical IDs differ", () => {
+  const response = normalizeMyBalletClassesResponse({ children: [
+    child("ignored", 30, { childId: 1, childName: "Omar" }),
+    child("also-ignored", 31, { childId: 2, childName: "Omar" }),
+  ] });
+  assert.deepEqual(response.children.map((item) => item.selectorKey), ["child:1", "child:2"]);
 });

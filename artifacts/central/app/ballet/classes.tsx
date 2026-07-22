@@ -312,7 +312,7 @@ export default function BalletClassesScreen() {
         <View style={s.content}>
           {!isLoading && !errorMessage && children.length > 0 ? (
             <>
-              <Text style={s.selectorLabel}>CHILD</Text>
+              <Text style={s.selectorLabel}>SELECT CHILD</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}

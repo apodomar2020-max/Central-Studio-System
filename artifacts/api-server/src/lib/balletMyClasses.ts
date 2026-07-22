@@ -100,7 +100,7 @@ export interface BalletMyClassesClass {
 
 export interface BalletMyClassesChild {
   selectorKey: string;
-  childId: number | null;
+  childId: number;
   applicationId: number | null;
   childName: string;
   applicationStatus: string | null;
@@ -238,7 +238,7 @@ function terminalState(status: string): BalletMyClassesEntitlementState | null {
 }
 
 function buildChild(
-  child: { selectorKey: string; childId: number | null; childName: string },
+  child: { selectorKey: string; childId: number; childName: string },
   application: BalletMyClassesApplicationRow | null,
   input: BuildInput,
 ): BalletMyClassesChild {
@@ -276,34 +276,28 @@ function buildChild(
 }
 
 export function buildMyBalletClassesResponse(input: BuildInput): { children: BalletMyClassesChild[] } {
-  const ownedChildren = input.children
+  const ownedChildrenById = new Map<number, BalletMyClassesChildRow>();
+  for (const child of input.children
     .filter((child) => child.parentId === input.parentStudentId)
-    .sort((a, b) => a.fullName.localeCompare(b.fullName) || a.id - b.id);
-  const ownedApplications = input.applications.filter((application) => application.parentStudentId === input.parentStudentId);
-
-  const children = ownedChildren.map((child) => buildChild(
-    { selectorKey: `child:${child.id}`, childId: child.id, childName: child.fullName },
-    selectAuthoritativeBalletApplication(ownedApplications.filter((application) => application.childId === child.id)),
-    input,
-  ));
-
-  const legacyByIdentity = new Map<string, BalletMyClassesApplicationRow[]>();
-  for (const application of ownedApplications) {
-    if (application.childId != null) continue;
-    const key = `${application.childName.trim().toLowerCase()}:${application.childBirthday ?? "unknown"}`;
-    const rows = legacyByIdentity.get(key) ?? [];
-    rows.push(application);
-    legacyByIdentity.set(key, rows);
+    .sort((a, b) => a.fullName.localeCompare(b.fullName) || a.id - b.id)) {
+    if (!ownedChildrenById.has(child.id)) ownedChildrenById.set(child.id, child);
   }
-  for (const applications of legacyByIdentity.values()) {
-    const application = selectAuthoritativeBalletApplication(applications);
-    if (!application) continue;
-    children.push(buildChild(
-      { selectorKey: `application:${application.id}`, childId: null, childName: application.childName },
-      application,
+
+  const applicationsByChildId = new Map<number, BalletMyClassesApplicationRow[]>();
+  for (const application of input.applications) {
+    if (application.parentStudentId !== input.parentStudentId
+      || application.childId == null
+      || !ownedChildrenById.has(application.childId)) continue;
+    const applications = applicationsByChildId.get(application.childId) ?? [];
+    applications.push(application);
+    applicationsByChildId.set(application.childId, applications);
+  }
+
+  return {
+    children: [...ownedChildrenById.values()].map((child) => buildChild(
+      { selectorKey: `child:${child.id}`, childId: child.id, childName: child.fullName },
+      selectAuthoritativeBalletApplication(applicationsByChildId.get(child.id) ?? []),
       input,
-    ));
-  }
-
-  return { children };
+    )),
+  };
 }

@@ -95,6 +95,7 @@ let accountB: Account;
  * hostilely set to Account A's child — proves ownership is not derived from
  * this column. */
 let hostileAssignmentId: number;
+let childlessApplicationId: number;
 
 before(async () => {
   const expressModule = await import("express");
@@ -187,6 +188,14 @@ before(async () => {
   accountA = await buildAccount("a");
   accountB = await buildAccount("b");
 
+  const childlessApplication = await pool.query(
+    `INSERT INTO ballet_applications
+       (parent_student_id, parent_name, parent_phone, parent_email, child_name, child_birthday, child_id, status)
+     VALUES ($1, 'Ownership Test Parent a', '0100000001', $2, $3, '2018-05-01', NULL, 'pending') RETURNING id`,
+    [accountA.parentId, accountA.email, accountA.childName],
+  );
+  childlessApplicationId = childlessApplication.rows[0].id;
+
   // Hostile fixture: an assignment tied to Account B's application but whose
   // child_id points at Account A's child. If ownership were derived from
   // child_id rather than the applicationId -> parentStudentId chain, this
@@ -278,6 +287,14 @@ test("Account A token resolves only Account A's data", async () => {
   assert.ok(!ids.applicationIds.includes(accountB.applicationId), "Account A response must not contain Application B");
   assert.ok(!ids.classIds.includes(accountB.classId), "Account A response must not contain Class B");
   assert.ok(!ids.scheduleIds.includes(accountB.scheduleId), "Account A response must not contain Schedule B");
+});
+
+test("childId-less applications never become selector entries", async () => {
+  const { status, body } = await getMyClasses(studentToken(accountA.parentId, accountA.email));
+  assert.equal(status, 200);
+  const children = (body as any).children as any[];
+  assert.deepEqual(children.map((child) => child.selectorKey), [`child:${accountA.childId}`]);
+  assert.equal(children.some((child) => child.applicationId === childlessApplicationId), false);
 });
 
 test("Account B token resolves only Account B's data", async () => {

@@ -5,6 +5,7 @@ import test from "node:test";
 import { requireStudentAuth } from "../middlewares/studentAuth";
 import {
   buildMyBalletClassesResponse,
+  selectAuthoritativeBalletApplication,
   type BalletMyClassesApplicationRow,
   type BalletMyClassesAssignmentRow,
   type BalletMyClassesClassRow,
@@ -131,6 +132,69 @@ test("children with no application remain selectable with no Classes", () => {
   assert.equal(child.entitlementState, "no_application");
   assert.equal(child.weeklyScheduleCount, 0);
   assert.deepEqual(child.classes, []);
+});
+
+test("one canonical child remains one selector entry across repeated applications", () => {
+  const active = application(11, 1, { updatedAt: "2026-01-01T00:00:00.000Z" });
+  const latestTerminal = application(12, 1, { status: "withdrawn", updatedAt: "2026-07-01T00:00:00.000Z" });
+  const olderTerminal = application(13, 1, { status: "cancelled", updatedAt: "2025-12-01T00:00:00.000Z" });
+  const result = build({ applications: [latestTerminal, active, olderTerminal] });
+  assert.equal(result.children.length, 1);
+  assert.equal(result.children[0].selectorKey, "child:1");
+  assert.equal(result.children[0].applicationId, active.id);
+  assert.equal(result.children[0].weeklyScheduleCount, 1);
+});
+
+test("authoritative application prioritizes active, then latest open, then latest terminal", () => {
+  const active = application(11, 1, { updatedAt: "2025-01-01T00:00:00.000Z" });
+  const latestOpen = application(12, 1, { status: "accepted", updatedAt: "2026-06-01T00:00:00.000Z" });
+  const latestTerminal = application(13, 1, { status: "withdrawn", updatedAt: "2026-07-01T00:00:00.000Z" });
+  assert.equal(selectAuthoritativeBalletApplication([latestTerminal, latestOpen, active])?.id, active.id);
+  assert.equal(selectAuthoritativeBalletApplication([latestTerminal, latestOpen])?.id, latestOpen.id);
+  assert.equal(selectAuthoritativeBalletApplication([latestTerminal])?.id, latestTerminal.id);
+});
+
+test("duplicate source rows for one owned childId collapse to one canonical selector", () => {
+  const result = build({ children: [
+    { id: 1, parentId: 10, fullName: "Maya" },
+    { id: 1, parentId: 10, fullName: "Maya" },
+    { id: 1, parentId: 10, fullName: "Maya Joined Again" },
+  ] });
+  assert.equal(result.children.length, 1);
+  assert.equal(result.children[0].childId, 1);
+});
+
+test("different canonical child IDs remain separate even with identical names and birthdays", () => {
+  const result = build({
+    children: [
+      { id: 1, parentId: 10, fullName: "Omar" },
+      { id: 2, parentId: 10, fullName: "Omar" },
+    ],
+    applications: [
+      application(11, 1, { childName: "Omar", childBirthday: "2018-01-01" }),
+      application(12, 2, { childName: "Omar", childBirthday: "2018-01-01" }),
+    ],
+    assignments: [assignment(11), assignment(12, 30, { childId: 2 })],
+    activeSubscriptionApplicationIds: new Set([11, 12]),
+  });
+  assert.deepEqual(result.children.map((child) => child.selectorKey), ["child:1", "child:2"]);
+});
+
+test("childId-less applications never create selector entries", () => {
+  const result = build({
+    applications: [application(11, 1), application(99, null, { childName: "Omar", status: "pending" })],
+  });
+  assert.deepEqual(result.children.map((child) => child.selectorKey), ["child:1"]);
+  assert.equal(result.children.some((child) => child.applicationId === 99), false);
+});
+
+test("selected-child application flow reuses the canonical child instead of inserting another", () => {
+  const routeSource = readFileSync(resolve(process.cwd(), "artifacts/api-server/src/routes/ballet.ts"), "utf8");
+  const submitRoute = routeSource.slice(routeSource.indexOf('"/ballet/applications"'), routeSource.indexOf("// ─── PATCH /api/ballet/applications/:id"));
+  const mobileSource = readFileSync(resolve(process.cwd(), "artifacts/central/app/ballet/assessment.tsx"), "utf8");
+  assert.match(submitRoute, /if \(childId != null\)[\s\S]*eq\(childrenTable\.id, childId\)[\s\S]*eq\(childrenTable\.parentId, parentStudentId\)/);
+  assert.match(submitRoute, /if \(childId == null\)[\s\S]*insert\(childrenTable\)/);
+  assert.match(mobileSource, /childId: selectedChildId/);
 });
 
 test("pending, assessment, placement, and terminal lifecycle states never receive current Classes", () => {

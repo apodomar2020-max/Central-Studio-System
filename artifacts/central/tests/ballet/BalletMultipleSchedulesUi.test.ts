@@ -44,6 +44,11 @@ test("child selector uses stable keys and preserves selection across refresh", (
   assert.doesNotMatch(classes, /children\[0\]|applications\[0\]/);
 });
 
+test("child selector uses the exact SELECT CHILD section label", () => {
+  assert.match(classes, />SELECT CHILD<|\{"SELECT CHILD"\}/);
+  assert.doesNotMatch(classes, />CHILD<|\{"CHILD"\}/);
+});
+
 test("non-entitled lifecycle states render explicit empty states without a public fallback", () => {
   for (const copy of ["No Ballet Classes Yet", "Application Pending", "Assessment In Progress", "Placement In Progress", "Payment Pending", "Activation Pending", "Schedule Not Assigned Yet", "Enrollment Ended"]) {
     assert.match(classes, new RegExp(copy));

@@ -43,7 +43,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gte, lte, ilike, isNull, or, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, ilike, isNotNull, isNull, or, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -824,7 +824,10 @@ router.get(
             updatedAt: balletApplicationsTable.updatedAt,
           })
           .from(balletApplicationsTable)
-          .where(eq(balletApplicationsTable.parentStudentId, parentStudentId))
+          .where(and(
+            eq(balletApplicationsTable.parentStudentId, parentStudentId),
+            isNotNull(balletApplicationsTable.childId),
+          ))
           .orderBy(desc(balletApplicationsTable.updatedAt), desc(balletApplicationsTable.id)),
       ]);
 

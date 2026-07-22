@@ -19,7 +19,7 @@ export type BalletMyClassesEntitlementState =
 
 export interface BalletMyClassesChild {
   selectorKey: string;
-  childId: number | null;
+  childId: number;
   applicationId: number | null;
   childName: string;
   applicationStatus: string | null;
@@ -58,18 +58,20 @@ function relation(value: unknown): { id: number; name: string } | null {
 export function normalizeMyBalletClassesResponse(value: unknown): BalletMyClassesResponse {
   const response = asRecord(value);
   const rows = Array.isArray(response?.children) ? response.children : [];
-  const bySelectorKey = new Map<string, BalletMyClassesChild>();
+  const byChildId = new Map<number, BalletMyClassesChild>();
 
   for (const value of rows) {
     const row = asRecord(value);
-    if (!row || typeof row.selectorKey !== "string" || row.selectorKey.length === 0 || typeof row.childName !== "string") continue;
+    const childId = positiveInteger(row?.childId);
+    if (!row || childId == null || typeof row.childName !== "string") continue;
     const entitlementState = ENTITLEMENT_STATES.has(row.entitlementState as BalletMyClassesEntitlementState)
       ? row.entitlementState as BalletMyClassesEntitlementState
       : "no_application";
     const classes = entitlementState === "active" ? normalizeBalletClasses(row.classes) : [];
-    bySelectorKey.set(row.selectorKey, {
-      selectorKey: row.selectorKey,
-      childId: positiveInteger(row.childId),
+    if (byChildId.has(childId)) continue;
+    byChildId.set(childId, {
+      selectorKey: `child:${childId}`,
+      childId,
       applicationId: positiveInteger(row.applicationId),
       childName: row.childName,
       applicationStatus: typeof row.applicationStatus === "string" ? row.applicationStatus : null,
@@ -81,7 +83,7 @@ export function normalizeMyBalletClassesResponse(value: unknown): BalletMyClasse
     });
   }
 
-  return { children: [...bySelectorKey.values()] };
+  return { children: [...byChildId.values()] };
 }
 
 export function resolveBalletChildSelection(
