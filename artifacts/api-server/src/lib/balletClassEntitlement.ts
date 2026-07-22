@@ -107,6 +107,21 @@ export function hasActiveLevelAndGroup(): SQL {
   )`;
 }
 
+/** Active canonical Class with valid active Level, Group, and Instructor relationships. */
+export function isOperationalBalletClass(): SQL {
+  return sql`(
+    ${balletClassesTable.isActive} = true
+    and ${balletClassesTable.isLegacy} = false
+    and ${hasActiveLevelAndGroup()}
+    and ${hasActiveInstructor()}
+  )`;
+}
+
+/** One valid active weekly Schedule whose owning Class is operational. */
+export function isOperationalBalletSchedule(): SQL {
+  return sql`(${isOperationalBalletClass()} and ${scheduleShapeCondition()})`;
+}
+
 /**
  * The full "assignment-ready canonical Class" predicate: active, non-legacy,
  * active canonical relationships, and at least one well-formed active Schedule.
@@ -116,10 +131,7 @@ export function hasActiveLevelAndGroup(): SQL {
  */
 export function isAssignmentReadyClass(): SQL {
   return sql`(
-    ${balletClassesTable.isActive} = true
-    and ${balletClassesTable.isLegacy} = false
-    and ${hasActiveLevelAndGroup()}
-    and ${hasActiveInstructor()}
+    ${isOperationalBalletClass()}
     and ${hasAtLeastOneValidActiveSchedule()}
   )`;
 }

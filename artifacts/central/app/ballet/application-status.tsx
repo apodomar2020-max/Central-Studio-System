@@ -13,7 +13,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -38,6 +38,7 @@ import {
   fetchBalletLevels,
   fetchBalletGroups,
   fetchBalletClasses,
+  groupBalletSchedulesByGroupId,
   CANCELLABLE_APPLICATION_STATUSES,
   EDITABLE_APPLICATION_STATUSES,
   ACTIVE_APPLICATION_STATUSES,
@@ -192,7 +193,7 @@ export default function ApplicationStatusScreen() {
   // fails, getStatusMeta simply falls back to its generic copy.
   const [levelNameById, setLevelNameById] = useState<Map<number, string>>(new Map());
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const ctrl = new AbortController();
     fetchBalletLevels(ctrl.signal)
       .then((levels) => {
@@ -203,7 +204,7 @@ export default function ApplicationStatusScreen() {
         // Best-effort — keep the generic status copy on failure.
       });
     return () => ctrl.abort();
-  }, []);
+  }, []));
 
   // Group id → name lookup, and group id → aggregated (deduped) weekly
   // schedules, built client-side from the two existing public catalogue
@@ -214,36 +215,20 @@ export default function ApplicationStatusScreen() {
   const [groupNameById, setGroupNameById] = useState<Map<number, string>>(new Map());
   const [schedulesByGroupId, setSchedulesByGroupId] = useState<Map<number, BalletClassSchedule[]>>(new Map());
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const ctrl = new AbortController();
     Promise.all([fetchBalletGroups(ctrl.signal), fetchBalletClasses(ctrl.signal)])
       .then(([groups, classes]) => {
         if (ctrl.signal.aborted) return;
         setGroupNameById(new Map(groups.map((g) => [g.id, g.name])));
 
-        // groupId -> (scheduleId -> schedule), accumulated across the
-        // separate classes owned by that group.
-        const byGroup = new Map<number, Map<number, BalletClassSchedule>>();
-        for (const cls of classes) {
-          const schedMap = byGroup.get(cls.groupId) ?? new Map<number, BalletClassSchedule>();
-          const classSchedules = cls.schedules ?? (cls.schedule ? [cls.schedule] : []);
-          for (const schedule of classSchedules) schedMap.set(schedule.id, schedule);
-          byGroup.set(cls.groupId, schedMap);
-        }
-        const result = new Map<number, BalletClassSchedule[]>();
-        for (const [groupId, schedMap] of byGroup) {
-          result.set(
-            groupId,
-            [...schedMap.values()].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)),
-          );
-        }
-        setSchedulesByGroupId(result);
+        setSchedulesByGroupId(groupBalletSchedulesByGroupId(classes));
       })
       .catch(() => {
         // Best-effort — keep the generic status copy on failure.
       });
     return () => ctrl.abort();
-  }, []);
+  }, []));
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoadState("loading");

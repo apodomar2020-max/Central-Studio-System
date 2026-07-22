@@ -22,6 +22,16 @@
 import { customFetch } from "@workspace/api-client-react";
 import type { BalletPaymentMethod } from "@workspace/api-zod";
 import { isOfflineError } from "@/services/connectivity";
+import { normalizeBalletClasses } from "./balletClassScheduleModel";
+export {
+  countActiveBalletWeeklySchedules,
+  groupBalletSchedulesByGroupId,
+  normalizeBalletClasses,
+  selectOperationalBalletClasses,
+  type BalletClass,
+  type BalletClassSchedule,
+} from "./balletClassScheduleModel";
+import type { BalletClass } from "./balletClassScheduleModel";
 
 // ─── Static programme config ──────────────────────────────────────────────────
 
@@ -62,6 +72,8 @@ export interface BalletSummary {
   activeStudents: number;
   instructors: number;
   levels: number;
+  weeklySchedules: number;
+  /** @deprecated Compatibility alias for older clients. */
   classes: number;
 }
 
@@ -135,10 +147,11 @@ export async function fetchBalletSummary(
   signal?: AbortSignal
 ): Promise<BalletSummary> {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-  return customFetch<BalletSummary>(
+  const response = await customFetch<Omit<BalletSummary, "weeklySchedules"> & { weeklySchedules?: number }>(
     `${apiUrl}/api/ballet/summary`,
     { method: "GET", signal }
   );
+  return { ...response, weeklySchedules: response.weeklySchedules ?? response.classes };
 }
 
 export async function fetchBalletProgramRequirements(signal?: AbortSignal): Promise<BalletProgramRequirementSection[]> {
@@ -595,39 +608,13 @@ export async function fetchBalletInstructor(
   return res.instructor;
 }
 
-/** One weekly time slot for a ballet class, as nested in GET /api/ballet/classes. */
-export interface BalletClassSchedule {
-  id: number;
-  dayOfWeek: number; // 0=Sunday … 6=Saturday
-  startTime: string; // "16:00"
-  endTime: string;   // "17:00"
-  durationMins: number | null;
-}
-
-/** Shape of a single row from GET /api/ballet/classes. */
-export interface BalletClass {
-  id: number;
-  title: string;
-  classImageUrl: string | null;
-  classVideoUrl: string | null;
-  instructor: { id: number; name: string; photoUrl: string | null } | null;
-  groupId: number;
-  levelId: number;
-  schedules: BalletClassSchedule[];
-  /** @deprecated Compatibility alias for older clients. Use schedules[]. */
-  schedule: BalletClassSchedule | null;
-}
-
 export async function fetchBalletClasses(signal?: AbortSignal): Promise<BalletClass[]> {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-  const res = await customFetch<{ classes: BalletClass[] }>(
+  const res = await customFetch<{ classes: unknown[] }>(
     `${apiUrl}/api/ballet/classes`,
     { method: "GET", signal }
   );
-  return res.classes.map((item) => ({
-    ...item,
-    schedules: Array.isArray(item.schedules) ? item.schedules : item.schedule ? [item.schedule] : [],
-  }));
+  return normalizeBalletClasses(res.classes);
 }
 
 /** Shape of a single row from GET /api/ballet/levels. */

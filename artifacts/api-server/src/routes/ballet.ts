@@ -42,7 +42,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gte, lte, ilike, isNull, or, inArray, sql, count } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, ilike, isNull, or, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -74,6 +74,8 @@ import { logger } from "../lib/logger";
 import { computeBalletMonthlyAttendanceSummary, currentBillingMonth } from "../lib/balletAttendance";
 import { normalizeInstructorPhotoUrlForResponse } from "../lib/instructorPhotoUrl";
 import { buildActiveBalletInstructorCountQuery } from "../lib/balletInstructorCountQuery";
+import { isAssignmentReadyClass, isOperationalBalletClass, isOperationalBalletSchedule, scheduleShapeCondition } from "../lib/balletClassEntitlement";
+import { buildActiveBalletWeeklyScheduleCountQuery } from "../lib/balletWeeklyScheduleCountQuery";
 
 const router: IRouter = Router();
 
@@ -405,7 +407,7 @@ router.get("/ballet/summary", async (_req, res): Promise<void> => {
       [activeStudents],
       [instructors],
       [levels],
-      [classes],
+      [weeklySchedules],
     ] = await Promise.all([
       db
         .select({ total: sql<number>`count(distinct coalesce(${balletApplicationsTable.childId}::text, 'application:' || ${balletApplicationsTable.id}::text))::int` })
@@ -419,24 +421,16 @@ router.get("/ballet/summary", async (_req, res): Promise<void> => {
         .select({ total: sql<number>`count(*)::int` })
         .from(balletLevelsTable)
         .where(eq(balletLevelsTable.isActive, true)),
-      db
-        .select({ total: sql<number>`count(distinct ${balletSchedulesTable.id})::int` })
-        .from(balletSchedulesTable)
-        .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
-        .innerJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
-        .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
-        .where(and(
-          eq(balletSchedulesTable.status, "active"),
-          eq(balletClassesTable.isActive, true),
-          eq(balletLevelsTable.isActive, true),
-        )),
+      buildActiveBalletWeeklyScheduleCountQuery(),
     ]);
 
     res.json({
       activeStudents: activeStudents?.total ?? 0,
       instructors: instructors?.total ?? 0,
       levels: levels?.total ?? 0,
-      classes: classes?.total ?? 0,
+      weeklySchedules: weeklySchedules?.total ?? 0,
+      /** @deprecated Use weeklySchedules. */
+      classes: weeklySchedules?.total ?? 0,
     });
   } catch (err) {
     logger.error({ err }, "GET /ballet/summary failed");
@@ -738,7 +732,7 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
       })
       .from(balletClassesTable)
       .leftJoin(balletInstructorsTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
-      .where(and(eq(balletClassesTable.isActive, true), eq(balletClassesTable.isLegacy, false)))
+      .where(isOperationalBalletClass())
       .orderBy(asc(balletClassesTable.title));
 
     const classIds = classRows.map((c) => c.id);
@@ -754,7 +748,7 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
             durationMins: balletSchedulesTable.durationMins,
           })
           .from(balletSchedulesTable)
-          .where(and(inArray(balletSchedulesTable.classId, classIds), eq(balletSchedulesTable.status, "active")))
+          .where(and(inArray(balletSchedulesTable.classId, classIds), scheduleShapeCondition()))
           .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime), asc(balletSchedulesTable.id))
       : [];
 
@@ -852,7 +846,14 @@ router.get(
           .filter((gid): gid is number => gid != null),
       )];
 
-      const schedulesByGroupId = new Map<number, { dayOfWeek: number; startTime: string; endTime: string }[]>();
+      const schedulesByGroupId = new Map<number, {
+        id: number;
+        classId: number;
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        durationMins: number | null;
+      }[]>();
       const instructorsByGroupId = new Map<number, string[]>();
 
       if (activeGroupIds.length > 0) {
@@ -862,24 +863,32 @@ router.get(
         // never show as a real class time.
         const scheduleRows = await db
           .select({
+            id:        balletSchedulesTable.id,
+            classId:   balletClassesTable.id,
             groupId:   balletClassesTable.groupId,
             dayOfWeek: balletSchedulesTable.dayOfWeek,
             startTime: balletSchedulesTable.startTime,
             endTime:   balletSchedulesTable.endTime,
+            durationMins: balletSchedulesTable.durationMins,
           })
           .from(balletClassesTable)
           .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
           .where(and(
             inArray(balletClassesTable.groupId, activeGroupIds),
-            eq(balletClassesTable.isActive, true),
-            eq(balletClassesTable.isLegacy, false),
-            eq(balletSchedulesTable.status, "active"),
+            isOperationalBalletSchedule(),
           ))
-          .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime));
+          .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime), asc(balletSchedulesTable.id));
         for (const row of scheduleRows) {
           if (row.groupId == null) continue;
           const list = schedulesByGroupId.get(row.groupId) ?? [];
-          list.push({ dayOfWeek: row.dayOfWeek, startTime: row.startTime, endTime: row.endTime });
+          list.push({
+            id: row.id,
+            classId: row.classId,
+            dayOfWeek: row.dayOfWeek,
+            startTime: row.startTime,
+            endTime: row.endTime,
+            durationMins: row.durationMins,
+          });
           schedulesByGroupId.set(row.groupId, list);
         }
 
@@ -896,9 +905,7 @@ router.get(
           .innerJoin(balletInstructorsTable, eq(balletInstructorsTable.id, balletClassesTable.instructorId))
           .where(and(
             inArray(balletClassesTable.groupId, activeGroupIds),
-            eq(balletClassesTable.isActive, true),
-            eq(balletClassesTable.isLegacy, false),
-            eq(balletInstructorsTable.isActive, true),
+            isAssignmentReadyClass(),
           ));
         for (const row of instructorRows) {
           if (row.groupId == null) continue;

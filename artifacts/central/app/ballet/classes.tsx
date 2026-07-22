@@ -14,11 +14,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,6 +32,8 @@ import ClassCard from "@/components/ClassCard";
 import {
   fetchBalletClasses,
   fetchBalletLevels,
+  countActiveBalletWeeklySchedules,
+  selectOperationalBalletClasses,
   type BalletClass,
   type BalletClassSchedule,
   type BalletLevel,
@@ -54,14 +57,8 @@ function formatTime(timeStr: string): string {
   return `${h}:${minsStr} ${ampm}`;
 }
 
-function activeSchedules(item: BalletClass): BalletClassSchedule[] {
-  return (item.schedules ?? (item.schedule ? [item.schedule] : []))
-    .filter((schedule) => schedule.dayOfWeek >= 0 && schedule.dayOfWeek <= 6 && schedule.startTime < schedule.endTime)
-    .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime) || a.id - b.id);
-}
-
 function scheduleSummary(item: BalletClass): string {
-  const schedules = activeSchedules(item);
+  const schedules = item.schedules;
   if (schedules.length === 0) return "Schedule TBC";
   return schedules
     .map((schedule) => `${DAY_NAMES[schedule.dayOfWeek] ?? "Weekly"} · ${formatTime(schedule.startTime)} - ${formatTime(schedule.endTime)}`)
@@ -69,7 +66,7 @@ function scheduleSummary(item: BalletClass): string {
 }
 
 function durationLabel(item: BalletClass): string {
-  const schedules = activeSchedules(item);
+  const schedules = item.schedules;
   if (schedules.length === 0) return "";
   const uniqueDurations = [...new Set(schedules.map((schedule) => schedule.durationMins).filter((mins): mins is number => mins != null))];
   if (uniqueDurations.length === 1) return `${uniqueDurations[0]} min`;
@@ -81,13 +78,12 @@ function levelLabelForClass(item: BalletClass, levelNameById: Map<number, string
 }
 
 function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): DanceClass {
-  const schedules = activeSchedules(item);
-  const firstSchedule = schedules[0];
+  const firstScheduleForCard = item.schedules[0];
   return {
     id: `ballet-${item.id}`,
-    scheduleId: firstSchedule ? `ballet-schedule-${firstSchedule.id}` : undefined,
+    scheduleId: firstScheduleForCard?.id != null ? `ballet-schedule-${firstScheduleForCard.id}` : undefined,
     scheduleType: "weekly",
-    scheduleStatus: firstSchedule ? "active" : undefined,
+    scheduleStatus: firstScheduleForCard ? "active" : undefined,
     packageEligible: false,
     categoryId: "ballet",
     categoryName: levelLabelForClass(item, levelNameById),
@@ -97,9 +93,9 @@ function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): Da
     photoUrl: normalizeMediaUrl(item.classImageUrl, "image"),
     classVideoUrl: normalizeMediaUrl(item.classVideoUrl, "video"),
     date: "",
-    dayOfWeek: firstSchedule ? DAY_NAMES[firstSchedule.dayOfWeek] ?? "" : "",
-    startTime: firstSchedule ? formatTime(firstSchedule.startTime) : "",
-    endTime: firstSchedule ? formatTime(firstSchedule.endTime) : "",
+    dayOfWeek: firstScheduleForCard ? DAY_NAMES[firstScheduleForCard.dayOfWeek] ?? "" : "",
+    startTime: firstScheduleForCard ? formatTime(firstScheduleForCard.startTime) : "",
+    endTime: firstScheduleForCard ? formatTime(firstScheduleForCard.endTime) : "",
     scheduleLabel: scheduleSummary(item),
     duration: durationLabel(item),
     location: "",
@@ -110,7 +106,7 @@ function toDanceClass(item: BalletClass, levelNameById: Map<number, string>): Da
     classCapacityEnabled: false,
     level: "All Levels",
     ageGroup: "Kids",
-    status: firstSchedule ? "available" : "unavailable",
+    status: firstScheduleForCard ? "available" : "unavailable",
     policy: "",
     featured: false,
     isBallet: true,
@@ -148,10 +144,12 @@ export default function BalletClassesScreen() {
   const [levels, setLevels] = useState<BalletLevel[]>([]);
   const [selectedLevelId, setSelectedLevelId] = useState<number | "all">("all");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setIsLoading(true);
+  const load = useCallback(async (signal?: AbortSignal, refreshing = false) => {
+    if (refreshing) setIsRefreshing(true);
+    else setIsLoading(true);
     setErrorMessage(null);
     try {
       const [classesData, levelsData] = await Promise.all([
@@ -167,14 +165,22 @@ export default function BalletClassesScreen() {
       setLevels([]);
       setErrorMessage("Unable to load Ballet classes right now.");
     } finally {
-      if (!signal?.aborted) setIsLoading(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const ctrl = new AbortController();
-    load(ctrl.signal);
+    void load(ctrl.signal);
     return () => ctrl.abort();
+  }, [load]));
+
+  const onRefresh = useCallback(() => {
+    const ctrl = new AbortController();
+    void load(ctrl.signal, true);
   }, [load]);
 
   const levelNameById = useMemo(() => {
@@ -184,9 +190,12 @@ export default function BalletClassesScreen() {
   }, [levels]);
 
   const visibleClasses = useMemo(() => {
-    if (selectedLevelId === "all") return classes;
-    return classes.filter((item) => item.levelId === selectedLevelId);
+    return selectOperationalBalletClasses(classes, selectedLevelId === "all" ? {} : { levelId: selectedLevelId });
   }, [classes, selectedLevelId]);
+  const visibleWeeklyScheduleCount = useMemo(
+    () => countActiveBalletWeeklySchedules(visibleClasses),
+    [visibleClasses],
+  );
 
   return (
     <View style={s.screen}>
@@ -216,7 +225,11 @@ export default function BalletClassesScreen() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} bounces>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        bounces
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={CYAN} colors={[CYAN]} />}
+      >
         <View style={[s.heroSection, { minHeight: topPad + 222 }]}>
           <LinearGradient
             colors={[BASE, "rgba(0,182,215,0.12)", BASE]}
@@ -278,6 +291,12 @@ export default function BalletClassesScreen() {
             ))}
           </ScrollView>
 
+          {!isLoading && !errorMessage ? (
+            <Text style={s.weeklySessionCount} testID="ballet-weekly-session-count">
+              {visibleWeeklyScheduleCount} weekly session{visibleWeeklyScheduleCount === 1 ? "" : "s"}
+            </Text>
+          ) : null}
+
           {isLoading ? (
             <View style={s.center}>
               <ActivityIndicator color={CYAN} />
@@ -337,6 +356,7 @@ export default function BalletClassesScreen() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BASE },
+  weeklySessionCount: { color: INK_200, fontSize: 13, marginBottom: 14 },
   atmosphericGlow: {
     position: "absolute",
     top: 0,
