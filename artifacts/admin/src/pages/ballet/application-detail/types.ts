@@ -44,8 +44,6 @@ export interface ApplicationDetailTabPanelsProps {
   setEditingAttendanceId: any;
   editStatus: any;
   setEditStatus: any;
-  editDuration: any;
-  setEditDuration: any;
   editNote: any;
   setEditNote: any;
   patchAttendanceMutation: any;
@@ -56,8 +54,6 @@ export interface ApplicationDetailTabPanelsProps {
   setAttDate: any;
   attStatus: any;
   setAttStatus: any;
-  attDuration: any;
-  setAttDuration: any;
   attNote: any;
   setAttNote: any;
   attendanceMutation: any;

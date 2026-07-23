@@ -7,6 +7,7 @@ export const QUEUE_NAMES = {
   reports: "reports",
   notificationAutomation: "notification-automation",
   balletCancellationFinalization: "ballet-cancellation-finalization",
+  balletAutoAbsence: "ballet-auto-absence",
 } as const;
 
 export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];
@@ -48,6 +49,22 @@ export type BalletCancellationFinalizationJob =
   | { type: "finalize_cancellation_request"; requestId: number; source?: "scheduler" | "admin" | "system" };
 
 /**
+ * Automatic Ballet absence (see lib/balletAutoAbsence.ts). "plan_due_occurrences"
+ * is the recurring planner: it discovers today's Ballet Schedule occurrences
+ * whose end time (+ a small grace) is imminent and enqueues one deterministic
+ * "process_occurrence" job per occurrence — deterministic jobId
+ * (`ballet-auto-absence:{scheduleId}:{classDate}`) so re-running the planner
+ * (restart, replica, overlapping lookahead windows) does not enqueue
+ * duplicates. The occurrence-identity DB unique index
+ * (attendance_ballet_unique_per_slot_date) is the ultimate idempotency
+ * backstop regardless of queue-level dedup.
+ */
+export type BalletAutoAbsenceJob =
+  | { type: "plan_due_occurrences"; source?: "scheduler" | "admin" | "system" }
+  | { type: "process_occurrence"; balletScheduleId: number; classDate: string; source?: "scheduler" | "admin" | "system" }
+  | { type: "deliver_absence_push"; notificationId: number; source?: "scheduler" | "system" };
+
+/**
  * Production scheduling for notification automation (Option B — BullMQ Job
  * Schedulers registered by the worker at startup). Each entry has a STABLE
  * schedulerId: BullMQ keys a repeatable job by this id, so re-registering on
@@ -79,6 +96,13 @@ export const NOTIFICATION_AUTOMATION_SCHEDULES: readonly NotificationAutomationS
 
 export const BALLET_CANCELLATION_FINALIZATION_SCHEDULES: readonly { schedulerId: string; pattern: string }[] = [
   { schedulerId: "ballet-cancellation-finalization:hourly-reconciliation", pattern: "5 * * * *" },
+] as const;
+
+// Every 15 minutes — the planner's own LOOKAHEAD_MINUTES window (see
+// balletAutoAbsence.ts) must exceed this cadence so no occurrence's end time
+// ever falls in the gap between two consecutive planner runs.
+export const BALLET_AUTO_ABSENCE_SCHEDULES: readonly { schedulerId: string; pattern: string }[] = [
+  { schedulerId: "ballet-auto-absence:plan-due-occurrences", pattern: "*/15 * * * *" },
 ] as const;
 
 /**

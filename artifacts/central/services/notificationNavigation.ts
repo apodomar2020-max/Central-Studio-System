@@ -31,6 +31,7 @@ const BALLET_NOTIFICATION_TYPES = new Set([
   "ballet_refund_processing",
   "ballet_refund_completed",
   "ballet_refund_failed",
+  "ballet_absence_recorded",
 ]);
 
 function stringValue(value: unknown): string | null {

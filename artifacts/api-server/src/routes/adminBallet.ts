@@ -54,6 +54,8 @@ import {
   getPaymentCyclesForApplication,
   getPaymentCyclesForApplications,
 } from "../lib/balletSubscriptions";
+import { performBalletAttendanceWrite, isBalletAttendanceError } from "../lib/balletAttendanceWrite";
+import { BALLET_ATTENDANCE_STATUSES } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive", "description", "requirements", "ageMin", "ageMax", "imageUrl"] as const;
@@ -1516,7 +1518,7 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
 //
 // POST /admin/ballet/attendance
 //   Body: { levelAssignmentId, balletScheduleId, classDate (YYYY-MM-DD), status,
-//           durationMinutes?, note? }
+//           note? }
 //   status ∈ checked_in | late | absent | cancelled
 //
 // Validation:
@@ -1528,8 +1530,8 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
 //     is never accepted from the client, to avoid a mismatched class/schedule.
 //   - the attendance table's pre-existing NOT NULL studentName/studentEmail are
 //     populated from the assignment's application (childName/parentEmail).
-//   - durationMinutes: if omitted, copied from the selected schedule's
-//     durationMins at record time and stored as an immutable snapshot on the
+//   - durationMinutes is copied from the selected schedule's durationMins at
+//     record time and stored as an immutable snapshot on the
 //     row (D2: the monthly calculation reads this snapshot, never a live
 //     join, so later schedule-duration edits never rewrite past totals).
 //   - a 23505 on the partial unique index (migration 0054) returns a clean
@@ -1537,8 +1539,8 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
 //     the existing row is never silently overwritten.
 //
 // PATCH /admin/ballet/attendance/:id
-//   Corrects status / durationMinutes / note only. levelAssignmentId,
-//   balletScheduleId, and classDate are immutable via this endpoint — to
+//   Corrects status / note only. levelAssignmentId, balletScheduleId,
+//   classDate, and durationMinutes are immutable via this endpoint — to
 //   change the occurrence itself, record a new attendance row instead.
 //
 // GET /admin/ballet/attendance?levelAssignmentId=&month=YYYY-MM
@@ -1546,16 +1548,15 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
 //   summary shape used elsewhere (C4).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BALLET_ATTENDANCE_STATUSES = ["checked_in", "late", "absent", "cancelled"] as const;
-
 const CreateAttendanceBody = z.object({
   levelAssignmentId: z.number({ required_error: "levelAssignmentId is required" }).int().positive(),
   balletScheduleId:  z.number({ required_error: "balletScheduleId is required" }).int().positive(),
   classDate:         z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "classDate must be in YYYY-MM-DD format"),
   status:            z.enum(BALLET_ATTENDANCE_STATUSES),
-  // D1: optional — defaults to the selected schedule's durationMins when omitted.
-  durationMinutes:   z.number().int().nonnegative().optional(),
   note:              z.string().optional(),
+  // durationMinutes is intentionally NOT accepted here — duration is always
+  // derived from the canonical Schedule at write time (performBalletAttendanceWrite).
+  // A client-supplied duration is never trusted, even from this trusted admin form.
 });
 
 router.post("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission("attendance", "checkIn"), async (req: AdminRequest, res): Promise<void> => {
@@ -1565,117 +1566,48 @@ router.post("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission
     return;
   }
 
-  const { levelAssignmentId, balletScheduleId, classDate, status, durationMinutes: requestedDuration, note } = parsed.data;
-
-  // Load the level assignment + its application identity (for the NOT NULL
-  // studentName/studentEmail columns).
-  const [assignment] = await db
-    .select({
-      id:            balletLevelAssignmentsTable.id,
-      status:        balletLevelAssignmentsTable.status,
-      levelId:       balletLevelAssignmentsTable.levelId,
-      groupId:       balletLevelAssignmentsTable.groupId,
-      applicationId: balletLevelAssignmentsTable.applicationId,
-      childName:     balletApplicationsTable.childName,
-      parentEmail:   balletApplicationsTable.parentEmail,
-    })
-    .from(balletLevelAssignmentsTable)
-    .innerJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletLevelAssignmentsTable.applicationId))
-    .where(eq(balletLevelAssignmentsTable.id, levelAssignmentId))
-    .limit(1);
-
-  if (!assignment) { res.status(404).json({ error: "Level assignment not found" }); return; }
-  if (assignment.status !== "active") {
-    res.status(422).json({ error: "Level assignment is not active — cannot record attendance." });
-    return;
-  }
-  if (assignment.groupId == null) {
-    res.status(422).json({ error: "This student has no assigned group — cannot record attendance." });
-    return;
-  }
-
-  // The schedule must belong to the assignment's current group AND level,
-  // resolve through an assignment-ready canonical Class (active, non-legacy,
-  // active relationships, at least one well-formed active Schedule — see
-  // balletClassEntitlement.ts), and the submitted schedule row itself must
-  // independently satisfy scheduleShapeCondition. We derive the class from
-  // the schedule itself (never trust a client-supplied classId). Legacy
-  // Classes and cancelled/malformed Schedules can never satisfy this.
-  const [scheduleLink] = await db
-    .select({
-      scheduleId:   balletSchedulesTable.id,
-      classId:      balletSchedulesTable.classId,
-      durationMins: balletSchedulesTable.durationMins,
-    })
-    .from(balletSchedulesTable)
-    .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
-    .where(and(
-      eq(balletClassesTable.groupId, assignment.groupId),
-      eq(balletClassesTable.levelId, assignment.levelId),
-      eq(balletSchedulesTable.id, balletScheduleId),
-      scheduleShapeCondition(),
-      isAssignmentReadyClass(),
-    ))
-    .limit(1);
-
-  if (!scheduleLink) {
-    res.status(422).json({ error: "The selected schedule does not belong to this student's group." });
-    return;
-  }
-
-  const adminEmail = req.adminUser?.email ?? null;
-  // D1: snapshot the duration NOW — client override wins, else the schedule's
-  // current durationMins, else null (never silently coerced to 0).
-  const durationMinutes = requestedDuration ?? scheduleLink.durationMins ?? null;
+  const { levelAssignmentId, balletScheduleId, classDate, status, note } = parsed.data;
+  const adminEmail = req.adminUser?.email ?? "unknown";
 
   try {
-    const [attendance] = await db
-      .insert(attendanceTable)
-      .values({
-        // Ballet identity + occurrence
-        balletLevelAssignmentId: levelAssignmentId,
-        balletScheduleId,
-        balletClassId: scheduleLink.classId,
-        classDate,
-        status,
-        durationMinutes,
-        notes: note ?? null,
-        // Satisfy pre-existing NOT NULL columns with already-available data.
-        studentName:  assignment.childName,
-        studentEmail: assignment.parentEmail,
-        checkedInBy:  adminEmail,
-      })
-      .returning();
+    const result = await performBalletAttendanceWrite({
+      levelAssignmentId,
+      balletScheduleId,
+      classDate,
+      status,
+      note,
+      performedBy: adminEmail,
+      source: "applicationDetail",
+      // No separate "resolved account" to cross-check on this surface — the
+      // Application Detail page is already scoped to the right application.
+      ownerStudentId: null,
+    });
 
     await logActivity(req, {
       action: "checkIn",
       module: "attendance",
       entityType: "ballet_attendance",
-      entityId: attendance.id,
-      entityLabel: assignment.childName,
-      after: { levelAssignmentId, balletScheduleId, balletClassId: scheduleLink.classId, classDate, status, durationMinutes },
-      summary: `Recorded ballet attendance (${status}) for ${assignment.childName} on ${classDate}`,
+      entityId: result.attendance.id,
+      entityLabel: result.childName,
+      after: {
+        levelAssignmentId, balletScheduleId, balletClassId: result.attendance.balletClassId, classDate, status,
+        durationMinutes: result.attendance.durationMinutes, source: "applicationDetail", program: "ballet",
+      },
+      summary: `Recorded ballet attendance (${status}) for ${result.childName} on ${classDate}`,
     });
 
-    res.status(201).json({ attendance });
+    const attendanceSummary = await computeBalletMonthlyAttendanceSummary(
+      levelAssignmentId,
+      result.applicationId,
+      classDate.slice(0, 7),
+    );
+    res.status(201).json({ attendance: result.attendance, attendanceSummary });
   } catch (err: unknown) {
-    const cause = (err as { cause?: unknown }).cause;
-    const pgErr = (cause ?? err) as { code?: string; constraint?: string };
-    if (pgErr.code === "23505" && pgErr.constraint === "attendance_ballet_unique_per_slot_date") {
-      // Never silently overwrite — surface the existing row's id so the
-      // caller can look at (or correct via PATCH) what's already there.
-      const [existing] = await db
-        .select({ id: attendanceTable.id })
-        .from(attendanceTable)
-        .where(and(
-          eq(attendanceTable.balletLevelAssignmentId, levelAssignmentId),
-          eq(attendanceTable.balletScheduleId, balletScheduleId),
-          eq(attendanceTable.classDate, classDate),
-        ))
-        .limit(1);
-      res.status(409).json({
-        error: "Attendance for this schedule and date is already recorded",
-        existingAttendanceId: existing?.id ?? null,
+    if (isBalletAttendanceError(err)) {
+      res.status(err.status).json({
+        error: err.message,
+        code: err.code,
+        ...(err.existingAttendanceId != null ? { existingAttendanceId: err.existingAttendanceId } : {}),
       });
       return;
     }
@@ -1686,19 +1618,19 @@ router.post("/admin/ballet/attendance", requireAdminAuth, requireAdminPermission
 
 // ─── PATCH /api/admin/ballet/attendance/:id ───────────────────────────────────
 //
-// Corrects an existing ballet attendance row. Only status / durationMinutes /
-// note may change — the occurrence identity (levelAssignmentId,
+// Corrects an existing ballet attendance row. Only status / note may change —
+// the occurrence identity (levelAssignmentId,
 // balletScheduleId, classDate) is immutable here by design (not accepted in
 // the body at all, so there's nothing to reject-if-present; a differently
 // shaped occurrence is a new attendance row, not a correction to this one).
+// durationMinutes is the immutable historical Schedule snapshot.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PatchAttendanceBody = z.object({
   status:          z.enum(BALLET_ATTENDANCE_STATUSES).optional(),
-  durationMinutes: z.number().int().nonnegative().nullable().optional(),
   note:            z.string().nullable().optional(),
-}).refine((b) => b.status !== undefined || b.durationMinutes !== undefined || b.note !== undefined, {
-  message: "At least one of status, durationMinutes, or note is required",
+}).strict().refine((b) => b.status !== undefined || b.note !== undefined, {
+  message: "At least one of status or note is required",
 });
 
 router.patch("/admin/ballet/attendance/:id", requireAdminAuth, requireAdminPermission("attendance", "checkIn"), async (req: AdminRequest, res): Promise<void> => {
@@ -1722,10 +1654,9 @@ router.patch("/admin/ballet/attendance/:id", requireAdminAuth, requireAdminPermi
     return;
   }
 
-  const { status, durationMinutes, note } = parsed.data;
+  const { status, note } = parsed.data;
   const updates: Partial<typeof attendanceTable.$inferInsert> = {};
   if (status !== undefined) updates.status = status;
-  if (durationMinutes !== undefined) updates.durationMinutes = durationMinutes;
   if (note !== undefined) updates.notes = note;
 
   const [attendance] = await db
@@ -1741,7 +1672,7 @@ router.patch("/admin/ballet/attendance/:id", requireAdminAuth, requireAdminPermi
     entityId: id,
     entityLabel: existing.studentName,
     before: { status: existing.status, durationMinutes: existing.durationMinutes, notes: existing.notes },
-    after: { status: attendance.status, durationMinutes: attendance.durationMinutes, notes: attendance.notes },
+    after: { status: attendance.status, durationMinutes: attendance.durationMinutes, notes: attendance.notes, source: "applicationDetail", program: "ballet" },
     summary: `Corrected ballet attendance #${id} for ${existing.studentName}`,
   });
 

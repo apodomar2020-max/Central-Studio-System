@@ -11,6 +11,7 @@ import type { Attendance } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QrCode, Search, CheckCircle2, CreditCard, User2, BarChart3, Clock, XCircle, Ban } from "lucide-react";
 import { ScanCheckInDialog } from "@/components/scan-check-in-dialog";
+import { UnifiedAttendanceDialog } from "@/components/unified-attendance-dialog";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { TablePagination } from "@/components/shared/table-pagination";
 
@@ -84,6 +85,7 @@ export default function AttendancePage() {
   const canPackageDeduct = can("qr", "packageDeduct");
   const queryClient = useQueryClient();
   const [scanOpen, setScanOpen] = useState(false);
+  const [gatewayOpen, setGatewayOpen] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
@@ -203,19 +205,31 @@ export default function AttendancePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Attendance & Check-In</h1>
           <p className="mt-1 text-sm" style={{ color: MUTED }}>
-            Check in students by QR scan or manual email lookup.
+            Check in Studio or Ballet students by QR scan, parent phone, or child name.
           </p>
         </div>
-        {canScan && (
-          <button
-            onClick={() => setScanOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold flex-shrink-0 self-start"
-            style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
-          >
-            <QrCode className="h-4 w-4" />
-            Scan QR
-          </button>
-        )}
+        <div className="flex gap-2 flex-shrink-0 self-start">
+          {canManualCheckIn && (
+            <button
+              onClick={() => setGatewayOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+              style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
+            >
+              <QrCode className="h-4 w-4" />
+              Attendance Gateway
+            </button>
+          )}
+          {canScan && (
+            <button
+              onClick={() => setScanOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+              style={{ background: "hsl(var(--muted))" }}
+            >
+              <QrCode className="h-4 w-4" />
+              Scan QR (Studio only)
+            </button>
+          )}
+        </div>
       </div>
 
       {canScan && (
@@ -224,6 +238,15 @@ export default function AttendancePage() {
           onOpenChange={setScanOpen}
           canCheckIn={canQrCheckIn}
           canPackageDeduct={canPackageDeduct}
+        />
+      )}
+      {canManualCheckIn && (
+        <UnifiedAttendanceDialog
+          open={gatewayOpen}
+          onOpenChange={setGatewayOpen}
+          canCheckIn={canManualCheckIn}
+          canPackageDeduct={canPackageDeduct}
+          canScan={canScan}
         />
       )}
 

@@ -147,6 +147,7 @@ export const BALLET_ATTENDED_ATTENDANCE_STATUSES = [
   "late",
 ] as const satisfies readonly BalletAttendanceStatus[];
 
+export const BALLET_CHECKED_IN_ATTENDANCE_STATUS = "checked_in" satisfies BalletAttendanceStatus;
 export const BALLET_ABSENT_ATTENDANCE_STATUS = "absent" satisfies BalletAttendanceStatus;
 export const BALLET_CANCELLED_ATTENDANCE_STATUS = "cancelled" satisfies BalletAttendanceStatus;
 

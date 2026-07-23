@@ -17,6 +17,7 @@ import {
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { normalizePhone } from "../lib/phoneNormalization";
 import {
   assertValidE164Phone,
   getWhatsAppCloudStatus,
@@ -122,21 +123,7 @@ type AudienceType = (typeof audienceTypeValues)[number];
 type AudienceConfig = Record<string, unknown> | null | undefined;
 type StudentRow = typeof studentsTable.$inferSelect;
 
-function normalizePhone(phone: string | null | undefined): string | null {
-  if (!phone) return null;
-  const trimmed = phone.trim();
-  if (!trimmed) return null;
-
-  let digits = trimmed.replace(/[^\d+]/g, "");
-  if (digits.startsWith("+")) digits = digits.slice(1);
-  digits = digits.replace(/\D/g, "");
-
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("01") && digits.length === 11) digits = `20${digits.slice(1)}`;
-  if (digits.startsWith("1") && digits.length === 10) digits = `20${digits}`;
-
-  return digits.length >= 10 && digits.length <= 15 ? digits : null;
-}
+export { normalizePhone };
 
 function asNumber(value: unknown): number | null {
   const parsed = Number(value);

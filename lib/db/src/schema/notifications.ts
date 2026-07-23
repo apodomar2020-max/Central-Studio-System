@@ -15,10 +15,13 @@ export const notificationsTable = pgTable("notifications", {
   metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
   sentAt: timestamp("sent_at", { withTimezone: true, mode: "string" }),
   isDraft: boolean("is_draft").notNull().default(true),
-  // Reminder-automation-only dedupe key (migration 0072). Nullable so ordinary
-  // (non-reminder) notifications are never subject to this constraint — only
-  // rows written by the reminder automation set this column. Format:
-  // "booking:{bookingId}:{reminderType}:{occurrenceDate}".
+  // Generic worker-write dedupe key (migration 0072, originally reminder-only,
+  // generalized for any deterministic automated-notification key). Nullable so
+  // ordinary notifications are never subject to this constraint — only rows
+  // written by an automated process (reminders, automatic Ballet absence,
+  // ...) set this column. Formats in use: reminders
+  // "booking:{bookingId}:{reminderType}:{occurrenceDate}"; Ballet absence
+  // "ballet_absence:{attendanceId}".
   reminderIdempotencyKey: text("reminder_idempotency_key"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),

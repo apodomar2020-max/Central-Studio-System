@@ -381,7 +381,6 @@ export default function ApplicationDetailPage() {
   const [attScheduleId, setAttScheduleId] = useState("");
   const [attDate, setAttDate]             = useState("");
   const [attStatus, setAttStatus]         = useState("checked_in");
-  const [attDuration, setAttDuration]     = useState("");
   const [attNote, setAttNote]             = useState("");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
@@ -409,7 +408,6 @@ export default function ApplicationDetailPage() {
   // D1: inline correction state for an existing attendance history row.
   const [editingAttendanceId, setEditingAttendanceId] = useState<number | null>(null);
   const [editStatus, setEditStatus]     = useState("checked_in");
-  const [editDuration, setEditDuration] = useState("");
   const [editNote, setEditNote]         = useState("");
 
   const appId = parseInt(id ?? "", 10);
@@ -787,7 +785,6 @@ export default function ApplicationDetailPage() {
           balletScheduleId: parseInt(attScheduleId, 10),
           classDate: attDate,
           status: attStatus,
-          durationMinutes: attDuration ? parseInt(attDuration, 10) : undefined,
           note: attNote || undefined,
         }),
       });
@@ -805,7 +802,6 @@ export default function ApplicationDetailPage() {
       setAttScheduleId("");
       setAttDate("");
       setAttStatus("checked_in");
-      setAttDuration("");
       setAttNote("");
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-attendance-history", data?.assignmentId] });
@@ -822,13 +818,12 @@ export default function ApplicationDetailPage() {
   // ── Attendance correction mutation (D1) ─────────────────────────────────────
 
   const patchAttendanceMutation = useMutation({
-    mutationFn: async (vars: { id: number; status: string; durationMinutes: string; note: string }) => {
+    mutationFn: async (vars: { id: number; status: string; note: string }) => {
       const res = await fetch(`${API_BASE}/api/admin/ballet/attendance/${vars.id}`, {
         method: "PATCH",
         headers: makeHeaders(token),
         body: JSON.stringify({
           status: vars.status,
-          durationMinutes: vars.durationMinutes ? parseInt(vars.durationMinutes, 10) : null,
           note: vars.note || null,
         }),
       });
@@ -850,7 +845,6 @@ export default function ApplicationDetailPage() {
   function startEditAttendance(row: AttendanceHistoryRow) {
     setEditingAttendanceId(row.id);
     setEditStatus(row.status);
-    setEditDuration(row.durationMinutes != null ? String(row.durationMinutes) : "");
     setEditNote(row.notes ?? "");
   }
 
@@ -1082,8 +1076,6 @@ export default function ApplicationDetailPage() {
           setEditingAttendanceId={setEditingAttendanceId}
           editStatus={editStatus}
           setEditStatus={setEditStatus}
-          editDuration={editDuration}
-          setEditDuration={setEditDuration}
           editNote={editNote}
           setEditNote={setEditNote}
           patchAttendanceMutation={patchAttendanceMutation}
@@ -1094,8 +1086,6 @@ export default function ApplicationDetailPage() {
           setAttDate={setAttDate}
           attStatus={attStatus}
           setAttStatus={setAttStatus}
-          attDuration={attDuration}
-          setAttDuration={setAttDuration}
           attNote={attNote}
           setAttNote={setAttNote}
           attendanceMutation={attendanceMutation}

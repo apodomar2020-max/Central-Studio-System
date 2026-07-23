@@ -1,4 +1,4 @@
-import { Worker } from "bullmq";
+import { DelayedError, Worker } from "bullmq";
 import { logger } from "./lib/logger";
 import { captureError, initErrorMonitoring } from "./lib/errorMonitoring";
 import {
@@ -6,9 +6,11 @@ import {
   getQueue,
   getQueueConnection,
   BALLET_CANCELLATION_FINALIZATION_SCHEDULES,
+  BALLET_AUTO_ABSENCE_SCHEDULES,
   NOTIFICATION_AUTOMATION_SCHEDULES,
   QUEUE_NAMES,
   type BalletCancellationFinalizationJob,
+  type BalletAutoAbsenceJob,
   type NotificationAutomationJob,
   workerEnabled,
   type ReportJob,
@@ -22,6 +24,7 @@ import {
   runPostClassReminderAutomation,
 } from "./lib/notificationReminders";
 import { processBalletCancellationFinalizationJob } from "./lib/balletCancellationFinalization";
+import { processBalletAutoAbsenceJob } from "./lib/balletAutoAbsence";
 import { recordReminderWorkerRun } from "./lib/reminderWorkerHeartbeat";
 import { getPushStatus } from "./lib/pushNotifications";
 
@@ -113,7 +116,22 @@ const balletCancellationFinalizationWorker = new Worker<BalletCancellationFinali
   { connection, concurrency: Number.parseInt(process.env["BALLET_CANCELLATION_FINALIZATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
 );
 
-for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker]) {
+const balletAutoAbsenceWorker = new Worker<BalletAutoAbsenceJob>(
+  QUEUE_NAMES.balletAutoAbsence,
+  async (job, token) => {
+    logger.info({ jobId: job.id, type: job.data.type }, "Processing Ballet auto-absence job");
+    return processBalletAutoAbsenceJob(job.data, {
+      jobId: job.id,
+      rescheduleAt: async (timestamp) => {
+        await job.moveToDelayed(timestamp, token);
+        throw new DelayedError();
+      },
+    });
+  },
+  { connection, concurrency: Number.parseInt(process.env["BALLET_AUTO_ABSENCE_QUEUE_CONCURRENCY"] ?? "1", 10) },
+);
+
+for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker]) {
   worker.on("failed", (job, err) => {
     captureError(err, { component: "queue-worker", queue: worker.name, jobId: job?.id });
   });
@@ -188,15 +206,43 @@ async function registerNotificationAutomationSchedulers(): Promise<void> {
   }
 }
 
+// Recurring planner for automatic Ballet absence (see lib/balletAutoAbsence.ts
+// for the two-stage plan/process design and the idempotency rationale).
+async function registerBalletAutoAbsenceSchedulers(): Promise<void> {
+  const queue = getQueue(QUEUE_NAMES.balletAutoAbsence);
+  if (!queue) {
+    logger.warn("Ballet auto-absence queue unavailable; skipping scheduler registration");
+    return;
+  }
+  for (const schedule of BALLET_AUTO_ABSENCE_SCHEDULES) {
+    try {
+      await queue.upsertJobScheduler(
+        schedule.schedulerId,
+        { pattern: schedule.pattern },
+        {
+          name: "plan_due_occurrences",
+          data: { type: "plan_due_occurrences", source: "scheduler" } satisfies BalletAutoAbsenceJob,
+          opts: defaultJobOptions(),
+        },
+      );
+      logger.info({ schedulerId: schedule.schedulerId, pattern: schedule.pattern }, "Registered Ballet auto-absence scheduler");
+    } catch (err) {
+      captureError(err, { component: "queue-worker", phase: "ballet-auto-absence-scheduler-registration", schedulerId: schedule.schedulerId });
+      logger.error({ err, schedulerId: schedule.schedulerId, pattern: schedule.pattern }, "Failed to register Ballet auto-absence scheduler");
+    }
+  }
+}
+
 await registerNotificationAutomationSchedulers();
 await registerBalletCancellationFinalizationSchedulers();
+await registerBalletAutoAbsenceSchedulers();
 
 logger.info("Queue worker started");
 
 async function shutdown() {
   logger.info("Queue worker shutting down");
   const connectionQuit = connection ? connection.quit() : Promise.resolve();
-  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), connectionQuit]);
+  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), balletAutoAbsenceWorker.close(), connectionQuit]);
   process.exit(0);
 }
 

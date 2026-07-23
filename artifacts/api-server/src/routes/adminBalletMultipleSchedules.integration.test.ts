@@ -109,6 +109,20 @@ async function insertActiveApplicationAndAssignment(run: string, levelId: number
      VALUES ($1, $2, $3, 'active') RETURNING id`,
     [applicationId, levelId, groupId],
   );
+  // performBalletAttendanceWrite (the shared write engine) requires a paid
+  // subscription overlapping the occurrence date before it will record
+  // checked_in/late/absent attendance — a wide, fixed window comfortably
+  // covers every classDate literal used across this file's fixtures.
+  const pkg = await pool.query(
+    `INSERT INTO ballet_packages (name, monthly_classes, monthly_hours, price_egp, is_active)
+     VALUES ($1, 8, 12, 2500, true) RETURNING id`,
+    [`Multi Schedule Package ${run}`],
+  );
+  await pool.query(
+    `INSERT INTO ballet_payments (application_id, package_id, amount_egp, status, payment_method, paid_at, subscription_start_date, subscription_expires_at)
+     VALUES ($1, $2, 2500, 'paid', 'inPerson', now(), '2026-01-01', '2026-12-31')`,
+    [applicationId, pkg.rows[0].id],
+  );
   return { applicationId, assignmentId: assignment.rows[0].id as number };
 }
 
@@ -280,7 +294,10 @@ test("cancelled sibling schedule is rejected while the still-active sibling rema
     0,
   );
 
-  const accepted = await postAttendance({ levelAssignmentId: assignmentId, balletScheduleId: scheduleA, classDate: "2026-07-07" });
+  // scheduleA is dayOfWeek=1 (Monday) — 2026-07-13 is the next Monday after
+  // the rejected 2026-07-09 (Thursday) case above; classDate must match the
+  // schedule's actual day now that the write engine validates it.
+  const accepted = await postAttendance({ levelAssignmentId: assignmentId, balletScheduleId: scheduleA, classDate: "2026-07-13" });
   assert.equal(accepted.status, 201);
   assert.equal(
     (await pool.query(`SELECT count(*)::int AS n FROM attendance WHERE ballet_schedule_id = $1`, [scheduleA])).rows[0].n,
@@ -545,4 +562,56 @@ test("concurrent overlapping POST requests cannot both create conflicting rows",
   assert.ok(conflict);
   assert.equal((await jsonBody(conflict)).code, "BALLET_SCHEDULE_TIME_CONFLICT");
   assert.equal((await schedulesForClassDay(classId, 6)).length, 1);
+});
+
+test("Attendance PATCH rejects client duration and preserves the immutable Schedule snapshot through status/note corrections", async () => {
+  const run = `attendance-patch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { levelId, groupId, classId } = await insertCanonicalBalletClass(run, "attendance-patch");
+  const { assignmentId } = await insertActiveApplicationAndAssignment(run, levelId, groupId);
+  const scheduleId = await insertSchedule(classId, 1, "10:00", "11:00");
+  const classDate = "2026-07-06"; // Monday, historical manual correction path
+  const created = await postAttendance({ levelAssignmentId: assignmentId, balletScheduleId: scheduleId, classDate });
+  assert.equal(created.status, 201);
+  const createdBody = await jsonBody(created);
+  const attendance = createdBody.attendance as { id: number; durationMinutes: number; status: string; notes: string | null };
+  assert.equal(attendance.durationMinutes, 60);
+
+  const summaryBeforeResponse = await asAdmin(`/api/admin/ballet/attendance?levelAssignmentId=${assignmentId}&month=2026-07`);
+  assert.equal(summaryBeforeResponse.status, 200);
+  const summaryBefore = (await jsonBody(summaryBeforeResponse)).summary;
+
+  const durationOnly = await asAdmin(`/api/admin/ballet/attendance/${attendance.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ durationMinutes: 1 }),
+  });
+  assert.equal(durationOnly.status, 400);
+
+  const mixedDuration = await asAdmin(`/api/admin/ballet/attendance/${attendance.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "late", durationMinutes: 999 }),
+  });
+  assert.equal(mixedDuration.status, 400, "strict validation must reject rather than silently apply part of a manipulated request");
+
+  const statusOnly = await asAdmin(`/api/admin/ballet/attendance/${attendance.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "late" }),
+  });
+  assert.equal(statusOnly.status, 200);
+  assert.equal(((await jsonBody(statusOnly)).attendance as { durationMinutes: number }).durationMinutes, 60);
+
+  const noteOnly = await asAdmin(`/api/admin/ballet/attendance/${attendance.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ note: "Corrected note only" }),
+  });
+  assert.equal(noteOnly.status, 200);
+  assert.equal(((await jsonBody(noteOnly)).attendance as { durationMinutes: number }).durationMinutes, 60);
+
+  const scheduleEdit = await patchSchedule(scheduleId, { endTime: "11:30" });
+  assert.equal(scheduleEdit.status, 200);
+  const stored = await pool.query(`SELECT status, notes, duration_minutes FROM attendance WHERE id = $1`, [attendance.id]);
+  assert.deepEqual(stored.rows[0], { status: "late", notes: "Corrected note only", duration_minutes: 60 });
+
+  const summaryAfterResponse = await asAdmin(`/api/admin/ballet/attendance?levelAssignmentId=${assignmentId}&month=2026-07`);
+  assert.equal(summaryAfterResponse.status, 200);
+  assert.deepEqual((await jsonBody(summaryAfterResponse)).summary, summaryBefore);
 });

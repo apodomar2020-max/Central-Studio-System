@@ -163,6 +163,19 @@ export async function logActivityWithActor(
   }
 }
 
+/**
+ * Transactional variant for mutations whose audit row is part of the atomic
+ * business outcome. This intentionally propagates failures so the caller's
+ * transaction rolls back instead of committing an unaudited change.
+ */
+export async function logActivityWithActorStrict(
+  client: ActivityClient,
+  actor: ActivityActorSnapshot,
+  entry: ActivityLogEntry,
+): Promise<void> {
+  await writeActivityLog(client, actor, entry);
+}
+
 export function adminActivityActor(req: AdminRequest): ActivityActorSnapshot {
   const actor = req.adminUser;
   const userAgentHeader = req.headers["user-agent"];

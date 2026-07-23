@@ -53,11 +53,13 @@ export type CheckInErrorCode =
   | "booking_not_confirmed"
   | "not_todays_occurrence"
   | "check_in_too_early"
+  | "check_in_closed"
   | "package_required"
   | "package_not_found"
   | "invalid_package"
   | "package_not_eligible"
-  | "no_credits";
+  | "no_credits"
+  | "candidate_key_mismatch";
 
 export interface CheckInError {
   isCheckInError: true;
@@ -159,6 +161,9 @@ export interface PerformBookingCheckInParams {
   packageOrderId?: number | null;
   /** Audit trail — admin email or "system". */
   performedBy: string;
+  /** Override the authoritative clock used for the check-in window check.
+   *  Defaults to the real wall clock — only tests pass this. */
+  now?: Date;
 }
 
 export interface BookingCheckInResult {
@@ -173,7 +178,7 @@ export interface BookingCheckInResult {
 
 export async function performBookingCheckIn(
   tx: Tx,
-  { booking, student, paymentMode, packageOrderId, performedBy }: PerformBookingCheckInParams,
+  { booking, student, paymentMode, packageOrderId, performedBy, now }: PerformBookingCheckInParams,
 ): Promise<BookingCheckInResult> {
   if (paymentMode === "package_credit" && packageOrderId == null) {
     throw makeCheckInError(400, "package_required", "Package credit check-in requires a packageOrderId.");
@@ -193,22 +198,33 @@ export async function performBookingCheckIn(
     throw makeCheckInError(400, "booking_not_confirmed", "Only confirmed bookings can be checked in. Confirm the booking first.");
   }
 
-  // ── Step 2 — Occurrence + grace window (today only, opens 2h before start)
+  // ── Step 2 — Canonical booking occurrence + strict window (opens 2h
+  // before start, including on the prior Cairo date, and closes strictly at
+  // scheduled end — see lib/occurrence.ts).
   let scheduleStartTime: string | null = null;
+  let scheduleEndTime: string | null = null;
   if (booking.scheduleId != null) {
     const [sched] = await tx
-      .select({ startTime: schedulesTable.startTime })
+      .select({ startTime: schedulesTable.startTime, endTime: schedulesTable.endTime })
       .from(schedulesTable)
       .where(eq(schedulesTable.id, booking.scheduleId))
       .limit(1);
     scheduleStartTime = sched?.startTime ?? null;
+    scheduleEndTime = sched?.endTime ?? null;
   }
-  const windowState = checkInWindowState({ startTime: scheduleStartTime }, booking.occurrenceDate);
+  const windowState = checkInWindowState(
+    { startTime: scheduleStartTime, endTime: scheduleEndTime },
+    booking.occurrenceDate,
+    now ?? new Date(),
+  );
   if (windowState === "too_early") {
     throw makeCheckInError(400, "check_in_too_early", "Check-in for this class opens 2 hours before it starts.");
   }
+  if (windowState === "ended") {
+    throw makeCheckInError(400, "check_in_closed", "Check-in for this class closed when it ended.");
+  }
   if (windowState === "not_today") {
-    throw makeCheckInError(400, "not_todays_occurrence", "This booking is not for today's class. Only today's confirmed booking can be checked in.");
+    throw makeCheckInError(400, "not_todays_occurrence", "This booking has no valid occurrence available for check-in.");
   }
 
   // ── Step 3 — One attendance per booking

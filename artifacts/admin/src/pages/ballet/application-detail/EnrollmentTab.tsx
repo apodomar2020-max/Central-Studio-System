@@ -12,7 +12,7 @@ import type { ApplicationDetailTabPanelsProps } from "./types";
 import { ATTENDANCE_STATUSES, DAY_NAMES, Field, formatDateTime, formatPaymentMethod, PaymentStatusBadge, Section, StatusBadge, SubscriptionBadge } from "./shared";
 
 export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, initialPayments, subscriptionReadinessState, paymentDataWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, setStatusNote, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editDuration, setEditDuration, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attDuration, setAttDuration, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, events } = props;
+  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, initialPayments, subscriptionReadinessState, paymentDataWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, setStatusNote, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, events } = props;
   return (
 <TabsContent value="enrollment" className="space-y-4">
 
@@ -194,15 +194,6 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
           ))}
         </SelectContent>
       </Select>
-      {/* D1: optional — defaults server-side to the schedule's own duration. */}
-      <input
-        type="number"
-        min={0}
-        className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-        placeholder="Duration in minutes (optional — defaults to schedule length)"
-        value={attDuration}
-        onChange={(e) => setAttDuration(e.target.value)}
-      />
       <Textarea
         className="text-sm min-h-[56px] resize-none"
         placeholder="Note (optional)"
@@ -248,14 +239,6 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
                       ))}
                     </SelectContent>
                   </Select>
-                  <input
-                    type="number"
-                    min={0}
-                    className="w-full h-8 rounded-md border bg-background px-2 text-sm"
-                    placeholder="Duration in minutes"
-                    value={editDuration}
-                    onChange={(e) => setEditDuration(e.target.value)}
-                  />
                   <Textarea
                     className="text-sm min-h-[48px] resize-none"
                     placeholder="Note (optional)"
@@ -266,7 +249,7 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
                     <Button
                       size="sm"
                       disabled={patchAttendanceMutation.isPending}
-                      onClick={() => patchAttendanceMutation.mutate({ id: row.id, status: editStatus, durationMinutes: editDuration, note: editNote })}
+                      onClick={() => patchAttendanceMutation.mutate({ id: row.id, status: editStatus, note: editNote })}
                       style={{ background: "#00B6D6", color: "#000" }}
                     >
                       {patchAttendanceMutation.isPending ? (

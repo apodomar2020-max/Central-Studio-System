@@ -261,9 +261,9 @@ async function lowCreditCycleDedupeKey(row: typeof packageOrdersTable.$inferSele
     : "legacy-no-credit-ledger";
 }
 
-type PushOutcome = "push_sent" | "push_failed" | "push_disabled" | "no_active_device";
+export type PushOutcome = "push_sent" | "push_failed" | "push_disabled" | "no_active_device";
 
-async function pushCreatedNotification(row: typeof notificationsTable.$inferSelect): Promise<PushOutcome> {
+export async function pushCreatedNotification(row: typeof notificationsTable.$inferSelect): Promise<PushOutcome> {
   const match = /^student:(\d+)$/.exec(row.target);
   if (!match) return "push_failed";
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -299,22 +299,37 @@ type ReminderInsertOutcome =
  * index, which we treat as a safe, non-fatal duplicate skip — never a
  * fatal Worker error, and never a second push.
  */
-async function insertReminderNotification(input: {
-  studentId?: number | null;
-  studentEmail: string;
-  title: string;
-  body: string;
-  type: string;
-  relatedEntityType: string;
-  relatedEntityId: number;
-  metadata: Record<string, unknown>;
-  idempotencyKey: string;
-}): Promise<ReminderInsertOutcome> {
-  const target = await resolveStudentTarget(db, input.studentId, input.studentEmail);
+/**
+ * Reused beyond the reminder automation itself (see lib/balletAutoAbsence.ts)
+ * — the DB-authoritative dedupe is the generic partial-unique-index on
+ * notifications.reminderIdempotencyKey, not anything reminder-specific in
+ * shape. Any deterministic, collision-safe key format is safe to pass here.
+ */
+export async function insertReminderNotification(
+  input: {
+    studentId?: number | null;
+    studentEmail: string;
+    title: string;
+    body: string;
+    type: string;
+    relatedEntityType: string;
+    relatedEntityId: number;
+    metadata: Record<string, unknown>;
+    idempotencyKey: string;
+  },
+  /**
+   * Participate in a caller-supplied transaction instead of the default
+   * `db` — used by the Ballet auto-absence Worker so this insert commits
+   * atomically with the Attendance row it belongs to (see
+   * lib/balletAutoAbsence.ts). Defaults to `db` for every existing caller.
+   */
+  client: Pick<typeof db, "select" | "insert"> = db,
+): Promise<ReminderInsertOutcome> {
+  const target = await resolveStudentTarget(client, input.studentId, input.studentEmail);
   if (!target) return { outcome: "no_target" };
 
   try {
-    const [row] = await db
+    const [row] = await client
       .insert(notificationsTable)
       .values({
         title: input.title,

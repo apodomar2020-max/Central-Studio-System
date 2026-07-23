@@ -571,7 +571,7 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
     // and the backend enforces the same rules at the /check-in/qr write path so
     // the UI flag can never be bypassed.
     const windowState = checkInWindowState(
-      { startTime: r.scheduleStartTime },
+      { startTime: r.scheduleStartTime, endTime: r.scheduleEndTime },
       r.booking.occurrenceDate,
     );
     const checkInBlockedReason =
@@ -585,9 +585,11 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
               ? "Awaiting admin confirmation"
               : windowState === "too_early"
                 ? "Check-in opens 2 hours before class"
-                : windowState === "not_today"
-                  ? "Not scheduled for today"
-                  : null;
+                : windowState === "ended"
+                  ? "Check-in closed when the class ended"
+                  : windowState === "not_today"
+                    ? "Not scheduled for today"
+                    : null;
     enrichedById.set(r.booking.id, {
       ...(existing ?? {}),
       ...r.booking,
