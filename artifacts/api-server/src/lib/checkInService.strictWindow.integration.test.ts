@@ -40,6 +40,7 @@ let db: typeof import("@workspace/db").db;
 let bookingsTable: typeof import("@workspace/db").bookingsTable;
 let performBookingCheckIn: typeof import("./checkInService.ts").performBookingCheckIn;
 let isCheckInError: typeof import("./checkInService.ts").isCheckInError;
+let flushPushQueue: typeof import("./notifications.ts").flushPushQueue;
 let cairoDateTimeToUtcMs: typeof import("./occurrence.ts").cairoDateTimeToUtcMs;
 
 function cairoAt(dateOnly: string, time: string): Date {
@@ -64,6 +65,8 @@ before(async () => {
   isCheckInError = svc.isCheckInError;
   const occurrenceModule = await import("./occurrence.ts");
   cairoDateTimeToUtcMs = occurrenceModule.cairoDateTimeToUtcMs;
+  const notificationsModule = await import("./notifications.ts");
+  flushPushQueue = notificationsModule.flushPushQueue;
 
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const student = await pool.query(
@@ -99,7 +102,7 @@ async function makeBooking(startTime: string, endTime: string, label: string, oc
 }
 
 async function attemptCheckIn(bookingId: number, now: Date) {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [booking] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, bookingId)).for("update");
     return performBookingCheckIn(tx, {
       booking,
@@ -109,6 +112,11 @@ async function attemptCheckIn(bookingId: number, now: Date) {
       now,
     });
   });
+  // Same post-commit-only contract every real caller follows (checkIn.ts,
+  // attendance.ts, adminAttendanceGateway.ts, studioWalkIn.ts) — exercised
+  // here too so this test can never diverge from production behavior.
+  await flushPushQueue(result.pendingPushJobs);
+  return result;
 }
 
 test("Studio check-in succeeds one minute before the scheduled end time", async () => {

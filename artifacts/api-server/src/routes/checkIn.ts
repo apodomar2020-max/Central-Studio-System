@@ -4,6 +4,7 @@ import { db, studentsTable, bookingsTable } from "@workspace/db";
 import { CheckInQrBody, CheckInQrResponse } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
+import { flushPushQueue } from "../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -85,6 +86,10 @@ router.post(
         });
       });
 
+      // Push dispatch happens strictly after the transaction above committed
+      // — a rolled-back check-in never reaches this line, so it can never
+      // send a "you're checked in" push for a write that didn't happen.
+      await flushPushQueue(result.pendingPushJobs);
       res.status(201).json(CheckInQrResponse.parse(result));
     } catch (err: unknown) {
       if (isCheckInError(err)) {

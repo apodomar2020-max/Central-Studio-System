@@ -1231,6 +1231,13 @@ export function ScanCheckInDialog({
             {/* Schedule + manual credit controls — legacy (email-scan) path only;
                 hidden entirely in the QR token flow. */}
             {!isTokenFlow && (<>
+              <div
+                className="text-xs px-3 py-2.5 rounded-xl"
+                style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
+              >
+                Use Check In Student to search for an existing account. New visitors must be
+                registered before attendance can be recorded.
+              </div>
               <div>
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
                   Today's Class
@@ -1298,11 +1305,16 @@ export function ScanCheckInDialog({
                   onClick={() => void handleCheckIn()}
                   disabled={
                     Boolean(
-                      scannedQrToken &&
+                      (scannedQrToken &&
                         (!selectedBookingId ||
                           !selectedBookingEligible ||
                           !paymentMode ||
-                          (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId))),
+                          (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId)))) ||
+                        // Walk-in (Path B) now requires a real, listed Schedule
+                        // and a resolved Account — the backend no longer
+                        // accepts a free-text Class or an unregistered walk-in
+                        // (see routes/attendance.ts POST /attendance).
+                        (!scannedQrToken && (effectiveScheduleId == null || effectiveStudentId == null)),
                     )
                   }
                   className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-40"

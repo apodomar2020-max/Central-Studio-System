@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
 import { useSearch } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  useListPackageOrders,
-  useCheckIn,
   useGetAttendanceStats,
   getListAttendanceQueryKey,
 } from "@workspace/api-client-react";
 import type { Attendance } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { QrCode, Search, CheckCircle2, CreditCard, User2, BarChart3, Clock, XCircle, Ban } from "lucide-react";
-import { ScanCheckInDialog } from "@/components/scan-check-in-dialog";
+import { QrCode, CheckCircle2, User2, BarChart3, Clock, XCircle, Ban } from "lucide-react";
 import { UnifiedAttendanceDialog } from "@/components/unified-attendance-dialog";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { TablePagination } from "@/components/shared/table-pagination";
@@ -27,6 +24,7 @@ function makeHeaders(token?: string | null): HeadersInit {
 }
 
 const STUDIO_CYAN = "#00B6D7";
+const PURPLE = "#8B5CF6";
 const AMBER = "#F59E0B";
 const GREEN = "#22C55E";
 const BG_CARD = "hsl(var(--card))";
@@ -59,19 +57,41 @@ function StatusBadge({ status }: { status?: string | null }) {
   );
 }
 
-type PackageOrder = {
-  id: number;
-  studentName: string;
-  studentEmail: string;
-  packageName: string;
-  totalCredits: number;
-  remainingCredits: number;
-  status: string;
-  expiresAt?: string | null;
-};
+function ProgramBadge({ program }: { program?: string }) {
+  const isBallet = program === "ballet";
+  return (
+    <span
+      className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase"
+      style={{ backgroundColor: isBallet ? `${PURPLE}20` : `${STUDIO_CYAN}20`, color: isBallet ? PURPLE : STUDIO_CYAN }}
+    >
+      {isBallet ? "Ballet" : "Studio"}
+    </span>
+  );
+}
 
-const CHECK_IN_STATUSES = ["checked_in", "late", "absent"] as const;
-type CheckInStatus = typeof CHECK_IN_STATUSES[number];
+/** Studio checked_in/late with a deducted credit → "1 Credit". Ballet
+ *  checked_in/late/absent → duration ("60 min" / "1h" / "1h 30m"). Cancelled,
+ *  or Studio without a deducted credit → "—". Never mixes the two systems. */
+function UsageCell({ record }: { record: Attendance }) {
+  if (record.status === "cancelled") {
+    return <span className="text-xs" style={{ color: MUTED_DARK }}>—</span>;
+  }
+  if (record.program === "ballet") {
+    const mins = record.durationMinutes;
+    if (mins == null) return <span className="text-xs" style={{ color: MUTED_DARK }}>—</span>;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const label = h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${mins} min`;
+    return <span className="text-xs font-medium" style={{ color: PURPLE }}>{label}</span>;
+  }
+  if (record.creditDeducted) {
+    return <span className="text-xs font-medium" style={{ color: AMBER }}>1 Credit</span>;
+  }
+  if (record.status === "checked_in" || record.status === "late") {
+    return <span className="text-xs" style={{ color: MUTED_DARK }}>Paid at Studio</span>;
+  }
+  return <span className="text-xs" style={{ color: MUTED_DARK }}>—</span>;
+}
 
 const ATTENDANCE_PAGE_SIZE = 25;
 
@@ -80,29 +100,19 @@ const ATTENDANCE_PAGE_SIZE = 25;
 export default function AttendancePage() {
   const { can, token } = useAdminAuth();
   const canScan = can("qr", "scan");
-  const canQrCheckIn = can("qr", "checkIn");
   const canManualCheckIn = can("attendance", "checkIn");
   const canPackageDeduct = can("qr", "packageDeduct");
-  const queryClient = useQueryClient();
-  const [scanOpen, setScanOpen] = useState(false);
   const [gatewayOpen, setGatewayOpen] = useState(false);
-  const [emailInput, setEmailInput] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
-  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
-  const [classTitle, setClassTitle] = useState("");
-  const [deductCredit, setDeductCredit] = useState(true);
-  const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>("checked_in");
   const [period, setPeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
-  const [successMsg, setSuccessMsg] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const urlSearch = useSearch();
 
-  // Deep-link support: /attendance?studentEmail=x@y.com pre-fills the search
+  // Deep-link support: /attendance?studentEmail=x@y.com filters the table
   // (used by the "View Attendance History" link on the admin 360 profile page).
   useEffect(() => {
     const email = new URLSearchParams(urlSearch).get("studentEmail");
     if (email) {
-      setEmailInput(email);
       setSearchEmail(email.trim().toLowerCase());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,54 +160,11 @@ export default function AttendancePage() {
   const attendanceTotal = attendanceQuery.data?.total ?? 0;
   const attendanceTotalPages = attendanceQuery.data?.totalPages ?? 0;
   const attendanceLoading = attendanceQuery.isLoading;
-  const { data: packageOrders = [] } = useListPackageOrders(undefined);
   const { data: stats } = useGetAttendanceStats({ period });
-
-  const { mutate: checkIn, isPending: isCheckingIn } = useCheckIn({
-    mutation: {
-      onSuccess: (data) => {
-        queryClient.invalidateQueries({ queryKey: getListAttendanceQueryKey() });
-        const statusLabel = STATUS_CONFIG[checkInStatus]?.label ?? checkInStatus;
-        setSuccessMsg(`✓ ${data.studentName} marked as ${statusLabel}${deductCredit && selectedPackageId ? " — 1 credit deducted" : ""}`);
-        setTimeout(() => setSuccessMsg(""), 5000);
-        setSelectedPackageId(null);
-        setClassTitle("");
-        setCheckInStatus("checked_in");
-      },
-    },
-  });
-
-  const studentOrders = (packageOrders as PackageOrder[]).filter(
-    (o) => o.studentEmail === searchEmail && o.status === "active" && o.remainingCredits > 0
-  );
 
   const filteredAttendance = (allAttendance as Attendance[]).filter((r) =>
     statusFilter === "all" ? true : r.status === statusFilter
   );
-
-  function handleSearch() {
-    setSearchEmail(emailInput.trim().toLowerCase());
-    setSelectedPackageId(null);
-    setSuccessMsg("");
-    setStatusFilter("all");
-  }
-
-  function handleCheckIn() {
-    if (!canManualCheckIn || !searchEmail) return;
-    const order = studentOrders.find((o) => o.id === selectedPackageId);
-    const shouldDeduct = deductCredit && !!selectedPackageId && checkInStatus !== "absent";
-    checkIn({
-      data: {
-        studentEmail: searchEmail,
-        studentName: order?.studentName ?? searchEmail,
-        packageOrderId: selectedPackageId,
-        classTitle: classTitle || null,
-        creditDeducted: shouldDeduct,
-        status: checkInStatus,
-        notes: null,
-      },
-    });
-  }
 
   return (
     <div className="space-y-6">
@@ -216,30 +183,12 @@ export default function AttendancePage() {
               style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
             >
               <QrCode className="h-4 w-4" />
-              Attendance Gateway
-            </button>
-          )}
-          {canScan && (
-            <button
-              onClick={() => setScanOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-              style={{ background: "hsl(var(--muted))" }}
-            >
-              <QrCode className="h-4 w-4" />
-              Scan QR (Studio only)
+              Check In Student
             </button>
           )}
         </div>
       </div>
 
-      {canScan && (
-        <ScanCheckInDialog
-          open={scanOpen}
-          onOpenChange={setScanOpen}
-          canCheckIn={canQrCheckIn}
-          canPackageDeduct={canPackageDeduct}
-        />
-      )}
       {canManualCheckIn && (
         <UnifiedAttendanceDialog
           open={gatewayOpen}
@@ -251,145 +200,8 @@ export default function AttendancePage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* ── Check-in panel ── */}
+        {/* ── Stats panel ── */}
         <div className="space-y-4">
-          {canManualCheckIn && (
-          <div className="rounded-xl p-5 space-y-4" style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}>
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${STUDIO_CYAN}20` }}>
-                <QrCode className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
-              </div>
-              <h2 className="text-sm font-semibold text-foreground">Student Check-In</h2>
-            </div>
-
-            {successMsg && (
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium"
-                style={{ background: `${GREEN}15`, color: GREEN, border: `1px solid ${GREEN}30` }}>
-                <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-                {successMsg}
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <input
-                type="email"
-                placeholder="Enter student email..."
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="flex-1 rounded-xl px-3 py-2.5 text-sm text-foreground"
-                style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
-              />
-              <button
-                onClick={handleSearch}
-                className="px-3 py-2.5 rounded-xl"
-                style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
-                title="Look up student"
-              >
-                <Search className="h-4 w-4" />
-              </button>
-            </div>
-
-            {searchEmail && (
-              <div className="space-y-3">
-                {/* Status selector */}
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: MUTED }}>Attendance Status</p>
-                  <div className="flex gap-2">
-                    {CHECK_IN_STATUSES.map((s) => {
-                      const cfg = STATUS_CONFIG[s];
-                      return (
-                        <button
-                          key={s}
-                          onClick={() => setCheckInStatus(s)}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-xs font-semibold transition-all"
-                          style={
-                            checkInStatus === s
-                              ? { background: `${cfg.color}20`, border: `1px solid ${cfg.color}50`, color: cfg.color }
-                              : { background: BG_ROW, border: `1px solid ${BORDER_SUBTLE}`, color: MUTED }
-                          }
-                        >
-                          <cfg.icon className="h-3 w-3" />
-                          {cfg.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Active packages */}
-                {studentOrders.length === 0 ? (
-                  <div className="text-sm px-3 py-2.5 rounded-xl"
-                    style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}>
-                    No active packages for {searchEmail}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: MUTED }}>Active Packages</p>
-                    {studentOrders.map((order) => (
-                      <button
-                        key={order.id}
-                        onClick={() => setSelectedPackageId(selectedPackageId === order.id ? null : order.id)}
-                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
-                        style={{
-                          background: selectedPackageId === order.id ? `${STUDIO_CYAN}15` : BG_ROW,
-                          border: `1px solid ${selectedPackageId === order.id ? STUDIO_CYAN + "50" : BORDER_SUBTLE}`,
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <CreditCard className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
-                          <span className="font-medium text-foreground">{order.packageName}</span>
-                        </div>
-                        <span className="text-xs font-semibold" style={{ color: STUDIO_CYAN }}>
-                          {order.remainingCredits} left
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: MUTED }}>
-                    Class Title (optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Hip Hop Adults"
-                    value={classTitle}
-                    onChange={(e) => setClassTitle(e.target.value)}
-                    className="w-full rounded-xl px-3 py-2.5 text-sm text-foreground"
-                    style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
-                  />
-                </div>
-
-                {selectedPackageId && checkInStatus !== "absent" && (
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={deductCredit}
-                      onChange={(e) => setDeductCredit(e.target.checked)}
-                      className="rounded"
-                    />
-                    <span className="text-sm" style={{ color: "#9CA3AF" }}>Deduct 1 credit from selected package</span>
-                  </label>
-                )}
-
-                <button
-                  onClick={handleCheckIn}
-                  disabled={isCheckingIn}
-                  className="w-full py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
-                  style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
-                >
-                  {isCheckingIn
-                    ? "Recording…"
-                    : `Record ${STATUS_CONFIG[checkInStatus]?.label ?? "Check-In"}`}
-                </button>
-              </div>
-            )}
-          </div>
-          )}
-
-          {/* Stats panel */}
           <div className="rounded-xl p-5 space-y-4" style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -415,7 +227,12 @@ export default function AttendancePage() {
               <>
                 <div className="text-2xl font-bold" style={{ color: STUDIO_CYAN }}>
                   {stats.total}
-                  <span className="text-sm font-normal ml-2" style={{ color: MUTED }}>total check-ins</span>
+                  <span className="text-sm font-normal ml-2" style={{ color: MUTED }}>Attendance Records</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <StatChip label="Checked In" value={stats.checkedInCount} color={GREEN} />
+                  <StatChip label="Late" value={stats.lateCount} color={AMBER} />
+                  <StatChip label="Absent" value={stats.absentCount} color="#EF4444" />
                 </div>
                 <div className="space-y-2">
                   {stats.data.map((d) => {
@@ -471,7 +288,7 @@ export default function AttendancePage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0" style={{ background: BG_ROW }}>
                 <tr>
-                  {["Student", "Class", "Status", "Credit", "Date"].map((h) => (
+                  {["Student", "Program", "Class", "Status", "Usage", "Date"].map((h) => (
                     <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider" style={{ color: MUTED_DARK }}>{h}</th>
                   ))}
                 </tr>
@@ -480,7 +297,7 @@ export default function AttendancePage() {
                 {attendanceLoading
                   ? Array.from({ length: 6 }).map((_, i) => (
                       <tr key={i} style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}>
-                        {Array.from({ length: 5 }).map((_, j) => (
+                        {Array.from({ length: 6 }).map((_, j) => (
                           <td key={j} className="px-4 py-3">
                         <Skeleton className="h-3.5 w-full" />
                           </td>
@@ -489,7 +306,7 @@ export default function AttendancePage() {
                     ))
                   : filteredAttendance.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm" style={{ color: MUTED_DARK }}>
+                      <td colSpan={6} className="px-4 py-10 text-center text-sm" style={{ color: MUTED_DARK }}>
                         No attendance records yet
                       </td>
                     </tr>
@@ -504,18 +321,17 @@ export default function AttendancePage() {
                           <div className="font-medium text-foreground text-xs">{record.studentName}</div>
                           <div className="text-xs" style={{ color: MUTED_DARK }}>{record.studentEmail}</div>
                         </td>
-                        <td className="px-4 py-2.5 text-xs max-w-[120px] truncate" style={{ color: "#9CA3AF" }}>
+                        <td className="px-4 py-2.5">
+                          <ProgramBadge program={record.program} />
+                        </td>
+                        <td className="px-4 py-2.5 text-xs max-w-[140px] truncate" style={{ color: "#9CA3AF" }}>
                           {record.classTitle ?? "—"}
                         </td>
                         <td className="px-4 py-2.5">
                           <StatusBadge status={record.status} />
                         </td>
                         <td className="px-4 py-2.5">
-                          {record.creditDeducted ? (
-                            <span className="text-xs font-medium" style={{ color: AMBER }}>−1</span>
-                          ) : (
-                            <span className="text-xs" style={{ color: MUTED_DARK }}>—</span>
-                          )}
+                          <UsageCell record={record} />
                         </td>
                         <td className="px-4 py-2.5 text-xs whitespace-nowrap" style={{ color: MUTED }}>
                           {new Date(record.checkedInAt).toLocaleString("en-GB", {
@@ -544,6 +360,15 @@ export default function AttendancePage() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="rounded-lg px-2.5 py-2 text-center" style={{ background: `${color}12`, border: `1px solid ${color}30` }}>
+      <div className="text-sm font-bold" style={{ color }}>{value}</div>
+      <div className="text-[10px] font-medium uppercase tracking-wide" style={{ color: MUTED }}>{label}</div>
     </div>
   );
 }

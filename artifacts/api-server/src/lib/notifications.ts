@@ -5,6 +5,14 @@ import { sendBroadcastPushNotification, sendPushNotification } from "./pushNotif
 
 type NotificationClient = Pick<typeof db, "select" | "insert">;
 
+/**
+ * A push send deferred until after the enclosing DB transaction commits —
+ * see pushQueue below. Plain data, no side effect yet.
+ */
+export type PendingPushJob =
+  | { kind: "student"; studentId: number; title: string; body: string; data: Record<string, unknown>; notificationId: number }
+  | { kind: "broadcast"; title: string; body: string; data: Record<string, unknown>; notificationId: number };
+
 type StudentNotificationInput = {
   studentId?: number | null;
   studentEmail?: string | null;
@@ -16,6 +24,15 @@ type StudentNotificationInput = {
   metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
   dispatchPush?: boolean;
+  /**
+   * When supplied, the push send is appended here instead of being fired
+   * immediately — the caller owns a DB transaction and must flush this
+   * queue (flushPushQueue) only AFTER that transaction has committed, so a
+   * rollback can never leave a push sent for a write that didn't happen.
+   * Omitted entirely: preserves the original fire-and-forget behavior for
+   * call sites outside a transaction whose commit boundary matters.
+   */
+  pushQueue?: PendingPushJob[];
 };
 
 type BroadcastNotificationInput = {
@@ -27,6 +44,7 @@ type BroadcastNotificationInput = {
   metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
   dispatchPush?: boolean;
+  pushQueue?: PendingPushJob[];
 };
 
 function normalizeEmail(email: string): string {
@@ -63,7 +81,7 @@ async function insertNotification(
   target: string,
   title: string,
   body: string,
-  input: Pick<StudentNotificationInput, "type" | "relatedEntityType" | "relatedEntityId" | "metadata" | "dispatchPush"> = {},
+  input: Pick<StudentNotificationInput, "type" | "relatedEntityType" | "relatedEntityId" | "metadata" | "dispatchPush" | "pushQueue"> = {},
   dedupe = true,
 ) {
   if (dedupe) {
@@ -120,27 +138,28 @@ async function insertNotification(
     .returning();
 
   if (input.dispatchPush !== false) {
+    const data = { type: input.type ?? "notification", ...(input.metadata ?? {}) };
     const studentTargetMatch = /^student:(\d+)$/.exec(target);
     if (studentTargetMatch) {
       const studentId = Number(studentTargetMatch[1]);
-      setTimeout(() => {
-        void sendPushNotification({
-          studentId,
-          title,
-          body,
-          data: { type: input.type ?? "notification", ...(input.metadata ?? {}) },
-          notificationId: row.id,
-        });
-      }, 0);
+      if (input.pushQueue) {
+        input.pushQueue.push({ kind: "student", studentId, title, body, data, notificationId: row.id });
+      } else {
+        // No queue supplied — this caller is not inside a transaction whose
+        // commit boundary matters (or predates this mechanism); preserve the
+        // original fire-and-forget behavior unchanged.
+        setTimeout(() => {
+          void sendPushNotification({ studentId, title, body, data, notificationId: row.id });
+        }, 0);
+      }
     } else if (target === "all") {
-      setTimeout(() => {
-        void sendBroadcastPushNotification({
-          title,
-          body,
-          data: { type: input.type ?? "notification", ...(input.metadata ?? {}) },
-          notificationId: row.id,
-        });
-      }, 0);
+      if (input.pushQueue) {
+        input.pushQueue.push({ kind: "broadcast", title, body, data, notificationId: row.id });
+      } else {
+        setTimeout(() => {
+          void sendBroadcastPushNotification({ title, body, data, notificationId: row.id });
+        }, 0);
+      }
     }
   }
 
@@ -161,4 +180,21 @@ export async function createBroadcastNotification(
   input: BroadcastNotificationInput,
 ) {
   return insertNotification(client, "all", input.title, input.body, input, input.dedupe ?? true);
+}
+
+/**
+ * Dispatches every queued push job — call this ONLY after the DB
+ * transaction that produced the queue has committed. sendPushNotification /
+ * sendBroadcastPushNotification never throw (they catch and report a
+ * failure result), so a bad push can never surface as a 500 on an
+ * otherwise-successful, already-committed write; genuine send failures are
+ * still logged via notification_delivery_logs, not swallowed silently.
+ */
+export async function flushPushQueue(queue: PendingPushJob[] | undefined): Promise<void> {
+  if (!queue || queue.length === 0) return;
+  await Promise.all(queue.map((job) =>
+    job.kind === "student"
+      ? sendPushNotification({ studentId: job.studentId, title: job.title, body: job.body, data: job.data, notificationId: job.notificationId })
+      : sendBroadcastPushNotification({ title: job.title, body: job.body, data: job.data, notificationId: job.notificationId }),
+  ));
 }

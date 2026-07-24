@@ -2,11 +2,12 @@ import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import * as zod from "zod";
-import { db, attendanceTable, bookingsTable, studentsTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
-import { createStudentNotification } from "../lib/notifications";
+import { db, attendanceTable, bookingsTable, studentsTable, schedulesTable, balletClassesTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
-import { logActivity } from "../lib/activityLog";
+import { listStudioWalkInOptions, performStudioWalkInCheckIn, type StudioWalkInPaymentDecision } from "../lib/studioWalkIn";
+import { flushPushQueue } from "../lib/notifications";
+import { logActivity, adminActivityActor } from "../lib/activityLog";
 import {
   ListAttendanceResponse,
   GetAttendanceStatsQueryParams,
@@ -62,17 +63,46 @@ router.get("/attendance", requireAdminAuth, requireAdminPermission("attendance",
     : await db.select({ total: sql<number>`count(*)::int` }).from(attendanceTable);
   const total = Number(countRow?.total ?? 0);
 
+  // classTitle falls back to the linked Ballet Class's title when the raw
+  // stored column is null — Ballet writes (balletAttendanceWrite.ts) only
+  // ever populate balletClassId, never this denormalized text column
+  // directly, so every Ballet row used to render "—" here. program is
+  // derived from balletLevelAssignmentId, the same discriminator
+  // balletAttendance.ts's own monthly-hours computation uses.
+  const projection = {
+    id: attendanceTable.id,
+    studentName: attendanceTable.studentName,
+    studentEmail: attendanceTable.studentEmail,
+    packageOrderId: attendanceTable.packageOrderId,
+    classTitle: sql<string | null>`coalesce(${attendanceTable.classTitle}, ${balletClassesTable.title})`,
+    creditDeducted: attendanceTable.creditDeducted,
+    notes: attendanceTable.notes,
+    studentId: attendanceTable.studentId,
+    classId: attendanceTable.classId,
+    scheduleId: attendanceTable.scheduleId,
+    bookingId: attendanceTable.bookingId,
+    checkedInBy: attendanceTable.checkedInBy,
+    status: attendanceTable.status,
+    checkedInAt: attendanceTable.checkedInAt,
+    createdAt: attendanceTable.createdAt,
+    updatedAt: attendanceTable.updatedAt,
+    program: sql<"studio" | "ballet">`case when ${attendanceTable.balletLevelAssignmentId} is not null then 'ballet' else 'studio' end`,
+    durationMinutes: attendanceTable.durationMinutes,
+  };
+
   const rows = whereClause
     ? await db
-        .select()
+        .select(projection)
         .from(attendanceTable)
+        .leftJoin(balletClassesTable, eq(attendanceTable.balletClassId, balletClassesTable.id))
         .where(whereClause)
         .orderBy(desc(attendanceTable.checkedInAt))
         .limit(pageSize)
         .offset(offset)
     : await db
-        .select()
+        .select(projection)
         .from(attendanceTable)
+        .leftJoin(balletClassesTable, eq(attendanceTable.balletClassId, balletClassesTable.id))
         .orderBy(desc(attendanceTable.checkedInAt))
         .limit(pageSize)
         .offset(offset);
@@ -87,18 +117,16 @@ router.get("/attendance", requireAdminAuth, requireAdminPermission("attendance",
 // ---------------------------------------------------------------------------
 // POST /attendance
 //
-// Accepts both the original body shape AND the extended shape (with optional
-// studentId / classId / scheduleId).  Clients that don't send the new fields
-// continue to work unchanged.
-//
-// Guarantees (enforced inside a single DB transaction):
-//   1. Duplicate prevention — if classId or scheduleId is supplied, we block
-//      a second check-in for the same student + class/schedule on the same day.
-//   2. Package integrity — credit is only deducted if the package exists and
-//      has credits remaining; the package is locked for the duration of the
-//      transaction to prevent double-deduction under concurrent requests.
-//   3. Atomic write — attendance record and credit deduction either both
-//      commit or both roll back.
+// Two entry points, both delegating to a shared engine rather than
+// reimplementing business logic:
+//   - bookingId supplied  → performBookingCheckIn() (checkInService.ts) —
+//     identical to QR / the Unified Attendance gateway's booked-candidate path.
+//   - no bookingId        → performStudioWalkInCheckIn() (studioWalkIn.ts) —
+//     identical to the Unified Attendance gateway's Walk-in path. Requires a
+//     canonical scheduleId AND a resolved studentId; a free-text-only legacy
+//     payload (no scheduleId, e.g. a client's "manual schedule" fallback) or
+//     an unregistered walk-in (no studentId) is rejected with
+//     {error:"deprecated_contract"} rather than written as untracked text.
 // ---------------------------------------------------------------------------
 router.post(
   "/attendance",
@@ -202,173 +230,73 @@ router.post(
         summary: `Checked in ${result.studentName}${result.classTitle ? ` for ${result.classTitle}` : ""}`,
       });
 
-      res.status(201).json(result);
+      // Post-commit only — a rolled-back check-in never reaches this line.
+      const { pendingPushJobs, ...responseBody } = result;
+      await flushPushQueue(pendingPushJobs);
+      res.status(201).json(responseBody);
       return;
     }
 
-    // ── WALK-IN check-in (no booking) — SEPARATE flow, behaviour unchanged ──
-    // Records that an (un-booked) student attended. This mirrors the existing
-    // walk-in behaviour exactly: optional same-day duplicate guard, optional
-    // package-credit deduction + ledger, attendance row, and notifications.
-    // (Booking-linked check-ins go through the shared performBookingCheckIn()
-    // above; this path intentionally remains its own implementation.)
-    const row = await db.transaction(async (tx) => {
-      // Step 1 — Duplicate attendance check (only when a class/schedule is given)
-      if (classId != null || scheduleId != null) {
-        const dupConditions = [
-          eq(attendanceTable.studentEmail, studentEmail),
-          // Same-day comparison in Africa/Cairo (no UTC drift).
-          sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
-        ];
-        if (scheduleId != null) {
-          dupConditions.push(eq(attendanceTable.scheduleId, scheduleId));
-        } else {
-          dupConditions.push(eq(attendanceTable.classId, classId!));
-        }
-
-        const [existing] = await tx
-          .select({ id: attendanceTable.id })
-          .from(attendanceTable)
-          .where(and(...dupConditions))
-          .limit(1);
-        if (existing) {
-          throw makeCheckInError(
-            409,
-            "duplicate_attendance",
-            "This student has already been checked in for this class today.",
-          );
-        }
-      }
-
-      // Step 2 — Credit deduction + ledger (with row-level lock), if requested
-      let remainingCreditsAfterDeduction: number | null = null;
-      if (creditDeducted && packageOrderId != null) {
-        if (scheduleId != null) {
-          const [schedule] = await tx
-            .select({ packageEligible: schedulesTable.packageEligible })
-            .from(schedulesTable)
-            .where(eq(schedulesTable.id, scheduleId))
-            .limit(1);
-          if (schedule?.packageEligible === false) {
-            throw makeCheckInError(400, "package_not_eligible", "This schedule is not eligible for package credits.");
-          }
-        }
-
-        const [order] = await tx
-          .select()
-          .from(packageOrdersTable)
-          .where(eq(packageOrdersTable.id, packageOrderId))
-          .for("update"); // prevents concurrent deductions on the same package
-        if (!order) {
-          throw makeCheckInError(404, "package_not_found", "Package order not found.");
-        }
-        if (order.remainingCredits <= 0) {
-          throw makeCheckInError(400, "no_credits", "This package has no remaining credits.");
-        }
-
-        const newRemaining = order.remainingCredits - 1;
-        remainingCreditsAfterDeduction = newRemaining;
-        await tx
-          .update(packageOrdersTable)
-          .set({ remainingCredits: newRemaining, status: newRemaining <= 0 ? "fullyUsed" : order.status })
-          .where(eq(packageOrdersTable.id, packageOrderId));
-
-        await tx.insert(creditTransactionsTable).values({
-          packageOrderId,
-          studentId: studentId ?? null,
-          type: "attendance_deduction",
-          delta: -1,
-          balanceBefore: order.remainingCredits,
-          balanceAfter: newRemaining,
-          referenceId: null,
-          referenceType: null,
-          notes: `Check-in for "${classTitle ?? "class"}"`,
-          createdBy: performedBy,
-        });
-      }
-
-      // Step 3 — Insert attendance record
-      const [inserted] = await tx
-        .insert(attendanceTable)
-        .values({
-          studentName,
-          studentEmail,
-          packageOrderId: packageOrderId ?? null,
-          classTitle: classTitle ?? null,
-          creditDeducted: creditDeducted ?? false,
-          notes: notes ?? null,
-          studentId: studentId ?? null,
-          classId: classId ?? null,
-          scheduleId: scheduleId ?? null,
-          bookingId: null,
-          checkedInBy: performedBy,
-          status: status ?? "checked_in",
-          checkedInAt: new Date().toISOString(),
-        })
-        .returning();
-
-      await createStudentNotification(tx, {
-        studentId: studentId ?? null,
-        studentEmail,
-        title: "Checked in",
-        body: `You have been checked in${classTitle ? ` for ${classTitle}` : ""}.`,
-        type: "attendance_checked_in",
-        relatedEntityType: "attendance",
-        relatedEntityId: inserted.id,
-        metadata: { className: classTitle, classId, scheduleId },
+    // ── WALK-IN check-in (no booking) — delegates to the canonical Studio
+    // Walk-in engine (lib/studioWalkIn.ts), the SAME one the Unified
+    // Attendance gateway's /admin/attendance/walk-in/confirm uses. This route
+    // is kept only for backward compatibility with existing callers
+    // (scan-check-in-dialog.tsx's Path B) — it is no longer a second,
+    // divergent business engine. A payload that cannot be mapped to a real
+    // canonical Schedule occurrence AND a real, resolved Account is rejected
+    // outright: free-text Class entry (no scheduleId) and unregistered
+    // walk-ins (no studentId) are no longer accepted here.
+    if (scheduleId == null || studentId == null) {
+      res.status(422).json({
+        error: "deprecated_contract",
+        message: "Walk-in check-in now requires a real Schedule and a resolved Account — free-text class entry is no longer supported. Use the Check In Student → Record Walk-in flow instead.",
       });
+      return;
+    }
 
-      if (creditDeducted && packageOrderId != null) {
-        await createStudentNotification(tx, {
-          studentId: studentId ?? null,
-          studentEmail,
-          title: "Credit used",
-          body: `1 credit was used${classTitle ? ` for ${classTitle}` : ""}.`,
-          type: "credits_exhausted",
-          relatedEntityType: "attendance",
-          relatedEntityId: inserted.id,
-          metadata: { className: classTitle, packageOrderId, remainingCredits: remainingCreditsAfterDeduction },
-        });
+    const [scheduleRow] = await db
+      .select({ classId: schedulesTable.classId })
+      .from(schedulesTable)
+      .where(eq(schedulesTable.id, scheduleId))
+      .limit(1);
+    if (!scheduleRow) {
+      res.status(422).json({ error: "deprecated_contract", message: "The selected Schedule could not be found." });
+      return;
+    }
 
-        if (remainingCreditsAfterDeduction === 0) {
-          await createStudentNotification(tx, {
-            studentId: studentId ?? null,
-            studentEmail,
-            title: "Package credits used",
-            body: "Your package credits have been used.",
-            type: "credits_exhausted",
-            relatedEntityType: "package_order",
-            relatedEntityId: packageOrderId,
-            metadata: { className: classTitle, packageOrderId, remainingCredits: remainingCreditsAfterDeduction },
-          });
-        }
-      }
+    // occurrenceDate has no field on this legacy payload — re-derived
+    // canonically the same way the Walk-in options list does, and rejected
+    // if this Schedule isn't a currently-eligible Walk-in occurrence for
+    // this account (covers window state, active Class/Schedule, and an
+    // already-existing Booking or Attendance for the same occurrence).
+    const nowForWalkIn = new Date();
+    const walkInOptions = await listStudioWalkInOptions(studentId, null, nowForWalkIn);
+    const matchingOption = walkInOptions.find((o) => o.scheduleId === scheduleId);
+    if (!matchingOption) {
+      res.status(422).json({
+        error: "deprecated_contract",
+        message: "This Schedule is not currently an eligible Walk-in occurrence for this Account.",
+      });
+      return;
+    }
 
-      return inserted;
+    const paymentDecision: StudioWalkInPaymentDecision =
+      creditDeducted && packageOrderId != null
+        ? { type: "package_credit", packageOrderId }
+        : { type: "paid_at_studio" };
+
+    const result = await performStudioWalkInCheckIn({
+      accountId: studentId,
+      participantChildId: null,
+      classId: scheduleRow.classId,
+      scheduleId,
+      occurrenceDate: matchingOption.occurrenceDate,
+      payment: paymentDecision,
+      actor: adminActivityActor(req),
+      now: nowForWalkIn,
     });
 
-    await logActivity(req, {
-      action: "checkIn",
-      module: "attendance",
-      entityType: "attendance",
-      entityId: row.id,
-      entityLabel: row.studentName,
-      after: {
-        studentId: row.studentId,
-        studentEmail: row.studentEmail,
-        studentName: row.studentName,
-        packageOrderId: row.packageOrderId,
-        classId: row.classId,
-        scheduleId: row.scheduleId,
-        classTitle: row.classTitle,
-        creditDeducted: row.creditDeducted,
-        status: row.status,
-        checkedInAt: row.checkedInAt,
-      },
-      summary: `Checked in ${row.studentName}${row.classTitle ? ` for ${row.classTitle}` : ""}`,
-    });
-
-    res.status(201).json(row);
+    res.status(201).json(result);
   } catch (err: unknown) {
     if (isCheckInError(err)) {
       res.status(err.status).json({ error: err.code, message: err.message });
@@ -394,6 +322,34 @@ router.get("/attendance/stats", requireAdminAuth, requireAdminPermission("attend
     .select()
     .from(attendanceTable)
     .orderBy(desc(attendanceTable.checkedInAt));
+
+  // Status/program breakdown — computed once, alongside the existing
+  // time-bucketed trend below, not instead of it. checked_in/late are the
+  // only statuses that represent actual attendance; absent is its opposite,
+  // and cancelled represents neither Studio Credit nor Ballet-hours
+  // consumption (matches balletAttendance.ts's own exclusion rule).
+  let checkedInCount = 0;
+  let lateCount = 0;
+  let absentCount = 0;
+  let cancelledCount = 0;
+  let studioCreditsConsumed = 0;
+  let balletMinutesConsumed = 0;
+  for (const row of rows) {
+    const isBallet = row.balletLevelAssignmentId != null;
+    if (row.status === "checked_in") checkedInCount += 1;
+    else if (row.status === "late") lateCount += 1;
+    else if (row.status === "absent") absentCount += 1;
+    else if (row.status === "cancelled") cancelledCount += 1;
+
+    if (row.status === "cancelled") continue;
+    if (isBallet) {
+      if (row.status === "checked_in" || row.status === "late" || row.status === "absent") {
+        balletMinutesConsumed += row.durationMinutes ?? 0;
+      }
+    } else if (row.creditDeducted) {
+      studioCreditsConsumed += 1;
+    }
+  }
 
   const now = new Date();
   let data: { label: string; count: number }[] = [];
@@ -451,7 +407,17 @@ router.get("/attendance/stats", requireAdminAuth, requireAdminPermission("attend
   }
 
   const total = data.reduce((sum, d) => sum + d.count, 0);
-  res.json({ period, total, data });
+  res.json({
+    period,
+    total,
+    data,
+    checkedInCount,
+    lateCount,
+    absentCount,
+    cancelledCount,
+    studioCreditsConsumed,
+    balletMinutesConsumed,
+  });
 });
 
 export default router;

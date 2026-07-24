@@ -26,7 +26,7 @@ import {
   packageOrdersTable,
   creditTransactionsTable,
 } from "@workspace/db";
-import { createStudentNotification } from "./notifications";
+import { createStudentNotification, type PendingPushJob } from "./notifications";
 import { checkInWindowState } from "./occurrence";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -59,7 +59,8 @@ export type CheckInErrorCode =
   | "invalid_package"
   | "package_not_eligible"
   | "no_credits"
-  | "candidate_key_mismatch";
+  | "candidate_key_mismatch"
+  | "booking_exists_use_normal_checkin";
 
 export interface CheckInError {
   isCheckInError: true;
@@ -174,6 +175,15 @@ export interface BookingCheckInResult {
   creditDeducted: boolean;
   remainingCredits: number | null;
   checkedInAt: string;
+  /**
+   * Push sends produced by this check-in, not yet dispatched. The caller
+   * owns the enclosing db.transaction() and MUST flushPushQueue() this only
+   * after that transaction resolves successfully — never before, and never
+   * if it rolled back. Strip this field before sending the result to a
+   * client; it is an internal handoff, not part of any public response
+   * contract.
+   */
+  pendingPushJobs: PendingPushJob[];
 }
 
 export async function performBookingCheckIn(
@@ -184,6 +194,7 @@ export async function performBookingCheckIn(
     throw makeCheckInError(400, "package_required", "Package credit check-in requires a packageOrderId.");
   }
 
+  const pendingPushJobs: PendingPushJob[] = [];
   const notificationContext = await getBookingNotificationContext(tx, booking);
 
   // ── Step 1 — Booking must be CONFIRMED (not pending/terminal/already attended)
@@ -353,7 +364,9 @@ export async function performBookingCheckIn(
     .set({ status: "attended", bookingStatus: "attended" })
     .where(eq(bookingsTable.id, booking.id));
 
-  // ── Step 9 — Notifications
+  // ── Step 9 — Notifications. dispatch (the actual push send) is queued via
+  // pushQueue, not fired here — the caller flushes it strictly after this
+  // transaction commits (see pendingPushJobs on the return value below).
   await createStudentNotification(tx, {
     studentId: student.id,
     title: "Checked in",
@@ -372,6 +385,7 @@ export async function performBookingCheckIn(
       participantName: notificationContext.participantName,
       bookingScope: notificationContext.bookingScope,
     },
+    pushQueue: pendingPushJobs,
   });
 
   if (selectedOrder) {
@@ -392,6 +406,7 @@ export async function performBookingCheckIn(
         bookingScope: notificationContext.bookingScope,
         remainingCredits,
       },
+      pushQueue: pendingPushJobs,
     });
 
     if (remainingCredits === 0) {
@@ -412,6 +427,7 @@ export async function performBookingCheckIn(
           bookingScope: notificationContext.bookingScope,
           remainingCredits,
         },
+        pushQueue: pendingPushJobs,
       });
     }
   }
@@ -424,5 +440,6 @@ export async function performBookingCheckIn(
     creditDeducted: paymentMode === "package_credit",
     remainingCredits,
     checkedInAt: attendance.checkedInAt,
+    pendingPushJobs,
   };
 }

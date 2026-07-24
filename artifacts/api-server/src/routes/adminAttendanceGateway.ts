@@ -32,13 +32,14 @@
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, studentsTable, bookingsTable, balletLevelAssignmentsTable, balletApplicationsTable, balletSchedulesTable } from "@workspace/db";
+import { db, studentsTable, childrenTable, bookingsTable, balletLevelAssignmentsTable, balletApplicationsTable, balletSchedulesTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
-import { logActivity } from "../lib/activityLog";
+import { logActivity, adminActivityActor } from "../lib/activityLog";
 import { computeBalletMonthlyAttendanceSummary } from "../lib/balletAttendance";
 import { attendanceOccurrenceDateForWeeklySchedule, cairoNow } from "../lib/occurrence";
 import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
+import { flushPushQueue } from "../lib/notifications";
 import { performBalletAttendanceWrite, isBalletAttendanceError } from "../lib/balletAttendanceWrite";
 import {
   resolveAttendanceCandidates,
@@ -46,6 +47,11 @@ import {
   computeBalletCandidateKey,
   type ResolverSource,
 } from "../lib/attendanceResolver";
+import {
+  listStudioWalkInOptions,
+  computeStudioWalkInCandidateKey,
+  performStudioWalkInCheckIn,
+} from "../lib/studioWalkIn";
 
 const router: IRouter = Router();
 
@@ -181,7 +187,10 @@ router.post(
           summary: `Recorded Studio attendance for ${result.studentName} via ${AUDIT_SOURCE_LABEL[body.source]}`,
         });
 
-        res.status(201).json({ program: "studio", attendance: result });
+        // Post-commit only — a rolled-back confirm never reaches this line.
+        const { pendingPushJobs, ...attendance } = result;
+        await flushPushQueue(pendingPushJobs);
+        res.status(201).json({ program: "studio", attendance });
       } catch (err: unknown) {
         if (isCheckInError(err)) {
           res.status(err.status).json({ error: err.code, message: err.message });
@@ -285,6 +294,152 @@ router.post(
         return;
       }
       logger.error({ err, body }, "POST /admin/attendance/confirm (ballet) failed");
+      res.status(500).json({ error: "Failed to record attendance" });
+    }
+  },
+);
+
+// ─── Studio Walk-in ─────────────────────────────────────────────────────────
+//
+// A walk-in is the participant-picked continuation of the same resolved
+// account this file already handles above — never a second front door. It is
+// always offered as a SECONDARY action alongside the resolved candidates
+// (Admin UI shows it per account, regardless of whether that account or
+// participant already has an eligible Booking for a different class or
+// occurrence) — a participant can be booked into Class A and still walk into
+// Class B. Only the exact same occurrence a Booking already covers is
+// excluded from the Walk-in options and rejected on confirm — see
+// studioWalkIn.ts's participantHasEligibleBookingForOccurrence.
+
+const WalkInParticipantsQuery = z.object({
+  accountId: z.coerce.number().int().positive(),
+});
+
+// GET, not POST — pure read, mirrors resolve's read-only contract. Kept as
+// its own endpoint (not folded into POST /admin/attendance/resolve) so the
+// existing, already-validated QR/phone/name resolver response shape used by
+// the Production-confirmed Ballet/Studio flows is never touched.
+router.get(
+  "/admin/attendance/walk-in/participants",
+  requireAdminAuth,
+  requireAdminPermission("attendance", "checkIn"),
+  async (req, res): Promise<void> => {
+    const parsed = WalkInParticipantsQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid query" });
+      return;
+    }
+    const [account] = await db
+      .select({ id: studentsTable.id, name: studentsTable.name })
+      .from(studentsTable)
+      .where(eq(studentsTable.id, parsed.data.accountId))
+      .limit(1);
+    if (!account) {
+      res.status(404).json({ error: "account_not_found", message: "Account not found." });
+      return;
+    }
+    const children = await db
+      .select({ id: childrenTable.id, fullName: childrenTable.fullName })
+      .from(childrenTable)
+      .where(eq(childrenTable.parentId, account.id));
+
+    res.json({
+      accountId: account.id,
+      participants: [
+        { type: "self" as const, childId: null, name: account.name },
+        ...children.map((c) => ({ type: "child" as const, childId: c.id, name: c.fullName })),
+      ],
+    });
+  },
+);
+
+const WalkInOptionsBody = z.object({
+  accountId: z.number().int().positive(),
+  participantChildId: z.number().int().positive().nullable(),
+});
+
+router.post(
+  "/admin/attendance/walk-in/options",
+  requireAdminAuth,
+  requireAdminPermission("attendance", "checkIn"),
+  async (req, res): Promise<void> => {
+    const parsed = WalkInOptionsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+      return;
+    }
+    const options = await listStudioWalkInOptions(parsed.data.accountId, parsed.data.participantChildId);
+    res.json({ options });
+  },
+);
+
+// Walk-in confirm intentionally accepts only canonical selection identifiers
+// and the payment decision — never a Class title, price, current time,
+// Credit amount, Instructor, or Attendance status. Every one of those is
+// server-derived inside performStudioWalkInCheckIn.
+const WalkInConfirmBody = z
+  .object({
+    candidateKey: z.string().min(1),
+    accountId: z.number().int().positive(),
+    participantChildId: z.number().int().positive().nullable(),
+    classId: z.number().int().positive(),
+    scheduleId: z.number().int().positive(),
+    occurrenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    payment: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("package_credit"), packageOrderId: z.number().int().positive() }),
+      z.object({ type: z.literal("paid_at_studio") }),
+    ]),
+  })
+  .strict();
+
+function requirePackageDeductForWalkInCredit(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.payment?.type !== "package_credit") { next(); return; }
+  requireAdminPermission("qr", "packageDeduct")(req, res, next);
+}
+
+router.post(
+  "/admin/attendance/walk-in/confirm",
+  requireAdminAuth,
+  requireAdminPermission("attendance", "checkIn"),
+  requireAdminPermission("qr", "checkIn"),
+  requirePackageDeductForWalkInCredit,
+  async (req: AdminRequest, res): Promise<void> => {
+    const parsed = WalkInConfirmBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+      return;
+    }
+    const body = parsed.data;
+
+    const expectedKey = computeStudioWalkInCandidateKey(
+      body.accountId,
+      body.participantChildId,
+      body.classId,
+      body.scheduleId,
+      body.occurrenceDate,
+    );
+    if (expectedKey !== body.candidateKey) {
+      res.status(409).json({ error: "candidate_key_mismatch", message: "This selection is stale — please search again." });
+      return;
+    }
+
+    try {
+      const result = await performStudioWalkInCheckIn({
+        accountId: body.accountId,
+        participantChildId: body.participantChildId,
+        classId: body.classId,
+        scheduleId: body.scheduleId,
+        occurrenceDate: body.occurrenceDate,
+        payment: body.payment,
+        actor: adminActivityActor(req),
+      });
+      res.status(201).json({ program: "studio", walkIn: true, attendance: result });
+    } catch (err: unknown) {
+      if (isCheckInError(err)) {
+        res.status(err.status).json({ error: err.code, message: err.message });
+        return;
+      }
+      logger.error({ err, body }, "POST /admin/attendance/walk-in/confirm failed");
       res.status(500).json({ error: "Failed to record attendance" });
     }
   },
