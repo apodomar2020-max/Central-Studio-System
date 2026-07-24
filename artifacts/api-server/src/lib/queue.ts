@@ -53,7 +53,7 @@ export type BalletCancellationFinalizationJob =
  * is the recurring planner: it discovers today's Ballet Schedule occurrences
  * whose end time (+ a small grace) is imminent and enqueues one deterministic
  * "process_occurrence" job per occurrence — deterministic jobId
- * (`ballet-auto-absence:{scheduleId}:{classDate}`) so re-running the planner
+ * (`ballet-auto-absence-{scheduleId}-{classDate}`) so re-running the planner
  * (restart, replica, overlapping lookahead windows) does not enqueue
  * duplicates. The occurrence-identity DB unique index
  * (attendance_ballet_unique_per_slot_date) is the ultimate idempotency

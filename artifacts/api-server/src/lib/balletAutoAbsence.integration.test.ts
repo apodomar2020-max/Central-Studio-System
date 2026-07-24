@@ -41,6 +41,11 @@ let processBalletAutoAbsenceOccurrence: typeof import("./balletAutoAbsence.ts").
 let planDueBalletAbsenceOccurrences: typeof import("./balletAutoAbsence.ts").planDueBalletAbsenceOccurrences;
 let reconcileBalletAbsencePushDelivery: typeof import("./balletAutoAbsence.ts").reconcileBalletAbsencePushDelivery;
 let processBalletAbsencePushDelivery: typeof import("./balletAutoAbsence.ts").processBalletAbsencePushDelivery;
+let enqueueProcessOccurrence: typeof import("./balletAutoAbsence.ts").enqueueProcessOccurrence;
+let enqueueAbsencePushDelivery: typeof import("./balletAutoAbsence.ts").enqueueAbsencePushDelivery;
+let balletAbsenceOccurrenceJobId: typeof import("./balletAutoAbsence.ts").balletAbsenceOccurrenceJobId;
+let balletAbsencePushJobId: typeof import("./balletAutoAbsence.ts").balletAbsencePushJobId;
+let assertValidBullMqCustomJobId: typeof import("./balletAutoAbsence.ts").assertValidBullMqCustomJobId;
 let BALLET_AUTO_ABSENCE_RECOVERY_HORIZON_DAYS: number;
 let cairoDateTimeToUtcMs: typeof import("./occurrence.ts").cairoDateTimeToUtcMs;
 
@@ -115,6 +120,11 @@ before(async () => {
   planDueBalletAbsenceOccurrences = mod.planDueBalletAbsenceOccurrences;
   reconcileBalletAbsencePushDelivery = mod.reconcileBalletAbsencePushDelivery;
   processBalletAbsencePushDelivery = mod.processBalletAbsencePushDelivery;
+  enqueueProcessOccurrence = mod.enqueueProcessOccurrence;
+  enqueueAbsencePushDelivery = mod.enqueueAbsencePushDelivery;
+  balletAbsenceOccurrenceJobId = mod.balletAbsenceOccurrenceJobId;
+  balletAbsencePushJobId = mod.balletAbsencePushJobId;
+  assertValidBullMqCustomJobId = mod.assertValidBullMqCustomJobId;
   BALLET_AUTO_ABSENCE_RECOVERY_HORIZON_DAYS = mod.BALLET_AUTO_ABSENCE_RECOVERY_HORIZON_DAYS;
   const occurrenceModule = await import("./occurrence.ts");
   cairoDateTimeToUtcMs = occurrenceModule.cairoDateTimeToUtcMs;
@@ -404,12 +414,74 @@ test("a malformed classDate is rejected with a safe diagnostic, never crashes th
   }
 });
 
+test("Ballet Auto Absence custom job IDs are deterministic, distinct, and colon-free", () => {
+  const pushA = balletAbsencePushJobId(101);
+  const pushARepeat = balletAbsencePushJobId(101);
+  const pushB = balletAbsencePushJobId(102);
+  assert.equal(pushA, "ballet-absence-push-101");
+  assert.equal(pushA, pushARepeat);
+  assert.notEqual(pushA, pushB);
+  assert.equal(pushA.includes(":"), false);
+
+  const occurrenceA = balletAbsenceOccurrenceJobId(11, "2026-07-20");
+  const occurrenceARepeat = balletAbsenceOccurrenceJobId(11, "2026-07-20");
+  const occurrenceOtherDate = balletAbsenceOccurrenceJobId(11, "2026-07-27");
+  const occurrenceOtherSchedule = balletAbsenceOccurrenceJobId(12, "2026-07-20");
+  assert.equal(occurrenceA, "ballet-auto-absence-11-2026-07-20");
+  assert.equal(occurrenceA, occurrenceARepeat);
+  assert.notEqual(occurrenceA, occurrenceOtherDate);
+  assert.notEqual(occurrenceA, occurrenceOtherSchedule);
+  assert.equal(occurrenceA.includes(":"), false);
+
+  assert.throws(
+    () => assertValidBullMqCustomJobId("ballet-absence-push:101"),
+    /custom jobId must not contain ':'/,
+  );
+  assert.throws(() => balletAbsenceOccurrenceJobId(11, "2026-02-30"), /canonical ISO class date/);
+});
+
+test("occurrence and push enqueue boundaries use canonical IDs and deduplicate repeats", async () => {
+  const jobs = new Map<string, { getState(): Promise<string>; retry(): Promise<void> }>();
+  const added: { name: string; jobId: string }[] = [];
+  const queue = {
+    getJob: async (jobId: string) => jobs.get(jobId) ?? null,
+    add: async (name: string, _data: unknown, opts: { jobId?: string }) => {
+      assert.ok(opts.jobId);
+      const job = {
+        getState: async () => "waiting",
+        retry: async () => undefined,
+      };
+      jobs.set(opts.jobId, job);
+      added.push({ name, jobId: opts.jobId });
+      return job;
+    },
+  };
+  const typedQueue = queue as unknown as Parameters<typeof enqueueProcessOccurrence>[0];
+
+  assert.equal(await enqueueProcessOccurrence(typedQueue, 21, "2026-07-20", 0), "enqueued");
+  assert.equal(await enqueueProcessOccurrence(typedQueue, 21, "2026-07-20", 0), "duplicate");
+  assert.equal(await enqueueProcessOccurrence(typedQueue, 21, "2026-07-27", 0), "enqueued");
+  assert.equal(await enqueueProcessOccurrence(typedQueue, 22, "2026-07-20", 0), "enqueued");
+  assert.equal(await enqueueAbsencePushDelivery(301, typedQueue), "enqueued");
+  assert.equal(await enqueueAbsencePushDelivery(301, typedQueue), "duplicate");
+  assert.equal(await enqueueAbsencePushDelivery(302, typedQueue), "enqueued");
+
+  assert.deepEqual(added, [
+    { name: "process_occurrence", jobId: balletAbsenceOccurrenceJobId(21, "2026-07-20") },
+    { name: "process_occurrence", jobId: balletAbsenceOccurrenceJobId(21, "2026-07-27") },
+    { name: "process_occurrence", jobId: balletAbsenceOccurrenceJobId(22, "2026-07-20") },
+    { name: "deliver_absence_push", jobId: balletAbsencePushJobId(301) },
+    { name: "deliver_absence_push", jobId: balletAbsencePushJobId(302) },
+  ]);
+  assert.ok(added.every(({ jobId }) => !jobId.includes(":")));
+});
+
 test("future, out-of-horizon, and mismatched deterministic job dates are rejected before student writes", async () => {
   const future = addDays(CLASS_DATE, 7);
   const futureResult = await processBalletAutoAbsenceOccurrence(
     { balletScheduleId: fx.scheduleId, classDate: future },
     afterEnd(CLASS_DATE),
-    { jobId: `ballet-auto-absence:${fx.scheduleId}:${future}` },
+    { jobId: balletAbsenceOccurrenceJobId(fx.scheduleId, future) },
   );
   assert.equal(futureResult.diagnostic, "future_occurrence");
 
@@ -417,14 +489,14 @@ test("future, out-of-horizon, and mismatched deterministic job dates are rejecte
   const oldResult = await processBalletAutoAbsenceOccurrence(
     { balletScheduleId: fx.scheduleId, classDate: CLASS_DATE },
     beyondHorizonNow,
-    { jobId: `ballet-auto-absence:${fx.scheduleId}:${CLASS_DATE}` },
+    { jobId: balletAbsenceOccurrenceJobId(fx.scheduleId, CLASS_DATE) },
   );
   assert.equal(oldResult.diagnostic, "outside_recovery_horizon");
 
   const identityResult = await processBalletAutoAbsenceOccurrence(
     { balletScheduleId: fx.scheduleId, classDate: CLASS_DATE },
     afterEnd(CLASS_DATE),
-    { jobId: `ballet-auto-absence:${fx.scheduleId + 1}:${CLASS_DATE}` },
+    { jobId: balletAbsenceOccurrenceJobId(fx.scheduleId + 1, CLASS_DATE) },
   );
   assert.equal(identityResult.diagnostic, "job_identity_mismatch");
 });
@@ -439,7 +511,7 @@ test("early Worker execution delegates one active-job delay to the authoritative
       { balletScheduleId: fx.scheduleId, classDate: date },
       cairoAt(date, "12:00"),
       {
-        jobId: `ballet-auto-absence:${fx.scheduleId}:${date}`,
+        jobId: balletAbsenceOccurrenceJobId(fx.scheduleId, date),
         rescheduleAt: async (timestamp): Promise<never> => {
           requestedTimestamps.push(timestamp);
           throw sentinel;
@@ -462,7 +534,7 @@ test("queued status and duration fields are ignored; canonical absent status and
   await processBalletAutoAbsenceOccurrence(
     { balletScheduleId: fx.scheduleId, classDate: date, status: "checked_in", durationMinutes: 1 } as unknown as { balletScheduleId: number; classDate: string },
     afterEnd(date),
-    { jobId: `ballet-auto-absence:${fx.scheduleId}:${date}` },
+    { jobId: balletAbsenceOccurrenceJobId(fx.scheduleId, date) },
   );
   const rows = await pool.query(
     `SELECT status, duration_minutes FROM attendance WHERE ballet_level_assignment_id = $1 AND ballet_schedule_id = $2 AND class_date = $3`,
@@ -578,6 +650,48 @@ async function insertDeliveryLog(notificationId: number, status: "sent" | "faile
     [notificationId, status, errorCode],
   );
 }
+
+test("reconciliation enqueues missing/failed delivery with safe IDs and leaves sent/skipped terminal", async () => {
+  const student = await pool.query(
+    `INSERT INTO students (name, email, phone, account_type) VALUES ('Reconcile Job IDs', $1, '0100000024', 'parent') RETURNING id`,
+    [`reconcile-job-ids-${Date.now()}@example.com`],
+  );
+  const missingId = await insertBalletAbsenceNotification(student.rows[0].id, uniqueAttendanceIdSeed());
+  const failedId = await insertBalletAbsenceNotification(student.rows[0].id, uniqueAttendanceIdSeed());
+  const sentId = await insertBalletAbsenceNotification(student.rows[0].id, uniqueAttendanceIdSeed());
+  const skippedId = await insertBalletAbsenceNotification(student.rows[0].id, uniqueAttendanceIdSeed());
+  await insertDeliveryLog(failedId, "failed", "transient_fcm_error");
+  await insertDeliveryLog(sentId, "sent");
+  await insertDeliveryLog(skippedId, "skipped", "no_active_device");
+
+  const addedJobIds: string[] = [];
+  const queue = {
+    getJob: async () => null,
+    add: async (_name: string, _data: unknown, opts: { jobId?: string }) => {
+      assert.ok(opts.jobId);
+      addedJobIds.push(opts.jobId);
+      return { id: opts.jobId };
+    },
+  } as unknown as Parameters<typeof enqueueProcessOccurrence>[0];
+
+  const notificationCountBefore = await pool.query(
+    `SELECT count(*)::int AS n FROM notifications WHERE id = ANY($1::int[])`,
+    [[missingId, failedId, sentId, skippedId]],
+  );
+  await reconcileBalletAbsencePushDelivery(new Date(), queue);
+  const notificationCountAfter = await pool.query(
+    `SELECT count(*)::int AS n FROM notifications WHERE id = ANY($1::int[])`,
+    [[missingId, failedId, sentId, skippedId]],
+  );
+
+  assert.ok(addedJobIds.includes(balletAbsencePushJobId(missingId)));
+  assert.ok(addedJobIds.includes(balletAbsencePushJobId(failedId)));
+  assert.equal(addedJobIds.includes(balletAbsencePushJobId(sentId)), false);
+  assert.equal(addedJobIds.includes(balletAbsencePushJobId(skippedId)), false);
+  assert.ok(addedJobIds.every((jobId) => !jobId.includes(":")));
+  assert.equal(notificationCountBefore.rows[0].n, 4);
+  assert.equal(notificationCountAfter.rows[0].n, 4, "reconciliation must not create duplicate logical Notifications");
+});
 
 test("two reconcilers may discover the same missing delivery while two processors call the provider only once", async () => {
   const student = await pool.query(

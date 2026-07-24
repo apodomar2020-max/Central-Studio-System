@@ -46,10 +46,29 @@ import {
   type BalletAttendanceErrorCode,
 } from "./balletAttendanceWrite";
 import { addDaysToIsoDate, cairoNow, cairoDateTimeToUtcMs, isValidIsoDate, isoDateDayOfWeek } from "./occurrence";
-import { getQueue, defaultJobOptions, QUEUE_NAMES, type BalletAutoAbsenceJob } from "./queue";
+import { getQueue, QUEUE_NAMES, type BalletAutoAbsenceJob } from "./queue";
 import { logActivityWithActorStrict, systemActivityActor } from "./activityLog";
 import { insertReminderNotification, pushCreatedNotification, type PushOutcome } from "./notificationReminders";
 import { logger } from "./logger";
+import {
+  balletAbsenceOccurrenceJobId,
+  balletAbsencePushJobId,
+} from "./balletAutoAbsenceJobIds";
+import {
+  enqueueAbsencePushDelivery,
+  enqueueProcessOccurrence,
+  type AutoAbsenceQueue,
+} from "./balletAutoAbsenceQueue";
+
+export {
+  assertValidBullMqCustomJobId,
+  balletAbsenceOccurrenceJobId,
+  balletAbsencePushJobId,
+} from "./balletAutoAbsenceJobIds";
+export {
+  enqueueAbsencePushDelivery,
+  enqueueProcessOccurrence,
+} from "./balletAutoAbsenceQueue";
 
 /** Delay after a schedule's end time before the absence job fires — gives an
  *  in-flight check-in transaction time to land before the cutoff is judged. */
@@ -97,52 +116,7 @@ async function scheduleIdsForDayOfWeek(dayOfWeek: number): Promise<{ id: number;
       eq(balletSchedulesTable.dayOfWeek, dayOfWeek),
       scheduleShapeCondition(),
       isOperationalBalletClass(),
-    ));
-}
-
-async function enqueueProcessOccurrence(
-  queue: NonNullable<ReturnType<typeof getQueue>>,
-  balletScheduleId: number,
-  classDate: string,
-  delayMs: number,
-): Promise<"enqueued" | "duplicate"> {
-  const jobId = `ballet-auto-absence:${balletScheduleId}:${classDate}`;
-  const existing = await queue.getJob(jobId);
-  if (existing) {
-    const state = await existing.getState();
-    if (state === "failed") {
-      await existing.retry();
-      return "enqueued";
-    }
-    return "duplicate";
-  }
-  await queue.add(
-    "process_occurrence",
-    { type: "process_occurrence", balletScheduleId, classDate, source: "scheduler" } satisfies BalletAutoAbsenceJob,
-    { ...defaultJobOptions(), delay: Math.max(0, delayMs), jobId },
-  );
-  return "enqueued";
-}
-
-async function enqueueAbsencePushDelivery(notificationId: number): Promise<"enqueued" | "duplicate" | "unavailable"> {
-  const queue = getQueue(QUEUE_NAMES.balletAutoAbsence);
-  if (!queue) return "unavailable";
-  const jobId = `ballet-absence-push:${notificationId}`;
-  const existing = await queue.getJob(jobId);
-  if (existing) {
-    const state = await existing.getState();
-    if (state === "failed") {
-      await existing.retry();
-      return "enqueued";
-    }
-    return "duplicate";
-  }
-  await queue.add(
-    "deliver_absence_push",
-    { type: "deliver_absence_push", notificationId, source: "scheduler" } satisfies BalletAutoAbsenceJob,
-    { ...defaultJobOptions(), jobId },
-  );
-  return "enqueued";
+  ));
 }
 
 export async function planDueBalletAbsenceOccurrences(now: Date = new Date()): Promise<PlanResult> {
@@ -292,7 +266,7 @@ export async function processBalletAutoAbsenceOccurrence(
     return emptyProcessResult("invalid_class_date");
   }
 
-  const expectedJobId = `ballet-auto-absence:${balletScheduleId}:${classDate}`;
+  const expectedJobId = balletAbsenceOccurrenceJobId(balletScheduleId, classDate);
   if (execution.jobId != null && execution.jobId !== expectedJobId) {
     logger.warn({ balletScheduleId, classDate, jobId: execution.jobId }, "ballet auto-absence: deterministic job identity mismatch");
     return emptyProcessResult("job_identity_mismatch");
@@ -596,7 +570,10 @@ async function canonicalDeliveryState(
  * sent/skipped are terminal; failed/missing are retryable. Reconciliation
  * only enqueues deterministic jobs and never calls the Push provider itself.
  */
-export async function reconcileBalletAbsencePushDelivery(now: Date = new Date()): Promise<PushReconciliationResult> {
+export async function reconcileBalletAbsencePushDelivery(
+  now: Date = new Date(),
+  queueOverride?: AutoAbsenceQueue | null,
+): Promise<PushReconciliationResult> {
   const horizonStartIso = new Date(now.getTime() - BALLET_AUTO_ABSENCE_RECOVERY_HORIZON_DAYS * 24 * 60 * 60_000).toISOString();
 
   const notifications = await db
@@ -609,7 +586,9 @@ export async function reconcileBalletAbsencePushDelivery(now: Date = new Date())
     .orderBy(desc(notificationsTable.createdAt), desc(notificationsTable.id))
     .limit(PUSH_RECONCILIATION_LIMIT);
 
-  const queue = getQueue(QUEUE_NAMES.balletAutoAbsence);
+  const queue = queueOverride === undefined
+    ? getQueue(QUEUE_NAMES.balletAutoAbsence)
+    : queueOverride;
   let scanned = 0;
   let enqueued = 0;
   let duplicateJobs = 0;
@@ -619,7 +598,7 @@ export async function reconcileBalletAbsencePushDelivery(now: Date = new Date())
     scanned += 1;
     if (!queue) continue;
 
-    const enqueueOutcome = await enqueueAbsencePushDelivery(row.id);
+    const enqueueOutcome = await enqueueAbsencePushDelivery(row.id, queue);
     if (enqueueOutcome === "enqueued") enqueued += 1;
     else if (enqueueOutcome === "duplicate") duplicateJobs += 1;
   }
@@ -674,7 +653,7 @@ export async function processBalletAutoAbsenceJob(
     return planResult;
   }
   if (jobData.type === "deliver_absence_push") {
-    const expectedJobId = `ballet-absence-push:${jobData.notificationId}`;
+    const expectedJobId = balletAbsencePushJobId(jobData.notificationId);
     if (execution.jobId != null && execution.jobId !== expectedJobId) {
       throw new Error(`Ballet absence push job identity mismatch for notification ${jobData.notificationId}`);
     }
