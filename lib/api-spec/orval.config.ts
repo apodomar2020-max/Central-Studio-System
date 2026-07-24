@@ -25,7 +25,11 @@ export default defineConfig({
       workspace: apiClientReactSrc,
       target: "generated",
       client: "react-query",
-      mode: "split",
+      // Orval 8.17 silently omits most React Query mutation hooks in "split"
+      // mode (base request fns and *MutationOptions are emitted, but the
+      // use* wrappers are dropped). "single" emits the full set — 1 hook per
+      // operation — and inlines the schema types into api.ts.
+      mode: "single",
       baseUrl: "/api",
       clean: true,
       prettier: true,

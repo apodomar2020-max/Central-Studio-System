@@ -567,15 +567,31 @@ paths:
     get:
       operationId: listStudents
       tags: [students]
+      summary: List student/parent accounts (admin, paginated)
+      parameters:
+        - name: accountType
+          in: query
+          required: false
+          schema: { type: string, enum: [student, parent] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
       responses:
         "200":
-          description: List of students
+          description: Paginated list of students
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Student"
+                $ref: "#/components/schemas/ListStudentsResponse"
     post:
       operationId: createStudent
       tags: [students]
@@ -1098,6 +1114,167 @@ paths:
               schema:
                 $ref: "#/components/schemas/AttendanceStats"
 
+  /dance-types:
+    get:
+      operationId: listDanceTypes
+      tags: [danceTypes]
+      summary: List active dance types (public catalogue)
+      responses:
+        "200":
+          description: Active dance types ordered by sortOrder then name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DanceType"
+
+  /check-in/qr:
+    post:
+      operationId: checkInQr
+      tags: [attendance]
+      summary: Check in a student from a scanned QR token (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInQrBody"
+      responses:
+        "200":
+          description: Attendance created for the scanned booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckInQrResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/credits/ledger:
+    get:
+      operationId: listCreditTransactions
+      tags: [credits]
+      summary: Paginated credit transaction ledger (admin)
+      parameters:
+        - name: packageOrderId
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: studentEmail
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Paginated credit ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListCreditTransactionsResponse"
+
+  /admin/package-orders/{id}/credits:
+    post:
+      operationId: adjustCredits
+      tags: [credits]
+      summary: Apply a credit adjustment to a package order (admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdjustCreditsBody"
+      responses:
+        "200":
+          description: Updated order plus the immutable ledger row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdjustCreditsResponse"
+        "400":
+          description: Invalid adjustment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /my/packages:
+    get:
+      operationId: getMyPackages
+      tags: [my]
+      summary: Package orders owned by the authenticated student
+      responses:
+        "200":
+          description: Package orders, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MyPackageOrder"
+
+  /my/credits:
+    get:
+      operationId: getMyCredits
+      tags: [my]
+      summary: Credit ledger for the authenticated student
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - name: packageOrderId
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Paginated credit transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyCreditsResponse"
+
+  /my/attendance:
+    get:
+      operationId: getMyAttendance
+      tags: [my]
+      summary: Attendance history for the authenticated student
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Paginated attendance history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyAttendanceResponse"
+
+
 components:
   schemas:
     HealthStatus:
@@ -1212,8 +1389,19 @@ components:
 
     Instructor:
       type: object
-      required: [id, name, specialties, experienceYears, isActive, createdAt]
+      required: [id, name, specialties, experienceYears, isActive, createdAt, achievements, professionalExperience]
       properties:
+        achievements:
+          type: array
+          items: { type: string }
+        professionalExperience:
+          type: array
+          items: { type: string }
+        teachingLevel: { type: string, nullable: true }
+        teachingPhilosophy: { type: string, nullable: true }
+        instagramUrl: { type: string, nullable: true }
+        tiktokUrl: { type: string, nullable: true }
+        youtubeUrl: { type: string, nullable: true }
         id: { type: integer }
         name: { type: string }
         bio: { type: ["string", "null"] }
@@ -1249,8 +1437,11 @@ components:
 
     Class:
       type: object
-      required: [id, title, category, level, durationMins, capacity, isActive, createdAt]
+      required: [id, title, category, level, durationMins, capacity, isActive, createdAt, ageGroup]
       properties:
+        ageGroup: { type: string }
+        danceTypeId: { type: integer, nullable: true }
+        classVideoUrl: { type: string, nullable: true }
         id: { type: integer }
         title: { type: string }
         description: { type: ["string", "null"] }
@@ -1292,13 +1483,20 @@ components:
 
     Schedule:
       type: object
-      required: [id, classId, dayOfWeek, startTime, endTime, isRecurring, createdAt]
+      required: [id, classId, type, status, startTime, endTime, packageEligible, isRecurring, createdAt]
       properties:
         id: { type: integer }
         classId: { type: integer }
-        dayOfWeek: { type: integer }
+        type: { type: string, enum: [weekly, one_time] }
+        # Domain enforced by schedules_status_check (migration 0029)
+        status: { type: string, enum: [active, completed, expired, cancelled] }
+        # null for one_time schedules (the concrete date is in `date`)
+        dayOfWeek: { type: integer, nullable: true }
+        date: { type: string, nullable: true }
         startTime: { type: string }
         endTime: { type: string }
+        priceEgp: { type: integer, nullable: true }
+        packageEligible: { type: boolean }
         location: { type: ["string", "null"] }
         isRecurring: { type: boolean }
         effectiveFrom: { type: ["string", "null"] }
@@ -1339,10 +1537,17 @@ components:
 
     CreateScheduleBody:
       type: object
-      required: [classId, dayOfWeek, startTime, endTime]
+      required: [classId, startTime, endTime]
       properties:
         classId: { type: integer }
-        dayOfWeek: { type: integer }
+        # Required for weekly schedules; the route enforces that rule and
+        # derives it from `date` for one_time schedules.
+        dayOfWeek: { type: integer, nullable: true }
+        type: { type: string }
+        status: { type: string }
+        date: { type: string, nullable: true }
+        priceEgp: { type: integer, nullable: true }
+        packageEligible: { type: boolean }
         startTime: { type: string }
         endTime: { type: string }
         location: { type: ["string", "null"] }
@@ -1354,7 +1559,12 @@ components:
       type: object
       properties:
         classId: { type: integer }
-        dayOfWeek: { type: integer }
+        dayOfWeek: { type: integer, nullable: true }
+        type: { type: string }
+        status: { type: string }
+        date: { type: string, nullable: true }
+        priceEgp: { type: integer, nullable: true }
+        packageEligible: { type: boolean }
         startTime: { type: string }
         endTime: { type: string }
         location: { type: ["string", "null"] }
@@ -1364,8 +1574,16 @@ components:
 
     PricePackage:
       type: object
-      required: [id, name, type, priceEgp, isActive, isFeatured, createdAt]
+      required: [id, name, type, priceEgp, isActive, isFeatured, createdAt, validityMonths, allowedDanceTypes, features]
       properties:
+        validityMonths: { type: integer }
+        singleClassPriceEgp: { type: number, nullable: true }
+        allowedDanceTypes:
+          type: array
+          items: { type: string }
+        features:
+          type: array
+          items: { type: string }
         id: { type: integer }
         name: { type: string }
         type: { type: string }
@@ -1403,6 +1621,7 @@ components:
       type: object
       required: [id, studentName, studentEmail, status, bookedAt, createdAt]
       properties:
+        occurrenceDate: { type: string, nullable: true }
         id: { type: integer }
         studentName: { type: string }
         studentEmail: { type: string }
@@ -1465,6 +1684,10 @@ components:
       type: object
       required: [studentName, studentEmail]
       properties:
+        packageOrderId: { type: integer, nullable: true }
+        participantChildId: { type: integer, nullable: true }
+        bookingScope: { type: string }
+        occurrenceDate: { type: string, nullable: true }
         studentName: { type: string }
         studentEmail: { type: string }
         studentPhone: { type: ["string", "null"] }
@@ -1481,6 +1704,8 @@ components:
     UpdateBookingBody:
       type: object
       properties:
+        bookingStatus: { type: string }
+        paymentStatus: { type: string }
         studentName: { type: string }
         studentEmail: { type: string }
         studentPhone: { type: ["string", "null"] }
@@ -1494,6 +1719,12 @@ components:
       type: object
       required: [id, name, email, totalBookings, joinedAt, createdAt]
       properties:
+        accountType: { type: string, nullable: true }
+        # Populated by GET /students/{id} for parent accounts; absent on list rows.
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudentChild"
         id: { type: integer }
         name: { type: string }
         email: { type: string }
@@ -1691,18 +1922,33 @@ components:
 
     Attendance:
       type: object
-      required: [id, studentName, studentEmail, creditDeducted, checkedInAt, createdAt, updatedAt]
+      required: [id, studentName, studentEmail, creditDeducted, checkedInAt, createdAt, updatedAt, program]
       properties:
         id: { type: integer }
         studentName: { type: string }
         studentEmail: { type: string }
         packageOrderId: { type: ["integer", "null"] }
+        # Resolved display title — falls back to the linked Ballet Class's
+        # title when the raw stored column is null (Ballet writes never
+        # populate this column directly; see routes/attendance.ts).
         classTitle: { type: ["string", "null"] }
         creditDeducted: { type: boolean }
         notes: { type: ["string", "null"] }
+        studentId: { type: ["integer", "null"] }
+        classId: { type: ["integer", "null"] }
+        scheduleId: { type: ["integer", "null"] }
+        bookingId: { type: ["integer", "null"] }
+        checkedInBy: { type: ["string", "null"] }
+        status: { type: string }
         checkedInAt: { type: string }
         createdAt: { type: string }
         updatedAt: { type: string }
+        # Program discriminator — derived from whether the row carries a
+        # Ballet level assignment. Lets the Admin UI pick the right Usage
+        # rendering (Studio credits vs. Ballet minutes) without guessing.
+        program: { type: string, enum: [studio, ballet] }
+        # Immutable Schedule-duration snapshot (Ballet rows only).
+        durationMinutes: { type: ["integer", "null"] }
 
     CheckInBody:
       type: object
@@ -1717,9 +1963,12 @@ components:
 
     AttendanceStats:
       type: object
-      required: [period, total, data]
+      required: [period, total, data, checkedInCount, lateCount, absentCount, cancelledCount, studioCreditsConsumed, balletMinutesConsumed]
       properties:
         period: { type: string }
+        # Total Attendance records of any status, across all time — NOT
+        # "check-ins": absent and cancelled rows are included here (matches
+        # the trend-chart `data` below, which also counts every status).
         total: { type: integer }
         data:
           type: array
@@ -1729,3 +1978,189 @@ components:
             properties:
               label: { type: string }
               count: { type: integer }
+        checkedInCount: { type: integer }
+        lateCount: { type: integer }
+        absentCount: { type: integer }
+        cancelledCount: { type: integer }
+        # Studio "1 credit consumed" events — creditDeducted=true, program=studio.
+        studioCreditsConsumed: { type: integer }
+        # Ballet minutes actually consumed (checked_in + late + absent —
+        # matches balletAttendance.ts's own monthly-hours definition;
+        # cancelled excluded).
+        balletMinutesConsumed: { type: integer }
+
+    ListStudentsResponse:
+      type: object
+      required: [students, total, page, pageSize, totalPages]
+      properties:
+        students:
+          type: array
+          items:
+            $ref: "#/components/schemas/Student"
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
+
+    DanceType:
+      type: object
+      required: [id, name, slug, isActive, sortOrder, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        iconUrl: { type: string, nullable: true }
+        iconSvg: { type: string, nullable: true }
+        iconMime: { type: string, nullable: true }
+        coverImageUrl: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        hasIconSvg: { type: boolean }
+        iconSvgUrl: { type: string, nullable: true }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    CheckInQrBody:
+      type: object
+      required: [qrToken, bookingId, paymentMode]
+      properties:
+        qrToken: { type: string }
+        bookingId: { type: integer }
+        paymentMode: { type: string, enum: [package_credit, pay_at_studio] }
+        packageOrderId: { type: integer }
+        checkedInBy: { type: string }
+
+    CheckInQrResponse:
+      type: object
+      required: [attendanceId, studentName, studentEmail, creditDeducted, checkedInAt]
+      properties:
+        attendanceId: { type: integer }
+        studentName: { type: string }
+        studentEmail: { type: string }
+        classTitle: { type: string, nullable: true }
+        creditDeducted: { type: boolean }
+        remainingCredits: { type: integer, nullable: true }
+        checkedInAt: { type: string }
+
+    CreditTransaction:
+      type: object
+      required: [id, packageOrderId, type, delta, balanceBefore, balanceAfter, createdBy, createdAt]
+      properties:
+        id: { type: integer }
+        packageOrderId: { type: integer }
+        studentId: { type: integer, nullable: true }
+        type: { type: string }
+        delta: { type: integer }
+        balanceBefore: { type: integer }
+        balanceAfter: { type: integer }
+        referenceId: { type: integer, nullable: true }
+        referenceType: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        createdBy: { type: string }
+        className: { type: string, nullable: true }
+        createdAt: { type: string }
+
+    ListCreditTransactionsResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditTransaction"
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    MyCreditsResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditTransaction"
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    AdjustCreditsBody:
+      type: object
+      required: [type, delta]
+      properties:
+        type: { type: string, enum: [manual_adjustment, package_bonus] }
+        delta: { type: integer }
+        notes: { type: string }
+
+    AdjustCreditsResponse:
+      type: object
+      required: [order, transaction]
+      properties:
+        order:
+          $ref: "#/components/schemas/PackageOrder"
+        transaction:
+          $ref: "#/components/schemas/CreditTransaction"
+
+    MyPackageOrder:
+      type: object
+      required: [id, studentName, studentEmail, packageName, totalCredits, remainingCredits, status, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        studentName: { type: string }
+        studentEmail: { type: string }
+        studentPhone: { type: string, nullable: true }
+        packageId: { type: integer, nullable: true }
+        packageName: { type: string }
+        totalCredits: { type: integer }
+        remainingCredits: { type: integer }
+        status: { type: string }
+        notes: { type: string, nullable: true }
+        activatedAt: { type: string, nullable: true }
+        expiresAt: { type: string, nullable: true }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        priceEgp: { type: number, nullable: true }
+
+    MyAttendanceRecord:
+      type: object
+      required: [id, studentEmail, studentName, creditDeducted, checkedInAt]
+      properties:
+        id: { type: integer }
+        studentEmail: { type: string }
+        studentName: { type: string }
+        classTitle: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        creditDeducted: { type: boolean }
+        checkedInAt: { type: string }
+        packageOrderId: { type: integer, nullable: true }
+        classId: { type: integer, nullable: true }
+        scheduleId: { type: integer, nullable: true }
+        notes: { type: string, nullable: true }
+        instructorName: { type: string, nullable: true }
+
+    MyAttendanceResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MyAttendanceRecord"
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    StudentChild:
+      type: object
+      required: [id, fullName, gender]
+      properties:
+        id: { type: integer }
+        fullName: { type: string }
+        birthday: { type: string, nullable: true }
+        age: { type: integer, nullable: true }
+        gender: { type: string }
+        medicalNotes: { type: string, nullable: true }
+        emergencyName: { type: string, nullable: true }
+        emergencyPhone: { type: string, nullable: true }
