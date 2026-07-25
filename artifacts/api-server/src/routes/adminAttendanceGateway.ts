@@ -30,19 +30,20 @@
  *                          requirePackageDeductForQr exactly)
  */
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, studentsTable, bookingsTable, balletLevelAssignmentsTable, balletApplicationsTable, balletSchedulesTable } from "@workspace/db";
+import { db, studentsTable, bookingsTable, balletLevelAssignmentsTable, balletApplicationsTable, balletSchedulesTable, schedulesTable, childrenTable, attendanceTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { logActivity } from "../lib/activityLog";
 import { computeBalletMonthlyAttendanceSummary } from "../lib/balletAttendance";
-import { attendanceOccurrenceDateForWeeklySchedule, cairoNow } from "../lib/occurrence";
-import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
+import { attendanceOccurrenceDateForWeeklySchedule, cairoNow, checkInWindowState } from "../lib/occurrence";
+import { performBookingCheckIn, performStudioWalkIn, dispatchStudioWalkInPush, makeCheckInError, isCheckInError } from "../lib/checkInService";
 import { performBalletAttendanceWrite, isBalletAttendanceError } from "../lib/balletAttendanceWrite";
 import {
   resolveAttendanceCandidates,
   computeStudioCandidateKey,
+  computeStudioWalkInCandidateKey,
   computeBalletCandidateKey,
   type ResolverSource,
 } from "../lib/attendanceResolver";
@@ -86,18 +87,37 @@ const ConfirmBody = z
     program: z.enum(["studio", "ballet"]),
     accountId: z.number().int().positive(),
     source: z.enum(["qr", "phone", "childName"]),
-    // Studio
+    // Studio — existing-booking check-in.
     bookingId: z.number().int().positive().optional(),
     paymentMode: z.enum(["package_credit", "pay_at_studio"]).optional(),
     packageOrderId: z.number().int().positive().optional(),
+    // Studio WALK-IN (Finance Phase 2B-4, full flow) — no pre-existing
+    // booking. scheduleId identifies the occurrence the Admin selected;
+    // `paid` is the mandatory Paid/Not Paid confirmation, required only
+    // when paymentMode is pay_at_studio (a package_credit walk-in reuses
+    // the existing credit flow and never needs it). childId identifies a
+    // child walk-in (validated server-side against childrenTable.parentId
+    // — never trusted blindly). expectedPriceEgp is the price the resolve()
+    // response displayed to the Admin; confirm() re-resolves the real price
+    // and rejects with 409 walkin_price_changed if it no longer matches.
+    scheduleId: z.number().int().positive().optional(),
+    paid: z.boolean().optional(),
+    childId: z.number().int().positive().optional(),
+    expectedPriceEgp: z.number().nonnegative().optional(),
     // Ballet — identity only, never business fields (status/date/duration).
     balletLevelAssignmentId: z.number().int().positive().optional(),
     balletScheduleId: z.number().int().positive().optional(),
     note: z.string().optional(),
   })
   .strict()
-  .refine((b) => b.program !== "studio" || (b.bookingId != null && b.paymentMode != null), {
-    message: "bookingId and paymentMode are required to confirm a Studio candidate",
+  .refine((b) => b.program !== "studio" || b.paymentMode != null, {
+    message: "paymentMode is required to confirm a Studio candidate",
+  })
+  .refine((b) => b.program !== "studio" || (b.bookingId != null) !== (b.scheduleId != null), {
+    message: "Exactly one of bookingId (existing booking) or scheduleId (walk-in) is required to confirm a Studio candidate",
+  })
+  .refine((b) => b.program !== "studio" || b.scheduleId == null || b.paymentMode !== "pay_at_studio" || b.paid != null, {
+    message: "A Paid/Not Paid confirmation (paid:true|false) is required for a pay-at-studio walk-in",
   })
   .refine((b) => b.program !== "ballet" || (b.balletLevelAssignmentId != null && b.balletScheduleId != null), {
     message: "balletLevelAssignmentId and balletScheduleId are required to confirm a Ballet candidate",
@@ -136,7 +156,7 @@ router.post(
     const now = new Date();
     const todayCairo = cairoNow(now).date;
 
-    if (body.program === "studio") {
+    if (body.program === "studio" && body.bookingId != null) {
       try {
         const result = await db.transaction(async (tx) => {
           // Never trust the resolver response's account/participant identity —
@@ -188,6 +208,207 @@ router.post(
           return;
         }
         logger.error({ err, bookingId: body.bookingId }, "POST /admin/attendance/confirm (studio) failed");
+        res.status(500).json({ error: "Failed to record attendance" });
+      }
+      return;
+    }
+
+    // ── Studio WALK-IN confirm (Finance Phase 2B-4, full flow) ─────────────
+    // No pre-existing booking: the Admin selected a live schedule occurrence
+    // through the SAME gateway resolve() step (walk-in candidates —
+    // attendanceResolver.ts's buildStudioWalkInCandidates). Package Credit
+    // reuses the existing performBookingCheckIn credit/ledger path exactly,
+    // after creating the synthetic booking it operates on. A pay-at-studio
+    // walk-in with paid:false aborts before any write. paid:true delegates
+    // to performStudioWalkIn, which performs the entire atomic capture.
+    if (body.program === "studio" && body.scheduleId != null) {
+      try {
+        const walkInResult = await db.transaction(async (tx) => {
+          const [account] = await tx.select().from(studentsTable).where(eq(studentsTable.id, body.accountId)).limit(1);
+          if (!account) throw makeCheckInError(404, "invalid_qr", "Account not found.");
+
+          // Child identity, when this walk-in is for a child — validated
+          // against the existing parent/child ownership model, never
+          // trusted blindly from the request body. An unrelated/foreign
+          // child id is rejected before any write.
+          let participantName = account.name;
+          let childId: number | null = null;
+          if (body.childId != null) {
+            const [child] = await tx
+              .select({ id: childrenTable.id, fullName: childrenTable.fullName })
+              .from(childrenTable)
+              .where(and(eq(childrenTable.id, body.childId), eq(childrenTable.parentId, account.id)))
+              .limit(1);
+            if (!child) throw makeCheckInError(403, "booking_mismatch", "This child does not belong to the resolved account.");
+            childId = child.id;
+            participantName = child.fullName;
+          }
+
+          const [schedule] = await tx
+            .select({
+              id: schedulesTable.id,
+              classId: schedulesTable.classId,
+              status: schedulesTable.status,
+              type: schedulesTable.type,
+              date: schedulesTable.date,
+              dayOfWeek: schedulesTable.dayOfWeek,
+              startTime: schedulesTable.startTime,
+              endTime: schedulesTable.endTime,
+            })
+            .from(schedulesTable)
+            .where(eq(schedulesTable.id, body.scheduleId!))
+            .for("update");
+          if (!schedule) throw makeCheckInError(404, "booking_not_found", "Schedule not found.");
+          if (schedule.status !== "active") throw makeCheckInError(400, "booking_not_actionable", "This schedule is not currently active.");
+
+          const occurrenceDate = schedule.type === "one_time"
+            ? schedule.date
+            : schedule.dayOfWeek != null
+              ? attendanceOccurrenceDateForWeeklySchedule({ dayOfWeek: schedule.dayOfWeek, startTime: schedule.startTime, endTime: schedule.endTime }, now)
+              : null;
+          if (!occurrenceDate) throw makeCheckInError(400, "not_todays_occurrence", "This schedule has no valid occurrence available right now.");
+
+          const windowState = checkInWindowState({ startTime: schedule.startTime, endTime: schedule.endTime }, occurrenceDate, now);
+          if (windowState === "too_early") throw makeCheckInError(400, "check_in_too_early", "Check-in for this class opens 2 hours before it starts.");
+          if (windowState !== "open") throw makeCheckInError(400, "check_in_closed", "Check-in for this class is not currently open.");
+
+          // CandidateKey binding — the walk-in equivalent of the
+          // existing-booking check above: recomputed from the server's own
+          // resolved schedule/occurrence/child, never the client's.
+          const expectedKey = computeStudioWalkInCandidateKey(body.accountId, childId, schedule.id, occurrenceDate);
+          if (expectedKey !== body.candidateKey) {
+            throw makeCheckInError(409, "candidate_key_mismatch", "This selection is stale or was not issued for this account — please search again.");
+          }
+
+          // Serialize concurrent/replayed confirmations for the SAME
+          // account+child+schedule+day — mirrors the identical fix already
+          // applied to the direct POST /attendance walk-in path (see
+          // attendance.ts). Without this, two near-simultaneous confirms
+          // (or a naive client retry after a slow response) could both pass
+          // the duplicate check below before either commits.
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`walkin:${account.email}:${schedule.id}:${childId ?? "self"}:${occurrenceDate}`}))`);
+
+          const [existingAttendance] = await tx
+            .select({ id: attendanceTable.id })
+            .from(attendanceTable)
+            .where(and(
+              eq(attendanceTable.studentEmail, account.email),
+              eq(attendanceTable.scheduleId, schedule.id),
+              sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
+            ))
+            .limit(1);
+          if (existingAttendance) {
+            throw makeCheckInError(409, "duplicate_attendance", "This participant has already been checked in for this class today.");
+          }
+
+          if (body.paymentMode === "package_credit") {
+            // Reuse the EXISTING package lock + credit-ledger flow exactly:
+            // create the required synthetic booking first (status
+            // "confirmed", matching what performBookingCheckIn requires of
+            // any booking it processes), then hand off to the same shared
+            // function existing-booking check-ins use. No credit logic is
+            // duplicated here.
+            const [syntheticBooking] = await tx
+              .insert(bookingsTable)
+              .values({
+                studentName: participantName,
+                studentEmail: account.email,
+                accountOwnerStudentId: account.id,
+                participantChildId: childId,
+                bookingScope: childId != null ? "child" : "self",
+                scheduleId: schedule.id,
+                classId: schedule.classId,
+                occurrenceDate,
+                paymentMode: "package_credit",
+                bookingStatus: "confirmed",
+                paymentStatus: "not_required",
+                status: "confirmed",
+                notes: "Studio walk-in (package credit)",
+              })
+              .returning();
+
+            const creditResult = await performBookingCheckIn(tx, {
+              booking: syntheticBooking,
+              student: { id: account.id, name: account.name, email: account.email },
+              paymentMode: "package_credit",
+              packageOrderId: body.packageOrderId ?? null,
+              performedBy,
+              now,
+            });
+            return { kind: "credit" as const, result: creditResult, bookingId: syntheticBooking.id };
+          }
+
+          // pay_at_studio — the mandatory Paid/Not Paid confirmation.
+          if (body.paid !== true) {
+            throw makeCheckInError(400, "walkin_not_paid", "This walk-in was not marked as paid — no records were created.");
+          }
+          const paidResult = await performStudioWalkIn(tx, {
+            studentName: participantName,
+            studentEmail: account.email,
+            studentId: account.id,
+            childId,
+            classId: schedule.classId,
+            scheduleId: schedule.id,
+            adminId: req.adminUser!.id,
+            performedBy,
+            expectedPriceEgp: body.expectedPriceEgp ?? null,
+            now,
+          });
+          return { kind: "paid" as const, result: paidResult };
+        });
+
+        if (walkInResult.kind === "paid") {
+          dispatchStudioWalkInPush(walkInResult.result.pendingPush);
+          await logActivity(req, {
+            action: "checkIn",
+            module: "attendance",
+            entityType: "attendance",
+            entityId: walkInResult.result.attendanceId,
+            entityLabel: walkInResult.result.studentName,
+            after: {
+              scheduleId: body.scheduleId, source: AUDIT_SOURCE_LABEL[body.source], program: "studio", accountId: body.accountId,
+              bookingId: walkInResult.result.bookingId, paymentRecordId: walkInResult.result.paymentRecordId,
+              finalPayableAmountMinor: walkInResult.result.finalPayableAmountMinor,
+            },
+            summary: `Recorded paid Studio walk-in for ${walkInResult.result.studentName} (EGP ${(walkInResult.result.finalPayableAmountMinor / 100).toFixed(2)}) via ${AUDIT_SOURCE_LABEL[body.source]}`,
+          });
+          res.status(201).json({
+            program: "studio",
+            attendance: {
+              attendanceId: walkInResult.result.attendanceId,
+              bookingId: walkInResult.result.bookingId,
+              studentName: walkInResult.result.studentName,
+              studentEmail: walkInResult.result.studentEmail,
+              creditDeducted: false,
+              remainingCredits: null,
+              checkedInAt: walkInResult.result.checkedInAt,
+              paid: true,
+              finalPayableAmountMinor: walkInResult.result.finalPayableAmountMinor,
+            },
+          });
+          return;
+        }
+
+        // kind === "credit"
+        await logActivity(req, {
+          action: "checkIn",
+          module: "attendance",
+          entityType: "attendance",
+          entityId: walkInResult.result.attendanceId,
+          entityLabel: walkInResult.result.studentName,
+          after: {
+            scheduleId: body.scheduleId, source: AUDIT_SOURCE_LABEL[body.source], program: "studio", accountId: body.accountId,
+            bookingId: walkInResult.bookingId, packageOrderId: body.packageOrderId ?? null,
+          },
+          summary: `Recorded Studio walk-in attendance (package credit) for ${walkInResult.result.studentName} via ${AUDIT_SOURCE_LABEL[body.source]}`,
+        });
+        res.status(201).json({ program: "studio", attendance: walkInResult.result });
+      } catch (err: unknown) {
+        if (isCheckInError(err)) {
+          res.status(err.status).json({ error: err.code, message: err.message });
+          return;
+        }
+        logger.error({ err, scheduleId: body.scheduleId }, "POST /admin/attendance/confirm (studio walk-in) failed");
         res.status(500).json({ error: "Failed to record attendance" });
       }
       return;

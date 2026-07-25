@@ -74,6 +74,12 @@ export const CheckInBodyExtended = zod.object({
   bookingId: zod.number().nullish(),
   checkedInBy: zod.string().nullish(),
   status: zod.enum(["checked_in", "late", "absent", "cancelled"]).optional(),
+  // Finance Phase 2B-4 (Studio Walk-in Atomic Monetary Capture) — optional,
+  // backward-compatible: only consulted on the walk-in (no bookingId) path
+  // when no Package Credit is being used. Omitted entirely => existing
+  // attendance-only behavior, unchanged. true => atomic paid walk-in capture.
+  // false => abort the whole operation, no rows written.
+  paid: zod.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------
