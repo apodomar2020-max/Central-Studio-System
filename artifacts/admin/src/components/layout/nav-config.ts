@@ -48,6 +48,11 @@ import {
   Wallet,
   Sparkles,
   Receipt,
+  Landmark,
+  ArrowLeftRight,
+  PiggyBank,
+  BadgePercent,
+  FileDown,
 } from "lucide-react";
 import type { PermRequirement } from "@/lib/permissions";
 
@@ -67,6 +72,13 @@ export interface NavLink {
   pageTitle?: string;
   /** Route/page does not exist yet — rendered disabled, never a real link. */
   comingSoon?: boolean;
+  /**
+   * Highlight only on an exact location match, instead of the default
+   * prefix match. Needed when this link's href is a strict prefix of its
+   * siblings' (e.g. Finance Overview "/finance" vs "/finance/packages"),
+   * where prefix matching would mark the parent active on every child page.
+   */
+  exact?: boolean;
 }
 
 export interface NavGroup {
@@ -83,7 +95,7 @@ const link = (
   href: string,
   perm: PermRequirement,
   icon?: ElementType,
-  extra?: Partial<Pick<NavLink, "pageTitle" | "comingSoon">>,
+  extra?: Partial<Pick<NavLink, "pageTitle" | "comingSoon" | "exact">>,
 ): NavLink => ({ kind: "link", title, href, perm, icon, ...extra });
 
 const group = (title: string, icon: ElementType, children: NavNode[]): NavGroup => ({
@@ -140,6 +152,41 @@ export const NAV_TREE: NavNode[] = [
     link("Feedback", "/feedback", [["feedback", "view"]], MessageSquareText),
   ]),
 
+  // Finance Department (Phase 1) — read-only visibility. Permissions mirror
+  // App.tsx ROUTE_PERMS exactly and reuse existing read permissions only; this
+  // group never widens access, and the backend filters by source family
+  // regardless of what the sidebar shows.
+  group("Finance", Landmark, [
+    link("Overview", "/finance", [["dashboard", "view"]], PiggyBank, {
+      pageTitle: "Finance Overview",
+      // "/finance" prefixes every sibling route, so exact matching keeps
+      // Overview from highlighting while a child page is open.
+      exact: true,
+    }),
+    link("Transactions", "/finance/transactions", [
+      ["packageOrders", "view"], ["bookings", "view"], ["attendance", "view"],
+      ["ballet.payments", "view"], ["promotions", "view"], ["credits", "history"],
+    ], ArrowLeftRight, { pageTitle: "Finance Transactions" }),
+    link("Package Payments", "/finance/packages", [["packageOrders", "view"], ["credits", "history"]], ShoppingBag, {
+      pageTitle: "Finance Package Payments",
+    }),
+    link("Class & Walk-in", "/finance/class-payments", [["bookings", "view"], ["attendance", "view"]], Ticket, {
+      pageTitle: "Finance Class & Walk-in",
+    }),
+    link("Ballet Finance", "/finance/ballet", [["ballet.payments", "view"]], Music2, {
+      pageTitle: "Ballet Finance",
+    }),
+    link("Refunds & Cancellations", "/finance/refunds", [["ballet.payments", "view"]], Receipt, {
+      pageTitle: "Finance Refunds & Cancellations",
+    }),
+    link("Discounts", "/finance/discounts", [["promotions", "view"]], BadgePercent, {
+      pageTitle: "Finance Discounts",
+    }),
+    link("Reports & Exports", "/finance/exports", [["reports", "view"]], FileDown, {
+      pageTitle: "Finance Reports & Exports",
+    }),
+  ]),
+
   group("System", ShieldCheck, [
     link("Bookings", "/bookings", [["bookings", "view"]], Ticket),
     group("Users", UserSquare2, [
@@ -190,6 +237,14 @@ export const NAV_ROUTES: NavRouteEntry[] = flattenLinks(NAV_TREE);
 /** Exact match for "/", prefix match for everything else (same as before). */
 export function isRouteActive(href: string, location: string): boolean {
   return href === "/" ? location === "/" : location === href || location.startsWith(href + "/");
+}
+
+/**
+ * Active state for a nav link, honouring its `exact` flag. Links without the
+ * flag keep the original prefix-matching behaviour exactly.
+ */
+export function isNavLinkActive(item: NavLink, location: string): boolean {
+  return item.exact ? location === item.href : isRouteActive(item.href, location);
 }
 
 /**

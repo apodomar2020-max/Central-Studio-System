@@ -52,6 +52,19 @@ import BalletRefundsPage from "@/pages/ballet/BalletRefundsPage";
 import DesignLabPage from "@/pages/DesignLabPage";
 import SettingsPage from "@/pages/settings";
 import LogsPage from "@/pages/logs";
+// Finance Department (Phase 1) — read-only visibility layer. Every page here
+// reads and deep-links; no financial mutation was moved out of its existing
+// operational page.
+import FinanceOverviewPage from "@/pages/finance/FinanceOverviewPage";
+import FinanceTransactionsPage from "@/pages/finance/FinanceTransactionsPage";
+import FinanceExportsPage from "@/pages/finance/FinanceExportsPage";
+import {
+  FinanceBalletPage,
+  FinanceClassPaymentsPage,
+  FinanceDiscountsPage,
+  FinancePackagesPage,
+  FinanceRefundsPage,
+} from "@/pages/finance/FinanceSourcePages";
 
 // Wire the API client to the backend.
 if (import.meta.env.VITE_API_URL) {
@@ -138,6 +151,25 @@ const ROUTE_PERMS = {
   balletRefunds: [["ballet.payments", "view"]],
   settings: [["settings", "view"]],
   logs: [["auditLogs", "view"]],
+  // Finance reuses the read permissions that already gate each underlying
+  // operational page — Phase 1 introduces no new permission codes, so no
+  // migration and no production role seed is required. The backend enforces the
+  // same mapping per event-source family; these guards only hide UI.
+  financeOverview: [["dashboard", "view"]],
+  // The unified feed is permission-filtered server-side, so any one Finance
+  // read permission is enough to open it — it will only ever return the
+  // families that admin may see.
+  financeTransactions: [
+    ["packageOrders", "view"], ["bookings", "view"], ["attendance", "view"],
+    ["ballet.payments", "view"], ["promotions", "view"], ["credits", "history"],
+  ],
+  financePackages: [["packageOrders", "view"], ["credits", "history"]],
+  // Walk-in rows need the attendance context as well as the booking source.
+  financeClassPayments: [["bookings", "view"], ["attendance", "view"]],
+  financeBallet: [["ballet.payments", "view"]],
+  financeRefunds: [["ballet.payments", "view"]],
+  financeDiscounts: [["promotions", "view"]],
+  financeExports: [["reports", "view"]],
 } satisfies Record<string, PermRequirement>;
 
 /** Wrap a page element in a permission guard for use as Route children. */
@@ -192,6 +224,14 @@ function ProtectedRouter() {
         <Route path="/ballet/refunds">{guarded(ROUTE_PERMS.balletRefunds, <BalletRefundsPage />)}</Route>
         <Route path="/settings">{guarded(ROUTE_PERMS.settings, <SettingsPage />)}</Route>
         <Route path="/logs">{guarded(ROUTE_PERMS.logs, <LogsPage />)}</Route>
+        <Route path="/finance/transactions">{guarded(ROUTE_PERMS.financeTransactions, <FinanceTransactionsPage />)}</Route>
+        <Route path="/finance/packages">{guarded(ROUTE_PERMS.financePackages, <FinancePackagesPage />)}</Route>
+        <Route path="/finance/class-payments">{guarded(ROUTE_PERMS.financeClassPayments, <FinanceClassPaymentsPage />)}</Route>
+        <Route path="/finance/ballet">{guarded(ROUTE_PERMS.financeBallet, <FinanceBalletPage />)}</Route>
+        <Route path="/finance/refunds">{guarded(ROUTE_PERMS.financeRefunds, <FinanceRefundsPage />)}</Route>
+        <Route path="/finance/discounts">{guarded(ROUTE_PERMS.financeDiscounts, <FinanceDiscountsPage />)}</Route>
+        <Route path="/finance/exports">{guarded(ROUTE_PERMS.financeExports, <FinanceExportsPage />)}</Route>
+        <Route path="/finance">{guarded(ROUTE_PERMS.financeOverview, <FinanceOverviewPage />)}</Route>
         {/* DEV-ONLY: component preview — not in sidebar */}
         <Route path="/design-lab" component={DesignLabPage} />
         <Route component={NotFound} />

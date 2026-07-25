@@ -44,6 +44,7 @@ import instagramRouter from "./instagram";
 import reportsRouter from "./reports";
 import backgroundMusicRouter from "./backgroundMusic";
 import classReminderSettingsRouter from "./classReminderSettings";
+import financeRouter from "./finance";
 
 const router: IRouter = Router();
 
@@ -92,5 +93,8 @@ router.use(instagramRouter);
 router.use(reportsRouter);
 router.use(backgroundMusicRouter);
 router.use(classReminderSettingsRouter);
+// Finance Department (Phase 1) — read-only aggregation over the existing
+// operational tables. Registered last; it adds no mutation routes.
+router.use(financeRouter);
 
 export default router;
