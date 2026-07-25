@@ -65,3 +65,5 @@ export * from "./paymentBackfillProgress";
 // Finance Phase 2A DB foundation — dark payment_records register + controlled
 // booking-delete source-tombstone protection (migration 0078)
 export * from "./paymentRecords";
+// Finance Phase 2A DB foundation — dark payment_refunds register (migration 0079)
+export * from "./paymentRefunds";
