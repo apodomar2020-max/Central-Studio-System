@@ -12,8 +12,14 @@ import {
   studentsTable,
   childrenTable,
   paymentRecordsTable,
+  paymentEventsTable,
+  classPricingSettingsTable,
+  type PaymentRecordRequestedChannel,
 } from "@workspace/db";
+import { egpToMinor } from "../lib/money";
+import { logger } from "../lib/logger";
 import { createStudentNotification } from "../lib/notifications";
+import { sendPushNotification } from "../lib/pushNotifications";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
 import {
   ListBookingsQueryParams,
@@ -62,6 +68,41 @@ type NotificationPayload = {
 };
 type BookingNotificationClient = Pick<typeof db, "select">;
 type BookingOwnerClient = Pick<typeof db, "select">;
+type BookingPriceClient = Pick<typeof db, "select">;
+
+const DEFAULT_SINGLE_CLASS_PRICE_EGP = 300;
+
+// Finance Phase 2B-2: the exact same server-side price authority the
+// existing (already-deployed) Finance Phase 1 read model uses for a
+// single-class booking — financeSources.ts's BOOKING_RESOLVED_PRICE and
+// financialAggregates.ts both resolve
+// coalesce(schedules.price_egp, class_pricing_settings.single_class_price_egp).
+// A schedule-level override wins when set; otherwise the Studio-wide
+// default always resolves (class_pricing_settings is a singleton row,
+// lazily seeded on first read exactly like classPricing.ts's own
+// getOrCreateClassPricingSettings — never a hard-coded/zero fallback here).
+async function resolveSingleClassPriceEgp(
+  client: BookingPriceClient,
+  scheduleId: number | null,
+): Promise<number> {
+  if (scheduleId != null) {
+    const [schedule] = await client
+      .select({ priceEgp: schedulesTable.priceEgp })
+      .from(schedulesTable)
+      .where(eq(schedulesTable.id, scheduleId))
+      .limit(1);
+    if (schedule?.priceEgp != null) return schedule.priceEgp;
+  }
+
+  const [settings] = await client
+    .select({ singleClassPriceEgp: classPricingSettingsTable.singleClassPriceEgp })
+    .from(classPricingSettingsTable)
+    .where(eq(classPricingSettingsTable.id, 1))
+    .limit(1);
+  if (settings) return settings.singleClassPriceEgp;
+
+  return DEFAULT_SINGLE_CLASS_PRICE_EGP;
+}
 
 async function refreshScheduleLifecycle(scheduleId: number): Promise<void> {
   await db
@@ -822,6 +863,24 @@ router.post(
     return;
   }
 
+  // Finance Phase 2B-2: capture creation-time monetary state only for an
+  // ordinary, customer-created, direct-monetary-payment booking. paymentMode
+  // is the real, already-enforced discriminator (PAYMENT_MODES above) —
+  // package_credit (credit ledger owns its own economics) and free (blocked
+  // above, and would otherwise fall into the "not_required" payment lane)
+  // are excluded. Studio walk-ins and Unified Attendance Gateway walk-ins
+  // never reach this insert at all (confirmed: bookingsTable has exactly one
+  // INSERT call site in this repository — this one — walk-in/check-in flows
+  // write to attendanceTable directly), so no further discriminator is
+  // needed to exclude them.
+  const isDirectPaymentBooking = normalized.paymentMode === "pay_at_studio" || normalized.paymentMode === "online_payment";
+
+  // Same deterministic post-commit push boundary as Phase 2B-1
+  // (packageOrders.ts): createStudentNotification's push dispatch runs on a
+  // separate connection from `tx` and must not be scheduled until this
+  // transaction has actually committed.
+  const pushState: { pending: { studentId: number; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
+
   const createResult = await db.transaction(async (tx) => {
     const classCapacityEnabled = await isClassCapacityEnabled();
     if (normalized.scheduleId != null) {
@@ -910,15 +969,121 @@ router.post(
       } as typeof bookingsTable.$inferInsert)
       .returning();
 
+    // Finance Phase 2B-2: capture the creation-time monetary snapshot as a
+    // live payment_records row, plus its opening payment_events "created"
+    // row, in the same transaction as the bookings write above — only for
+    // an ordinary direct-payment booking (see isDirectPaymentBooking above).
+    // The amount is always the server-resolved schedule/Studio-default
+    // price — never a client-provided figure.
+    if (isDirectPaymentBooking) {
+      const priceEgp = await resolveSingleClassPriceEgp(tx, normalized.scheduleId ?? null);
+      const grossAmountMinor = egpToMinor(priceEgp);
+      // No real, server-validated discount mechanism exists on this booking
+      // flow today (no promotion service is wired into POST /bookings) —
+      // per the locked spec, discount is 0 rather than inventing support.
+      const discountAmountMinor = 0;
+      const finalPayableAmountMinor = grossAmountMinor - discountAmountMinor;
+
+      const requestedPaymentChannel: PaymentRecordRequestedChannel =
+        normalized.paymentMode === "pay_at_studio"
+          ? "pay_at_studio"
+          : "online";
+
+      // Every direct-payment booking is created with paymentStatus
+      // "pending_payment" (normalizeBookingWrite above) and the only exit
+      // is an admin PATCH /bookings/:id {paymentStatus:"paid"} — gated by
+      // the payment-confirmation guard further down this file, which only
+      // accepts a transition FROM "pending_payment" (or "failed"). There is
+      // no self-service confirmation and no payment-gateway callback. A
+      // newly created direct-payment booking is therefore already sitting
+      // in that admin confirmation queue — pending_confirmation, not unpaid.
+      const initialStatus = "pending_confirmation" as const;
+
+      const [paymentRecord] = await tx
+        .insert(paymentRecordsTable)
+        .values({
+          flowType: "single_class_booking",
+          packageOrderId: null,
+          bookingId: inserted.id,
+          captureOrigin: "live_capture",
+          occurredAt: inserted.createdAt,
+          evidenceClass: "confirmed",
+          amountAvailability: "exact",
+          amountSource: "creation_snapshot",
+          grossAmountMinor,
+          discountAmountMinor,
+          finalPayableAmountMinor,
+          paidAmountMinor: 0,
+          refundedAmountMinor: 0,
+          currency: "EGP",
+          requestedPaymentChannel,
+          rawRequestedChannel: normalized.paymentMode ?? null,
+          status: initialStatus,
+          // accountOwnerStudentId/participantChildId are the same
+          // route-validated identity already used to write the booking row
+          // itself (JWT-forced owner; child ownership checked against
+          // childrenTable.parentId above) — never re-derived from the
+          // request body here.
+          studentId: accountOwnerStudentId,
+          childId: participantChildId,
+          creationIdempotencyKey: null,
+        })
+        .returning();
+
+      await tx.insert(paymentEventsTable).values({
+        paymentRecordId: paymentRecord.id,
+        paymentRefundId: null,
+        eventType: "created",
+        amountMinor: null,
+        previousStatus: null,
+        newStatus: initialStatus,
+        creditTransactionId: null,
+        actorAdminId: null,
+        // POST /bookings requires requireStudentAuth + requireVerifiedStudent
+        // — this insert is only ever reached by an authenticated student.
+        actorType: "student",
+        reason: null,
+        providerReference: null,
+        ipAddress: null,
+        userAgent: null,
+        idempotencyKey: null,
+      });
+    }
+
+    // The notification ROW is inserted here, on the transaction client, so
+    // it stays atomic with the booking/payment rows above. dispatchPush:
+    // false suppresses createStudentNotification's own setTimeout(0) push
+    // scheduling — the actual push is dispatched post-commit below instead.
     const notification = await bookingCreatedNotification(tx, inserted);
-    await createStudentNotification(tx, {
+    const notificationRow = await createStudentNotification(tx, {
       studentId: inserted.accountOwnerStudentId,
       studentEmail: inserted.studentEmail,
       ...notification,
+      dispatchPush: false,
     });
+    if (notificationRow && inserted.accountOwnerStudentId != null) {
+      pushState.pending = {
+        studentId: inserted.accountOwnerStudentId,
+        title: notification.title,
+        body: notification.body,
+        data: { type: notification.type, ...notification.metadata },
+        notificationId: notificationRow.id,
+      };
+    }
 
     return inserted;
   });
+  // Deterministic post-commit boundary: the push is dispatched only after
+  // `db.transaction` above has resolved, i.e. only after the booking, any
+  // Finance rows, and the notification row have all actually committed.
+  // Not awaited — matches the pre-existing fire-and-forget contract; a push
+  // failure here has never rolled back a booking and still does not.
+  if (pushState.pending) {
+    const push = pushState.pending;
+    void sendPushNotification(push).catch((error) => {
+      logger.error({ err: error, notificationId: push.notificationId }, "Failed to dispatch booking creation push");
+    });
+  }
 
   if ("kind" in createResult) {
     if (createResult.kind === "schedule_not_found") {
