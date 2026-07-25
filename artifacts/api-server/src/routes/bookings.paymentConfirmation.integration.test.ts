@@ -41,7 +41,12 @@ const ADMIN_JWT_SECRET = "dev-admin-secret-change-in-production";
 
 let app: import("express").Express;
 let server: import("node:http").Server;
-let pool: import("pg").Pool;
+// Typed via @workspace/db's own export rather than `import("pg").Pool`:
+// api-server has no direct pg/@types/pg dependency of its own (only
+// @workspace/db does), so referencing the package directly here is
+// unresolvable under this file's tsconfig. `pool`'s already-correct type
+// flows through @workspace/db's own export instead — zero new dependency.
+let pool: typeof import("@workspace/db").pool;
 let port: number;
 let jwtSign: (payload: object, secret: string, opts?: object) => string;
 let superAdminId: number;
@@ -130,7 +135,12 @@ before(async () => {
   app.use("/api", requireAuth);
   app.use("/api", bookingsRouter);
   await new Promise<void>((resolve) => {
-    server = app.listen(0, "127.0.0.1", resolve);
+    // A bare arrow wrapper, not `resolve` itself: Express's listen callback
+    // signature is `(error?: Error) => void`, which is not assignable to
+    // the Promise executor's `resolve: (value?: void) => void` — passing
+    // resolve directly is a real parameter-type mismatch, not suppressible
+    // noise. Wrapping makes the call site's actual signature explicit.
+    server = app.listen(0, "127.0.0.1", () => resolve());
   });
   port = (server.address() as import("node:net").AddressInfo).port;
 
