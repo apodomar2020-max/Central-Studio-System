@@ -43,7 +43,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gte, lte, ilike, isNotNull, isNull, or, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lte, ilike, isNotNull, isNull, or, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -79,6 +79,10 @@ import { isAssignmentReadyClass, isOperationalBalletClass, isOperationalBalletSc
 import { buildActiveBalletWeeklyScheduleCountQuery } from "../lib/balletWeeklyScheduleCountQuery";
 import { currentSubscription, getPaymentCyclesForApplications } from "../lib/balletSubscriptions";
 import { buildMyBalletClassesResponse } from "../lib/balletMyClasses";
+import { computeAgeAsOf, isAgeEligible } from "../lib/balletAgeEligibility";
+import { cairoNow } from "../lib/occurrence";
+
+export { computeAgeAsOf, isAgeEligible };
 
 const router: IRouter = Router();
 
@@ -141,23 +145,9 @@ function normalizeTimeLabel(time: string): string {
  * Computes age in whole years as of `referenceDateIso`, NOT as of today —
  * used to check assessment-slot age eligibility against the child's age on
  * the slot's actual date, not the date the application happens to be
- * submitted. Returns null if either date string is not a valid calendar
- * date (Phase A / P0-5 — a malformed/missing birthday is never silently
- * treated as "no restriction").
+ * submitted. Returns null if either date string is not a valid calendar.
  */
-function computeAgeAsOf(birthdayIso: string, referenceDateIso: string): number | null {
-  const birth = new Date(`${birthdayIso}T00:00:00Z`);
-  const ref = new Date(`${referenceDateIso}T00:00:00Z`);
-  if (Number.isNaN(birth.getTime()) || Number.isNaN(ref.getTime())) return null;
-
-  let age = ref.getUTCFullYear() - birth.getUTCFullYear();
-  const refMonthDay = ref.getUTCMonth() * 100 + ref.getUTCDate();
-  const birthMonthDay = birth.getUTCMonth() * 100 + birth.getUTCDate();
-  if (refMonthDay < birthMonthDay) age -= 1;
-  return age;
-}
-
-type AssessmentOccurrence = {
+export type AssessmentOccurrence = {
   scheduleId: number;
   classId: number;
   className: string;
@@ -168,11 +158,64 @@ type AssessmentOccurrence = {
   time: string;
   startTime: string;
   endTime: string;
+  capacity?: number | null;
 };
 
-async function listAvailableAssessmentSchedules(childBirthday: string): Promise<AssessmentOccurrence[]> {
+export type ListAvailableAssessmentSchedulesResult = {
+  schedules: AssessmentOccurrence[];
+  emptyReason?: string;
+  code?: string;
+};
+
+export async function listAvailableAssessmentSchedules(
+  childBirthday: string,
+): Promise<ListAvailableAssessmentSchedulesResult> {
+  if (!childBirthday || !/^\d{4}-\d{2}-\d{2}$/.test(childBirthday)) {
+    return {
+      schedules: [],
+      emptyReason: "A valid child birthday is required to view available assessment appointments.",
+      code: "MISSING_BIRTHDAY",
+    };
+  }
+
   const today = todayIso();
   const end = addDaysIso(today, BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS);
+
+  const ageAtToday = computeAgeAsOf(childBirthday, today);
+  const ageAtEnd = computeAgeAsOf(childBirthday, end);
+
+  if (ageAtToday == null || ageAtEnd == null) {
+    return {
+      schedules: [],
+      emptyReason: "A valid child birthday is required to view available assessment appointments.",
+      code: "MISSING_BIRTHDAY",
+    };
+  }
+
+  const activeLevels = await db
+    .select({
+      id: balletLevelsTable.id,
+      name: balletLevelsTable.name,
+      ageMin: balletLevelsTable.ageMin,
+      ageMax: balletLevelsTable.ageMax,
+    })
+    .from(balletLevelsTable)
+    .where(eq(balletLevelsTable.isActive, true));
+
+  const eligibleLevels = activeLevels.filter((l) => {
+    return (
+      (l.ageMin == null || ageAtEnd >= l.ageMin) &&
+      (l.ageMax == null || ageAtToday <= l.ageMax)
+    );
+  });
+
+  if (activeLevels.length > 0 && eligibleLevels.length === 0) {
+    return {
+      schedules: [],
+      emptyReason: "No ballet levels are currently configured for your child's age group.",
+      code: "NO_AGE_ELIGIBLE_LEVEL",
+    };
+  }
 
   const rows = await db
     .select({
@@ -186,11 +229,24 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
       levelName:  balletLevelsTable.name,
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
+      capacity:   balletSchedulesTable.capacity,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
-    .innerJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
-    .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
+    .leftJoin(
+      balletClassLevelsTable,
+      and(
+        isNull(balletClassesTable.levelId),
+        eq(balletClassLevelsTable.classId, balletClassesTable.id),
+      ),
+    )
+    .innerJoin(
+      balletLevelsTable,
+      eq(
+        balletLevelsTable.id,
+        sql<number>`coalesce(${balletClassesTable.levelId}, ${balletClassLevelsTable.levelId})`,
+      ),
+    )
     .where(and(
       eq(balletSchedulesTable.status, "active"),
       eq(balletClassesTable.isActive, true),
@@ -198,7 +254,42 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
     ))
     .orderBy(asc(balletLevelsTable.sortOrder), asc(balletClassesTable.title), asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime));
 
+  if (rows.length === 0) {
+    return {
+      schedules: [],
+      emptyReason: "No assessment appointments are currently scheduled for your child's level.",
+      code: "NO_ACTIVE_SCHEDULES",
+    };
+  }
+
+  const bookings = await db
+    .select({
+      scheduleId: balletApplicationsTable.assessmentScheduleId,
+      date:       balletApplicationsTable.assessmentDate,
+      count:      count(),
+    })
+    .from(balletApplicationsTable)
+    .where(and(
+      inArray(balletApplicationsTable.status, ["pending", "accepted", "needsFollowUp", "assignedToLevel", "active"]),
+      isNotNull(balletApplicationsTable.assessmentScheduleId),
+      isNotNull(balletApplicationsTable.assessmentDate),
+      gte(balletApplicationsTable.assessmentDate, today),
+      lte(balletApplicationsTable.assessmentDate, end),
+    ))
+    .groupBy(balletApplicationsTable.assessmentScheduleId, balletApplicationsTable.assessmentDate);
+
+  const bookedCountMap = new Map<string, number>();
+  for (const b of bookings) {
+    if (b.scheduleId != null && b.date != null) {
+      bookedCountMap.set(`${b.scheduleId}:${b.date}`, b.count);
+    }
+  }
+
+  const occurrenceKeys = new Set<string>();
   const occurrences: AssessmentOccurrence[] = [];
+  let totalCandidates = 0;
+  let fullCandidates = 0;
+
   for (const row of rows) {
     for (let cursor = today; cursor <= end; cursor = addDaysIso(cursor, 1)) {
       const date = new Date(`${cursor}T12:00:00Z`);
@@ -206,11 +297,20 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
 
       const age = computeAgeAsOf(childBirthday, cursor);
       if (age == null) continue;
-      const eligible =
-        (row.ageMin == null || age >= row.ageMin) &&
-        (row.ageMax == null || age <= row.ageMax);
+      const eligible = isAgeEligible(age, row.ageMin, row.ageMax);
       if (!eligible) continue;
 
+      const bookedKey = `${row.scheduleId}:${cursor}`;
+      if (occurrenceKeys.has(bookedKey)) continue;
+
+      totalCandidates++;
+      const booked = bookedCountMap.get(bookedKey) ?? 0;
+      if (row.capacity != null && booked >= row.capacity) {
+        fullCandidates++;
+        continue;
+      }
+
+      occurrenceKeys.add(bookedKey);
       occurrences.push({
         scheduleId: row.scheduleId,
         classId:    row.classId,
@@ -222,19 +322,37 @@ async function listAvailableAssessmentSchedules(childBirthday: string): Promise<
         time:       normalizeTimeLabel(row.startTime),
         startTime:  row.startTime,
         endTime:    row.endTime,
+        capacity:   row.capacity,
       });
     }
   }
 
-  return occurrences.sort((a, b) => (
+  if (occurrences.length === 0) {
+    if (totalCandidates > 0 && fullCandidates === totalCandidates) {
+      return {
+        schedules: [],
+        emptyReason: "Assessment appointments for your child's level are currently fully booked.",
+        code: "SCHEDULES_FULL",
+      };
+    }
+    return {
+      schedules: [],
+      emptyReason: "No assessment appointments are currently scheduled for your child's level.",
+      code: "NO_ACTIVE_SCHEDULES",
+    };
+  }
+
+  occurrences.sort((a, b) => (
     a.date.localeCompare(b.date) ||
     a.startTime.localeCompare(b.startTime) ||
     a.className.localeCompare(b.className) ||
     a.levelName.localeCompare(b.levelName)
   ));
+
+  return { schedules: occurrences };
 }
 
-async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: string, childBirthday: string): Promise<AssessmentOccurrence | null> {
+export async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: string, childBirthday: string): Promise<AssessmentOccurrence | null> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(assessmentDate)) return null;
 
   const rows = await db
@@ -249,11 +367,24 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
       levelName:  balletLevelsTable.name,
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
+      capacity:   balletSchedulesTable.capacity,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
-    .innerJoin(balletClassLevelsTable, eq(balletClassLevelsTable.classId, balletClassesTable.id))
-    .innerJoin(balletLevelsTable, eq(balletLevelsTable.id, balletClassLevelsTable.levelId))
+    .leftJoin(
+      balletClassLevelsTable,
+      and(
+        isNull(balletClassesTable.levelId),
+        eq(balletClassLevelsTable.classId, balletClassesTable.id),
+      ),
+    )
+    .innerJoin(
+      balletLevelsTable,
+      eq(
+        balletLevelsTable.id,
+        sql<number>`coalesce(${balletClassesTable.levelId}, ${balletClassLevelsTable.levelId})`,
+      ),
+    )
     .where(and(
       eq(balletSchedulesTable.id, scheduleId),
       eq(balletSchedulesTable.status, "active"),
@@ -270,9 +401,7 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
     if (selectedDate.getUTCDay() !== row.dayOfWeek) continue;
     const age = computeAgeAsOf(childBirthday, assessmentDate);
     if (age == null) return null;
-    const eligible =
-      (row.ageMin == null || age >= row.ageMin) &&
-      (row.ageMax == null || age <= row.ageMax);
+    const eligible = isAgeEligible(age, row.ageMin, row.ageMax);
     if (!eligible) continue;
     return {
       scheduleId: row.scheduleId,
@@ -285,6 +414,7 @@ async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: s
       time:       normalizeTimeLabel(row.startTime),
       startTime:  row.startTime,
       endTime:    row.endTime,
+      capacity:   row.capacity,
     };
   }
 
@@ -432,7 +562,6 @@ router.get("/ballet/summary", async (_req, res): Promise<void> => {
       instructors: instructors?.total ?? 0,
       levels: levels?.total ?? 0,
       weeklySchedules: weeklySchedules?.total ?? 0,
-      /** @deprecated Use weeklySchedules. */
       classes: weeklySchedules?.total ?? 0,
     });
   } catch (err) {
@@ -449,19 +578,66 @@ router.get("/ballet/summary", async (_req, res): Promise<void> => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AvailableAssessmentSchedulesQuery = z.object({
-  childBirthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "childBirthday must be YYYY-MM-DD"),
+  childBirthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "childBirthday must be YYYY-MM-DD").optional(),
+  childId: z.coerce.number().int().positive().optional(),
 });
 
 router.get("/ballet/available-assessment-schedules", async (req, res): Promise<void> => {
   const parsedQuery = AvailableAssessmentSchedulesQuery.safeParse(req.query);
   if (!parsedQuery.success) {
-    res.status(400).json({ error: parsedQuery.error.issues[0]?.message ?? "Invalid childBirthday" });
+    res.status(400).json({ error: parsedQuery.error.issues[0]?.message ?? "Invalid query parameters" });
+    return;
+  }
+
+  let resolvedBirthday = parsedQuery.data.childBirthday;
+
+  if (parsedQuery.data.childId != null) {
+    // If student auth header is present or childId requested, validate ownership
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.split(" ")[1];
+        const jwt = await import("jsonwebtoken");
+        const secret = process.env.STUDENT_JWT_SECRET ?? "dev-student-secret-change-in-production";
+        const decoded = jwt.default.verify(token, secret) as { sub?: number };
+        if (decoded?.sub) {
+          const [child] = await db
+            .select({ birthday: childrenTable.birthday })
+            .from(childrenTable)
+            .where(and(
+              eq(childrenTable.id, parsedQuery.data.childId),
+              eq(childrenTable.parentId, decoded.sub),
+            ))
+            .limit(1);
+
+          if (!child) {
+            res.status(404).json({ error: "Child profile not found or does not belong to your account" });
+            return;
+          }
+
+          // Authoritative canonical stored birthday overrides any client override
+          resolvedBirthday = child.birthday;
+        }
+      } catch {
+        // invalid token ignored for optional auth check
+      }
+    }
+  }
+
+  if (!resolvedBirthday) {
+    res.status(400).json({ error: "childBirthday or a valid owned childId is required" });
     return;
   }
 
   try {
-    const schedules = await listAvailableAssessmentSchedules(parsedQuery.data.childBirthday);
-    res.json(schedules);
+    const result = await listAvailableAssessmentSchedules(resolvedBirthday);
+    if (result.schedules.length > 0) {
+      res.json(result.schedules);
+    } else {
+      if (result.emptyReason) res.header("X-Empty-Reason", result.emptyReason);
+      if (result.code) res.header("X-Empty-Code", result.code);
+      res.json([]);
+    }
   } catch (err) {
     logger.error({ err }, "GET /ballet/available-assessment-schedules failed");
     res.status(500).json({ error: "Failed to load available assessment schedules" });
@@ -774,7 +950,6 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
         groupId:       c.groupId,
         levelId:       c.levelId,
         schedules,
-        /** @deprecated Use schedules[] instead. */
         schedule:      schedules[0] ?? null,
       };
     });
