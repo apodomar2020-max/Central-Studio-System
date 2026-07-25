@@ -8,8 +8,14 @@ import {
   creditTransactionsTable,
   pricePackagesTable,
   studentsTable,
+  paymentRecordsTable,
+  paymentEventsTable,
+  type PaymentRecordRequestedChannel,
 } from "@workspace/db";
+import { egpToMinor } from "../lib/money";
+import { logger } from "../lib/logger";
 import { createStudentNotification } from "../lib/notifications";
+import { sendPushNotification } from "../lib/pushNotifications";
 import { createPromotionRedemptions, validatePackagePromotion } from "../lib/promotionService";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
@@ -247,6 +253,25 @@ router.post(
     return;
   }
 
+  // Finance Phase 2B-1 correction: createStudentNotification's push dispatch
+  // (pushNotifications.ts's sendPushNotification) runs on the shared `db`
+  // pool — a separate connection from this route's `tx` — and is normally
+  // scheduled via a detached setTimeout(0) the instant the notification row
+  // is inserted. That connection can see the new package_order/payment rows
+  // only once this transaction commits; scheduling the push before COMMIT
+  // races the commit regardless of where in the transaction body the call
+  // sits. dispatchPush: false keeps the notification row itself atomic with
+  // the rest of this transaction (Pattern B) while `pendingPush` captures
+  // exactly what createStudentNotification would have scheduled, so it can
+  // be dispatched for real only after `db.transaction` below has resolved
+  // successfully — a deterministic post-commit boundary, not a timing race.
+  // A mutable container, not a bare `let`: TypeScript narrows a `let`
+  // reassigned inside a closure back to its type at closure-creation time
+  // for any read after `await`ing that closure (a known control-flow-
+  // analysis limitation — reading the plain variable below would type as
+  // `never`), so the pending-push state is held in an object field instead.
+  const pushState: { pending: { studentId: number; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
+
   const result = await db.transaction(async (tx) => {
     const promotionResult = await validatePackagePromotion({
       student: { id: student.id, emailVerified: student.emailVerified },
@@ -286,30 +311,138 @@ router.post(
         expiresAt: null,
       })
       .returning();
-    await createStudentNotification(tx, {
+
+    // Finance Phase 2B-1: capture the creation-time monetary snapshot as a
+    // live payment_records row, plus its opening payment_events "created"
+    // row, in the same transaction as the package_orders write above. The
+    // amount is always the server-computed catalog price minus any locked
+    // promotion discount — never a client-provided figure.
+    const grossAmountMinor = egpToMinor(packageDefinition.priceEgp);
+    const discountAmountMinor = promotionResult.eligible ? egpToMinor(promotionResult.discountAmount) : 0;
+    const finalPayableAmountMinor = grossAmountMinor - discountAmountMinor;
+
+    const requestedPaymentChannel: PaymentRecordRequestedChannel =
+      parsed.data.paymentMode === "pay_at_studio"
+        ? "pay_at_studio"
+        : parsed.data.paymentMode === "online_payment"
+          ? "online"
+          : "unknown";
+
+    // Every newly created package order starts operational status
+    // "pendingPayment" (see the insert above) and the ONLY path out of it
+    // is an admin PATCH {status:"active"} gated by the packageOrders:approve
+    // permission (see requirePackageOrderAction / the activation transaction
+    // below) — there is no self-service confirmation, no payment gateway
+    // callback, and no other transition into "active". A pendingPayment
+    // order is therefore already sitting in an admin confirmation queue the
+    // instant it is created, not merely "unpaid with no queue" — so the
+    // Finance status must be pending_confirmation, matching the order's
+    // real lifecycle, not unpaid.
+    const initialStatus = "pending_confirmation" as const;
+
+    const [paymentRecord] = await tx
+      .insert(paymentRecordsTable)
+      .values({
+        flowType: "package_purchase",
+        packageOrderId: inserted.id,
+        bookingId: null,
+        captureOrigin: "live_capture",
+        occurredAt: inserted.createdAt,
+        evidenceClass: "confirmed",
+        amountAvailability: "exact",
+        amountSource: "creation_snapshot",
+        grossAmountMinor,
+        discountAmountMinor,
+        finalPayableAmountMinor,
+        paidAmountMinor: 0,
+        refundedAmountMinor: 0,
+        currency: "EGP",
+        requestedPaymentChannel,
+        rawRequestedChannel: parsed.data.paymentMode ?? null,
+        status: initialStatus,
+        studentId: student.id,
+        childId: null,
+        creationIdempotencyKey: null,
+      })
+      .returning();
+
+    await tx.insert(paymentEventsTable).values({
+      paymentRecordId: paymentRecord.id,
+      paymentRefundId: null,
+      eventType: "created",
+      amountMinor: null,
+      previousStatus: null,
+      newStatus: initialStatus,
+      creditTransactionId: null,
+      actorAdminId: null,
+      actorType: "student",
+      reason: null,
+      providerReference: null,
+      ipAddress: null,
+      userAgent: null,
+      idempotencyKey: null,
+    });
+
+    // The notification ROW is inserted here, on the transaction client, so
+    // it stays atomic with the package order/payment rows above (rolls back
+    // together on any later failure in this transaction). dispatchPush:
+    // false suppresses createStudentNotification's own setTimeout(0) push
+    // scheduling — the actual push is dispatched post-commit below instead.
+    const notificationTitle = "Package request submitted";
+    const notificationBody = `Your package request for ${inserted.packageName} has been submitted.`;
+    const notificationMetadata = {
+      packageName: inserted.packageName,
+      remainingCredits: inserted.remainingCredits,
+    };
+    const notificationRow = await createStudentNotification(tx, {
       studentEmail: inserted.studentEmail,
-      title: "Package request submitted",
-      body: `Your package request for ${inserted.packageName} has been submitted.`,
+      title: notificationTitle,
+      body: notificationBody,
       type: "package_created",
       relatedEntityType: "package_order",
       relatedEntityId: inserted.id,
-      metadata: {
-        packageName: inserted.packageName,
-        remainingCredits: inserted.remainingCredits,
-        },
-      });
-      await createPromotionRedemptions(tx, promotionResult, {
+      metadata: notificationMetadata,
+      dispatchPush: false,
+    });
+    if (notificationRow) {
+      pushState.pending = {
         studentId: student.id,
-        packageOrderId: inserted.id,
-        metadata: {
-          packageId: packageDefinition.id,
-          packageName: packageDefinition.name,
-          promoCode: promotionResult.promotionCode,
-          source: "package_checkout",
-        },
-      });
+        title: notificationTitle,
+        body: notificationBody,
+        data: { type: "package_created", ...notificationMetadata },
+        notificationId: notificationRow.id,
+      };
+    }
+
+    // Promotion redemption mutates usage state (redemption counts) that
+    // must correspond atomically to the captured discount above — it stays
+    // inside this transaction, not deferred like the push dispatch, so a
+    // failure here still rolls back the package order and both payment rows.
+    await createPromotionRedemptions(tx, promotionResult, {
+      studentId: student.id,
+      packageOrderId: inserted.id,
+      metadata: {
+        packageId: packageDefinition.id,
+        packageName: packageDefinition.name,
+        promoCode: promotionResult.promotionCode,
+        source: "package_checkout",
+      },
+    });
+
     return inserted;
   });
+  // Deterministic post-commit boundary: the push is dispatched only after
+  // `db.transaction` above has resolved, i.e. only after package_orders,
+  // payment_records, payment_events, the notification row, and any
+  // promotion redemption have all actually committed. Not awaited — matches
+  // the pre-existing fire-and-forget contract; a push failure here has
+  // never rolled back a package purchase and still does not.
+  if (pushState.pending) {
+    const push = pushState.pending;
+    void sendPushNotification(push).catch((error) => {
+      logger.error({ err: error, notificationId: push.notificationId }, "Failed to dispatch package-order creation push");
+    });
+  }
   if ("kind" in result && result.kind === "promotion_not_eligible") {
     res.status(409).json({
       error: result.reason,
