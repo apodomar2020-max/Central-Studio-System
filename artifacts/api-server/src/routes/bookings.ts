@@ -11,6 +11,7 @@ import {
   attendanceTable,
   studentsTable,
   childrenTable,
+  paymentRecordsTable,
 } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
@@ -1227,7 +1228,10 @@ router.delete(
     return;
   }
   const row = await db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id));
+    // Locks the booking row before any tombstone/delete decision, matching
+    // the same FOR UPDATE convention as packageOrders.ts's activation guard
+    // — prevents a concurrent delete from racing this one.
+    const [existing] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, params.data.id)).for("update");
     if (!existing) return null;
 
     const notification = await bookingStatusNotification(tx, existing, "cancelled");
@@ -1238,6 +1242,22 @@ router.delete(
         ...notification,
       });
     }
+
+    // Finance Phase 2A: payment_records.booking_id/package_order_id use
+    // ON DELETE RESTRICT, not SET NULL — a plain cascade can't be told apart
+    // from an unauthorized direct write after the fact. This transaction is
+    // the one authorized way to clear a payment_records row's booking_id: it
+    // sets a transaction-local marker the guard trigger on payment_records
+    // checks for (see 0078_payment_records_foundation.sql), tombstones any
+    // linked row, then deletes the booking — all in the same transaction, so
+    // either both happen or neither does. No payment_records row is created
+    // by any route today, so this is a no-op for every booking that has one
+    // (there are none yet); it exists so the delete route already satisfies
+    // the FK once a future write path starts creating payment_records rows.
+    await tx.execute(sql`set local app.allow_payment_source_tombstone = 'on'`);
+    await tx.update(paymentRecordsTable)
+      .set({ bookingId: null, sourceDeletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+      .where(eq(paymentRecordsTable.bookingId, existing.id));
 
     const [deleted] = await tx.delete(bookingsTable).where(eq(bookingsTable.id, params.data.id)).returning();
     return deleted ?? null;
