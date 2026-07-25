@@ -15,8 +15,16 @@
  * complete); only `refunded`/`failed` populate `processedByAdminId`/
  * `processedAt`, recording who attempted the payout and when, including on
  * failure.
+ *
+ * `payment_refunds_id_payment_record_unique` (id, paymentRecordId) is
+ * logically redundant with the `id` primary key alone — it exists solely as
+ * the required PostgreSQL target for payment_events' composite FK
+ * (payment_refund_id, payment_record_id), which guarantees a payment event
+ * can never reference a refund row that belongs to a *different* payment
+ * record than the event's own payment_record_id. See
+ * 0080_payment_events_foundation.sql.
  */
-import { check, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { check, integer, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { paymentRecordsTable } from "./paymentRecords";
 import { systemUsersTable } from "./systemUsers";
@@ -68,6 +76,9 @@ export const paymentRefundsTable = pgTable("payment_refunds", {
   uniqueIndex("payment_refunds_open_idx")
     .on(table.paymentRecordId)
     .where(sql`${table.status} in ('underReview','approved','processing')`),
+
+  // Supporting composite-FK target for payment_events — see module doc above.
+  unique("payment_refunds_id_payment_record_unique").on(table.id, table.paymentRecordId),
 
   // ── Vocabularies ─────────────────────────────────────────────────────
   check("payment_refunds_status_check", sql`${table.status} in ('underReview','approved','rejected','processing','refunded','failed')`),
