@@ -306,7 +306,7 @@ export default function BalletAssessmentScreen() {
   const loadAppointments = useCallback(async (child: ChildProfile, signal?: AbortSignal) => {
     setAppointmentsState("loading");
     try {
-      const data = await fetchAvailableAssessmentSchedules(signal, child.birthday);
+      const data = await fetchAvailableAssessmentSchedules(signal, child.birthday, child.id);
       if (signal?.aborted) return;
       setAppointments(data);
       setAppointmentsState(data.length ? "ready" : "empty");
@@ -723,7 +723,9 @@ export default function BalletAssessmentScreen() {
             {appointmentsState === "empty" ? (
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyTitle}>No assessment appointments available</Text>
-                <Text style={styles.emptyText}>No active assessment schedules match {selectedChild.fullName}'s age right now.</Text>
+                <Text style={styles.emptyText}>
+                  {(appointments as unknown as { emptyReason?: string }).emptyReason ?? `No active assessment schedules match ${selectedChild.fullName}'s age right now.`}
+                </Text>
               </View>
             ) : null}
             {appointmentsState === "ready" && appointments.map((appointment) => (
