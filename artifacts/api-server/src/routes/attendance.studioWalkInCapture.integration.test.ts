@@ -10,7 +10,7 @@
  * pre-existing (unpriced) walk-in behavior unchanged.
  */
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { after, before, test, mock } from "node:test";
 
 const DATABASE_URL = process.env.DISPOSABLE_STUDIO_WALKIN_DATABASE_URL
   ?? "postgresql://abdelrahmanomar@127.0.0.1:5432/central_studio_disposable_studio_walkin";
@@ -105,7 +105,44 @@ async function totals() {
   };
 }
 
+// Deterministic teardown: the fire-and-forget push dispatch
+// (setTimeout(0)/post-commit) is replaced with an in-process spy so
+// teardown can wait for it to actually settle instead of racing
+// notification_delivery_logs inserts against pool.end() with a fixed
+// sleep. Same pattern as adminAttendanceGateway.studioWalkIn and
+// attendance.studioWalkInCapture.zeroWriter integration tests. Since this
+// file's tests trigger a variable, path-dependent number of push calls
+// (0-2 depending on branch), teardown waits for the call count to go
+// quiet (stable across consecutive polls) rather than requiring each
+// test to track an exact expected total.
+let pushCallCount = 0;
+async function waitForPushCallsToSettle(quietRounds = 6, intervalMs = 100, timeoutMs = 10000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastCount = -1;
+  let stableRounds = 0;
+  while (Date.now() < deadline) {
+    if (pushCallCount === lastCount) {
+      stableRounds += 1;
+      if (stableRounds >= quietRounds) return;
+    } else {
+      stableRounds = 0;
+      lastCount = pushCallCount;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 before(async () => {
+  mock.module("../lib/pushNotifications", {
+    namedExports: {
+      sendPushNotification: async () => {
+        pushCallCount += 1;
+        return { sent: 0, failed: 0, skipped: true, reason: "push_disabled" as const };
+      },
+      sendBroadcastPushNotification: async () => ({ sent: 0, failed: 0 }),
+    },
+  });
+
   const expressModule = await import("express");
   const express = expressModule.default;
   const jwtModule = await import("jsonwebtoken");
@@ -165,7 +202,8 @@ before(async () => {
 });
 
 after(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await waitForPushCallsToSettle();
+  mock.reset();
   await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   await pool.end();
 });
