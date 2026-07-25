@@ -120,8 +120,8 @@ before(async () => {
   const express = expressModule.default;
   const jwtModule = await import("jsonwebtoken");
   jwtSign = jwtModule.default.sign;
-  const { requireAuth } = await import("../middlewares/auth.ts");
-  const bookingsRouter = (await import("./bookings.ts")).default;
+  const { requireAuth } = await import("../middlewares/auth");
+  const bookingsRouter = (await import("./bookings")).default;
   const dbModule = await import("@workspace/db");
   pool = dbModule.pool;
 
