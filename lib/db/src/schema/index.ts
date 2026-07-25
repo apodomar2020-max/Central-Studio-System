@@ -58,3 +58,7 @@ export * from "./adminActivityLogs";
 // Booked-class reminder settings + Worker health (migrations 0072-0074)
 export * from "./classReminderSettings";
 export * from "./reminderWorkerHeartbeats";
+// Finance Phase 2A DB foundation — backfill batch manifest + per-source-family
+// progress tracking (migration 0077)
+export * from "./paymentBackfillBatches";
+export * from "./paymentBackfillProgress";
