@@ -372,13 +372,53 @@ router.patch(
 
   if (isActivating) {
     const result = await db.transaction(async (tx) => {
-      // Fetch current state for ledger balance fields
+      // Pre-Phase-2 Payment Integrity Hotfix: lock the row before making any
+      // activation decision. Without FOR UPDATE, two concurrent activation
+      // requests (a double-click, or a client retry after a timed-out
+      // response whose write actually succeeded) can both read the
+      // pre-activation row, both pass the status check below, and both
+      // insert a package_activated credit row — silently double-crediting
+      // the student. The lock serializes concurrent activation attempts on
+      // this exact order so only the first one observes a pre-activation
+      // status.
       const [current] = await tx
         .select()
         .from(packageOrdersTable)
-        .where(eq(packageOrdersTable.id, params.data.id));
-      if (!current) return undefined;
+        .where(eq(packageOrdersTable.id, params.data.id))
+        .for("update");
+      if (!current) return { kind: "not_found" as const };
       beforeOrder = current;
+
+      // Only pendingPayment orders may be activated. Every other status is
+      // reachable exclusively through other flows that are not this
+      // endpoint's job to redo: fullyUsed/expired orders are reactivated via
+      // POST /admin/package-orders/:id/credits (adminCredits.ts), which
+      // issues a manual_adjustment/package_bonus credit row, never
+      // package_activated; cancelled and already-active orders have no
+      // legitimate reason to run this transition again. Restricting the
+      // source state (not merely rejecting "already active") also closes the
+      // window where a retried/duplicated request lands after the credit
+      // insert below has already run once for this order.
+      if (current.status !== "pendingPayment") {
+        return { kind: "not_activatable" as const, current };
+      }
+
+      // Defense in depth beneath the status guard above: even if a future
+      // code path ever resets status back to pendingPayment after activation
+      // (there is none today), a package_activated row already existing for
+      // this order is independent, durable proof that credits were already
+      // issued once, and must never be issued a second time.
+      const [existingActivation] = await tx
+        .select({ id: creditTransactionsTable.id })
+        .from(creditTransactionsTable)
+        .where(and(
+          eq(creditTransactionsTable.packageOrderId, current.id),
+          eq(creditTransactionsTable.type, "package_activated"),
+        ))
+        .limit(1);
+      if (existingActivation) {
+        return { kind: "not_activatable" as const, current };
+      }
 
       // Bind the Expiration Date: when activating, default expiresAt to
       // activatedAt + the package's validity window (from price_packages), unless
@@ -417,27 +457,35 @@ router.patch(
         createdBy: "admin",
       });
 
-      if (current.status !== "active") {
-        await createStudentNotification(tx, {
-          studentId: updated.studentId,
-          studentEmail: updated.studentEmail,
-          title: "Package active",
-          body: `Your ${updated.packageName} package is now active.`,
-          type: "package_activated",
-          relatedEntityType: "package_order",
-          relatedEntityId: updated.id,
-          metadata: {
-            packageName: updated.packageName,
-            remainingCredits: updated.remainingCredits,
-          },
-        });
-      }
+      // current.status is guaranteed "pendingPayment" here (guarded above),
+      // so this transition always represents a genuine first activation —
+      // the notification is unconditional, not re-gated on current.status.
+      await createStudentNotification(tx, {
+        studentId: updated.studentId,
+        studentEmail: updated.studentEmail,
+        title: "Package active",
+        body: `Your ${updated.packageName} package is now active.`,
+        type: "package_activated",
+        relatedEntityType: "package_order",
+        relatedEntityId: updated.id,
+        metadata: {
+          packageName: updated.packageName,
+          remainingCredits: updated.remainingCredits,
+        },
+      });
 
-      return { before: current, updated };
+      return { kind: "ok" as const, before: current, updated };
     });
 
-    if (!result) {
+    if (result.kind === "not_found") {
       res.status(404).json({ error: "Package order not found" });
+      return;
+    }
+    if (result.kind === "not_activatable") {
+      res.status(409).json({
+        error: `Package order ${result.current.id} cannot be activated from status "${result.current.status}". Only pendingPayment orders can be activated, and each order can only be activated once.`,
+        code: "PACKAGE_ORDER_NOT_ACTIVATABLE",
+      });
       return;
     }
     beforeOrder = result.before;

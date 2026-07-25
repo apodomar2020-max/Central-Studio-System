@@ -1127,6 +1127,48 @@ router.patch(
       }
     }
 
+    // ── Payment confirmation guard (Pre-Phase-2 Payment Integrity Hotfix) ────
+    // This PATCH is general-purpose (schedule, notes, status, etc.), so the
+    // guard below fires only when the write actually targets paymentStatus
+    // "paid" — the one transition with a real, irreversible-in-spirit
+    // consequence (a booking treated as paid cash). The row lock above
+    // (.for("update")) already serializes concurrent PATCHes on this booking;
+    // this guard adds the state-machine check that decides whether THIS
+    // particular transition is allowed to proceed, so a duplicate/concurrent
+    // confirmation attempt is rejected instead of silently re-applied.
+    if (normalized.paymentStatus === "paid") {
+      // A package-credit or free booking must never become a paid-cash
+      // booking through this endpoint — its economics live entirely in the
+      // credit ledger (package_credit) or nowhere (free), and "paid" would
+      // fabricate a cash receipt that was never collected.
+      if (normalized.paymentMode === "package_credit" || normalized.paymentMode === "free") {
+        return {
+          kind: "payment_not_confirmable" as const,
+          message: `A ${normalized.paymentMode === "package_credit" ? "package-credit" : "free"} booking cannot be confirmed as a paid cash booking.`,
+        };
+      }
+      // Reject repeated or invalid confirmations. "not_required" bookings
+      // (package-credit/free, checked above, but also any other current or
+      // future not_required booking) and "refunded"/already-"paid" bookings
+      // have no legitimate reason to accept a new "paid" write — the only
+      // confirmable source states are "pending_payment" (the normal case)
+      // and "failed" (a retried payment attempt that then succeeded).
+      if (existing.paymentStatus !== "pending_payment" && existing.paymentStatus !== "failed") {
+        return {
+          kind: "payment_not_confirmable" as const,
+          message: `Booking ${existing.id} cannot be confirmed as paid from payment status "${existing.paymentStatus}".`,
+        };
+      }
+      // A cancelled or rejected booking is operationally terminal — payment
+      // confirmation on it would resurrect a booking nobody is attending.
+      if (existing.bookingStatus === "cancelled" || existing.bookingStatus === "rejected") {
+        return {
+          kind: "payment_not_confirmable" as const,
+          message: `Booking ${existing.id} cannot be confirmed as paid — its booking status ("${existing.bookingStatus}") is terminal.`,
+        };
+      }
+    }
+
     const [updated] = await tx.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
 
     if (updated.bookingStatus !== existing.bookingStatus) {
@@ -1161,6 +1203,11 @@ router.patch(
 
   if (result.kind === "forbidden") {
     res.status(409).json({ error: result.message, code: "invalid_status_transition" });
+    return;
+  }
+
+  if (result.kind === "payment_not_confirmable") {
+    res.status(409).json({ error: result.message, code: "PAYMENT_STATUS_NOT_CONFIRMABLE" });
     return;
   }
 
