@@ -67,3 +67,5 @@ export * from "./paymentBackfillProgress";
 export * from "./paymentRecords";
 // Finance Phase 2A DB foundation — dark payment_refunds register (migration 0079)
 export * from "./paymentRefunds";
+// Finance Phase 2A DB foundation — dark append-only payment_events ledger (migration 0080)
+export * from "./paymentEvents";
