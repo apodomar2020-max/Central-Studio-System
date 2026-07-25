@@ -13,7 +13,8 @@
  *   package_refund       – credits restored when a booking is cancelled
  */
 
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const creditTransactionsTable = pgTable("credit_transactions", {
   id: serial("id").primaryKey(),
@@ -51,7 +52,14 @@ export const creditTransactionsTable = pgTable("credit_transactions", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
     .notNull()
     .defaultNow(),
-});
+}, (table) => ([
+  // Finance Phase 2A DB hardening: at most one package_activated row per
+  // package order, enforced at the database level (independent of the
+  // application-level FOR UPDATE guard in packageOrders.ts).
+  uniqueIndex("credit_transactions_one_package_activation_idx")
+    .on(table.packageOrderId)
+    .where(sql`${table.type} = 'package_activated'`),
+]));
 
 export type CreditTransaction = typeof creditTransactionsTable.$inferSelect;
 export type InsertCreditTransaction = typeof creditTransactionsTable.$inferInsert;

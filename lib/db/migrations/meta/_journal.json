@@ -526,6 +526,13 @@
       "when": 1784462429000,
       "tag": "0075_ballet_class_canonical_relationships",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1784462430000,
+      "tag": "0076_enforce_one_package_activation_credit",
+      "breakpoints": true
     }
   ]
 }
