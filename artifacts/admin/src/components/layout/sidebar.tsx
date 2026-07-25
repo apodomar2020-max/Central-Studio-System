@@ -31,7 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import {
   NAV_TREE,
-  isRouteActive,
+  isNavLinkActive,
   type NavGroup,
   type NavLink,
   type NavNode,
@@ -58,7 +58,7 @@ function containsActive(group: NavGroup, location: string): boolean {
   return group.children.some((child) =>
     child.kind === "group"
       ? containsActive(child, location)
-      : !child.comingSoon && isRouteActive(child.href, location),
+      : !child.comingSoon && isNavLinkActive(child, location),
   );
 }
 
@@ -75,7 +75,7 @@ function NavLinkItem({
   location: string;
   onNavigate?: () => void;
 }) {
-  const active = !item.comingSoon && isRouteActive(item.href, location);
+  const active = !item.comingSoon && isNavLinkActive(item, location);
   const Icon = item.icon as LucideIcon | undefined;
   const nested = depth > 0;
 
@@ -273,7 +273,7 @@ function CollapsedNav({
             </Tooltip>
           );
         }
-        const active = isRouteActive(node.href, location);
+        const active = isNavLinkActive(node, location);
         return (
           <Tooltip key={node.href} delayDuration={0}>
             <TooltipTrigger asChild>
