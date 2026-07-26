@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useUpdatePackageOrder,
+  updatePackageOrder,
   useDeletePackageOrder,
   useListCreditTransactions,
   getListPackageOrdersQueryKey,
   getListCreditTransactionsQueryKey,
 } from "@workspace/api-client-react";
 import { TablePagination } from "@/components/shared/table-pagination";
-import type { AdjustCreditsBody } from "@workspace/api-client-react";
+import type { AdjustCreditsBody, UpdatePackageOrderBody } from "@workspace/api-client-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -29,6 +30,25 @@ const TX_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   manual_adjustment:    { label: "Manual Adjustment",    color: "#3B82F6" },
   package_bonus:        { label: "Bonus Credits",        color: "#8B5CF6" },
   package_refund:       { label: "Refund",               color: "#22C55E" },
+};
+
+const CONFIRMED_PAYMENT_METHODS = ["cash", "card", "kashier", "bank_transfer", "unknown"] as const;
+type ConfirmedPaymentMethod = (typeof CONFIRMED_PAYMENT_METHODS)[number];
+const CONFIRMED_PAYMENT_METHOD_LABELS: Record<ConfirmedPaymentMethod, string> = {
+  cash: "Cash",
+  card: "Card",
+  kashier: "Kashier",
+  bank_transfer: "Bank Transfer",
+  unknown: "Unknown",
+};
+
+// `confirmedPaymentMethod` is accepted by PATCH /package-orders/:id on the
+// server (artifacts/api-server/src/routes/packageOrders.ts) when activating
+// but the generated UpdatePackageOrderBody type hasn't been regenerated to
+// include it yet — extend it locally rather than widening the whole request
+// body to `any`.
+type UpdatePackageOrderBodyWithPaymentMethod = UpdatePackageOrderBody & {
+  confirmedPaymentMethod?: ConfirmedPaymentMethod;
 };
 
 const STUDIO_CYAN = "#00B6D7";
@@ -251,6 +271,89 @@ function AdjustCreditsDialog({
   );
 }
 
+// ─── Activate Package Dialog ──────────────────────────────────────────────────
+
+function ActivatePackageDialog({
+  order,
+  onClose,
+  onActivate,
+  isPending,
+  errorMessage,
+}: {
+  order: PackageOrder;
+  onClose: () => void;
+  onActivate: (confirmedPaymentMethod: ConfirmedPaymentMethod) => void;
+  isPending: boolean;
+  errorMessage: string;
+}) {
+  const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState<ConfirmedPaymentMethod | "">("");
+
+  function handleSubmit() {
+    if (!confirmedPaymentMethod || isPending) return;
+    onActivate(confirmedPaymentMethod);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-6 space-y-5"
+        style={{ background: BG_CARD, border: `1px solid ${BORDER}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: "#22C55E20" }}>
+            <CheckCircle2 className="h-5 w-5" style={{ color: "#22C55E" }} />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Activate Package</h2>
+            <p className="text-xs" style={{ color: MUTED }}>{order.studentName} · {order.packageName}</p>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: MUTED }}>
+            Payment Method
+          </label>
+          <select
+            value={confirmedPaymentMethod}
+            onChange={(e) => setConfirmedPaymentMethod(e.target.value as ConfirmedPaymentMethod)}
+            className="w-full rounded-xl px-3 py-2.5 text-sm text-foreground"
+            style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
+            data-testid="select-confirmed-payment-method"
+          >
+            <option value="" disabled>Select payment method…</option>
+            {CONFIRMED_PAYMENT_METHODS.map((m) => (
+              <option key={m} value={m}>{CONFIRMED_PAYMENT_METHOD_LABELS[m]}</option>
+            ))}
+          </select>
+        </div>
+
+        {errorMessage && (
+          <p className="text-xs" style={{ color: "#EF4444" }}>{errorMessage}</p>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+            style={{ background: BG_ROW, color: MUTED }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={isPending || !confirmedPaymentMethod}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-40"
+            style={{ background: "#22C55E", color: "hsl(var(--primary-foreground))" }}
+          >
+            {isPending ? "Activating…" : "Activate"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Ledger Panel ─────────────────────────────────────────────────────────────
 
 function LedgerPanel({ orderId }: { orderId: number }) {
@@ -337,6 +440,8 @@ export default function PackageOrders() {
   const [editNotes, setEditNotes] = useState("");
   const [editExpiry, setEditExpiry] = useState("");
   const [adjustingOrder, setAdjustingOrder] = useState<PackageOrder | null>(null);
+  const [activatingOrder, setActivatingOrder] = useState<PackageOrder | null>(null);
+  const [activateError, setActivateError] = useState("");
   const [expandedLedger, setExpandedLedger] = useState<number | null>(null);
 
   // Changing the status tab resets pagination.
@@ -405,13 +510,38 @@ export default function PackageOrders() {
     },
   });
 
-  function handleActivate(order: PackageOrder) {
-    if (!confirm(`Activate "${order.packageName}" for ${order.studentName}?`)) return;
+  const { mutate: activateOrder, isPending: isActivating } = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: UpdatePackageOrderBodyWithPaymentMethod }) =>
+      updatePackageOrder(id, data as UpdatePackageOrderBody),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListPackageOrdersQueryKey() });
+      setActivatingOrder(null);
+      setActivateError("");
+    },
+    onError: (err: unknown) => {
+      const data = err !== null && typeof err === "object" && "data" in err ? (err as { data?: { message?: string; error?: string } }).data : null;
+      setActivateError(data?.message ?? data?.error ?? "Could not activate this package — please try again.");
+    },
+  });
+
+  function handleActivateOpen(order: PackageOrder) {
+    setActivateError("");
+    setActivatingOrder(order);
+  }
+
+  function handleActivateConfirm(confirmedPaymentMethod: ConfirmedPaymentMethod) {
+    if (!activatingOrder) return;
     const expiry = new Date();
     expiry.setMonth(expiry.getMonth() + 3);
-    updateOrder({
-      id: order.id,
-      data: { status: "active", activatedAt: new Date().toISOString(), expiresAt: expiry.toISOString() },
+    setActivateError("");
+    activateOrder({
+      id: activatingOrder.id,
+      data: {
+        status: "active",
+        activatedAt: new Date().toISOString(),
+        expiresAt: expiry.toISOString(),
+        confirmedPaymentMethod,
+      },
     });
   }
 
@@ -550,7 +680,7 @@ export default function PackageOrders() {
                         <div className="flex items-center gap-1 flex-wrap">
                           {canApprove && order.status === "pendingPayment" && (
                             <button
-                              onClick={() => handleActivate(order)}
+                              onClick={() => handleActivateOpen(order)}
                               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold"
                               style={{ backgroundColor: "#22C55E20", color: "#22C55E" }}
                             >
@@ -692,6 +822,17 @@ export default function PackageOrders() {
       {/* Adjust Credits dialog */}
       {canAdjustCredits && adjustingOrder && (
         <AdjustCreditsDialog order={adjustingOrder} onClose={() => setAdjustingOrder(null)} />
+      )}
+
+      {/* Activate Package dialog */}
+      {canApprove && activatingOrder && (
+        <ActivatePackageDialog
+          order={activatingOrder}
+          onClose={() => { setActivatingOrder(null); setActivateError(""); }}
+          onActivate={handleActivateConfirm}
+          isPending={isActivating}
+          errorMessage={activateError}
+        />
       )}
     </div>
   );

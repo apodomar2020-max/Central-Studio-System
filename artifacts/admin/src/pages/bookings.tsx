@@ -9,6 +9,15 @@ import {
   useUpdateBooking,
   getListBookingsQueryKey,
 } from "@workspace/api-client-react";
+import type { UpdateBookingBody } from "@workspace/api-client-react";
+
+// `confirmedPaymentMethod` is accepted by PATCH /bookings/:id on the server
+// (artifacts/api-server/src/routes/bookings.ts) but the generated
+// UpdateBookingBody type hasn't been regenerated to include it yet — extend
+// it locally rather than widening the whole request body to `any`.
+type UpdateBookingBodyWithPaymentMethod = UpdateBookingBody & {
+  confirmedPaymentMethod?: "cash" | "card" | "kashier" | "bank_transfer" | "unknown";
+};
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +38,15 @@ import { PageHeader } from "@/components/layout/page-header";
 
 const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed"];
 const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"];
+const CONFIRMED_PAYMENT_METHODS = ["cash", "card", "kashier", "bank_transfer", "unknown"] as const;
+type ConfirmedPaymentMethod = (typeof CONFIRMED_PAYMENT_METHODS)[number];
+const CONFIRMED_PAYMENT_METHOD_LABELS: Record<ConfirmedPaymentMethod, string> = {
+  cash: "Cash",
+  card: "Card",
+  kashier: "Kashier",
+  bank_transfer: "Bank Transfer",
+  unknown: "Unknown",
+};
 const FILTERS = ["all", "pending", "confirmed", "rejected", "cancelled", "attended"] as const;
 const SCOPE_FILTERS = ["all", "self", "child"] as const;
 const PAGE_SIZE = 50;
@@ -173,6 +191,9 @@ export default function Bookings() {
   const [editing, setEditing] = useState<Booking | null>(null);
   const [statusConfirm, setStatusConfirm] = useState<{ booking: Booking; status: "confirmed" | "rejected" } | null>(null);
   const [paymentConfirm, setPaymentConfirm] = useState<{ booking: Booking; status: "paid" | "failed" } | null>(null);
+  const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState<ConfirmedPaymentMethod | "">("");
+  const [paymentConfirmSubmitLock, setPaymentConfirmSubmitLock] = useState(false);
+  const [paymentConfirmError, setPaymentConfirmError] = useState("");
 
   useEffect(() => {
     setPage(1);
@@ -240,9 +261,30 @@ export default function Bookings() {
   };
 
   const confirmPaymentChange = () => {
-    if (!paymentConfirm) return;
-    setPaymentStatus(paymentConfirm.booking, paymentConfirm.status);
-    setPaymentConfirm(null);
+    if (!paymentConfirm || paymentConfirmSubmitLock) return;
+    if (paymentConfirm.status === "paid" && !confirmedPaymentMethod) return;
+    setPaymentConfirmSubmitLock(true);
+    setPaymentConfirmError("");
+    const data: UpdateBookingBodyWithPaymentMethod = {
+      paymentStatus: paymentConfirm.status,
+      ...(paymentConfirm.status === "paid" ? { confirmedPaymentMethod: confirmedPaymentMethod || undefined } : {}),
+    };
+    updateBooking.mutate(
+      { id: paymentConfirm.booking.id, data },
+      {
+        onSuccess: () => {
+          invalidateBookings();
+          setPaymentConfirm(null);
+          setConfirmedPaymentMethod("");
+          setPaymentConfirmSubmitLock(false);
+        },
+        onError: (err: unknown) => {
+          const data = err !== null && typeof err === "object" && "data" in err ? (err as { data?: { message?: string; error?: string } }).data : null;
+          setPaymentConfirmError(data?.message ?? data?.error ?? "Could not update payment status — please try again.");
+          setPaymentConfirmSubmitLock(false);
+        },
+      },
+    );
   };
 
   const paginationPages = (() => {
@@ -718,7 +760,16 @@ export default function Bookings() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={paymentConfirm != null} onOpenChange={(next) => !next && setPaymentConfirm(null)}>
+      <Dialog
+        open={paymentConfirm != null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setPaymentConfirm(null);
+            setConfirmedPaymentMethod("");
+            setPaymentConfirmError("");
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
@@ -738,15 +789,38 @@ export default function Bookings() {
               <p className="text-[11px] text-muted-foreground">
                 Are you sure you want to {paymentConfirm.status === "paid" ? "confirm" : "reject"} this payment?
               </p>
+              {paymentConfirm.status === "paid" && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Payment Method
+                  </label>
+                  <Select
+                    value={confirmedPaymentMethod}
+                    onValueChange={(v) => setConfirmedPaymentMethod(v as ConfirmedPaymentMethod)}
+                  >
+                    <SelectTrigger data-testid="select-confirmed-payment-method">
+                      <SelectValue placeholder="Select payment method…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONFIRMED_PAYMENT_METHODS.map((m) => (
+                        <SelectItem key={m} value={m}>{CONFIRMED_PAYMENT_METHOD_LABELS[m]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {paymentConfirmError && (
+                <p className="text-xs text-destructive">{paymentConfirmError}</p>
+              )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setPaymentConfirm(null)}>Cancel</Button>
                 <Button
                   type="button"
                   variant={paymentConfirm.status === "failed" ? "destructive" : "default"}
                   onClick={confirmPaymentChange}
-                  disabled={updateBooking.isPending}
+                  disabled={paymentConfirmSubmitLock || (paymentConfirm.status === "paid" && !confirmedPaymentMethod)}
                 >
-                  {paymentConfirm.status === "paid" ? "Confirm Payment" : "Reject Payment"}
+                  {paymentConfirmSubmitLock ? "Saving…" : paymentConfirm.status === "paid" ? "Confirm Payment" : "Reject Payment"}
                 </Button>
               </DialogFooter>
             </div>
