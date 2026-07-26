@@ -12,6 +12,7 @@
     "test:financial": "../../lib/db/node_modules/.bin/tsx --test src/lib/financialAggregates.test.ts",
     "finance:backfill:dry-run": "../../lib/db/node_modules/.bin/tsx src/cli/financeBackfillDryRunCli.entry.ts",
     "finance:backfill:execute": "../../lib/db/node_modules/.bin/tsx src/cli/financeBackfillExecuteCli.entry.ts",
+    "finance:backfill:production-dry-run": "../../lib/db/node_modules/.bin/tsx src/cli/financeBackfillProductionDryRunCli.entry.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
