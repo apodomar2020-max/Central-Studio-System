@@ -26,8 +26,10 @@ import {
   balletSchedulesTable,
   balletClassesTable,
   attendanceTable,
+  packageOrdersTable,
 } from "@workspace/db";
 import { normalizePhone } from "./phoneNormalization";
+import { resolveSingleClassPriceEgp } from "./singleClassPricing";
 import { isAssignmentReadyClass, scheduleShapeCondition } from "./balletClassEntitlement";
 import { getPaymentCyclesForApplication } from "./balletSubscriptions";
 import { subscriptionCoversDate } from "./balletAttendanceWrite";
@@ -78,6 +80,28 @@ export interface AttendanceCandidate {
   eligibility: CandidateEligibility;
   reason: string | null;
   existingAttendanceId: number | null;
+  /**
+   * Set ONLY on a Studio walk-in candidate (bookingId === null, program ===
+   * "studio"): the server-resolved, display-only Single-Class price for
+   * this schedule — the exact same value (never a client amount) Finance
+   * Phase 2B-4 will capture if this walk-in is confirmed Paid. Null for
+   * every booking-based candidate (their economics already exist).
+   */
+  walkinPriceEgp: number | null;
+  /**
+   * Set ONLY on a Studio walk-in candidate: the resolved child id when this
+   * walk-in is for a specific child (participantType "child"), else null.
+   * Carried separately from participantId so the confirm step can populate
+   * payment_records.child_id without re-deriving it from the request body.
+   */
+  walkinChildId: number | null;
+  /**
+   * Set ONLY on a Studio walk-in candidate: whether this account currently
+   * has at least one active package order with remaining credits — display
+   * only, so the Admin UI can decide whether to offer Package Credit at
+   * all. confirm() re-validates the real package order independently.
+   */
+  hasPackageCredit: boolean;
 }
 
 export interface AttendanceAccountCandidates {
@@ -136,6 +160,24 @@ function initialsOf(name: string): string {
  */
 export function computeStudioCandidateKey(accountId: number, bookingId: number, occurrenceDate: string): string {
   return ["studio", accountId, bookingId, occurrenceDate].join(":");
+}
+
+/**
+ * Same tamper-evident scheme as computeStudioCandidateKey, for a Studio
+ * WALK-IN candidate — one with no pre-existing booking. Keyed on the
+ * schedule (not a booking id, since none exists yet) + occurrence date +
+ * participant child (or "self"), so a key minted for one
+ * account/child/schedule/occurrence combination can never be replayed
+ * against another — including swapping which child of the same parent the
+ * walk-in is for.
+ */
+export function computeStudioWalkInCandidateKey(
+  accountId: number,
+  participantChildId: number | null,
+  scheduleId: number,
+  occurrenceDate: string,
+): string {
+  return ["studioWalkin", accountId, participantChildId ?? "self", scheduleId, occurrenceDate].join(":");
 }
 
 export function computeBalletCandidateKey(
@@ -309,7 +351,139 @@ async function buildStudioCandidates(
       eligibility,
       reason,
       existingAttendanceId,
+      walkinPriceEgp: null,
+      walkinChildId: participantIsChild ? booking.participantChildId! : null,
+      hasPackageCredit: false,
     });
+  }
+
+  const walkInCandidates = await buildStudioWalkInCandidates(accountId, accountName, accountEmail, maskedPhone, candidates, now);
+  candidates.push(...walkInCandidates);
+
+  return candidates;
+}
+
+/**
+ * Studio walk-in candidates — Finance Phase 2B-4 (full flow). Every active
+ * schedule whose attendance window is open RIGHT NOW, that this account
+ * does not already have a booking-based candidate for, is offered as a
+ * walk-in option: "check this account into this class now, no pre-existing
+ * booking required." Read-only discovery, same as every other candidate —
+ * confirm() re-validates everything server-side before writing anything.
+ */
+async function buildStudioWalkInCandidates(
+  accountId: number,
+  accountName: string,
+  accountEmail: string,
+  maskedPhone: string | null,
+  existingCandidates: AttendanceCandidate[],
+  now: Date,
+): Promise<AttendanceCandidate[]> {
+  const nowCairo = cairoNow(now);
+  const coveredScheduleIds = new Set(
+    existingCandidates
+      .filter((c) => c.program === "studio" && c.scheduleId != null)
+      .map((c) => c.scheduleId as number),
+  );
+
+  const [rows, children, hasPackageCredit] = await Promise.all([
+    db
+      .select({
+        scheduleId: schedulesTable.id,
+        classId: schedulesTable.classId,
+        className: classesTable.title,
+        type: schedulesTable.type,
+        date: schedulesTable.date,
+        dayOfWeek: schedulesTable.dayOfWeek,
+        startTime: schedulesTable.startTime,
+        endTime: schedulesTable.endTime,
+        priceEgp: schedulesTable.priceEgp,
+      })
+      .from(schedulesTable)
+      .leftJoin(classesTable, eq(classesTable.id, schedulesTable.classId))
+      .where(eq(schedulesTable.status, "active")),
+    // Existing parent/child ownership model — the SAME table Ballet candidate
+    // resolution already uses for a child's identity (childrenTable.parentId).
+    db
+      .select({ id: childrenTable.id, fullName: childrenTable.fullName })
+      .from(childrenTable)
+      .where(eq(childrenTable.parentId, accountId)),
+    // Existing credit-ledger ownership rule: a package order belongs to the
+    // ACCOUNT (studentEmail), never a specific child — matches
+    // performBookingCheckIn's own `order.studentEmail === student.email`
+    // check exactly. Display-only; confirm() re-validates independently.
+    db
+      .select({ id: packageOrdersTable.id })
+      .from(packageOrdersTable)
+      .where(and(
+        eq(packageOrdersTable.studentEmail, accountEmail),
+        eq(packageOrdersTable.status, "active"),
+        sql`${packageOrdersTable.remainingCredits} > 0`,
+      ))
+      .limit(1)
+      .then((r) => r.length > 0),
+  ]);
+
+  // Participants this account can walk in as: itself, plus every owned
+  // child — mirrors exactly who the Ballet candidate builder already
+  // resolves attendance for under this same account.
+  const participants: Array<{ type: "account" | "child"; id: number; name: string; childId: number | null }> = [
+    { type: "account", id: accountId, name: accountName, childId: null },
+    ...children.map((child) => ({ type: "child" as const, id: child.id, name: child.fullName, childId: child.id })),
+  ];
+
+  const candidates: AttendanceCandidate[] = [];
+  for (const row of rows) {
+    if (coveredScheduleIds.has(row.scheduleId)) continue;
+    const occurrenceDate = row.type === "one_time"
+      ? row.date
+      : row.dayOfWeek != null
+        ? attendanceOccurrenceDateForWeeklySchedule({ dayOfWeek: row.dayOfWeek, startTime: row.startTime, endTime: row.endTime }, now)
+        : null;
+    if (!occurrenceDate || occurrenceDate !== nowCairo.date) continue;
+    const windowState = checkInWindowState({ startTime: row.startTime, endTime: row.endTime }, occurrenceDate, now);
+    if (windowState !== "open") continue;
+
+    // Same server-authoritative resolver Finance Phase 2B-2/2B-4 capture
+    // uses (schedule override, else the Studio-wide default) — never the
+    // raw, possibly-null schedule column alone, so this preview can never
+    // under-report relative to what confirm() actually captures.
+    const priceEgp = await resolveSingleClassPriceEgp(db, row.scheduleId);
+
+    for (const participant of participants) {
+      candidates.push({
+        candidateKey: computeStudioWalkInCandidateKey(accountId, participant.childId, row.scheduleId, occurrenceDate),
+        program: "studio",
+        participantType: participant.type,
+        participantId: participant.id,
+        participantName: participant.name,
+        participantInitials: initialsOf(participant.name),
+        parentName: accountName,
+        maskedParentPhone: maskedPhone,
+        bookingId: null,
+        balletApplicationId: null,
+        balletLevelAssignmentId: null,
+        classId: row.classId,
+        className: row.className ?? null,
+        scheduleId: row.scheduleId,
+        occurrenceDate,
+        dayOfWeek: row.dayOfWeek ?? null,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        durationMinutes: null,
+        level: null,
+        group: null,
+        eligibility: "eligible",
+        reason: null,
+        existingAttendanceId: null,
+        // Display-only preview — the confirm step re-resolves this exact
+        // value server-side via the same resolveSingleClassPriceEgp() rather
+        // than trusting this number back from the client.
+        walkinPriceEgp: priceEgp,
+        walkinChildId: participant.childId,
+        hasPackageCredit,
+      });
+    }
   }
   return candidates;
 }
@@ -455,6 +629,9 @@ async function buildBalletCandidates(
         eligibility,
         reason,
         existingAttendanceId: existing?.id ?? null,
+        walkinPriceEgp: null,
+        walkinChildId: null,
+        hasPackageCredit: false,
       });
     }
   }

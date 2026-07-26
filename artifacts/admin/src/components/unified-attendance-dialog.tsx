@@ -79,6 +79,12 @@ interface Candidate {
   eligibility: "eligible" | "too_early" | "ended" | "already_recorded" | "inactive_enrollment" | "no_active_subscription" | "cancelled" | "invalid_assignment" | "not_scheduled_today";
   reason: string | null;
   existingAttendanceId: number | null;
+  // Finance Phase 2B-4: set only on a Studio WALK-IN candidate (bookingId
+  // is null) — the server-resolved, display-only price and whether a
+  // Package Credit is available for this account. Never editable.
+  walkinPriceEgp: number | null;
+  walkinChildId: number | null;
+  hasPackageCredit: boolean;
 }
 
 interface AccountGroup {
@@ -174,6 +180,8 @@ export function UnifiedAttendanceDialog({
   const [selected, setSelected] = useState<{ account: AccountGroup; candidate: Candidate } | null>(null);
   const [paymentMode, setPaymentMode] = useState<"package_credit" | "pay_at_studio">("pay_at_studio");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  // Prevents a double-click/double-submit from firing the confirm request twice.
+  const [submitLock, setSubmitLock] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -189,6 +197,7 @@ export function UnifiedAttendanceDialog({
     setSelected(null);
     setPaymentMode("pay_at_studio");
     setSelectedPackageId(null);
+    setSubmitLock(false);
     setErrorMessage("");
     setSuccessMessage("");
   }
@@ -319,8 +328,13 @@ export function UnifiedAttendanceDialog({
 
   function pickCandidate(account: AccountGroup, candidate: Candidate) {
     setSelected({ account, candidate });
-    setPaymentMode("pay_at_studio");
+    // A walk-in with no available Package Credit goes straight to the
+    // mandatory Paid/Not Paid confirmation — Package Credit is offered as
+    // the default only when the resolver says one is actually available.
+    const isWalkIn = candidate.bookingId == null && candidate.program === "studio";
+    setPaymentMode(isWalkIn && !candidate.hasPackageCredit ? "pay_at_studio" : (isWalkIn ? "package_credit" : "pay_at_studio"));
     setSelectedPackageId(null);
+    setSubmitLock(false);
     setPhase("confirming");
   }
 
@@ -329,8 +343,15 @@ export function UnifiedAttendanceDialog({
     setPhase("results");
   }
 
-  async function confirmAttendance() {
-    if (!selected) return;
+  // Not Paid cancels the whole operation client-side: nothing was ever
+  // written (the server never saw this request), so there is nothing to
+  // roll back — just return to the results list without any success state.
+  function declineWalkInPayment() {
+    backToResults();
+  }
+
+  async function confirmAttendance(paidDecision?: boolean) {
+    if (!selected || submitLock) return;
     const { account, candidate } = selected;
     if (candidate.eligibility !== "eligible") return;
     if (candidate.program === "studio" && paymentMode === "package_credit" && !canPackageDeduct) {
@@ -338,6 +359,7 @@ export function UnifiedAttendanceDialog({
       return;
     }
 
+    setSubmitLock(true);
     setPhase("submitting");
     setErrorMessage("");
     try {
@@ -348,9 +370,22 @@ export function UnifiedAttendanceDialog({
         source: resolverResult?.source ?? "qr",
       };
       if (candidate.program === "studio") {
-        body.bookingId = candidate.bookingId;
         body.paymentMode = paymentMode;
         if (paymentMode === "package_credit") body.packageOrderId = selectedPackageId;
+        if (candidate.bookingId != null) {
+          body.bookingId = candidate.bookingId;
+        } else {
+          // Studio walk-in (Finance Phase 2B-4): no pre-existing booking.
+          // The resolved price is echoed back exactly as displayed — never
+          // editable, never re-entered — so the server can guarantee it
+          // captures the same amount the Admin actually confirmed against
+          // (409 walkin_price_changed if the configured price moved since
+          // resolve()).
+          body.scheduleId = candidate.scheduleId;
+          if (candidate.walkinChildId != null) body.childId = candidate.walkinChildId;
+          if (candidate.walkinPriceEgp != null) body.expectedPriceEgp = candidate.walkinPriceEgp;
+          if (paymentMode === "pay_at_studio") body.paid = paidDecision ?? true;
+        }
       } else {
         body.balletLevelAssignmentId = candidate.balletLevelAssignmentId;
         body.balletScheduleId = candidate.scheduleId;
@@ -367,6 +402,8 @@ export function UnifiedAttendanceDialog({
       const data = err !== null && typeof err === "object" && "data" in err ? (err as { data?: { message?: string; error?: string } }).data : null;
       setErrorMessage(data?.message ?? data?.error ?? "Could not record attendance — please try again.");
       setPhase("error");
+    } finally {
+      setSubmitLock(false);
     }
   }
 
@@ -531,44 +568,88 @@ export function UnifiedAttendanceDialog({
               )}
             </div>
 
-            {selected.candidate.program === "studio" && (
-              <div className="space-y-2">
-                <p className="text-sm font-semibold">Payment</p>
-                <div className="flex gap-2">
-                  <button onClick={() => setPaymentMode("pay_at_studio")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "pay_at_studio" ? CYAN : "hsl(var(--muted))", color: paymentMode === "pay_at_studio" ? "hsl(var(--primary-foreground))" : undefined }}>
-                    Pay at Studio
-                  </button>
-                  {canPackageDeduct && (
-                    <button onClick={() => setPaymentMode("package_credit")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "package_credit" ? CYAN : "hsl(var(--muted))", color: paymentMode === "package_credit" ? "hsl(var(--primary-foreground))" : undefined }}>
-                    Package Credit
+            {(() => {
+              const isWalkIn = selected.candidate.bookingId == null && selected.candidate.program === "studio";
+              // For a walk-in, only offer Package Credit when the resolver
+              // actually found one available for this account — an
+              // existing-booking candidate has no such preview, so it keeps
+              // the prior canPackageDeduct-only gate exactly as before.
+              const showPackageCreditOption = canPackageDeduct && (!isWalkIn || selected.candidate.hasPackageCredit);
+              const showPaidNotPaid = isWalkIn && paymentMode === "pay_at_studio";
+
+              return (
+                <>
+                  {selected.candidate.program === "studio" && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold">Payment</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => setPaymentMode("pay_at_studio")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "pay_at_studio" ? CYAN : "hsl(var(--muted))", color: paymentMode === "pay_at_studio" ? "hsl(var(--primary-foreground))" : undefined }}>
+                          Pay at Studio
+                        </button>
+                        {showPackageCreditOption && (
+                          <button onClick={() => setPaymentMode("package_credit")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "package_credit" ? CYAN : "hsl(var(--muted))", color: paymentMode === "package_credit" ? "hsl(var(--primary-foreground))" : undefined }}>
+                          Package Credit
+                          </button>
+                        )}
+                      </div>
+                      {paymentMode === "package_credit" && (
+                        <select value={selectedPackageId ?? ""} onChange={(e) => setSelectedPackageId(e.target.value ? Number(e.target.value) : null)} className="w-full rounded-lg px-3 py-2 text-sm" style={{ border: `1px solid ${BORDER}`, background: CARD }}>
+                          <option value="">Select a package…</option>
+                          {accountPackages.map((pkg) => (
+                            <option key={pkg.id} value={pkg.id}>{pkg.packageName} ({pkg.remainingCredits} left)</option>
+                          ))}
+                        </select>
+                      )}
+                      {showPaidNotPaid && selected.candidate.walkinPriceEgp != null && (
+                        // Server-resolved price, display-only — never an
+                        // editable input. Shown before any Paid/Not Paid
+                        // decision can be made.
+                        <div className="rounded-lg p-3 flex items-center justify-between" style={{ border: `1px solid ${BORDER}`, background: "hsl(var(--muted) / 0.4)" }}>
+                          <span className="text-sm" style={{ color: MUTED }}>Single-Class price</span>
+                          <span className="text-base font-bold">EGP {selected.candidate.walkinPriceEgp}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {errorMessage && (
+                    <div className="flex items-center gap-2 rounded-lg p-3 text-sm" style={{ background: "hsl(var(--destructive) / 0.1)", color: RED }}>
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" /> {errorMessage}
+                    </div>
+                  )}
+
+                  {showPaidNotPaid ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={declineWalkInPayment}
+                        disabled={submitLock}
+                        className="flex-1 px-4 py-3 rounded-lg text-sm font-bold disabled:opacity-50"
+                        style={{ background: "hsl(var(--muted))" }}
+                      >
+                        Not Paid
+                      </button>
+                      <button
+                        onClick={() => void confirmAttendance(true)}
+                        disabled={submitLock}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold disabled:opacity-50"
+                        style={{ background: GREEN, color: "white" }}
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Paid
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => void confirmAttendance()}
+                      disabled={submitLock || (selected.candidate.program === "studio" && paymentMode === "package_credit" && selectedPackageId == null)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold disabled:opacity-50"
+                      style={{ background: GREEN, color: "white" }}
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Confirm Attendance
                     </button>
                   )}
-                </div>
-                {paymentMode === "package_credit" && (
-                  <select value={selectedPackageId ?? ""} onChange={(e) => setSelectedPackageId(e.target.value ? Number(e.target.value) : null)} className="w-full rounded-lg px-3 py-2 text-sm" style={{ border: `1px solid ${BORDER}`, background: CARD }}>
-                    <option value="">Select a package…</option>
-                    {accountPackages.map((pkg) => (
-                      <option key={pkg.id} value={pkg.id}>{pkg.packageName} ({pkg.remainingCredits} left)</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            )}
-
-            {errorMessage && (
-              <div className="flex items-center gap-2 rounded-lg p-3 text-sm" style={{ background: "hsl(var(--destructive) / 0.1)", color: RED }}>
-                <AlertTriangle className="h-4 w-4 flex-shrink-0" /> {errorMessage}
-              </div>
-            )}
-
-            <button
-              onClick={confirmAttendance}
-              disabled={selected.candidate.program === "studio" && paymentMode === "package_credit" && selectedPackageId == null}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold disabled:opacity-50"
-              style={{ background: GREEN, color: "white" }}
-            >
-              <CheckCircle2 className="h-4 w-4" /> Confirm Attendance
-            </button>
+                </>
+              );
+            })()}
           </div>
         )}
 

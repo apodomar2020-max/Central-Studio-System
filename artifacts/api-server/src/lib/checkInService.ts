@@ -25,9 +25,16 @@ import {
   attendanceTable,
   packageOrdersTable,
   creditTransactionsTable,
+  paymentRecordsTable,
+  paymentEventsTable,
+  type PaymentRecordRequestedChannel,
 } from "@workspace/db";
 import { createStudentNotification } from "./notifications";
-import { checkInWindowState } from "./occurrence";
+import { checkInWindowState, currentOccurrenceDate } from "./occurrence";
+import { resolveSingleClassPriceEgp } from "./singleClassPricing";
+import { egpToMinor } from "./money";
+import { sendPushNotification } from "./pushNotifications";
+import { logger } from "./logger";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Booking = typeof bookingsTable.$inferSelect;
@@ -59,7 +66,10 @@ export type CheckInErrorCode =
   | "invalid_package"
   | "package_not_eligible"
   | "no_credits"
-  | "candidate_key_mismatch";
+  | "candidate_key_mismatch"
+  | "invalid_price_configuration"
+  | "walkin_not_paid"
+  | "walkin_price_changed";
 
 export interface CheckInError {
   isCheckInError: true;
@@ -425,4 +435,280 @@ export async function performBookingCheckIn(
     remainingCredits,
     checkedInAt: attendance.checkedInAt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// performStudioWalkIn — Finance Phase 2B-4: Studio Walk-in Atomic Monetary
+// Capture.
+//
+// A genuinely SEPARATE write path from performBookingCheckIn() above: it
+// creates its own synthetic booking (there is no pre-existing booking to
+// check in against — that's what makes it a walk-in), then performs the
+// SAME attended-transition shape (attendance row) plus the new Finance
+// capture, all inside one transaction. Called ONLY when:
+//   - no valid Package Credit is being used for this walk-in (that path
+//     stays exactly as it was — see attendance.ts's package-credit branch,
+//     untouched by this function), and
+//   - the Admin has explicitly confirmed Paid (paid:true in the request).
+//
+// The caller (attendance.ts) is responsible for the Not Paid short-circuit
+// (paid:false → abort before ever calling this) and for opening the
+// transaction / dispatching the returned pendingPush after it commits —
+// mirroring the exact pattern already established in Phase 2B-1/2B-2
+// (packageOrders.ts / bookings.ts): the notification ROW is inserted here
+// (dispatchPush:false, atomic with everything else); the actual push send
+// is deferred to the caller, post-commit.
+// ---------------------------------------------------------------------------
+export interface PerformStudioWalkInParams {
+  studentName: string;
+  studentEmail: string;
+  /** Validated account id, when the walk-in is linked to a real account (optional — many walk-ins are unlinked). */
+  studentId?: number | null;
+  /** Validated child id (childrenTable.parentId === studentId already checked by the caller) — set only for a child walk-in. */
+  childId?: number | null;
+  classId?: number | null;
+  scheduleId?: number | null;
+  /** Authenticated admin confirming payment — system_users.id. */
+  adminId: number;
+  /** Audit trail — admin email, matches the existing checkedInBy convention. */
+  performedBy: string;
+  /**
+   * The exact price the caller displayed to the Admin before this
+   * confirmation (e.g. the Attendance Gateway's resolve() response). When
+   * provided, it must equal the price re-resolved here right now, or the
+   * whole operation aborts with invalid_price_configuration-style
+   * protection (see walkin_price_changed below) rather than silently
+   * capturing a different amount than what was shown.
+   */
+  expectedPriceEgp?: number | null;
+  now?: Date;
+}
+
+export interface StudioWalkInPendingPush {
+  studentId: number;
+  title: string;
+  body: string;
+  data: Record<string, unknown>;
+  notificationId: number;
+}
+
+export interface StudioWalkInResult {
+  bookingId: number;
+  attendanceId: number;
+  paymentRecordId: number;
+  studentName: string;
+  studentEmail: string;
+  grossAmountMinor: number;
+  finalPayableAmountMinor: number;
+  checkedInAt: string;
+  pendingPush: StudioWalkInPendingPush | null;
+}
+
+export async function performStudioWalkIn(
+  tx: Tx,
+  params: PerformStudioWalkInParams,
+): Promise<StudioWalkInResult> {
+  const now = params.now ?? new Date();
+
+  // ── Step: resolve the exact positive server price — never a client value,
+  // never a silent zero fallback. Same resolver Single-Class Booking
+  // Creation Capture and the Finance Phase 1 read model both use, so the
+  // price this function captures can never disagree with what any other
+  // surface displays for the same schedule/class.
+  const priceEgp = await resolveSingleClassPriceEgp(tx, params.scheduleId ?? null);
+  if (!(priceEgp > 0)) {
+    throw makeCheckInError(
+      409,
+      "invalid_price_configuration",
+      "No valid Single-Class price is configured for this class/schedule. Configure a price before recording a paid walk-in.",
+    );
+  }
+  // ── Price-binding guard: if the caller tells us what price it displayed
+  // to the Admin (Attendance Gateway's resolve() response), it must match
+  // what we just re-resolved right now exactly — otherwise the configured
+  // price changed between preview and confirmation, and we must never
+  // silently capture a different amount than the one the Admin actually
+  // saw and confirmed against.
+  const grossAmountMinor = egpToMinor(priceEgp);
+  if (
+    params.expectedPriceEgp != null &&
+    egpToMinor(params.expectedPriceEgp) !== grossAmountMinor
+  ) {
+    throw makeCheckInError(
+      409,
+      "walkin_price_changed",
+      "The class price changed since it was displayed — please review the updated price and confirm again.",
+    );
+  }
+
+  const discountAmountMinor = 0;
+  const finalPayableAmountMinor = grossAmountMinor - discountAmountMinor;
+
+  // ── Occurrence date, resolved the exact same way the ordinary booking
+  // route does (currentOccurrenceDate), for a schedule-linked walk-in.
+  let occurrenceDate: string | null = null;
+  if (params.scheduleId != null) {
+    const [schedule] = await tx
+      .select({
+        type: schedulesTable.type,
+        date: schedulesTable.date,
+        dayOfWeek: schedulesTable.dayOfWeek,
+        startTime: schedulesTable.startTime,
+      })
+      .from(schedulesTable)
+      .where(eq(schedulesTable.id, params.scheduleId))
+      .limit(1);
+    if (schedule) occurrenceDate = currentOccurrenceDate(schedule);
+  }
+
+  const checkedInAtIso = now.toISOString();
+
+  // ── Insert the synthetic booking. bookingStatus/paymentStatus/status are
+  // set directly to their terminal "already attended, already paid" shape
+  // — this confirmation IS the attendance event, happening atomically with
+  // it, not a separate pending state that something else confirms later.
+  const [booking] = await tx
+    .insert(bookingsTable)
+    .values({
+      studentName: params.studentName,
+      studentEmail: normalizeLegacyEmail(params.studentEmail),
+      accountOwnerStudentId: params.studentId ?? null,
+      participantChildId: params.childId ?? null,
+      bookingScope: params.childId != null ? "child" : "self",
+      scheduleId: params.scheduleId ?? null,
+      classId: params.classId ?? null,
+      occurrenceDate,
+      paymentMode: "pay_at_studio",
+      bookingStatus: "attended",
+      paymentStatus: "paid",
+      status: "attended",
+      notes: "Studio walk-in",
+    })
+    .returning();
+
+  // ── Finance capture: payment_records + payment_events, same transaction.
+  const [paymentRecord] = await tx
+    .insert(paymentRecordsTable)
+    .values({
+      flowType: "studio_walkin",
+      packageOrderId: null,
+      bookingId: booking.id,
+      captureOrigin: "live_capture",
+      occurredAt: checkedInAtIso,
+      evidenceClass: "confirmed",
+      amountAvailability: "exact",
+      amountSource: "creation_snapshot",
+      grossAmountMinor,
+      discountAmountMinor,
+      finalPayableAmountMinor,
+      paidAmountMinor: finalPayableAmountMinor,
+      refundedAmountMinor: 0,
+      currency: "EGP",
+      requestedPaymentChannel: "pay_at_studio" as PaymentRecordRequestedChannel,
+      rawRequestedChannel: "pay_at_studio",
+      confirmedPaymentMethod: "unknown",
+      rawConfirmedMethod: null,
+      status: "paid",
+      paidAt: checkedInAtIso,
+      confirmingAdminId: params.adminId,
+      providerReference: null,
+      internalReceiptRef: null,
+      studentId: params.studentId ?? null,
+      childId: params.childId ?? null,
+      creationIdempotencyKey: null,
+    })
+    .returning();
+
+  await tx.insert(paymentEventsTable).values({
+    paymentRecordId: paymentRecord.id,
+    paymentRefundId: null,
+    eventType: "created_and_confirmed",
+    amountMinor: finalPayableAmountMinor,
+    previousStatus: null,
+    newStatus: "paid",
+    creditTransactionId: null,
+    actorAdminId: params.adminId,
+    actorType: "admin",
+    reason: "studio_walkin_paid_at_studio",
+    providerReference: null,
+    ipAddress: null,
+    userAgent: null,
+    idempotencyKey: null,
+  });
+
+  // ── Attendance row — same shape as the existing walk-in/credit paths.
+  const [attendance] = await tx
+    .insert(attendanceTable)
+    .values({
+      studentName: params.studentName,
+      studentEmail: normalizeLegacyEmail(params.studentEmail),
+      studentId: params.studentId ?? null,
+      classId: params.classId ?? null,
+      scheduleId: params.scheduleId ?? null,
+      bookingId: booking.id,
+      packageOrderId: null,
+      creditDeducted: false,
+      checkedInBy: params.performedBy,
+      status: "checked_in",
+      classTitle: null,
+      notes: "Payment mode: pay at studio",
+      checkedInAt: checkedInAtIso,
+    })
+    .returning();
+
+  // ── Notification row, atomic with everything above, push dispatch
+  // deferred to the caller post-commit (dispatchPush:false — see module
+  // header comment).
+  let pendingPush: StudioWalkInPendingPush | null = null;
+  if (params.studentId != null) {
+    const title = "Checked in";
+    const body = `You have been checked in for your class.`;
+    const metadata = { bookingId: booking.id, classId: params.classId ?? null, scheduleId: params.scheduleId ?? null };
+    const notificationRow = await createStudentNotification(tx, {
+      studentId: params.studentId,
+      studentEmail: params.studentEmail,
+      title,
+      body,
+      type: "attendance_checked_in",
+      relatedEntityType: "booking",
+      relatedEntityId: booking.id,
+      metadata,
+      dispatchPush: false,
+    });
+    if (notificationRow) {
+      pendingPush = {
+        studentId: params.studentId,
+        title,
+        body,
+        data: { type: "attendance_checked_in", ...metadata },
+        notificationId: notificationRow.id,
+      };
+    }
+  }
+
+  return {
+    bookingId: booking.id,
+    attendanceId: attendance.id,
+    paymentRecordId: paymentRecord.id,
+    studentName: params.studentName,
+    studentEmail: normalizeLegacyEmail(params.studentEmail),
+    grossAmountMinor,
+    finalPayableAmountMinor,
+    checkedInAt: attendance.checkedInAt,
+    pendingPush,
+  };
+}
+
+/**
+ * Fire-and-forget push dispatch for a completed studio walk-in — call only
+ * AFTER the enclosing db.transaction() has resolved successfully. Mirrors
+ * packageOrders.ts / bookings.ts's identical post-commit boundary: the push
+ * is never scheduled until this transaction has actually committed, and a
+ * rejection here is caught, logged, and never rolls back the walk-in.
+ */
+export function dispatchStudioWalkInPush(pendingPush: StudioWalkInPendingPush | null): void {
+  if (!pendingPush) return;
+  void sendPushNotification(pendingPush).catch((error) => {
+    logger.error({ err: error, notificationId: pendingPush.notificationId }, "Failed to dispatch studio walk-in push");
+  });
 }

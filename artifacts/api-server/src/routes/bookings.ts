@@ -13,11 +13,11 @@ import {
   childrenTable,
   paymentRecordsTable,
   paymentEventsTable,
-  classPricingSettingsTable,
   type PaymentRecordRequestedChannel,
 } from "@workspace/db";
 import { egpToMinor } from "../lib/money";
 import { logger } from "../lib/logger";
+import { resolveSingleClassPriceEgp } from "../lib/singleClassPricing";
 import { createStudentNotification } from "../lib/notifications";
 import { sendPushNotification } from "../lib/pushNotifications";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
@@ -68,41 +68,6 @@ type NotificationPayload = {
 };
 type BookingNotificationClient = Pick<typeof db, "select">;
 type BookingOwnerClient = Pick<typeof db, "select">;
-type BookingPriceClient = Pick<typeof db, "select">;
-
-const DEFAULT_SINGLE_CLASS_PRICE_EGP = 300;
-
-// Finance Phase 2B-2: the exact same server-side price authority the
-// existing (already-deployed) Finance Phase 1 read model uses for a
-// single-class booking — financeSources.ts's BOOKING_RESOLVED_PRICE and
-// financialAggregates.ts both resolve
-// coalesce(schedules.price_egp, class_pricing_settings.single_class_price_egp).
-// A schedule-level override wins when set; otherwise the Studio-wide
-// default always resolves (class_pricing_settings is a singleton row,
-// lazily seeded on first read exactly like classPricing.ts's own
-// getOrCreateClassPricingSettings — never a hard-coded/zero fallback here).
-async function resolveSingleClassPriceEgp(
-  client: BookingPriceClient,
-  scheduleId: number | null,
-): Promise<number> {
-  if (scheduleId != null) {
-    const [schedule] = await client
-      .select({ priceEgp: schedulesTable.priceEgp })
-      .from(schedulesTable)
-      .where(eq(schedulesTable.id, scheduleId))
-      .limit(1);
-    if (schedule?.priceEgp != null) return schedule.priceEgp;
-  }
-
-  const [settings] = await client
-    .select({ singleClassPriceEgp: classPricingSettingsTable.singleClassPriceEgp })
-    .from(classPricingSettingsTable)
-    .where(eq(classPricingSettingsTable.id, 1))
-    .limit(1);
-  if (settings) return settings.singleClassPriceEgp;
-
-  return DEFAULT_SINGLE_CLASS_PRICE_EGP;
-}
 
 async function refreshScheduleLifecycle(scheduleId: number): Promise<void> {
   await db

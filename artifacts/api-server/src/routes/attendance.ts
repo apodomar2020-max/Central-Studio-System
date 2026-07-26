@@ -5,7 +5,7 @@ import * as zod from "zod";
 import { db, attendanceTable, bookingsTable, studentsTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
-import { performBookingCheckIn, makeCheckInError, isCheckInError } from "../lib/checkInService";
+import { performBookingCheckIn, makeCheckInError, isCheckInError, performStudioWalkIn, dispatchStudioWalkInPush } from "../lib/checkInService";
 import { logActivity } from "../lib/activityLog";
 import {
   ListAttendanceResponse,
@@ -126,6 +126,7 @@ router.post(
     bookingId,
     checkedInBy,
     status,
+    paid,
   } = parsed.data;
 
   const performedBy = checkedInBy ?? "system";
@@ -212,9 +213,23 @@ router.post(
     // package-credit deduction + ledger, attendance row, and notifications.
     // (Booking-linked check-ins go through the shared performBookingCheckIn()
     // above; this path intentionally remains its own implementation.)
-    const row = await db.transaction(async (tx) => {
+    const usingPackageCredit = creditDeducted === true && packageOrderId != null;
+
+    const walkInResult = await db.transaction(async (tx) => {
       // Step 1 — Duplicate attendance check (only when a class/schedule is given)
       if (classId != null || scheduleId != null) {
+        // Serialize concurrent walk-in attempts for the SAME
+        // student+class/schedule+day: the duplicate check below is a plain
+        // SELECT (no row to lock — the very thing it's checking for may not
+        // exist yet), so without this, two simultaneous requests can both
+        // pass the check before either commits, producing double revenue
+        // for a paid walk-in. A transaction-scoped advisory lock, released
+        // automatically at commit/rollback, closes that window: the second
+        // concurrent request blocks here until the first's transaction
+        // resolves, then sees its committed attendance row and is correctly
+        // rejected as a duplicate.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`walkin:${studentEmail}:${scheduleId ?? "c" + classId}:today`}))`);
+
         const dupConditions = [
           eq(attendanceTable.studentEmail, studentEmail),
           // Same-day comparison in Africa/Cairo (no UTC drift).
@@ -238,6 +253,34 @@ router.post(
             "This student has already been checked in for this class today.",
           );
         }
+      }
+
+      // ── Finance Phase 2B-4: Studio Walk-in Atomic Monetary Capture ────────
+      // Only reachable when no valid Package Credit is being used for this
+      // walk-in (that path is completely untouched below) AND the Admin has
+      // explicitly confirmed Paid/Not Paid. Requests that omit `paid`
+      // entirely fall through to the pre-existing attendance-only behavior,
+      // unchanged — this is purely additive.
+      if (!usingPackageCredit && paid === true) {
+        const adminId = req.adminUser?.id;
+        if (adminId == null) {
+          throw makeCheckInError(401, "invalid_qr", "Authenticated admin identity is required to confirm a paid walk-in.");
+        }
+        const result = await performStudioWalkIn(tx, {
+          studentName,
+          studentEmail,
+          studentId: studentId ?? null,
+          classId: classId ?? null,
+          scheduleId: scheduleId ?? null,
+          adminId,
+          performedBy,
+        });
+        return { kind: "paidWalkIn" as const, result };
+      }
+      if (!usingPackageCredit && paid === false) {
+        // Not Paid — abort the whole operation. No booking, no attendance,
+        // no Finance rows. Nothing below this point in the transaction runs.
+        throw makeCheckInError(400, "walkin_not_paid", "This walk-in was not marked as paid — no records were created.");
       }
 
       // Step 2 — Credit deduction + ledger (with row-level lock), if requested
@@ -344,8 +387,55 @@ router.post(
         }
       }
 
-      return inserted;
+      return { kind: "legacy" as const, row: inserted };
     });
+
+    if (walkInResult.kind === "paidWalkIn") {
+      const result = walkInResult.result;
+      // Post-commit push dispatch — the transaction above has already
+      // resolved successfully at this point, so this can only ever run
+      // after the booking/payment_records/payment_events/attendance/
+      // notification rows have actually committed. Mirrors the exact
+      // boundary established in Phase 2B-1/2B-2.
+      dispatchStudioWalkInPush(result.pendingPush);
+
+      await logActivity(req, {
+        action: "checkIn",
+        module: "attendance",
+        entityType: "attendance",
+        entityId: result.attendanceId,
+        entityLabel: result.studentName,
+        after: {
+          studentId: studentId ?? null,
+          studentEmail: result.studentEmail,
+          studentName: result.studentName,
+          bookingId: result.bookingId,
+          classId: classId ?? null,
+          scheduleId: scheduleId ?? null,
+          paymentRecordId: result.paymentRecordId,
+          grossAmountMinor: result.grossAmountMinor,
+          finalPayableAmountMinor: result.finalPayableAmountMinor,
+          checkedInAt: result.checkedInAt,
+        },
+        summary: `Recorded paid Studio walk-in for ${result.studentName} (EGP ${(result.finalPayableAmountMinor / 100).toFixed(2)})`,
+      });
+
+      res.status(201).json({
+        attendanceId: result.attendanceId,
+        bookingId: result.bookingId,
+        studentName: result.studentName,
+        studentEmail: result.studentEmail,
+        classTitle: classTitle ?? null,
+        creditDeducted: false,
+        remainingCredits: null,
+        checkedInAt: result.checkedInAt,
+        paid: true,
+        finalPayableAmountMinor: result.finalPayableAmountMinor,
+      });
+      return;
+    }
+
+    const row = walkInResult.row;
 
     await logActivity(req, {
       action: "checkIn",
