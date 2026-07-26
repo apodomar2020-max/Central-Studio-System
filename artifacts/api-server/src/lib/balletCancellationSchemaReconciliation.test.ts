@@ -69,11 +69,11 @@ test("migration 0074 remains a unique journal entry for the reminder worker hear
   assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0074Entry!.tag}.sql`)));
 });
 
-test("migration 0075 (Ballet Class canonical relationships) is the newest unique journal entry, after the reminder-automation migrations", () => {
-  const newest = journal.entries.at(-1);
-  const previous = journal.entries.at(-2);
+test("migration 0075 (Ballet Class canonical relationships) remains a unique journal entry following the reminder-automation sequence", () => {
+  const migration0075Entry = journal.entries.find((entry) => entry.tag === "0075_ballet_class_canonical_relationships");
+  const previous = journal.entries.find((entry) => entry.idx === 74);
 
-  assert.deepEqual(newest, {
+  assert.deepEqual(migration0075Entry, {
     idx: 75,
     version: "7",
     when: 1784462429000,
@@ -81,10 +81,20 @@ test("migration 0075 (Ballet Class canonical relationships) is the newest unique
     breakpoints: true,
   });
   assert.equal(previous?.idx, 74);
-  assert.ok(newest!.when > previous!.when);
+  assert.ok(migration0075Entry!.when > previous!.when);
   assert.equal(journal.entries.filter((entry) => entry.tag === "0075_ballet_class_canonical_relationships").length, 1);
-  assert.equal(journal.entries.filter((entry) => entry.when === newest!.when).length, 1);
-  assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${newest!.tag}.sql`)));
+  assert.equal(journal.entries.filter((entry) => entry.when === migration0075Entry!.when).length, 1);
+  assert.ok(existsSync(resolve(process.cwd(), `lib/db/migrations/${migration0075Entry!.tag}.sql`)));
+
+  // Journal-wide integrity invariants
+  const indices = journal.entries.map((e) => e.idx);
+  const tags = journal.entries.map((e) => e.tag);
+  assert.equal(new Set(indices).size, journal.entries.length, "All journal indexes must be unique");
+  assert.equal(new Set(tags).size, journal.entries.length, "All journal tags must be unique");
+  assert.ok(
+    journal.entries.every((e, i) => i === 0 || e.idx > journal.entries[i - 1].idx),
+    "Journal indexes must remain strictly increasing",
+  );
 });
 
 test("migration 0070 documents a narrow forward-only initiator reconciliation", () => {
