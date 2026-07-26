@@ -45,6 +45,7 @@ import reportsRouter from "./reports";
 import backgroundMusicRouter from "./backgroundMusic";
 import classReminderSettingsRouter from "./classReminderSettings";
 import financeRouter from "./finance";
+import financeBackfillBatchesRouter from "./financeBackfillBatches";
 
 const router: IRouter = Router();
 
@@ -96,5 +97,9 @@ router.use(classReminderSettingsRouter);
 // Finance Department (Phase 1) — read-only aggregation over the existing
 // operational tables. Registered last; it adds no mutation routes.
 router.use(financeRouter);
+
+// Finance Phase 2D-2 — historical backfill batch control (metadata/status
+// only). No route in this router can write a Finance/source table.
+router.use(financeBackfillBatchesRouter);
 
 export default router;
