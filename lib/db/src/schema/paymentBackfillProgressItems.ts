@@ -7,11 +7,11 @@
  * cannot represent a per-record status, so this is a new table rather than
  * an alteration of it; payment_backfill_progress is left untouched.
  *
- * No writer exists in Phase 2D-2 — 'succeeded' and 'processing' are
- * rejected by this table's own CHECK constraint (see the migration), not
- * merely by application code, so a row can never legitimately reach either
- * status until the Phase 2D-3 writer exists and this constraint is
- * deliberately relaxed alongside it.
+ * Phase 2D-2 had no writer, so 'succeeded'/'processing' were rejected by
+ * this table's own CHECK constraint. Phase 2D-3 (migration 0084) relaxed
+ * that for 'succeeded' now that financeBackfillWriter.ts exists.
+ * 'processing' remains permanently excluded — the writer is synchronous per
+ * source row, so there is no real intermediate state to observe.
  */
 import {
   check,
@@ -91,7 +91,11 @@ export const paymentBackfillProgressItemsTable = pgTable("payment_backfill_progr
   ),
   check("payment_backfill_progress_items_attempts_non_negative_check", sql`${table.attempts} >= 0`),
   check("payment_backfill_progress_items_source_id_non_negative_check", sql`${table.sourceId} >= 0`),
-  check("payment_backfill_progress_items_no_writer_yet_check", sql`${table.status} not in ('succeeded','processing')`),
+  // Phase 2D-3: the writer now exists, so 'succeeded' is reachable.
+  // 'processing' remains excluded — this writer is synchronous per source
+  // row (insert completes or the whole transaction rolls back), so there is
+  // no real intermediate state to observe from outside that transaction.
+  check("payment_backfill_progress_items_no_intermediate_processing_check", sql`${table.status} <> 'processing'`),
   check("payment_backfill_progress_items_failed_shape_check", sql`${table.status} <> 'failed' or ${table.lastErrorCode} is not null`),
 
   index("payment_backfill_progress_items_batch_id_idx").on(table.batchId),
