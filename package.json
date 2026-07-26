@@ -7,6 +7,7 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "test:ballet:integration": "pnpm --filter @workspace/scripts run test:ballet:integration",
     "finance:backfill:dry-run": "pnpm --filter @workspace/api-server run finance:backfill:dry-run",
+    "finance:backfill:execute": "pnpm --filter @workspace/api-server run finance:backfill:execute",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
