@@ -199,11 +199,16 @@ export async function fetchBalletFaqs(signal?: AbortSignal): Promise<BalletFaq[]
 export async function fetchAvailableAssessmentSchedules(
   signal?: AbortSignal,
   childBirthday?: string,
+  childId?: number | string,
 ): Promise<AssessmentScheduleOption[]> {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-  const query = childBirthday ? `?childBirthday=${encodeURIComponent(childBirthday)}` : "";
+  const params = new URLSearchParams();
+  if (childBirthday) params.set("childBirthday", childBirthday);
+  if (childId != null) params.set("childId", String(childId));
+  const queryString = params.toString() ? `?${params.toString()}` : "";
+
   const res = await customFetch<AssessmentScheduleOption[]>(
-    `${apiUrl}/api/ballet/available-assessment-schedules${query}`,
+    `${apiUrl}/api/ballet/available-assessment-schedules${queryString}`,
     { method: "GET", signal }
   );
   return res;
