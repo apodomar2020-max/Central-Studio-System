@@ -568,6 +568,13 @@
       "when": 1784462435000,
       "tag": "0081_payment_events_legacy_created",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1784462436000,
+      "tag": "0082_payment_backfill_batch_lifecycle",
+      "breakpoints": true
     }
   ]
 }

@@ -47,6 +47,21 @@ async function insertBatch(overrides: Record<string, unknown> = {}): Promise<str
     rolled_back_at: null,
     created_by: "test-seed",
     source_main_commit: "0000000000000000000000000000000000000000",
+    // Phase 2D-2 (migration 0082) requires evidence/approval binding for
+    // any status other than 'created'/'dry_run_completed'/'cancelled' —
+    // this file's default status is 'running', so these must be present.
+    // Present for every status regardless (harmless for 'created' rows
+    // too), so callers don't need to know which statuses require them.
+    classifier_version: "test-fixture",
+    report_schema_version: "test-fixture",
+    filters: JSON.stringify({ sourceFamilies: ["package_orders"], maxRows: 100, batchSize: 50 }),
+    max_rows: 100,
+    batch_size: 50,
+    evidence_fingerprint: "test-fixture-fingerprint",
+    approved_by: "test-seed",
+    approved_at: new Date().toISOString(),
+    expected_eligible_count: 0,
+    max_execution_count: 0,
     ...overrides,
   };
   const columns = Object.keys(fields);
