@@ -25,9 +25,12 @@
  * OFFSET-based pagination, so concurrent inserts elsewhere in the table
  * cannot shift already-returned rows out from under a later page.
  *
- * This module does not use or claim any transaction/snapshot isolation.
- * Each family's SELECT is a single independent statement; a dry-run run
- * spanning multiple families is not atomic across those statements.
+ * This module does not itself open a transaction — by default `db` is used,
+ * so each family's SELECT is an independent statement (a dry-run spanning
+ * multiple families is not atomic across them). A caller that needs a real
+ * Postgres read-only transaction (see the CLI in ../cli/) can pass a `tx`
+ * from `db.transaction()` as the second argument to
+ * `runFinanceBackfillDryRun`/`fetchExistingRecords` instead of the default.
  */
 import {
   and,
@@ -65,7 +68,15 @@ import {
 } from "./financeBackfillClassifier";
 
 export type { SourceFamily, EligibilityClass, FinanceBackfillClassificationCode };
-export { SOURCE_FAMILIES };
+export { SOURCE_FAMILIES, CLASSIFIER_VERSION };
+
+/**
+ * The minimal drizzle query-builder surface the planner needs. `db` and a
+ * `db.transaction()` callback's `tx` both satisfy this shape, so a caller
+ * (e.g. the CLI) can wrap a dry-run in a real Postgres read-only
+ * transaction by passing `tx` here instead of the default shared `db`.
+ */
+export type DbLike = Pick<typeof db, "select">;
 
 export const DRY_RUN_REPORT_SCHEMA_VERSION = "2d1b.1.0.0";
 
@@ -337,6 +348,7 @@ function passesResultFilters(c: FinanceBackfillClassification, filters: DryRunFi
 }
 
 async function fetchExistingRecords(
+  executor: DbLike,
   packageOrderIds: number[],
   bookingIds: number[],
 ): Promise<PaymentRecordSummaryInput[]> {
@@ -345,7 +357,7 @@ async function fetchExistingRecords(
   if (bookingIds.length > 0) clauses.push(inArray(paymentRecordsTable.bookingId, bookingIds));
   if (clauses.length === 0) return [];
   const whereClause = clauses.length === 1 ? clauses[0] : or(...clauses);
-  const rows = await db
+  const rows = await executor
     .select({
       id: paymentRecordsTable.id,
       flowType: paymentRecordsTable.flowType,
@@ -451,7 +463,7 @@ export function buildAggregateReport(
  * Never creates a payment_backfill_batches or payment_backfill_progress row.
  * Throws (does not silently no-op) on any invalid or unbounded filter input.
  */
-export async function runFinanceBackfillDryRun(filters: DryRunFilters): Promise<DryRunReport> {
+export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor: DbLike = db): Promise<DryRunReport> {
   validateDryRunFilters(filters);
 
   const classifiedRows: ClassifiedRow[] = [];
@@ -482,7 +494,7 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters): Promise<
       if (filters.createdAfter) conditions.push(gte(packageOrdersTable.createdAt, filters.createdAfter));
       if (filters.createdBefore) conditions.push(lte(packageOrdersTable.createdAt, filters.createdBefore));
 
-      const rows = await db
+      const rows = await executor
         .select()
         .from(packageOrdersTable)
         .where(conditions.length ? and(...conditions) : undefined)
@@ -492,7 +504,7 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters): Promise<
       const pageRows = rows.slice(0, pageSize);
       if (rows.length > pageRows.length) truncated = true;
 
-      const existing = await fetchExistingRecords(pageRows.map((r) => r.id), []);
+      const existing = await fetchExistingRecords(executor, pageRows.map((r) => r.id), []);
       for (const row of pageRows) {
         if (remaining <= 0) break;
         const classification = classifyPackageOrder(
@@ -513,7 +525,7 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters): Promise<
       if (filters.createdAfter) conditions.push(gte(bookingsTable.createdAt, filters.createdAfter));
       if (filters.createdBefore) conditions.push(lte(bookingsTable.createdAt, filters.createdBefore));
 
-      const rows = await db
+      const rows = await executor
         .select()
         .from(bookingsTable)
         .where(conditions.length ? and(...conditions) : undefined)
@@ -526,7 +538,7 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters): Promise<
       // A booking is "studio-walk-in linked" iff it already has a
       // payment_records row with flowType 'studio_walkin' — the only
       // reliable, generic signal this schema exposes.
-      const existing = await fetchExistingRecords([], pageRows.map((r) => r.id));
+      const existing = await fetchExistingRecords(executor, [], pageRows.map((r) => r.id));
 
       for (const row of pageRows) {
         if (remaining <= 0) break;
@@ -555,7 +567,7 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters): Promise<
       if (filters.createdAfter) conditions.push(gte(attendanceTable.checkedInAt, filters.createdAfter));
       if (filters.createdBefore) conditions.push(lte(attendanceTable.checkedInAt, filters.createdBefore));
 
-      const rows = await db
+      const rows = await executor
         .select()
         .from(attendanceTable)
         .where(conditions.length ? and(...conditions) : undefined)
@@ -567,9 +579,9 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters): Promise<
 
       const bookingIds = pageRows.map((r) => r.bookingId).filter((id): id is number => id != null);
       const linkedBookings = bookingIds.length
-        ? await db.select().from(bookingsTable).where(inArray(bookingsTable.id, bookingIds))
+        ? await executor.select().from(bookingsTable).where(inArray(bookingsTable.id, bookingIds))
         : [];
-      const existing = await fetchExistingRecords([], bookingIds);
+      const existing = await fetchExistingRecords(executor, [], bookingIds);
 
       for (const row of pageRows) {
         if (remaining <= 0) break;
