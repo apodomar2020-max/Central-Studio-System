@@ -170,15 +170,19 @@ export async function sendPushNotification(input: SendPushInput): Promise<SendPu
     // Operational/delivery result so a reminder notification row is never
     // left with no explanation for why no push arrived (Phase 7). No token,
     // no PII — just the reason.
-    await db.insert(notificationDeliveryLogsTable).values({
-      notificationId: input.notificationId ?? null,
-      studentId: input.studentId,
-      channel: "push",
-      provider: "expo",
-      status: "skipped",
-      errorCode: "push_disabled",
-      errorMessage: "Push notifications are disabled for this environment.",
-    });
+    try {
+      await db.insert(notificationDeliveryLogsTable).values({
+        notificationId: input.notificationId ?? null,
+        studentId: input.studentId,
+        channel: "push",
+        provider: "expo",
+        status: "skipped",
+        errorCode: "push_disabled",
+        errorMessage: "Push notifications are disabled for this environment.",
+      });
+    } catch (logErr) {
+      logger.warn({ err: logErr, studentId: input.studentId, notificationId: input.notificationId ?? null }, "Failed to write skipped push delivery log");
+    }
     return { sent: 0, failed: 0, skipped: true, reason: "push_disabled" };
   }
   try {
