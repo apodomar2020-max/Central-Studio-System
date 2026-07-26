@@ -62,6 +62,7 @@ export * from "./reminderWorkerHeartbeats";
 // progress tracking (migration 0077)
 export * from "./paymentBackfillBatches";
 export * from "./paymentBackfillProgress";
+export * from "./paymentBackfillProgressItems";
 // Finance Phase 2A DB foundation — dark payment_records register + controlled
 // booking-delete source-tombstone protection (migration 0078)
 export * from "./paymentRecords";
