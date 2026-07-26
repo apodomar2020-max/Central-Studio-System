@@ -241,7 +241,7 @@ export const paymentRecordsTable = pgTable("payment_records", {
       ${table.captureOrigin} = 'historical_backfill' and ${table.evidenceClass} = 'legacy_operational_status'
       and ${table.paidAmountMinor} = 0 and ${table.refundedAmountMinor} = 0
       and ${table.paidAt} is null and ${table.confirmingAdminId} is null and ${table.confirmedPaymentMethod} is null
-      and ${table.amountAvailability} in ('estimated_backfill','unknown')
+      and ${table.amountAvailability} in ('exact','estimated_backfill','unknown')
     )
   `),
   check("payment_records_backfill_excludes_paid_waived_check", sql`${table.captureOrigin} <> 'historical_backfill' or ${table.status} not in ('paid','waived')`),

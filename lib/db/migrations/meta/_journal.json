@@ -575,6 +575,20 @@
       "when": 1784462436000,
       "tag": "0082_payment_backfill_batch_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1784462437000,
+      "tag": "0083_legacy_unverified_allows_exact_amount",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1784462438000,
+      "tag": "0084_progress_items_writer_exists",
+      "breakpoints": true
     }
   ]
 }
