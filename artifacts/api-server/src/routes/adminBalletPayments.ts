@@ -737,8 +737,8 @@ router.post(
         payment = inserted;
       });
     } catch (err: unknown) {
-      const typed = err as { status?: number; code?: string; message?: string };
-      if (typed.status === 409 || typed.code === "23505") {
+      const typed = err as { status?: number; code?: string; message?: string; cause?: { code?: string }; driverError?: { code?: string } };
+      if (typed.status === 409 || typed.code === "23505" || typed.cause?.code === "23505" || typed.driverError?.code === "23505") {
         res.status(409).json({
           error: "A pending renewal already exists for this payment cycle.",
           code: "BALLET_PENDING_RENEWAL_EXISTS",
