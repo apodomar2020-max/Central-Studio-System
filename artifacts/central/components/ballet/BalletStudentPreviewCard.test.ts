@@ -51,6 +51,14 @@ const informationPanelStyleSource = cardSource.slice(
   cardSource.indexOf("  informationPanel:"),
   cardSource.indexOf("  identity:"),
 );
+const footerDividerStyleSource = cardSource.slice(
+  cardSource.indexOf("  footerDivider:"),
+  cardSource.indexOf("  comingSoon:"),
+);
+const comingSoonStyleSource = cardSource.slice(
+  cardSource.indexOf("  comingSoon:"),
+  cardSource.indexOf("  comingSoonText:"),
+);
 
 function application(overrides: Partial<BalletStudentPreviewApplicationSource> = {}): BalletStudentPreviewApplicationSource {
   return {
@@ -315,7 +323,8 @@ test("one routed eligible child is preselected and locked in the existing assess
     visibleChildCount: 1,
     sessionCreatedChildCount: 0,
   }), true);
-  assert.match(assessmentSource, /visibleChildren\.length === 1[\s\S]*setSelectedChild\(onlyChild\)/);
+  assert.match(assessmentSource, /decideChildEligibilityAction\(\{/);
+  assert.match(assessmentSource, /action\.type === "preselect"/);
   assert.match(assessmentSource, /locked=\{routedChildLocked\}/);
   assert.match(landingSource, /pathname: "\/ballet\/assessment"/);
 });
@@ -323,8 +332,23 @@ test("one routed eligible child is preselected and locked in the existing assess
 test("multiple routed children remain limited to the eligible identifier list", () => {
   assert.deepEqual(parseEligibleBalletChildIds("9,10,9,invalid"), [9, 10]);
   assert.deepEqual([...buildEffectiveEligibleBalletChildIds([9, 10], new Set())!], [9, 10]);
-  assert.match(assessmentSource, /effectiveEligibleChildIds\.has\(childId\)/);
-  assert.match(assessmentSource, /BLOCKING_CHILD_APPLICATION_STATUSES\.has\(status\)/);
+  assert.match(assessmentSource, /computeVisibleAssessmentChildren\(\{/);
+  assert.match(assessmentSource, /effectiveEligibleChildIds,/);
+  assert.match(assessmentSource, /blockingStatuses: BLOCKING_CHILD_APPLICATION_STATUSES,/);
+});
+
+test("the canonical numeric child id is derived through the validated normalization helper, never coerced inline", () => {
+  assert.match(assessmentSource, /fetchAvailableAssessmentSchedules\(signal, child\.birthday, childId\)/);
+  assert.match(assessmentSource, /const childId = parseCanonicalChildId\(child\.id\) \?\? undefined;/);
+  assert.match(assessmentSource, /const selectedChildId = parseCanonicalChildId\(selectedChild_\.id\);/);
+  assert.doesNotMatch(assessmentSource, /fetchAvailableAssessmentSchedules\(signal, child\.birthday, child\.id\)/);
+  assert.doesNotMatch(assessmentSource, /Number\(selectedChild_\.id\)/);
+});
+
+test("the submission draft is built before the submission lock and the POST, and success finalizes it rather than rebuilding from state", () => {
+  assert.match(assessmentSource, /const draftSnapshot = buildAssessmentSubmissionDraft\(\{[\s\S]{0,400}submittingRef\.current = true;/);
+  assert.match(assessmentSource, /finalizeAssessmentSubmissionSnapshot\(draftSnapshot,/);
+  assert.match(assessmentSource, /isSubmissionInFlight: submitting,/);
 });
 
 test("the actual student card has no chevron", () => {
@@ -347,6 +371,21 @@ test("long names and narrow Samsung-width cards use shrink-safe responsive layou
 test("the real card no longer uses the previous oversized fixed or minimum height", () => {
   assert.doesNotMatch(cardStyleSource, /height: 266|minHeight: 266/);
   assert.match(cardStyleSource, /alignSelf: "flex-start"/);
+});
+
+test("pending and active cards share a common content-region minimum height sized for the Active layout", () => {
+  assert.match(informationPanelStyleSource, /minHeight: \d+/);
+  const [, minHeightValue] = informationPanelStyleSource.match(/minHeight: (\d+)/) ?? [];
+  assert.ok(minHeightValue && Number(minHeightValue) >= 180, "informationPanel minHeight should fit a 4-row Active layout");
+  // The outer card itself stays content-driven; only the inner content
+  // region carries the shared minimum, so it can't regress into an
+  // oversized fixed outer shell.
+  assert.doesNotMatch(cardStyleSource, /minHeight/);
+});
+
+test("the footer stays outside the shared content-region minimum height and compact", () => {
+  assert.doesNotMatch(footerDividerStyleSource, /minHeight|height: (?!1\b)/);
+  assert.doesNotMatch(comingSoonStyleSource, /minHeight/);
 });
 
 test("an empty resolved schedule is unavailable instead of misleading zero classes", () => {
