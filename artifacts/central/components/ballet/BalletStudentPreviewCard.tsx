@@ -290,6 +290,11 @@ const styles = StyleSheet.create({
   informationPanel: {
     flex: 1,
     minWidth: 0,
+    // Sized for the normal 4-row Active layout (identity block + 4 detail
+    // rows) so pending/shorter-content cards match Active card height via
+    // visualPanel's alignSelf: "stretch" instead of the card growing to fit
+    // fabricated content. The footer stays outside this region.
+    minHeight: 200,
     paddingTop: 12,
     paddingRight: 12,
     paddingBottom: 10,
