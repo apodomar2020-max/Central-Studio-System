@@ -87,7 +87,11 @@ async function jsonBody(res: Response): Promise<Record<string, unknown>> {
 }
 
 async function activate(id: number): Promise<Response> {
-  return asAdmin(`/api/package-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status: "active" }) });
+  // Finance Phase 2C: confirmedPaymentMethod is now required for this
+  // transition (this file predates that change) — every call through this
+  // helper represents a genuine activation attempt, so it always supplies
+  // one, matching the pre-existing tests' original intent unchanged.
+  return asAdmin(`/api/package-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status: "active", confirmedPaymentMethod: "cash" }) });
 }
 
 async function activationCreditCount(packageOrderId: number): Promise<number> {

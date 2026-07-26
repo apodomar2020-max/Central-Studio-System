@@ -78,7 +78,12 @@ async function jsonBody(res: Response): Promise<Record<string, unknown>> {
 }
 
 async function confirmPaid(id: number): Promise<Response> {
-  return asAdmin(`/api/bookings/${id}`, { method: "PATCH", body: JSON.stringify({ paymentStatus: "paid" }) });
+  // Finance Phase 2C: confirmedPaymentMethod is now required for this
+  // transition (this file predates that change) — every call through this
+  // helper represents a genuine confirmation attempt, so it always
+  // supplies one, matching the pre-existing tests' original intent
+  // unchanged.
+  return asAdmin(`/api/bookings/${id}`, { method: "PATCH", body: JSON.stringify({ paymentStatus: "paid", confirmedPaymentMethod: "cash" }) });
 }
 
 async function bookingRow(id: number): Promise<{ paymentStatus: string; bookingStatus: string; paymentMode: string | null; notes: string | null }> {
