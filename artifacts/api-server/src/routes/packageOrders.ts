@@ -11,12 +11,15 @@ import {
   paymentRecordsTable,
   paymentEventsTable,
   type PaymentRecordRequestedChannel,
+  PAYMENT_RECORD_CONFIRMED_METHODS,
+  type PaymentRecordConfirmedMethod,
 } from "@workspace/db";
 import { egpToMinor } from "../lib/money";
 import { logger } from "../lib/logger";
 import { createStudentNotification } from "../lib/notifications";
 import { sendPushNotification } from "../lib/pushNotifications";
 import { createPromotionRedemptions, validatePackagePromotion } from "../lib/promotionService";
+import { confirmCanonicalPaymentRecord, appendActivationCreditsIssuedEventOnce } from "../lib/financeConfirmation";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
@@ -91,6 +94,18 @@ function packageOrderActivitySnapshot(row: typeof packageOrdersTable.$inferSelec
 function packageOrderLabel(row: typeof packageOrdersTable.$inferSelect): string {
   return `${row.studentName} - ${row.packageName}`;
 }
+
+// Finance Phase 2C: UpdatePackageOrderBody is a generated (orval) zod
+// schema that does not know about this field and, by default zod.object
+// behavior, silently strips unknown keys — so confirmedPaymentMethod is
+// parsed separately against this small local schema rather than by
+// extending the generated contract. Required only for the activation
+// (status:"active") transition, validated against the exact DB-enum
+// values from the schema (never invented), and never trusted for any
+// other field (amount/discount/actor/timestamp all remain server-derived).
+const PackageOrderConfirmedPaymentMethod = z.object({
+  confirmedPaymentMethod: z.enum(PAYMENT_RECORD_CONFIRMED_METHODS).optional(),
+});
 
 const PurchasePackageBody = z.object({
   packageId: z.coerce.number().int().positive(),
@@ -500,8 +515,37 @@ router.patch(
   // All other updates (notes, expiry, etc.) take the simple non-transactional path.
   const isActivating = parsed.data.status === "active";
 
+  // Finance Phase 2C: activation is the approved authoritative moment for
+  // payment confirmation (policy decision #1) — confirmedPaymentMethod is
+  // therefore required for this transition and only this transition, never
+  // for unrelated edits/rejection. Admin must explicitly choose it; `unknown`
+  // is accepted only as an explicit choice, never an invisible default.
+  let confirmedPaymentMethod: PaymentRecordConfirmedMethod | undefined;
+  if (isActivating) {
+    const methodParsed = PackageOrderConfirmedPaymentMethod.safeParse(req.body);
+    if (!methodParsed.success || !methodParsed.data.confirmedPaymentMethod) {
+      res.status(400).json({
+        error: "confirmedPaymentMethod is required to confirm payment and activate a package order.",
+        code: "CONFIRMED_PAYMENT_METHOD_REQUIRED",
+      });
+      return;
+    }
+    confirmedPaymentMethod = methodParsed.data.confirmedPaymentMethod;
+  }
+  const confirmingAdminId = req.adminUser?.id;
+  if (isActivating && confirmingAdminId == null) {
+    res.status(401).json({ error: "Authenticated Admin identity is required to confirm payment." });
+    return;
+  }
+
   let row: typeof packageOrdersTable.$inferSelect | undefined;
   let beforeOrder: typeof packageOrdersTable.$inferSelect | undefined;
+  let financeCompatibility: "legacy_payment_record_missing" | null = null;
+  // Finance Phase 2C: same deferred-push pattern as POST /package-orders —
+  // the notification row is inserted inside `tx` (atomic with the Finance
+  // confirmation/activation writes above), but its push must be dispatched
+  // only after this transaction actually commits.
+  const activationPushState: { pending: { studentId: number; studentEmail: string; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
 
   if (isActivating) {
     const result = await db.transaction(async (tx) => {
@@ -553,6 +597,37 @@ router.patch(
         return { kind: "not_activatable" as const, current };
       }
 
+      // Finance Phase 2C: this activation is the approved authoritative
+      // payment-confirmation moment (policy decision #1). Confirm the
+      // existing canonical payment_records row BEFORE mutating
+      // package_orders/credit_transactions, so a Finance integrity problem
+      // (multiple/mismatched records) aborts the whole transaction — no
+      // partial activation with an inconsistent Finance ledger.
+      const confirmation = await confirmCanonicalPaymentRecord(tx, {
+        flowType: "package_purchase",
+        packageOrderId: current.id,
+        confirmedPaymentMethod: confirmedPaymentMethod!,
+        confirmingAdminId: confirmingAdminId!,
+      });
+      if (confirmation.kind === "integrity_error" || confirmation.kind === "terminal") {
+        return { kind: "finance_integrity_error" as const, current, confirmation };
+      }
+      let confirmedPaymentRecordId: number | null = null;
+      if (confirmation.kind === "legacy_missing") {
+        // Phase 2C approved policy #4: a pre-Phase-2B order has no
+        // canonical payment_records row. Do not fabricate one — preserve
+        // existing operational activation behavior unchanged, surface a
+        // controlled, non-sensitive compatibility signal, and log a
+        // structured high-severity warning for Phase 2D remediation.
+        logger.warn({
+          event: "finance_legacy_payment_record_missing",
+          flowType: "package_purchase",
+          packageOrderId: current.id,
+        }, "Activating a package order with no canonical payment_records row — legacy/pre-Phase-2B source, Phase 2D backfill scope.");
+      } else {
+        confirmedPaymentRecordId = confirmation.record.id;
+      }
+
       // Bind the Expiration Date: when activating, default expiresAt to
       // activatedAt + the package's validity window (from price_packages), unless
       // the admin set an explicit expiry. Orders with no linked package or no
@@ -577,7 +652,7 @@ router.patch(
         .returning();
 
       // Insert package_activated ledger row
-      await tx.insert(creditTransactionsTable).values({
+      const [creditTransaction] = await tx.insert(creditTransactionsTable).values({
         packageOrderId: current.id,
         studentId: null,
         type: "package_activated",
@@ -588,26 +663,62 @@ router.patch(
         referenceType: null,
         notes: `Package "${current.packageName}" activated`,
         createdBy: "admin",
-      });
+      }).returning();
+
+      // Finance Phase 2C: the credit issuance above is the fulfillment side
+      // effect of payment confirmation — append the dedicated
+      // activation_credits_issued event (idempotent: a no-op if this exact
+      // payment record already has one, covering "Finance paid but
+      // fulfillment incomplete" resume per approved policy #7). Only
+      // possible when a canonical payment record actually exists.
+      if (confirmedPaymentRecordId != null) {
+        await appendActivationCreditsIssuedEventOnce(tx, {
+          paymentRecordId: confirmedPaymentRecordId,
+          creditTransactionId: creditTransaction.id,
+          actorAdminId: confirmingAdminId!,
+        });
+      }
 
       // current.status is guaranteed "pendingPayment" here (guarded above),
       // so this transition always represents a genuine first activation —
       // the notification is unconditional, not re-gated on current.status.
-      await createStudentNotification(tx, {
+      // Finance Phase 2C: dispatchPush:false + a post-commit dispatch below
+      // (approved policy #8) — the notification row itself stays atomic
+      // with the Finance/activation writes above.
+      const activationTitle = "Package active";
+      const activationBody = `Your ${updated.packageName} package is now active.`;
+      const activationMetadata = {
+        packageName: updated.packageName,
+        remainingCredits: updated.remainingCredits,
+      };
+      const activationNotificationRow = await createStudentNotification(tx, {
         studentId: updated.studentId,
         studentEmail: updated.studentEmail,
-        title: "Package active",
-        body: `Your ${updated.packageName} package is now active.`,
+        title: activationTitle,
+        body: activationBody,
         type: "package_activated",
         relatedEntityType: "package_order",
         relatedEntityId: updated.id,
-        metadata: {
-          packageName: updated.packageName,
-          remainingCredits: updated.remainingCredits,
-        },
+        metadata: activationMetadata,
+        dispatchPush: false,
       });
+      if (activationNotificationRow && updated.studentId != null) {
+        activationPushState.pending = {
+          studentId: updated.studentId,
+          studentEmail: updated.studentEmail,
+          title: activationTitle,
+          body: activationBody,
+          data: { type: "package_activated", ...activationMetadata },
+          notificationId: activationNotificationRow.id,
+        };
+      }
 
-      return { kind: "ok" as const, before: current, updated };
+      return {
+        kind: "ok" as const,
+        before: current,
+        updated,
+        financeCompatibility: confirmedPaymentRecordId == null ? "legacy_payment_record_missing" as const : null,
+      };
     });
 
     if (result.kind === "not_found") {
@@ -621,8 +732,30 @@ router.patch(
       });
       return;
     }
+    if (result.kind === "finance_integrity_error") {
+      logger.error({
+        event: "finance_confirmation_integrity_error",
+        flowType: "package_purchase",
+        packageOrderId: result.current.id,
+        confirmation: result.confirmation,
+      }, "Blocked package activation due to a Finance payment_records integrity problem.");
+      res.status(409).json({
+        error: "This package order's payment record is in an inconsistent state and cannot be confirmed automatically. Please contact engineering support.",
+        code: "FINANCE_CONFIRMATION_INTEGRITY_ERROR",
+      });
+      return;
+    }
     beforeOrder = result.before;
     row = result.updated;
+    financeCompatibility = result.financeCompatibility;
+    // Deterministic post-commit boundary — dispatched only once the
+    // activation transaction above has actually resolved successfully.
+    if (activationPushState.pending) {
+      const push = activationPushState.pending;
+      void sendPushNotification(push).catch((error) => {
+        logger.error({ err: error, notificationId: push.notificationId }, "Failed to dispatch package-activation push");
+      });
+    }
   } else {
     const result = await db.transaction(async (tx) => {
       const [current] = await tx
@@ -697,6 +830,13 @@ router.patch(
     }
   }
 
+  // Non-sensitive, additive compatibility signal for Phase 2C policy #4 —
+  // a response header rather than a new response-body field, since
+  // UpdatePackageOrderResponse is a generated (orval) contract this route
+  // must not diverge from.
+  if (financeCompatibility) {
+    res.setHeader("X-Finance-Compatibility", financeCompatibility);
+  }
   res.json(UpdatePackageOrderResponse.parse(row));
   },
 );
