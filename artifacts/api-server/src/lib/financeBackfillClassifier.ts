@@ -159,6 +159,9 @@ export interface FinanceBackfillClassification {
   /** Hardcoded false throughout Phase 2D-1 — no writer exists yet. */
   writable: false;
 
+  /** No PII — internal IDs and codes only. Safe to log or display in aggregate. */
+  safeSummary: string;
+
   amountTier: AmountTier;
   discountTier: DiscountTier;
   paymentStatusTier: PaymentStatusTier;
@@ -231,6 +234,7 @@ function baseResult(
   | "amountTier"
   | "discountTier"
   | "paymentStatusTier"
+  | "safeSummary"
 > {
   return {
     sourceFamily,
@@ -250,13 +254,22 @@ function baseResult(
   };
 }
 
+function attachSafeSummary(
+  result: Omit<FinanceBackfillClassification, "safeSummary">,
+): FinanceBackfillClassification {
+  return {
+    ...result,
+    safeSummary: `${result.sourceFamily}#${result.sourceId} -> ${result.classificationCode} (${result.eligibility})`,
+  };
+}
+
 // ── Package orders ──────────────────────────────────────────────────────────
 
-export function classifyPackageOrder(
+function classifyPackageOrderInternal(
   order: PackageOrderClassifyInput,
   existingRecords: PaymentRecordSummaryInput[],
   catalogPriceMinor: number | null,
-): FinanceBackfillClassification {
+): Omit<FinanceBackfillClassification, "safeSummary"> {
   const base = baseResult("package_orders", "package_order", order.id, order.createdAt);
   const own = existingRecords.filter((r) => r.flowType === "package_purchase" && r.packageOrderId === order.id);
   const foreign = existingRecords.filter((r) => r.packageOrderId === order.id && r.flowType !== "package_purchase");
@@ -351,7 +364,7 @@ export function classifyPackageOrder(
       amountTier,
       discountTier: "unknown_discount",
       paymentStatusTier: "operational_pending",
-    } as FinanceBackfillClassification;
+    } as Omit<FinanceBackfillClassification, "safeSummary">;
   }
 
   if (order.status === "active") {
@@ -373,7 +386,7 @@ export function classifyPackageOrder(
         amountTier,
         discountTier: "unknown_discount",
         paymentStatusTier: "ambiguous",
-      } as FinanceBackfillClassification;
+      } as Omit<FinanceBackfillClassification, "safeSummary">;
     }
 
     const code: PackageOrderClassificationCode =
@@ -395,7 +408,7 @@ export function classifyPackageOrder(
       amountTier,
       discountTier: "unknown_discount",
       paymentStatusTier: "fulfilled_unverified",
-    } as FinanceBackfillClassification;
+    } as Omit<FinanceBackfillClassification, "safeSummary">;
   }
 
   // Any other/unrecognized status: fulfilled-unverified fallback, never invented as canonical.
@@ -415,16 +428,16 @@ export function classifyPackageOrder(
     amountTier: "unknown_amount",
     discountTier: "unknown_discount",
     paymentStatusTier: "unknown",
-  } as FinanceBackfillClassification;
+  } as Omit<FinanceBackfillClassification, "safeSummary">;
 }
 
 // ── Bookings ────────────────────────────────────────────────────────────────
 
-export function classifyBooking(
+function classifyBookingInternal(
   booking: BookingClassifyInput,
   existingRecords: PaymentRecordSummaryInput[],
   catalogPriceMinor: number | null,
-): FinanceBackfillClassification {
+): Omit<FinanceBackfillClassification, "safeSummary"> {
   const base = baseResult("bookings", "booking", booking.id, booking.createdAt);
   const own = existingRecords.filter(
     (r) => (r.flowType === "single_class_booking" || r.flowType === "studio_walkin") && r.bookingId === booking.id,
@@ -611,7 +624,7 @@ export function classifyBooking(
       amountTier,
       discountTier: "unknown_discount",
       paymentStatusTier: "operational_pending",
-    } as FinanceBackfillClassification;
+    } as Omit<FinanceBackfillClassification, "safeSummary">;
   }
 
   if (booking.paymentStatus === "paid") {
@@ -634,7 +647,7 @@ export function classifyBooking(
       amountTier,
       discountTier: "unknown_discount",
       paymentStatusTier: "fulfilled_unverified",
-    } as FinanceBackfillClassification;
+    } as Omit<FinanceBackfillClassification, "safeSummary">;
   }
 
   return {
@@ -654,16 +667,16 @@ export function classifyBooking(
     amountTier,
     discountTier: "unknown_discount",
     paymentStatusTier: "fulfilled_unverified",
-  } as FinanceBackfillClassification;
+  } as Omit<FinanceBackfillClassification, "safeSummary">;
 }
 
 // ── Studio walk-ins (attendance rows) — REPORTING ONLY, writable always false ──
 
-export function classifyStudioWalkinAttendance(
+function classifyStudioWalkinAttendanceInternal(
   attendance: AttendanceClassifyInput,
   linkedBooking: BookingClassifyInput | null,
   existingRecords: PaymentRecordSummaryInput[],
-): FinanceBackfillClassification {
+): Omit<FinanceBackfillClassification, "safeSummary"> {
   const base = baseResult("studio_walkins", "attendance", attendance.id, attendance.checkedInAt);
 
   if (linkedBooking) {
@@ -774,7 +787,7 @@ export function classifyStudioWalkinAttendance(
     amountTier: "unknown_amount",
     discountTier: "unknown_discount",
     paymentStatusTier: "fulfilled_unverified",
-  } as FinanceBackfillClassification;
+  } as Omit<FinanceBackfillClassification, "safeSummary">;
 }
 
 /** Re-derives isExactEvidenceEligible per the Phase 2D-1 spec's AND-of-all-conditions rule. */
@@ -800,6 +813,30 @@ export function computeIsExactEvidenceEligible(input: {
     !input.hasPackageCreditOrFreeOrNotPaidAmbiguity &&
     !input.hasConflictingOperationalEvidence
   );
+}
+
+export function classifyPackageOrder(
+  order: PackageOrderClassifyInput,
+  existingRecords: PaymentRecordSummaryInput[],
+  catalogPriceMinor: number | null,
+): FinanceBackfillClassification {
+  return attachSafeSummary(classifyPackageOrderInternal(order, existingRecords, catalogPriceMinor));
+}
+
+export function classifyBooking(
+  booking: BookingClassifyInput,
+  existingRecords: PaymentRecordSummaryInput[],
+  catalogPriceMinor: number | null,
+): FinanceBackfillClassification {
+  return attachSafeSummary(classifyBookingInternal(booking, existingRecords, catalogPriceMinor));
+}
+
+export function classifyStudioWalkinAttendance(
+  attendance: AttendanceClassifyInput,
+  linkedBooking: BookingClassifyInput | null,
+  existingRecords: PaymentRecordSummaryInput[],
+): FinanceBackfillClassification {
+  return attachSafeSummary(classifyStudioWalkinAttendanceInternal(attendance, linkedBooking, existingRecords));
 }
 
 export const CLASSIFIER_VERSION = "2d1.0.0";
