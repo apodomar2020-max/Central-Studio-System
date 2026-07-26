@@ -7,15 +7,21 @@ import { BA } from "./assessmentTokens";
 export default function BalletAssessmentHeader({
   title = "Ballet Assessment",
   onBack,
+  homeAction,
 }: {
   title?: string;
   onBack: () => void;
+  /** When provided, replaces the Back action with a compact Home action —
+   *  used only on the submitted-success screen, which must never expose
+   *  both Back and Home at once. */
+  homeAction?: () => void;
 }) {
+  const isHome = homeAction != null;
   return (
     <View style={styles.header}>
-      <TouchableOpacity onPress={onBack} style={styles.backButton} activeOpacity={0.75}>
-        <Ionicons name="chevron-back" size={20} color={BA.cyan500} />
-        <Text style={styles.backText}>Back</Text>
+      <TouchableOpacity onPress={isHome ? homeAction : onBack} style={styles.backButton} activeOpacity={0.75}>
+        <Ionicons name={isHome ? "home-outline" : "chevron-back"} size={20} color={BA.cyan500} />
+        <Text style={styles.backText}>{isHome ? "Home" : "Back"}</Text>
       </TouchableOpacity>
       <Text style={styles.title}>{title}</Text>
       <View style={styles.spacer} />
