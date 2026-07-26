@@ -2,6 +2,7 @@ import { blockStudentJwt } from "../middlewares/auth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
 import {
   db,
   bookingsTable,
@@ -14,13 +15,16 @@ import {
   paymentRecordsTable,
   paymentEventsTable,
   type PaymentRecordRequestedChannel,
+  PAYMENT_RECORD_CONFIRMED_METHODS,
+  type PaymentRecordConfirmedMethod,
 } from "@workspace/db";
 import { egpToMinor } from "../lib/money";
 import { logger } from "../lib/logger";
 import { resolveSingleClassPriceEgp } from "../lib/singleClassPricing";
 import { createStudentNotification } from "../lib/notifications";
 import { sendPushNotification } from "../lib/pushNotifications";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { confirmCanonicalPaymentRecord } from "../lib/financeConfirmation";
 import {
   ListBookingsQueryParams,
   CreateBookingBody,
@@ -1175,12 +1179,23 @@ router.patch(
   },
 );
 
+// Finance Phase 2C: UpdateBookingBody is a generated (orval) zod schema
+// that does not know about this field and, by default zod.object
+// behavior, silently strips unknown keys — so confirmedPaymentMethod is
+// parsed separately against this small local schema rather than by
+// extending the generated contract. Required only when this PATCH
+// transitions paymentStatus to "paid", validated against the exact
+// DB-enum values from the schema.
+const BookingConfirmedPaymentMethod = z.object({
+  confirmedPaymentMethod: z.enum(PAYMENT_RECORD_CONFIRMED_METHODS).optional(),
+});
+
 router.patch(
   "/bookings/:id",
   blockStudentJwt,
   requireAdminAuth,
   requireBookingUpdatePermission,
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
   const params = UpdateBookingParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -1191,6 +1206,13 @@ router.patch(
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const confirmedPushState: { pending: { studentId: number; studentEmail: string; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
+  let financeCompatibility: "legacy_payment_record_missing" | null = null;
+  const methodParsed = BookingConfirmedPaymentMethod.safeParse(req.body);
+  const requestedConfirmedPaymentMethod: PaymentRecordConfirmedMethod | undefined = methodParsed.success
+    ? methodParsed.data.confirmedPaymentMethod
+    : undefined;
+  const confirmingAdminId = req.adminUser?.id;
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -1298,9 +1320,48 @@ router.patch(
           message: `Booking ${existing.id} cannot be confirmed as paid — its booking status ("${existing.bookingStatus}") is terminal.`,
         };
       }
+
+      // Finance Phase 2C: this transition to paymentStatus:"paid" is the
+      // approved authoritative Finance payment-confirmation action (policy
+      // decision #2). confirmedPaymentMethod is required for it — the
+      // booking row lock above already serializes concurrent PATCHes, so
+      // this check only ever runs once per genuine confirmation.
+      if (!requestedConfirmedPaymentMethod) {
+        return {
+          kind: "confirmed_payment_method_required" as const,
+        };
+      }
+      if (confirmingAdminId == null) {
+        return { kind: "admin_identity_required" as const };
+      }
     }
 
     const [updated] = await tx.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
+
+    // Finance Phase 2C: transition the existing canonical payment_records
+    // row atomically with the booking update above, only for the actual
+    // pending->paid transition (not every operational-status edit sharing
+    // this PATCH). Studio-walk-in and package-credit/free bookings never
+    // reach here — the guards above already excluded them.
+    if (normalized.paymentStatus === "paid" && existing.paymentStatus !== "paid") {
+      const confirmation = await confirmCanonicalPaymentRecord(tx, {
+        flowType: "single_class_booking",
+        bookingId: updated.id,
+        confirmedPaymentMethod: requestedConfirmedPaymentMethod!,
+        confirmingAdminId: confirmingAdminId!,
+      });
+      if (confirmation.kind === "integrity_error" || confirmation.kind === "terminal") {
+        return { kind: "finance_integrity_error" as const, confirmation };
+      }
+      if (confirmation.kind === "legacy_missing") {
+        logger.warn({
+          event: "finance_legacy_payment_record_missing",
+          flowType: "single_class_booking",
+          bookingId: updated.id,
+        }, "Confirming payment for a booking with no canonical payment_records row — legacy/pre-Phase-2B source, Phase 2D backfill scope.");
+        financeCompatibility = "legacy_payment_record_missing";
+      }
+    }
 
     if (updated.bookingStatus !== existing.bookingStatus) {
       const notification = await bookingStatusNotification(tx, updated, updated.bookingStatus);
@@ -1316,11 +1377,28 @@ router.patch(
     if (updated.paymentStatus !== existing.paymentStatus) {
       const notification = await paymentStatusNotification(tx, updated, updated.paymentStatus);
       if (notification) {
-        await createStudentNotification(tx, {
+        // Finance Phase 2C: for the specific paid-confirmation transition,
+        // defer push to after commit (approved policy #2 step 10) — the
+        // notification row itself still inserts atomically inside `tx`.
+        // Every other payment-status notification (refunded/failed) keeps
+        // its pre-existing dispatch behavior unchanged.
+        const isConfirmationNotification = updated.paymentStatus === "paid";
+        const notificationRow = await createStudentNotification(tx, {
           studentId: updated.accountOwnerStudentId,
           studentEmail: updated.studentEmail,
           ...notification,
+          dispatchPush: isConfirmationNotification ? false : undefined,
         });
+        if (isConfirmationNotification && notificationRow && updated.accountOwnerStudentId != null) {
+          confirmedPushState.pending = {
+            studentId: updated.accountOwnerStudentId,
+            studentEmail: updated.studentEmail,
+            title: notification.title,
+            body: notification.body,
+            data: { type: notification.type, ...notification.metadata },
+            notificationId: notificationRow.id,
+          };
+        }
       }
     }
 
@@ -1342,6 +1420,44 @@ router.patch(
     return;
   }
 
+  if (result.kind === "confirmed_payment_method_required") {
+    res.status(400).json({
+      error: "confirmedPaymentMethod is required to confirm this booking's payment.",
+      code: "CONFIRMED_PAYMENT_METHOD_REQUIRED",
+    });
+    return;
+  }
+
+  if (result.kind === "admin_identity_required") {
+    res.status(401).json({ error: "Authenticated Admin identity is required to confirm payment." });
+    return;
+  }
+
+  if (result.kind === "finance_integrity_error") {
+    logger.error({
+      event: "finance_confirmation_integrity_error",
+      flowType: "single_class_booking",
+      bookingId: params.data.id,
+      confirmation: result.confirmation,
+    }, "Blocked booking payment confirmation due to a Finance payment_records integrity problem.");
+    res.status(409).json({
+      error: "This booking's payment record is in an inconsistent state and cannot be confirmed automatically. Please contact engineering support.",
+      code: "FINANCE_CONFIRMATION_INTEGRITY_ERROR",
+    });
+    return;
+  }
+
+  // Deterministic post-commit boundary — dispatched only once the
+  // confirmation transaction above has actually resolved successfully.
+  if (confirmedPushState.pending) {
+    const push = confirmedPushState.pending;
+    void sendPushNotification(push).catch((error) => {
+      logger.error({ err: error, notificationId: push.notificationId }, "Failed to dispatch booking-payment-confirmation push");
+    });
+  }
+  if (financeCompatibility) {
+    res.setHeader("X-Finance-Compatibility", financeCompatibility);
+  }
   res.json(UpdateBookingResponse.parse(result.booking));
   },
 );
