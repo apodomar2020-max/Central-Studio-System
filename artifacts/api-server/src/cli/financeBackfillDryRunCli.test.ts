@@ -445,12 +445,29 @@ test("output: JSON output contains no PII fields", async () => {
   }
 });
 
-test("output: error output redacts a DB URL embedded in an underlying error message", async () => {
+test("output: error output never carries a DB URL embedded in an underlying planner error message", async () => {
   const h = makeHarness({ plannerError: new Error("connect failed: postgresql://user:pw@evil.example.com:5432/db") });
   await runCli(baseArgv(), h.deps);
   const text = h.stderrLines.join("\n");
   assert.equal(text.includes("evil.example.com"), false);
-  assert.ok(text.includes("[redacted-connection-string]"));
+  assert.equal(text.includes("user:pw"), false);
+});
+
+test("output: error output never carries raw SQL or bound parameter values from a driver-level planner failure", async () => {
+  // drizzle/pg wrap query failures as `Failed query: SELECT ... WHERE id = $1`
+  // with real bound values under `.message` — this must never reach stderr.
+  const h = makeHarness({
+    plannerError: new Error(
+      "Failed query: SELECT * FROM bookings WHERE student_email = $1\nparams: student.name@example.com",
+    ),
+  });
+  await runCli(baseArgv(), h.deps);
+  const text = h.stderrLines.join("\n");
+  assert.equal(/SELECT|FROM|WHERE/i.test(text), false);
+  assert.equal(text.includes("student.name@example.com"), false);
+  const parsedError = JSON.parse(text);
+  assert.equal(parsedError.errorCode, "planner_error");
+  assert.equal(parsedError.message, "the dry-run query failed");
 });
 
 test("output: no stack trace is printed by default", async () => {

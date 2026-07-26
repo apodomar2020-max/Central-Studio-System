@@ -348,6 +348,18 @@ function formatSafeError(errorCode: string, err: unknown): string {
   return JSON.stringify({ errorCode, message: redact(message) });
 }
 
+/**
+ * Planner-layer errors originate from the drizzle/pg driver, whose own
+ * `.message` (e.g. "Failed query: SELECT ... WHERE id = $1") can carry raw
+ * SQL text and bound parameter values — never safe to forward verbatim.
+ * Unlike validation/safety errors (self-authored, safe strings), a planner
+ * error always gets a fixed generic message; the errorCode + exit code
+ * carry enough signal for an operator to investigate through proper access.
+ */
+function formatSafePlannerError(): string {
+  return JSON.stringify({ errorCode: "planner_error", message: "the dry-run query failed" });
+}
+
 // ── CLI dependency contract (fully injectable — no real I/O in this file) ───
 
 export interface CliDeps {
@@ -394,8 +406,8 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<void> {
   let report: DryRunReport;
   try {
     report = await deps.runDryRun(parsed.filters);
-  } catch (err) {
-    deps.stderr(formatSafeError("planner_error", err));
+  } catch {
+    deps.stderr(formatSafePlannerError());
     deps.exit(EXIT_PLANNER_ERROR);
     return;
   }
