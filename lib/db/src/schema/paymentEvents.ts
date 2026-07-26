@@ -39,6 +39,7 @@ export const PAYMENT_EVENT_TYPES = [
   "cancelled",
   "voided",
   "refund_payout_completed",
+  "legacy_created",
 ] as const;
 export type PaymentEventType = (typeof PAYMENT_EVENT_TYPES)[number];
 
@@ -101,7 +102,7 @@ export const paymentEventsTable = pgTable("payment_events", {
     .where(sql`${table.providerReference} is not null`),
 
   // ── Vocabularies ─────────────────────────────────────────────────────
-  check("payment_events_event_type_check", sql`${table.eventType} in ('created','created_and_confirmed','confirmed','method_changed','activation_credits_issued','waived','failed','cancelled','voided','refund_payout_completed')`),
+  check("payment_events_event_type_check", sql`${table.eventType} in ('created','created_and_confirmed','confirmed','method_changed','activation_credits_issued','waived','failed','cancelled','voided','refund_payout_completed','legacy_created')`),
   check("payment_events_actor_type_check", sql`${table.actorType} in ('admin','system','student')`),
   check("payment_events_previous_status_check", sql`${table.previousStatus} is null or ${table.previousStatus} in ('unpaid','pending_confirmation','paid','partially_refunded','refunded','waived','failed','cancelled','legacy_unverified')`),
   check("payment_events_new_status_check", sql`${table.newStatus} in ('unpaid','pending_confirmation','paid','partially_refunded','refunded','waived','failed','cancelled','legacy_unverified')`),
@@ -173,6 +174,14 @@ export const paymentEventsTable = pgTable("payment_events", {
     ${table.eventType} <> 'refund_payout_completed' or (
       ${table.previousStatus} in ('paid','partially_refunded')
       and ${table.amountMinor} is not null and ${table.amountMinor} > 0 and ${table.newStatus} in ('partially_refunded','refunded')
+    )
+  `),
+  // Finance Phase 2D: dedicated event for historical-backfill record
+  // creation. Kept fully separate from `created` — see migration 0081.
+  check("payment_events_legacy_created_shape_check", sql`
+    ${table.eventType} <> 'legacy_created' or (
+      ${table.previousStatus} is null and ${table.amountMinor} is null
+      and ${table.newStatus} = 'legacy_unverified'
     )
   `),
 ]));
