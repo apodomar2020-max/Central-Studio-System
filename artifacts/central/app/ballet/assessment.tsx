@@ -24,6 +24,7 @@ import BalletAssessmentChildCard from "@/components/ballet/BalletAssessmentChild
 import BalletAssessmentHeader from "@/components/ballet/BalletAssessmentHeader";
 import BalletAssessmentPackageCard from "@/components/ballet/BalletAssessmentPackageCard";
 import BalletAssessmentSuccessActions from "@/components/ballet/BalletAssessmentSuccessActions";
+import BalletAssessmentSuccessSummaryCard from "@/components/ballet/BalletAssessmentSuccessSummaryCard";
 import BalletAssessmentSummaryCard from "@/components/ballet/BalletAssessmentSummaryCard";
 import BalletStepIndicator from "@/components/ballet/BalletStepIndicator";
 import { BA, BA_RADIUS } from "@/components/ballet/assessmentTokens";
@@ -32,6 +33,16 @@ import {
   parseEligibleBalletChildIds,
   shouldLockSingleRoutedBalletChild,
 } from "@/components/ballet/balletStudentPreviewModel";
+import {
+  buildAssessmentSubmissionDraft,
+  canSubmitAssessment,
+  computeReviewMissingStep,
+  computeVisibleAssessmentChildren,
+  decideChildEligibilityAction,
+  finalizeAssessmentSubmissionSnapshot,
+  parseCanonicalChildId,
+  type AssessmentSubmissionSnapshot,
+} from "@/components/ballet/balletAssessmentStateModel";
 import ErrorState from "@/components/ErrorState";
 import OfflineState from "@/components/OfflineState";
 import { SkeletonBox } from "@/components/SkeletonLoader";
@@ -184,6 +195,9 @@ export default function BalletAssessmentScreen() {
   const [packagesState, setPackagesState] = useState<LoadState>("loading");
   const [submitting, setSubmitting] = useState(false);
   const [submittedApplicationId, setSubmittedApplicationId] = useState<number | null>(null);
+  const [submittedSnapshot, setSubmittedSnapshot] = useState<
+    AssessmentSubmissionSnapshot<ChildProfile, AssessmentScheduleOption, BalletPackageOption> | null
+  >(null);
   const [editingApplicationId, setEditingApplicationId] = useState<number | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelReasonOpen, setCancelReasonOpen] = useState(false);
@@ -199,6 +213,7 @@ export default function BalletAssessmentScreen() {
   const [addingChild, setAddingChild] = useState(false);
   const authPromptShownRef = useRef(false);
   const parentPromptShownRef = useRef(false);
+  const submittingRef = useRef(false);
   const successScale = useRef(new Animated.Value(0)).current;
   const trimmedCancelReason = cancelReason.trim();
   const cancelReasonError = trimmedCancelReason.length === 0
@@ -219,14 +234,14 @@ export default function BalletAssessmentScreen() {
     return buildEffectiveEligibleBalletChildIds(routedEligibleChildIds, sessionCreatedChildIds);
   }, [routedEligibleChildIds, sessionCreatedChildIds]);
   const visibleChildren = useMemo(() => {
-    if (effectiveEligibleChildIds == null) return children;
-    return children.filter((child) => {
-      const childId = Number(child.id);
-      if (!Number.isInteger(childId) || !effectiveEligibleChildIds.has(childId)) return false;
-      if (sessionCreatedChildIds.has(childId)) return true;
-      if (applicationsState !== "ready") return true;
-      const status = getChildApplicationStatus(child, applications);
-      return status == null || !BLOCKING_CHILD_APPLICATION_STATUSES.has(status);
+    return computeVisibleAssessmentChildren({
+      children,
+      applications,
+      applicationsReady: applicationsState === "ready",
+      effectiveEligibleChildIds,
+      sessionCreatedChildIds,
+      blockingStatuses: BLOCKING_CHILD_APPLICATION_STATUSES,
+      getChildApplicationStatus,
     });
   }, [applications, applicationsState, children, effectiveEligibleChildIds, sessionCreatedChildIds]);
   const routedChildLocked = shouldLockSingleRoutedBalletChild({
@@ -237,17 +252,60 @@ export default function BalletAssessmentScreen() {
   });
 
   useEffect(() => {
-    if (routedEligibleChildIds == null || applicationsState !== "ready") return;
-    if (selectedChild && sessionCreatedChildIds.has(Number(selectedChild.id))) return;
-    if (visibleChildren.length === 1) {
-      const onlyChild = visibleChildren[0]!;
-      if (selectedChild?.id !== onlyChild.id) setSelectedChild(onlyChild);
+    const action = decideChildEligibilityAction({
+      hasRoutedAllowList: routedEligibleChildIds != null,
+      applicationsReady: applicationsState === "ready",
+      hasSubmittedSnapshot: submittedSnapshot != null,
+      hasEditingApplication: editingApplicationId != null,
+      isSubmissionInFlight: submitting,
+      selectedChildId: selectedChild?.id ?? null,
+      isSessionCreatedSelectedChild: selectedChild != null && sessionCreatedChildIds.has(Number(selectedChild.id)),
+      step,
+      visibleChildIds: visibleChildren.map((child) => child.id),
+    });
+
+    if (action.type === "preselect") {
+      const child = visibleChildren.find((candidate) => candidate.id === action.childId);
+      if (child) setSelectedChild(child);
       return;
     }
-    if (selectedChild && !visibleChildren.some((child) => child.id === selectedChild.id)) {
+
+    if (action.type === "clearOnChildStep") {
       setSelectedChild(null);
+      alert.show({
+        tone: "warning",
+        title: "Child No Longer Eligible",
+        message: "This child already has a current Ballet application. Please choose another child.",
+      });
+      return;
     }
-  }, [applicationsState, routedEligibleChildIds, selectedChild, sessionCreatedChildIds, visibleChildren]);
+
+    if (action.type === "bounceToChild") {
+      const childName = selectedChild?.fullName ?? "This child";
+      setSelectedChild(null);
+      setSelectedAppointment(null);
+      setSelectedPackage(null);
+      setStep("child");
+      alert.show({
+        tone: "warning",
+        title: "Application Already Exists",
+        message: `${childName} already has a current Ballet application. Please choose another child to continue.`,
+      });
+    }
+  }, [alert, applicationsState, editingApplicationId, routedEligibleChildIds, selectedChild, sessionCreatedChildIds, step, submittedSnapshot, submitting, visibleChildren]);
+
+  const reviewMissingStep = useMemo(() => {
+    return computeReviewMissingStep({
+      step,
+      hasChild: selectedChild != null,
+      hasAppointment: selectedAppointment != null,
+      hasPackage: selectedPackage != null,
+    });
+  }, [step, selectedChild, selectedAppointment, selectedPackage]);
+
+  useEffect(() => {
+    if (reviewMissingStep != null) setStep(reviewMissingStep);
+  }, [reviewMissingStep]);
 
   useEffect(() => {
     if (!user) {
@@ -306,7 +364,12 @@ export default function BalletAssessmentScreen() {
   const loadAppointments = useCallback(async (child: ChildProfile, signal?: AbortSignal) => {
     setAppointmentsState("loading");
     try {
-      const data = await fetchAvailableAssessmentSchedules(signal, child.birthday, child.id);
+      // childId is an optional ownership-verifying refinement here (the
+      // backend re-derives an authoritative birthday from it when present);
+      // childBirthday alone is sufficient for the fetch, so an invalid id
+      // is safely omitted rather than coerced or blocked on.
+      const childId = parseCanonicalChildId(child.id) ?? undefined;
+      const data = await fetchAvailableAssessmentSchedules(signal, child.birthday, childId);
       if (signal?.aborted) return;
       setAppointments(data);
       setAppointmentsState(data.length ? "ready" : "empty");
@@ -411,65 +474,116 @@ export default function BalletAssessmentScreen() {
   }
 
   async function handleSubmit() {
-    if (!user || !selectedChild || !selectedAppointment || !selectedPackage || submitting) return;
-    const selectedChildId = Number(selectedChild.id);
-    if (!Number.isInteger(selectedChildId) || selectedChildId <= 0) {
+    // 1. reject if already submitting
+    if (submittingRef.current) return;
+
+    // 2. validate child, appointment, package, and payment method (a fixed
+    // canonical constant in this flow — never user-selected, so always
+    // valid once reached).
+    if (!canSubmitAssessment({
+      hasUser: !!user,
+      hasChild: !!selectedChild,
+      hasAppointment: !!selectedAppointment,
+      hasPackage: !!selectedPackage,
+      isSubmitting: submitting,
+      hasSubmittedSnapshot: submittedSnapshot != null,
+    })) {
+      return;
+    }
+    // Non-null by the guard above; narrowed for TypeScript.
+    const user_ = user!;
+    const selectedChild_ = selectedChild!;
+    const selectedAppointment_ = selectedAppointment!;
+    const selectedPackage_ = selectedPackage!;
+    const selectedChildId = parseCanonicalChildId(selectedChild_.id);
+    if (selectedChildId == null) {
       alert.show({ tone: "warning", title: "Invalid Child", message: "Please select a saved child profile before submitting." });
       return;
     }
+
+    // 3. build an immutable draft snapshot from the validated local
+    // variables — before the submission lock is set and before any network
+    // request begins, so it can never be built from state re-read after an
+    // await.
+    const draftSnapshot = buildAssessmentSubmissionDraft({
+      child: selectedChild_,
+      appointment: selectedAppointment_,
+      pkg: selectedPackage_,
+      paymentLabel: CANONICAL_PAYMENT_LABEL,
+    });
+
+    // 4. set the synchronous submission lock
+    submittingRef.current = true;
     setSubmitting(true);
     try {
+      // 5. begin the POST request
       if (editingApplicationId != null) {
         await updateBalletApplication(editingApplicationId, {
-          assessmentScheduleId: selectedAppointment.scheduleId,
-          assessmentDate: selectedAppointment.date,
-          preferredPackageId: selectedPackage.id,
+          assessmentScheduleId: selectedAppointment_.scheduleId,
+          assessmentDate: selectedAppointment_.date,
+          preferredPackageId: selectedPackage_.id,
           preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
         });
+        // 6. finalize the submitted snapshot by adding the returned
+        // identity onto the draft — never rebuilt from state.
+        setSubmittedSnapshot(finalizeAssessmentSubmissionSnapshot(draftSnapshot, {
+          applicationId: editingApplicationId,
+          status: null,
+        }));
         setSubmittedApplicationId(editingApplicationId);
         setEditingApplicationId(null);
         return;
       }
 
       const result = await submitBalletApplication({
-        parentName: user.fullName,
-        parentPhone: user.phone,
-        parentEmail: user.email,
-        childName: selectedChild.fullName,
-        childBirthday: selectedChild.birthday,
-        childAge: selectedChild.age || calculateAge(selectedChild.birthday),
-        childGender: selectedChild.gender,
+        parentName: user_.fullName,
+        parentPhone: user_.phone,
+        parentEmail: user_.email,
+        childName: selectedChild_.fullName,
+        childBirthday: selectedChild_.birthday,
+        childAge: selectedChild_.age || calculateAge(selectedChild_.birthday),
+        childGender: selectedChild_.gender,
         previousExperience: false,
-        medicalNotes: selectedChild.medicalNotes,
-        emergencyContactName: selectedChild.emergencyContactName,
-        emergencyContactPhone: selectedChild.emergencyContactPhone,
-        assessmentScheduleId: selectedAppointment.scheduleId,
-        assessmentDate: selectedAppointment.date,
+        medicalNotes: selectedChild_.medicalNotes,
+        emergencyContactName: selectedChild_.emergencyContactName,
+        emergencyContactPhone: selectedChild_.emergencyContactPhone,
+        assessmentScheduleId: selectedAppointment_.scheduleId,
+        assessmentDate: selectedAppointment_.date,
         preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
-        preferredPackageId: selectedPackage.id,
+        preferredPackageId: selectedPackage_.id,
         childId: selectedChildId,
       });
+      // 6. finalize the submitted snapshot from the draft + server response
+      // (7. success view renders from this snapshot only — see below).
+      // This happens before any success-side state update (optimistic list
+      // update, refetch) so the success screen can never be starved by a
+      // subsequent eligibility reconciliation pass.
+      setSubmittedSnapshot(finalizeAssessmentSubmissionSnapshot(draftSnapshot, {
+        applicationId: result.application.id,
+        status: result.application.status,
+      }));
       setSubmittedApplicationId(result.application.id);
+      // 8. then update/refetch applications
       setApplications((prev) => [
         {
           id: result.application.id,
           childId: selectedChildId,
-          parentName: user.fullName,
-          parentPhone: user.phone,
-          parentEmail: user.email,
-          childName: selectedChild.fullName,
-          childBirthday: selectedChild.birthday,
-          childAge: selectedChild.age || calculateAge(selectedChild.birthday),
-          childGender: selectedChild.gender,
-          emergencyContactName: selectedChild.emergencyContactName ?? null,
-          emergencyContactPhone: selectedChild.emergencyContactPhone ?? null,
+          parentName: user_.fullName,
+          parentPhone: user_.phone,
+          parentEmail: user_.email,
+          childName: selectedChild_.fullName,
+          childBirthday: selectedChild_.birthday,
+          childAge: selectedChild_.age || calculateAge(selectedChild_.birthday),
+          childGender: selectedChild_.gender,
+          emergencyContactName: selectedChild_.emergencyContactName ?? null,
+          emergencyContactPhone: selectedChild_.emergencyContactPhone ?? null,
           previousExperience: false,
           experienceDetails: null,
-          medicalNotes: selectedChild.medicalNotes ?? null,
+          medicalNotes: selectedChild_.medicalNotes ?? null,
           notes: null,
-          assessmentScheduleId: selectedAppointment.scheduleId,
-          assessmentDate: selectedAppointment.date,
-          preferredPackageId: selectedPackage.id,
+          assessmentScheduleId: selectedAppointment_.scheduleId,
+          assessmentDate: selectedAppointment_.date,
+          preferredPackageId: selectedPackage_.id,
           preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
           status: result.application.status,
           adminNotes: null,
@@ -488,6 +602,10 @@ export default function BalletAssessmentScreen() {
       const typed = err as { status?: number; data?: { error?: string; code?: string }; message?: string };
       if (typed.status === 409) {
         alert.show({ tone: "warning", title: "Already Applied", message: typed.data?.error ?? "This child already has a Ballet application." });
+        setSelectedChild(null);
+        setSelectedAppointment(null);
+        setSelectedPackage(null);
+        setStep("child");
         await loadApplications();
         return;
       }
@@ -497,12 +615,14 @@ export default function BalletAssessmentScreen() {
         message: typed.data?.error ?? typed.message ?? "We couldn't submit the application. Please try again.",
       });
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
 
   function resetForAnotherChild() {
     setSubmittedApplicationId(null);
+    setSubmittedSnapshot(null);
     setEditingApplicationId(null);
     setSelectedChild(null);
     setSelectedAppointment(null);
@@ -512,11 +632,12 @@ export default function BalletAssessmentScreen() {
   }
 
   function confirmCancel() {
-    if (submittedApplicationId == null || !selectedChild) return;
+    if (submittedApplicationId == null || !submittedSnapshot) return;
+    const childName = submittedSnapshot.child.fullName;
     alert.show({
       tone: "destructive",
-      title: `Cancel ${selectedChild.fullName}'s Application?`,
-      message: `This cancels only ${selectedChild.fullName}'s submitted Ballet Assessment application. You can apply again afterwards.`,
+      title: `Cancel ${childName}'s Application?`,
+      message: `This cancels only ${childName}'s submitted Ballet Assessment application. You can apply again afterwards.`,
       actions: [
         { label: "Keep Application", tone: "neutral" },
         {
@@ -562,38 +683,38 @@ export default function BalletAssessmentScreen() {
     return <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]} />;
   }
 
-  if (submittedApplicationId != null && selectedChild && selectedAppointment) {
+  if (submittedApplicationId != null && submittedSnapshot) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
         <LinearGradient colors={["#04161B", BA.ink900]} style={StyleSheet.absoluteFill} />
+        <BalletAssessmentHeader onBack={goBack} homeAction={() => router.replace("/" as never)} />
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.successScroll, { paddingTop: (Platform.OS === "web" ? 40 : insets.top) + 34 }]}
+          contentContainerStyle={[styles.successScroll, { paddingTop: 20 }]}
         >
           <Animated.View style={[styles.successIcon, { transform: [{ scale: successScale }] }]}>
-            <Svg width={42} height={42} viewBox="0 0 24 24" fill="none">
+            <Svg width={38} height={38} viewBox="0 0 24 24" fill="none">
               <Path d="M20 6 9 17l-5-5" stroke={BA.ink900} strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
           </Animated.View>
           <Text style={styles.successTitle}>Application Submitted Successfully</Text>
-          <View style={styles.successCard}>
-            <Text style={styles.successLabel}>Child</Text>
-            <Text style={styles.successValue}>{selectedChild.fullName}</Text>
-            <Text style={styles.successLabel}>Assessment</Text>
-            <Text style={styles.successValue}>{formatDisplayDate(selectedAppointment.date, true)}</Text>
-            <Text style={styles.successValue}>{selectedAppointment.time}</Text>
-            <Text style={styles.successLabel}>Payment Method</Text>
-            <Text style={styles.successValue}>{CANONICAL_PAYMENT_LABEL}</Text>
-            <Text style={styles.successLabel}>Status</Text>
-            <Text style={[styles.successValue, { color: BA.amber }]}>Pending Review</Text>
-          </View>
+          <BalletAssessmentSuccessSummaryCard
+            childName={submittedSnapshot.child.fullName}
+            assessmentDateLabel={formatDisplayDate(submittedSnapshot.appointment.date, true)}
+            assessmentTimeLabel={submittedSnapshot.appointment.time}
+            paymentLabel={submittedSnapshot.paymentLabel}
+            statusLabel="Pending Review"
+          />
         </ScrollView>
-        <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
+        <View style={[styles.footer, styles.successFooter, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
           <BalletAssessmentSuccessActions
-            onHome={() => router.replace("/" as never)}
             onModify={() => {
               setEditingApplicationId(submittedApplicationId);
+              setSelectedChild(submittedSnapshot.child);
+              setSelectedAppointment(submittedSnapshot.appointment);
+              setSelectedPackage(submittedSnapshot.pkg);
               setSubmittedApplicationId(null);
+              setSubmittedSnapshot(null);
               setStep("review");
             }}
             onAnotherChild={resetForAnotherChild}
@@ -768,7 +889,7 @@ export default function BalletAssessmentScreen() {
           </View>
         )}
 
-        {step === "review" && selectedChild && selectedAppointment && selectedPackage && (
+        {step === "review" && reviewMissingStep == null && selectedChild && selectedAppointment && selectedPackage && (
           <View style={styles.section}>
             <ScreenTitle title="Review Application" subtitle="Confirm every detail before submitting." />
             <BalletAssessmentSummaryCard
@@ -783,6 +904,12 @@ export default function BalletAssessmentScreen() {
             />
           </View>
         )}
+        {step === "review" && reviewMissingStep != null && (
+          <View style={styles.section}>
+            <ScreenTitle title="Review Application" subtitle="Confirm every detail before submitting." />
+            <LoadingCards />
+          </View>
+        )}
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
@@ -793,9 +920,9 @@ export default function BalletAssessmentScreen() {
         ) : null}
         {step === "review" ? (
           <TouchableOpacity
-            style={[styles.footerButton, styles.primaryButton, submitting && { opacity: 0.6 }]}
+            style={[styles.footerButton, styles.primaryButton, (submitting || reviewMissingStep != null) && { opacity: 0.6 }]}
             onPress={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || reviewMissingStep != null}
             activeOpacity={0.86}
           >
             {submitting ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Submit Application</Text>}
@@ -972,6 +1099,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  // The success screen's action stack is a single column of full-width
+  // actions, not a row-paired Back/Continue pair — reusing `footer`
+  // unmodified previously left its lone child sized to its own intrinsic
+  // (shrink-to-fit) content width instead of the available screen width,
+  // which is what made the buttons look clipped/cramped.
+  successFooter: {
+    flexDirection: "column",
+  },
   footerButton: {
     flex: 1,
     minHeight: 52,
@@ -1112,48 +1247,32 @@ const styles = StyleSheet.create({
   },
   successScroll: {
     paddingHorizontal: 24,
-    paddingBottom: 220,
+    paddingBottom: 40,
     alignItems: "center",
   },
   successIcon: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: BA.cyan500,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 22,
+    marginBottom: 16,
+    shadowColor: BA.cyan500,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 6,
   },
   successTitle: {
     color: BA.white,
     fontFamily: "Anton_400Regular",
-    fontSize: 40,
-    lineHeight: 39,
+    fontSize: 27,
+    lineHeight: 30,
     textTransform: "uppercase",
     textAlign: "center",
-    ...iosDisplayTextStyle(40, 39),
-    marginBottom: 24,
-  },
-  successCard: {
-    width: "100%",
-    borderRadius: BA_RADIUS.xl,
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.28)",
-    backgroundColor: BA.ink800,
-    padding: 16,
-    gap: 4,
-  },
-  successLabel: {
-    color: BA.ink400,
-    fontFamily: "SpaceMono_700Bold",
-    fontSize: 10,
-    letterSpacing: 0.9,
-    textTransform: "uppercase",
-    marginTop: 8,
-  },
-  successValue: {
-    color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 15,
+    ...iosDisplayTextStyle(27, 30),
+    marginBottom: 26,
+    paddingHorizontal: 6,
   },
 });
