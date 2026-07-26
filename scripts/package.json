@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backfill-membership-ids": "tsx ./src/backfillMembershipIds.ts",
+    "test:ballet:integration": "tsx ./src/runDisposableBalletTests.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

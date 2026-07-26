@@ -141,14 +141,17 @@ test("balletClassEntitlement.ts is the single source of the assignment-ready pre
   assert.match(groupRoute, /import \{ isAssignmentReadyClass \} from "\.\.\/lib\/balletClassEntitlement"/);
   assert.match(applicationRoute, /import \{ isAssignmentReadyClass, scheduleShapeCondition \} from "\.\.\/lib\/balletClassEntitlement"/);
 
-  // All 4 gates call isAssignmentReadyClass(): Group readiness (1 site),
-  // Activation, Application Group assignment, Attendance (3 sites in
-  // adminBallet.ts) — never a bespoke inline reimplementation.
+  // Entitlement gates call isAssignmentReadyClass() in Group readiness (1 site in adminBalletGroups.ts),
+  // Assign Group, and Activation (2 sites in adminBallet.ts) — never a bespoke inline reimplementation.
   const groupRouteCalls = (groupRoute.match(/isAssignmentReadyClass\(\)/g) ?? []).length;
   const applicationRouteCalls = (applicationRoute.match(/isAssignmentReadyClass\(\)/g) ?? []).length;
   assert.equal(groupRouteCalls, 1, "Group readiness must call isAssignmentReadyClass exactly once");
-  assert.equal(applicationRouteCalls, 3, "Activation, assign-group, and Attendance must each call isAssignmentReadyClass");
-  assert.match(applicationRoute, /scheduleShapeCondition\(\)/, "Attendance must additionally validate the specific submitted Schedule row");
+  assert.equal(applicationRouteCalls, 2, "Activation and assign-group must each call isAssignmentReadyClass");
+
+  // Verify route contexts explicitly
+  assert.match(applicationRoute, /Cannot activate:[\s\S]*?isAssignmentReadyClass\(\)/, "Activation path must call isAssignmentReadyClass()");
+  assert.match(applicationRoute, /\/admin\/ballet\/applications\/:id\/assign-group[\s\S]*?isAssignmentReadyClass\(\)/, "assign-group path must call isAssignmentReadyClass()");
+  assert.match(applicationRoute, /performBalletAttendanceWrite/, "Attendance write path must use performBalletAttendanceWrite engine");
 });
 
 test("assign-level uses an allowlist so an already-active application can never be reset to assignedToLevel", () => {
