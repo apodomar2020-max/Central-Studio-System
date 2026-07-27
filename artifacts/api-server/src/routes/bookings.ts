@@ -1414,8 +1414,17 @@ router.patch(
       // other than "pending" (e.g. some future combined admin action), that
       // explicit choice is respected instead of being overwritten.
       if (normalized.bookingStatus === "pending") {
-        normalized.bookingStatus = "confirmed";
-        normalized.status = legacyStatusFromSplit(normalized.bookingStatus, normalized.paymentStatus);
+        // Narrow via a local const rather than relying on property narrowing
+        // surviving the assignment below: `normalized` is typed as the broad
+        // Drizzle insert partial (BookingWrite), so TypeScript does not
+        // retain a literal-narrowed type for `normalized.bookingStatus`
+        // across the write on the next line. The runtime value is always a
+        // valid BookingStatus here (this block only runs when the check
+        // above already matched "pending"); this local just gives the
+        // compiler the same guarantee explicitly.
+        const confirmedBookingStatus: BookingStatus = "confirmed";
+        normalized.bookingStatus = confirmedBookingStatus;
+        normalized.status = legacyStatusFromSplit(confirmedBookingStatus, normalized.paymentStatus);
         bookingStatusAutoConfirmedByPayment = true;
       }
     }
