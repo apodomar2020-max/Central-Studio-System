@@ -5,10 +5,11 @@
 ## 1. Final Reviewed Branch and Head
 
 - Branch: `feat/finance-final-closure-batch-1`
-- Final reviewed head: `35b3f7cd4b3a18c7f2e71a32ecf873dd8b688ae3` (`35b3f7c`)
-- Documentation-cleanup commit (this task): `11acb84`
+- **Final independently reviewed runtime head: `35b3f7cd4b3a18c7f2e71a32ecf873dd8b688ae3` (`35b3f7c`)** — this is the commit the independent review verdict below applies to; no runtime, test, or migration file has changed since.
+- Documentation-cleanup commit: `11acb84`
+- **Current complete branch head: `36d6252`** — adds this release-readiness document on top of `11acb84`; still documentation-only, no runtime/test/migration change relative to `35b3f7c`.
 - Baseline: `d5ab3bd017392459a2e5cbb0dfd58af7e7ea0e4f` (confirmed unchanged from `origin/main` throughout this work)
-- Independent review verdict on `35b3f7c`: `PASS WITH DOCUMENTATION CLEANUP` (documentation cleanup now resolved in `11acb84`)
+- Independent review verdict on `35b3f7c`: `PASS WITH DOCUMENTATION CLEANUP` (documentation cleanup resolved in `11acb84`; this document and later documentation-only commits build on top of that state without altering runtime behavior)
 
 ## 2. Runtime Verification Summary
 
@@ -51,7 +52,7 @@ Before applying to any real database (staging or production):
 1. **Fetch latest `origin/main`**: `git fetch origin` and confirm `origin/main` is still at (or a fast-forward descendant of) `d5ab3bd017392459a2e5cbb0dfd58af7e7ea0e4f`.
 2. **Verify no new conflicting Finance/booking/attendance changes**: diff `origin/main` against this batch's baseline to confirm nothing has landed upstream in `artifacts/api-server/src/routes/bookings.ts`, `myRoutes.ts`, `students.ts`, `artifacts/api-server/src/lib/financeSources.ts`/`financeReadModel.ts`, `artifacts/central/contexts/AppContext.tsx`, `artifacts/central/app/booking/flow.tsx`, or `lib/db/src/schema/bookings.ts` since this branch was created — if anything has, re-review the merge diff for this batch specifically around those files before proceeding.
 3. **Create a clean release worktree** off the current `origin/main`, separate from `/private/tmp/finance-final-closure-batch-1` (which should remain untouched until the merge is confirmed).
-4. **Merge the feature branch** (`feat/finance-final-closure-batch-1` at `35b3f7c`/`11acb84`) into `main` in that release worktree, per the team's normal PR/merge process — not performed as part of this task.
+4. **Merge the feature branch** — `feat/finance-final-closure-batch-1` at current head `36d6252` (documentation-only commits on top of the independently-reviewed runtime head `35b3f7c`; no runtime/test/migration change since that review) — into `main` in that release worktree, per the team's normal PR/merge process — not performed as part of this task.
 5. **Run full release verification** in the release worktree: the same 242-test suite, `pnpm run typecheck` (Central/Admin/API), and `checkNoNativeAlert.js`, against the merged state — not merely re-trusting this branch's own pre-merge results.
 6. **Apply Migration 0085** using the existing approved migration process, after the preflight diagnostic query in §3 confirms a clean target database.
 7. **Deploy `api-server` and `admin`** together, per the existing deployment process for this repository — these two are interdependent within this batch (the Finance read-model, credit-aggregation, and booking-confirmation fixes span both).
@@ -75,11 +76,14 @@ Concretely: on the deployed mobile app (real device or simulator), book and pay 
 
 ## 7. Rollback Plan
 
-- **Application code**: prefer reverting the single merge commit that brings this branch into `main`, rather than reverting the six individual commits (`c965188` / `82d3cb4` / `8eaa560` / `63a0e04` / `5633d29` / `35b3f7c`) one at a time. Every change in this batch is additive/corrective with no destructive data operations, so either approach is safe; the merge-commit revert is simpler.
+- **Application code**: prefer reverting the single merge commit that brings this branch into `main`, rather than reverting individual commits one at a time. If individual-commit rollback is ever needed instead:
+  - Runtime implementation history only: `c965188` / `82d3cb4` / `8eaa560` / `63a0e04` / `5633d29` / `35b3f7c` (this last one, `35b3f7c`, is also the final independently reviewed runtime head — no runtime/test/migration commit exists after it).
+  - Documentation-only commits (no runtime effect, safe to leave in place even if runtime commits are reverted): `11acb84`, `36d6252`, plus this correction commit and the controlled-release-plan commit that follow it.
+  - Every change in this batch is additive/corrective with no destructive data operations, so either the merge-commit revert or the individual-commit approach is safe; the merge-commit revert is simpler.
 - **Migration 0085**: `DROP INDEX "bookings_active_occurrence_participant_unique";` — safe, reversible, no data loss (the index carries no data of its own).
 - **No historical data was migrated, backfilled, or otherwise mutated** by this batch, so there is nothing to roll back at the data layer beyond the index itself.
 - **Mobile release**: if an issue is found only after the Central mobile release goes out (e.g., during Tuesday/Thursday UAT), roll back via the existing approved mobile release process's own rollback mechanism (e.g., OTA revert or store rollback), independently of the API/Admin rollback above.
 
 ## 8. Explicit Statement
 
-**No merge, deploy, or migration application was performed in this task or any prior task in this sequence.** This document, the implementation report, and the review-response record are documentation deliverables only. The branch `feat/finance-final-closure-batch-1` at `11acb84` remains unmerged into `main`, migration 0085 remains unapplied to any staging or production database, and no API/Admin/mobile deploy has occurred.
+**No merge, deploy, or migration application was performed in this task or any prior task in this sequence.** This document, the implementation report, and the review-response record are documentation deliverables only. The branch `feat/finance-final-closure-batch-1` at current head `36d6252` remains unmerged into `main`, migration 0085 remains unapplied to any staging or production database, and no API/Admin/mobile deploy has occurred.
