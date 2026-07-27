@@ -195,7 +195,11 @@ export function UnifiedAttendanceDialog({
 
   const [resolverResult, setResolverResult] = useState<ResolverResponse | null>(null);
   const [selected, setSelected] = useState<{ account: AccountGroup; candidate: Candidate } | null>(null);
-  const [paymentMode, setPaymentMode] = useState<"package_credit" | "pay_at_studio">("pay_at_studio");
+  // For a Walk-in, this starts as null — no default, no automatic preference
+  // for Package Credit even when one is available. Existing-booking
+  // check-ins keep their prior default ("pay_at_studio") since that flow is
+  // unchanged by the explicit Walk-in settlement policy.
+  const [paymentMode, setPaymentMode] = useState<"package_credit" | "pay_at_studio" | null>("pay_at_studio");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   // Prevents a double-click/double-submit from firing the confirm request twice.
   const [submitLock, setSubmitLock] = useState(false);
@@ -345,11 +349,11 @@ export function UnifiedAttendanceDialog({
 
   function pickCandidate(account: AccountGroup, candidate: Candidate) {
     setSelected({ account, candidate });
-    // A walk-in with no available Package Credit goes straight to the
-    // mandatory Paid/Not Paid confirmation — Package Credit is offered as
-    // the default only when the resolver says one is actually available.
+    // Mandatory explicit choice — a Walk-in never gets a pre-selected
+    // settlement method, even when a valid Package Credit is available.
+    // Existing-booking candidates keep the prior default unchanged.
     const isWalkIn = candidate.bookingId == null && candidate.program === "studio";
-    setPaymentMode(isWalkIn && !candidate.hasPackageCredit ? "pay_at_studio" : (isWalkIn ? "package_credit" : "pay_at_studio"));
+    setPaymentMode(isWalkIn ? null : "pay_at_studio");
     setSelectedPackageId(null);
     setSubmitLock(false);
     setPhase("confirming");
@@ -371,6 +375,7 @@ export function UnifiedAttendanceDialog({
     if (!selected || submitLock) return;
     const { account, candidate } = selected;
     if (candidate.eligibility !== "eligible") return;
+    if (candidate.program === "studio" && paymentMode == null) return;
     if (candidate.program === "studio" && paymentMode === "package_credit" && !canPackageDeduct) {
       setErrorMessage("You do not have permission to deduct package credits.");
       return;
@@ -679,7 +684,12 @@ export function UnifiedAttendanceDialog({
                   ) : (
                     <button
                       onClick={() => void confirmAttendance()}
-                      disabled={submitLock || (selected.candidate.program === "studio" && paymentMode === "package_credit" && selectedPackageId == null)}
+                      disabled={
+                        submitLock ||
+                        (selected.candidate.program === "studio" &&
+                          (paymentMode == null ||
+                            (paymentMode === "package_credit" && selectedPackageId == null)))
+                      }
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold disabled:opacity-50"
                       style={{ background: GREEN, color: "white" }}
                     >

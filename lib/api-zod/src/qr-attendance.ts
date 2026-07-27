@@ -74,12 +74,44 @@ export const CheckInBodyExtended = zod.object({
   bookingId: zod.number().nullish(),
   checkedInBy: zod.string().nullish(),
   status: zod.enum(["checked_in", "late", "absent", "cancelled"]).optional(),
-  // Finance Phase 2B-4 (Studio Walk-in Atomic Monetary Capture) — optional,
-  // backward-compatible: only consulted on the walk-in (no bookingId) path
-  // when no Package Credit is being used. Omitted entirely => existing
-  // attendance-only behavior, unchanged. true => atomic paid walk-in capture.
-  // false => abort the whole operation, no rows written.
+  // Finance Phase 2B-4 (Studio Walk-in Atomic Monetary Capture) — retained
+  // for the booking-based (bookingId != null) path only. On the walk-in
+  // path this is superseded by `settlementMode` below; the route no longer
+  // reads `paid` on the walk-in branch.
   paid: zod.boolean().optional(),
+  // Explicit Walk-in settlement discriminator (mandatory for walk-in
+  // requests — i.e. whenever bookingId is omitted). There is NO default:
+  // the mere existence of a valid package credit must never select
+  // "package_credit" on its own, and the server must never infer this
+  // value from payment status, package availability, or participant
+  // state — it must come from an explicit Admin choice. See
+  // STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
+  settlementMode: zod.enum(["package_credit", "pay_at_studio", "not_paid"]).optional(),
+}).superRefine((body, ctx) => {
+  // "absent" is a no-show status record, not an arrival — it is not a
+  // Studio Walk-in in the payment-settlement sense (no attendance-linked
+  // arrival is happening), so it is exempt from the mandatory settlement
+  // choice. Every other no-booking submission (an actual arrival — the
+  // default "checked_in", or "late") is a genuine Walk-in and requires it.
+  if (body.bookingId == null && body.status !== "absent" && body.settlementMode == null) {
+    ctx.addIssue({
+      code: zod.ZodIssueCode.custom,
+      path: ["settlementMode"],
+      message:
+        "settlementMode is required for a Studio Walk-in check-in (\"package_credit\" | \"pay_at_studio\" | \"not_paid\") — there is no default.",
+    });
+  }
+  if (
+    body.bookingId == null &&
+    body.settlementMode === "package_credit" &&
+    body.packageOrderId == null
+  ) {
+    ctx.addIssue({
+      code: zod.ZodIssueCode.custom,
+      path: ["packageOrderId"],
+      message: "packageOrderId is required when settlementMode is \"package_credit\".",
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -260,7 +260,13 @@ export function ScanCheckInDialog({
   const [selectedScheduleId, setSelectedScheduleId] = useState<number>(MANUAL_SCHEDULE_ID);
   const [manualClassTitle, setManualClassTitle] = useState("");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
-  const [deductCredit, setDeductCredit] = useState(true);
+  // Explicit Walk-in settlement choice — no default, per the mandatory
+  // 3-way settlement policy. See STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
+  // The mere existence of a valid package credit must never pre-select
+  // "package_credit"; this only ever changes via an explicit Admin click.
+  const [walkInSettlement, setWalkInSettlement] = useState<
+    "package_credit" | "pay_at_studio" | "not_paid" | null
+  >(null);
 
   const [resolveError, setResolveError] = useState("");
   const [duplicateError, setDuplicateError] = useState("");
@@ -348,7 +354,7 @@ export function ScanCheckInDialog({
     setSelectedScheduleId(MANUAL_SCHEDULE_ID);
     setManualClassTitle("");
     setSelectedPackageId(null);
-    setDeductCredit(canPackageDeduct);
+    setWalkInSettlement(null);
     setResolveError("");
     setDuplicateError("");
     setSuccessMsg("");
@@ -504,19 +510,37 @@ export function ScanCheckInDialog({
     }
 
     // ── Path B: Walk-in / legacy attendance endpoint (email scan, no booking) ──
-    // Separate flow — records walk-in attendance, optionally deducting a credit.
-    const creditActuallyDeducted = canPackageDeduct && deductCredit && !!selectedPackageId;
+    // Records walk-in attendance. `walkInSettlement` is a mandatory explicit
+    // Admin choice — there is no default and no inference from package
+    // availability. See STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
+    if (!walkInSettlement) {
+      setResolveError("Choose a settlement method (Use Package Credit, Pay at Studio, or Not Paid) before checking in.");
+      setPhase("error");
+      return;
+    }
+    if (walkInSettlement === "package_credit" && (!canPackageDeduct || !selectedPackageId)) {
+      setResolveError("Select a package with available credit to use Package Credit.");
+      setPhase("error");
+      return;
+    }
+    if (walkInSettlement === "not_paid") {
+      // Cancelled at the UI boundary — no attendance-creation request is
+      // sent at all, so there is nothing for the backend to no-op against.
+      setSuccessMsg("Walk-in cancelled — marked Not Paid. No records were created.");
+      setPhase("done");
+      return;
+    }
 
     const body = {
       studentEmail: effectiveStudentEmail,
       studentName: effectiveStudentName,
-      packageOrderId: canPackageDeduct ? selectedPackageId : null,
+      packageOrderId: walkInSettlement === "package_credit" ? selectedPackageId : null,
       classTitle: effectiveClassTitle || null,
-      creditDeducted: creditActuallyDeducted,
       notes: null,
       studentId: effectiveStudentId,
       classId: effectiveClassId,
       scheduleId: effectiveScheduleId,
+      settlementMode: walkInSettlement,
     };
 
     try {
@@ -529,7 +553,7 @@ export function ScanCheckInDialog({
       queryClient.invalidateQueries({ queryKey: getListPackageOrdersQueryKey() });
 
       setSuccessMsg(
-        `${row.studentName} checked in${creditActuallyDeducted ? " — 1 credit deducted" : ""}`,
+        `${row.studentName} checked in${walkInSettlement === "package_credit" ? " — 1 credit deducted" : walkInSettlement === "pay_at_studio" ? " — paid at studio" : ""}`,
       );
       setPhase("done");
     } catch (err: unknown) {
@@ -1270,19 +1294,72 @@ export function ScanCheckInDialog({
                 </div>
               )}
 
-              {canPackageDeduct && selectedPackageId && (
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={deductCredit}
-                    onChange={(e) => setDeductCredit(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-sm" style={{ color: "#9CA3AF" }}>
-                    Deduct 1 credit from selected package
-                  </span>
+              {/* Mandatory Walk-in settlement choice — no option is pre-selected.
+                  Package availability never decides this automatically. */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
+                  Settlement Method (required)
                 </label>
-              )}
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWalkInSettlement("package_credit")}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                    style={{
+                      background: walkInSettlement === "package_credit" ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
+                      border: `1px solid ${walkInSettlement === "package_credit" ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
+                    }}
+                  >
+                    <span className="font-medium text-white">Use Package Credit</span>
+                  </button>
+                  {walkInSettlement === "package_credit" && (!canPackageDeduct || activePackages.length === 0) && (
+                    <div
+                      className="text-sm px-3 py-2.5 rounded-xl"
+                      style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
+                    >
+                      No valid package credit is available — choose Pay at Studio or Not Paid instead.
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setWalkInSettlement("pay_at_studio")}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                    style={{
+                      background: walkInSettlement === "pay_at_studio" ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
+                      border: `1px solid ${walkInSettlement === "pay_at_studio" ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
+                    }}
+                  >
+                    <span className="font-medium text-white">Pay at Studio</span>
+                  </button>
+                  {walkInSettlement === "pay_at_studio" && (
+                    <div
+                      className="text-sm px-3 py-2.5 rounded-xl"
+                      style={{ background: `${STUDIO_CYAN}10`, color: STUDIO_CYAN, border: `1px solid ${STUDIO_CYAN}25` }}
+                    >
+                      The single-class price will be charged. Package credits will not be used, even if available.
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setWalkInSettlement("not_paid")}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                    style={{
+                      background: walkInSettlement === "not_paid" ? `${STUDIO_CYAN}15` : "hsl(203 30% 14%)",
+                      border: `1px solid ${walkInSettlement === "not_paid" ? STUDIO_CYAN + "50" : "hsl(203 30% 18%)"}`,
+                    }}
+                  >
+                    <span className="font-medium text-white">Not Paid</span>
+                  </button>
+                  {walkInSettlement === "not_paid" && (
+                    <div
+                      className="text-sm px-3 py-2.5 rounded-xl"
+                      style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
+                    >
+                      This walk-in will be cancelled — no attendance, booking, payment, or credit records will be created.
+                    </div>
+                  )}
+                </div>
+              </div>
             </>)}
 
             <div className="flex gap-2 pt-1">
@@ -1298,11 +1375,14 @@ export function ScanCheckInDialog({
                   onClick={() => void handleCheckIn()}
                   disabled={
                     Boolean(
-                      scannedQrToken &&
-                        (!selectedBookingId ||
-                          !selectedBookingEligible ||
-                          !paymentMode ||
-                          (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId))),
+                      scannedQrToken
+                        ? !selectedBookingId ||
+                            !selectedBookingEligible ||
+                            !paymentMode ||
+                            (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId))
+                        : !isTokenFlow &&
+                            (!walkInSettlement ||
+                              (walkInSettlement === "package_credit" && (!canPackageDeduct || !selectedPackageId))),
                     )
                   }
                   className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-40"

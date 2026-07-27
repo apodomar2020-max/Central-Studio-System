@@ -181,12 +181,12 @@ after(async () => {
   await pool.end();
 });
 
-test("a paid no-credit walk-in writes exactly +1 studio_walkin payment record, +1 created_and_confirmed event, and nothing else", async () => {
+test("an explicit pay_at_studio no-credit walk-in writes exactly +1 studio_walkin payment record, +1 created_and_confirmed event, and nothing else", async () => {
   const student = await makeStudent();
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio" }),
   });
   assert.equal(res.status, 201);
   expectedPushCalls += 1; // performStudioWalkIn's post-commit push dispatch
@@ -202,7 +202,7 @@ test("a paid no-credit walk-in writes exactly +1 studio_walkin payment record, +
   assert.equal(after.activationEvents, before.activationEvents);
 });
 
-test("a Package Credit walk-in adds zero monetary Finance rows", async () => {
+test("an explicit package_credit walk-in adds zero monetary Finance rows", async () => {
   const student = await makeStudent();
   const pkg = await pool.query(`INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('ZW Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`);
   const order = await pool.query(
@@ -216,7 +216,7 @@ test("a Package Credit walk-in adds zero monetary Finance rows", async () => {
     method: "POST",
     body: JSON.stringify({
       studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId,
-      creditDeducted: true, packageOrderId: order.rows[0].id,
+      settlementMode: "package_credit", packageOrderId: order.rows[0].id,
     }),
   });
   assert.equal(res.status, 201);
@@ -233,9 +233,21 @@ test("Not Paid adds zero rows", async () => {
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: false }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "not_paid" }),
   });
   assert.equal(res.status, 400);
   const after = await totals();
   assert.deepEqual(after, before);
+});
+
+test("omitting settlementMode entirely on a walk-in returns a validation error, zero writes", async () => {
+  const student = await makeStudent();
+  const before = await totals();
+  const res = await asAdmin("/api/attendance", {
+    method: "POST",
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId }),
+  });
+  assert.equal(res.status, 400);
+  const after = await totals();
+  assert.deepEqual(after, before, "an unresolved settlement choice must never fall through to any write path");
 });
