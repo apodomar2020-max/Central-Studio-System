@@ -146,30 +146,25 @@ const ROUTE_PERMS = {
   balletGroups: [["ballet.groups", "view"]],
   balletPackages: [["ballet.packages", "view"]],
   balletPerformances: [["ballet.performances", "view"]],
-  balletPayments: [["ballet.payments", "view"]],
+  balletPayments: [["finance", "view"]],
   balletCancellationRequests: [["ballet.applications", "view"]],
-  balletRefunds: [["ballet.payments", "view"]],
+  balletRefunds: [["finance", "view"]],
   settings: [["settings", "view"]],
   logs: [["auditLogs", "view"]],
   // Finance reuses the read permissions that already gate each underlying
-  // operational page — Phase 1 introduces no new permission codes, so no
-  // migration and no production role seed is required. The backend enforces the
-  // same mapping per event-source family; these guards only hide UI.
-  financeOverview: [["dashboard", "view"]],
-  // The unified feed is permission-filtered server-side, so any one Finance
-  // read permission is enough to open it — it will only ever return the
-  // families that admin may see.
-  financeTransactions: [
-    ["packageOrders", "view"], ["bookings", "view"], ["attendance", "view"],
-    ["ballet.payments", "view"], ["promotions", "view"], ["credits", "history"],
-  ],
-  financePackages: [["packageOrders", "view"], ["credits", "history"]],
-  // Walk-in rows need the attendance context as well as the booking source.
-  financeClassPayments: [["bookings", "view"], ["attendance", "view"]],
-  financeBallet: [["ballet.payments", "view"]],
-  financeRefunds: [["ballet.payments", "view"]],
-  financeDiscounts: [["promotions", "view"]],
-  financeExports: [["reports", "view"]],
+  // Finance Roles & Permissions integration: every Finance page is gated on
+  // the single finance.view permission. The backend enforces the identical
+  // permission independently on every read endpoint (routes/finance.ts),
+  // so this guard is defense-in-depth for the UI only, not the real
+  // authorization boundary.
+  financeOverview: [["finance", "view"]],
+  financeTransactions: [["finance", "view"]],
+  financePackages: [["finance", "view"]],
+  financeClassPayments: [["finance", "view"]],
+  financeBallet: [["finance", "view"]],
+  financeRefunds: [["finance", "view"]],
+  financeDiscounts: [["finance", "view"]],
+  financeExports: [["finance", "view"]],
 } satisfies Record<string, PermRequirement>;
 
 /** Wrap a page element in a permission guard for use as Route children. */

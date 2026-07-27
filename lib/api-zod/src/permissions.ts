@@ -24,6 +24,7 @@ export const PERMISSION_GROUPS = [
   "Packages & Credits",
   "Content & Engagement",
   "Ballet",
+  "Finance",
   "Insights & System",
   "Future / Reserved",
 ] as const;
@@ -280,12 +281,20 @@ const permissionCatalog = [
     actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"], ["assignPermissions", "Assign Permissions"]),
   },
   {
+    // Activated (previously reserved) for the Finance Roles & Permissions
+    // integration. No prior role has ever been granted any action under
+    // this module (it was `reserved: true`), so activating it and defining
+    // its real action set here is additive and requires no data migration.
     key: "finance",
     label: "Finance",
-    description: "Reserved for the future Finance module.",
-    group: "Future / Reserved",
-    reserved: true,
-    actions: actions(["view", "View"], ["revenueView", "Revenue"], ["cashFlowView", "Cash Flow"], ["branchRevenueView", "Branch Revenue"], ["instructorRevenueView", "Instructor Revenue"], ["refundsView", "Refunds"], ["exports", "Exports"]),
+    description: "Finance Department access: viewing financial data, confirming payments, managing refunds, and exporting reports.",
+    group: "Finance",
+    actions: actions(
+      ["view", "View Finance"],
+      ["paymentsConfirm", "Confirm Payments"],
+      ["refundsManage", "Manage Refunds"],
+      ["exports", "Export Finance Data"],
+    ),
   },
   {
     // Phase 7B: activated (previously reserved) — backs the System → Logs page.

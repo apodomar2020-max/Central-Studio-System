@@ -65,6 +65,19 @@ function requirePackageOrderAction(req: Request, res: Response, next: NextFuncti
   requireAdminPermission("packageOrders", "approve")(req, res, next);
 }
 
+// Finance Roles & Permissions integration: status:"active" is the approved
+// authoritative payment-confirmation moment for a package order (see the
+// Finance Phase 2C comment on the PATCH handler below) — it requires
+// finance.paymentsConfirm in addition to the existing packageOrders.approve
+// permission already enforced by requirePackageOrderAction.
+function requirePackageOrderPaymentConfirmPermission(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.status !== "active") {
+    next();
+    return;
+  }
+  requireAdminPermission("finance", "paymentsConfirm")(req, res, next);
+}
+
 function requirePackageOrderReadAccess(req: Request, res: Response, next: NextFunction): void {
   if (req.studentJwtVerified) {
     requireVerifiedStudent(req, res, next);
@@ -495,6 +508,7 @@ router.patch(
   blockStudentJwt,
   requireAdminAuth,
   requirePackageOrderAction,
+  requirePackageOrderPaymentConfirmPermission,
   async (req: AdminRequest, res): Promise<void> => {
   const params = UpdatePackageOrderParams.safeParse(req.params);
   if (!params.success) {

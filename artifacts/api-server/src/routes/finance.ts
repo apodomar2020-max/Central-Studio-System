@@ -39,7 +39,7 @@ import {
   type FinanceEventType,
 } from "@workspace/api-zod";
 import { blockStudentJwt } from "../middlewares/auth";
-import { requireAdminAuth, type AdminRequest } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { logActivity } from "../lib/activityLog";
 import { buildFinanceOverview } from "../lib/financeOverview";
@@ -101,6 +101,17 @@ function requireAnyFinanceFamily(req: AdminRequest, res: Response, next: NextFun
     return;
   }
   next();
+}
+
+/**
+ * Finance Roles & Permissions integration — the master gate for the whole
+ * Finance section. Every route in this file requires finance.view in
+ * addition to whatever operational-family scoping (resolveVisibleFamilies)
+ * already narrows the actual data returned. Super Admin bypasses via
+ * requireAdminPermission itself.
+ */
+function requireFinanceView(req: AdminRequest, res: Response, next: NextFunction): void {
+  requireAdminPermission("finance", "view")(req, res, next);
 }
 
 // ─── Query validation ─────────────────────────────────────────────────────────
@@ -182,16 +193,9 @@ router.get(
   "/finance/overview",
   blockStudentJwt,
   requireAdminAuth,
+  requireFinanceView,
   async (req: AdminRequest, res): Promise<void> => {
     const admin = req.adminUser!;
-    if (!financeAdminCan(admin, "dashboard", "view")) {
-      res.status(403).json({
-        error: "Permission denied",
-        requiredPermission: { module: "dashboard", action: "view" },
-      });
-      return;
-    }
-
     res.json(
       await buildFinanceOverview({
         includeDiscounts: financeAdminCan(admin, "promotions", "view"),
@@ -206,6 +210,7 @@ router.get(
   "/finance/transactions",
   blockStudentJwt,
   requireAdminAuth,
+  requireFinanceView,
   requireAnyFinanceFamily,
   async (req: AdminRequest, res): Promise<void> => {
     const parsed = TransactionsQuery.safeParse(req.query);
@@ -236,23 +241,15 @@ router.get(
 
 // ─── GET /api/finance/export ──────────────────────────────────────────────────
 
-/** Format → the existing report permission that already gates that format. */
+/**
+ * Finance Roles & Permissions integration: exporting Finance data requires
+ * finance.exports IN ADDITION to finance.view (already enforced by
+ * requireFinanceView earlier in this route's middleware chain) — a user
+ * with only finance.view can read Finance pages but must not download
+ * exports. Checked before any export data is queried or generated.
+ */
 function requireFinanceExportPermission(req: AdminRequest, res: Response, next: NextFunction): void {
-  const admin = req.adminUser;
-  if (!admin) {
-    res.status(401).json({ error: "Admin authentication required" });
-    return;
-  }
-  const format = typeof req.query["format"] === "string" ? req.query["format"] : "json";
-  const action = format === "xlsx" ? "exportExcel" : format === "pdf" ? "exportPdf" : "view";
-  if (!financeAdminCan(admin, "reports", action)) {
-    res.status(403).json({
-      error: "Permission denied",
-      requiredPermission: { module: "reports", action },
-    });
-    return;
-  }
-  next();
+  requireAdminPermission("finance", "exports")(req, res, next);
 }
 
 /**
@@ -343,6 +340,7 @@ router.get(
   "/finance/export",
   blockStudentJwt,
   requireAdminAuth,
+  requireFinanceView,
   requireAnyFinanceFamily,
   requireFinanceExportPermission,
   async (req: AdminRequest, res): Promise<void> => {

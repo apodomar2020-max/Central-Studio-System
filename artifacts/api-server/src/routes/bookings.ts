@@ -143,6 +143,22 @@ function requireBookingUpdatePermission(req: Request, res: Response, next: NextF
   });
 }
 
+// Finance Roles & Permissions integration: this PATCH is general-purpose
+// (schedule, notes, status, etc.), but a write that targets
+// paymentStatus:"paid" is a genuine payment-confirmation action — it must
+// require finance.paymentsConfirm in addition to the existing
+// bookings.edit/cancel permission already enforced by
+// requireBookingUpdatePermission, even though it is launched from the
+// Bookings page rather than Finance.
+function requireBookingPaymentConfirmPermission(req: Request, res: Response, next: NextFunction): void {
+  const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+  if (body["paymentStatus"] !== "paid") {
+    next();
+    return;
+  }
+  requireAdminPermission("finance", "paymentsConfirm")(req, res, next);
+}
+
 function requireBookingReadAccess(req: Request, res: Response, next: NextFunction): void {
   if (req.studentJwtVerified) {
     requireVerifiedStudent(req, res, next);
@@ -1252,6 +1268,7 @@ router.patch(
   blockStudentJwt,
   requireAdminAuth,
   requireBookingUpdatePermission,
+  requireBookingPaymentConfirmPermission,
   async (req: AdminRequest, res): Promise<void> => {
   const params = UpdateBookingParams.safeParse(req.params);
   if (!params.success) {

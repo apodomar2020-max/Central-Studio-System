@@ -23,6 +23,20 @@ function requirePackageDeductForManualCheckIn(req: Request, res: Response, next:
   requireAdminPermission("qr", "packageDeduct")(req, res, next);
 }
 
+// Finance Roles & Permissions integration: settlementMode:"pay_at_studio" is
+// the moment this Studio Walk-in becomes a confirmed cash payment (see
+// performStudioWalkIn) — it requires finance.paymentsConfirm in addition to
+// the existing attendance.checkIn permission, even though it is launched
+// from the Attendance page rather than Finance. package_credit and not_paid
+// are not payment-confirmation events and are unaffected.
+function requireWalkInPaymentConfirmPermission(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.settlementMode !== "pay_at_studio") {
+    next();
+    return;
+  }
+  requireAdminPermission("finance", "paymentsConfirm")(req, res, next);
+}
+
 // ---------------------------------------------------------------------------
 // GET /attendance
 // ---------------------------------------------------------------------------
@@ -106,6 +120,7 @@ router.post(
   requireAdminAuth,
   requireAdminPermission("attendance", "checkIn"),
   requirePackageDeductForManualCheckIn,
+  requireWalkInPaymentConfirmPermission,
   async (req: AdminRequest, res): Promise<void> => {
   const parsed = CheckInBodyExtended.safeParse(req.body);
   if (!parsed.success) {

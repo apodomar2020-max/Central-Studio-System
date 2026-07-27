@@ -50,7 +50,12 @@ function badgeClass(status: string) {
 }
 
 export default function BalletRefundsPage() {
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  // Finance Roles & Permissions integration: refund control buttons require
+  // finance.refundsManage — a view-only user can see refund records here
+  // but must not execute refund actions. Backend independently enforces the
+  // same permission on every mutation endpoint.
+  const canManageRefunds = can("finance", "refundsManage");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
@@ -105,11 +110,11 @@ export default function BalletRefundsPage() {
                           <Input className="h-8 w-32" value={referenceById[row.id] ?? ""} placeholder="Receipt/ref" onChange={(event) => setReferenceById((prev) => ({ ...prev, [row.id]: event.target.value }))} />
                         </div>
                       )}
-                      {row.status === "underReview" && <Button size="sm" variant="outline" onClick={() => mutate.mutate({ id: row.id, path: "approve", body: { approvedAmountEgp: amount, refundMethod: "cash" } })}>Approve Cash</Button>}
-                      {row.status === "underReview" && <Button size="sm" variant="destructive" onClick={() => mutate.mutate({ id: row.id, path: "reject", body: { adminNotes: "Rejected by admin" } })}>Reject</Button>}
-                      {row.status === "approved" && <Button size="sm" variant="outline" onClick={() => mutate.mutate({ id: row.id, path: "mark-processing" })}>Processing</Button>}
-                      {(row.status === "approved" || row.status === "processing") && <Button size="sm" variant="outline" onClick={() => mutate.mutate({ id: row.id, path: "mark-refunded", body: { refundedAmountEgp: amount, transactionReference: referenceById[row.id] || `cash-refund-${row.id}` } })}>Mark Refunded</Button>}
-                      {(row.status === "approved" || row.status === "processing") && <Button size="sm" variant="destructive" onClick={() => mutate.mutate({ id: row.id, path: "mark-failed", body: { failedReason: "Marked failed by admin" } })}>Failed</Button>}
+                      {canManageRefunds && row.status === "underReview" && <Button size="sm" variant="outline" onClick={() => mutate.mutate({ id: row.id, path: "approve", body: { approvedAmountEgp: amount, refundMethod: "cash" } })}>Approve Cash</Button>}
+                      {canManageRefunds && row.status === "underReview" && <Button size="sm" variant="destructive" onClick={() => mutate.mutate({ id: row.id, path: "reject", body: { adminNotes: "Rejected by admin" } })}>Reject</Button>}
+                      {canManageRefunds && row.status === "approved" && <Button size="sm" variant="outline" onClick={() => mutate.mutate({ id: row.id, path: "mark-processing" })}>Processing</Button>}
+                      {canManageRefunds && (row.status === "approved" || row.status === "processing") && <Button size="sm" variant="outline" onClick={() => mutate.mutate({ id: row.id, path: "mark-refunded", body: { refundedAmountEgp: amount, transactionReference: referenceById[row.id] || `cash-refund-${row.id}` } })}>Mark Refunded</Button>}
+                      {canManageRefunds && (row.status === "approved" || row.status === "processing") && <Button size="sm" variant="destructive" onClick={() => mutate.mutate({ id: row.id, path: "mark-failed", body: { failedReason: "Marked failed by admin" } })}>Failed</Button>}
                       <Button size="sm" variant="ghost" onClick={() => navigate(`/ballet/applications/${row.applicationId}`)}><FileText className="mr-1 h-3.5 w-3.5" />App</Button>
                     </TableCell>
                   </TableRow>

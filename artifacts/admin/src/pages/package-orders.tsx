@@ -430,6 +430,11 @@ export default function PackageOrders() {
   const { can, token } = useAdminAuth();
   const canApprove = can("packageOrders", "approve");
   const canCancel = can("packageOrders", "cancel");
+  // Finance Roles & Permissions integration: activating a package order is
+  // the payment-confirmation moment for a package purchase — it requires
+  // finance.paymentsConfirm in addition to the existing packageOrders.approve
+  // permission. Backend enforces the same permission independently.
+  const canConfirmPayments = can("finance", "paymentsConfirm");
   const canDelete = can("packageOrders", "delete");
   const canAdjustCredits = can("credits", "adjust");
   const canViewCreditHistory = can("credits", "history") || can("credits", "view");
@@ -678,7 +683,7 @@ export default function PackageOrders() {
                       {/* Actions */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 flex-wrap">
-                          {canApprove && order.status === "pendingPayment" && (
+                          {canApprove && canConfirmPayments && order.status === "pendingPayment" && (
                             <button
                               onClick={() => handleActivateOpen(order)}
                               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold"

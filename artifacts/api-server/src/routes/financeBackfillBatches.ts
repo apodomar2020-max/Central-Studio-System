@@ -62,11 +62,11 @@ function getBatchId(req: AdminRequest): string {
 }
 
 function requireFinanceView(req: AdminRequest, res: Response, next: () => void): void {
-  // Reuses the existing Finance "dashboard.view" permission (see
-  // routes/finance.ts) rather than inventing a new permission module for a
-  // control-only surface this small. Approve/cancel/start use the stronger
+  // Finance Roles & Permissions integration: now gated on the real
+  // finance.view permission (see routes/finance.ts), matching every other
+  // Finance read surface. Approve/cancel/start use the stronger
   // requireSuperAdmin tier instead of this one.
-  if (!req.adminUser || !financeAdminCan(req.adminUser, "dashboard", "view")) {
+  if (!req.adminUser || !financeAdminCan(req.adminUser, "finance", "view")) {
     res.status(403).json({ error: "Permission denied" });
     return;
   }

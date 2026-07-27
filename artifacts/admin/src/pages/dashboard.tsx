@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Users,
   Ticket,
@@ -156,6 +157,8 @@ function money(value: number | undefined): string {
 
 export default function Dashboard() {
   const { theme } = useAdminTheme();
+  const { can } = useAdminAuth();
+  const canViewFinance = can("finance", "view");
   const [attendancePeriod, setAttendancePeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
 
   const dashboardQuery = useGetDashboard();
@@ -262,9 +265,9 @@ export default function Dashboard() {
       </header>
 
       <section className="space-y-5">
-        <SectionHeader title="Live Today" description="Cairo-day activity and recorded operational revenue." />
+        <SectionHeader title="Live Today" description={canViewFinance ? "Cairo-day activity and recorded operational revenue." : "Cairo-day operational activity."} />
         <div className="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
-          <article className="revenue-hero relative min-h-60 overflow-hidden rounded-lg border p-5 sm:p-8">
+          {canViewFinance && <article className="revenue-hero relative min-h-60 overflow-hidden rounded-lg border p-5 sm:p-8">
             <div className="revenue-grid absolute inset-0 opacity-60" />
             <div className="absolute -right-12 -top-14 h-52 w-52 rounded-full bg-primary/20 blur-3xl" />
             <div className="absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-[#8A5CFF]/20 blur-3xl" />
@@ -302,7 +305,7 @@ export default function Dashboard() {
                 ) : null}
               </div>
             </div>
-          </article>
+          </article>}
 
           <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-1">
             {isLoading ? [...Array(3)].map((_, index) => <SkeletonCard key={index} />) : [
@@ -314,19 +317,19 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="space-y-5">
+      {canViewFinance && <section className="space-y-5">
         <SectionHeader title="Financial Overview" description="Explicit gross/net revenue and Ballet refund exposure." />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {isLoading ? [...Array(6)].map((_, index) => <SkeletonCard key={index} />) : financialMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
-      </section>
+      </section>}
 
-      <section className="space-y-5">
+      {canViewFinance && <section className="space-y-5">
         <SectionHeader title="Ballet Payment Method Split" description="Current methods plus historical Bank Transfer reporting." />
         <div className="grid gap-4 md:grid-cols-3">
           {isLoading ? [...Array(3)].map((_, index) => <SkeletonCard key={index} />) : balletMethodSplit.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
-      </section>
+      </section>}
 
       <section className="space-y-5">
         <SectionHeader title="Ballet Cancellation & Refunds" description="Enrollment lifecycle and refund-ledger workflow indicators." />

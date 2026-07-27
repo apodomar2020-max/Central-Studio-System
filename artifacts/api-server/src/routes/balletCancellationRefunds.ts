@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Response } from "express";
+import { Router, type IRouter, type Response, type NextFunction } from "express";
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -1004,7 +1004,7 @@ const ListRefundsQuery = z.object({
   status: z.enum(["underReview", "approved", "rejected", "processing", "refunded", "failed", "withdrawn"]).optional(),
 });
 
-router.get("/admin/ballet/refunds", requireAdminAuth, requireAdminPermission("ballet.payments", "view"), async (req, res): Promise<void> => {
+router.get("/admin/ballet/refunds", requireAdminAuth, requireAdminPermission("finance", "view"), async (req, res): Promise<void> => {
   const parsed = ListRefundsQuery.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: "Invalid query parameters" }); return; }
   const { page, limit, status } = parsed.data;
@@ -1042,7 +1042,7 @@ router.get("/admin/ballet/refunds", requireAdminAuth, requireAdminPermission("ba
   res.json({ data: rows, total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });
 });
 
-router.get("/admin/ballet/refunds/:id", requireAdminAuth, requireAdminPermission("ballet.payments", "view"), async (req, res): Promise<void> => {
+router.get("/admin/ballet/refunds/:id", requireAdminAuth, requireAdminPermission("finance", "view"), async (req, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid refund ID" }); return; }
   const [refund] = await db.select().from(balletRefundsTable).where(eq(balletRefundsTable.id, id)).limit(1);
@@ -1087,7 +1087,7 @@ async function validateRefundAmount(tx: typeof db, refundId: number, amountEgp: 
   return { kind: "ok" as const, refund, payment, remaining };
 }
 
-router.post("/admin/ballet/refunds/:id/approve", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), async (req: AdminRequest, res): Promise<void> => {
+router.post("/admin/ballet/refunds/:id/approve", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), requireAdminPermission("finance", "refundsManage"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid refund ID" }); return; }
   const parsed = ApproveRefundBody.safeParse(req.body ?? {});
@@ -1145,7 +1145,7 @@ router.post("/admin/ballet/refunds/:id/approve", requireAdminAuth, requireAdminP
 const AdminNotesBody = z.object({ adminNotes: z.string().min(1).max(2000).optional(), failedReason: z.string().min(1).max(2000).optional() });
 const MarkRefundedBody = z.object({ refundedAmountEgp: z.number().int().positive(), transactionReference: z.string().min(1).max(500), processedAt: z.string().optional() });
 
-router.post("/admin/ballet/refunds/:id/reject", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), async (req: AdminRequest, res): Promise<void> => {
+router.post("/admin/ballet/refunds/:id/reject", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), requireAdminPermission("finance", "refundsManage"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid refund ID" }); return; }
   const parsed = AdminNotesBody.safeParse(req.body ?? {});
@@ -1191,7 +1191,7 @@ router.post("/admin/ballet/refunds/:id/reject", requireAdminAuth, requireAdminPe
   res.json({ refund: result.refund });
 });
 
-router.post("/admin/ballet/refunds/:id/mark-processing", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), async (req: AdminRequest, res): Promise<void> => {
+router.post("/admin/ballet/refunds/:id/mark-processing", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), requireAdminPermission("finance", "refundsManage"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid refund ID" }); return; }
   const now = new Date().toISOString();
@@ -1237,7 +1237,7 @@ router.post("/admin/ballet/refunds/:id/mark-processing", requireAdminAuth, requi
   res.json({ refund: result.refund });
 });
 
-router.post("/admin/ballet/refunds/:id/mark-refunded", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), async (req: AdminRequest, res): Promise<void> => {
+router.post("/admin/ballet/refunds/:id/mark-refunded", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), requireAdminPermission("finance", "refundsManage"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params["id"]);
   const parsed = MarkRefundedBody.safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" }); return; }
@@ -1295,7 +1295,7 @@ router.post("/admin/ballet/refunds/:id/mark-refunded", requireAdminAuth, require
   res.json({ refund: result.refund });
 });
 
-router.post("/admin/ballet/refunds/:id/mark-failed", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), async (req: AdminRequest, res): Promise<void> => {
+router.post("/admin/ballet/refunds/:id/mark-failed", requireAdminAuth, requireAdminPermission("ballet.payments", "edit"), requireAdminPermission("finance", "refundsManage"), async (req: AdminRequest, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid refund ID" }); return; }
   const parsed = AdminNotesBody.safeParse(req.body ?? {});
