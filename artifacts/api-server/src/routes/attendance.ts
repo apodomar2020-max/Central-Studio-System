@@ -126,7 +126,7 @@ router.post(
     bookingId,
     checkedInBy,
     status,
-    paid,
+    settlementMode,
   } = parsed.data;
 
   const performedBy = checkedInBy ?? "system";
@@ -207,15 +207,24 @@ router.post(
       return;
     }
 
-    // ── WALK-IN check-in (no booking) — SEPARATE flow, behaviour unchanged ──
-    // Records that an (un-booked) student attended. This mirrors the existing
-    // walk-in behaviour exactly: optional same-day duplicate guard, optional
-    // package-credit deduction + ledger, attendance row, and notifications.
+    // ── WALK-IN check-in (no booking) ───────────────────────────────────────
+    // Records that an (un-booked) student attended. The Admin's explicit
+    // `settlementMode` choice ("package_credit" | "pay_at_studio" |
+    // "not_paid") is the ONLY thing that decides which write path runs below
+    // — it is mandatory (enforced by the CheckInBodyExtended schema) and the
+    // server never infers it from package availability, payment status, or
+    // participant state. See STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
     // (Booking-linked check-ins go through the shared performBookingCheckIn()
     // above; this path intentionally remains its own implementation.)
-    const usingPackageCredit = creditDeducted === true && packageOrderId != null;
 
     const walkInResult = await db.transaction(async (tx) => {
+      // ── Not Paid — cancel the whole operation up front. Zero writes: no
+      // booking, no attendance, no payment, no credit deduction, no ledger
+      // entry. Nothing below this point in the transaction runs.
+      if (settlementMode === "not_paid") {
+        throw makeCheckInError(400, "walkin_not_paid", "This walk-in was not marked as paid — no records were created.");
+      }
+
       // Step 1 — Duplicate attendance check (only when a class/schedule is given)
       if (classId != null || scheduleId != null) {
         // Serialize concurrent walk-in attempts for the SAME
@@ -255,13 +264,12 @@ router.post(
         }
       }
 
-      // ── Finance Phase 2B-4: Studio Walk-in Atomic Monetary Capture ────────
-      // Only reachable when no valid Package Credit is being used for this
-      // walk-in (that path is completely untouched below) AND the Admin has
-      // explicitly confirmed Paid/Not Paid. Requests that omit `paid`
-      // entirely fall through to the pre-existing attendance-only behavior,
-      // unchanged — this is purely additive.
-      if (!usingPackageCredit && paid === true) {
+      // ── Pay at Studio — explicit Admin choice. Package credits are never
+      // queried or touched on this branch, even if the participant has one
+      // or more valid packages: package availability must never influence
+      // this path. performStudioWalkIn resolves the exact server-side price
+      // and creates the canonical payment record + event atomically.
+      if (settlementMode === "pay_at_studio") {
         const adminId = req.adminUser?.id;
         if (adminId == null) {
           throw makeCheckInError(401, "invalid_qr", "Authenticated admin identity is required to confirm a paid walk-in.");
@@ -277,15 +285,17 @@ router.post(
         });
         return { kind: "paidWalkIn" as const, result };
       }
-      if (!usingPackageCredit && paid === false) {
-        // Not Paid — abort the whole operation. No booking, no attendance,
-        // no Finance rows. Nothing below this point in the transaction runs.
-        throw makeCheckInError(400, "walkin_not_paid", "This walk-in was not marked as paid — no records were created.");
-      }
 
-      // Step 2 — Credit deduction + ledger (with row-level lock), if requested
+      // Step 2 — Credit deduction + ledger (with row-level lock). Only
+      // reachable when the Admin explicitly chose "package_credit".
       let remainingCreditsAfterDeduction: number | null = null;
-      if (creditDeducted && packageOrderId != null) {
+      if (settlementMode === "package_credit") {
+        // Enforced by CheckInBodyExtended's superRefine, re-checked here so
+        // the compiler (and runtime) never treats packageOrderId as present
+        // just because settlementMode is "package_credit".
+        if (packageOrderId == null) {
+          throw makeCheckInError(400, "package_not_found", "packageOrderId is required when settlementMode is \"package_credit\".");
+        }
         if (scheduleId != null) {
           const [schedule] = await tx
             .select({ packageEligible: schedulesTable.packageEligible })
@@ -338,7 +348,7 @@ router.post(
           studentEmail,
           packageOrderId: packageOrderId ?? null,
           classTitle: classTitle ?? null,
-          creditDeducted: creditDeducted ?? false,
+          creditDeducted: settlementMode === "package_credit",
           notes: notes ?? null,
           studentId: studentId ?? null,
           classId: classId ?? null,
@@ -361,7 +371,7 @@ router.post(
         metadata: { className: classTitle, classId, scheduleId },
       });
 
-      if (creditDeducted && packageOrderId != null) {
+      if (settlementMode === "package_credit") {
         await createStudentNotification(tx, {
           studentId: studentId ?? null,
           studentEmail,

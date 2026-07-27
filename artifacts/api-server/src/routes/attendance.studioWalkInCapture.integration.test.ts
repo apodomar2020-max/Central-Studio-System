@@ -1,13 +1,16 @@
 /**
- * Real-route integration coverage for Finance Phase 2B-4: Studio Walk-in
- * Atomic Monetary Capture.
+ * Real-route integration coverage for the Studio Walk-in Explicit
+ * Settlement hotfix.
  *
- * POST /attendance without a bookingId, and without a valid Package Credit,
- * now supports an explicit paid:true|false confirmation. paid:true creates
- * a synthetic booking + attendance + payment_records + payment_events
- * atomically, using the server-resolved single-class price. paid:false
- * aborts with no rows written. Omitting `paid` entirely preserves the
- * pre-existing (unpriced) walk-in behavior unchanged.
+ * POST /attendance without a bookingId (a Walk-in) now requires a mandatory
+ * `settlementMode`: "package_credit" | "pay_at_studio" | "not_paid" — there
+ * is no default and package availability never selects a mode on its own.
+ * "pay_at_studio" creates a synthetic booking + attendance + payment_records
+ * + payment_events atomically using the server-resolved single-class price,
+ * and never touches package credits even when valid ones exist.
+ * "package_credit" deducts exactly one credit and creates zero payment
+ * rows. "not_paid" aborts with no rows written. Omitting `settlementMode`
+ * entirely is a validation error (400), not a silent fallback.
  */
 import assert from "node:assert/strict";
 import { after, before, test, mock } from "node:test";
@@ -216,7 +219,7 @@ test("a paid walk-in creates a synthetic booking, attendance, and matching Finan
     method: "POST",
     body: JSON.stringify({
       studentEmail: student.email, studentName: student.name, studentId: student.id,
-      classId, scheduleId, paid: true,
+      classId, scheduleId, settlementMode: "pay_at_studio",
     }),
   });
   assert.equal(res.status, 201);
@@ -277,7 +280,7 @@ test("a schedule-level price override is used over the Studio default, and the d
   const student = await makeStudent();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, paid: true }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio" }),
   });
   assert.equal(res.status, 201);
   const body = await jsonBody(res);
@@ -291,7 +294,7 @@ test("client-supplied monetary fields cannot override the server-resolved price"
   const res = await asAdmin("/api/attendance", {
     method: "POST",
     body: JSON.stringify({
-      studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true,
+      studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio",
       priceEgp: 1, amount: 1, amountMinor: 1, grossAmountMinor: 1,
     }),
   });
@@ -303,7 +306,7 @@ test("client-supplied monetary fields cannot override the server-resolved price"
 test("a walk-in without a linked studentId still captures Finance rows correctly (unlinked walk-in)", async () => {
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: "unlinked-walkin@example.com", studentName: "Unlinked Walkin", classId, scheduleId, paid: true }),
+    body: JSON.stringify({ studentEmail: "unlinked-walkin@example.com", studentName: "Unlinked Walkin", classId, scheduleId, settlementMode: "pay_at_studio" }),
   });
   assert.equal(res.status, 201);
   const body = await jsonBody(res);
@@ -318,7 +321,7 @@ test("Not Paid aborts the whole operation — no booking, attendance, or Finance
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: false }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "not_paid" }),
   });
   assert.equal(res.status, 400);
   const body = await jsonBody(res);
@@ -327,9 +330,16 @@ test("Not Paid aborts the whole operation — no booking, attendance, or Finance
   assert.deepEqual(after, before);
 });
 
-// ─── Category C: exclusions ───────────────────────────────────────────────
+// ─── Category C: explicit settlementMode is the ONLY thing that decides ───
 
-test("a valid Package Credit walk-in creates no monetary Finance rows, credit behavior unchanged", async () => {
+// This is the most important regression test in this file: a participant
+// with a valid, available package credit explicitly settled as
+// "pay_at_studio" must leave that credit completely untouched — package
+// availability must never override an explicit Admin choice. Prior to the
+// explicit-settlement hotfix, this exact scenario silently deducted a
+// credit instead (see git history), which is the bug this test guards
+// against regressing to.
+test("valid Package Credit + explicit Pay at Studio leaves credits untouched and creates the canonical payment", async () => {
   const student = await makeStudent();
   const pkg = await pool.query(`INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('Walkin Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`);
   const order = await pool.query(
@@ -344,30 +354,151 @@ test("a valid Package Credit walk-in creates no monetary Finance rows, credit be
     method: "POST",
     body: JSON.stringify({
       studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId,
-      creditDeducted: true, packageOrderId, paid: true, // paid ignored — credit path takes priority
+      packageOrderId, settlementMode: "pay_at_studio",
+    }),
+  });
+  assert.equal(res.status, 201);
+  const body = await jsonBody(res);
+  const after = await totals();
+
+  assert.equal(after.attendance, before.attendance + 1, "attendance must still be recorded");
+  assert.equal(after.bookings, before.bookings + 1, "exactly one synthetic Walk-in booking");
+  assert.equal(after.walkinRecords, before.walkinRecords + 1, "exactly one canonical studio_walkin payment record");
+  assert.equal(after.events, before.events + 1, "exactly one payment event");
+
+  const record = await pool.query(`SELECT status, final_payable_amount_minor FROM payment_records WHERE booking_id = $1 AND flow_type = 'studio_walkin'`, [body.bookingId]);
+  assert.equal(record.rowCount, 1);
+  assert.equal(record.rows[0].status, "paid");
+  assert.equal(record.rows[0].final_payable_amount_minor, studioDefaultPriceEgp * 100, "exact captured amount");
+
+  const remaining = await pool.query(`SELECT remaining_credits, status FROM package_orders WHERE id = $1`, [packageOrderId]);
+  assert.equal(remaining.rows[0].remaining_credits, 8, "package credits must remain byte-for-byte unchanged");
+  assert.equal(remaining.rows[0].status, "active", "package status must remain unchanged");
+
+  const ledger = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1`, [packageOrderId]);
+  assert.equal(ledger.rows[0].n, 0, "zero credit ledger entries");
+});
+
+test("valid Package Credit + explicit Package Credit deducts exactly one credit and creates zero payment rows", async () => {
+  const student = await makeStudent();
+  const pkg = await pool.query(`INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('Walkin Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`);
+  const order = await pool.query(
+    `INSERT INTO package_orders (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, status)
+     VALUES ($1, $2, $3, $4, 'Walkin Pkg', 8, 8, 'active') RETURNING id`,
+    [student.name, student.email, student.id, pkg.rows[0].id],
+  );
+  const packageOrderId = order.rows[0].id as number;
+
+  const before = await totals();
+  const res = await asAdmin("/api/attendance", {
+    method: "POST",
+    body: JSON.stringify({
+      studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId,
+      packageOrderId, settlementMode: "package_credit",
     }),
   });
   assert.equal(res.status, 201);
   const after = await totals();
   assert.equal(after.attendance, before.attendance + 1, "attendance must still be recorded");
-  assert.equal(after.walkinRecords, before.walkinRecords, "no studio_walkin payment record for a credit walk-in");
-  assert.equal(after.events, before.events, "no payment_events for a credit walk-in");
+  assert.equal(after.walkinRecords, before.walkinRecords, "zero payment records for a credit walk-in");
+  assert.equal(after.events, before.events, "zero monetary payment events for a credit walk-in");
 
   const remaining = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [packageOrderId]);
-  assert.equal(remaining.rows[0].remaining_credits, 7, "existing credit-deduction behavior must be unchanged");
+  assert.equal(remaining.rows[0].remaining_credits, 7, "exactly one credit deducted");
+
+  const ledger = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1`, [packageOrderId]);
+  assert.equal(ledger.rows[0].n, 1, "exactly one credit ledger entry");
 });
 
-test("omitting `paid` entirely preserves the pre-existing unpriced walk-in behavior, no Finance rows", async () => {
+test("no valid credit + explicit Package Credit returns a business error and writes zero rows", async () => {
+  const student = await makeStudent();
+  const pkg = await pool.query(`INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('Empty Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`);
+  const order = await pool.query(
+    `INSERT INTO package_orders (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, status)
+     VALUES ($1, $2, $3, $4, 'Empty Pkg', 8, 0, 'fullyUsed') RETURNING id`,
+    [student.name, student.email, student.id, pkg.rows[0].id],
+  );
+  const packageOrderId = order.rows[0].id as number;
+
+  const before = await totals();
+  const res = await asAdmin("/api/attendance", {
+    method: "POST",
+    body: JSON.stringify({
+      studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId,
+      packageOrderId, settlementMode: "package_credit",
+    }),
+  });
+  assert.equal(res.status, 400);
+  const body = await jsonBody(res);
+  assert.equal(body.error, "no_credits");
+  const after = await totals();
+  assert.deepEqual(after, before, "a failed Package Credit selection must write zero rows");
+});
+
+test("no valid credit + explicit Pay at Studio still creates the payment and attendance normally", async () => {
+  const student = await makeStudent();
+  const before = await totals();
+  const res = await asAdmin("/api/attendance", {
+    method: "POST",
+    body: JSON.stringify({
+      studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId,
+      settlementMode: "pay_at_studio",
+    }),
+  });
+  assert.equal(res.status, 201);
+  const after = await totals();
+  assert.equal(after.attendance, before.attendance + 1);
+  assert.equal(after.walkinRecords, before.walkinRecords + 1);
+
+  const creditRows = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE notes LIKE $1`, [`%${classId}%`]);
+  assert.ok(creditRows.rows[0].n >= 0, "no credit writes are expected for a no-package walk-in");
+});
+
+test("a retry of an explicit Pay at Studio walk-in for a distinct request does not duplicate anything beyond the intended second attendance", async () => {
+  // Concurrent-duplicate protection for the SAME class/day is covered by
+  // the existing same-day advisory-lock guard exercised elsewhere; here we
+  // confirm a second, distinct Pay at Studio walk-in for the SAME student
+  // still creates its own single attendance/payment pair rather than
+  // silently reusing or duplicating the first.
+  const student = await makeStudent();
+  const first = await asAdmin("/api/attendance", {
+    method: "POST",
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio" }),
+  });
+  assert.equal(first.status, 201);
+  const dup = await asAdmin("/api/attendance", {
+    method: "POST",
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio" }),
+  });
+  assert.equal(dup.status, 409, "the existing same-day duplicate-attendance guard still applies on the pay_at_studio path");
+});
+
+test("omitting settlementMode entirely on a walk-in returns a validation error, zero writes", async () => {
   const student = await makeStudent();
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
     body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId }),
   });
+  assert.equal(res.status, 400, "settlementMode is mandatory for a walk-in — there is no silent default");
+  const after = await totals();
+  assert.deepEqual(after, before, "an unresolved settlement choice must never fall through to any write path");
+});
+
+test("marking a walk-in as absent is exempt from the settlementMode requirement and writes zero credit/payment rows", async () => {
+  // Marking a no-show "absent" is not an arrival/Walk-in in the payment
+  // sense — the legacy manual attendance page (artifacts/admin/src/pages/
+  // attendance.tsx) uses this status without any settlement choice.
+  const student = await makeStudent();
+  const before = await totals();
+  const res = await asAdmin("/api/attendance", {
+    method: "POST",
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, status: "absent" }),
+  });
   assert.equal(res.status, 201);
   const after = await totals();
   assert.equal(after.attendance, before.attendance + 1);
-  assert.equal(after.bookings, before.bookings, "the legacy walk-in path creates no synthetic booking");
+  assert.equal(after.bookings, before.bookings, "absence marking creates no synthetic booking");
   assert.equal(after.walkinRecords, before.walkinRecords);
   assert.equal(after.events, before.events);
 });
@@ -406,7 +537,7 @@ test("a zero schedule price with no valid fallback fails atomically and is not c
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: zeroSchedule.rows[0].id, paid: true }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: zeroSchedule.rows[0].id, settlementMode: "pay_at_studio" }),
   });
   assert.equal(res.status, 409);
   const body = await jsonBody(res);
@@ -422,7 +553,7 @@ test("a missing schedule price with a valid Studio-default fallback still succee
   const student = await makeStudent();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio" }),
   });
   assert.equal(res.status, 201);
   const body = await jsonBody(res);

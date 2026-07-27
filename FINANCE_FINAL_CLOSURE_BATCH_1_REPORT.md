@@ -113,6 +113,8 @@ Backend safety was already sound and required no change: `candidateKey` binding 
 
 ## 11. Walk-in Credit Re-verification
 
+> **Superseded** — the automatic package-credit-preference behavior this section verified (a valid credit was silently preferred over Pay at Studio) was replaced by the mandatory explicit 3-way settlement choice (`package_credit` | `pay_at_studio` | `not_paid`, no default). See `STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md` and the `hotfix/studio-walkin-explicit-payment-choice` change. The verification below is retained for historical record only.
+
 Re-ran the full existing walk-in test suite (17 pre-existing tests, unaffected — Part C is UI-only and never touches `checkInService.ts`/`adminAttendanceGateway.ts`) plus 2 new tests proving, over real HTTP against a real Postgres row lock: exactly one credit deducted, exactly one `credit_transactions` ledger row, exactly one `attendance` row, zero `payment_records` rows, the response carries the post-deduction balance, and a retried/duplicate scan does not deduct twice. Added a true-concurrency test (`Promise.all`, two simultaneous requests) proving exactly one deduction under a real race — re-run 3× for stability, no intermittent duplicates. No defect was found in the transactional core; no code change was made to it.
 
 ## 12. Payment-to-Booking State Linkage

@@ -48,3 +48,18 @@ test("a not-eligible candidate never falls through to the generic eligibility st
   assert.doesNotMatch(source, /default: return \{ label: candidate\.reason \?\? candidate\.eligibility/);
   assert.match(source, /default: return \{ label: candidate\.reason \?\? "Not eligible", color: RED \};/);
 });
+
+// ─── Studio Walk-in Explicit Settlement hotfix ───────────────────────────────
+
+test("pickCandidate never pre-selects a settlement mode for a Walk-in, even when a valid package credit exists", () => {
+  // The old bug: paymentMode defaulted to "package_credit" automatically
+  // whenever candidate.hasPackageCredit was true, so package availability
+  // silently made the choice for the Admin. Package availability must never
+  // decide this — the Admin must click one of the settlement buttons.
+  assert.doesNotMatch(source, /candidate\.hasPackageCredit\s*\?\s*"package_credit"/);
+  assert.match(source, /setPaymentMode\(isWalkIn \? null : "pay_at_studio"\)/);
+});
+
+test("Confirm Attendance is disabled for a Studio candidate until an explicit settlement mode is chosen", () => {
+  assert.match(source, /paymentMode == null \|\|/);
+});

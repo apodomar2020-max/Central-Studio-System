@@ -445,14 +445,15 @@ export async function performBookingCheckIn(
 // creates its own synthetic booking (there is no pre-existing booking to
 // check in against — that's what makes it a walk-in), then performs the
 // SAME attended-transition shape (attendance row) plus the new Finance
-// capture, all inside one transaction. Called ONLY when:
-//   - no valid Package Credit is being used for this walk-in (that path
-//     stays exactly as it was — see attendance.ts's package-credit branch,
-//     untouched by this function), and
-//   - the Admin has explicitly confirmed Paid (paid:true in the request).
+// capture, all inside one transaction. Called ONLY when the Admin has
+// EXPLICITLY selected settlementMode:"pay_at_studio" for this walk-in.
+// Package availability is never consulted here and never overrides this
+// choice — even a participant with valid package credits leaves those
+// credits byte-for-byte unchanged on this path. See
+// STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
 //
 // The caller (attendance.ts) is responsible for the Not Paid short-circuit
-// (paid:false → abort before ever calling this) and for opening the
+// (settlementMode:"not_paid" → abort before ever calling this) and for opening the
 // transaction / dispatching the returned pendingPush after it commits —
 // mirroring the exact pattern already established in Phase 2B-1/2B-2
 // (packageOrders.ts / bookings.ts): the notification ROW is inserted here

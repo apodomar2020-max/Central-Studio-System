@@ -90,7 +90,12 @@ export default function AttendancePage() {
   const [searchEmail, setSearchEmail] = useState("");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [classTitle, setClassTitle] = useState("");
-  const [deductCredit, setDeductCredit] = useState(true);
+  // Mandatory explicit Walk-in settlement choice — no default, no
+  // inference from package availability. Not required when marking
+  // "absent" (a no-show record, not an arrival/Walk-in).
+  const [walkInSettlement, setWalkInSettlement] = useState<
+    "package_credit" | "pay_at_studio" | "not_paid" | null
+  >(null);
   const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>("checked_in");
   const [period, setPeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
   const [successMsg, setSuccessMsg] = useState("");
@@ -158,11 +163,12 @@ export default function AttendancePage() {
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: getListAttendanceQueryKey() });
         const statusLabel = STATUS_CONFIG[checkInStatus]?.label ?? checkInStatus;
-        setSuccessMsg(`✓ ${data.studentName} marked as ${statusLabel}${deductCredit && selectedPackageId ? " — 1 credit deducted" : ""}`);
+        setSuccessMsg(`✓ ${data.studentName} marked as ${statusLabel}${walkInSettlement === "package_credit" ? " — 1 credit deducted" : ""}`);
         setTimeout(() => setSuccessMsg(""), 5000);
         setSelectedPackageId(null);
         setClassTitle("");
         setCheckInStatus("checked_in");
+        setWalkInSettlement(null);
       },
     },
   });
@@ -185,16 +191,30 @@ export default function AttendancePage() {
   function handleCheckIn() {
     if (!canManualCheckIn || !searchEmail) return;
     const order = studentOrders.find((o) => o.id === selectedPackageId);
-    const shouldDeduct = deductCredit && !!selectedPackageId && checkInStatus !== "absent";
+    // "absent" is a no-show record, not an arrival — no settlement choice
+    // is required or sent. Every other status is a genuine Walk-in arrival
+    // and requires an explicit settlement choice; there is no default.
+    if (checkInStatus !== "absent" && !walkInSettlement) return;
+    if (checkInStatus !== "absent" && walkInSettlement === "package_credit" && !selectedPackageId) return;
+    if (checkInStatus !== "absent" && walkInSettlement === "not_paid") {
+      // Cancelled at the UI boundary — no request is sent at all.
+      setSuccessMsg("Walk-in cancelled — marked Not Paid. No records were created.");
+      setTimeout(() => setSuccessMsg(""), 5000);
+      setSelectedPackageId(null);
+      setClassTitle("");
+      setCheckInStatus("checked_in");
+      setWalkInSettlement(null);
+      return;
+    }
     checkIn({
       data: {
         studentEmail: searchEmail,
         studentName: order?.studentName ?? searchEmail,
-        packageOrderId: selectedPackageId,
+        packageOrderId: checkInStatus !== "absent" && walkInSettlement === "package_credit" ? selectedPackageId : null,
         classTitle: classTitle || null,
-        creditDeducted: shouldDeduct,
         status: checkInStatus,
         notes: null,
+        ...(checkInStatus !== "absent" ? { settlementMode: walkInSettlement } : {}),
       },
     });
   }
@@ -362,21 +382,71 @@ export default function AttendancePage() {
                   />
                 </div>
 
-                {selectedPackageId && checkInStatus !== "absent" && (
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={deductCredit}
-                      onChange={(e) => setDeductCredit(e.target.checked)}
-                      className="rounded"
-                    />
-                    <span className="text-sm" style={{ color: "#9CA3AF" }}>Deduct 1 credit from selected package</span>
-                  </label>
+                {checkInStatus !== "absent" && (
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: MUTED }}>
+                      Settlement Method (required)
+                    </label>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setWalkInSettlement("package_credit")}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                        style={{
+                          background: walkInSettlement === "package_credit" ? `${STUDIO_CYAN}15` : BG_ROW,
+                          border: `1px solid ${walkInSettlement === "package_credit" ? STUDIO_CYAN + "50" : BORDER}`,
+                        }}
+                      >
+                        <span className="font-medium text-foreground">Use Package Credit</span>
+                      </button>
+                      {walkInSettlement === "package_credit" && !selectedPackageId && (
+                        <div className="text-sm px-3 py-2.5 rounded-xl" style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}>
+                          Select a package with available credit above.
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setWalkInSettlement("pay_at_studio")}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                        style={{
+                          background: walkInSettlement === "pay_at_studio" ? `${STUDIO_CYAN}15` : BG_ROW,
+                          border: `1px solid ${walkInSettlement === "pay_at_studio" ? STUDIO_CYAN + "50" : BORDER}`,
+                        }}
+                      >
+                        <span className="font-medium text-foreground">Pay at Studio</span>
+                      </button>
+                      {walkInSettlement === "pay_at_studio" && (
+                        <div className="text-sm px-3 py-2.5 rounded-xl" style={{ background: `${STUDIO_CYAN}10`, color: STUDIO_CYAN, border: `1px solid ${STUDIO_CYAN}25` }}>
+                          The single-class price will be charged. Package credits will not be used, even if available.
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setWalkInSettlement("not_paid")}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                        style={{
+                          background: walkInSettlement === "not_paid" ? `${STUDIO_CYAN}15` : BG_ROW,
+                          border: `1px solid ${walkInSettlement === "not_paid" ? STUDIO_CYAN + "50" : BORDER}`,
+                        }}
+                      >
+                        <span className="font-medium text-foreground">Not Paid</span>
+                      </button>
+                      {walkInSettlement === "not_paid" && (
+                        <div className="text-sm px-3 py-2.5 rounded-xl" style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}>
+                          This walk-in will be cancelled — no attendance, booking, payment, or credit records will be created.
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
 
                 <button
                   onClick={handleCheckIn}
-                  disabled={isCheckingIn}
+                  disabled={
+                    isCheckingIn ||
+                    (checkInStatus !== "absent" &&
+                      (!walkInSettlement || (walkInSettlement === "package_credit" && !selectedPackageId)))
+                  }
                   className="w-full py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
                   style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
                 >
