@@ -6,7 +6,7 @@
  * (packageName, credits, dates, status) — nothing faked.
  */
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -203,6 +203,14 @@ export default function PackageCenterScreen() {
     await refetch();
     setRefreshing(false);
   }, [refetch]);
+
+  // Finance Batch 1 (Part B2): refetch on every screen focus, not only app
+  // foreground — same rationale as credit-history.tsx.
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
 
   const pendingRequests = useMemo(() => packages.filter(isPendingRequest), [packages]);
   const rejectedRequests = useMemo(() => packages.filter(isRejectedRequest), [packages]);

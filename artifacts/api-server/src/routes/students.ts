@@ -604,7 +604,15 @@ async function buildStudentOverviewData(
   // package_orders has no reliable price field (packageId is a legacy FK
   // that may not match a current price_packages row).
   // ---------------------------------------------------------------------
-  const activePackagePromise = permissions.canViewPackages
+  // Finance Batch 1 fix: this used to `.limit(1)` and return a single active
+  // package's remainingCredits as "the" balance — wrong whenever a student
+  // has more than one active package (e.g. an old 3-credit package plus a
+  // newly activated 4-credit package), since only one of the two rows would
+  // ever be counted. availableCredits below is now the SUM of remainingCredits
+  // across every qualifying active package; activePackages carries the full
+  // contributing list, and activePackage (below) keeps the single
+  // soonest-expiring package for its existing display purpose only.
+  const activePackagesPromise = permissions.canViewPackages
     ? db
         .select()
         .from(packageOrdersTable)
@@ -614,9 +622,7 @@ async function buildStudentOverviewData(
           sql`${packageOrdersTable.remainingCredits} > 0`,
         ))
         .orderBy(sql`${packageOrdersTable.expiresAt} asc nulls last`)
-        .limit(1)
-        .then((r) => r[0] ?? null)
-    : Promise.resolve(null);
+    : Promise.resolve([] as (typeof packageOrdersTable.$inferSelect)[]);
 
   const recentPackagesPromise = permissions.canViewPackages
     ? db
@@ -700,7 +706,7 @@ async function buildStudentOverviewData(
     recentBookingsRaw,
     totalAttendance,
     recentAttendanceRaw,
-    activePackage,
+    activePackages,
     recentPackages,
     creditTransactions,
     feedbackAgg,
@@ -712,13 +718,22 @@ async function buildStudentOverviewData(
     recentBookingsPromise,
     totalAttendancePromise,
     recentAttendancePromise,
-    activePackagePromise,
+    activePackagesPromise,
     recentPackagesPromise,
     creditTransactionsPromise,
     feedbackAggPromise,
     recentFeedbackPromise,
     danceInterestsPromise,
   ]);
+
+  // Canonical availableCredits: the sum of remainingCredits across every
+  // qualifying active package (excludes pendingPayment/cancelled/fullyUsed/
+  // expired packages and non-owned rows via packageOwnerCondition/status/
+  // remainingCredits>0 filters already applied in activePackagesPromise
+  // above). activePackage keeps the single soonest-expiring package for its
+  // existing narrower display purpose (package name/expiry sub-label).
+  const activePackage = activePackages[0] ?? null;
+  const availableCredits = activePackages.reduce((sum, p) => sum + p.remainingCredits, 0);
 
   const recentBookings = recentBookingsRaw.map((b) => ({
     id: b.id,
@@ -784,7 +799,20 @@ async function buildStudentOverviewData(
           expiresAt: activePackage.expiresAt ?? null,
         }
       : null,
-    remainingCredits: activePackage?.remainingCredits ?? null,
+    // Canonical availableCredits — the sum across every qualifying active
+    // package, not just one. Kept under the existing `remainingCredits` key
+    // for backward compatibility with existing Admin UI consumers.
+    remainingCredits: permissions.canViewPackages ? availableCredits : null,
+    availableCredits: permissions.canViewPackages ? availableCredits : null,
+    // Full contributing-package list behind the aggregate above, for any
+    // surface that needs to show the breakdown rather than just the total.
+    activePackages: activePackages.map((p) => ({
+      id: p.id,
+      packageName: p.packageName,
+      remainingCredits: p.remainingCredits,
+      totalCredits: p.totalCredits,
+      expiresAt: p.expiresAt ?? null,
+    })),
     packageExpiry: activePackage?.expiresAt ?? null,
     feedbackAverage: feedbackAgg.avg,
     feedbackCount: feedbackAgg.count,

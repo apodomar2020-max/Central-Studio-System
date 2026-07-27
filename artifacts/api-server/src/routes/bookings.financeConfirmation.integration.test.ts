@@ -365,18 +365,25 @@ test("B7: exactly one 'confirmed' payment_events row is appended", async () => {
   assert.equal(await paymentEventCount(paymentRecordId, "confirmed"), 1);
 });
 
-test("B8: the booking's operational transition remains correct alongside the Finance write", async () => {
+test("B8: the booking's operational transition remains correct alongside the Finance write (Finance Batch 1 Part E: payment confirmation now also confirms the booking)", async () => {
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const { id } = await makeCanonicalPendingBooking(run, "b8");
   const bookingStatusBefore = (await bookingRow(id)).bookingStatus;
+  assert.equal(bookingStatusBefore, "pending", "setup: a freshly created direct-payment booking starts pending");
 
   const res = await confirmPaid(id, { confirmedPaymentMethod: "cash" });
   assert.equal(res.status, 200);
   const body = await jsonBody(res);
   assert.equal(body.paymentStatus, "paid");
+  assert.equal(body.bookingStatus, "confirmed", "the response must report the booking as confirmed, not left pending");
   const row = await bookingRow(id);
   assert.equal(row.paymentStatus, "paid");
-  assert.equal(row.bookingStatus, bookingStatusBefore, "the Finance write must not itself mutate bookingStatus");
+  // Reversed from the original assertion here (which encoded the exact bug
+  // reported: paymentStatus became "paid" while bookingStatus silently
+  // stayed "pending", leaving Confirm/Reject visible in the Admin UI even
+  // though payment was already collected) — the Finance write and the
+  // booking-status transition are now atomically one fact, not two.
+  assert.equal(row.bookingStatus, "confirmed", "the Finance write must ALSO confirm the booking — this was the exact reported bug");
 });
 
 test("B9: the payment-confirmation notification (type payment_paid) is inserted exactly once", async () => {

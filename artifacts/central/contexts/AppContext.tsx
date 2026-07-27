@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState, type AppStateStatus } from "react-native";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
@@ -317,6 +318,26 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   useEffect(() => {
     loadPersistedState();
+  }, []);
+
+  // Finance Batch 1 (Part B2): credit/package data is server-authoritative
+  // but can go stale on-device — e.g. an admin activates a package or
+  // deducts a credit at check-in while this app is backgrounded, and there
+  // is no push-driven cache invalidation for it. Refetch packages/bookings
+  // whenever the app returns to the foreground, one fetch per transition
+  // (not polling), so a student never has to force-quit/reopen the app to
+  // see an updated balance.
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const cameToForeground = appStateRef.current.match(/inactive|background/) && nextState === "active";
+      appStateRef.current = nextState;
+      if (!cameToForeground || !userRef.current) return;
+      fetchAndSetPackages().catch(() => {});
+      fetchAndSetBookings().catch(() => {});
+    });
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadPersistedState() {

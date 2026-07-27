@@ -122,15 +122,32 @@ function formatTime(t: string | null): string {
   return `${h12}:${match[2]} ${period}`;
 }
 
+/**
+ * Finance Batch 1 (Part C): a candidate with a real booking (bookingId !=
+ * null) and a Studio walk-in OFFER (bookingId == null — this account/child
+ * simply has an open, unbooked check-in window right now) both used to
+ * render as the identical green "Eligible now" label — this is exactly what
+ * caused UAT confusion: every family member looked "booked" for the class in
+ * front of the admin, when only the actual booked participant truly was.
+ * Booked and walk-in candidates now get distinct labels so the two can never
+ * be visually confused, without changing any backend eligibility logic.
+ */
+function isBookedCandidate(candidate: Candidate): boolean {
+  return candidate.bookingId != null || candidate.program === "ballet";
+}
+
 function eligibilityLabel(candidate: Candidate): { label: string; color: string } {
   switch (candidate.eligibility) {
-    case "eligible": return { label: "Eligible now", color: GREEN };
+    case "eligible":
+      return isBookedCandidate(candidate)
+        ? { label: "Booked for this class", color: GREEN }
+        : { label: "Available as Walk-in", color: CYAN };
     case "too_early": return { label: candidate.reason ?? "Too early", color: AMBER };
     case "ended": return { label: candidate.reason ?? "Closed", color: MUTED };
     case "already_recorded": return { label: candidate.reason ?? "Already recorded", color: MUTED };
     case "no_active_subscription": return { label: candidate.reason ?? "No active subscription", color: RED };
     case "cancelled": return { label: candidate.reason ?? "Cancelled", color: RED };
-    default: return { label: candidate.reason ?? candidate.eligibility, color: RED };
+    default: return { label: candidate.reason ?? "Not eligible", color: RED };
   }
 }
 
@@ -505,50 +522,72 @@ export function UnifiedAttendanceDialog({
             {resolverResult.accounts.length === 0 ? (
               <p className="text-sm text-center py-8" style={{ color: MUTED }}>No matching account found.</p>
             ) : (
-              resolverResult.accounts.map((account) => (
-                <div key={account.accountId} className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: MUTED }}>
-                    {account.accountName} {account.maskedPhone ? `· ${account.maskedPhone}` : ""}
-                  </p>
-                  {account.candidates.length === 0 ? (
-                    <p className="text-sm rounded-lg p-3" style={{ border: `1px solid ${BORDER}`, color: MUTED }}>No eligible class right now for this account.</p>
-                  ) : (
-                    account.candidates.map((candidate) => {
-                      const elig = eligibilityLabel(candidate);
-                      const clickable = candidate.eligibility === "eligible";
-                      return (
-                        <button
-                          key={candidate.candidateKey}
-                          disabled={!clickable}
-                          onClick={() => pickCandidate(account, candidate)}
-                          className="w-full text-left rounded-xl p-3 flex items-center gap-3 disabled:opacity-60"
-                          style={{ border: `1px solid ${BORDER}`, background: CARD }}
-                        >
-                          <div className="h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: candidate.program === "ballet" ? `${PURPLE}22` : `${CYAN}22`, color: candidate.program === "ballet" ? PURPLE : CYAN }}>
-                            {candidate.participantInitials}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold truncate">{candidate.participantName}</span>
-                              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: candidate.program === "ballet" ? `${PURPLE}22` : `${CYAN}22`, color: candidate.program === "ballet" ? PURPLE : CYAN }}>
-                                {candidate.program}
-                              </span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "hsl(var(--muted))", color: MUTED }}>
-                                {candidate.participantType === "child" ? "Child" : "Self"}
-                              </span>
-                            </div>
-                            <p className="text-xs truncate" style={{ color: MUTED }}>
-                              {candidate.className ?? "Class"} · {formatTime(candidate.startTime)}{candidate.endTime ? ` – ${formatTime(candidate.endTime)}` : ""}
-                              {candidate.level ? ` · ${candidate.level.name}` : ""}{candidate.group ? ` / ${candidate.group.name}` : ""}
-                            </p>
-                          </div>
-                          <span className="text-xs font-semibold flex-shrink-0" style={{ color: elig.color }}>{elig.label}</span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              ))
+              resolverResult.accounts.map((account) => {
+                // Finance Batch 1 (Part C, decision tree): when this account
+                // has at least one real booking-based candidate for the
+                // current occurrence, show ONLY those booked candidates —
+                // unrelated family members with an unbooked walk-in window
+                // open right now must never render alongside them looking
+                // "eligible" the same way (Case 1/2). Only when NO one has
+                // an actual booking do we fall into Walk-in mode and offer
+                // the account/child list explicitly labeled as such (Case 3).
+                const bookedCandidates = account.candidates.filter(isBookedCandidate);
+                const walkInCandidates = account.candidates.filter((c) => !isBookedCandidate(c));
+                const visibleCandidates = bookedCandidates.length > 0 ? bookedCandidates : walkInCandidates;
+                const sectionLabel = bookedCandidates.length > 0
+                  ? (bookedCandidates.length === 1 ? "Booked participant" : "Booked participants")
+                  : "Walk-in — no booking found, select a participant";
+
+                return (
+                  <div key={account.accountId} className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: MUTED }}>
+                      {account.accountName} {account.maskedPhone ? `· ${account.maskedPhone}` : ""}
+                    </p>
+                    {account.candidates.length === 0 ? (
+                      <p className="text-sm rounded-lg p-3" style={{ border: `1px solid ${BORDER}`, color: MUTED }}>No eligible class right now for this account.</p>
+                    ) : (
+                      <>
+                        <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: bookedCandidates.length > 0 ? GREEN : CYAN }}>
+                          {sectionLabel}
+                        </p>
+                        {visibleCandidates.map((candidate) => {
+                          const elig = eligibilityLabel(candidate);
+                          const clickable = candidate.eligibility === "eligible";
+                          return (
+                            <button
+                              key={candidate.candidateKey}
+                              disabled={!clickable}
+                              onClick={() => pickCandidate(account, candidate)}
+                              className="w-full text-left rounded-xl p-3 flex items-center gap-3 disabled:opacity-60"
+                              style={{ border: `1px solid ${BORDER}`, background: CARD }}
+                            >
+                              <div className="h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: candidate.program === "ballet" ? `${PURPLE}22` : `${CYAN}22`, color: candidate.program === "ballet" ? PURPLE : CYAN }}>
+                                {candidate.participantInitials}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold truncate">{candidate.participantName}</span>
+                                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: candidate.program === "ballet" ? `${PURPLE}22` : `${CYAN}22`, color: candidate.program === "ballet" ? PURPLE : CYAN }}>
+                                    {candidate.program}
+                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "hsl(var(--muted))", color: MUTED }}>
+                                    {candidate.participantType === "child" ? "Child" : "Self"}
+                                  </span>
+                                </div>
+                                <p className="text-xs truncate" style={{ color: MUTED }}>
+                                  {candidate.className ?? "Class"} · {formatTime(candidate.startTime)}{candidate.endTime ? ` – ${formatTime(candidate.endTime)}` : ""}
+                                  {candidate.level ? ` · ${candidate.level.name}` : ""}{candidate.group ? ` / ${candidate.group.name}` : ""}
+                                </p>
+                              </div>
+                              <span className="text-xs font-semibold flex-shrink-0" style={{ color: elig.color }}>{elig.label}</span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         )}

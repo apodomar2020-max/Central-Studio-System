@@ -90,6 +90,8 @@ export const FINANCE_AMOUNT_SOURCES = [
   "ballet_payment_snapshot",
   "ballet_refund_snapshot",
   "promotion_redemption_snapshot",
+  /** Canonical payment_records creation-time snapshot (Phase 2B writers). */
+  "payment_record_snapshot",
   "current_package_catalog_price",
   "current_schedule_price",
   "current_single_class_setting",
@@ -160,6 +162,11 @@ export const FINANCE_PAYMENT_METHODS = [
   "pay_at_studio",
   "online_payment",
   "package_credit",
+  // Finance Batch 1: canonical payment_records.confirmed_payment_method
+  // vocabulary — a real admin-confirmed collection method, distinct from
+  // "in_person" (a Ballet-payments raw value with different provenance).
+  "cash",
+  "card",
   "unknown",
 ] as const;
 export type FinanceNormalizedPaymentMethod = (typeof FINANCE_PAYMENT_METHODS)[number];
@@ -473,6 +480,8 @@ export const FINANCE_PAYMENT_METHOD_LABELS: Readonly<
   pay_at_studio: "Pay at Studio",
   online_payment: "Online Payment",
   package_credit: "Package Credit",
+  cash: "Cash",
+  card: "Card",
   unknown: "Unknown",
 };
 

@@ -1208,6 +1208,13 @@ router.patch(
   }
   const confirmedPushState: { pending: { studentId: number; studentEmail: string; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
   let financeCompatibility: "legacy_payment_record_missing" | null = null;
+  // Finance Batch 1 (Part E): true only when THIS transaction auto-forced
+  // bookingStatus pending -> confirmed as a side effect of confirming
+  // payment (see the guard block below) — used to suppress the generic
+  // booking-status-changed notification for that specific transition, so a
+  // single payment confirmation sends one push ("payment confirmed"), not
+  // two ("payment confirmed" + "booking confirmed") for the same action.
+  let bookingStatusAutoConfirmedByPayment = false;
   const methodParsed = BookingConfirmedPaymentMethod.safeParse(req.body);
   const requestedConfirmedPaymentMethod: PaymentRecordConfirmedMethod | undefined = methodParsed.success
     ? methodParsed.data.confirmedPaymentMethod
@@ -1334,6 +1341,26 @@ router.patch(
       if (confirmingAdminId == null) {
         return { kind: "admin_identity_required" as const };
       }
+
+      // Finance Batch 1 (Part E): payment confirmation must atomically
+      // confirm the booking too — previously paymentStatus could become
+      // "paid" while bookingStatus stayed "pending" (its default-inherited
+      // value, since the Admin "Confirm Payment" action only sends
+      // {paymentStatus, confirmedPaymentMethod}), leaving Confirm/Reject
+      // visible in the Admin UI even though payment was already collected.
+      // Every guard above (source paymentStatus pending_payment/failed,
+      // bookingStatus not cancelled/rejected/attended, package_credit/free
+      // excluded) has already run by this point, so "pending" is the only
+      // bookingStatus value this transition can still be sitting on —
+      // forcing it to "confirmed" here needs no further guard. If the
+      // caller's own request already explicitly targets a bookingStatus
+      // other than "pending" (e.g. some future combined admin action), that
+      // explicit choice is respected instead of being overwritten.
+      if (normalized.bookingStatus === "pending") {
+        normalized.bookingStatus = "confirmed";
+        normalized.status = legacyStatusFromSplit(normalized.bookingStatus, normalized.paymentStatus);
+        bookingStatusAutoConfirmedByPayment = true;
+      }
     }
 
     const [updated] = await tx.update(bookingsTable).set(normalized).where(eq(bookingsTable.id, params.data.id)).returning();
@@ -1363,7 +1390,7 @@ router.patch(
       }
     }
 
-    if (updated.bookingStatus !== existing.bookingStatus) {
+    if (updated.bookingStatus !== existing.bookingStatus && !bookingStatusAutoConfirmedByPayment) {
       const notification = await bookingStatusNotification(tx, updated, updated.bookingStatus);
       if (notification) {
         await createStudentNotification(tx, {

@@ -602,7 +602,7 @@ const dpStyles = StyleSheet.create({
 });
 
 export default function ProfileScreen() {
-  const { user, setUser, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications } = useAppContext();
+  const { user, setUser, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications, refreshUserPackages } = useAppContext();
   const alert = useCentralAlert();
   const { localEnabled: backgroundMusicEnabled, setLocalEnabled: setBackgroundMusicEnabled } = useBackgroundMusic();
   const insets = useSafeAreaInsets();
@@ -617,6 +617,13 @@ export default function ProfileScreen() {
       navigatingRef.current = false;
       if (!user) return undefined;
       let active = true;
+
+      // Finance Batch 1 (Part B2): refresh credit/package data on every
+      // screen focus, not just app foreground — covers the case where the
+      // student navigates back to Profile from another tab in the same
+      // session (e.g. right after an admin activates a package while the
+      // student is browsing classes).
+      refreshUserPackages().catch(() => {});
 
       customFetch<MyAttendanceResponse>("/api/my/attendance?limit=100")
         .then((res) => {
@@ -637,7 +644,7 @@ export default function ProfileScreen() {
       return () => {
         active = false;
       };
-    }, [user]),
+    }, [user, refreshUserPackages]),
   );
 
   const upcoming = bookings.filter(

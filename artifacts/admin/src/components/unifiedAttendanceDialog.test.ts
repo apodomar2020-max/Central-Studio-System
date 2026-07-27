@@ -12,6 +12,39 @@ test("Ballet confirmation submits identity only and never client-controlled occu
 
 test("resolver results require an explicit candidate pick before confirmation", () => {
   assert.match(source, /function pickCandidate\(account: AccountGroup, candidate: Candidate\)/);
-  assert.match(source, /if \(!selected\) return;/);
+  assert.match(source, /if \(!selected \|\| submitLock\) return;/);
   assert.doesNotMatch(source, /setSelected\([^\n]*candidates\[0\]/);
+});
+
+// ─── Finance Batch 1 (Part C) — booked vs Walk-in candidate distinction ──────
+
+test("a booked candidate (real bookingId) and a Walk-in offer (no bookingId) are never labeled identically", () => {
+  assert.match(source, /function isBookedCandidate\(candidate: Candidate\): boolean/);
+  assert.match(source, /candidate\.bookingId != null \|\| candidate\.program === "ballet"/);
+  // The old bug: every "eligible" candidate rendered the identical
+  // "Eligible now" label regardless of whether it had a real booking.
+  assert.doesNotMatch(source, /label: "Eligible now"/);
+  assert.match(source, /label: "Booked for this class"/);
+  assert.match(source, /label: "Available as Walk-in"/);
+});
+
+test("when at least one participant has a real booking, unbooked family members are not shown as candidates at all", () => {
+  // visibleCandidates must resolve to ONLY bookedCandidates whenever any
+  // exist — walkInCandidates must never render alongside a real booking for
+  // the same account/occurrence (this is exactly the UAT symptom: every
+  // family member appearing "eligible" when only one was actually booked).
+  assert.match(source, /const bookedCandidates = account\.candidates\.filter\(isBookedCandidate\)/);
+  assert.match(source, /const walkInCandidates = account\.candidates\.filter\(\(c\) => !isBookedCandidate\(c\)\)/);
+  assert.match(
+    source,
+    /const visibleCandidates = bookedCandidates\.length > 0 \? bookedCandidates : walkInCandidates/,
+  );
+});
+
+test("a not-eligible candidate never falls through to the generic eligibility string as a label", () => {
+  // Case 4 (Not eligible): every switch branch must resolve to a concrete,
+  // concise label — never the raw internal eligibility enum value leaking
+  // into the UI (e.g. "no_active_subscription" shown verbatim).
+  assert.doesNotMatch(source, /default: return \{ label: candidate\.reason \?\? candidate\.eligibility/);
+  assert.match(source, /default: return \{ label: candidate\.reason \?\? "Not eligible", color: RED \};/);
 });
