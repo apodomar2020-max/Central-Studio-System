@@ -4,7 +4,7 @@
 
 Batch 1 implements Parts A–G of the Finance Final Closure plan: canonical `payment_records` integration into the Finance read model, a credit-aggregation bug fix plus mobile refresh wiring, an Attendance Gateway UI fix distinguishing booked participants from Walk-in offers, re-verification of the walk-in credit-deduction core, an atomic payment→booking-confirmation fix, duplicate-booking UI/DB protection, and a reproduction attempt for the reported Tuesday/Thursday occurrence bleed (not reproducible in the current codebase).
 
-All changes are scoped to Finance/booking/attendance/credit code paths. No Ballet-only files were touched. One migration was added (a partial unique index, additive and non-destructive). 233 tests executed across 13 test files/runs, all passing, with stability re-runs on every concurrency-sensitive test. `admin` and `api-server` typecheck cleanly; `central` typecheck has only pre-existing, unrelated `node:test`/`node:assert` type-declaration errors on Ballet test files (present at baseline, confirmed unaffected by this work).
+All changes are scoped to Finance/booking/attendance/credit code paths. No Ballet-only files were touched. One migration was added (a partial unique index, additive and non-destructive). **Final total: 242 tests executed, 242 passed, 0 failed, 0 skipped**, across every test file/run listed in §15, with stability re-runs on every concurrency-sensitive test. **Central production typecheck: 0 errors. Admin typecheck: 0 errors. API build: clean.** (The API typecheck command was found to exhibit pre-existing, baseline-reproduced non-determinism unrelated to this work — detailed in the Central Typecheck Scope Fix section below, not treated as a headline failure.)
 
 ## 2. Baseline and Worktree
 
@@ -12,7 +12,14 @@ All changes are scoped to Finance/booking/attendance/credit code paths. No Balle
 - Local `main` was dirty with unrelated Ballet work (4 commits ahead), so one clean isolated worktree was created off `origin/main`:
   - Worktree: `/private/tmp/finance-final-closure-batch-1`
   - Branch: `feat/finance-final-closure-batch-1`
-- Commit: `c965188` (single commit, all Batch 1 work).
+- **Final reviewed head: `35b3f7cd4b3a18c7f2e71a32ecf873dd8b688ae3`** (`35b3f7c`).
+- Implementation commit history (historical, in order):
+  - `c965188` — Batch 1 implementation (Parts A–G)
+  - `82d3cb4` — Batch 1 implementation report (round 1)
+  - `8eaa560` — independent-review Round 1 blocker fixes (stable participant ID, PostgreSQL 23505 mapping)
+  - `63a0e04` — report/review-response update after Round 1 fixes
+  - `5633d29` — Central typecheck scope fix (Round 2 blocker)
+  - `35b3f7c` — report/review-response update after Round 2 fix (this document)
 - No merge, no deploy, no production data touched.
 
 ## 3. Files Changed
@@ -37,13 +44,16 @@ All changes are scoped to Finance/booking/attendance/credit code paths. No Balle
 - `lib/api-zod/src/finance.ts` — Part A (new amount source + `cash`/`card` methods)
 - `lib/db/migrations/meta/_journal.json` — Part F2 (new migration entry)
 - `lib/db/src/schema/bookings.ts` — Part F2 (partial unique index)
+- `artifacts/api-server/src/routes/myRoutes.ts` — Blocker 1 (added `participantChildId` to the `/api/my/bookings` response)
+- `artifacts/central/tsconfig.json` — Central Typecheck Scope Fix (Node test files excluded from the production project)
 
-**New (5):**
-- `artifacts/api-server/src/routes/bookings.occurrenceUniqueness.integration.test.ts` — Part F2/F3 tests
+**New (6):**
+- `artifacts/api-server/src/routes/bookings.occurrenceUniqueness.integration.test.ts` — Part F2/F3 + Blocker 2 tests
 - `artifacts/api-server/src/routes/myBookings.occurrenceIndependence.integration.test.ts` — Part G reproduction test
 - `artifacts/api-server/src/routes/students.creditAggregation.integration.test.ts` — Part B tests
-- `artifacts/central/app/booking/flow.duplicateBooking.test.ts` — Part F1 tests
+- `artifacts/central/tests/booking/flow.duplicateBooking.test.ts` — Part F1 + Blocker 1 tests (relocated from `artifacts/central/app/booking/flow.duplicateBooking.test.ts`, which no longer exists, per the Central Typecheck Scope Fix)
 - `lib/db/migrations/0085_bookings_occurrence_participant_unique.sql` — Part F2 migration
+- `FINANCE_FINAL_CLOSURE_BATCH_1_REVIEW_RESPONSE.md`, `FINANCE_FINAL_CLOSURE_BATCH_1_RELEASE_READINESS.md` — documentation deliverables (this report itself is also part of the diff)
 
 ## 4. Migration Created
 
@@ -179,8 +189,8 @@ One test-authoring bug was found and fixed during this process (not a product bu
 
 ## 17. Typecheck/Build Results
 
-- `pnpm run typecheck` (root, which builds `lib/db`/`lib/api-zod` via `tsc --build` first, then typechecks every workspace): **`admin` and `api-server` clean, zero errors.**
-- `central` typecheck reports errors, but exclusively `TS2307: Cannot find module 'node:assert/strict'`/`'node:test'`/`'node:fs'`/`'node:path'` on `.test.ts` files (a pre-existing, repo-wide `@types/node`/tsconfig `types` resolution gap affecting every Node-test-runner-based test file in `central`, confirmed present on a clean, unmodified baseline checkout before any of this batch's changes) plus two pre-existing unrelated errors in `tests/ballet/BalletMultipleSchedulesUi.test.ts` (a Ballet file, untouched by this batch). No new typecheck errors were introduced by this batch's source changes.
+- `pnpm run typecheck` (root, which builds `lib/db`/`lib/api-zod` via `tsc --build` first, then typechecks every workspace): **`admin` clean, zero errors. `api-server` clean at the time of this original check; see the "Central Typecheck Scope Fix" section below for a later finding of pre-existing, baseline-reproduced non-determinism in this specific command, unrelated to this batch.**
+- **(Historical — superseded.)** At the time this section was originally written, `central` typecheck reported 37 errors, all in `.test.ts` files (a pre-existing, repo-wide `node:test`-runner module-resolution gap, plus 3 new errors from the relocated test file then still inside the production project's `include` graph). **This has since been fully resolved — see "Central Typecheck Scope Fix" below: Central production typecheck is now 0 errors, deterministically.**
 - `node artifacts/central/scripts/checkNoNativeAlert.js`: **✓ No direct native Alert usage found (scanned 134 files).**
 - `mock.module is not a function`: encountered exactly as anticipated in three integration test files that use `node:test`'s experimental module-mocking API. Root cause confirmed: this repo's `tsx`-based invocation doesn't enable Node's `--experimental-test-module-mocks` flag. Resolved (not worked around) by invoking these specific files as `node --import <tsx-loader.mjs> --experimental-test-module-mocks --test <file>` — a real, repo-compatible invocation (uses the project's own installed `tsx` loader), not a fabricated pass. Every test in every affected file was confirmed to actually execute and pass under this invocation, not silently skipped.
 
@@ -189,18 +199,21 @@ One test-authoring bug was found and fixed during this process (not a product bu
 - Migration 0085 was hand-authored (paired with a hand-written journal entry) rather than produced via `drizzle-kit generate`, due to a pre-existing interactive-TTY-prompt limitation in this environment — see §4 for the runtime-correctness argument and the recommended follow-up check.
 - Part G's Tuesday/Thursday symptom was not reproduced; if it resurfaces in production, it may require a live UAT capture with exact screenshots/network traces to pin down a surface not covered by this session's trace (e.g., a push-notification body, or an admin-side view not yet examined).
 - Part C's fix hides Walk-in candidates whenever any real booking exists for the account for the current search — a deliberate, conservative reading of "do not present unrelated family members as booked"; if the product later wants Walk-in offers visible in a clearly separate section even alongside real bookings (the brief's Case 1/2 explicitly allows this as optional), that's a follow-up UI change, not a backend change.
-- The mobile duplicate-detection in `flow.tsx` matches a child booking by `participantName === child.fullName` (name-based), since the mapped local `Booking` type has no `participantChildId` field today — precise but not identical to matching by numeric child id; adding that field to the mobile booking mapper would be a small, separate follow-up.
+- **(Historical — resolved.)** The original Batch 1 draft matched a child booking by `participantName === child.fullName` (name-based). This was identified as a defect in independent review and fixed (Blocker 1, commit `8eaa560`): `participantChildId` is now returned by `/api/my/bookings`, included in the mobile `Booking` type/API schema, mapped into `AppContext`, and used as the primary identity in `flow.tsx`'s `childAlreadyBooked`. The normalized name comparison exists only as an explicitly isolated legacy fallback for booking rows with no `participantChildId` — see the "Independent Review Blocker Fixes" section below for full detail.
 
 ## 19. Deployment Plan
 
-1. Review this branch (`feat/finance-final-closure-batch-1`, commit `c965188`) and this report.
-2. Apply migration 0085 to a staging database first; re-run the duplicate-diagnostic query from §4 against staging data before promoting to production, per policy.
+**No deployment has occurred.** This section describes the intended plan only, for the final reviewed branch head `35b3f7c`.
+
+1. Review this branch (`feat/finance-final-closure-batch-1`, final reviewed head `35b3f7c`) and this report, alongside `FINANCE_FINAL_CLOSURE_BATCH_1_RELEASE_READINESS.md` for the concrete release sequence.
+2. Apply migration 0085 to a staging database first, using the existing approved migration process; re-run the duplicate-diagnostic query from §4 against staging data before promoting to production, per policy. **Migration 0085 remains unapplied to production as of this document.**
 3. Deploy `api-server`, `admin`, and `central` together (the Finance read-model change, the credit-aggregation fix, the booking-confirmation fix, and the new DB index are interdependent within this batch; no partial-deploy ordering constraint was identified beyond "run the migration before or alongside the api-server deploy that assumes the index exists" — the app code does not currently query the index directly, so ordering is not strict, but running it first is the safer default).
-4. No feature flag was used or is recommended — every change here is a bug fix to already-shipped Finance/booking/attendance/credit behavior, not new functionality behind a flag.
+4. The Central mobile changes in this batch must ship through the existing approved Central mobile release process (app store / OTA update path) after the branch is merged — this is a mobile app, not a service that redeploys the moment `main` changes, and this report does not assume any specific release cadence for that path beyond "use what's already approved."
+5. No feature flag was used or is recommended — every change here is a bug fix to already-shipped Finance/booking/attendance/credit behavior, not new functionality behind a flag.
 
 ## 20. Rollback Plan
 
-- Application code: revert the commits `c965188`/`82d3cb4`/`8eaa560` (or the merge commit once merged) — every change in this batch is additive/corrective with no destructive data operations, so a code revert alone is safe.
+- Application code: the full commit sequence to revert, if needed, is `c965188` / `82d3cb4` / `8eaa560` / `63a0e04` / `5633d29` / `35b3f7c`. **Preferred approach**: once this branch is merged, roll back by reverting the single merge commit into `main`, rather than reverting each of these six commits individually — every change in this batch is additive/corrective with no destructive data operations, so a single merge-commit revert is safe and simplest.
 - Migration 0085: `DROP INDEX "bookings_active_occurrence_participant_unique";` — safe, reversible, no data loss, since the index carries no data of its own.
 - No data was migrated or backfilled, so there is nothing to roll back at the data layer.
 
@@ -296,4 +309,8 @@ Adding `@types/node` (or similar) to the Central/Expo production project was exp
 
 ## 21. Final Decision
 
-**PASS — Central typecheck scope blocker fixed; Finance Final Closure Batch 1 is ready for final independent verification.**
+Final independent review verdict: `PASS WITH DOCUMENTATION CLEANUP`. The runtime implementation (final reviewed head `35b3f7c`) is independently verified and merge-ready; the documentation cleanup addressed in this update was the only remaining item.
+
+**PASS WITH DOCUMENTATION CLEANUP RESOLVED — Finance Final Closure Batch 1 runtime implementation is independently verified and ready for controlled merge and release preparation.**
+
+This does not mean the whole Finance feature is finally closed: **Open UAT item — Tuesday/Thursday paid-state bleed was not reproduced automatically and must be verified on the deployed mobile flow before final feature closure.**

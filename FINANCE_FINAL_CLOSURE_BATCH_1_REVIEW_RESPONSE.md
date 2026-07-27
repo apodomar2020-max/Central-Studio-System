@@ -1,10 +1,11 @@
 # Finance Final Closure Batch 1 — Independent Review Response
 
-Review verdicts addressed:
-- Round 1: `CHANGES REQUIRED` on commit `82d3cb4` → fixed in `8eaa560`.
-- Round 2: one remaining merge blocker (Central typecheck scope) on commit `63a0e04` → fixed in `5633d29`.
+Review history addressed, in order:
+- **Round 1**: `CHANGES REQUIRED` on commit `82d3cb4` (stable participant-ID identity bug, PostgreSQL 23505 not mapped to `duplicate_booking`) → fixed in `8eaa560`.
+- **Round 2**: review of `63a0e04` found one remaining merge blocker (Central typecheck scope — a Node test file still compiled by the RN production TypeScript project) → fixed in `5633d29`.
+- **Round 3 (final)**: independent review of `35b3f7c` returned verdict `PASS WITH DOCUMENTATION CLEANUP` — the runtime implementation was independently verified and merge-ready; only stale documentation remained to be corrected (this document and the implementation report).
 
-Branch: `feat/finance-final-closure-batch-1`.
+Branch: `feat/finance-final-closure-batch-1`. Final reviewed head: `35b3f7cd4b3a18c7f2e71a32ecf873dd8b688ae3` (`35b3f7c`).
 
 ## Blocker 1 — Stable participant identity in mobile duplicate-booking detection
 
@@ -60,13 +61,33 @@ The independent review is correct that the existing diagnostic test (`myBookings
 - `checkNoNativeAlert.js`: pass.
 - `git diff --stat`: **1 file** (`artifacts/central/tsconfig.json`) — confirms no Finance runtime logic was touched.
 
+## Final Verified State (as of `35b3f7c`)
+
+| Item | Status |
+|---|---|
+| Stable participant-ID (Blocker 1) | **PASS** |
+| PostgreSQL 23505 → `duplicate_booking` mapping (Blocker 2) | **PASS** |
+| Migration 0085 (re-verified, not rewritten) | **PASS** |
+| Central production typecheck | **0 errors** |
+| Total tests | **242/242 passed, 0 failed, 0 skipped** |
+| API build | **clean** |
+| Admin typecheck | **clean (0 errors)** |
+| `checkNoNativeAlert.js` | **clean** (134 files scanned) |
+| Worktree state at final independent review | **clean** |
+
 ## Verification Summary
 
-- **Focused tests**: stable participant-ID duplicate selector (13/13), occurrence uniqueness + concurrent 409 mapping (6/6), Finance read-model regression (37/37 + 88/88 filters/export/UI), payment confirmation regression (15/15 + 23/23), Attendance Gateway regression (18/18) — all passing. Full run-by-run detail in the updated `FINANCE_FINAL_CLOSURE_BATCH_1_REPORT.md`.
-- **Typechecks**: `admin` clean (0), `central` clean (0, deterministic, 3× reproduced). `api-server` exhibits pre-existing, baseline-reproduced non-determinism unrelated to this work (documented, not hidden).
+- **Focused tests**: stable participant-ID duplicate selector (13/13), occurrence uniqueness + concurrent 409 mapping (6/6), Finance read-model regression (37/37 + 88/88 filters/export/UI), payment confirmation regression (15/15 + 23/23), Attendance Gateway regression (18/18) — all passing, part of the final total of **242 tests executed, 242 passed, 0 failed, 0 skipped**. Full run-by-run detail in the updated `FINANCE_FINAL_CLOSURE_BATCH_1_REPORT.md`.
+- **Typechecks**: `admin` clean (0), `central` clean (0, deterministic, 3× reproduced). `api-server` exhibits pre-existing, baseline-reproduced non-determinism unrelated to this work (documented, not hidden) — the API build itself is clean.
 - **Guard**: `checkNoNativeAlert.js` — passes (134 files scanned).
 - **Stability**: the Blocker 2 concurrency test repeated 5× (round 1) — 5/5 pass, no intermittent failures.
 
+## Open UAT Item (unchanged through every round)
+
+**Open UAT item — Tuesday/Thursday paid-state bleed was not reproduced automatically and must be verified on the deployed mobile flow before final feature closure.**
+
+This is not described as fixed or closed at any point in this record.
+
 ## Final Status
 
-**PASS — Central typecheck scope blocker fixed; Finance Final Closure Batch 1 is ready for final independent verification.**
+**PASS — Finance Final Closure Batch 1 independently verified and ready for controlled merge; Tuesday/Thursday remains a required post-deployment UAT item.**
