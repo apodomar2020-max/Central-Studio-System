@@ -66,8 +66,12 @@ export default function FinanceExportsPage() {
 
   // Formats are the ones the backend actually implements (xlsx | pdf), each
   // gated on the existing reports permission the API checks for that format.
-  const canExportExcel = can("reports", "exportExcel");
-  const canExportPdf = can("reports", "exportPdf");
+  // Finance Roles & Permissions integration: exports require finance.exports
+  // (a user with only finance.view can read Finance pages but must not
+  // download exports). Both formats share the same single permission.
+  const canExport = can("finance", "exports");
+  const canExportExcel = canExport;
+  const canExportPdf = canExport;
 
   /**
    * A tiny preview request (one row) serves two purposes: it confirms the

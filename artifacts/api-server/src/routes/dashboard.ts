@@ -14,8 +14,9 @@ import {
   balletRefundsTable,
 } from "@workspace/db";
 import { GetDashboardResponse } from "@workspace/api-zod";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { getFinancialAggregates } from "../lib/financialAggregates";
+import { hasRolePermission } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -51,7 +52,11 @@ function occursOn(schedule: ScheduleRow, day: { key: string; dayOfWeek: number }
 // Admin-only: aggregates revenue, user counts, and operational stats. The
 // shared API key is an app identifier, not authentication — it must never be
 // enough to read financial data (Security Assessment H-01).
-router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "view"), async (_req, res): Promise<void> => {
+router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "view"), async (req: AdminRequest, res): Promise<void> => {
+  const canViewFinance = Boolean(
+    req.adminUser?.isSuperAdmin ||
+    hasRolePermission(req.adminUser?.permissions, "finance", "view"),
+  );
   const [
     [userStats],
     [bookingStats],
@@ -147,13 +152,13 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     date.setUTCDate(date.getUTCDate() + index + 1);
     return cairoDayInfo(date);
   });
-  const todayClasses = scheduleRows.filter((schedule) => occursOn(schedule, today)).length;
+  const todayClasses = scheduleRows.filter((schedule: ScheduleRow) => occursOn(schedule, today)).length;
   const upcomingClasses = upcomingDays.reduce(
-    (total, day) => total + scheduleRows.filter((schedule) => occursOn(schedule, day)).length,
+    (total, day) => total + scheduleRows.filter((schedule: ScheduleRow) => occursOn(schedule, day)).length,
     0,
   );
 
-  res.json(GetDashboardResponse.parse({
+  const response = GetDashboardResponse.parse({
     totalUsers: Number(userStats.totalUsers),
     totalStudents: Number(userStats.students),
     totalParents: Number(userStats.parents),
@@ -200,7 +205,33 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     missedAttendance: Number(attendanceStats.missedAttendance),
     todayClasses,
     upcomingClasses,
-  }));
+  });
+
+  // The Dashboard remains useful to operational roles, but it must not become
+  // a side door around finance.view. Preserve the response shape for existing
+  // clients while replacing every financial value with a non-sensitive zero
+  // and removing explanatory financial metadata.
+  if (!canViewFinance) {
+    Object.assign(response, {
+      totalRevenue: 0,
+      revenueTrackingComplete: false,
+      grossGenericBookingRevenueEgp: 0,
+      grossGenericPackageRevenueEgp: 0,
+      grossBalletRevenueEgp: 0,
+      balletCompletedRefundsEgp: 0,
+      legacyBalletRefundedPaymentsEgp: 0,
+      balletPendingRefundExposureEgp: 0,
+      balletNetRevenueEgp: 0,
+      totalGrossRevenueEgp: 0,
+      totalNetRevenueEgp: 0,
+      balletPayAtStudioRevenueEgp: 0,
+      balletOnlineRevenueEgp: 0,
+      balletLegacyBankTransferRevenueEgp: 0,
+      legacyRevenueTrackingLimitations: [],
+      approvedProcessingRefundExposureEgp: 0,
+    });
+  }
+  res.json(response);
 });
 
 export default router;

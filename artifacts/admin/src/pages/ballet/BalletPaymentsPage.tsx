@@ -130,7 +130,11 @@ function addDays(date: string, days: number) {
 }
 
 export default function BalletPaymentsPage() {
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  // Finance Roles & Permissions integration: confirming a Ballet payment as
+  // paid requires finance.paymentsConfirm. Backend enforces the same
+  // permission independently.
+  const canConfirmPayments = can("finance", "paymentsConfirm");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -307,7 +311,7 @@ export default function BalletPaymentsPage() {
                   <TableCell className="text-sm text-muted-foreground">{payment.updatedAt ? new Date(payment.updatedAt).toLocaleString() : new Date(payment.createdAt).toLocaleString()}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                    {payment.status === "pending" && (
+                    {canConfirmPayments && payment.status === "pending" && (
                       <Button variant="outline" size="sm" onClick={() => {
                         const today = new Date().toISOString().slice(0, 10);
                         setConfirmStartDate(today);

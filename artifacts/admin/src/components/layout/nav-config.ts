@@ -133,11 +133,11 @@ export const NAV_TREE: NavNode[] = [
       }),
       link("Groups", "/ballet/groups", [["ballet.groups", "view"]], UsersRound, { pageTitle: "Ballet Groups" }),
       link("Packages", "/ballet/packages", [["ballet.packages", "view"]], Wallet, { pageTitle: "Ballet Packages" }),
-      link("Payments", "/ballet/payments", [["ballet.payments", "view"]], Receipt, { pageTitle: "Ballet Payments" }),
+      link("Payments", "/ballet/payments", [["finance", "view"]], Receipt, { pageTitle: "Ballet Payments" }),
       link("Cancellation Requests", "/ballet/cancellation-requests", [["ballet.applications", "view"]], FileClock, {
         pageTitle: "Ballet Cancellation Requests",
       }),
-      link("Refunds", "/ballet/refunds", [["ballet.payments", "view"]], Receipt, { pageTitle: "Ballet Refunds" }),
+      link("Refunds", "/ballet/refunds", [["finance", "view"]], Receipt, { pageTitle: "Ballet Refunds" }),
       link("Performances", "/ballet/performances", [["ballet.performances", "view"]], Sparkles, {
         pageTitle: "Ballet Performance Opportunities",
       }),
@@ -152,37 +152,35 @@ export const NAV_TREE: NavNode[] = [
     link("Feedback", "/feedback", [["feedback", "view"]], MessageSquareText),
   ]),
 
-  // Finance Department (Phase 1) — read-only visibility. Permissions mirror
-  // App.tsx ROUTE_PERMS exactly and reuse existing read permissions only; this
-  // group never widens access, and the backend filters by source family
-  // regardless of what the sidebar shows.
+  // Finance Department — gated on the single finance.view permission (Finance
+  // Roles & Permissions integration). Every Finance page requires finance.view;
+  // this group never widens access, and the backend enforces the same
+  // permission independently on every read endpoint regardless of what the
+  // sidebar shows (hiding a menu item alone is not security).
   group("Finance", Landmark, [
-    link("Overview", "/finance", [["dashboard", "view"]], PiggyBank, {
+    link("Overview", "/finance", [["finance", "view"]], PiggyBank, {
       pageTitle: "Finance Overview",
       // "/finance" prefixes every sibling route, so exact matching keeps
       // Overview from highlighting while a child page is open.
       exact: true,
     }),
-    link("Transactions", "/finance/transactions", [
-      ["packageOrders", "view"], ["bookings", "view"], ["attendance", "view"],
-      ["ballet.payments", "view"], ["promotions", "view"], ["credits", "history"],
-    ], ArrowLeftRight, { pageTitle: "Finance Transactions" }),
-    link("Package Payments", "/finance/packages", [["packageOrders", "view"], ["credits", "history"]], ShoppingBag, {
+    link("Transactions", "/finance/transactions", [["finance", "view"]], ArrowLeftRight, { pageTitle: "Finance Transactions" }),
+    link("Package Payments", "/finance/packages", [["finance", "view"]], ShoppingBag, {
       pageTitle: "Finance Package Payments",
     }),
-    link("Class & Walk-in", "/finance/class-payments", [["bookings", "view"], ["attendance", "view"]], Ticket, {
+    link("Class & Walk-in", "/finance/class-payments", [["finance", "view"]], Ticket, {
       pageTitle: "Finance Class & Walk-in",
     }),
-    link("Ballet Finance", "/finance/ballet", [["ballet.payments", "view"]], Music2, {
+    link("Ballet Finance", "/finance/ballet", [["finance", "view"]], Music2, {
       pageTitle: "Ballet Finance",
     }),
-    link("Refunds & Cancellations", "/finance/refunds", [["ballet.payments", "view"]], Receipt, {
+    link("Refunds & Cancellations", "/finance/refunds", [["finance", "view"]], Receipt, {
       pageTitle: "Finance Refunds & Cancellations",
     }),
-    link("Discounts", "/finance/discounts", [["promotions", "view"]], BadgePercent, {
+    link("Discounts", "/finance/discounts", [["finance", "view"]], BadgePercent, {
       pageTitle: "Finance Discounts",
     }),
-    link("Reports & Exports", "/finance/exports", [["reports", "view"]], FileDown, {
+    link("Reports & Exports", "/finance/exports", [["finance", "view"]], FileDown, {
       pageTitle: "Finance Reports & Exports",
     }),
   ]),

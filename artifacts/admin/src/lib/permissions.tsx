@@ -5,8 +5,11 @@
  * returns true for Super Admin, so Super Admin bypass is automatic everywhere.
  * Missing permission => default deny for ordinary admins.
  *
- * NOTE: This is presentation-only. The backend is NOT guarded yet, so these
- * helpers must not be relied on for security — only for hiding/disabling UI.
+ * NOTE: This is presentation-only. Every route/action gated here also has an
+ * independent backend permission check (requireAdminPermission) — these
+ * helpers must not be relied on as the actual security boundary, only for
+ * hiding/disabling UI. Hiding a control here never substitutes for the
+ * backend guard.
  */
 import React from "react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";

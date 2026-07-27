@@ -155,6 +155,12 @@ export default function Bookings() {
   const canCreate = can("bookings", "create");
   const canEdit = can("bookings", "edit");
   const canCancel = can("bookings", "cancel");
+  // Finance Roles & Permissions integration: confirming a Pay-at-Studio
+  // booking payment requires finance.paymentsConfirm in addition to the
+  // existing bookings.edit permission, even though this button lives on
+  // the Bookings page rather than Finance. Backend enforces the same
+  // permission independently.
+  const canConfirmPayments = can("finance", "paymentsConfirm");
   const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("all");
   const [scopeFilter, setScopeFilter] = useState<(typeof SCOPE_FILTERS)[number]>("all");
   const [search, setSearch] = useState("");
@@ -368,7 +374,7 @@ export default function Bookings() {
               bookings.map((booking) => {
                 const canShowBookingActions = canEdit && (booking.bookingStatus ?? booking.status) === "pending";
                 const canShowCancelAction = canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status);
-                const canShowPaymentActions = canEdit && booking.paymentStatus === "pending_payment";
+                const canShowPaymentActions = canEdit && canConfirmPayments && booking.paymentStatus === "pending_payment";
                 const hasAnyActions = canShowBookingActions || canShowCancelAction || canShowPaymentActions;
                 const bookingStatus = booking.bookingStatus ?? booking.status;
                 const paymentStatus = booking.paymentStatus ?? "not_required";

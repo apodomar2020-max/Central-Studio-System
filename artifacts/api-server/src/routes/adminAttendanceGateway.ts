@@ -133,6 +133,16 @@ function requirePackageDeductForStudioCredit(req: Request, res: Response, next: 
   requireAdminPermission("qr", "packageDeduct")(req, res, next);
 }
 
+// Finance Roles & Permissions integration: paymentMode:"pay_at_studio"
+// confirms a cash payment (an existing booking's Pay-at-Studio check-in, or
+// a Studio Walk-in) — it requires finance.paymentsConfirm in addition to
+// the existing attendance.checkIn permission, even though this is launched
+// from the Attendance Gateway rather than Finance.
+function requirePaymentConfirmForPayAtStudio(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.program !== "studio" || req.body?.paymentMode !== "pay_at_studio") { next(); return; }
+  requireAdminPermission("finance", "paymentsConfirm")(req, res, next);
+}
+
 const AUDIT_SOURCE_LABEL: Record<ResolverSource, string> = {
   qr: "qr",
   phone: "parentPhone",
@@ -145,6 +155,7 @@ router.post(
   requireAdminPermission("attendance", "checkIn"),
   requireQrCheckInForStudio,
   requirePackageDeductForStudioCredit,
+  requirePaymentConfirmForPayAtStudio,
   async (req: AdminRequest, res): Promise<void> => {
     const parsed = ConfirmBody.safeParse(req.body);
     if (!parsed.success) {

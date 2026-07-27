@@ -29,7 +29,7 @@
  *       rejecting any existing non-renewal pending/paid/refunded payment.
  */
 
-import { Router, type IRouter, type Response } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -77,7 +77,7 @@ const ListQuerySchema = z.object({
   applicationId: z.coerce.number().int().positive().optional(),
 });
 
-router.get("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("ballet.payments", "view"), async (req, res): Promise<void> => {
+router.get("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("finance", "view"), async (req, res): Promise<void> => {
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid query parameters" });
@@ -446,10 +446,23 @@ async function updatePaymentStatus(
   res.json({ payment: updatedPayment });
 }
 
+// Finance Roles & Permissions integration: status:"paid" is the moment a
+// Ballet assessment/subscription payment is confirmed — it requires
+// finance.paymentsConfirm in addition to the existing ballet.payments.edit
+// permission already enforced on these routes.
+function requireBalletPaymentConfirmPermission(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.status !== "paid") {
+    next();
+    return;
+  }
+  requireAdminPermission("finance", "paymentsConfirm")(req, res, next);
+}
+
 router.patch(
   "/admin/ballet/payments/:id/status",
   requireAdminAuth,
   requireAdminPermission("ballet.payments", "edit"),
+  requireBalletPaymentConfirmPermission,
   async (req: AdminRequest, res): Promise<void> => {
     const id = parseInt(String(req.params["id"] ?? ""), 10);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid payment ID" }); return; }
@@ -461,6 +474,7 @@ router.patch(
   "/admin/ballet/applications/:applicationId/payments/:id/status",
   requireAdminAuth,
   requireAdminPermission("ballet.payments", "edit"),
+  requireBalletPaymentConfirmPermission,
   async (req: AdminRequest, res): Promise<void> => {
     const applicationId = parseInt(String(req.params["applicationId"] ?? ""), 10);
     const id = parseInt(String(req.params["id"] ?? ""), 10);
