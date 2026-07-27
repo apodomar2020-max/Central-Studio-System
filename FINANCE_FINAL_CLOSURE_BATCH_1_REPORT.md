@@ -254,6 +254,46 @@ Ran a side-by-side comparison: a fresh worktree of the unmodified baseline (`d5a
 
 Not claimed as closed. Reworded per instructions to the exact required wording — see §14 above and the review-response document.
 
+## Central Typecheck Scope Fix
+
+A second independent review of commit `63a0e04` found one remaining merge blocker: `artifacts/central/tests/booking/flow.duplicateBooking.test.ts` was still compiled as part of Central's production TypeScript project, introducing `node:test`/`node:assert`/`node:fs` module-resolution errors. Fixed in commit `5633d29`.
+
+### Resolving the reviewer's stated arithmetic inconsistency
+
+The second review claimed baseline Central typecheck = 0 errors, current branch = 37, only 3 attributed to the relocated test. This was investigated **before** making any change, per instructions:
+
+1. **Exact baseline error count**: **34**, not 0. Verified by creating a clean worktree at `d5ab3bd`, running `pnpm install` fresh, then the exact command `pnpm --filter @workspace/central run typecheck` from repository root — but only after the required root-level prerequisite (`pnpm run typecheck:libs`, i.e. `tsc --build` for `lib/db`/`lib/api-zod`), since running the filtered command alone without building the referenced projects first produces a large, unrelated cascade of `TS6305`/implicit-`any` errors that are an artifact of stale/missing project-reference output, not real diagnostics. With the prerequisite run first, baseline Central consistently produces exactly 34 errors across 12 pre-existing `node:test`/`node:assert`/`node:fs`/`node:path` module-resolution gaps (Ballet test files, `providers/`, `services/` — none touched by Batch 1), confirmed identically via both `pnpm --filter @workspace/central run typecheck` (after the prerequisite) and the root `pnpm run typecheck` orchestrator, and reproduced 3 times.
+2. **Exact pre-fix branch error count**: **37** — the same 12 baseline files plus exactly 1 new file, `tests/booking/flow.duplicateBooking.test.ts` (3 errors: `node:assert/strict`, `node:fs`, `node:test`), confirmed via `comm` diffing the sorted file lists between the two runs.
+3. **Exact new-error delta before this fix**: **+3** (one new file, the relocated test, inheriting the same pre-existing error category every other test file in `central` already has — not a new kind of error).
+4. **Conclusion**: the reviewer's arithmetic was internally consistent (`34 + 3 = 37`) once the correct baseline (34, not 0) is used. The "0" baseline figure in the second review appears to have been produced by a different invocation than the one specified in this task (most likely without the `typecheck:libs` prerequisite, which — as this task's own investigation reproduced — can swing Central's and other packages' error counts unpredictably depending on stale/missing referenced-project build output).
+
+### Chosen test/tsconfig boundary
+
+No dedicated test-tsconfig pattern (Option A) exists anywhere in this repository — confirmed by searching for every `tsconfig*.json` file (10 total: root, base, and one per workspace package) and finding none scoped specifically to Node-runner tests. Applied **Option B**: added a narrow `exclude` array to `artifacts/central/tsconfig.json`:
+```json
+"exclude": ["node_modules", "tests/**", "**/*.test.ts", "**/*.test.tsx"]
+```
+This is the exact array specified in the task. It excludes only the `tests/` directory and any `*.test.ts(x)` file anywhere in the project — no normal runtime source file matches either pattern, so nothing that ships in the app is excluded. `strict: true` was left untouched.
+
+### Why global Node types were not added
+
+Adding `@types/node` (or similar) to the Central/Expo production project was explicitly out of scope and was not done, for the reason the task itself states: the React Native app project has no legitimate use for Node's global/module types (`node:test`, `node:fs`, etc.) in its own runtime code, and introducing them would blur the boundary between "code that ships in the app" and "Node-runner test scaffolding that merely lives in the same repository directory." Excluding the test files from the production project's `include` graph is the correct fix in both directions — it also means a future accidental `import "node:fs"` in real app code would still correctly fail to typecheck, which adding global Node types would have silently permitted.
+
+### Post-fix verification
+
+- **Central**: `pnpm run typecheck` → **0 errors**, reproduced 3 times in a row after a fresh `pnpm install` and full `.tsbuildinfo`/`dist` cleanup each time. Fully deterministic.
+- **Admin**: `pnpm --filter @workspace/admin run typecheck` → 0 errors (unchanged).
+- **api-server**: `pnpm --filter @workspace/api-server run typecheck` (and the equivalent root-pipeline invocation) was found to be **non-deterministic** — it flip-flopped between 0 and 126 errors (all in pre-existing, untouched Ballet integration-test files, e.g. `balletAssessmentPostgresIntegration.test.ts`, `balletAttendanceWrite.integration.test.ts`) across repeated runs. Critically, **this same flip-flop was reproduced on the unmodified `d5ab3bd` baseline commit itself**, under an identical fresh-install/clean-build procedure, with zero Batch 1 or Blocker-fix changes present. This is pre-existing flakiness in this repository's TypeScript composite-project (`tsc --build`) incremental caching for the `pg`/`@types/pg` ambient-module resolution, unrelated to Central, unrelated to Finance runtime logic, and out of this task's explicitly narrow scope (git diff for this task touches exactly one file: `artifacts/central/tsconfig.json`). It is documented here for transparency, not left silently unmentioned, but it is **not** a merge blocker introduced by this fix.
+- Relocated test (`tests/booking/flow.duplicateBooking.test.ts`) run explicitly via `node --test`: **13/13 pass.**
+- `bookings.occurrenceUniqueness.integration.test.ts` (Part F2/F3 + Blocker 2) re-run once: **6/6 pass.**
+- `node artifacts/central/scripts/checkNoNativeAlert.js`: **✓ pass** (134 files scanned).
+- `git diff --stat` for this task: **1 file changed** (`artifacts/central/tsconfig.json`, 14 insertions) — no Finance runtime file, no Ballet file, no other test file touched.
+- No test was skipped, deleted, or weakened — the exclude only affects which files TypeScript's `tsc --noEmit` visits for Central; the relocated test still runs and passes under `node --test`, exactly as before.
+
+### Tuesday/Thursday open UAT status (unchanged)
+
+**Open UAT item — Tuesday/Thursday paid-state bleed was not reproduced automatically and must be verified on the deployed mobile flow before final feature closure.**
+
 ## 21. Final Decision
 
-**PASS — Independent-review blockers fixed; Finance Final Closure Batch 1 is ready for re-review.**
+**PASS — Central typecheck scope blocker fixed; Finance Final Closure Batch 1 is ready for final independent verification.**

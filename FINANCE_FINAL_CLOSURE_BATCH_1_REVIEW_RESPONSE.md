@@ -1,7 +1,10 @@
 # Finance Final Closure Batch 1 — Independent Review Response
 
-Review verdict addressed: `CHANGES REQUIRED` on commit `82d3cb4`.
-Fix commit: `8eaa560` on branch `feat/finance-final-closure-batch-1`.
+Review verdicts addressed:
+- Round 1: `CHANGES REQUIRED` on commit `82d3cb4` → fixed in `8eaa560`.
+- Round 2: one remaining merge blocker (Central typecheck scope) on commit `63a0e04` → fixed in `5633d29`.
+
+Branch: `feat/finance-final-closure-batch-1`.
 
 ## Blocker 1 — Stable participant identity in mobile duplicate-booking detection
 
@@ -37,13 +40,33 @@ Fix commit: `8eaa560` on branch `feat/finance-final-closure-batch-1`.
 
 The independent review is correct that the existing diagnostic test (`myBookings.occurrenceIndependence.integration.test.ts`) exercises the server data/API layer directly over HTTP, not the actual mobile `app/(tabs)/bookings.tsx`/`app/(tabs)/classes.tsx` rendering path. No attempt was made to invent a fix without reproduction, and no runtime occurrence behavior was changed in this fix task. This remains an explicit, tracked open item pending real-device/simulator UAT.
 
+## Round 2 — Central Typecheck Scope Blocker
+
+**Status: Fixed** (commit `5633d29`).
+
+**Reviewer's stated inconsistency resolved before making any change**: the second review claimed baseline Central typecheck = 0, current branch = 37, only 3 attributed to the relocated test — internally inconsistent arithmetic as stated. Investigation (fresh `d5ab3bd` worktree, exact `pnpm --filter @workspace/central run typecheck` command, run after the required root prerequisite `pnpm run typecheck:libs`) found:
+- **Exact baseline count: 34** (not 0) — 12 pre-existing Ballet-related `node:test`/`node:assert`/`node:fs`/`node:path` files, confirmed via 3 repeated runs.
+- **Exact pre-fix branch count: 37** — the same 12 files plus exactly 1 new file (the relocated test, 3 errors).
+- **Delta: +3**, matching the review's own "3 errors attributed to the relocated test" — the review's arithmetic was actually correct; only its stated baseline (0) was wrong.
+
+**Fix**: no dedicated test-tsconfig pattern exists anywhere in this repo (checked all 10 `tsconfig*.json` files), so applied the task's specified Option B — added `"exclude": ["node_modules", "tests/**", "**/*.test.ts", "**/*.test.tsx"]` to `artifacts/central/tsconfig.json`. No global Node types were added to the RN production project (deliberately — see the report's full rationale). `strict: true` unchanged; no runtime source file matches either exclude pattern.
+
+**Post-fix verification**:
+- Central: **0 errors**, reproduced 3× after fresh installs/clean builds — deterministic.
+- Admin: 0 errors (unchanged).
+- api-server: found to be **non-deterministic** (0/126 flip-flopping) — but reproduced identically on the **unmodified baseline** under the same clean conditions, proving this is pre-existing repo flakiness in `tsc --build`'s incremental caching, unrelated to Central, Finance runtime logic, or this task's one-file change.
+- Relocated test via `node --test`: **13/13 pass**.
+- `bookings.occurrenceUniqueness.integration.test.ts` re-run once: **6/6 pass**.
+- `checkNoNativeAlert.js`: pass.
+- `git diff --stat`: **1 file** (`artifacts/central/tsconfig.json`) — confirms no Finance runtime logic was touched.
+
 ## Verification Summary
 
 - **Focused tests**: stable participant-ID duplicate selector (13/13), occurrence uniqueness + concurrent 409 mapping (6/6), Finance read-model regression (37/37 + 88/88 filters/export/UI), payment confirmation regression (15/15 + 23/23), Attendance Gateway regression (18/18) — all passing. Full run-by-run detail in the updated `FINANCE_FINAL_CLOSURE_BATCH_1_REPORT.md`.
-- **Typechecks**: `admin` and `api-server` clean. `central` has the same pre-existing 12-file `node:test`/`node:assert` baseline error set plus exactly one new file (the relocated test itself, same pre-existing error category) — proven via a direct baseline-vs-fix diff, not asserted.
+- **Typechecks**: `admin` clean (0), `central` clean (0, deterministic, 3× reproduced). `api-server` exhibits pre-existing, baseline-reproduced non-determinism unrelated to this work (documented, not hidden).
 - **Guard**: `checkNoNativeAlert.js` — passes (134 files scanned).
-- **Stability**: the Blocker 2 concurrency test repeated 5× — 5/5 pass, no intermittent failures.
+- **Stability**: the Blocker 2 concurrency test repeated 5× (round 1) — 5/5 pass, no intermittent failures.
 
 ## Final Status
 
-**PASS — Independent-review blockers fixed; Finance Final Closure Batch 1 is ready for re-review.**
+**PASS — Central typecheck scope blocker fixed; Finance Final Closure Batch 1 is ready for final independent verification.**
