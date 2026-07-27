@@ -6,7 +6,7 @@
  * (for the "Available Credits" hero). Nothing faked.
  */
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -126,6 +126,16 @@ export default function CreditHistoryScreen() {
     await Promise.all([refetch(), refetchPackages()]);
     setRefreshing(false);
   }, [refetch, refetchPackages]);
+
+  // Finance Batch 1 (Part B2): refetch on every screen focus, not only app
+  // foreground — covers a student switching to this tab from another screen
+  // in the same session right after a package activation/deduction.
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+      refetchPackages();
+    }, [refetch, refetchPackages]),
+  );
 
   const transactions = data?.data ?? [];
   const total = data?.total ?? 0;

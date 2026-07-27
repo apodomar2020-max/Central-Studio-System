@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState, type AppStateStatus } from "react-native";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
@@ -75,6 +76,14 @@ export interface Booking {
   price: number;
   participantType: "self" | "child";
   participantName: string;
+  /**
+   * Stable child identity for this booking (children.id), when the backend
+   * row has one. Null/undefined only for legacy rows created before this
+   * field was captured — duplicate-booking detection (booking/flow.tsx)
+   * must key on this, never on participantName, since names are editable
+   * and not unique across siblings.
+   */
+  participantChildId?: number | null;
   paymentMethod: "online" | "cash" | "packageCredit";
   paymentStatus: "not_required" | "pending_payment" | "paid" | "refunded" | "failed";
   bookingStatus: "pending" | "confirmed" | "rejected" | "cancelled" | "attended" | "completed" | "noShow";
@@ -226,6 +235,7 @@ interface ApiMyBooking {
   price: number;
   participantType: string;
   participantName: string;
+  participantChildId?: number | null;
   paymentMethod: string;
   paymentStatus: string;
   bookingStatus: string;
@@ -255,6 +265,7 @@ function mapMyBookingToLocal(r: ApiMyBooking): Booking {
     price: r.price ?? 0,
     participantType: r.participantType === "child" ? "child" : "self",
     participantName: r.participantName || "",
+    participantChildId: r.participantChildId ?? null,
     paymentMethod:
       r.paymentMethod === "packageCredit" ? "packageCredit" : r.paymentMethod === "online" ? "online" : "cash",
     paymentStatus: mapApiPaymentStatusToLocal(r.paymentStatus),
@@ -317,6 +328,26 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   useEffect(() => {
     loadPersistedState();
+  }, []);
+
+  // Finance Batch 1 (Part B2): credit/package data is server-authoritative
+  // but can go stale on-device — e.g. an admin activates a package or
+  // deducts a credit at check-in while this app is backgrounded, and there
+  // is no push-driven cache invalidation for it. Refetch packages/bookings
+  // whenever the app returns to the foreground, one fetch per transition
+  // (not polling), so a student never has to force-quit/reopen the app to
+  // see an updated balance.
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const cameToForeground = appStateRef.current.match(/inactive|background/) && nextState === "active";
+      appStateRef.current = nextState;
+      if (!cameToForeground || !userRef.current) return;
+      fetchAndSetPackages().catch(() => {});
+      fetchAndSetBookings().catch(() => {});
+    });
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadPersistedState() {

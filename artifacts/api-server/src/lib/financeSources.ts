@@ -39,6 +39,7 @@ import {
   classPricingSettingsTable,
   creditTransactionsTable,
   packageOrdersTable,
+  paymentRecordsTable,
   pricePackagesTable,
   promotionRedemptionsTable,
   promotionsTable,
@@ -307,9 +308,27 @@ const packagePurchases: FinanceFamilyDescriptor = {
         currentCatalogPriceEgp: pricePackagesTable.priceEgp,
         activatedAt: packageOrdersTable.activatedAt,
         createdAt: packageOrdersTable.createdAt,
+        // Finance Batch 1: canonical Phase 2B-1/2C payment record, when one
+        // exists — the payment_records/package_orders relationship is
+        // one-to-one per the flow_package_order_unique constraint, so this
+        // left join cannot fan out rows.
+        paymentRecordStatus: paymentRecordsTable.status,
+        paymentRecordConfirmedMethod: paymentRecordsTable.confirmedPaymentMethod,
+        paymentRecordFinalPayableAmountMinor: paymentRecordsTable.finalPayableAmountMinor,
+        paymentRecordPaidAmountMinor: paymentRecordsTable.paidAmountMinor,
+        paymentRecordRefundedAmountMinor: paymentRecordsTable.refundedAmountMinor,
+        paymentRecordDiscountAmountMinor: paymentRecordsTable.discountAmountMinor,
+        paymentRecordPaidAt: paymentRecordsTable.paidAt,
       })
       .from(packageOrdersTable)
       .leftJoin(pricePackagesTable, eq(packageOrdersTable.packageId, pricePackagesTable.id))
+      .leftJoin(
+        paymentRecordsTable,
+        and(
+          eq(paymentRecordsTable.packageOrderId, packageOrdersTable.id),
+          eq(paymentRecordsTable.flowType, "package_purchase"),
+        ),
+      )
       .where(where)
       .orderBy(sql`${OCCURRED_PACKAGE_ORDER} desc`, sql`${packageOrdersTable.id} desc`)
       .limit(take);
@@ -335,6 +354,7 @@ function bookingFamily(
     ? ["studio_walkin_payment"]
     : ["single_class_payment"];
   const owner = alias(studentsTable, `finance_${family}_owner`);
+  const BOOKING_PAYMENT_RECORD = alias(paymentRecordsTable, `finance_${family}_payment_record`);
 
   const baseQuery = () =>
     db
@@ -364,13 +384,31 @@ function bookingFamily(
         walkInActorAdminId: WALK_IN_ACTOR_ID,
         walkInActorEmail: WALK_IN_ACTOR_EMAIL,
         isWalkIn: IS_WALK_IN,
+        // Finance Batch 1: canonical Phase 2B-2/2B-4/2C payment record, when
+        // one exists — payment_records/bookings is one-to-one per the
+        // flow_booking_unique constraint, so this left join cannot fan out.
+        paymentRecordStatus: BOOKING_PAYMENT_RECORD.status,
+        paymentRecordConfirmedMethod: BOOKING_PAYMENT_RECORD.confirmedPaymentMethod,
+        paymentRecordGrossAmountMinor: BOOKING_PAYMENT_RECORD.grossAmountMinor,
+        paymentRecordDiscountAmountMinor: BOOKING_PAYMENT_RECORD.discountAmountMinor,
+        paymentRecordFinalPayableAmountMinor: BOOKING_PAYMENT_RECORD.finalPayableAmountMinor,
+        paymentRecordPaidAmountMinor: BOOKING_PAYMENT_RECORD.paidAmountMinor,
+        paymentRecordRefundedAmountMinor: BOOKING_PAYMENT_RECORD.refundedAmountMinor,
+        paymentRecordPaidAt: BOOKING_PAYMENT_RECORD.paidAt,
       })
       .from(bookingsTable)
       .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
       .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
       .leftJoin(classPricingSettingsTable, eq(classPricingSettingsTable.id, sql`1`))
       .leftJoin(owner, eq(bookingsTable.accountOwnerStudentId, owner.id))
-      .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id));
+      .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
+      .leftJoin(
+        BOOKING_PAYMENT_RECORD,
+        and(
+          eq(BOOKING_PAYMENT_RECORD.bookingId, bookingsTable.id),
+          inArray(BOOKING_PAYMENT_RECORD.flowType, ["single_class_booking", "studio_walkin"]),
+        ),
+      );
 
   return {
     family,

@@ -194,6 +194,69 @@ test("a valid unpaid monetary (pay_at_studio) booking can be marked paid", async
   assert.equal((await bookingRow(id)).paymentStatus, "paid");
 });
 
+// ─── Finance Batch 1 Part E — payment confirmation atomically confirms
+// the booking. Confirmed bug: paymentStatus and bookingStatus were two
+// independent fields — the Admin "Confirm Payment" action only ever sent
+// {paymentStatus, confirmedPaymentMethod}, so bookingStatus stayed
+// "pending" (its default-inherited value) even after payment was
+// confirmed, leaving Confirm/Reject visible in the Admin bookings list.
+// Every other test in this file happens to create its fixture booking
+// with bookingStatus already "confirmed" (see makeBooking's default), so
+// none of them actually exercise this exact bug — these do. ──────────────
+
+test("Part E: confirming payment atomically confirms a still-pending booking (the exact reported bug)", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { id } = await makeBooking(run, "pending-to-confirmed", {
+    paymentMode: "pay_at_studio",
+    paymentStatus: "pending_payment",
+    bookingStatus: "pending",
+  });
+
+  const res = await confirmPaid(id);
+  assert.equal(res.status, 200);
+  const body = await jsonBody(res);
+  assert.equal(body.paymentStatus, "paid");
+  assert.equal(body.bookingStatus, "confirmed", "the response must report bookingStatus as confirmed, not left pending");
+
+  const row = await bookingRow(id);
+  assert.equal(row.paymentStatus, "paid");
+  assert.equal(row.bookingStatus, "confirmed", "the booking row itself must be confirmed — this is the exact reported bug");
+});
+
+test("Part E: a booking already bookingStatus=confirmed before payment is unaffected (idempotent, no unintended transition)", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { id } = await makeBooking(run, "already-confirmed", {
+    paymentMode: "pay_at_studio",
+    paymentStatus: "pending_payment",
+    bookingStatus: "confirmed",
+  });
+
+  const res = await confirmPaid(id);
+  assert.equal(res.status, 200);
+  const row = await bookingRow(id);
+  assert.equal(row.paymentStatus, "paid");
+  assert.equal(row.bookingStatus, "confirmed");
+});
+
+test("Part E: a failure in payment-record confirmation rolls back the booking-status change too (single atomic transaction)", async () => {
+  // A package-credit/free booking is exactly the case where
+  // confirmCanonicalPaymentRecord is never reached at all — the guard
+  // above rejects the whole PATCH before the transaction does anything,
+  // so bookingStatus must be provably untouched, not just paymentStatus.
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { id } = await makeBooking(run, "atomic-rollback", {
+    paymentMode: "package_credit",
+    paymentStatus: "not_required",
+    bookingStatus: "pending",
+  });
+
+  const res = await confirmPaid(id);
+  assert.equal(res.status, 409);
+  const row = await bookingRow(id);
+  assert.equal(row.paymentStatus, "not_required", "payment side must roll back / never apply");
+  assert.equal(row.bookingStatus, "pending", "booking side must roll back / never apply — same transaction, same outcome");
+});
+
 test("a failed online_payment booking can be reconfirmed as paid after a successful retry", async () => {
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const { id } = await makeBooking(run, "retry", { paymentMode: "online_payment", paymentStatus: "failed" });

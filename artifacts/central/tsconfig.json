@@ -15,6 +15,20 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],
+  // Node-test-runner files (node:test/node:assert/etc.) are not part of the
+  // React Native/Expo production app and must not be compiled as part of
+  // this project — they are executed directly by Node via `node --test`,
+  // not by the Expo/RN toolchain, and this project has no @types/node (nor
+  // should it: adding Node globals to the RN app project would be wrong for
+  // the opposite reason). Excluding them here, rather than adding Node
+  // types to the production project, keeps this project's typecheck
+  // scoped to what actually ships in the app.
+  "exclude": [
+    "node_modules",
+    "tests/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ],
   "references": [
     {
       "path": "../../lib/api-client-react"

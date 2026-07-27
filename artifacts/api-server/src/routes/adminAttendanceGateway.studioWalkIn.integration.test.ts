@@ -609,3 +609,128 @@ test("a duplicate confirmation attempt (same candidate, submitted twice) produce
   const records = await pool.query(`SELECT count(*)::int AS n FROM payment_records WHERE booking_id = $1`, [firstBody.attendance ? (firstBody.attendance as Record<string, unknown>).bookingId : null]);
   assert.equal(records.rows[0].n, 1);
 });
+
+// ─── Finance Batch 1 Part D — package-credit re-verification, end to end ────
+//
+// Re-verifies the full atomic flow explicitly (not just "8 -> 7" as the
+// earlier test above does): exactly one credit deducted, exactly one
+// credit_transactions ledger row, exactly one attendance row, zero payment
+// records, the response returns the updated balance, and a retried/
+// duplicate scan does not deduct a second credit. This is unaffected by
+// Part C's Admin UI labeling fix (that change is presentation-only in
+// unified-attendance-dialog.tsx and does not touch this route or
+// checkInService.ts), but is re-run here to confirm the core remains sound
+// after that fix landed, per the corrective brief's Part D requirement.
+
+test("Part D: package-credit walk-in deducts exactly one credit, one ledger row, one attendance row, zero payment records, and returns the updated balance", async () => {
+  const phone = uniquePhone();
+  const student = await makeStudent(phone);
+  const pkg = await pool.query(`INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('GW Part D Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`);
+  const order = await pool.query(
+    `INSERT INTO package_orders (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, status)
+     VALUES ($1, $2, $3, $4, 'GW Part D Pkg', 8, 8, 'active') RETURNING id`,
+    [student.name, student.email, student.id, pkg.rows[0].id],
+  );
+  const packageOrderId = order.rows[0].id as number;
+  const candidate = await resolveWalkInCandidate(phone);
+
+  const paymentRecordsBefore = await pool.query(`SELECT count(*)::int AS n FROM payment_records`);
+  const ledgerBefore = await pool.query(
+    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
+    [packageOrderId],
+  );
+
+  const res = await asAdmin("/api/admin/attendance/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
+      scheduleId, paymentMode: "package_credit", packageOrderId,
+    }),
+  });
+  assert.equal(res.status, 201);
+  expectedPushCalls += 2; // "Checked in" + "Credit used" (not exhausted: 8 -> 7)
+  const body = await jsonBody(res);
+  const attendance = body.attendance as Record<string, unknown>;
+
+  // Response returns the updated balance directly — no separate refetch
+  // needed for the admin UI to display it.
+  assert.equal(attendance.remainingCredits, 7, "response must carry the POST-deduction balance");
+  assert.equal(attendance.creditDeducted, true);
+
+  const orderAfter = await pool.query(`SELECT remaining_credits, status FROM package_orders WHERE id = $1`, [packageOrderId]);
+  assert.equal(orderAfter.rows[0].remaining_credits, 7, "exactly one credit deducted");
+  assert.equal(orderAfter.rows[0].status, "active");
+
+  const ledgerAfter = await pool.query(
+    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
+    [packageOrderId],
+  );
+  assert.equal(ledgerAfter.rows[0].n, ledgerBefore.rows[0].n + 1, "exactly one ledger row inserted");
+
+  const attendanceRows = await pool.query(
+    `SELECT count(*)::int AS n FROM attendance WHERE id = $1`,
+    [attendance.attendanceId],
+  );
+  assert.equal(attendanceRows.rows[0].n, 1, "exactly one attendance row inserted");
+
+  const paymentRecordsAfter = await pool.query(`SELECT count(*)::int AS n FROM payment_records`);
+  assert.equal(
+    paymentRecordsAfter.rows[0].n,
+    paymentRecordsBefore.rows[0].n,
+    "a package-credit check-in must create NO payment record",
+  );
+
+  // Retry/duplicate scan of the SAME candidateKey must not deduct twice.
+  const retry = await asAdmin("/api/admin/attendance/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
+      scheduleId, paymentMode: "package_credit", packageOrderId,
+    }),
+  });
+  assert.notEqual(retry.status, 201, "a duplicate scan must be rejected, not silently re-applied");
+
+  const orderAfterRetry = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [packageOrderId]);
+  assert.equal(orderAfterRetry.rows[0].remaining_credits, 7, "retry must not deduct a second credit");
+
+  const ledgerAfterRetry = await pool.query(
+    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
+    [packageOrderId],
+  );
+  assert.equal(ledgerAfterRetry.rows[0].n, ledgerBefore.rows[0].n + 1, "retry must not insert a second ledger row");
+});
+
+test("Part D: two concurrent package-credit check-ins for the same candidateKey result in exactly one deduction", async () => {
+  const phone = uniquePhone();
+  const student = await makeStudent(phone);
+  const pkg = await pool.query(`INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('GW Part D Concurrency Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`);
+  const order = await pool.query(
+    `INSERT INTO package_orders (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, status)
+     VALUES ($1, $2, $3, $4, 'GW Part D Concurrency Pkg', 8, 8, 'active') RETURNING id`,
+    [student.name, student.email, student.id, pkg.rows[0].id],
+  );
+  const packageOrderId = order.rows[0].id as number;
+  const candidate = await resolveWalkInCandidate(phone);
+  const confirmBody = JSON.stringify({
+    candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
+    scheduleId, paymentMode: "package_credit", packageOrderId,
+  });
+
+  const [first, second] = await Promise.all([
+    asAdmin("/api/admin/attendance/confirm", { method: "POST", body: confirmBody }),
+    asAdmin("/api/admin/attendance/confirm", { method: "POST", body: confirmBody }),
+  ]);
+  const statuses = [first.status, second.status].sort((a, b) => a - b);
+  assert.equal(statuses[0], 201, "exactly one of the two concurrent requests must succeed");
+  assert.notEqual(statuses[1], 201, "the other concurrent request must be rejected, not also succeed");
+  expectedPushCalls += 2; // only the winning request's "Checked in" + "Credit used" pushes fire
+
+  const orderAfter = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [packageOrderId]);
+  assert.equal(orderAfter.rows[0].remaining_credits, 7, "concurrent duplicate requests must deduct exactly once");
+
+  const ledgerAfter = await pool.query(
+    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
+    [packageOrderId],
+  );
+  assert.equal(ledgerAfter.rows[0].n, 1, "concurrent duplicate requests must insert exactly one ledger row");
+});

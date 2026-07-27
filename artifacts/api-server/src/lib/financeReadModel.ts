@@ -123,6 +123,26 @@ export function normalizePaymentMethod(
   }
 }
 
+/**
+ * payment_records.confirmed_payment_method uses its own closed vocabulary
+ * (cash/card/kashier/bank_transfer/unknown) — distinct from the booking/
+ * Ballet raw strings normalizePaymentMethod handles, so it needs its own
+ * mapping rather than falling through to "unknown" for a real, valid value.
+ */
+export function normalizePaymentRecordMethod(
+  raw: string | null | undefined,
+): FinanceNormalizedPaymentMethod | null {
+  const value = textOrNull(raw);
+  if (value == null) return null;
+  switch (value) {
+    case "cash": return "cash";
+    case "card": return "card";
+    case "kashier": return "kashier";
+    case "bank_transfer": return "bank_transfer";
+    default: return "unknown";
+  }
+}
+
 // ─── Booking payment status normalization ─────────────────────────────────────
 
 /**
@@ -243,20 +263,151 @@ export interface PackageOrderSourceRow {
   currentCatalogPriceEgp: number | null;
   activatedAt: string | null;
   createdAt: string;
+  /**
+   * Canonical Finance Phase 2B-1/2C payment_records row for this package
+   * order (flow_type = 'package_purchase'), when one exists. Null for a
+   * legacy order created before the writer landed — see the fallback branch
+   * in mapPackagePurchase, which is preserved unchanged for that case.
+   */
+  paymentRecordStatus: string | null;
+  paymentRecordConfirmedMethod: string | null;
+  paymentRecordFinalPayableAmountMinor: number | null;
+  paymentRecordPaidAmountMinor: number | null;
+  paymentRecordRefundedAmountMinor: number | null;
+  paymentRecordDiscountAmountMinor: number | null;
+  paymentRecordPaidAt: string | null;
 }
 
 /**
- * A package order is an OPERATIONAL record, not a receipt.
+ * payment_records.status → the normalized Finance payment-status vocabulary.
+ * The canonical enum is richer than FinancePaymentStatus; rawSourceStatus
+ * (set to the exact payment_records.status) keeps the untruncated value, so
+ * this coarsening never loses information Finance can't recover.
+ */
+function normalizePaymentRecordStatus(raw: string | null): FinancePaymentStatus | null {
+  switch (raw) {
+    case "unpaid": return "pending";
+    case "pending_confirmation": return "pending";
+    case "paid": return "paid";
+    case "partially_refunded": return "refunded";
+    case "refunded": return "refunded";
+    case "waived": return "not_required";
+    case "cancelled": return "rejected";
+    case "failed": return "failed";
+    case "legacy_unverified": return "pending";
+    default: return null;
+  }
+}
+
+/**
+ * A package order is an OPERATIONAL record, not a receipt — but since Finance
+ * Phase 2B-1 (creation) / 2C (activation confirmation), every new package
+ * order also has a canonical payment_records row (flow_type =
+ * 'package_purchase') recording the real payment status, confirmed method,
+ * and exact minor-unit amount captured at creation/activation time. That row
+ * takes priority whenever it exists (see the branch below): paymentStatus
+ * comes from payment_records.status, the amount is the exact
+ * finalPayableAmountMinor snapshot (never a live catalog re-derivation), and
+ * reliability reads recorded_collection once paid — credit issuance (package
+ * activation) stays a separate concept, never conflated with cash-collection
+ * status.
  *
- * `status` in (active, fullyUsed, expired) proves an admin approved the order
- * and credits were issued — it does not prove money was collected, and there
- * is no column anywhere that records the collected amount. So:
+ * A legacy package order with no payment_records row (created before the
+ * writer existed) falls back UNCHANGED to the original estimate-based
+ * behavior:
  *   • paymentStatus is null (never "paid"),
- *   • the real status is preserved in rawSourceStatus,
+ *   • the real operational status is preserved in rawSourceStatus,
  *   • the amount is today's catalog price, flagged estimated,
  *   • an unresolvable price yields null money and unknown_amount.
+ * This fallback must never be removed — old test/legacy rows will never
+ * retroactively gain a payment_records row.
  */
 export function mapPackagePurchase(row: PackageOrderSourceRow): UnifiedFinanceTransaction {
+  if (row.paymentRecordStatus != null) {
+    return mapPackagePurchaseFromPaymentRecord(row);
+  }
+  return mapPackagePurchaseLegacyEstimate(row);
+}
+
+function mapPackagePurchaseFromPaymentRecord(row: PackageOrderSourceRow): UnifiedFinanceTransaction {
+  const finalPayableEgp = row.paymentRecordFinalPayableAmountMinor != null
+    ? row.paymentRecordFinalPayableAmountMinor / 100
+    : null;
+  const discountEgp = row.paymentRecordDiscountAmountMinor != null
+    ? row.paymentRecordDiscountAmountMinor / 100
+    : 0;
+  const refundedEgp = row.paymentRecordRefundedAmountMinor != null
+    ? row.paymentRecordRefundedAmountMinor / 100
+    : 0;
+  const grossEgp = finalPayableEgp != null ? finalPayableEgp + discountEgp : null;
+
+  const normalizedStatus = normalizePaymentRecordStatus(row.paymentRecordStatus);
+  const isPaidCollection = row.paymentRecordStatus === "paid" || row.paymentRecordStatus === "partially_refunded";
+  const badge: FinanceReliabilityBadge = isPaidCollection ? "recorded_collection" : "estimated_operational";
+
+  const amounts = emptyAmounts();
+  amounts.amountEgp = finalPayableEgp;
+  amounts.grossAmountEgp = grossEgp;
+  amounts.discountAmountEgp = discountEgp > 0 ? discountEgp : null;
+  amounts.netAmountEgp = finalPayableEgp;
+  amounts.refundedAmountEgp = refundedEgp > 0 ? refundedEgp : null;
+
+  return {
+    id: financeEventId(FINANCE_ID_PREFIXES.package_orders, row.id),
+    eventType: "package_purchase",
+    eventNature: isPaidCollection ? "cash_inflow" : "operational_estimate",
+    sourceTable: "package_orders",
+    sourceId: row.id,
+    amounts,
+    amountAvailability: "exact",
+    amountSource: "payment_record_snapshot",
+    credit: emptyCredit(),
+    paymentStatus: normalizedStatus,
+    refundStatus: null,
+    // The exact payment_records.status, not the coarser package_orders
+    // operational status — this is now the more precise "raw truth".
+    rawSourceStatus: row.paymentRecordStatus,
+    rawPaymentMethod: row.paymentRecordConfirmedMethod,
+    normalizedPaymentMethod: normalizePaymentRecordMethod(row.paymentRecordConfirmedMethod),
+    occurredAt: row.activatedAt ?? row.createdAt,
+    paidAt: row.paymentRecordPaidAt,
+    refundedAt: null,
+    customer: {
+      studentId: row.studentId,
+      name: textOrNull(row.studentName),
+      email: textOrNull(row.studentEmail),
+      phone: textOrNull(row.studentPhone),
+      participantScope: "unknown",
+      childId: null,
+      childName: null,
+    },
+    references: {
+      bookingId: null,
+      attendanceId: null,
+      packageOrderId: row.id,
+      packageId: row.packageId,
+      packageName: textOrNull(row.packageName),
+      balletApplicationId: null,
+      balletPaymentId: null,
+      balletRefundId: null,
+      promotionRedemptionId: null,
+      creditTransactionId: null,
+    },
+    scheduleContext: null,
+    actor: null,
+    providerReference: null,
+    reliability: {
+      badge,
+      explanation: isPaidCollection
+        ? FINANCE_RELIABILITY_EXPLANATIONS.recorded_collection
+          + " Package credit issuance is a separate operational fact, tracked independently of this cash-collection status."
+        : "This package purchase has a canonical payment record, but it has not yet been confirmed paid — status shown is the real payment lifecycle state, not an estimate.",
+    },
+    sourceDeepLink: "/package-orders",
+  };
+}
+
+function mapPackagePurchaseLegacyEstimate(row: PackageOrderSourceRow): UnifiedFinanceTransaction {
   const catalogPrice = egpOrNull(row.currentCatalogPriceEgp);
   const resolved = catalogPrice != null;
 
@@ -363,6 +514,19 @@ export interface BookingSourceRow {
   walkInActorAdminId: number | null;
   walkInActorEmail: string | null;
   isWalkIn: boolean;
+  /**
+   * Canonical Finance Phase 2B-2/2B-4/2C payment_records row for this
+   * booking (flow_type in single_class_booking/studio_walkin), when one
+   * exists. Null for a legacy booking created before the writer landed.
+   */
+  paymentRecordStatus: string | null;
+  paymentRecordConfirmedMethod: string | null;
+  paymentRecordGrossAmountMinor: number | null;
+  paymentRecordDiscountAmountMinor: number | null;
+  paymentRecordFinalPayableAmountMinor: number | null;
+  paymentRecordPaidAmountMinor: number | null;
+  paymentRecordRefundedAmountMinor: number | null;
+  paymentRecordPaidAt: string | null;
 }
 
 /** Payment modes that represent money changing hands for a generic booking. */
@@ -382,17 +546,117 @@ export function isMonetaryBookingPaymentMode(paymentMode: string | null | undefi
 /**
  * Generic single-class payment (B) and studio walk-in payment (C).
  *
- * Both are the same table with the same missing information — bookings store
- * no historical amount — so they share one mapper and differ only in event
- * type, walk-in actor attribution, and deep link. The amount uses the SAME
- * fallback order as the existing dashboard aggregate
- * (coalesce(schedule.priceEgp, classPricingSettings.singleClassPriceEgp)) so
- * Finance can never disagree with the Dashboard about a generic figure.
+ * Since Finance Phase 2B-2 (single-class direct-payment creation), 2B-4
+ * (paid Studio Walk-in), and 2C (Pay-at-Studio confirmation), a booking with
+ * a real cash flow also has a canonical payment_records row capturing the
+ * exact minor-unit amount and payment status at creation/confirmation time.
+ * That row takes priority whenever it exists (see the branch below) — the
+ * displayed amount is the exact captured snapshot, immune to later schedule
+ * price changes, and reliability reads recorded_collection once paid.
  *
- * paidAt stays null: no booking column records a payment instant, and an
- * attendance check-in time must never be silently promoted to a payment time.
+ * A legacy/package-credit/free booking with no payment_records row falls
+ * back UNCHANGED to the original schedule-price estimate (SAME fallback
+ * order as the existing dashboard aggregate — coalesce(schedule.priceEgp,
+ * classPricingSettings.singleClassPriceEgp) — so Finance never disagrees
+ * with the Dashboard about a generic estimated figure), with the existing
+ * "estimated_operational"/estimate-warning treatment preserved.
  */
 export function mapBookingPayment(row: BookingSourceRow): UnifiedFinanceTransaction {
+  if (row.paymentRecordStatus != null) {
+    return mapBookingPaymentFromPaymentRecord(row);
+  }
+  return mapBookingPaymentLegacyEstimate(row);
+}
+
+function mapBookingPaymentFromPaymentRecord(row: BookingSourceRow): UnifiedFinanceTransaction {
+  const finalPayableEgp = row.paymentRecordFinalPayableAmountMinor != null
+    ? row.paymentRecordFinalPayableAmountMinor / 100
+    : null;
+  const grossEgp = row.paymentRecordGrossAmountMinor != null ? row.paymentRecordGrossAmountMinor / 100 : finalPayableEgp;
+  const discountEgp = row.paymentRecordDiscountAmountMinor != null ? row.paymentRecordDiscountAmountMinor / 100 : 0;
+  const refundedEgp = row.paymentRecordRefundedAmountMinor != null ? row.paymentRecordRefundedAmountMinor / 100 : 0;
+
+  const normalizedStatus = normalizePaymentRecordStatus(row.paymentRecordStatus);
+  const isPaidCollection = row.paymentRecordStatus === "paid" || row.paymentRecordStatus === "partially_refunded";
+  const badge: FinanceReliabilityBadge = isPaidCollection ? "recorded_collection" : "estimated_operational";
+  const eventType: FinanceEventType = row.isWalkIn ? "studio_walkin_payment" : "single_class_payment";
+
+  const amounts = emptyAmounts();
+  amounts.amountEgp = finalPayableEgp;
+  amounts.grossAmountEgp = grossEgp;
+  amounts.discountAmountEgp = discountEgp > 0 ? discountEgp : null;
+  amounts.netAmountEgp = finalPayableEgp;
+  amounts.refundedAmountEgp = refundedEgp > 0 ? refundedEgp : null;
+
+  return {
+    id: financeEventId(row.isWalkIn ? FINANCE_WALKIN_ID_PREFIX : FINANCE_ID_PREFIXES.bookings, row.id),
+    eventType,
+    eventNature: isPaidCollection ? "cash_inflow" : "operational_estimate",
+    sourceTable: "bookings",
+    sourceId: row.id,
+    amounts,
+    amountAvailability: "exact",
+    amountSource: "payment_record_snapshot",
+    credit: emptyCredit(),
+    paymentStatus: normalizedStatus,
+    refundStatus: null,
+    rawSourceStatus: row.paymentRecordStatus,
+    rawPaymentMethod: row.paymentRecordConfirmedMethod ?? row.paymentMode,
+    normalizedPaymentMethod: row.paymentRecordConfirmedMethod != null
+      ? normalizePaymentRecordMethod(row.paymentRecordConfirmedMethod)
+      : normalizePaymentMethod(row.paymentMode),
+    occurredAt: row.bookedAt,
+    paidAt: row.paymentRecordPaidAt,
+    refundedAt: null,
+    customer: {
+      studentId: row.accountOwnerStudentId,
+      name: textOrNull(row.ownerName) ?? textOrNull(row.studentName),
+      email: textOrNull(row.ownerEmail) ?? textOrNull(row.studentEmail),
+      phone: textOrNull(row.ownerPhone) ?? textOrNull(row.studentPhone),
+      participantScope:
+        row.participantChildId != null || row.bookingScope === "child"
+          ? "child"
+          : row.bookingScope === "self"
+            ? "self"
+            : "unknown",
+      childId: row.participantChildId,
+      childName: textOrNull(row.childName),
+    },
+    references: {
+      bookingId: row.id,
+      attendanceId: row.attendanceId,
+      packageOrderId: null,
+      packageId: null,
+      packageName: null,
+      balletApplicationId: null,
+      balletPaymentId: null,
+      balletRefundId: null,
+      promotionRedemptionId: null,
+      creditTransactionId: null,
+    },
+    scheduleContext: {
+      classId: row.classId,
+      classTitle: textOrNull(row.classTitle),
+      scheduleId: row.scheduleId,
+      occurrenceDate: row.occurrenceDate,
+    },
+    actor: row.isWalkIn && (row.walkInActorAdminId != null || row.walkInActorEmail != null)
+      ? { adminId: row.walkInActorAdminId, adminEmail: textOrNull(row.walkInActorEmail) }
+      : null,
+    providerReference: null,
+    reliability: {
+      badge,
+      explanation: isPaidCollection
+        ? FINANCE_RELIABILITY_EXPLANATIONS.recorded_collection
+        : "This booking has a canonical payment record, but it has not yet been confirmed paid — status shown is the real payment lifecycle state, not an estimate.",
+    },
+    sourceDeepLink: row.isWalkIn
+      ? `/attendance${row.studentEmail ? `?studentEmail=${encodeURIComponent(row.studentEmail)}` : ""}`
+      : `/bookings${row.studentEmail ? `?studentEmail=${encodeURIComponent(row.studentEmail)}` : ""}`,
+  };
+}
+
+function mapBookingPaymentLegacyEstimate(row: BookingSourceRow): UnifiedFinanceTransaction {
   const schedulePrice = egpOrNull(row.schedulePriceEgp);
   const settingPrice = egpOrNull(row.singleClassSettingEgp);
   const resolvedPrice = schedulePrice ?? settingPrice;

@@ -81,6 +81,42 @@ export default function BookingFlowScreen() {
   const cls = classQuery.data
     ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp, classCapacityEnabled)
     : null;
+  // Finance Batch 1 (Part F1): an already-booked participant must be
+  // disabled, not merely rejected after submission. "Active" here mirrors
+  // the backend's own DUPLICATE_BLOCKING_STATUSES (bookings.ts) — pending
+  // OR confirmed blocks a duplicate; cancelled/rejected/attended do not.
+  // Scoped to the EXACT occurrence (scheduleId + occurrenceDate/date), so a
+  // past occurrence's booking never blocks re-booking a future one.
+  const occurrenceBookings = cls
+    ? bookings.filter((b) =>
+        b.scheduleId != null
+        && cls.scheduleId != null
+        && String(b.scheduleId) === String(cls.scheduleId)
+        && (b.occurrenceDate ?? b.date) === cls.date
+        && (b.bookingStatus === "pending" || b.bookingStatus === "confirmed"),
+      )
+    : [];
+  const selfAlreadyBooked = occurrenceBookings.some((b) => b.participantType === "self");
+  // Review Blocker 1: identity must be a stable id (children.id /
+  // participantChildId), never participantName — two children can share a
+  // name, names are editable, and casing/spacing can differ. The name
+  // comparison below is a LEGACY FALLBACK ONLY, isolated to booking rows
+  // that genuinely have no participantChildId (pre-dating the field being
+  // captured) — every current/new booking row has one (see
+  // myRoutes.ts/AppContext.tsx's mapMyBookingToLocal), so this fallback
+  // should see zero real bookings going forward and exists only so an old
+  // in-flight legacy row doesn't silently stop being detected at all.
+  function childAlreadyBooked(child: { id: string; fullName: string }): boolean {
+    return occurrenceBookings.some((booking) => {
+      if (booking.participantType !== "child") return false;
+      if (booking.participantChildId != null) {
+        return String(booking.participantChildId) === String(child.id);
+      }
+      // Legacy fallback only for rows without a stable child ID.
+      return booking.participantName.trim().toLowerCase() === child.fullName.trim().toLowerCase();
+    });
+  }
+
   const activePackages = userPackages.filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0);
   const packageCreditsRemaining = activePackages.reduce((sum, pkg) => sum + pkg.remainingCredits, 0);
   const selectedPackage = activePackages[0];
@@ -301,6 +337,7 @@ export default function BookingFlowScreen() {
         price: finalPrice,
         participantType,
         participantName,
+        participantChildId: participantType === "child" ? participantChildId : null,
         paymentMethod,
         paymentStatus: apiPaymentStatus,
         bookingStatus: apiBookingStatus,
@@ -429,10 +466,16 @@ export default function BookingFlowScreen() {
             </View>
 
             <TouchableOpacity
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setParticipantType("self"); }}
+              onPress={() => {
+                if (selfAlreadyBooked) return;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setParticipantType("self");
+              }}
+              disabled={selfAlreadyBooked}
               style={[
                 styles.participantCard,
                 participantType === "self" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "15" },
+                selfAlreadyBooked && styles.disabledCard,
               ]}
             >
               <ParticipantAvatar type="self" name={user.fullName} avatarUrl={user.avatarUrl} size={48} />
@@ -442,7 +485,9 @@ export default function BookingFlowScreen() {
                 </Text>
                 <Text style={styles.participantSub}>{user.fullName}</Text>
               </View>
-              {participantType === "self" && (
+              {selfAlreadyBooked ? (
+                <Text style={styles.alreadyBookedBadge}>Already booked</Text>
+              ) : participantType === "self" && (
                 <View style={[styles.checkCircle, { backgroundColor: colors.studio.primary }]}>
                   <Ionicons name="checkmark" size={14} color="#000" />
                 </View>
@@ -492,31 +537,39 @@ export default function BookingFlowScreen() {
               />
             ) : participantType === "child" ? (
               <View style={styles.childPicker}>
-                {children.map((child) => (
-                  <TouchableOpacity
-                    key={child.id}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setSelectedChildId(child.id);
-                    }}
-                    style={[
-                      styles.childOption,
-                      selectedChildId === child.id && {
-                        borderColor: colors.studio.primary,
-                        backgroundColor: colors.studio.primary + "12",
-                      },
-                    ]}
-                  >
-                    <ParticipantAvatar type="child" name={child.fullName} gender={child.gender} size={36} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.childName}>{child.fullName}</Text>
-                      <Text style={styles.participantSub}>Age {child.age}</Text>
-                    </View>
-                    {selectedChildId === child.id && (
-                      <Ionicons name="checkmark-circle" size={20} color={colors.studio.primary} />
-                    )}
-                  </TouchableOpacity>
-                ))}
+                {children.map((child) => {
+                  const isAlreadyBooked = childAlreadyBooked(child);
+                  return (
+                    <TouchableOpacity
+                      key={child.id}
+                      onPress={() => {
+                        if (isAlreadyBooked) return;
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setSelectedChildId(child.id);
+                      }}
+                      disabled={isAlreadyBooked}
+                      style={[
+                        styles.childOption,
+                        selectedChildId === child.id && {
+                          borderColor: colors.studio.primary,
+                          backgroundColor: colors.studio.primary + "12",
+                        },
+                        isAlreadyBooked && styles.disabledCard,
+                      ]}
+                    >
+                      <ParticipantAvatar type="child" name={child.fullName} gender={child.gender} size={36} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.childName}>{child.fullName}</Text>
+                        <Text style={styles.participantSub}>Age {child.age}</Text>
+                      </View>
+                      {isAlreadyBooked ? (
+                        <Text style={styles.alreadyBookedBadge}>Already booked</Text>
+                      ) : selectedChildId === child.id && (
+                        <Ionicons name="checkmark-circle" size={20} color={colors.studio.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             ) : null}
 
@@ -826,6 +879,10 @@ const styles = StyleSheet.create({
   },
   childAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   childName: { fontSize: 14, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
+  alreadyBookedBadge: {
+    fontSize: 11, fontFamily: "Archivo_600SemiBold", color: "#8E97A2",
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.06)",
+  },
   summaryCard: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
   summaryRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12,

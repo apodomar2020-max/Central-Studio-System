@@ -15,7 +15,7 @@ import {
   Archivo_900Black,
 } from "@expo-google-fonts/archivo";
 import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/space-mono";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -26,6 +26,7 @@ import * as Sentry from "@sentry/react-native";
 import * as Updates from "expo-updates";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -123,6 +124,19 @@ setAuthTokenGetter(async () => {
 });
 
 const queryClient = new QueryClient();
+
+// Finance Batch 1 (Part B2): React Query's `refetchOnWindowFocus` does
+// nothing on React Native — there is no browser window-focus event — so
+// without this, every screen using a generated `useGetMy*` query hook
+// (Credit History, package center, etc.) can show a stale credit balance
+// until its own unrelated refetch trigger happens to fire. Wiring
+// `focusManager` to AppState is the standard React Query React Native
+// integration: it makes `refetchOnWindowFocus` (already query-client
+// default) actually fire when the app returns to the foreground, for every
+// query in the app, without touching each screen individually.
+function onAppStateChange(status: AppStateStatus): void {
+  focusManager.setFocused(status === "active");
+}
 
 const ANDROID_HARDWARE_BACK_PROTECTED_ROUTES = new Set([
   "auth/login",
@@ -294,6 +308,11 @@ function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", onAppStateChange);
+    return () => subscription.remove();
+  }, []);
 
   if (!fontsLoaded && !fontError) return null;
 

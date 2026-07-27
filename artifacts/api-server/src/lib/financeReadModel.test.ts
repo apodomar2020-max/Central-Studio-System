@@ -183,6 +183,66 @@ test("package order with missing catalog price: amounts null, unknown availabili
   assert.equal(event.reliability.badge, "unknown_amount");
 });
 
+// ─── 2b. Package order WITH a canonical payment_records row (Finance Batch 1) ─
+
+test("package order with a canonical paid payment record: exact amount, Paid status, Cash method, recorded_collection", async () => {
+  const { mapPackagePurchase } = await load();
+  const event = mapPackagePurchase(packageOrderRow({
+    status: "active",
+    paymentRecordStatus: "paid",
+    paymentRecordConfirmedMethod: "cash",
+    paymentRecordFinalPayableAmountMinor: 240000,
+    paymentRecordPaidAmountMinor: 240000,
+    paymentRecordRefundedAmountMinor: 0,
+    paymentRecordDiscountAmountMinor: 0,
+    paymentRecordPaidAt: "2026-06-01T10:05:00.000Z",
+  }));
+
+  assert.equal(event.paymentStatus, "paid");
+  assert.equal(event.rawSourceStatus, "paid");
+  assert.equal(event.rawPaymentMethod, "cash");
+  assert.equal(event.normalizedPaymentMethod, "cash");
+  assert.equal(event.amounts.amountEgp, 2400);
+  assert.equal(event.amountAvailability, "exact");
+  assert.equal(event.amountSource, "payment_record_snapshot");
+  assert.equal(event.reliability.badge, "recorded_collection");
+  assert.equal(event.paidAt, "2026-06-01T10:05:00.000Z");
+  // Cash collection must never be re-labeled as a credit/service-unit concept.
+  assert.notEqual(event.reliability.badge, "service_credit_unit");
+});
+
+test("package order with a pending_confirmation payment record: no blank status, not marked Paid", async () => {
+  const { mapPackagePurchase } = await load();
+  const event = mapPackagePurchase(packageOrderRow({
+    status: "pendingPayment",
+    paymentRecordStatus: "pending_confirmation",
+    paymentRecordConfirmedMethod: null,
+    paymentRecordFinalPayableAmountMinor: 240000,
+    paymentRecordPaidAmountMinor: 0,
+    paymentRecordRefundedAmountMinor: 0,
+    paymentRecordDiscountAmountMinor: 0,
+    paymentRecordPaidAt: null,
+  }));
+
+  // Status must be a real, non-blank value — never null/blank for a row that
+  // has a canonical payment record, even before confirmation.
+  assert.equal(event.paymentStatus, "pending");
+  assert.notEqual(event.paymentStatus, null);
+  assert.equal(event.amountAvailability, "exact");
+  assert.equal(event.amounts.amountEgp, 2400);
+  assert.notEqual(event.reliability.badge, "recorded_collection");
+});
+
+test("legacy package order with NO payment_records row still uses the estimate fallback unchanged", async () => {
+  const { mapPackagePurchase } = await load();
+  const event = mapPackagePurchase(packageOrderRow({ status: "active" }));
+
+  assert.equal(event.paymentStatus, null);
+  assert.equal(event.amountAvailability, "estimated");
+  assert.equal(event.amountSource, "current_package_catalog_price");
+  assert.equal(event.reliability.badge, "estimated_operational");
+});
+
 // ─── 3. Paid generic class booking ────────────────────────────────────────────
 
 test("paid generic class booking: current schedule price is marked estimated with no cash claim", async () => {
@@ -275,6 +335,70 @@ test("walk-in with no proven admin leaves actor null rather than guessing", asyn
     bookingRow({ isWalkIn: true, walkInActorAdminId: null, walkInActorEmail: null }),
   );
   assert.equal(event.actor, null);
+});
+
+// ─── 4b. Booking/walk-in WITH a canonical payment_records row (Batch 1) ───────
+
+test("paid Studio Walk-in with a canonical payment record: exact recorded amount, no estimate warning", async () => {
+  const { mapBookingPayment } = await load();
+  const event = mapBookingPayment(bookingRow({
+    id: 91,
+    isWalkIn: true,
+    paymentRecordStatus: "paid",
+    paymentRecordConfirmedMethod: "cash",
+    paymentRecordGrossAmountMinor: 35000,
+    paymentRecordDiscountAmountMinor: 0,
+    paymentRecordFinalPayableAmountMinor: 35000,
+    paymentRecordPaidAmountMinor: 35000,
+    paymentRecordRefundedAmountMinor: 0,
+    paymentRecordPaidAt: "2026-07-01T12:00:00.000Z",
+  }));
+
+  assert.equal(event.paymentStatus, "paid");
+  assert.equal(event.amounts.amountEgp, 350);
+  assert.equal(event.amountAvailability, "exact");
+  assert.equal(event.amountSource, "payment_record_snapshot");
+  assert.equal(event.reliability.badge, "recorded_collection");
+  assert.equal(event.paidAt, "2026-07-01T12:00:00.000Z");
+  // Must not carry the historical-estimate explanation text.
+  assert.doesNotMatch(event.reliability.explanation, /re-derived from current pricing/i);
+});
+
+test("direct-payment booking with a canonical payment record shows the exact stored amount, immune to later price changes", async () => {
+  const { mapBookingPayment } = await load();
+  const event = mapBookingPayment(bookingRow({
+    schedulePriceEgp: 500, // price changed AFTER the booking was captured
+    paymentRecordStatus: "paid",
+    paymentRecordConfirmedMethod: "cash",
+    paymentRecordGrossAmountMinor: 35000, // captured at the ORIGINAL price
+    paymentRecordDiscountAmountMinor: 0,
+    paymentRecordFinalPayableAmountMinor: 35000,
+    paymentRecordPaidAmountMinor: 35000,
+    paymentRecordRefundedAmountMinor: 0,
+    paymentRecordPaidAt: "2026-07-01T12:00:00.000Z",
+  }));
+
+  // The later schedulePriceEgp change (500) must NOT alter the amount shown.
+  assert.equal(event.amounts.amountEgp, 350);
+  assert.equal(event.amountSource, "payment_record_snapshot");
+});
+
+test("legacy booking with NO payment_records row still shows the estimate caveat", async () => {
+  const { mapBookingPayment } = await load();
+  const event = mapBookingPayment(bookingRow());
+
+  assert.equal(event.amountSource, "current_schedule_price");
+  assert.equal(event.reliability.badge, "estimated_operational");
+  assert.match(event.reliability.explanation, /not a recorded collection/i);
+});
+
+test("package-credit issuance never appears as a cash payment status even when a payment record exists for a different booking", async () => {
+  const { mapCreditTransaction } = await load();
+  const creditEvent = mapCreditTransaction(creditRow({ type: "package_activated" }));
+  // Credit events carry a unit delta, never a money amount or payment status.
+  assert.equal(creditEvent.amounts.amountEgp, null);
+  assert.equal(creditEvent.paymentStatus, null);
+  assert.notEqual(creditEvent.credit.unitDelta, null);
 });
 
 // ─── 5. Package-credit walk-in is not a cash event ────────────────────────────
