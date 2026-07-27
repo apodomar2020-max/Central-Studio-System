@@ -97,8 +97,24 @@ export default function BookingFlowScreen() {
       )
     : [];
   const selfAlreadyBooked = occurrenceBookings.some((b) => b.participantType === "self");
-  function childAlreadyBooked(child: { fullName: string }): boolean {
-    return occurrenceBookings.some((b) => b.participantType === "child" && b.participantName === child.fullName);
+  // Review Blocker 1: identity must be a stable id (children.id /
+  // participantChildId), never participantName — two children can share a
+  // name, names are editable, and casing/spacing can differ. The name
+  // comparison below is a LEGACY FALLBACK ONLY, isolated to booking rows
+  // that genuinely have no participantChildId (pre-dating the field being
+  // captured) — every current/new booking row has one (see
+  // myRoutes.ts/AppContext.tsx's mapMyBookingToLocal), so this fallback
+  // should see zero real bookings going forward and exists only so an old
+  // in-flight legacy row doesn't silently stop being detected at all.
+  function childAlreadyBooked(child: { id: string; fullName: string }): boolean {
+    return occurrenceBookings.some((booking) => {
+      if (booking.participantType !== "child") return false;
+      if (booking.participantChildId != null) {
+        return String(booking.participantChildId) === String(child.id);
+      }
+      // Legacy fallback only for rows without a stable child ID.
+      return booking.participantName.trim().toLowerCase() === child.fullName.trim().toLowerCase();
+    });
   }
 
   const activePackages = userPackages.filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0);
@@ -321,6 +337,7 @@ export default function BookingFlowScreen() {
         price: finalPrice,
         participantType,
         participantName,
+        participantChildId: participantType === "child" ? participantChildId : null,
         paymentMethod,
         paymentStatus: apiPaymentStatus,
         bookingStatus: apiBookingStatus,

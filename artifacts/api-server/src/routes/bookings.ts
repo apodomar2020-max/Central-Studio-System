@@ -205,6 +205,43 @@ function legacyToPaymentStatus(status?: string | null, packageOrderId?: number |
   }
 }
 
+/**
+ * Independent-review Blocker 2: migration 0085's
+ * bookings_active_occurrence_participant_unique DB constraint correctly
+ * blocks a true concurrent duplicate booking (the application-level
+ * check-then-insert above has no row lock around it), but the LOSING
+ * concurrent request's raw Postgres 23505 error was previously uncaught —
+ * it propagated to Express's default error handler as a 500, not the same
+ * 409/duplicate_booking response the app-level check already returns for
+ * the exact same business condition.
+ *
+ * drizzle-orm (node-postgres driver) wraps the raw pg error in a
+ * DrizzleQueryError, exposing the pg fields on `.cause`, not on the
+ * wrapper itself — confirmed by direct inspection against a disposable
+ * database: `err.code` is undefined, `err.cause.code === "23505"`,
+ * `err.cause.constraint === "bookings_active_occurrence_participant_unique"`.
+ * Checking both `error.code`/`error.constraint` AND
+ * `error.cause?.code`/`error.cause?.constraint` keeps this correct
+ * regardless of whether a future change unwraps the error or not.
+ *
+ * Deliberately narrow: only THIS exact constraint name maps to
+ * duplicate_booking. Any other 23505 (a different unique constraint
+ * entirely) must surface as whatever it already surfaces as today — this
+ * function must never widen "any uniqueness violation" into this one
+ * business-facing error.
+ */
+function isOccurrenceDuplicateViolation(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+  const value = error as {
+    code?: string;
+    constraint?: string;
+    cause?: { code?: string; constraint?: string };
+  };
+  const code = value.code ?? value.cause?.code;
+  const constraint = value.constraint ?? value.cause?.constraint;
+  return code === "23505" && constraint === "bookings_active_occurrence_participant_unique";
+}
+
 function legacyStatusFromSplit(bookingStatus: BookingStatus, paymentStatus: PaymentStatus): string {
   if (bookingStatus === "pending" && paymentStatus === "pending_payment") return "pendingPayment";
   return bookingStatus;
@@ -850,7 +887,9 @@ router.post(
   // transaction has actually committed.
   const pushState: { pending: { studentId: number; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
 
-  const createResult = await db.transaction(async (tx) => {
+  let createResult;
+  try {
+    createResult = await db.transaction(async (tx) => {
     const classCapacityEnabled = await isClassCapacityEnabled();
     if (normalized.scheduleId != null) {
       const [lockedSchedule] = await tx
@@ -1041,7 +1080,25 @@ router.post(
     }
 
     return inserted;
-  });
+    });
+  } catch (error: unknown) {
+    // Independent-review Blocker 2: the losing side of a true concurrent
+    // duplicate-booking race hits migration 0085's DB constraint directly
+    // (the application-level check above has no row lock around it) and
+    // must map to the SAME 409/duplicate_booking response the app-level
+    // check already returns for this business condition — never a bare 500.
+    if (isOccurrenceDuplicateViolation(error)) {
+      res.status(409).json({
+        error: "You already have an active booking for this class.",
+        code: "duplicate_booking",
+      });
+      return;
+    }
+    // Any other error (a different constraint, a connection failure, etc.)
+    // is not this function's concern — rethrow unchanged so it is handled
+    // exactly as it already was before this fix.
+    throw error;
+  }
   // Deterministic post-commit boundary: the push is dispatched only after
   // `db.transaction` above has resolved, i.e. only after the booking, any
   // Finance rows, and the notification row have all actually committed.

@@ -157,7 +157,7 @@ test("Part F2: the DB index exists exactly as specified (partial, coalesced, sta
   assert.match(def, /booking_status = ANY \(ARRAY\['pending'::text, 'confirmed'::text\]\)/);
 });
 
-test("Part F3: two truly concurrent requests for the same participant + occurrence produce exactly one booking, one payment record, one payment event", async () => {
+test("Part F3 / Blocker 2: two truly concurrent requests for the same participant + occurrence produce exactly one 201, one 409 duplicate_booking (never a 500), one booking, one payment record, one payment event", async () => {
   const student = await makeStudent("concurrent");
   const token = studentToken(student.id, student.email);
   const body = JSON.stringify({
@@ -170,12 +170,73 @@ test("Part F3: two truly concurrent requests for the same participant + occurren
   ]);
   const statuses = [a.status, b.status].sort((x, y) => x - y);
   assert.equal(statuses[0], 201, "exactly one concurrent request must succeed");
-  assert.notEqual(statuses[1], 201, "the other must be deterministically rejected, not also succeed");
+  // Blocker 2: the loser must be the SAME 409/duplicate_booking response
+  // the app-level check already returns for this condition — never a 500.
+  assert.equal(statuses[1], 409, "the losing request must be a deterministic 409, never a 500");
+  assert.notEqual(statuses[1], 500, "the DB constraint violation on the losing request must never surface as a bare 500");
+
+  const loser = a.status === 409 ? a : b;
+  const loserBody = await jsonBody(loser);
+  assert.equal(loserBody.code, "duplicate_booking", "the loser's response code must be duplicate_booking, matching the app-level check's own response");
+  assert.equal(loserBody.error, "You already have an active booking for this class.");
 
   const counts = await countsForStudent(student.email);
   assert.equal(counts.bookings, 1, "the DB constraint must guarantee exactly one booking row survives, even under a true race");
   assert.equal(counts.records, 1, "exactly one payment_records row — no duplicate monetary capture");
   assert.equal(counts.events, 1, "exactly one payment_events row");
+});
+
+test("Blocker 2: a different participant (different student) CAN still book the exact same occurrence concurrently", async () => {
+  const studentA = await makeStudent("concurrent-diff-a");
+  const studentB = await makeStudent("concurrent-diff-b");
+  const tokenA = studentToken(studentA.id, studentA.email);
+  const tokenB = studentToken(studentB.id, studentB.email);
+  const bodyFor = (email: string) => JSON.stringify({ studentName: email, studentEmail: email, scheduleId, classId, paymentMode: "pay_at_studio" });
+
+  const [resA, resB] = await Promise.all([
+    asStudent(tokenA, "/api/bookings", { method: "POST", body: bodyFor(studentA.email) }),
+    asStudent(tokenB, "/api/bookings", { method: "POST", body: bodyFor(studentB.email) }),
+  ]);
+  assert.equal(resA.status, 201, "student A must succeed");
+  assert.equal(resB.status, 201, "student B must ALSO succeed — the unique index is scoped per account_owner_student_id, not per occurrence alone");
+
+  const countsA = await countsForStudent(studentA.email);
+  const countsB = await countsForStudent(studentB.email);
+  assert.equal(countsA.bookings, 1);
+  assert.equal(countsB.bookings, 1);
+});
+
+test("Blocker 2: isOccurrenceDuplicateViolation only maps the exact bookings_active_occurrence_participant_unique constraint — an unrelated 23505 is not mis-mapped", async () => {
+  // Prove the exact runtime error shape drizzle-orm/node-postgres surfaces
+  // for a genuinely UNRELATED unique-constraint violation, and confirm the
+  // route's narrow constraint-name check would not match it. This is a
+  // direct-DB-level proof (not an HTTP round trip through a route that
+  // enforces a different unique constraint, since bookings.ts has none
+  // other than the one this batch added) — it proves the detection helper
+  // is name-scoped, not "any 23505", using the same disposable database
+  // and the same error-shape-inspection method used to design the fix.
+  const dbModule = await import("@workspace/db");
+  const { db: rawDb, studentsTable } = dbModule;
+  const email = `unrelated-unique-${Date.now()}@example.com`;
+  await rawDb.insert(studentsTable).values({ name: "Unrelated Unique Test", email, phone: "0100000000", accountType: "student" });
+  let unrelatedError: unknown = null;
+  try {
+    // students.email has its own unique constraint, entirely unrelated to
+    // the occurrence-booking index this batch introduced.
+    await rawDb.insert(studentsTable).values({ name: "Unrelated Unique Test 2", email, phone: "0100000000", accountType: "student" });
+  } catch (err) {
+    unrelatedError = err;
+  }
+  assert.ok(unrelatedError, "setup: the unrelated unique violation must actually throw");
+  const value = unrelatedError as { code?: string; constraint?: string; cause?: { code?: string; constraint?: string } };
+  const code = value.code ?? value.cause?.code;
+  const constraint = value.constraint ?? value.cause?.constraint;
+  assert.equal(code, "23505", "setup: confirms this really is a 23505, the same SQLSTATE the occurrence-booking violation uses");
+  assert.notEqual(
+    constraint,
+    "bookings_active_occurrence_participant_unique",
+    "the unrelated violation's constraint name must differ from the one the route's helper checks for",
+  );
 });
 
 test("Part F4: a cancelled booking does not block a valid new booking for the same occurrence", async () => {

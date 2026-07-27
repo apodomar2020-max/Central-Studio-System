@@ -76,6 +76,14 @@ export interface Booking {
   price: number;
   participantType: "self" | "child";
   participantName: string;
+  /**
+   * Stable child identity for this booking (children.id), when the backend
+   * row has one. Null/undefined only for legacy rows created before this
+   * field was captured — duplicate-booking detection (booking/flow.tsx)
+   * must key on this, never on participantName, since names are editable
+   * and not unique across siblings.
+   */
+  participantChildId?: number | null;
   paymentMethod: "online" | "cash" | "packageCredit";
   paymentStatus: "not_required" | "pending_payment" | "paid" | "refunded" | "failed";
   bookingStatus: "pending" | "confirmed" | "rejected" | "cancelled" | "attended" | "completed" | "noShow";
@@ -227,6 +235,7 @@ interface ApiMyBooking {
   price: number;
   participantType: string;
   participantName: string;
+  participantChildId?: number | null;
   paymentMethod: string;
   paymentStatus: string;
   bookingStatus: string;
@@ -256,6 +265,7 @@ function mapMyBookingToLocal(r: ApiMyBooking): Booking {
     price: r.price ?? 0,
     participantType: r.participantType === "child" ? "child" : "self",
     participantName: r.participantName || "",
+    participantChildId: r.participantChildId ?? null,
     paymentMethod:
       r.paymentMethod === "packageCredit" ? "packageCredit" : r.paymentMethod === "online" ? "online" : "cash",
     paymentStatus: mapApiPaymentStatusToLocal(r.paymentStatus),

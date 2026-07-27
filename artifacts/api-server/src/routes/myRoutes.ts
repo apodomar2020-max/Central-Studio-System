@@ -367,6 +367,11 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       price: r.schedulePriceEgp ?? 0,
       participantType,
       participantName: r.participantChildName ?? b.studentName,
+      // Stable child identity (children.id) for this booking, when present —
+      // the mobile app's duplicate-booking check must key on this, not on
+      // participantName, since child names are editable and not unique
+      // across siblings. Null only for legacy rows without one.
+      participantChildId: b.participantChildId ?? null,
       paymentMethod,
       paymentStatus: b.paymentStatus ?? "not_required",
       bookingStatus,
