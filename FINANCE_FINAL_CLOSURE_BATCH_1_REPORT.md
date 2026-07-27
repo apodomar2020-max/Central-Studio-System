@@ -127,15 +127,19 @@ Verified: 23/23 tests pass in `bookings.financeConfirmation.integration.test.ts`
 
 ## 14. Tuesday/Thursday Reproduction and Result
 
-**Not reproducible** against the current codebase, at either the data/API layer or the two most relevant mobile display surfaces.
+**Open UAT item — Tuesday/Thursday paid-state bleed was not reproduced automatically and must be verified on the deployed mobile flow before final feature closure.**
 
 Reproduction attempted: one class with two schedules (Tuesday `day_of_week=2`, Thursday `day_of_week=4`), one participant, an independent booking created for each occurrence, Tuesday's booking confirmed paid. `GET /api/my/bookings` — the mobile app's single source of truth — returned Thursday's booking with its own independent `pending_payment` status, unaffected by Tuesday's confirmation (see `myBookings.occurrenceIndependence.integration.test.ts`, passing).
 
-Traced surfaces: `app/(tabs)/bookings.tsx` (flat per-booking list — inherently occurrence-scoped, since each occurrence is its own row) and `app/(tabs)/classes.tsx`'s `activeBooking` matcher (keys explicitly on `b.scheduleId === item.scheduleId && b.occurrenceDate === item.date`, already occurrence-scoped — a stale code comment calling this a TODO understates what the code already correctly does). Neither surface reproduces the symptom.
+**Independent review correctly identified a scope limitation in this test**: it exercises the server-side data/API layer (`GET /api/my/bookings` returning independent per-occurrence rows) directly via HTTP, not the actual recurring-class mobile UI path — it does not render `app/(tabs)/bookings.tsx` or `app/(tabs)/classes.tsx`, drive `AppContext`'s state, or exercise whatever component/hook actually decides which card shows "Paid" on a real device. Source-level tracing of those two files (cited below) shows logic that *should* behave correctly, but tracing static source is not equivalent to observing the rendered mobile app, and this batch has no React Native rendering harness available to close that gap automatically.
 
-Recorded per the requested format: `classId`/`scheduleId` — two distinct schedule rows under one class; participant identity — one student email; `bookingId` — two distinct booking rows; Tuesday `occurrenceDate` = `2026-07-28`; Thursday `occurrenceDate` = `2026-07-30`; the object resolving the Paid badge — `bookings.tsx`'s per-row `b.paymentStatus` and `classes.tsx`'s `activeBooking` lookup, both independently correct.
+Traced surfaces (source-level only, not run): `app/(tabs)/bookings.tsx` (flat per-booking list — inherently occurrence-scoped, since each occurrence is its own row) and `app/(tabs)/classes.tsx`'s `activeBooking` matcher (keys explicitly on `b.scheduleId === item.scheduleId && b.occurrenceDate === item.date`, already occurrence-scoped — a stale code comment calling this a TODO understates what the code already correctly does).
 
-**No runtime behavior was changed for this part.** A diagnostic regression test was added (`myBookings.occurrenceIndependence.integration.test.ts`) rather than a fix, since no bug was located. If the symptom persists in production, the residual DB-level concurrency gap closed by Part F2 (no unique constraint existed before this batch) and legacy null-occurrence rows are the two remaining candidate explanations not fully ruled out — recommend a live UAT re-reproduction with exact screenshots/network capture if this resurfaces.
+Recorded per the requested format: `classId`/`scheduleId` — two distinct schedule rows under one class; participant identity — one student email; `bookingId` — two distinct booking rows; Tuesday `occurrenceDate` = `2026-07-28`; Thursday `occurrenceDate` = `2026-07-30`; the object resolving the Paid badge — `bookings.tsx`'s per-row `b.paymentStatus` and `classes.tsx`'s `activeBooking` lookup, both independently correct **at the source level**, unverified on a running mobile app.
+
+**No runtime behavior was changed for this part**, and this task did not attempt to broaden scope to add a real mobile-UI reproduction harness (none exists in the repo today, and building one was out of scope for this fix-only task). If the symptom persists in production, the residual DB-level concurrency gap closed by Part F2 (no unique constraint existed before Batch 1) and legacy null-occurrence rows remain candidate explanations not fully ruled out — but the authoritative next step is the UAT verification below, not further automated reproduction.
+
+**This must remain an open item and must be verified on the deployed mobile app (real device or simulator, real recurring class, real payment confirmation) before this issue is closed** — see `FINANCE_FINAL_CLOSURE_BATCH_1_REVIEW_RESPONSE.md` for the tracked open item.
 
 ## 15. Tests Executed and Exact Counts
 
@@ -144,7 +148,7 @@ Recorded per the requested format: `classId`/`scheduleId` — two distinct sched
 | `financeReadModel.test.ts` (Part A, +11 new) | 37 | 37 pass |
 | `financeFilters.test.ts` + `financeExport.test.ts` + `financeUi.test.ts` (regression) | 88 | 88 pass |
 | `unifiedAttendanceDialog.test.ts` (Part C, +3 new, 1 pre-existing repaired) | 5 | 5 pass |
-| `flow.duplicateBooking.test.ts` (Part F1, new) | 4 | 4 pass |
+| `tests/booking/flow.duplicateBooking.test.ts` (Part F1 + Blocker 1, relocated + expanded) | 13 | 13 pass |
 | `students.creditAggregation.integration.test.ts` (Part B, new) | 5 | 5 pass |
 | `adminAttendanceGateway.studioWalkIn.integration.test.ts` (Part D, +2 new) | 18 | 18 pass |
 | `bookings.paymentConfirmation.integration.test.ts` (Part E, +3 new) | 15 | 15 pass |
@@ -154,19 +158,22 @@ Recorded per the requested format: `classId`/`scheduleId` — two distinct sched
 | `bookings.creationCapture.atomicity.integration.test.ts` (regression) | 3 | 3 pass |
 | `bookings.creationCapture.zeroWriter.integration.test.ts` (regression) | 3 | 3 pass |
 | `bookings.delete.integration.test.ts` (regression) | 7 | 7 pass |
-| `bookings.occurrenceUniqueness.integration.test.ts` (Part F2/F3, new) | 4 | 4 pass |
+| `bookings.occurrenceUniqueness.integration.test.ts` (Part F2/F3 + Blocker 2, expanded) | 6 | 6 pass |
 | `myBookings.occurrenceIndependence.integration.test.ts` (Part G, new) | 1 | 1 pass |
 | `packageOrders.activation.integration.test.ts` (regression) | 10 | 10 pass |
-| **Total** | **238** | **238 pass, 0 fail** |
+| **Total** | **242** | **242 pass, 0 fail** |
 
-New tests added in this batch: 11 (Part A) + 3 (Part C) + 4 (Part F1) + 5 (Part B) + 2 (Part D) + 3 (Part E, `bookings.paymentConfirmation`) + 4 (Part F2/F3) + 1 (Part G) = **33 new tests**; 1 pre-existing test corrected to match the fixed policy (Part E's B8) and 1 pre-existing broken regex test repaired (unrelated pre-existing bug, `unifiedAttendanceDialog.test.ts`, found while adding Part C tests to the same file).
+New tests added across both rounds: 11 (Part A) + 3 (Part C) + 13 (Part F1 + Blocker 1) + 5 (Part B) + 2 (Part D) + 3 (Part E, `bookings.paymentConfirmation`) + 6 (Part F2/F3 + Blocker 2) + 1 (Part G) = **44 new tests**; 1 pre-existing test corrected to match the fixed policy (Part E's B8) and 1 pre-existing broken regex test repaired (unrelated pre-existing bug, `unifiedAttendanceDialog.test.ts`, found while adding Part C tests to the same file).
 
 ## 16. Stability Results
 
-Repeated 3× each, no intermittent failures:
+Repeated 3× each (round 1), no intermittent failures:
 - `adminAttendanceGateway.studioWalkIn.integration.test.ts` "Part D" concurrency test (package-credit deduction race).
 - `bookings.occurrenceUniqueness.integration.test.ts` "Part F3" concurrency test (DB-constraint race).
 - `bookings.financeConfirmation.integration.test.ts` full file (payment/booking atomic-confirmation, including its own pre-existing B13 concurrency test).
+
+Repeated 5× (round 2, per independent-review requirement), no intermittent failures:
+- `bookings.occurrenceUniqueness.integration.test.ts` "Part F3 / Blocker 2" concurrency test — 5/5 pass, exactly one 201 + one 409/duplicate_booking every run, never a 500.
 
 One test-authoring bug was found and fixed during this process (not a product bug): a first draft of the Part F3 concurrency assertion sorted HTTP status codes with default (lexicographic) `.sort()`, inverting the expected index — corrected to a numeric comparator; the actual product behavior (one 201, one 409, exactly one credit/booking) was correct on the very first run once instrumented with debug output.
 
@@ -193,10 +200,60 @@ One test-authoring bug was found and fixed during this process (not a product bu
 
 ## 20. Rollback Plan
 
-- Application code: revert the single commit `c965188` (or the merge commit once merged) — every change in this batch is additive/corrective with no destructive data operations, so a code revert alone is safe.
+- Application code: revert the commits `c965188`/`82d3cb4`/`8eaa560` (or the merge commit once merged) — every change in this batch is additive/corrective with no destructive data operations, so a code revert alone is safe.
 - Migration 0085: `DROP INDEX "bookings_active_occurrence_participant_unique";` — safe, reversible, no data loss, since the index carries no data of its own.
 - No data was migrated or backfilled, so there is nothing to roll back at the data layer.
 
+## Independent Review Blocker Fixes
+
+An independent review of commit `82d3cb4` returned `CHANGES REQUIRED` with two confirmed merge blockers and one pre-deploy test-structure issue. All three are resolved as of commit `8eaa560`.
+
+### 1. Stable participant-ID fix (Blocker 1)
+
+Confirmed defect: `booking/flow.tsx`'s `childAlreadyBooked` matched on `participantName === child.fullName` — unsafe because names are editable and not unique across siblings. Fixed by:
+- Adding `participantChildId?: number | null` to `AppContext.tsx`'s local `Booking` interface.
+- Mapping it in the canonical (only) API→local mapper, `mapMyBookingToLocal`: `participantChildId: r.participantChildId ?? null`.
+- **A gap not mentioned in the original bug report was found and fixed**: the server's `GET /api/my/bookings` route (`myRoutes.ts`) did not actually include `participantChildId` in its response object at all — only the raw DB row had it. Added it to the response, since the mobile fix is a no-op without it.
+- Rewriting `childAlreadyBooked` to check `booking.participantChildId != null` first (`String(booking.participantChildId) === String(child.id)`), falling back to the normalized name comparison only when `participantChildId` is `null`.
+
+### 2. Legacy fallback decision
+
+**Retained, but isolated and documented as legacy-only.** Every current and new booking row now carries `participantChildId` (server-side, from the `bookings.participant_child_id` column, always populated at creation — see `bookings.ts`'s insert). The name-based fallback is unreachable for any row created going forward; it exists solely so a booking row created before this field was mapped into the API response doesn't silently stop being detected as a duplicate at all. It was not removed entirely because the task's own instructions treat this as "acceptable only... and must be clearly isolated/documented" rather than requiring outright removal, and removing it would regress detection for any such legacy row still present. The isolation is enforced structurally (an early-return inside the `participantChildId != null` branch) and proven by a dedicated test asserting the id-check is evaluated strictly before the name-check in the source.
+
+### 3. Test relocation
+
+`flow.duplicateBooking.test.ts` moved from `app/booking/` to `tests/booking/` (new directory), with its `readFileSync` import path updated to `../../app/booking/flow.tsx`. Expanded from 4 to 13 tests: the original 4 source-assertion tests (updated for the new stable-ID logic) plus 9 new tests — a dedicated "id check precedes name fallback" source assertion, a Booking-model/mapper assertion, and 7 behavioral tests (one per required scenario 1–7) run against a standalone re-implementation of the exact algorithm, kept honest by the source-level regex assertions in the same file.
+
+### 4. PostgreSQL 23505 mapping (Blocker 2)
+
+`bookings.ts`'s booking-creation `db.transaction(...)` call is now wrapped in `try/catch`. A new `isOccurrenceDuplicateViolation(error)` helper narrowly matches only the constraint this batch's migration added, mapping it to the existing `409 { error: "You already have an active booking for this class.", code: "duplicate_booking" }` response — identical to the app-level check's own response for the same business condition. Any other error is rethrown unchanged.
+
+### 5. Constraint-name verification
+
+Proved the exact runtime error shape against a disposable database (`central_studio_disposable_occurrence_unique`) before writing the detection helper, using a throwaway script that inserted a genuine duplicate row through the real `db.insert(bookingsTable)` call path:
+```
+err.constructor.name: DrizzleQueryError
+err.code: undefined
+err.cause.code: '23505'
+err.cause.constraint: 'bookings_active_occurrence_participant_unique'
+```
+Confirms drizzle-orm (node-postgres driver) wraps the raw `pg` error in a `DrizzleQueryError`, exposing `code`/`constraint` only on `.cause` — exactly why the helper checks `error.code ?? error.cause?.code` and `error.constraint ?? error.cause?.constraint`, per the reviewer's own preferred shape. The throwaway proof script was deleted after use; it is not part of the committed diff.
+
+### 6. Concurrency results
+
+- Batch 1's original "Part F3" test updated to assert the loser is exactly `409`/`duplicate_booking` (previously only asserted "not 201"). Re-run 5× — 5/5 pass, no intermittent failures.
+- New test proving a *different* participant can still book the identical occurrence concurrently (both succeed) — the index is scoped per `account_owner_student_id`, not per-occurrence alone.
+- New test proving an unrelated `23505` (a `students.email` unique-constraint violation, same SQLSTATE, different constraint name) is confirmed structurally distinct from `bookings_active_occurrence_participant_unique` and would not be matched by the detection helper.
+- All 6 tests in `bookings.occurrenceUniqueness.integration.test.ts` (4 original + 2 new) pass.
+
+### 7. Typecheck comparison
+
+Ran a side-by-side comparison: a fresh worktree of the unmodified baseline (`d5ab3bd`) typechecked via the correct root `pnpm run typecheck` (which builds `lib/db`/`lib/api-zod` first) produced errors in exactly these `central` files: `components/ballet/BalletAssessmentSuccessActions.test.ts`, `BalletChildManagementSafety.test.ts`, `BalletStudentPreviewCard.test.ts`, `balletAssessmentStateModel.test.ts`, `providers/centralAlertBridge.test.ts`, `centralAlertLogic.test.ts`, `services/backgroundMusic.test.ts`, `backgroundMusicRules.test.ts`, `balletClassScheduleModel.test.ts`, `balletMyClassesModel.test.ts`, `notificationNavigation.test.ts`, `tests/ballet/BalletMultipleSchedulesUi.test.ts` — 12 files, all pre-existing `node:test`/`node:assert`/`node:fs`/`node:path` module-resolution gaps (a repo-wide `@types/node`/tsconfig gap affecting every Node-test-runner file), none touched by this batch. After this fix commit, the exact same 12 files still error, **plus exactly one new file**: `tests/booking/flow.duplicateBooking.test.ts` — the relocated test file itself, which inherits the identical pre-existing error category (every test file in `central` has it) rather than a new kind of error. No `.tsx`/non-test source file gained a new error. `admin` and `api-server` remain fully clean (zero errors) on both the baseline and this fix commit.
+
+### 8. Tuesday/Thursday open UAT status
+
+Not claimed as closed. Reworded per instructions to the exact required wording — see §14 above and the review-response document.
+
 ## 21. Final Decision
 
-**PASS — Finance Final Closure Batch 1 implemented and ready for review.**
+**PASS — Independent-review blockers fixed; Finance Final Closure Batch 1 is ready for re-review.**
