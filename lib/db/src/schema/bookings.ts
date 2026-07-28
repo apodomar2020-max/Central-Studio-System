@@ -1,4 +1,4 @@
-import { date, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, date, integer, pgTable, serial, smallint, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -23,6 +23,13 @@ export const bookingsTable = pgTable("bookings", {
   // identity = student + schedule + occurrence, so a weekly class can be re-booked
   // for the next occurrence once the previous one passes. Null for legacy rows.
   occurrenceDate: date("occurrence_date", { mode: "string" }),
+  participantDateOfBirthSnapshot: date("participant_date_of_birth_snapshot", { mode: "string" }),
+  participantAgeOnOccurrence: smallint("participant_age_on_occurrence"),
+  eligibilityEvaluatedOn: date("eligibility_evaluated_on", { mode: "string" }),
+  classAllowAllAgesSnapshot: boolean("class_allow_all_ages_snapshot"),
+  classMinAgeSnapshot: smallint("class_min_age_snapshot"),
+  classMaxAgeSnapshot: smallint("class_max_age_snapshot"),
+  eligibilityDecisionCode: text("eligibility_decision_code"),
   packageId: integer("package_id"),
   // Explicit packageOrderId added in migration 0013. Legacy packageId field kept for
   // backward-compat but packageOrderId is the authoritative FK to package_orders.id.
@@ -69,6 +76,22 @@ export const bookingsTable = pgTable("bookings", {
       and ${table.accountOwnerStudentId} is not null
       and ${table.bookingStatus} in ('pending', 'confirmed')
     `),
+  check("bookings_participant_age_snapshot_check", sql`
+    ${table.participantAgeOnOccurrence} is null or ${table.participantAgeOnOccurrence} between 0 and 150
+  `),
+  check("bookings_class_age_range_snapshot_check", sql`
+    (${table.classAllowAllAgesSnapshot} is null and ${table.classMinAgeSnapshot} is null and ${table.classMaxAgeSnapshot} is null)
+    or (${table.classAllowAllAgesSnapshot} = true and ${table.classMinAgeSnapshot} is null and ${table.classMaxAgeSnapshot} is null)
+    or (
+      ${table.classAllowAllAgesSnapshot} = false
+      and ${table.classMinAgeSnapshot} is not null
+      and ${table.classMinAgeSnapshot} between 0 and 150
+      and (
+        ${table.classMaxAgeSnapshot} is null
+        or (${table.classMaxAgeSnapshot} between 0 and 150 and ${table.classMinAgeSnapshot} <= ${table.classMaxAgeSnapshot})
+      )
+    )
+  `),
 ]));
 
 export const insertBookingSchema = createInsertSchema(bookingsTable).omit({ id: true, createdAt: true, updatedAt: true });

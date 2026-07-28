@@ -603,6 +603,13 @@
       "when": 1784462440000,
       "tag": "0086_notification_device_unregister_secret",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1785254400000,
+      "tag": "0087_age_eligibility_participant_foundation",
+      "breakpoints": true
     }
   ]
 }

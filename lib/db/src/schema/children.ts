@@ -1,4 +1,4 @@
-import { integer, pgTable, serial, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { date, integer, pgTable, serial, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { studentsTable } from "./students";
@@ -16,6 +16,9 @@ export const childrenTable = pgTable("children", {
   id:            serial("id").primaryKey(),
   parentId:      integer("parent_id").notNull().references(() => studentsTable.id, { onDelete: "cascade" }),
   fullName:      text("full_name").notNull(),
+  // Canonical DOB for new eligibility work. Legacy birthday/age remain
+  // temporarily readable until the separately approved pre-launch reset.
+  dateOfBirth:   date("date_of_birth", { mode: "string" }),
   birthday:      text("birthday"),
   age:           integer("age"),
   gender:        text("gender").notNull().default("female"),

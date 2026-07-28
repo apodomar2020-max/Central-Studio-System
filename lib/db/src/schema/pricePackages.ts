@@ -1,4 +1,5 @@
-import { boolean, integer, pgTable, real, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, check, integer, pgTable, real, serial, smallint, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -11,6 +12,9 @@ export const pricePackagesTable = pgTable("price_packages", {
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   isFeatured: boolean("is_featured").notNull().default(false),
+  allowAllAges: boolean("allow_all_ages"),
+  minAge: smallint("min_age"),
+  maxAge: smallint("max_age"),
   // How many months from purchase until the package expires
   validityMonths: integer("validity_months").notNull().default(6),
   // Per-class price shown on the card (optional override; calculated from priceEgp/sessions if null)
@@ -21,7 +25,18 @@ export const pricePackagesTable = pgTable("price_packages", {
   features: text("features").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
-});
+}, (table) => ([
+  check("price_packages_age_range_shape_check", sql`
+    (${table.allowAllAges} is null and ${table.minAge} is null and ${table.maxAge} is null)
+    or (${table.allowAllAges} = true and ${table.minAge} is null and ${table.maxAge} is null)
+    or (
+      ${table.allowAllAges} = false
+      and ${table.minAge} is not null
+      and ${table.minAge} between 0 and 150
+      and (${table.maxAge} is null or (${table.maxAge} between 0 and 150 and ${table.minAge} <= ${table.maxAge}))
+    )
+  `),
+]));
 
 export const insertPricePackageSchema = createInsertSchema(pricePackagesTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertPricePackage = z.infer<typeof insertPricePackageSchema>;

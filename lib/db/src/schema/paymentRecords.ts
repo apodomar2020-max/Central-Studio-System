@@ -129,6 +129,7 @@ export const paymentRecordsTable = pgTable("payment_records", {
   internalReceiptRef: text("internal_receipt_ref"),
 
   studentId: integer("student_id").references(() => studentsTable.id, { onDelete: "set null" }),
+  participantType: text("participant_type"),
   childId: integer("child_id").references(() => childrenTable.id, { onDelete: "set null" }),
 
   creationIdempotencyKey: text("creation_idempotency_key"),
@@ -149,6 +150,11 @@ export const paymentRecordsTable = pgTable("payment_records", {
   check("payment_records_requested_channel_check", sql`${table.requestedPaymentChannel} is null or ${table.requestedPaymentChannel} in ('pay_at_studio','online','internal_credit','complimentary','unknown')`),
   check("payment_records_confirmed_method_check", sql`${table.confirmedPaymentMethod} is null or ${table.confirmedPaymentMethod} in ('cash','card','kashier','bank_transfer','unknown')`),
   check("payment_records_status_check", sql`${table.status} in ('unpaid','pending_confirmation','paid','partially_refunded','refunded','waived','failed','cancelled','legacy_unverified')`),
+  check("payment_records_participant_shape_check", sql`
+    (${table.participantType} is null)
+    or (${table.participantType} = 'self' and ${table.childId} is null)
+    or (${table.participantType} = 'child' and ${table.childId} is not null)
+  `),
   check("payment_records_currency_check", sql`${table.currency} = 'EGP'`),
 
   // ── Source-to-flow-type binding, including the tombstone shape ────────

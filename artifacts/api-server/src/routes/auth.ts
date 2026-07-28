@@ -29,6 +29,7 @@ import {
   verifyOtpCode,
 } from "../lib/authHelpers";
 import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfileResponse";
+import { validateProfileAge } from "../lib/eligibility/profileAgeValidation";
 
 const router: IRouter = Router();
 
@@ -37,6 +38,7 @@ const RegisterBody = z.object({
   email: z.string().email("Invalid email address"),
   phone: z.string().optional(),
   accountType: z.enum(["student", "parent"]).optional(),
+  dateOfBirth: z.string().optional(),
   password: PasswordSchema,
 });
 
@@ -108,7 +110,19 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
-  const { name, email, phone, accountType, password } = parsed.data;
+  const { name, email, phone, accountType, dateOfBirth, password } = parsed.data;
+
+  if (dateOfBirth != null) {
+    const ageValidation = validateProfileAge({
+      accountType: accountType ?? null,
+      dateOfBirth,
+    });
+    if (!ageValidation.eligible) {
+      const reason = ageValidation.reasons[0]!;
+      res.status(400).json({ error: reason.message, code: reason.code });
+      return;
+    }
+  }
 
   // Check if email is already taken
   const [existing] = await db
@@ -127,6 +141,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     name: name.trim(),
     phone: phone?.trim() || null,
     accountType: accountType ?? null,
+    dateOfBirth: dateOfBirth ?? null,
   };
   const completion = legacyProfileCompletionPatch(profileInput);
 
@@ -137,6 +152,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       email: normalizeEmail(email),
       phone: profileInput.phone,
       accountType: profileInput.accountType,
+      dateOfBirth: profileInput.dateOfBirth,
       ...completion,
       passwordHash,
       authProvider: "local",
@@ -251,6 +267,25 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
     : parsed.data.policiesAccepted === false
       ? null
       : existing.policiesAcceptedAt;
+
+  // Phase A: DOB/Parent-age validation is authoritative at the profile
+  // boundary, while missing DOB remains a valid partial-onboarding state.
+  // Validate before writing so a rejected transition cannot partially
+  // mutate the account or accidentally mark completion finished.
+  const shouldValidateAge =
+    nextDateOfBirth != null &&
+    (parsed.data.dateOfBirth !== undefined || parsed.data.accountType !== undefined);
+  if (shouldValidateAge) {
+    const ageValidation = validateProfileAge({
+      accountType: nextAccountType,
+      dateOfBirth: nextDateOfBirth,
+    });
+    if (!ageValidation.eligible) {
+      const reason = ageValidation.reasons[0]!;
+      res.status(400).json({ error: reason.message, code: reason.code });
+      return;
+    }
+  }
 
   // Profile Completion Engine (Phase 4): this endpoint now ALWAYS saves
   // whatever subset of fields is given and reports current completion

@@ -13,6 +13,7 @@
  * Registration flow this encodes:
  *   email → profile → children (parent only) → medical (parent only) → styles → done
  */
+import { validateProfileAge } from "./eligibility/profileAgeValidation";
 
 export type CompletionStep = "email" | "profile" | "children" | "medical" | "styles";
 
@@ -47,17 +48,22 @@ function isNonEmpty(value: string | null | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-const PROFILE_FIELD_CHECKS = (input: ProfileCompletionInput): [string, boolean][] => [
+const PROFILE_FIELD_CHECKS = (input: ProfileCompletionInput): [string, boolean][] => {
+  const ageValidation = input.dateOfBirth
+    ? validateProfileAge({ accountType: input.accountType, dateOfBirth: input.dateOfBirth })
+    : null;
+  return [
   ["name", isNonEmpty(input.name)],
   ["phone", isNonEmpty(input.phone)],
   ["accountType", input.accountType === "student" || input.accountType === "parent"],
   ["gender", isNonEmpty(input.gender)],
-  ["dateOfBirth", isNonEmpty(input.dateOfBirth)],
+  ["dateOfBirth", isNonEmpty(input.dateOfBirth) && ageValidation?.eligible === true],
   ["city", isNonEmpty(input.city)],
   ["nationality", isNonEmpty(input.nationality)],
   ["howDidYouHearAboutUs", isNonEmpty(input.howDidYouHearAboutUs)],
   ["policiesAccepted", input.policiesAcceptedAt != null],
-];
+  ];
+};
 
 export function computeProfileCompletion(input: ProfileCompletionInput): ProfileCompletion {
   const isParent = input.accountType === "parent";

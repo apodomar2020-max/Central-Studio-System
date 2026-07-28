@@ -1,10 +1,11 @@
-import { boolean, date, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, date, index, integer, pgTable, serial, smallint, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { balletClassesTable } from "./balletClasses";
 import { balletSchedulesTable } from "./balletSchedules";
 import { balletLevelAssignmentsTable } from "./balletLevelAssignments";
+import { childrenTable } from "./children";
 import {
   BALLET_ATTENDANCE_STATUSES,
   type BalletAttendanceStatus,
@@ -24,6 +25,10 @@ export const attendanceTable = pgTable("attendance", {
   // FK references added as part of QR Attendance system (Step 1).
   // All nullable so legacy attendance records remain valid.
   studentId: integer("student_id"),   // → students.id (set when scanned via QR token)
+  participantType: text("participant_type"),
+  participantChildId: integer("participant_child_id").references(() => childrenTable.id, { onDelete: "set null" }),
+  participantAgeOnOccurrence: smallint("participant_age_on_occurrence"),
+  eligibilityEvaluatedOn: date("eligibility_evaluated_on", { mode: "string" }),
   classId: integer("class_id"),       // → classes.id  (set when admin picks from dropdown)
   scheduleId: integer("schedule_id"), // → schedules.id (set when admin picks from dropdown)
   // Ballet system separation: set for ballet check-ins. classId/scheduleId
@@ -66,6 +71,15 @@ export const attendanceTable = pgTable("attendance", {
   uniqueIndex("attendance_ballet_unique_per_slot_date")
     .on(table.balletLevelAssignmentId, table.balletScheduleId, table.classDate)
     .where(sql`${table.balletLevelAssignmentId} is not null`),
+  check("attendance_participant_shape_check", sql`
+    (${table.participantType} is null and ${table.participantChildId} is null)
+    or (${table.participantType} is not null and ${table.participantType} = 'self' and ${table.participantChildId} is null)
+    or (${table.participantType} is not null and ${table.participantType} = 'child' and ${table.participantChildId} is not null)
+  `),
+  check("attendance_participant_age_snapshot_check", sql`
+    ${table.participantAgeOnOccurrence} is null or ${table.participantAgeOnOccurrence} between 0 and 150
+  `),
+  index("attendance_participant_child_checked_in_at_idx").on(table.participantChildId, table.checkedInAt),
 ]));
 
 export const insertAttendanceSchema = createInsertSchema(attendanceTable).omit({ id: true, createdAt: true, updatedAt: true });
