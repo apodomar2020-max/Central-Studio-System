@@ -173,12 +173,14 @@ export function UnifiedAttendanceDialog({
   canCheckIn,
   canPackageDeduct,
   canScan,
+  canConfirmPayments,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canCheckIn: boolean;
   canPackageDeduct: boolean;
   canScan: boolean;
+  canConfirmPayments: boolean;
 }) {
   const queryClient = useQueryClient();
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -363,7 +365,7 @@ export function UnifiedAttendanceDialog({
     setPhase("confirming");
     setWalkInActionAmount(null);
     const isActionableWalkIn = candidate.bookingId == null && candidate.program === "studio";
-    if (isActionableWalkIn && candidate.scheduleId != null) {
+    if (isActionableWalkIn && canConfirmPayments && candidate.scheduleId != null) {
       setWalkInActionAmountLoading(true);
       void customFetch<{ amountEgp: number | null }>("/api/admin/attendance/walkin-payment-amount", {
         method: "POST",
@@ -651,9 +653,9 @@ export function UnifiedAttendanceDialog({
                     <div className="space-y-2">
                       <p className="text-sm font-semibold">Payment</p>
                       <div className="flex gap-2">
-                        <button onClick={() => setPaymentMode("pay_at_studio")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "pay_at_studio" ? CYAN : "hsl(var(--muted))", color: paymentMode === "pay_at_studio" ? "hsl(var(--primary-foreground))" : undefined }}>
+                        {canConfirmPayments && <button onClick={() => setPaymentMode("pay_at_studio")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "pay_at_studio" ? CYAN : "hsl(var(--muted))", color: paymentMode === "pay_at_studio" ? "hsl(var(--primary-foreground))" : undefined }}>
                           Pay at Studio
-                        </button>
+                        </button>}
                         {showPackageCreditOption && (
                           <button onClick={() => setPaymentMode("package_credit")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "package_credit" ? CYAN : "hsl(var(--muted))", color: paymentMode === "package_credit" ? "hsl(var(--primary-foreground))" : undefined }}>
                           Package Credit

@@ -51,8 +51,14 @@ test("booking and package general lists redact while dedicated action endpoints 
 
 test("walk-in discovery never returns amounts to payment-confirm-only users", () => {
   const route = read("artifacts/api-server/src/routes/adminAttendanceGateway.ts");
+  const attendancePage = read("artifacts/admin/src/pages/attendance.tsx");
+  const unifiedDialog = read("artifacts/admin/src/components/unified-attendance-dialog.tsx");
+  const scanDialog = read("artifacts/admin/src/components/scan-check-in-dialog.tsx");
   assert.match(route, /if \(!canViewFinanceAmounts\(req\.adminUser\)\)[\s\S]*?walkinPriceEgp: null/);
   assert.match(route, /"\/admin\/attendance\/walkin-payment-amount"[\s\S]*?requireAdminPermission\("finance", "paymentsConfirm"\)/);
+  assert.match(attendancePage, /const canConfirmPayments = can\("finance", "paymentsConfirm"\)/);
+  assert.match(unifiedDialog, /canConfirmPayments && <button[\s\S]*?Pay at Studio/);
+  assert.match(scanDialog, /canConfirmPayments && <button[\s\S]*?Pay at Studio/);
 });
 
 test("Dashboard and Admin rendering never substitute redacted finance values with zero", () => {
