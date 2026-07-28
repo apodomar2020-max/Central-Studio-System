@@ -63,7 +63,7 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
     <div className="grid gap-3 sm:grid-cols-2">
       <Field label="Current status" value={<PaymentStatusBadge status={currentPayment?.status} />} />
       <Field label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} />
-      <Field label="Amount" value={currentPayment ? `${currentPayment.amountEgp} EGP` : null} />
+      <Field label="Amount" value={currentPayment ? (currentPayment.amountEgp == null ? "Restricted" : `${currentPayment.amountEgp} EGP`) : null} />
       <Field
         label="Preferred package"
         value={
@@ -145,7 +145,7 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
             </div>
             <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
               <span>{payment.packageName ?? (payment.packageId ? `Package #${payment.packageId}` : "No package")}</span>
-              <span>{payment.amountEgp.toLocaleString()} EGP</span>
+              <span>{payment.amountEgp == null ? "Restricted" : `${payment.amountEgp.toLocaleString()} EGP`}</span>
               <span>{formatPaymentMethod(payment.paymentMethod) ?? "No method"}</span>
               <span>{payment.subscriptionDisplayStatus}</span>
               <span>Paid: {formatDateTime(payment.paidAt)}</span>

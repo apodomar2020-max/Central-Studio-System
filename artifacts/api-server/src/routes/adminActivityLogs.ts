@@ -13,7 +13,8 @@ import { Router, type IRouter } from "express";
 import { and, count, desc, eq, gte, ilike, lte, or, type SQL } from "drizzle-orm";
 import { db, adminActivityLogsTable } from "@workspace/db";
 import { blockStudentJwt } from "../middlewares/auth";
-import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { canViewFinanceAmounts } from "../lib/financialVisibility";
 
 const router: IRouter = Router();
 
@@ -26,12 +27,31 @@ function firstString(value: unknown): string | undefined {
   return undefined;
 }
 
+const FINANCIAL_KEY = /(amount|price|revenue|subtotal|total.*egp|egp.*total|paid.*minor|refund.*egp)/i;
+const FINANCIAL_TEXT = /\b(?:EGP\s*)?\d[\d,]*(?:\.\d+)?\s*EGP\b/gi;
+
+function redactFinancialLogValue(value: unknown, key = ""): unknown {
+  if (FINANCIAL_KEY.test(key)) return null;
+  if (Array.isArray(value)) return value.map((item) => redactFinancialLogValue(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([entryKey, entryValue]) => [entryKey, redactFinancialLogValue(entryValue, entryKey)]),
+    );
+  }
+  return value;
+}
+
+function redactFinancialSummary(summary: string): string {
+  return summary.replace(FINANCIAL_TEXT, "Restricted amount");
+}
+
 router.get(
   "/admin/logs",
   blockStudentJwt,
   requireAdminAuth,
   requireAdminPermission("auditLogs", "view"),
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const page = Math.max(1, parseInt(firstString(req.query["page"]) ?? "1", 10) || 1);
     const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(firstString(req.query["limit"]) ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT));
 
@@ -57,10 +77,11 @@ router.get(
     if (to && DATE_RE.test(to)) {
       conditions.push(lte(adminActivityLogsTable.createdAt, `${to}T23:59:59.999Z`));
     }
+    const canViewAmounts = canViewFinanceAmounts(req.adminUser);
     if (search) {
       const pattern = `%${search}%`;
       const searchCondition = or(
-        ilike(adminActivityLogsTable.summary, pattern),
+        ...(canViewAmounts ? [ilike(adminActivityLogsTable.summary, pattern)] : []),
         ilike(adminActivityLogsTable.entityLabel, pattern),
         ilike(adminActivityLogsTable.actorName, pattern),
         ilike(adminActivityLogsTable.actorEmail, pattern),
@@ -83,7 +104,12 @@ router.get(
 
     const total = Number(totals?.total ?? 0);
     res.json({
-      data,
+      data: canViewAmounts ? data : data.map((row) => ({
+        ...row,
+        summary: redactFinancialSummary(row.summary),
+        before: redactFinancialLogValue(row.before),
+        after: redactFinancialLogValue(row.after),
+      })),
       total,
       page,
       limit,

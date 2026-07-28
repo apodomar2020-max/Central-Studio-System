@@ -207,28 +207,27 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     upcomingClasses,
   });
 
-  // The Dashboard remains useful to operational roles, but it must not become
-  // a side door around finance.view. Preserve the response shape for existing
-  // clients while replacing every financial value with a non-sensitive zero
-  // and removing explanatory financial metadata.
+  // Keep operational metrics available without turning a redacted amount into
+  // a misleading "EGP 0". Nullable fields make the authorization boundary
+  // explicit in the response and are never rendered by the unauthorized UI.
   if (!canViewFinance) {
     Object.assign(response, {
-      totalRevenue: 0,
-      revenueTrackingComplete: false,
-      grossGenericBookingRevenueEgp: 0,
-      grossGenericPackageRevenueEgp: 0,
-      grossBalletRevenueEgp: 0,
-      balletCompletedRefundsEgp: 0,
-      legacyBalletRefundedPaymentsEgp: 0,
-      balletPendingRefundExposureEgp: 0,
-      balletNetRevenueEgp: 0,
-      totalGrossRevenueEgp: 0,
-      totalNetRevenueEgp: 0,
-      balletPayAtStudioRevenueEgp: 0,
-      balletOnlineRevenueEgp: 0,
-      balletLegacyBankTransferRevenueEgp: 0,
+      totalRevenue: null,
+      revenueTrackingComplete: null,
+      grossGenericBookingRevenueEgp: null,
+      grossGenericPackageRevenueEgp: null,
+      grossBalletRevenueEgp: null,
+      balletCompletedRefundsEgp: null,
+      legacyBalletRefundedPaymentsEgp: null,
+      balletPendingRefundExposureEgp: null,
+      balletNetRevenueEgp: null,
+      totalGrossRevenueEgp: null,
+      totalNetRevenueEgp: null,
+      balletPayAtStudioRevenueEgp: null,
+      balletOnlineRevenueEgp: null,
+      balletLegacyBankTransferRevenueEgp: null,
       legacyRevenueTrackingLimitations: [],
-      approvedProcessingRefundExposureEgp: 0,
+      approvedProcessingRefundExposureEgp: null,
     });
   }
   res.json(response);

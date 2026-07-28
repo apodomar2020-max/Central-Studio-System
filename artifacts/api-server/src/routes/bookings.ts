@@ -18,7 +18,8 @@ import {
   PAYMENT_RECORD_CONFIRMED_METHODS,
   type PaymentRecordConfirmedMethod,
 } from "@workspace/db";
-import { egpToMinor } from "../lib/money";
+import { egpToMinor, minorToEgp } from "../lib/money";
+import { canViewFinanceAmounts } from "../lib/financialVisibility";
 import { logger } from "../lib/logger";
 import { resolveSingleClassPriceEgp } from "../lib/singleClassPricing";
 import { createStudentNotification } from "../lib/notifications";
@@ -487,7 +488,7 @@ function formatTime(t: string | null): string | null {
   return `${h12}:${m} ${period}`;
 }
 
-router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void> => {
+router.get("/bookings", requireBookingReadAccess, async (req: AdminRequest, res): Promise<void> => {
   if (req.studentJwtVerified) {
     if (req.studentEmailVerified === false) {
       res.status(403).json({
@@ -676,7 +677,10 @@ router.get("/bookings", requireBookingReadAccess, async (req, res): Promise<void
       scheduleStartTime: r.scheduleStartTime ?? null,
       scheduleEndTime: r.scheduleEndTime ?? null,
       scheduleLocation: r.scheduleLocation ?? null,
-      schedulePriceEgp: r.schedulePriceEgp ?? null,
+      schedulePriceEgp:
+        req.studentJwtVerified || canViewFinanceAmounts(req.adminUser)
+          ? r.schedulePriceEgp ?? null
+          : null,
       schedulePackageEligible: r.schedulePackageEligible ?? true,
       scheduleLabel,
       displayTitle: r.classTitle ?? `Booking #${r.booking.id}`,
@@ -1199,6 +1203,52 @@ router.get("/bookings/:id", requireBookingReadAccess, async (req, res): Promise<
   }
   res.json(GetBookingResponse.parse(row));
 });
+
+router.get(
+  "/bookings/:id/payment-confirmation-amount",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("bookings", "view"),
+  requireAdminPermission("finance", "paymentsConfirm"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = GetBookingParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const [record] = await db
+      .select({
+        finalPayableAmountMinor: paymentRecordsTable.finalPayableAmountMinor,
+        status: paymentRecordsTable.status,
+        bookingPaymentStatus: bookingsTable.paymentStatus,
+        bookingPaymentMode: bookingsTable.paymentMode,
+      })
+      .from(paymentRecordsTable)
+      .innerJoin(bookingsTable, eq(bookingsTable.id, paymentRecordsTable.bookingId))
+      .where(and(
+        eq(paymentRecordsTable.bookingId, params.data.id),
+        eq(paymentRecordsTable.flowType, "single_class_booking"),
+      ))
+      .limit(1);
+    if (!record) {
+      res.status(404).json({ error: "Payment record not found" });
+      return;
+    }
+    if (
+      record.status !== "pending_confirmation" ||
+      record.bookingPaymentStatus !== "pending_payment" ||
+      record.bookingPaymentMode !== "pay_at_studio"
+    ) {
+      res.status(409).json({ error: "Payment is not eligible for confirmation" });
+      return;
+    }
+    res.json({
+      bookingId: params.data.id,
+      amountEgp: record.finalPayableAmountMinor == null ? null : minorToEgp(record.finalPayableAmountMinor),
+      paymentStatus: record.status,
+    });
+  },
+);
 
 // ── Student-safe cancellation ────────────────────────────────────────────────
 // Students may cancel ONLY their own ACTIVE booking. Sets bookingStatus =

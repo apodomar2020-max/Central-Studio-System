@@ -279,12 +279,16 @@ function ActivatePackageDialog({
   onActivate,
   isPending,
   errorMessage,
+  amountEgp,
+  amountLoading,
 }: {
   order: PackageOrder;
   onClose: () => void;
   onActivate: (confirmedPaymentMethod: ConfirmedPaymentMethod) => void;
   isPending: boolean;
   errorMessage: string;
+  amountEgp: number | null;
+  amountLoading: boolean;
 }) {
   const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState<ConfirmedPaymentMethod | "">("");
 
@@ -308,6 +312,13 @@ function ActivatePackageDialog({
             <h2 className="text-lg font-bold text-foreground">Activate Package</h2>
             <p className="text-xs" style={{ color: MUTED }}>{order.studentName} · {order.packageName}</p>
           </div>
+        </div>
+
+        <div className="rounded-xl p-3 text-sm" style={{ background: BG_ROW }}>
+          <span style={{ color: MUTED }}>Amount: </span>
+          <span className="font-semibold text-foreground">
+            {amountLoading ? "Loading…" : amountEgp == null ? "Amount unavailable" : `EGP ${amountEgp.toLocaleString()}`}
+          </span>
         </div>
 
         <div>
@@ -342,7 +353,7 @@ function ActivatePackageDialog({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={isPending || !confirmedPaymentMethod}
+            disabled={isPending || amountLoading || amountEgp == null || !confirmedPaymentMethod}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-40"
             style={{ background: "#22C55E", color: "hsl(var(--primary-foreground))" }}
           >
@@ -447,6 +458,8 @@ export default function PackageOrders() {
   const [adjustingOrder, setAdjustingOrder] = useState<PackageOrder | null>(null);
   const [activatingOrder, setActivatingOrder] = useState<PackageOrder | null>(null);
   const [activateError, setActivateError] = useState("");
+  const [activationAmount, setActivationAmount] = useState<number | null>(null);
+  const [activationAmountLoading, setActivationAmountLoading] = useState(false);
   const [expandedLedger, setExpandedLedger] = useState<number | null>(null);
 
   // Changing the status tab resets pagination.
@@ -532,6 +545,18 @@ export default function PackageOrders() {
   function handleActivateOpen(order: PackageOrder) {
     setActivateError("");
     setActivatingOrder(order);
+    setActivationAmount(null);
+    setActivationAmountLoading(true);
+    void fetch(`${API_BASE}/api/package-orders/${order.id}/payment-confirmation-amount`, {
+      headers: makeHeaders(token),
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load the authorized payment amount.");
+        return response.json() as Promise<{ amountEgp: number | null }>;
+      })
+      .then((body) => setActivationAmount(body.amountEgp))
+      .catch((error: unknown) => setActivateError(error instanceof Error ? error.message : "Could not load the authorized payment amount."))
+      .finally(() => setActivationAmountLoading(false));
   }
 
   function handleActivateConfirm(confirmedPaymentMethod: ConfirmedPaymentMethod) {
@@ -837,6 +862,8 @@ export default function PackageOrders() {
           onActivate={handleActivateConfirm}
           isPending={isActivating}
           errorMessage={activateError}
+          amountEgp={activationAmount}
+          amountLoading={activationAmountLoading}
         />
       )}
     </div>

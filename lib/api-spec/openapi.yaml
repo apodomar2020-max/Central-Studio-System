@@ -1172,8 +1172,8 @@ components:
         refundedBookings: { type: integer }
         activeClasses: { type: integer }
         activeInstructors: { type: integer }
-        totalRevenue: { type: number }
-        revenueTrackingComplete: { type: boolean }
+        totalRevenue: { type: [number, "null"] }
+        revenueTrackingComplete: { type: [boolean, "null"] }
         pendingBookings: { type: integer }
         activePackages: { type: integer }
         pendingPackageOrders: { type: integer }
@@ -1182,18 +1182,18 @@ components:
         missedAttendance: { type: integer }
         todayClasses: { type: integer }
         upcomingClasses: { type: integer }
-        grossGenericBookingRevenueEgp: { type: number }
-        grossGenericPackageRevenueEgp: { type: number }
-        grossBalletRevenueEgp: { type: number }
-        balletCompletedRefundsEgp: { type: number }
-        legacyBalletRefundedPaymentsEgp: { type: number }
-        balletPendingRefundExposureEgp: { type: number }
-        balletNetRevenueEgp: { type: number }
-        totalGrossRevenueEgp: { type: number }
-        totalNetRevenueEgp: { type: number }
-        balletPayAtStudioRevenueEgp: { type: number }
-        balletOnlineRevenueEgp: { type: number }
-        balletLegacyBankTransferRevenueEgp: { type: number }
+        grossGenericBookingRevenueEgp: { type: [number, "null"] }
+        grossGenericPackageRevenueEgp: { type: [number, "null"] }
+        grossBalletRevenueEgp: { type: [number, "null"] }
+        balletCompletedRefundsEgp: { type: [number, "null"] }
+        legacyBalletRefundedPaymentsEgp: { type: [number, "null"] }
+        balletPendingRefundExposureEgp: { type: [number, "null"] }
+        balletNetRevenueEgp: { type: [number, "null"] }
+        totalGrossRevenueEgp: { type: [number, "null"] }
+        totalNetRevenueEgp: { type: [number, "null"] }
+        balletPayAtStudioRevenueEgp: { type: [number, "null"] }
+        balletOnlineRevenueEgp: { type: [number, "null"] }
+        balletLegacyBankTransferRevenueEgp: { type: [number, "null"] }
         legacyRevenueTrackingLimitations:
           type: array
           items:
@@ -1206,7 +1206,7 @@ components:
         activeBalletEnrollments: { type: integer }
         withdrawnBalletEnrollments: { type: integer }
         refundsUnderReview: { type: integer }
-        approvedProcessingRefundExposureEgp: { type: number }
+        approvedProcessingRefundExposureEgp: { type: [number, "null"] }
         completedFullRefunds: { type: integer }
         completedPartialRefunds: { type: integer }
 

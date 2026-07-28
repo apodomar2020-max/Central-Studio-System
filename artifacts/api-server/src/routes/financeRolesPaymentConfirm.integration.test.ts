@@ -40,6 +40,7 @@ let jwtSign: (payload: object, secret: string, opts?: object) => string;
 
 let approveOnlyAdminId: number;
 let approveAndConfirmAdminId: number;
+let financeViewAdminId: number;
 let packageDefinitionId: number;
 let studentId: number;
 
@@ -70,6 +71,19 @@ async function createPendingOrder(): Promise<number> {
     ["Finance Roles Test Student", `finance-roles-pay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@example.com`, studentId, packageDefinitionId],
   );
   return order.rows[0].id as number;
+}
+
+async function createCapturedPendingOrder(): Promise<number> {
+  const id = await createPendingOrder();
+  await pool.query(
+    `INSERT INTO payment_records
+       (flow_type, package_order_id, capture_origin, occurred_at, evidence_class, amount_availability, amount_source,
+        gross_amount_minor, discount_amount_minor, final_payable_amount_minor, status)
+     VALUES ('package_purchase', $1, 'live_capture', now(), 'confirmed', 'exact', 'creation_snapshot',
+             100000, 0, 100000, 'pending_confirmation')`,
+    [id],
+  );
+  return id;
 }
 
 before(async () => {
@@ -133,6 +147,15 @@ before(async () => {
     `INSERT INTO system_users (username, email, password_hash, full_name, is_super_admin, role_id) VALUES ($1, $2, 'x', 'Approve And Confirm', false, $3) RETURNING id`,
     [`finance-roles-pay-both-${run}`, `finance-roles-pay-both-${run}@example.com`, approveAndConfirmRole.rows[0].id],
   )).rows[0].id as number;
+
+  const financeViewRole = await pool.query(
+    `INSERT INTO roles (name, permissions) VALUES ($1, $2::jsonb) RETURNING id`,
+    [`Finance Roles View ${run}`, JSON.stringify({ packageOrders: { view: true }, finance: { view: true } })],
+  );
+  financeViewAdminId = (await pool.query(
+    `INSERT INTO system_users (username, email, password_hash, full_name, is_super_admin, role_id) VALUES ($1, $2, 'x', 'Finance View', false, $3) RETURNING id`,
+    [`finance-roles-view-${run}`, `finance-roles-view-${run}@example.com`, financeViewRole.rows[0].id],
+  )).rows[0].id as number;
 });
 
 async function writeSnapshot(): Promise<Record<string, number>> {
@@ -178,6 +201,29 @@ test("packageOrders.approve + finance.paymentsConfirm together succeed in confir
   assert.equal(res.status, 200);
   const after = await pool.query(`SELECT status FROM package_orders WHERE id = $1`, [orderId]);
   assert.equal(after.rows[0].status, "active");
+});
+
+test("package list stays redacted for payment-confirm-only while the selected action payload exposes the exact captured amount", async () => {
+  const orderId = await createCapturedPendingOrder();
+  const list = await asAdmin("/api/package-orders", approveAndConfirmAdminId);
+  assert.equal(list.status, 200);
+  const rows = await list.json() as Array<{ id: number; priceEgp: number | null }>;
+  assert.equal(rows.find((row) => row.id === orderId)?.priceEgp, null);
+
+  const action = await asAdmin(`/api/package-orders/${orderId}/payment-confirmation-amount`, approveAndConfirmAdminId);
+  assert.equal(action.status, 200);
+  assert.deepEqual(await action.json(), {
+    packageOrderId: orderId,
+    amountEgp: 1000,
+    paymentStatus: "pending_confirmation",
+  });
+
+  const denied = await asAdmin(`/api/package-orders/${orderId}/payment-confirmation-amount`, approveOnlyAdminId);
+  assert.equal(denied.status, 403);
+
+  const financeList = await asAdmin("/api/package-orders", financeViewAdminId);
+  const financeRows = await financeList.json() as Array<{ id: number; priceEgp: number | null }>;
+  assert.equal(financeRows.find((row) => row.id === orderId)?.priceEgp, 1000);
 });
 
 test("non-payment edits (e.g. notes) still only require packageOrders.approve, unaffected by the new gate", async () => {

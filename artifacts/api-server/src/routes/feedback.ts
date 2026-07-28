@@ -17,6 +17,7 @@ import {
 import { hasRolePermission } from "@workspace/api-zod";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { ExposableHttpError } from "../lib/httpError";
+import { canViewFinanceAmounts } from "../lib/financialVisibility";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 
 const router: IRouter = Router();
@@ -459,8 +460,19 @@ router.get("/feedback/:id", blockStudentJwt, requireAdminAuth, requireAdminPermi
     return;
   }
   const canViewComments = adminCanViewComments(req);
+  const canViewAmounts = canViewFinanceAmounts(req.adminUser);
+  const scheduleSnapshot =
+    row.scheduleSnapshot && typeof row.scheduleSnapshot === "object"
+      ? {
+          ...row.scheduleSnapshot,
+          priceEgp: canViewAmounts
+            ? (row.scheduleSnapshot as Record<string, unknown>)["priceEgp"] ?? null
+            : null,
+        }
+      : row.scheduleSnapshot;
   res.json({
     ...row,
+    scheduleSnapshot,
     comment: canViewComments ? row.comment : null,
     commentHidden: !canViewComments && Boolean(row.comment),
   });

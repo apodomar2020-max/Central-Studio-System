@@ -132,8 +132,8 @@ test("Dashboard hides financial sections and API redacts amounts without finance
   assert.match(page, /const canViewFinance = can\("finance", "view"\)/);
   assert.match(page, /\{canViewFinance && <section/);
   assert.match(route, /hasRolePermission\(req\.adminUser\?\.permissions, "finance", "view"\)/);
-  assert.match(route, /totalNetRevenueEgp: 0/);
-  assert.match(route, /approvedProcessingRefundExposureEgp: 0/);
+  assert.match(route, /totalNetRevenueEgp: null/);
+  assert.match(route, /approvedProcessingRefundExposureEgp: null/);
 });
 
 test("every materially distinct Admin payment confirmation path has a pre-handler finance gate", async () => {

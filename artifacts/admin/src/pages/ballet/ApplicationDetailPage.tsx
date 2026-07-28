@@ -135,7 +135,7 @@ interface BalletPayment {
   levelAssignmentId: number | null;
   packageId: number | null;
   packageName?: string | null;
-  amountEgp: number;
+  amountEgp: number | null;
   status: string;
   paymentMethod: string | null;
   billingMonth: string | null;
@@ -178,8 +178,8 @@ interface EligibleRefund {
   paymentId: number | null;
   paymentMethod: string | null;
   originalAmountEgp: number | null;
-  alreadyRefundedEgp: number;
-  remainingRefundableEgp: number;
+  alreadyRefundedEgp: number | null;
+  remainingRefundableEgp: number | null;
 }
 
 interface BalletRefund {
@@ -261,6 +261,7 @@ interface DetailResponse {
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const restrictedAmount = (value: number | null) => value == null ? "Restricted" : `${value} EGP`;
 const ATTENDANCE_STATUSES = [
   { value: "checked_in", label: "Checked In" },
   { value: "late",       label: "Late" },
@@ -402,6 +403,8 @@ export default function ApplicationDetailPage() {
   const [initialPaymentBillingMonth, setInitialPaymentBillingMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [initialPaymentNotes, setInitialPaymentNotes] = useState("");
   const [confirmingPayment, setConfirmingPayment] = useState<BalletPayment | null>(null);
+  const [confirmingPaymentAmount, setConfirmingPaymentAmount] = useState<number | null>(null);
+  const [confirmingPaymentAmountLoading, setConfirmingPaymentAmountLoading] = useState(false);
   const [confirmStartDate, setConfirmStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [confirmExpiresAt, setConfirmExpiresAt] = useState(() => addDays(new Date().toISOString().slice(0, 10), 30));
 
@@ -978,6 +981,22 @@ export default function ApplicationDetailPage() {
     setConfirmStartDate(today);
     setConfirmExpiresAt(addDays(today, 30));
     setConfirmingPayment(payment);
+    setConfirmingPaymentAmount(null);
+    setConfirmingPaymentAmountLoading(true);
+    void fetch(`${API_BASE}/api/admin/ballet/payments/${payment.id}/payment-confirmation-amount`, {
+      headers: makeHeaders(token),
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load the authorized payment amount.");
+        return response.json() as Promise<{ amountEgp: number | null }>;
+      })
+      .then((body) => setConfirmingPaymentAmount(body.amountEgp))
+      .catch((error: unknown) => toast({
+        title: "Payment amount unavailable",
+        description: error instanceof Error ? error.message : "Could not load the authorized payment amount.",
+        variant: "destructive",
+      }))
+      .finally(() => setConfirmingPaymentAmountLoading(false));
   };
 
   return (
@@ -1182,11 +1201,16 @@ export default function ApplicationDetailPage() {
               </div>
             </div>
             <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
-              Payment #{confirmingPayment?.id} · Pay at Studio · {confirmingPayment?.amountEgp.toLocaleString()} EGP
+              Payment #{confirmingPayment?.id} · Pay at Studio ·{" "}
+              {confirmingPaymentAmountLoading
+                ? "Loading…"
+                : confirmingPaymentAmount == null
+                  ? "Amount unavailable"
+                  : `${confirmingPaymentAmount.toLocaleString()} EGP`}
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" size="sm" onClick={() => setConfirmingPayment(null)} disabled={confirmPaymentMutation.isPending}>Cancel</Button>
-              <Button size="sm" onClick={() => confirmPaymentMutation.mutate()} disabled={!confirmStartDate || !confirmExpiresAt || confirmPaymentMutation.isPending}>
+              <Button size="sm" onClick={() => confirmPaymentMutation.mutate()} disabled={!confirmStartDate || !confirmExpiresAt || confirmingPaymentAmountLoading || confirmingPaymentAmount == null || confirmPaymentMutation.isPending}>
                 {confirmPaymentMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Confirming…</> : "Confirm Paid"}
               </Button>
             </div>
@@ -1300,9 +1324,9 @@ export default function ApplicationDetailPage() {
               <>
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground space-y-1">
                   <div>Eligible payment #{eligibleRefund.paymentId} · Pay at Studio (cash refund only)</div>
-                  <div>Original amount: {eligibleRefund.originalAmountEgp} EGP</div>
-                  <div>Already refunded: {eligibleRefund.alreadyRefundedEgp} EGP</div>
-                  <div>Remaining refundable: {eligibleRefund.remainingRefundableEgp} EGP</div>
+                  <div>Original amount: {restrictedAmount(eligibleRefund.originalAmountEgp)}</div>
+                  <div>Already refunded: {restrictedAmount(eligibleRefund.alreadyRefundedEgp)}</div>
+                  <div>Remaining refundable: {restrictedAmount(eligibleRefund.remainingRefundableEgp)}</div>
                 </div>
                 <label className="flex items-start gap-2 text-xs text-muted-foreground">
                   <input type="checkbox" checked={cancelRequestRefund} onChange={(e) => setCancelRequestRefund(e.target.checked)} />
@@ -1354,9 +1378,9 @@ export default function ApplicationDetailPage() {
               <>
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground space-y-1">
                   <div>Eligible payment #{eligibleRefund.paymentId} · Pay at Studio (cash refund only)</div>
-                  <div>Original amount: {eligibleRefund.originalAmountEgp} EGP</div>
-                  <div>Already refunded: {eligibleRefund.alreadyRefundedEgp} EGP</div>
-                  <div>Remaining refundable: {eligibleRefund.remainingRefundableEgp} EGP</div>
+                  <div>Original amount: {restrictedAmount(eligibleRefund.originalAmountEgp)}</div>
+                  <div>Already refunded: {restrictedAmount(eligibleRefund.alreadyRefundedEgp)}</div>
+                  <div>Remaining refundable: {restrictedAmount(eligibleRefund.remainingRefundableEgp)}</div>
                 </div>
                 <label className="flex items-start gap-2 text-xs text-muted-foreground">
                   <input type="checkbox" checked={cancelRequestRefund} onChange={(e) => setCancelRequestRefund(e.target.checked)} />

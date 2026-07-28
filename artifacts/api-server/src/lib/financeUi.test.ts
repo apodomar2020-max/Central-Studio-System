@@ -366,9 +366,8 @@ test("Finance navigation and routes use only existing catalog permissions", () =
     assert.match(permissions, new RegExp(`key: "${moduleKey!.replace(".", "\\.")}"`), `unknown module ${moduleKey}`);
     // ...and the action must be one the catalog declares.
     assert.match(permissions, new RegExp(`\\["${actionKey}",`), `unknown action ${actionKey}`);
-    // The reserved `finance` module needs a production role seed, so Phase 1
-    // must not depend on it.
-    assert.notEqual(moduleKey, "finance", "Finance must not use the reserved finance permission module");
+    assert.equal(moduleKey, "finance");
+    assert.equal(actionKey, "view");
   }
 });
 
@@ -376,13 +375,13 @@ test("nav permissions match the route guards for every Finance page", () => {
   // A nav entry that is easier to satisfy than its route guard would show a link
   // straight into an Access Denied page.
   const expectations: Array<[href: string, pairs: string[]]> = [
-    ["/finance", ['["dashboard", "view"]']],
-    ["/finance/packages", ['["packageOrders", "view"]', '["credits", "history"]']],
-    ["/finance/class-payments", ['["bookings", "view"]', '["attendance", "view"]']],
-    ["/finance/ballet", ['["ballet.payments", "view"]']],
-    ["/finance/refunds", ['["ballet.payments", "view"]']],
-    ["/finance/discounts", ['["promotions", "view"]']],
-    ["/finance/exports", ['["reports", "view"]']],
+    ["/finance", ['["finance", "view"]']],
+    ["/finance/packages", ['["finance", "view"]']],
+    ["/finance/class-payments", ['["finance", "view"]']],
+    ["/finance/ballet", ['["finance", "view"]']],
+    ["/finance/refunds", ['["finance", "view"]']],
+    ["/finance/discounts", ['["finance", "view"]']],
+    ["/finance/exports", ['["finance", "view"]']],
   ];
   for (const [href, pairs] of expectations) {
     const entry = new RegExp(`link\\([^)]*"${href.replace(/\//g, "\\/")}"[\\s\\S]{0,260}?\\)`).exec(navConfig);
@@ -573,10 +572,9 @@ test("the exports page shows limitations before the download controls", () => {
 });
 
 test("export formats are gated on the same permissions the API checks", () => {
-  assert.match(exportsPage, /can\("reports", "exportExcel"\)/);
-  assert.match(exportsPage, /can\("reports", "exportPdf"\)/);
-  // The API resolves the same pair from the requested format.
-  assert.match(financeRoute, /format === "xlsx" \? "exportExcel" : format === "pdf" \? "exportPdf" : "view"/);
+  assert.match(exportsPage, /can\("finance", "exports"\)/);
+  assert.match(financeRoute, /requireAdminPermission\("finance", "view"\)/);
+  assert.match(financeRoute, /requireAdminPermission\("finance", "exports"\)/);
 });
 
 test("the exports page offers only formats the backend implements", () => {

@@ -56,6 +56,11 @@ import {
 } from "../lib/balletSubscriptions";
 import { performBalletAttendanceWrite, isBalletAttendanceError } from "../lib/balletAttendanceWrite";
 import { BALLET_ATTENDANCE_STATUSES } from "@workspace/api-zod";
+import {
+  canViewFinanceAmounts,
+  canViewRefundActionAmount,
+  redactFinancialFields,
+} from "../lib/financialVisibility";
 
 const router: IRouter = Router();
 const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive", "description", "requirements", "ageMin", "ageMax", "imageUrl"] as const;
@@ -389,7 +394,7 @@ router.get("/admin/ballet/applications", requireAdminAuth, requireAdminPermissio
 //   events        — full event history (newest first)
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
+router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req: AdminRequest, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
 
@@ -557,6 +562,27 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
       ? { kind: "activeEnrollment", resolvedCycle: await resolveApplicationCurrentCycle(id, todayDateOnly()) }
       : { kind: "preActivation" };
   const eligibleRefund = await balletRefundEligibilitySummary(id, refundEligibilityContext);
+  const canViewAmounts = canViewFinanceAmounts(req.adminUser);
+  const visiblePayments = payments.map((payment) =>
+    redactFinancialFields(payment, ["amountEgp"], canViewAmounts),
+  );
+  const visibleCurrentPayment = currentPayment
+    ? redactFinancialFields(currentPayment, ["amountEgp"], canViewAmounts)
+    : null;
+  const visibleRefunds = refunds.map((refund) => redactFinancialFields(
+    refund,
+    ["requestedAmountEgp", "approvedAmountEgp", "refundedAmountEgp"],
+    canViewAmounts,
+  ));
+  const visibleEligibility = eligibleRefund && canViewRefundActionAmount(req.adminUser)
+    ? eligibleRefund
+    : eligibleRefund
+      ? redactFinancialFields(
+          eligibleRefund,
+          ["originalAmountEgp", "alreadyRefundedEgp", "remainingRefundableEgp"],
+          false,
+        )
+      : null;
 
   res.json({
     application:  {
@@ -569,20 +595,26 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     assignmentId: activeAssignment?.id ?? null,
     groupSchedules,
     events,
-    payments,
-    currentPayment,
-    currentSubscription: currentPayment,
+    payments: visiblePayments,
+    currentPayment: visibleCurrentPayment,
+    currentSubscription: visibleCurrentPayment,
     attendanceSummary,
     cancellationRequests: cancellationRequestsWithInitiator,
-    refunds,
-    eligibleRefund,
+    refunds: visibleRefunds,
+    eligibleRefund: visibleEligibility,
   });
 });
 
 
 // ─── GET /api/admin/ballet/applications/:id/export.pdf ───────────────────────
 
-router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req: AdminRequest, res): Promise<void> => {
+router.get(
+  "/admin/ballet/applications/:id/export.pdf",
+  requireAdminAuth,
+  requireAdminPermission("ballet.applications", "view"),
+  requireAdminPermission("finance", "view"),
+  requireAdminPermission("finance", "exports"),
+  async (req: AdminRequest, res): Promise<void> => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
 
@@ -681,7 +713,8 @@ router.get("/admin/ballet/applications/:id/export.pdf", requireAdminAuth, requir
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${balletApplicationPdfFilename(app.id, app.childName)}"`);
   res.send(buf);
-});
+  },
+);
 
 // ─── PATCH /api/admin/ballet/applications/:id/status ─────────────────────────
 //
@@ -1383,7 +1416,7 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
   });
 });
 
-router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req, res): Promise<void> => {
+router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdminPermission("ballet.applications", "view"), async (req: AdminRequest, res): Promise<void> => {
   const assignmentId = parseInt(String(req.params["assignmentId"] ?? ""), 10);
   if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid assignment ID" }); return; }
 
@@ -1489,6 +1522,13 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
     .limit(100);
 
   const currentPayment = latestPayments.get(row.applicationId) ?? null;
+  const canViewAmounts = canViewFinanceAmounts(req.adminUser);
+  const visibleCurrentPayment = currentPayment
+    ? redactFinancialFields(currentPayment, ["amountEgp"], canViewAmounts)
+    : null;
+  const visiblePaymentRows = paymentRows.map((payment) =>
+    redactFinancialFields(payment, ["amountEgp"], canViewAmounts),
+  );
   res.json({
     student: {
       ...row,
@@ -1500,8 +1540,8 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
         daysRemaining: currentPayment?.daysRemaining ?? null,
         studentStage: deriveStudentStage(row.applicationStatus, currentPayment?.subscriptionStatus ?? null),
     },
-    currentPayment,
-    payments: paymentRows,
+    currentPayment: visibleCurrentPayment,
+    payments: visiblePaymentRows,
     enrollmentHistory: enrollmentHistoryResult.rows,
     groupSchedules,
     attendanceSummary,
