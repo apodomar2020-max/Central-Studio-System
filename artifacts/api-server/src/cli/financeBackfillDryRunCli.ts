@@ -28,6 +28,7 @@ import {
   type EligibilityClass,
   type FinanceBackfillClassificationCode,
 } from "../lib/financeBackfillDryRun";
+import { decodeFinanceBackfillCursor } from "../lib/financeBackfillPagination";
 
 export const READ_ONLY_BANNER =
   "=== Finance historical backfill DRY-RUN — READ-ONLY, ZERO-WRITE. No batch, no writer, no source mutation. ===";
@@ -151,9 +152,20 @@ function parseCursors(values: string[] | undefined): FamilyCursor[] | undefined 
       }
       const family = entry.slice(0, sep);
       const idStr = entry.slice(sep + 1);
-      const afterId = Number(idStr);
-      if (!Number.isInteger(afterId)) {
-        throw new CliValidationError(`invalid --cursor value: "${entry}" (id must be an integer)`);
+      let afterId: number;
+      if (/^\d+$/.test(idStr)) {
+        // Temporary backward compatibility with the previously documented
+        // family:id CLI form. New reports emit opaque cursors in pageInfo.
+        afterId = Number(idStr);
+      } else {
+        try {
+          afterId = decodeFinanceBackfillCursor(idStr, family as SourceFamily).afterId;
+        } catch {
+          throw new CliValidationError(`invalid --cursor value: "${entry}"`);
+        }
+      }
+      if (!Number.isSafeInteger(afterId)) {
+        throw new CliValidationError(`invalid --cursor value: "${entry}"`);
       }
       return { family: family as SourceFamily, afterId };
     });
@@ -319,10 +331,9 @@ export function formatHumanReport(report: DryRunReport): string {
   lines.push(`code commit:           ${report.codeCommit}`);
   lines.push(`applied filters:       ${JSON.stringify(safeFiltersForHumanOutput(report.appliedFilters))}`);
   lines.push(`scanned / classified:  ${report.scannedCount} / ${report.classifiedCount}`);
-  lines.push(`truncated:             ${report.truncated}`);
+  lines.push(`has next page:         ${report.pageInfo.hasNextPage}`);
   for (const family of SOURCE_FAMILIES) {
-    if (!(family in report.nextCursors)) continue;
-    const present = report.nextCursors[family] != null;
+    const present = report.pageInfo.nextCursors[family] != null;
     lines.push(`next cursor (${family}): ${present ? "present — re-run with --format json to continue" : "none"}`);
   }
   lines.push(`eligibility counts:    ${JSON.stringify(report.aggregates.eligibilityCounts)}`);

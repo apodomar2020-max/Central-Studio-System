@@ -77,7 +77,11 @@ function fakeReport(overrides: Partial<DryRunReport> = {}): DryRunReport {
     scannedCount: 3,
     classifiedCount: 3,
     truncated: false,
-    nextCursors: { bookings: 42 },
+    nextCursors: { package_orders: null, bookings: 42, studio_walkins: null },
+    pageInfo: {
+      hasNextPage: true,
+      nextCursors: { package_orders: null, bookings: "opaque-booking-cursor", studio_walkins: null },
+    },
     aggregates: {
       sourceFamilyCounts: { bookings: 3 },
       sourceKindCounts: { booking: 3 },
@@ -255,6 +259,13 @@ test("args: invalid date range is rejected", () => {
 test("args: invalid cursor is rejected", () => {
   assert.throws(() => parseCliArgs(baseArgv(["--cursor", "bookings:not-a-number"])), /invalid --cursor value/);
   assert.throws(() => parseCliArgs(baseArgv(["--cursor", "no-colon-here"])), /invalid --cursor value/);
+});
+
+test("args: canonical opaque cursor is accepted and decoded for the planner", async () => {
+  const { encodeFinanceBackfillCursor } = await import("../lib/financeBackfillPagination");
+  const opaque = encodeFinanceBackfillCursor("bookings", 42);
+  const parsed = parseCliArgs(baseArgv(["--cursor", `bookings:${opaque}`]));
+  assert.deepEqual(parsed.filters.cursors, [{ family: "bookings", afterId: 42 }]);
 });
 
 test("args: unknown output format is rejected", () => {

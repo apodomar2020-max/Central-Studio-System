@@ -11,11 +11,10 @@
  *
  * Output safety: the report is aggregate-only by construction — there is no
  * field, sample, or diagnostic facility anywhere in this module that carries
- * a raw source ID, name, email, phone, or other PII into the returned
- * report. Source IDs are used only internally, to build the per-family
- * resume cursor (`nextCursors`), a plain integer already exposed to any
- * caller that requested that page in the first place — never randomly
- * sampled or included as a list.
+ * a name, email, phone, or other PII into the returned report. Source IDs are
+ * used internally to build opaque per-family cursors in `pageInfo`. The
+ * deprecated numeric `nextCursors` mirror remains for one transition release
+ * so already-deployed operator tooling is not broken.
  *
  * Cursor semantics: package_orders, bookings, and attendance are three
  * unrelated integer ID spaces. There is no meaningful global ordering across
@@ -67,6 +66,11 @@ import {
   type BookingClassifyInput,
 } from "./financeBackfillClassifier";
 import { resolveCodeCommit } from "./codeCommit";
+import {
+  normalizeFinanceBackfillPageInfo,
+  type FinanceBackfillPageInfo,
+  type LegacyFinanceBackfillCursorMap,
+} from "./financeBackfillPagination";
 
 export type { SourceFamily, EligibilityClass, FinanceBackfillClassificationCode };
 export { SOURCE_FAMILIES, CLASSIFIER_VERSION };
@@ -79,7 +83,7 @@ export { SOURCE_FAMILIES, CLASSIFIER_VERSION };
  */
 export type DbLike = Pick<typeof db, "select">;
 
-export const DRY_RUN_REPORT_SCHEMA_VERSION = "2d1b.1.0.0";
+export const DRY_RUN_REPORT_SCHEMA_VERSION = "2d1b.1.1.0";
 
 /** Every classification code the classifier can ever produce, for filter validation. */
 const ALL_CLASSIFICATION_CODES: readonly string[] = [
@@ -183,8 +187,11 @@ export interface DryRunReport {
 
   scannedCount: number;
   classifiedCount: number;
+  /** @deprecated Use pageInfo.hasNextPage. Kept for one release for existing tooling. */
   truncated: boolean;
-  nextCursors: Partial<Record<SourceFamily, number | null>>;
+  /** @deprecated Raw numeric boundaries; use opaque pageInfo.nextCursors. */
+  nextCursors: Partial<LegacyFinanceBackfillCursorMap>;
+  pageInfo: FinanceBackfillPageInfo;
 
   aggregates: DryRunAggregates;
   authoritativeTotals: AuthoritativeMonetaryTotals;
@@ -399,6 +406,7 @@ export function buildAggregateReport(
   filters: DryRunFilters,
   meta: AggregateReportInput,
 ): Omit<DryRunReport, "codeCommit" | "generatedTimestamp"> {
+  const { pageInfo, legacyNextCursors } = normalizeFinanceBackfillPageInfo(meta.nextCursors);
   const aggregates = emptyAggregates();
   let classifiedCount = 0;
   let authoritativeGross = 0;
@@ -435,8 +443,9 @@ export function buildAggregateReport(
     appliedFilters: filters,
     scannedCount: meta.scannedCount,
     classifiedCount,
-    truncated: meta.truncated,
-    nextCursors: meta.nextCursors,
+    truncated: pageInfo.hasNextPage,
+    nextCursors: legacyNextCursors,
+    pageInfo,
     aggregates,
     authoritativeTotals: {
       grossAmountMinor: authoritativeGross,
@@ -469,7 +478,6 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor:
 
   const classifiedRows: ClassifiedRow[] = [];
   let scannedCount = 0;
-  let truncated = false;
   const nextCursors: Partial<Record<SourceFamily, number | null>> = {};
 
   // Fixed canonical processing order regardless of the caller's array order,
@@ -484,8 +492,20 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor:
     classifiedRows.push({ family, id, classification });
   }
 
+  function recordPageBoundary(
+    family: SourceFamily,
+    rows: Array<{ id: number }>,
+    pageRows: Array<{ id: number }>,
+    afterId: number | undefined,
+  ): void {
+    if (rows.length > pageRows.length) {
+      nextCursors[family] = pageRows.at(-1)?.id ?? afterId ?? 0;
+    } else {
+      nextCursors[family] = null;
+    }
+  }
+
   for (const family of familiesToScan) {
-    if (remaining <= 0) break;
     const pageSize = Math.min(remaining, filters.batchSize);
     const afterId = cursorFor(filters, family);
 
@@ -500,10 +520,10 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor:
         .from(packageOrdersTable)
         .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(asc(packageOrdersTable.id))
-        .limit(pageSize + 1);
+        .limit(Math.max(1, pageSize + 1));
 
       const pageRows = rows.slice(0, pageSize);
-      if (rows.length > pageRows.length) truncated = true;
+      recordPageBoundary(family, rows, pageRows, afterId);
 
       const existing = await fetchExistingRecords(executor, pageRows.map((r) => r.id), []);
       for (const row of pageRows) {
@@ -531,10 +551,10 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor:
         .from(bookingsTable)
         .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(asc(bookingsTable.id))
-        .limit(pageSize + 1);
+        .limit(Math.max(1, pageSize + 1));
 
       const pageRows = rows.slice(0, pageSize);
-      if (rows.length > pageRows.length) truncated = true;
+      recordPageBoundary(family, rows, pageRows, afterId);
 
       // A booking is "studio-walk-in linked" iff it already has a
       // payment_records row with flowType 'studio_walkin' — the only
@@ -573,10 +593,10 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor:
         .from(attendanceTable)
         .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(asc(attendanceTable.id))
-        .limit(pageSize + 1);
+        .limit(Math.max(1, pageSize + 1));
 
       const pageRows = rows.slice(0, pageSize);
-      if (rows.length > pageRows.length) truncated = true;
+      recordPageBoundary(family, rows, pageRows, afterId);
 
       const bookingIds = pageRows.map((r) => r.bookingId).filter((id): id is number => id != null);
       const linkedBookings = bookingIds.length
@@ -610,7 +630,11 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor:
     }
   }
 
-  const reportBody = buildAggregateReport(classifiedRows, filters, { scannedCount, truncated, nextCursors });
+  const reportBody = buildAggregateReport(classifiedRows, filters, {
+    scannedCount,
+    truncated: Object.values(nextCursors).some((cursor) => cursor != null),
+    nextCursors,
+  });
   return {
     ...reportBody,
     codeCommit: await resolveCodeCommit(),
