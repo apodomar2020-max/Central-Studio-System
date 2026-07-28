@@ -14,7 +14,11 @@ function fakeReport(overrides: Partial<DryRunReport> = {}): DryRunReport {
     scannedCount: 10,
     classifiedCount: 10,
     truncated: false,
-    nextCursors: { bookings: 42 },
+    nextCursors: { package_orders: null, bookings: 42, studio_walkins: null },
+    pageInfo: {
+      hasNextPage: true,
+      nextCursors: { package_orders: null, bookings: "opaque-booking-cursor", studio_walkins: null },
+    },
     aggregates: {
       sourceFamilyCounts: { bookings: 10 },
       sourceKindCounts: { booking: 10 },

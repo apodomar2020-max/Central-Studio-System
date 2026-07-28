@@ -432,9 +432,14 @@ test("privacy: there is no diagnostic sample-ID facility on the report or filter
 
 // ── Cursor / truncation (pure) ──────────────────────────────────────────────
 
-test("cursor: truncated flag passes through from scan metadata", () => {
-  const report = buildAggregateReport([row()], baseFilters(), { scannedCount: 1, truncated: true, nextCursors: {} });
+test("cursor: legacy truncated agrees with canonical pageInfo", () => {
+  const report = buildAggregateReport([row()], baseFilters(), {
+    scannedCount: 1,
+    truncated: false,
+    nextCursors: { bookings: 1 },
+  });
   assert.equal(report.truncated, true);
+  assert.equal(report.pageInfo.hasNextPage, true);
 });
 
 test("cursor: next cursor is reported per-family, not as a single ambiguous global value", () => {
@@ -445,6 +450,11 @@ test("cursor: next cursor is reported per-family, not as a single ambiguous glob
   });
   assert.equal(report.nextCursors.package_orders, 10);
   assert.equal(report.nextCursors.bookings, 20);
+  assert.equal(report.nextCursors.studio_walkins, null);
+  assert.equal(report.pageInfo.hasNextPage, true);
+  assert.equal(typeof report.pageInfo.nextCursors.package_orders, "string");
+  assert.equal(typeof report.pageInfo.nextCursors.bookings, "string");
+  assert.equal(report.pageInfo.nextCursors.studio_walkins, null);
 });
 
 // ── Integration: DB-backed determinism, cursor continuation, zero-write proof ──
@@ -580,7 +590,7 @@ test("integration: known legacy pending bookings classify as legacy_pending_book
 
 test("integration: cursor continuation does not duplicate or skip rows across two pages", async () => {
   const page1 = await runFinanceBackfillDryRun({ sourceFamilies: ["bookings"], maxRows: 2, batchSize: 2 });
-  assert.equal(page1.truncated, true);
+  assert.equal(page1.pageInfo.hasNextPage, true);
   const cursor = page1.nextCursors.bookings;
   assert.ok(typeof cursor === "number");
 

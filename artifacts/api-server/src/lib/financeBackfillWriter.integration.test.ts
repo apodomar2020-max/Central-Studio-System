@@ -76,7 +76,11 @@ function fakeReport(appliedFilters: DryRunFilters): DryRunReport {
     scannedCount: 1,
     classifiedCount: 1,
     truncated: false,
-    nextCursors: {},
+    nextCursors: { package_orders: null, bookings: null, studio_walkins: null },
+    pageInfo: {
+      hasNextPage: false,
+      nextCursors: { package_orders: null, bookings: null, studio_walkins: null },
+    },
     aggregates: {
       sourceFamilyCounts: {}, sourceKindCounts: {}, classificationCounts: {}, eligibilityCounts: {},
       evidenceClassCounts: {}, amountAvailabilityCounts: {}, amountReliabilityCounts: {}, discountReliabilityCounts: {},
