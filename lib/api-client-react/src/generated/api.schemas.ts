@@ -26,8 +26,8 @@ export interface DashboardSummary {
   refundedBookings: number;
   activeClasses: number;
   activeInstructors: number;
-  totalRevenue: number;
-  revenueTrackingComplete: boolean;
+  totalRevenue: number | null;
+  revenueTrackingComplete: boolean | null;
   pendingBookings: number;
   activePackages: number;
   pendingPackageOrders: number;
@@ -36,18 +36,18 @@ export interface DashboardSummary {
   missedAttendance: number;
   todayClasses: number;
   upcomingClasses: number;
-  grossGenericBookingRevenueEgp: number;
-  grossGenericPackageRevenueEgp: number;
-  grossBalletRevenueEgp: number;
-  balletCompletedRefundsEgp: number;
-  legacyBalletRefundedPaymentsEgp: number;
-  balletPendingRefundExposureEgp: number;
-  balletNetRevenueEgp: number;
-  totalGrossRevenueEgp: number;
-  totalNetRevenueEgp: number;
-  balletPayAtStudioRevenueEgp: number;
-  balletOnlineRevenueEgp: number;
-  balletLegacyBankTransferRevenueEgp: number;
+  grossGenericBookingRevenueEgp: number | null;
+  grossGenericPackageRevenueEgp: number | null;
+  grossBalletRevenueEgp: number | null;
+  balletCompletedRefundsEgp: number | null;
+  legacyBalletRefundedPaymentsEgp: number | null;
+  balletPendingRefundExposureEgp: number | null;
+  balletNetRevenueEgp: number | null;
+  totalGrossRevenueEgp: number | null;
+  totalNetRevenueEgp: number | null;
+  balletPayAtStudioRevenueEgp: number | null;
+  balletOnlineRevenueEgp: number | null;
+  balletLegacyBankTransferRevenueEgp: number | null;
   legacyRevenueTrackingLimitations: Array<{
     code: string;
     message: string;
@@ -56,7 +56,7 @@ export interface DashboardSummary {
   activeBalletEnrollments: number;
   withdrawnBalletEnrollments: number;
   refundsUnderReview: number;
-  approvedProcessingRefundExposureEgp: number;
+  approvedProcessingRefundExposureEgp: number | null;
   completedFullRefunds: number;
   completedPartialRefunds: number;
 }

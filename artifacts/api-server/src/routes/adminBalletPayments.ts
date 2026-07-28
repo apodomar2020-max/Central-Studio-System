@@ -77,6 +77,40 @@ const ListQuerySchema = z.object({
   applicationId: z.coerce.number().int().positive().optional(),
 });
 
+router.get(
+  "/admin/ballet/payments/:id/payment-confirmation-amount",
+  requireAdminAuth,
+  requireAdminPermission("ballet.payments", "edit"),
+  requireAdminPermission("finance", "paymentsConfirm"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const id = parseInt(String(req.params["id"] ?? ""), 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid payment ID" });
+      return;
+    }
+    const [payment] = await db
+      .select({
+        id: balletPaymentsTable.id,
+        applicationId: balletPaymentsTable.applicationId,
+        amountEgp: balletPaymentsTable.amountEgp,
+        status: balletPaymentsTable.status,
+        paymentMethod: balletPaymentsTable.paymentMethod,
+      })
+      .from(balletPaymentsTable)
+      .where(eq(balletPaymentsTable.id, id))
+      .limit(1);
+    if (!payment) {
+      res.status(404).json({ error: "Payment not found" });
+      return;
+    }
+    if (payment.status !== "pending" || payment.paymentMethod !== "inPerson") {
+      res.status(409).json({ error: "Payment is not eligible for confirmation" });
+      return;
+    }
+    res.json(payment);
+  },
+);
+
 router.get("/admin/ballet/payments", requireAdminAuth, requireAdminPermission("finance", "view"), async (req, res): Promise<void> => {
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
@@ -426,9 +460,11 @@ async function updatePaymentStatus(
   logger.info({ paymentId: id, fromStatus: payment?.status, toStatus: status, adminId }, "Ballet payment status updated");
 
   if (payment && updatedPayment && payment.status !== status) {
+    const beforePayment = payment;
+    const afterPayment = updatedPayment;
     const { before, after } = diffFields(
-      Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, payment[key]])),
-      Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, updatedPayment![key]])),
+      Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, beforePayment[key]])),
+      Object.fromEntries(BALLET_PAYMENT_ACTIVITY_FIELDS.map((key) => [key, afterPayment[key]])),
       BALLET_PAYMENT_ACTIVITY_FIELDS,
     );
     await logActivity(req, {
@@ -648,7 +684,7 @@ router.patch(
     }
 
     res.json({
-      payment: paymentAfter ? serializePaymentCycle(paymentAfter) : null,
+      payment: paymentAfter ? serializePaymentCycle({ ...paymentAfter, packageName: null }) : null,
       previousExpiresAt: paymentBefore?.subscriptionExpiresAt ?? null,
       newExpiresAt: paymentAfter?.subscriptionExpiresAt ?? null,
       adjustment: historyEntry,

@@ -17,7 +17,7 @@ export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
     <SummaryCard label="Application Status" value={<StatusBadge status={app.status} />} sub={`Updated ${new Date(app.updatedAt).toLocaleDateString()}`} />
     <SummaryCard label="Assigned Level" value={level?.name ?? "Not assigned"} sub={group?.name ? `Group: ${group.name}` : "No group yet"} />
-    <SummaryCard label="Payment Status" value={<PaymentStatusBadge status={currentPayment?.status} />} sub={currentPayment ? `${currentPayment.amountEgp} EGP` : "No payment recorded"} />
+    <SummaryCard label="Payment Status" value={<PaymentStatusBadge status={currentPayment?.status} />} sub={currentPayment ? (currentPayment.amountEgp == null ? "Restricted" : `${currentPayment.amountEgp} EGP`) : "No payment recorded"} />
     <SummaryCard label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} sub={currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "No active period"} />
   </div>
   <Section title="Operational Snapshot">

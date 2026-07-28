@@ -47,6 +47,8 @@ import {
   computeBalletCandidateKey,
   type ResolverSource,
 } from "../lib/attendanceResolver";
+import { resolveSingleClassPriceEgp } from "../lib/singleClassPricing";
+import { canViewFinanceAmounts } from "../lib/financialVisibility";
 
 const router: IRouter = Router();
 
@@ -65,7 +67,7 @@ router.post(
   requireAdminAuth,
   requireAdminPermission("attendance", "checkIn"),
   requireQrScanForQrSource,
-  async (req, res): Promise<void> => {
+  async (req: AdminRequest, res): Promise<void> => {
     const parsed = ResolveBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -73,7 +75,75 @@ router.post(
     }
     const { source, query } = parsed.data as { source: ResolverSource; query: string };
     const result = await resolveAttendanceCandidates(source, query);
+    if (!canViewFinanceAmounts(req.adminUser)) {
+      for (const account of result.accounts) {
+        account.candidates = account.candidates.map((candidate) => ({
+          ...candidate,
+          walkinPriceEgp: null,
+        }));
+      }
+    }
     res.json(result);
+  },
+);
+
+const WalkInPaymentAmountBody = z.object({
+  candidateKey: z.string().min(1),
+  accountId: z.number().int().positive(),
+  scheduleId: z.number().int().positive(),
+  childId: z.number().int().positive().nullable().optional(),
+  occurrenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).strict();
+
+router.post(
+  "/admin/attendance/walkin-payment-amount",
+  requireAdminAuth,
+  requireAdminPermission("attendance", "checkIn"),
+  requireAdminPermission("finance", "paymentsConfirm"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const parsed = WalkInPaymentAmountBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+      return;
+    }
+    const body = parsed.data;
+    const expectedKey = computeStudioWalkInCandidateKey(
+      body.accountId,
+      body.childId ?? null,
+      body.scheduleId,
+      body.occurrenceDate,
+    );
+    if (expectedKey !== body.candidateKey) {
+      res.status(409).json({ error: "candidate_key_mismatch", message: "This payment selection is stale." });
+      return;
+    }
+    const [[account], [child], [schedule]] = await Promise.all([
+      db.select({ id: studentsTable.id }).from(studentsTable).where(eq(studentsTable.id, body.accountId)).limit(1),
+      body.childId != null
+        ? db.select({ id: childrenTable.id, parentId: childrenTable.parentId }).from(childrenTable).where(eq(childrenTable.id, body.childId)).limit(1)
+        : Promise.resolve([]),
+      db
+      .select({ id: schedulesTable.id, startTime: schedulesTable.startTime, endTime: schedulesTable.endTime })
+      .from(schedulesTable)
+      .where(eq(schedulesTable.id, body.scheduleId))
+      .limit(1),
+    ]);
+    if (!account || !schedule || (body.childId != null && child?.parentId !== body.accountId)) {
+      res.status(404).json({ error: "Payment action not found" });
+      return;
+    }
+    if (
+      body.occurrenceDate !== cairoNow(new Date()).date ||
+      checkInWindowState(
+        { startTime: schedule.startTime, endTime: schedule.endTime },
+        body.occurrenceDate,
+      ) !== "open"
+    ) {
+      res.status(409).json({ error: "Payment action is no longer eligible" });
+      return;
+    }
+    const amountEgp = await resolveSingleClassPriceEgp(db, body.scheduleId);
+    res.json({ candidateKey: body.candidateKey, amountEgp });
   },
 );
 

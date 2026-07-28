@@ -204,7 +204,7 @@ test("Dashboard response redacts all financial amounts without finance.view", as
     "balletPayAtStudioRevenueEgp", "balletOnlineRevenueEgp",
     "balletLegacyBankTransferRevenueEgp", "approvedProcessingRefundExposureEgp",
   ]) {
-    assert.equal(body[key], 0, `${key} must be redacted`);
+    assert.equal(body[key], null, `${key} must be explicitly redacted, never reported as zero`);
   }
 });
 

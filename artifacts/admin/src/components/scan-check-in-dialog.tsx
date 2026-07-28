@@ -235,11 +235,13 @@ export function ScanCheckInDialog({
   onOpenChange,
   canCheckIn,
   canPackageDeduct,
+  canConfirmPayments,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canCheckIn: boolean;
   canPackageDeduct: boolean;
+  canConfirmPayments: boolean;
 }) {
   const queryClient = useQueryClient();
 
@@ -939,13 +941,13 @@ export function ScanCheckInDialog({
                     outline: "none",
                   }}
                 />
-                <button
+                {canConfirmPayments && <button
                   onClick={handleManualLookup}
                   className="px-4 py-2.5 rounded-xl text-sm font-semibold"
                   style={{ background: STUDIO_CYAN, color: "#000" }}
                 >
                   Look up
-                </button>
+                </button>}
               </div>
             </div>
           </div>
@@ -1301,7 +1303,7 @@ export function ScanCheckInDialog({
                   Settlement Method (required)
                 </label>
                 <div className="grid grid-cols-1 gap-2">
-                  <button
+                  {canConfirmPayments && <button
                     type="button"
                     onClick={() => setWalkInSettlement("package_credit")}
                     className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
@@ -1311,7 +1313,7 @@ export function ScanCheckInDialog({
                     }}
                   >
                     <span className="font-medium text-white">Use Package Credit</span>
-                  </button>
+                  </button>}
                   {walkInSettlement === "package_credit" && (!canPackageDeduct || activePackages.length === 0) && (
                     <div
                       className="text-sm px-3 py-2.5 rounded-xl"

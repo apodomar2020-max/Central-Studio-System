@@ -1,6 +1,6 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -14,7 +14,8 @@ import {
   PAYMENT_RECORD_CONFIRMED_METHODS,
   type PaymentRecordConfirmedMethod,
 } from "@workspace/db";
-import { egpToMinor } from "../lib/money";
+import { egpToMinor, minorToEgp } from "../lib/money";
+import { canViewFinanceAmounts } from "../lib/financialVisibility";
 import { logger } from "../lib/logger";
 import { createStudentNotification } from "../lib/notifications";
 import { sendPushNotification } from "../lib/pushNotifications";
@@ -34,6 +35,33 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+async function serializePackageOrderRows(
+  rows: Array<typeof packageOrdersTable.$inferSelect>,
+  req: AdminRequest,
+) {
+  const canViewAmounts = canViewFinanceAmounts(req.adminUser);
+  if (!canViewAmounts || rows.length === 0) {
+    return rows.map((row) => ({ ...row, priceEgp: null }));
+  }
+  const records = await db
+    .select({
+      packageOrderId: paymentRecordsTable.packageOrderId,
+      finalPayableAmountMinor: paymentRecordsTable.finalPayableAmountMinor,
+    })
+    .from(paymentRecordsTable)
+    .where(inArray(paymentRecordsTable.packageOrderId, rows.map((row) => row.id)));
+  const amountByOrderId = new Map(
+    records.map((record) => [
+      record.packageOrderId,
+      record.finalPayableAmountMinor == null ? null : minorToEgp(record.finalPayableAmountMinor),
+    ]),
+  );
+  return rows.map((row) => ({
+    ...row,
+    priceEgp: amountByOrderId.get(row.id) ?? null,
+  }));
+}
 
 function requirePackageOrderAction(req: Request, res: Response, next: NextFunction): void {
   const status = req.body?.status;
@@ -188,7 +216,7 @@ router.get(
       ? await db.select().from(packageOrdersTable).where(whereClause).orderBy(desc(packageOrdersTable.createdAt))
       : await db.select().from(packageOrdersTable).orderBy(desc(packageOrdersTable.createdAt));
     res.setHeader("X-Total-Count", String(rows.length));
-    res.json(ListPackageOrdersResponse.parse(rows));
+    res.json(ListPackageOrdersResponse.parse(await serializePackageOrderRows(rows, req as AdminRequest)));
     return;
   }
 
@@ -209,7 +237,7 @@ router.get(
   res.setHeader("X-Page", String(effectivePage));
   res.setHeader("X-Page-Size", String(effectivePageSize));
   res.setHeader("X-Total-Pages", String(total === 0 ? 0 : Math.ceil(total / effectivePageSize)));
-  res.json(ListPackageOrdersResponse.parse(rows));
+  res.json(ListPackageOrdersResponse.parse(await serializePackageOrderRows(rows, req as AdminRequest)));
   },
 );
 
@@ -502,6 +530,47 @@ router.get("/package-orders/:id", requirePackageOrderReadAccess, async (req, res
   }
   res.json(GetPackageOrderResponse.parse(row));
 });
+
+router.get(
+  "/package-orders/:id/payment-confirmation-amount",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("packageOrders", "view"),
+  requireAdminPermission("finance", "paymentsConfirm"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = GetPackageOrderParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const [record] = await db
+      .select({
+        finalPayableAmountMinor: paymentRecordsTable.finalPayableAmountMinor,
+        status: paymentRecordsTable.status,
+        orderStatus: packageOrdersTable.status,
+      })
+      .from(paymentRecordsTable)
+      .innerJoin(packageOrdersTable, eq(packageOrdersTable.id, paymentRecordsTable.packageOrderId))
+      .where(and(
+        eq(paymentRecordsTable.packageOrderId, params.data.id),
+        eq(paymentRecordsTable.flowType, "package_purchase"),
+      ))
+      .limit(1);
+    if (!record) {
+      res.status(404).json({ error: "Payment record not found" });
+      return;
+    }
+    if (record.status !== "pending_confirmation" || record.orderStatus !== "pendingPayment") {
+      res.status(409).json({ error: "Package payment is not eligible for confirmation" });
+      return;
+    }
+    res.json({
+      packageOrderId: params.data.id,
+      amountEgp: record.finalPayableAmountMinor == null ? null : minorToEgp(record.finalPayableAmountMinor),
+      paymentStatus: record.status,
+    });
+  },
+);
 
 router.patch(
   "/package-orders/:id",

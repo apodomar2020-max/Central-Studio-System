@@ -83,6 +83,7 @@ export default function AttendancePage() {
   const canQrCheckIn = can("qr", "checkIn");
   const canManualCheckIn = can("attendance", "checkIn");
   const canPackageDeduct = can("qr", "packageDeduct");
+  const canConfirmPayments = can("finance", "paymentsConfirm");
   const queryClient = useQueryClient();
   const [scanOpen, setScanOpen] = useState(false);
   const [gatewayOpen, setGatewayOpen] = useState(false);
@@ -258,6 +259,7 @@ export default function AttendancePage() {
           onOpenChange={setScanOpen}
           canCheckIn={canQrCheckIn}
           canPackageDeduct={canPackageDeduct}
+          canConfirmPayments={canConfirmPayments}
         />
       )}
       {canManualCheckIn && (
@@ -267,6 +269,7 @@ export default function AttendancePage() {
           canCheckIn={canManualCheckIn}
           canPackageDeduct={canPackageDeduct}
           canScan={canScan}
+          canConfirmPayments={canConfirmPayments}
         />
       )}
 
@@ -404,7 +407,7 @@ export default function AttendancePage() {
                           Select a package with available credit above.
                         </div>
                       )}
-                      <button
+                      {canConfirmPayments && <button
                         type="button"
                         onClick={() => setWalkInSettlement("pay_at_studio")}
                         className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
@@ -414,7 +417,7 @@ export default function AttendancePage() {
                         }}
                       >
                         <span className="font-medium text-foreground">Pay at Studio</span>
-                      </button>
+                      </button>}
                       {walkInSettlement === "pay_at_studio" && (
                         <div className="text-sm px-3 py-2.5 rounded-xl" style={{ background: `${STUDIO_CYAN}10`, color: STUDIO_CYAN, border: `1px solid ${STUDIO_CYAN}25` }}>
                           The single-class price will be charged. Package credits will not be used, even if available.

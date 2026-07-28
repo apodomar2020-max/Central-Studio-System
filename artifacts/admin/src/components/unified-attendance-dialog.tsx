@@ -173,12 +173,14 @@ export function UnifiedAttendanceDialog({
   canCheckIn,
   canPackageDeduct,
   canScan,
+  canConfirmPayments,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canCheckIn: boolean;
   canPackageDeduct: boolean;
   canScan: boolean;
+  canConfirmPayments: boolean;
 }) {
   const queryClient = useQueryClient();
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -203,6 +205,8 @@ export function UnifiedAttendanceDialog({
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   // Prevents a double-click/double-submit from firing the confirm request twice.
   const [submitLock, setSubmitLock] = useState(false);
+  const [walkInActionAmount, setWalkInActionAmount] = useState<number | null>(null);
+  const [walkInActionAmountLoading, setWalkInActionAmountLoading] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -219,6 +223,8 @@ export function UnifiedAttendanceDialog({
     setPaymentMode("pay_at_studio");
     setSelectedPackageId(null);
     setSubmitLock(false);
+    setWalkInActionAmount(null);
+    setWalkInActionAmountLoading(false);
     setErrorMessage("");
     setSuccessMessage("");
   }
@@ -357,6 +363,26 @@ export function UnifiedAttendanceDialog({
     setSelectedPackageId(null);
     setSubmitLock(false);
     setPhase("confirming");
+    setWalkInActionAmount(null);
+    const isActionableWalkIn = candidate.bookingId == null && candidate.program === "studio";
+    if (isActionableWalkIn && canConfirmPayments && candidate.scheduleId != null) {
+      setWalkInActionAmountLoading(true);
+      void customFetch<{ amountEgp: number | null }>("/api/admin/attendance/walkin-payment-amount", {
+        method: "POST",
+        body: JSON.stringify({
+          candidateKey: candidate.candidateKey,
+          accountId: account.accountId,
+          scheduleId: candidate.scheduleId,
+          childId: candidate.walkinChildId,
+          occurrenceDate: candidate.occurrenceDate,
+        }),
+      })
+        .then((body) => setWalkInActionAmount(body.amountEgp))
+        .catch((error: unknown) => setErrorMessage(
+          error instanceof Error ? error.message : "Could not load the authorized payment amount.",
+        ))
+        .finally(() => setWalkInActionAmountLoading(false));
+    }
   }
 
   function backToResults() {
@@ -405,7 +431,7 @@ export function UnifiedAttendanceDialog({
           // resolve()).
           body.scheduleId = candidate.scheduleId;
           if (candidate.walkinChildId != null) body.childId = candidate.walkinChildId;
-          if (candidate.walkinPriceEgp != null) body.expectedPriceEgp = candidate.walkinPriceEgp;
+          if (walkInActionAmount != null) body.expectedPriceEgp = walkInActionAmount;
           if (paymentMode === "pay_at_studio") body.paid = paidDecision ?? true;
         }
       } else {
@@ -627,9 +653,9 @@ export function UnifiedAttendanceDialog({
                     <div className="space-y-2">
                       <p className="text-sm font-semibold">Payment</p>
                       <div className="flex gap-2">
-                        <button onClick={() => setPaymentMode("pay_at_studio")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "pay_at_studio" ? CYAN : "hsl(var(--muted))", color: paymentMode === "pay_at_studio" ? "hsl(var(--primary-foreground))" : undefined }}>
+                        {canConfirmPayments && <button onClick={() => setPaymentMode("pay_at_studio")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "pay_at_studio" ? CYAN : "hsl(var(--muted))", color: paymentMode === "pay_at_studio" ? "hsl(var(--primary-foreground))" : undefined }}>
                           Pay at Studio
-                        </button>
+                        </button>}
                         {showPackageCreditOption && (
                           <button onClick={() => setPaymentMode("package_credit")} className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold" style={{ background: paymentMode === "package_credit" ? CYAN : "hsl(var(--muted))", color: paymentMode === "package_credit" ? "hsl(var(--primary-foreground))" : undefined }}>
                           Package Credit
@@ -644,13 +670,19 @@ export function UnifiedAttendanceDialog({
                           ))}
                         </select>
                       )}
-                      {showPaidNotPaid && selected.candidate.walkinPriceEgp != null && (
+                      {showPaidNotPaid && (
                         // Server-resolved price, display-only — never an
                         // editable input. Shown before any Paid/Not Paid
                         // decision can be made.
                         <div className="rounded-lg p-3 flex items-center justify-between" style={{ border: `1px solid ${BORDER}`, background: "hsl(var(--muted) / 0.4)" }}>
                           <span className="text-sm" style={{ color: MUTED }}>Single-Class price</span>
-                          <span className="text-base font-bold">EGP {selected.candidate.walkinPriceEgp}</span>
+                          <span className="text-base font-bold">
+                            {walkInActionAmountLoading
+                              ? "Loading…"
+                              : walkInActionAmount == null
+                                ? "Amount unavailable"
+                                : `EGP ${walkInActionAmount}`}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -666,7 +698,7 @@ export function UnifiedAttendanceDialog({
                     <div className="flex gap-2">
                       <button
                         onClick={declineWalkInPayment}
-                        disabled={submitLock}
+                        disabled={submitLock || walkInActionAmountLoading || walkInActionAmount == null}
                         className="flex-1 px-4 py-3 rounded-lg text-sm font-bold disabled:opacity-50"
                         style={{ background: "hsl(var(--muted))" }}
                       >

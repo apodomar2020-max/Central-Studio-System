@@ -50,6 +50,8 @@ const CONFIRMED_PAYMENT_METHOD_LABELS: Record<ConfirmedPaymentMethod, string> = 
 const FILTERS = ["all", "pending", "confirmed", "rejected", "cancelled", "attended"] as const;
 const SCOPE_FILTERS = ["all", "self", "child"] as const;
 const PAGE_SIZE = 50;
+const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
 
 const formSchema = z.object({
   studentName: z.string().min(1, "Name is required"),
@@ -118,10 +120,6 @@ const paymentStatusLabel = (s: string) => {
 const participantName = (booking: Booking) => booking.participantName || booking.studentName;
 const accountOwnerName = (booking: Booking) => booking.accountOwnerName || booking.studentName;
 const accountOwnerEmail = (booking: Booking) => booking.accountOwnerEmail || booking.studentEmail;
-const paymentAmountLabel = (booking: Booking) =>
-  typeof booking.schedulePriceEgp === "number"
-    ? `EGP ${booking.schedulePriceEgp.toLocaleString()}`
-    : "Amount unavailable";
 const isChildBooking = (booking: Booking) =>
   booking.bookingScope === "child" || booking.participantType === "child" || booking.participantChildId != null;
 const scopeLabel = (booking: Booking) => (isChildBooking(booking) ? "Child" : "Self");
@@ -151,7 +149,7 @@ const paymentStatusPillClass = (status: string) => {
 };
 
 export default function Bookings() {
-  const { can } = useAdminAuth();
+  const { can, token } = useAdminAuth();
   const canCreate = can("bookings", "create");
   const canEdit = can("bookings", "edit");
   const canCancel = can("bookings", "cancel");
@@ -200,6 +198,40 @@ export default function Bookings() {
   const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState<ConfirmedPaymentMethod | "">("");
   const [paymentConfirmSubmitLock, setPaymentConfirmSubmitLock] = useState(false);
   const [paymentConfirmError, setPaymentConfirmError] = useState("");
+  const [paymentActionAmount, setPaymentActionAmount] = useState<number | null>(null);
+  const [paymentActionAmountLoading, setPaymentActionAmountLoading] = useState(false);
+
+  useEffect(() => {
+    if (!paymentConfirm || paymentConfirm.status !== "paid") {
+      setPaymentActionAmount(null);
+      setPaymentActionAmountLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setPaymentActionAmount(null);
+    setPaymentActionAmountLoading(true);
+    void fetch(`${API_BASE}/api/bookings/${paymentConfirm.booking.id}/payment-confirmation-amount`, {
+      headers: {
+        ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+        ...(token ? { "x-admin-token": token } : {}),
+      },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load the authorized payment amount.");
+        return response.json() as Promise<{ amountEgp: number | null }>;
+      })
+      .then((body) => setPaymentActionAmount(body.amountEgp))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPaymentConfirmError(error instanceof Error ? error.message : "Could not load the authorized payment amount.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPaymentActionAmountLoading(false);
+      });
+    return () => controller.abort();
+  }, [paymentConfirm, token]);
 
   useEffect(() => {
     setPage(1);
@@ -789,7 +821,15 @@ export default function Bookings() {
                   <span className="text-muted-foreground">Participant:</span>
                   <span className="font-medium">{participantName(paymentConfirm.booking)}</span>
                   <span className="text-muted-foreground">Amount:</span>
-                  <span className="font-medium">{paymentAmountLabel(paymentConfirm.booking)}</span>
+                  <span className="font-medium">
+                    {paymentConfirm.status !== "paid"
+                      ? "Not applicable"
+                      : paymentActionAmountLoading
+                        ? "Loading…"
+                        : paymentActionAmount == null
+                          ? "Amount unavailable"
+                          : `EGP ${paymentActionAmount.toLocaleString()}`}
+                  </span>
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground">
@@ -824,7 +864,7 @@ export default function Bookings() {
                   type="button"
                   variant={paymentConfirm.status === "failed" ? "destructive" : "default"}
                   onClick={confirmPaymentChange}
-                  disabled={paymentConfirmSubmitLock || (paymentConfirm.status === "paid" && !confirmedPaymentMethod)}
+                  disabled={paymentConfirmSubmitLock || (paymentConfirm.status === "paid" && (!confirmedPaymentMethod || paymentActionAmountLoading || paymentActionAmount == null))}
                 >
                   {paymentConfirmSubmitLock ? "Saving…" : paymentConfirm.status === "paid" ? "Confirm Payment" : "Reject Payment"}
                 </Button>

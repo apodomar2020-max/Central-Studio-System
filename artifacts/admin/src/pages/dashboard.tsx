@@ -151,8 +151,8 @@ function formatRefreshTime(date: Date): string {
   }).format(date);
 }
 
-function money(value: number | undefined): string {
-  return `EGP ${(value ?? 0).toLocaleString()}`;
+function money(value: number | null | undefined): string {
+  return value == null ? "Restricted" : `EGP ${value.toLocaleString()}`;
 }
 
 export default function Dashboard() {
@@ -230,7 +230,7 @@ export default function Dashboard() {
     { title: "Active Ballet Enrollments", value: dashboard?.activeBalletEnrollments ?? 0, icon: CheckCircle2, accent: GREEN },
     { title: "Withdrawn Ballet Enrollments", value: dashboard?.withdrawnBalletEnrollments ?? 0, icon: XCircle, accent: MUTED },
     { title: "Refunds Under Review", value: dashboard?.refundsUnderReview ?? 0, icon: FileText, accent: PURPLE },
-    { title: "Approved/Processing Exposure", value: money(dashboard?.approvedProcessingRefundExposureEgp), icon: AlertTriangle, accent: AMBER },
+    ...(canViewFinance ? [{ title: "Approved/Processing Exposure", value: money(dashboard?.approvedProcessingRefundExposureEgp), icon: AlertTriangle, accent: AMBER }] : []),
     { title: "Completed Full Refunds", value: dashboard?.completedFullRefunds ?? 0, icon: RotateCcw, accent: RED },
     { title: "Completed Partial Refunds", value: dashboard?.completedPartialRefunds ?? 0, icon: RotateCcw, accent: CYAN },
   ];
