@@ -1129,8 +1129,6 @@ components:
         - refundedBookings
         - activeClasses
         - activeInstructors
-        - totalRevenue
-        - revenueTrackingComplete
         - pendingBookings
         - activePackages
         - pendingPackageOrders
@@ -1139,24 +1137,10 @@ components:
         - missedAttendance
         - todayClasses
         - upcomingClasses
-        - grossGenericBookingRevenueEgp
-        - grossGenericPackageRevenueEgp
-        - grossBalletRevenueEgp
-        - balletCompletedRefundsEgp
-        - legacyBalletRefundedPaymentsEgp
-        - balletPendingRefundExposureEgp
-        - balletNetRevenueEgp
-        - totalGrossRevenueEgp
-        - totalNetRevenueEgp
-        - balletPayAtStudioRevenueEgp
-        - balletOnlineRevenueEgp
-        - balletLegacyBankTransferRevenueEgp
-        - legacyRevenueTrackingLimitations
         - pendingCancellationRequests
         - activeBalletEnrollments
         - withdrawnBalletEnrollments
         - refundsUnderReview
-        - approvedProcessingRefundExposureEgp
         - completedFullRefunds
         - completedPartialRefunds
       properties:
@@ -1172,8 +1156,6 @@ components:
         refundedBookings: { type: integer }
         activeClasses: { type: integer }
         activeInstructors: { type: integer }
-        totalRevenue: { type: [number, "null"] }
-        revenueTrackingComplete: { type: [boolean, "null"] }
         pendingBookings: { type: integer }
         activePackages: { type: integer }
         pendingPackageOrders: { type: integer }
@@ -1182,31 +1164,10 @@ components:
         missedAttendance: { type: integer }
         todayClasses: { type: integer }
         upcomingClasses: { type: integer }
-        grossGenericBookingRevenueEgp: { type: [number, "null"] }
-        grossGenericPackageRevenueEgp: { type: [number, "null"] }
-        grossBalletRevenueEgp: { type: [number, "null"] }
-        balletCompletedRefundsEgp: { type: [number, "null"] }
-        legacyBalletRefundedPaymentsEgp: { type: [number, "null"] }
-        balletPendingRefundExposureEgp: { type: [number, "null"] }
-        balletNetRevenueEgp: { type: [number, "null"] }
-        totalGrossRevenueEgp: { type: [number, "null"] }
-        totalNetRevenueEgp: { type: [number, "null"] }
-        balletPayAtStudioRevenueEgp: { type: [number, "null"] }
-        balletOnlineRevenueEgp: { type: [number, "null"] }
-        balletLegacyBankTransferRevenueEgp: { type: [number, "null"] }
-        legacyRevenueTrackingLimitations:
-          type: array
-          items:
-            type: object
-            required: [code, message]
-            properties:
-              code: { type: string }
-              message: { type: string }
         pendingCancellationRequests: { type: integer }
         activeBalletEnrollments: { type: integer }
         withdrawnBalletEnrollments: { type: integer }
         refundsUnderReview: { type: integer }
-        approvedProcessingRefundExposureEgp: { type: [number, "null"] }
         completedFullRefunds: { type: integer }
         completedPartialRefunds: { type: integer }
 

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { count, eq, inArray, sql } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import {
   db,
   studentsTable,
@@ -15,8 +15,6 @@ import {
 } from "@workspace/db";
 import { GetDashboardResponse } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
-import { getFinancialAggregates } from "../lib/financialAggregates";
-import { hasRolePermission } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -49,14 +47,10 @@ function occursOn(schedule: ScheduleRow, day: { key: string; dayOfWeek: number }
   return true;
 }
 
-// Admin-only: aggregates revenue, user counts, and operational stats. The
+// Admin-only: aggregates user counts and operational stats. The
 // shared API key is an app identifier, not authentication — it must never be
 // enough to read financial data (Security Assessment H-01).
 router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "view"), async (req: AdminRequest, res): Promise<void> => {
-  const canViewFinance = Boolean(
-    req.adminUser?.isSuperAdmin ||
-    hasRolePermission(req.adminUser?.permissions, "finance", "view"),
-  );
   const [
     [userStats],
     [bookingStats],
@@ -68,7 +62,6 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     [balletEnrollmentStats],
     [balletRefundStats],
     scheduleRows,
-    financial,
   ] = await Promise.all([
     db.select({
       totalUsers: count(),
@@ -105,7 +98,6 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     }).from(balletLevelAssignmentsTable),
 	    db.select({
 	      refundsUnderReview: sql<number>`count(*) filter (where ${balletRefundsTable.status} = 'underReview')`,
-	      approvedProcessingRefundExposure: sql<number>`coalesce(sum(${balletRefundsTable.approvedAmountEgp}) filter (where ${balletRefundsTable.status} in ('approved','processing') and ${balletRefundsTable.approvedAmountEgp} > 0), 0)::int`,
 	      completedFullRefunds: sql<number>`
 	        (
 	          select count(*)::int
@@ -143,7 +135,6 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
       .from(schedulesTable)
       .innerJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
       .where(eq(classesTable.isActive, true)),
-    getFinancialAggregates(),
   ]);
 
   const today = cairoDayInfo(new Date());
@@ -172,30 +163,10 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     refundedBookings: Number(bookingStats.refundedBookings),
     activeClasses: Number(classStats.activeClasses),
     activeInstructors: Number(instructorStats.activeInstructors),
-    // Backward-compatible legacy field: existing Admin Dashboard consumers still
-    // expect "paid classes + activated generic packages". New explicit financial
-    // fields below expose Ballet-aware gross/net values without changing this
-    // field's meaning during Phase 1.
-    totalRevenue: financial.grossGenericBookingRevenueEgp + financial.grossGenericPackageRevenueEgp,
-    revenueTrackingComplete: financial.revenueTrackingComplete,
-    grossGenericBookingRevenueEgp: financial.grossGenericBookingRevenueEgp,
-    grossGenericPackageRevenueEgp: financial.grossGenericPackageRevenueEgp,
-    grossBalletRevenueEgp: financial.grossBalletRevenueEgp,
-    balletCompletedRefundsEgp: financial.balletCompletedRefundsEgp,
-    legacyBalletRefundedPaymentsEgp: financial.legacyBalletRefundedPaymentsEgp,
-    balletPendingRefundExposureEgp: financial.balletPendingRefundExposureEgp,
-    balletNetRevenueEgp: financial.balletNetRevenueEgp,
-    totalGrossRevenueEgp: financial.totalGrossRevenueEgp,
-    totalNetRevenueEgp: financial.totalNetRevenueEgp,
-    balletPayAtStudioRevenueEgp: financial.balletPayAtStudioRevenueEgp,
-    balletOnlineRevenueEgp: financial.balletOnlineRevenueEgp,
-    balletLegacyBankTransferRevenueEgp: financial.balletLegacyBankTransferRevenueEgp,
-    legacyRevenueTrackingLimitations: financial.legacyRevenueTrackingLimitations,
     pendingCancellationRequests: Number(balletCancellationStats.pendingCancellationRequests),
     activeBalletEnrollments: Number(balletEnrollmentStats.activeBalletEnrollments),
     withdrawnBalletEnrollments: Number(balletEnrollmentStats.withdrawnBalletEnrollments),
     refundsUnderReview: Number(balletRefundStats.refundsUnderReview),
-    approvedProcessingRefundExposureEgp: Number(balletRefundStats.approvedProcessingRefundExposure),
     completedFullRefunds: Number(balletRefundStats.completedFullRefunds),
     completedPartialRefunds: Number(balletRefundStats.completedPartialRefunds),
     activePackages: Number(packageStats.activePackages),
@@ -207,29 +178,6 @@ router.get("/dashboard", requireAdminAuth, requireAdminPermission("dashboard", "
     upcomingClasses,
   });
 
-  // Keep operational metrics available without turning a redacted amount into
-  // a misleading "EGP 0". Nullable fields make the authorization boundary
-  // explicit in the response and are never rendered by the unauthorized UI.
-  if (!canViewFinance) {
-    Object.assign(response, {
-      totalRevenue: null,
-      revenueTrackingComplete: null,
-      grossGenericBookingRevenueEgp: null,
-      grossGenericPackageRevenueEgp: null,
-      grossBalletRevenueEgp: null,
-      balletCompletedRefundsEgp: null,
-      legacyBalletRefundedPaymentsEgp: null,
-      balletPendingRefundExposureEgp: null,
-      balletNetRevenueEgp: null,
-      totalGrossRevenueEgp: null,
-      totalNetRevenueEgp: null,
-      balletPayAtStudioRevenueEgp: null,
-      balletOnlineRevenueEgp: null,
-      balletLegacyBankTransferRevenueEgp: null,
-      legacyRevenueTrackingLimitations: [],
-      approvedProcessingRefundExposureEgp: null,
-    });
-  }
   res.json(response);
 });
 
