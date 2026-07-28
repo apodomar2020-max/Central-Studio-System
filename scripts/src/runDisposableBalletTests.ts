@@ -183,6 +183,7 @@ async function main() {
       DISPOSABLE_HOTFIX_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_ACTIVATION_INDEX_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_OCCURRENCE_UNIQUE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
+      DISPOSABLE_LAST_CREDIT_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_PACKAGE_CAPTURE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_SINGLE_CLASS_BOOKING_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_PAYMENT_RECORDS_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",

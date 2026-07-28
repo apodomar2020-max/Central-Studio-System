@@ -31,6 +31,7 @@ import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
 import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
+import { getBookingErrorMessage } from "@/services/bookingErrorMessages";
 
 type PaymentMethod = "online" | "cash" | "packageCredit";
 
@@ -367,9 +368,18 @@ export default function BookingFlowScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       // Friendly handling for the backend duplicate-booking guard (HTTP 409 /
       // code "duplicate_booking") instead of the generic failure screen.
-      const status = (err as { status?: number })?.status;
-      const code = (err as { data?: { code?: string } })?.data?.code;
+      const errorData = (err as { data?: { code?: string; error?: string } })?.data;
+      const code = errorData?.code ?? errorData?.error;
       const msg = err instanceof Error ? err.message : "";
+      const friendlyError = getBookingErrorMessage(code);
+      if (friendlyError) {
+        alert.show({
+          tone: "warning",
+          title: friendlyError.title,
+          message: friendlyError.message,
+        });
+        return;
+      }
       if (code === "booking_attempt_limit_reached" || /booking_attempt_limit_reached/i.test(msg)) {
         alert.show({
           tone: "warning",
@@ -378,7 +388,7 @@ export default function BookingFlowScreen() {
         });
         return;
       }
-      if (status === 409 || /duplicate_booking|already have an active booking/i.test(msg)) {
+      if (code === "duplicate_booking" || /duplicate_booking|already have an active booking/i.test(msg)) {
         alert.show({
           tone: "warning",
           title: "Already booked",
