@@ -5,6 +5,12 @@ import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/utils/bookingStatus";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import {
+  beginPushLogout,
+  finishPushLogout,
+  unregisterPushDeviceForLogout,
+} from "@/services/pushNotifications";
+import { createLogoutCoordinator } from "@/services/logoutCoordinator";
 
 /** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
 export type ProfileCompletionStep = "email" | "profile" | "children" | "medical" | "styles";
@@ -171,6 +177,7 @@ interface AppContextType {
   setIsOnboarded: (v: boolean) => void;
   user: User | null;
   setUser: (user: User | null) => Promise<void>;
+  logout: () => Promise<void>;
   children: ChildProfile[];
   /** Returns the created profile (with its real backend id) on success, or
    *  null on failure — the caller can use the id immediately (e.g. to link
@@ -321,6 +328,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   const isMountedRef = useRef(true);
   // Track user in a ref so callbacks can access it without re-creating
   const userRef = useRef<User | null>(null);
+  const logoutRef = useRef<(() => Promise<void>) | null>(null);
   useEffect(() => {
     isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
@@ -570,6 +578,17 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       setReferralCredits(0);
     }
   }, []);
+
+  if (!logoutRef.current) {
+    logoutRef.current = createLogoutCoordinator({
+      begin: () => { beginPushLogout(); },
+      unregister: unregisterPushDeviceForLogout,
+      // setUser(null) removes the student JWT, so this is deliberately second.
+      clearSession: () => setUser(null),
+      finish: finishPushLogout,
+    });
+  }
+  const logout = logoutRef.current;
 
   const addChild = useCallback(async (child: ChildProfile) => {
     try {
@@ -861,6 +880,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         setIsOnboarded,
         user,
         setUser,
+        logout,
         children,
         addChild,
         updateChild,

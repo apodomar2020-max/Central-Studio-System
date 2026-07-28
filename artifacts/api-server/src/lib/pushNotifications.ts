@@ -5,6 +5,7 @@ import {
   notificationDevicesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
+import { isPushDeviceEligible } from "./pushDeviceEligibility";
 
 type PushData = Record<string, unknown>;
 
@@ -191,6 +192,8 @@ export async function sendPushNotification(input: SendPushInput): Promise<SendPu
         id: notificationDevicesTable.id,
         pushToken: notificationDevicesTable.pushToken,
         platform: notificationDevicesTable.platform,
+        provider: notificationDevicesTable.provider,
+        isActive: notificationDevicesTable.isActive,
       })
       .from(notificationDevicesTable)
       .where(and(
@@ -198,13 +201,14 @@ export async function sendPushNotification(input: SendPushInput): Promise<SendPu
         eq(notificationDevicesTable.provider, "expo"),
         eq(notificationDevicesTable.isActive, true),
       ));
+    const eligibleDevices = devices.filter(isPushDeviceEligible);
     logger.info({
       notificationId: input.notificationId ?? null,
       studentId: input.studentId,
-      activeDeviceCount: devices.length,
-      platformCounts: platformCounts(devices),
+      activeDeviceCount: eligibleDevices.length,
+      platformCounts: platformCounts(eligibleDevices),
     }, "[PUSH_DIAG] active push devices loaded");
-    if (devices.length === 0) {
+    if (eligibleDevices.length === 0) {
       logger.info({ studentId: input.studentId, notificationId: input.notificationId ?? null }, "Push notification skipped: no active devices");
       await db.insert(notificationDeliveryLogsTable).values({
         notificationId: input.notificationId ?? null,
@@ -217,7 +221,7 @@ export async function sendPushNotification(input: SendPushInput): Promise<SendPu
       });
       return { sent: 0, failed: 0, skipped: false, reason: "no_active_device" };
     }
-    const result = await sendToDevices(input, devices);
+    const result = await sendToDevices(input, eligibleDevices);
     return { ...result, skipped: false, reason: result.sent > 0 ? "sent" : "failed" };
   } catch (error) {
     logger.warn({ err: error, studentId: input.studentId }, "Push notification failed safely");
@@ -238,6 +242,8 @@ export async function sendBroadcastPushNotification(input: SendBroadcastInput): 
       studentId: notificationDevicesTable.studentId,
       pushToken: notificationDevicesTable.pushToken,
       platform: notificationDevicesTable.platform,
+      provider: notificationDevicesTable.provider,
+      isActive: notificationDevicesTable.isActive,
     })
     .from(notificationDevicesTable)
     .where(and(
@@ -247,7 +253,7 @@ export async function sendBroadcastPushNotification(input: SendBroadcastInput): 
     .limit(limit);
 
   const byStudent = new Map<number, PushDevice[]>();
-  for (const device of devices) {
+  for (const device of devices.filter(isPushDeviceEligible)) {
     const list = byStudent.get(device.studentId) ?? [];
     list.push({ id: device.id, pushToken: device.pushToken, platform: device.platform });
     byStudent.set(device.studentId, list);

@@ -1,6 +1,12 @@
 import { useEffect } from "react";
+import { AppState } from "react-native";
 import { useAppContext } from "@/contexts/AppContext";
-import { isExpoGo, registerPushNotificationsForCurrentUser } from "@/services/pushNotifications";
+import {
+  isExpoGo,
+  isPushLogoutInProgress,
+  registerPushNotificationsForCurrentUser,
+  retryPendingInstallationUnregister,
+} from "@/services/pushNotifications";
 
 function gateDiag(message: string, data?: Record<string, unknown>): void {
   if (!__DEV__) return;
@@ -18,13 +24,29 @@ export default function PushRegistrationGate() {
   }, []);
 
   useEffect(() => {
+    if (user?.id) return;
+    const retry = () => { void retryPendingInstallationUnregister(); };
+    retry();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") retry();
+    });
+    return () => subscription.remove();
+  }, [user?.id]);
+
+  useEffect(() => {
     const expoGo = isExpoGo();
+    const logoutInProgress = isPushLogoutInProgress();
     gateDiag("gate evaluated", {
       userExists: Boolean(user?.id),
       userId: user?.id ?? null,
       emailVerified: Boolean(user?.emailVerified),
       isExpoGo: expoGo,
+      logoutInProgress,
     });
+    if (logoutInProgress) {
+      gateDiag("gate skipped", { reason: "logout_in_progress" });
+      return;
+    }
     if (expoGo) {
       gateDiag("gate skipped", { reason: "expo_go" });
       return;

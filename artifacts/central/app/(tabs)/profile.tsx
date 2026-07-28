@@ -602,7 +602,7 @@ const dpStyles = StyleSheet.create({
 });
 
 export default function ProfileScreen() {
-  const { user, setUser, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications, refreshUserPackages } = useAppContext();
+  const { user, logout, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications, refreshUserPackages } = useAppContext();
   const alert = useCentralAlert();
   const { localEnabled: backgroundMusicEnabled, setLocalEnabled: setBackgroundMusicEnabled } = useBackgroundMusic();
   const insets = useSafeAreaInsets();
@@ -677,7 +677,7 @@ export default function ProfileScreen() {
           tone: "danger",
           onPress: () => {
             void (async () => {
-              await setUser(null);
+              await logout();
               if (__DEV__) {
                 console.log("[AUTH_NAV] signOut auth cleared", { destination: "/onboarding/welcome" });
               }

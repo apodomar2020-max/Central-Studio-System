@@ -59,6 +59,7 @@ export const notificationDevicesTable = pgTable(
     provider: text("provider").notNull().default("expo"),
     platform: text("platform").notNull().default("unknown"),
     deviceId: text("device_id"),
+    unregisterSecretHash: text("unregister_secret_hash"),
     isActive: boolean("is_active").notNull().default(true),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

@@ -1,10 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
+import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
+import { retryPendingInstallation } from "./installationUnregisterRetry";
 
 const DEVICE_ID_KEY = "notificationDeviceId";
+const PENDING_UNREGISTER_KEY = "notificationPendingUnregister";
+const UNREGISTER_SECRET_KEY = "notificationUnregisterSecret";
 const ANDROID_NOTIFICATION_CHANNEL_ID = "central-default-v1";
 const ANDROID_NOTIFICATION_SOUND = "central_notification.wav";
 
@@ -13,6 +17,9 @@ type DevicePushToken = Awaited<ReturnType<ExpoNotificationsModule["getDevicePush
 
 const REDACTED = "[REDACTED]";
 const SENSITIVE_KEY_PATTERN = /token|jwt|password|secret|credential|authorization|api[_-]?key/i;
+
+let logoutInProgress = false;
+let registrationInFlight: Promise<void> | null = null;
 
 function pushDiag(message: string, data?: Record<string, unknown>): void {
   if (!__DEV__) return;
@@ -150,6 +157,104 @@ async function getDeviceId(): Promise<string> {
   return next;
 }
 
+export function isPushLogoutInProgress(): boolean {
+  return logoutInProgress;
+}
+
+export function beginPushLogout(): boolean {
+  if (logoutInProgress) return false;
+  logoutInProgress = true;
+  return true;
+}
+
+export function finishPushLogout(): void {
+  logoutInProgress = false;
+}
+
+async function clearPendingUnregister(): Promise<void> {
+  await AsyncStorage.removeItem(PENDING_UNREGISTER_KEY);
+}
+
+async function getUnregisterSecret(): Promise<string | null> {
+  return SecureStore.getItemAsync(UNREGISTER_SECRET_KEY);
+}
+
+async function setUnregisterSecret(secret: string): Promise<void> {
+  await SecureStore.setItemAsync(UNREGISTER_SECRET_KEY, secret, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
+}
+
+async function getOrCreateUnregisterSecret(): Promise<string> {
+  const existing = await getUnregisterSecret();
+  if (existing) return existing;
+  const bytes = await Crypto.getRandomBytesAsync(32);
+  const secret = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  // Persist before registration can activate/rotate the database row. If this
+  // fails, registration aborts and the server never receives the new secret.
+  await setUnregisterSecret(secret);
+  return secret;
+}
+
+async function readPendingUnregister(): Promise<{ deviceId: string } | null> {
+  const raw = await AsyncStorage.getItem(PENDING_UNREGISTER_KEY);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as { deviceId?: unknown };
+    return typeof value.deviceId === "string" && value.deviceId ? { deviceId: value.deviceId } : null;
+  } catch {
+    await clearPendingUnregister();
+    return null;
+  }
+}
+
+async function postUnregister(deviceId: string): Promise<number> {
+  const response = await customFetch<{ ok?: boolean; updated?: number }>(
+    "/api/notifications/devices/unregister",
+    { method: "POST", body: JSON.stringify({ deviceId }) },
+  );
+  return response.updated ?? 0;
+}
+
+function retryDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function retryPendingInstallationUnregister(maxAttempts = 3): Promise<boolean> {
+  return retryPendingInstallation({
+    readPending: readPendingUnregister,
+    readSecret: getUnregisterSecret,
+    unregister: async (deviceId, unregisterSecret) => {
+      const response = await customFetch<{ ok?: boolean }>(
+        "/api/notifications/devices/unregister-by-installation",
+        { method: "POST", body: JSON.stringify({ deviceId, unregisterSecret }) },
+      );
+      return response.ok === true;
+    },
+    clearPending: clearPendingUnregister,
+    wait: retryDelay,
+  }, maxAttempts);
+}
+
+/** Called while the current student's JWT is still present. */
+export async function unregisterPushDeviceForLogout(): Promise<void> {
+  const deviceId = await getDeviceId();
+  const unregisterSecret = await getUnregisterSecret();
+  // AsyncStorage contains only the installation UUID. The authorization
+  // credential remains in OS-backed SecureStore.
+  if (unregisterSecret) {
+    await AsyncStorage.setItem(PENDING_UNREGISTER_KEY, JSON.stringify({ deviceId }));
+  }
+
+  // A register that began before logout could otherwise commit afterwards and
+  // reactivate the row. The guard prevents any new registration from starting.
+  const activeRegistration = registrationInFlight;
+  if (activeRegistration) await activeRegistration.catch(() => {});
+
+  const updated = await postUnregister(deviceId);
+  if (updated > 0) await clearPendingUnregister();
+}
+
 function permissionGranted(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const permission = value as Record<string, unknown>;
@@ -161,8 +266,12 @@ function permissionStatus(value: unknown): unknown {
   return (value as Record<string, unknown>).status ?? null;
 }
 
-export async function registerPushNotificationsForCurrentUser(): Promise<void> {
+async function registerPushNotifications(): Promise<void> {
   pushDiag("register start", { platform: Platform.OS, isExpoGo: isExpoGo() });
+  if (logoutInProgress) {
+    pushDiag("register skipped", { reason: "logout_in_progress" });
+    return;
+  }
   if (Platform.OS === "web") {
     pushDiag("register skipped", { reason: "web" });
     return;
@@ -188,6 +297,7 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
   }
 
   await ensureAndroidNotificationChannel(Notifications);
+  if (logoutInProgress) return;
 
   const current = await Notifications.getPermissionsAsync();
   pushDiag("permission current", {
@@ -205,6 +315,7 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
     pushDiag("register skipped", { reason: "permission_denied" });
     return;
   }
+  if (logoutInProgress) return;
 
   const projectId = getProjectId();
   logRuntimeConfig(Notifications, projectId);
@@ -251,13 +362,28 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
     pushDiag("register skipped", { reason: "empty_token" });
     return;
   }
+  if (logoutInProgress) return;
 
   try {
+    const pendingCleared = await retryPendingInstallationUnregister();
+    if (!pendingCleared) {
+      pushDiag("register skipped", { reason: "pending_unregister_not_cleared" });
+      return;
+    }
+    if (logoutInProgress) return;
     pushDiag("register API request", {
       tokenPrefix: tokenPrefix(pushToken),
       platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "unknown",
     });
-    const response = await customFetch<{ ok?: boolean; id?: number; isActive?: boolean; lastSeenAt?: string }>(
+    const deviceId = await getDeviceId();
+    const existingUnregisterSecret = await getOrCreateUnregisterSecret();
+    const response = await customFetch<{
+      ok?: boolean;
+      id?: number;
+      isActive?: boolean;
+      lastSeenAt?: string;
+      unregisterSecret?: string;
+    }>(
       "/api/notifications/devices/register",
       {
         method: "POST",
@@ -265,7 +391,8 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
           pushToken,
           provider: "expo",
           platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "unknown",
-          deviceId: await getDeviceId(),
+          deviceId,
+          unregisterSecret: existingUnregisterSecret,
         }),
       },
     );
@@ -276,6 +403,8 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
       tokenPrefix: tokenPrefix(pushToken),
     });
     pushDiag("register final success", { tokenPrefix: tokenPrefix(pushToken) });
+    if (response.unregisterSecret) await setUnregisterSecret(response.unregisterSecret);
+    await clearPendingUnregister();
   } catch (error) {
     pushDiag("register API failure", {
       tokenPrefix: tokenPrefix(pushToken),
@@ -283,4 +412,15 @@ export async function registerPushNotificationsForCurrentUser(): Promise<void> {
     });
     throw error;
   }
+}
+
+export function registerPushNotificationsForCurrentUser(): Promise<void> {
+  if (logoutInProgress) return Promise.resolve();
+  if (registrationInFlight) return registrationInFlight;
+  const operation = registerPushNotifications();
+  const tracked = operation.finally(() => {
+    if (registrationInFlight === tracked) registrationInFlight = null;
+  });
+  registrationInFlight = tracked;
+  return tracked;
 }

@@ -2,6 +2,7 @@ import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import {
   db,
   notificationDeliveryLogsTable,
@@ -26,6 +27,10 @@ import {
 import { diffFields, logActivity } from "../lib/activityLog";
 import { enqueueJob, QUEUE_NAMES, type NotificationAutomationJob } from "../lib/queue";
 import {
+  resolveRegistrationSecret,
+  unregisterByInstallation,
+} from "../lib/installationUnregister";
+import {
   CreateNotificationBody,
   GetNotificationParams,
   GetNotificationResponse,
@@ -48,6 +53,7 @@ const DeviceRegisterBody = z.object({
   provider: z.literal("expo").default("expo"),
   platform: z.enum(["ios", "android", "unknown"]).default("unknown"),
   deviceId: z.string().optional(),
+  unregisterSecret: z.string().min(32).max(256).optional(),
 });
 
 const DeviceUnregisterBody = z.object({
@@ -55,6 +61,19 @@ const DeviceUnregisterBody = z.object({
   deviceId: z.string().optional(),
 }).refine((value) => Boolean(value.pushToken || value.deviceId), {
   message: "pushToken or deviceId is required",
+});
+
+const InstallationUnregisterBody = z.object({
+  deviceId: z.string().min(1).max(256),
+  unregisterSecret: z.string().min(32).max(256),
+});
+
+const installationUnregisterRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: true },
 });
 
 const AutomationType = z.enum(["all", "class_reminders", "post_class_reminders", "package_reminders"]);
@@ -464,6 +483,7 @@ router.post("/notifications/devices/register", requireStudentAuth, requireVerifi
 
   const studentId: number = req.studentId;
   const now = new Date().toISOString();
+  const registrationSecret = resolveRegistrationSecret(parsed.data.unregisterSecret);
   const [existingDevice] = await db
     .select({ id: notificationDevicesTable.id })
     .from(notificationDevicesTable)
@@ -476,31 +496,75 @@ router.post("/notifications/devices/register", requireStudentAuth, requireVerifi
     tokenPrefix: tokenPrefix(parsed.data.pushToken),
     action: existingDevice ? "update" : "create",
   }, "[PUSH_DIAG] notification device db write start");
-  const [device] = await db
-    .insert(notificationDevicesTable)
-    .values({
-      studentId,
-      pushToken: parsed.data.pushToken,
-      provider: parsed.data.provider,
-      platform: parsed.data.platform,
-      deviceId: parsed.data.deviceId ?? null,
-      isActive: true,
-      lastSeenAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: notificationDevicesTable.pushToken,
-      set: {
+  const device = await (async () => {
+    try {
+      return await db.transaction(async (tx) => {
+        if (parsed.data.deviceId && parsed.data.unregisterSecret) {
+          // Possession of the existing installation secret safely proves which
+          // prior rows belong to this physical installation. Deactivate them in
+          // the same transaction before activating the current token so token
+          // refresh and cross-account reassignment cannot leave a stale active row.
+          await tx
+            .update(notificationDevicesTable)
+            .set({ isActive: false, updatedAt: now })
+            .where(or(
+              // The authenticated owner may retire their own older rows even if
+              // SecureStore was lost and this registration rotated the secret.
+              and(
+                eq(notificationDevicesTable.studentId, studentId),
+                eq(notificationDevicesTable.deviceId, parsed.data.deviceId),
+              ),
+              // The installation credential may retire the same physical
+              // installation across an account handoff.
+              and(
+                eq(notificationDevicesTable.deviceId, parsed.data.deviceId),
+                eq(notificationDevicesTable.unregisterSecretHash, registrationSecret.secretHash),
+              ),
+            ));
+        }
+
+        const [registered] = await tx
+          .insert(notificationDevicesTable)
+          .values({
+            studentId,
+            pushToken: parsed.data.pushToken,
+            provider: parsed.data.provider,
+            platform: parsed.data.platform,
+            deviceId: parsed.data.deviceId ?? null,
+            unregisterSecretHash: registrationSecret.secretHash,
+            isActive: true,
+            lastSeenAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: notificationDevicesTable.pushToken,
+            set: {
+              studentId,
+              provider: parsed.data.provider,
+              platform: parsed.data.platform,
+              deviceId: parsed.data.deviceId ?? null,
+              unregisterSecretHash: registrationSecret.secretHash,
+              isActive: true,
+              lastSeenAt: now,
+              updatedAt: now,
+            },
+          })
+          .returning();
+        return registered;
+      });
+    } catch (error) {
+      logger.error({
         studentId,
-        provider: parsed.data.provider,
         platform: parsed.data.platform,
-        deviceId: parsed.data.deviceId ?? null,
-        isActive: true,
-        lastSeenAt: now,
-        updatedAt: now,
-      },
-    })
-    .returning();
+        provider: parsed.data.provider,
+        tokenPrefix: tokenPrefix(parsed.data.pushToken),
+        errorName: error instanceof Error ? error.name : "unknown",
+      }, "Notification device registration database write failed");
+      res.status(500).json({ error: "Device registration failed" });
+      return null;
+    }
+  })();
+  if (!device) return;
 
   logger.info({
     studentId,
@@ -512,7 +576,13 @@ router.post("/notifications/devices/register", requireStudentAuth, requireVerifi
     deviceId: device.id,
   }, "[PUSH_DIAG] notification device registered");
 
-  res.json({ ok: true, id: device.id, isActive: device.isActive, lastSeenAt: device.lastSeenAt });
+  res.json({
+    ok: true,
+    id: device.id,
+    isActive: device.isActive,
+    lastSeenAt: device.lastSeenAt,
+    ...(registrationSecret.returnSecret ? { unregisterSecret: registrationSecret.secret } : {}),
+  });
 });
 
 router.post("/notifications/devices/unregister", requireStudentAuth, requireVerifiedStudent, async (req: any, res): Promise<void> => {
@@ -534,6 +604,42 @@ router.post("/notifications/devices/unregister", requireStudentAuth, requireVeri
 
   res.json({ ok: true, updated: rows.length });
 });
+
+/**
+ * Threat model: this route is intentionally not student-scoped. Possession of
+ * a 256-bit per-installation secret authorizes exactly one operation: soft
+ * deactivation of matching device rows. It cannot read ownership, register a
+ * token, or transfer an account. Device IDs alone are not credentials.
+ */
+router.post(
+  "/notifications/devices/unregister-by-installation",
+  installationUnregisterRateLimiter,
+  async (req, res): Promise<void> => {
+    const parsed = InstallationUnregisterBody.safeParse(req.body);
+    if (parsed.success) {
+      await unregisterByInstallation(
+        {
+          async deactivate(deviceId, secretHash) {
+            const rows = await db
+              .update(notificationDevicesTable)
+              .set({ isActive: false, updatedAt: new Date().toISOString() })
+              .where(and(
+                eq(notificationDevicesTable.deviceId, deviceId),
+                eq(notificationDevicesTable.unregisterSecretHash, secretHash),
+              ))
+              .returning({ id: notificationDevicesTable.id });
+            return rows.length > 0;
+          },
+        },
+        parsed.data.deviceId,
+        parsed.data.unregisterSecret,
+      );
+    }
+    // Identical for malformed, unknown, wrong-secret, inactive, and successful
+    // requests. This endpoint must not be usable as an installation oracle.
+    res.json({ ok: true });
+  },
+);
 
 router.get("/notifications/:id", requireAdminAuth, requireAdminPermission("notifications", "view"), async (req, res): Promise<void> => {
   const params = GetNotificationParams.safeParse(req.params);

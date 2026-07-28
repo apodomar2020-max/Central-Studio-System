@@ -596,6 +596,13 @@
       "when": 1784462439000,
       "tag": "0085_bookings_occurrence_participant_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1784462440000,
+      "tag": "0086_notification_device_unregister_secret",
+      "breakpoints": true
     }
   ]
 }
