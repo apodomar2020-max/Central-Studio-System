@@ -66,6 +66,7 @@ import {
   type PaymentRecordSummaryInput,
   type BookingClassifyInput,
 } from "./financeBackfillClassifier";
+import { resolveCodeCommit } from "./codeCommit";
 
 export type { SourceFamily, EligibilityClass, FinanceBackfillClassificationCode };
 export { SOURCE_FAMILIES, CLASSIFIER_VERSION };
@@ -615,24 +616,4 @@ export async function runFinanceBackfillDryRun(filters: DryRunFilters, executor:
     codeCommit: await resolveCodeCommit(),
     generatedTimestamp: new Date().toISOString(),
   };
-}
-
-/**
- * Resolves the running code's git commit for the report banner. Reads
- * `GIT_COMMIT_SHA` (set by CI/deploy) first; falls back to `git rev-parse
- * HEAD` for local/dev runs. Never throws — returns "unknown" instead, since
- * a dry-run report must never fail solely because git metadata is
- * unavailable (e.g. a built dist/ with no .git directory).
- */
-async function resolveCodeCommit(): Promise<string> {
-  if (process.env.GIT_COMMIT_SHA) return process.env.GIT_COMMIT_SHA;
-  try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-    const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"]);
-    return stdout.trim();
-  } catch {
-    return "unknown";
-  }
 }

@@ -545,6 +545,23 @@ test("integration: repeated dry-run still produces zero writes", async () => {
   assert.deepEqual(after_, before_);
 });
 
+test("integration: Finance report includes the validated deployed commit", async () => {
+  const previous = process.env.GIT_COMMIT_SHA;
+  const deployedCommit = "c".repeat(40);
+  process.env.GIT_COMMIT_SHA = ` ${deployedCommit}\n`;
+  try {
+    const report = await runFinanceBackfillDryRun({
+      sourceFamilies: ["bookings"],
+      maxRows: 1000,
+      batchSize: 500,
+    });
+    assert.equal(report.codeCommit, deployedCommit);
+  } finally {
+    if (previous === undefined) delete process.env.GIT_COMMIT_SHA;
+    else process.env.GIT_COMMIT_SHA = previous;
+  }
+});
+
 test("integration: repeated identical run has identical aggregate output (excluding generatedTimestamp)", async () => {
   const filters = { sourceFamilies: ["bookings"] as const, maxRows: 1000, batchSize: 500 };
   const r1 = await runFinanceBackfillDryRun({ sourceFamilies: [...filters.sourceFamilies], maxRows: filters.maxRows, batchSize: filters.batchSize });

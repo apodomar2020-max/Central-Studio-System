@@ -1,14 +1,14 @@
 import { Router, type IRouter } from "express";
+import { resolveCodeCommit } from "../lib/codeCommit";
 
 const router: IRouter = Router();
 
-router.get("/version", (_req, res) => {
+router.get("/version", async (_req, res) => {
+  const codeCommit = await resolveCodeCommit();
   res.json({
     version: "dance-types-build",
-    commit:
-      process.env["RAILWAY_GIT_COMMIT_SHA"] ??
-      process.env["VERCEL_GIT_COMMIT_SHA"] ??
-      "unknown",
+    commit: codeCommit,
+    codeCommit,
     time: new Date().toISOString(),
     routes: ["dance-types"],
   });

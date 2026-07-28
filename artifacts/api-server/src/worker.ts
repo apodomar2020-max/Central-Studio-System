@@ -27,10 +27,9 @@ import { processBalletCancellationFinalizationJob } from "./lib/balletCancellati
 import { processBalletAutoAbsenceJob } from "./lib/balletAutoAbsence";
 import { recordReminderWorkerRun } from "./lib/reminderWorkerHeartbeat";
 import { getPushStatus } from "./lib/pushNotifications";
+import { resolveCodeCommit } from "./lib/codeCommit";
 
-function deployedVersion(): string | null {
-  return process.env["RAILWAY_GIT_COMMIT_SHA"] ?? process.env["VERCEL_GIT_COMMIT_SHA"] ?? null;
-}
+const deployedVersion = await resolveCodeCommit();
 
 await initErrorMonitoring();
 
@@ -72,7 +71,7 @@ const notificationAutomationWorker = new Worker<NotificationAutomationJob>(
     const heartbeatBase = {
       pushNotificationsEnabled: getPushStatus().enabled,
       queueWorkerEnabled: workerEnabled(),
-      deployedVersion: deployedVersion(),
+      deployedVersion,
     };
     let result;
     try {
