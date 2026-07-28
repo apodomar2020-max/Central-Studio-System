@@ -58,8 +58,18 @@ function apiUrl(path: string): string {
 async function makeStudent(run: string, label: string): Promise<{ id: number; email: string }> {
   const email = `pkg-capture-${run}-${label}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ($1, $2, '0100000000', 'student', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, '0100000000', 'student', '2000-01-01', true) RETURNING id`,
     [`Package Capture Test ${label}`, email],
+  );
+  return { id: result.rows[0].id as number, email };
+}
+
+async function makeParent(run: string, label: string): Promise<{ id: number; email: string }> {
+  const email = `pkg-capture-${run}-${label}@example.com`;
+  const result = await pool.query(
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified)
+     VALUES ($1, $2, '0100000000', 'parent', '1985-01-01', true) RETURNING id`,
+    [`Package Parent ${label}`, email],
   );
   return { id: result.rows[0].id as number, email };
 }
@@ -135,6 +145,7 @@ before(async () => {
   jwtSign = jwtModule.default.sign;
   const { requireAuth } = await import("../middlewares/auth");
   const packageOrdersRouter = (await import("./packageOrders")).default;
+  const myRoutesRouter = (await import("./myRoutes")).default;
   const dbModule = await import("@workspace/db");
   pool = dbModule.pool;
 
@@ -142,6 +153,7 @@ before(async () => {
   app.use(express.json());
   app.use("/api", requireAuth);
   app.use("/api", packageOrdersRouter);
+  app.use("/api", myRoutesRouter);
   await new Promise<void>((resolve) => {
     server = app.listen(0, "127.0.0.1", () => resolve());
   });
@@ -210,6 +222,157 @@ test("creating a package order writes a matching payment_records row in the corr
   assert.equal(record!.confirming_admin_id, null);
   assert.equal(record!.confirmed_payment_method, null);
   assert.equal(record!.student_id, student.id);
+  assert.equal(record!.participant_type, "self");
+  assert.equal(record!.child_id, null);
+});
+
+test("a Parent child purchase stores only authoritative participant snapshots and payer identity", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const parent = await makeParent(run, "child-owner");
+  const cairoToday = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+  const [currentYear, currentMonth, currentDay] = cairoToday.split("-");
+  const childDob = `${Number(currentYear) - 11}-${currentMonth}-${currentDay}`;
+  const child = await pool.query(
+    `INSERT INTO children (parent_id, full_name, date_of_birth, birthday, age, gender)
+     VALUES ($1, 'Canonical Child Name', $2, 'forged-legacy', 99, 'female')
+     RETURNING id`,
+    [parent.id, childDob],
+  );
+  const childId = child.rows[0].id as number;
+  const childPackage = await pool.query(
+    `INSERT INTO price_packages
+       (name, type, price_egp, sessions, validity_months, is_active, allow_all_ages, min_age, max_age)
+     VALUES ($1, 'per_class', 500, 4, 2, true, false, 5, 12)
+     RETURNING id`,
+    [`Child Package ${run}`],
+  );
+
+  const res = await asStudent(studentToken(parent.id, parent.email), "/api/package-orders", {
+    method: "POST",
+    body: JSON.stringify({
+      packageId: childPackage.rows[0].id,
+      participantType: "child",
+      participantChildId: childId,
+      participantName: "Forged Name",
+      participantDateOfBirth: "1900-01-01",
+      participantAge: 126,
+    }),
+  });
+  assert.equal(res.status, 201);
+  const body = await jsonBody(res);
+  assert.equal(body.participantType, "child");
+  assert.equal(body.participantChildId, childId);
+  assert.equal(body.participantName, "Canonical Child Name");
+  assert.equal(body.participantAgeAtPurchase, 11);
+  assert.equal(body.purchaseEligibilityConfigurationState, "configured");
+
+  const stored = await pool.query(
+    `SELECT *, participant_date_of_birth_snapshot::text AS participant_dob_text
+     FROM package_orders WHERE id = $1`,
+    [body.id],
+  );
+  assert.equal(stored.rows[0].participant_dob_text, childDob);
+  assert.equal(stored.rows[0].student_id, parent.id);
+  const payment = await paymentRecordFor(body.id as number);
+  assert.equal(payment!.student_id, parent.id, "payer remains the authenticated Parent");
+  assert.equal(payment!.child_id, childId, "child ID is descriptive participant metadata");
+  assert.equal(payment!.participant_type, "child");
+
+  const myPackagesResponse = await asStudent(
+    studentToken(parent.id, parent.email),
+    "/api/my/packages",
+  );
+  assert.equal(myPackagesResponse.status, 200);
+  const myPackages = await myPackagesResponse.json() as Array<Record<string, unknown>>;
+  const owned = myPackages.find((order) => order.id === body.id);
+  assert.equal(owned?.participantType, "child");
+  assert.equal(owned?.participantChildId, childId);
+  assert.equal(owned?.participantName, "Canonical Child Name");
+  assert.equal(owned?.ownershipState, "assigned");
+});
+
+test("Student child selection and an unrelated Parent child are rejected without writes", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const student = await makeStudent(run, "student-child-rejected");
+  const owner = await makeParent(run, "actual-child-owner");
+  const attacker = await makeParent(run, "other-parent");
+  const child = await pool.query(
+    `INSERT INTO children (parent_id, full_name, date_of_birth, gender)
+     VALUES ($1, 'Private Child', '2015-01-01', 'female') RETURNING id`,
+    [owner.id],
+  );
+  const childId = child.rows[0].id as number;
+  const before = await packageOrderCount();
+
+  const studentResponse = await asStudent(studentToken(student.id, student.email), "/api/package-orders", {
+    method: "POST",
+    body: JSON.stringify({ packageId, participantType: "child", participantChildId: childId }),
+  });
+  assert.equal(studentResponse.status, 400);
+  assert.equal((await jsonBody(studentResponse)).code, "STUDENT_SELF_ONLY");
+
+  const parentResponse = await asStudent(studentToken(attacker.id, attacker.email), "/api/package-orders", {
+    method: "POST",
+    body: JSON.stringify({ packageId, participantType: "child", participantChildId: childId }),
+  });
+  assert.equal(parentResponse.status, 404);
+  assert.equal((await jsonBody(parentResponse)).code, "PARTICIPANT_NOT_OWNED");
+  assert.equal(await packageOrderCount(), before);
+});
+
+test("missing DOB and age-ineligible self or child purchases fail before financial writes", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const missingStudent = await pool.query(
+    `INSERT INTO students (name, email, account_type, email_verified)
+     VALUES ('Missing DOB', $1, 'student', true) RETURNING id, email`,
+    [`missing-dob-${run}@example.com`],
+  );
+  const parent = await makeParent(run, "ineligible-self");
+  const missingChild = await pool.query(
+    `INSERT INTO children (parent_id, full_name, gender)
+     VALUES ($1, 'Missing DOB Child', 'female') RETURNING id`,
+    [parent.id],
+  );
+  const kidsPackage = await pool.query(
+    `INSERT INTO price_packages
+       (name, type, price_egp, sessions, validity_months, is_active, allow_all_ages, min_age, max_age)
+     VALUES ($1, 'per_class', 400, 4, 2, true, false, 5, 12) RETURNING id`,
+    [`Kids Rejection Package ${run}`],
+  );
+  const before = { orders: await packageOrderCount(), payments: await paymentRecordCount() };
+
+  const missingSelf = await asStudent(
+    studentToken(missingStudent.rows[0].id, missingStudent.rows[0].email),
+    "/api/package-orders",
+    { method: "POST", body: JSON.stringify({ packageId: kidsPackage.rows[0].id, participantType: "self" }) },
+  );
+  assert.equal(missingSelf.status, 409);
+  assert.equal((await jsonBody(missingSelf)).code, "PACKAGE_PARTICIPANT_INELIGIBLE");
+
+  const ineligibleParent = await asStudent(studentToken(parent.id, parent.email), "/api/package-orders", {
+    method: "POST",
+    body: JSON.stringify({ packageId: kidsPackage.rows[0].id, participantType: "self" }),
+  });
+  assert.equal(ineligibleParent.status, 409);
+  const ineligibleBody = await jsonBody(ineligibleParent);
+  assert.equal((ineligibleBody.eligibility as { reasons: Array<{ code: string }> }).reasons[0]?.code, "AGE_ABOVE_MAXIMUM");
+
+  const missingChildResponse = await asStudent(studentToken(parent.id, parent.email), "/api/package-orders", {
+    method: "POST",
+    body: JSON.stringify({
+      packageId: kidsPackage.rows[0].id,
+      participantType: "child",
+      participantChildId: missingChild.rows[0].id,
+    }),
+  });
+  assert.equal(missingChildResponse.status, 409);
+
+  assert.deepEqual(
+    { orders: await packageOrderCount(), payments: await paymentRecordCount() },
+    before,
+  );
 });
 
 test("the payment_records row's requested_payment_channel reflects paymentMode", async () => {
@@ -449,7 +612,9 @@ test("the creation response contract is unchanged: only package-order fields, no
   const expectedKeys = [
     "id", "studentName", "studentEmail", "studentPhone", "packageId",
     "packageName", "totalCredits", "remainingCredits", "status", "notes",
-    "activatedAt", "expiresAt", "createdAt", "updatedAt",
+    "activatedAt", "expiresAt", "createdAt", "updatedAt", "participantType",
+    "participantChildId", "participantName", "participantAgeAtPurchase",
+    "purchaseEligibilityConfigurationState", "ownershipState",
   ].sort();
   assert.deepEqual(Object.keys(order).sort(), expectedKeys, "the response must contain exactly the pre-existing package-order fields — no payment_records/payment_events data leaked into it");
   assert.equal(order.status, "pendingPayment", "the operational package-order status is untouched by this change");
@@ -512,7 +677,9 @@ test("an eligible non-zero promotion discount is captured correctly across payme
   const expectedKeys = [
     "id", "studentName", "studentEmail", "studentPhone", "packageId",
     "packageName", "totalCredits", "remainingCredits", "status", "notes",
-    "activatedAt", "expiresAt", "createdAt", "updatedAt",
+    "activatedAt", "expiresAt", "createdAt", "updatedAt", "participantType",
+    "participantChildId", "participantName", "participantAgeAtPurchase",
+    "purchaseEligibilityConfigurationState", "ownershipState",
   ].sort();
   assert.deepEqual(Object.keys(order).sort(), expectedKeys, "response contract must remain unchanged even with a promotion applied");
 });

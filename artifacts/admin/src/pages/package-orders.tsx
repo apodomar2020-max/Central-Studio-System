@@ -75,6 +75,12 @@ type PackageOrder = {
   expiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  participantType?: "self" | "child" | null;
+  participantChildId?: number | null;
+  participantName?: string | null;
+  participantAgeAtPurchase?: number | null;
+  purchaseEligibilityConfigurationState?: "configured" | "legacy_unconfigured" | null;
+  ownershipState?: "assigned" | "legacy_unassigned";
 };
 
 function makeHeaders(token?: string | null): HeadersInit {
@@ -633,7 +639,7 @@ export default function PackageOrders() {
         <table className="w-full text-sm">
           <thead style={{ background: BG_ROW }}>
             <tr>
-              {["Student", "Package", "Credits", "Status", "Requested", "Ledger", "Actions"].map((h) => (
+              {["Payer", "Participant", "Package", "Credits", "Status", "Requested", "Ledger", "Actions"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: MUTED_DARK }}>{h}</th>
               ))}
             </tr>
@@ -642,7 +648,7 @@ export default function PackageOrders() {
             {isLoading
               ? Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} style={{ borderTop: `1px solid ${BORDER}` }}>
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <Skeleton className="h-4 w-full" />
                       </td>
@@ -651,7 +657,7 @@ export default function PackageOrders() {
                 ))
               : (orders as PackageOrder[]).length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm" style={{ color: MUTED_DARK }}>
+                  <td colSpan={8} className="px-4 py-12 text-center text-sm" style={{ color: MUTED_DARK }}>
                     No package orders found
                   </td>
                 </tr>
@@ -667,6 +673,23 @@ export default function PackageOrders() {
                         <div className="font-medium text-foreground">{order.studentName}</div>
                         <div className="text-xs mt-0.5" style={{ color: MUTED }}>{order.studentEmail}</div>
                         {order.studentPhone && <div className="text-xs" style={{ color: MUTED_DARK }}>{order.studentPhone}</div>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {order.participantType ? (
+                          <>
+                            <div className="font-medium text-foreground">
+                              {order.participantName ?? "Participant"}
+                            </div>
+                            <div className="text-xs mt-0.5" style={{ color: MUTED }}>
+                              {order.participantType === "child" ? "Child" : "Self"}
+                              {order.participantAgeAtPurchase != null ? ` · age ${order.participantAgeAtPurchase}` : ""}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-xs font-semibold" style={{ color: AMBER }}>
+                            Legacy unassigned
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{order.packageName}</div>

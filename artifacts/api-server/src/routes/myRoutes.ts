@@ -76,13 +76,21 @@ router.get("/my/packages", async (req, res): Promise<void> => {
       createdAt: packageOrdersTable.createdAt,
       updatedAt: packageOrdersTable.updatedAt,
       priceEgp: pricePackagesTable.priceEgp,
+      participantType: packageOrdersTable.participantType,
+      participantChildId: packageOrdersTable.participantChildId,
+      participantName: packageOrdersTable.participantNameSnapshot,
+      participantAgeAtPurchase: packageOrdersTable.participantAgeAtPurchase,
+      purchaseEligibilityConfigurationState: packageOrdersTable.purchaseEligibilityConfigurationState,
     })
     .from(packageOrdersTable)
     .leftJoin(pricePackagesTable, eq(packageOrdersTable.packageId, pricePackagesTable.id))
     .where(eq(packageOrdersTable.studentEmail, req.studentEmail!))
     .orderBy(desc(packageOrdersTable.createdAt));
 
-  res.json(rows);
+  res.json(rows.map((row) => ({
+    ...row,
+    ownershipState: row.participantType == null ? "legacy_unassigned" : "assigned",
+  })));
 });
 
 // ---------------------------------------------------------------------------
@@ -110,12 +118,44 @@ router.get("/my/credits", async (req, res): Promise<void> => {
 
   // Step 1 — collect all package order IDs for this student
   const orders = await db
-    .select({ id: packageOrdersTable.id })
+    .select({
+      id: packageOrdersTable.id,
+      participantType: packageOrdersTable.participantType,
+      participantChildId: packageOrdersTable.participantChildId,
+      participantName: packageOrdersTable.participantNameSnapshot,
+      remainingCredits: packageOrdersTable.remainingCredits,
+    })
     .from(packageOrdersTable)
     .where(eq(packageOrdersTable.studentEmail, req.studentEmail!));
 
+  const participantBalanceMap = new Map<string, {
+    participantType: "self" | "child" | null;
+    participantChildId: number | null;
+    participantName: string | null;
+    remainingCredits: number;
+    ownershipState: "assigned" | "legacy_unassigned";
+  }>();
+  for (const order of orders) {
+    const key = `${order.participantType ?? "legacy"}:${order.participantChildId ?? ""}`;
+    const existing = participantBalanceMap.get(key);
+    if (existing) {
+      existing.remainingCredits += order.remainingCredits;
+    } else {
+      participantBalanceMap.set(key, {
+        participantType: order.participantType === "self" || order.participantType === "child"
+          ? order.participantType
+          : null,
+        participantChildId: order.participantChildId,
+        participantName: order.participantName,
+        remainingCredits: order.remainingCredits,
+        ownershipState: order.participantType == null ? "legacy_unassigned" : "assigned",
+      });
+    }
+  }
+  const participantBalances = [...participantBalanceMap.values()];
+
   if (orders.length === 0) {
-    res.json({ data: [], total: 0, page, limit });
+    res.json({ data: [], total: 0, page, limit, participantBalances });
     return;
   }
 
@@ -130,7 +170,7 @@ router.get("/my/credits", async (req, res): Promise<void> => {
   }
 
   if (scopedIds.length === 0) {
-    res.json({ data: [], total: 0, page, limit });
+    res.json({ data: [], total: 0, page, limit, participantBalances });
     return;
   }
 
@@ -214,10 +254,14 @@ router.get("/my/credits", async (req, res): Promise<void> => {
       const fromNote = bookingIdFromNote(t.notes);
       if (fromNote != null) className = classByBooking.get(fromNote) ?? null;
     }
-    return { ...t, className };
+    return {
+      ...t,
+      className,
+      ownershipState: t.participantType == null ? "legacy_unassigned" : "assigned",
+    };
   });
 
-  res.json({ data: enriched, total, page, limit });
+  res.json({ data: enriched, total, page, limit, participantBalances });
 });
 
 // ---------------------------------------------------------------------------

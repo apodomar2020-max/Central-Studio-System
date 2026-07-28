@@ -53,6 +53,7 @@ import {
 import { formatCairoDateKey, getCairoTomorrowDateKey } from "@/utils/cairoDate";
 import colors from "@/constants/colors";
 import PackagePurchaseModal from "@/components/PackagePurchaseModal";
+import type { PackageParticipantSelection } from "@/contexts/AppContext";
 import BalletFeaturedProgramCard from "@/components/BalletFeaturedProgramCard";
 import NewStudentBanner from "@/components/NewStudentBanner";
 import ProfileCompletionBanner from "@/components/ProfileCompletionBanner";
@@ -673,7 +674,7 @@ function PackagesSection() {
     setConfirmPkg(pkg);
   }, [user]);
 
-  const confirmPurchase = useCallback(async (promoCode?: string | null) => {
+  const confirmPurchase = useCallback(async (participant: PackageParticipantSelection, promoCode?: string | null) => {
     if (!confirmPkg) return;
     setPurchasing(true);
     try {
@@ -683,6 +684,7 @@ function PackagesSection() {
         sessions: confirmPkg.sessions ?? 1,
         validityMonths: 0,
         promoCode,
+        participant,
       });
       const packageName = confirmPkg.name;
       setConfirmPkg(null);

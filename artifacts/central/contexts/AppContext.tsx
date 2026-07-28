@@ -120,7 +120,16 @@ export interface UserPackage {
   purchaseDate: string;
   expiryDate: string;
   status: "active" | "expired" | "fullyUsed" | "cancelled" | "pendingPayment";
+  participantType?: "self" | "child" | null;
+  participantChildId?: number | null;
+  participantName?: string | null;
+  participantAgeAtPurchase?: number | null;
+  ownershipState?: "assigned" | "legacy_unassigned";
 }
+
+export type PackageParticipantSelection =
+  | { participantType: "self"; participantChildId?: never }
+  | { participantType: "child"; participantChildId: number };
 
 export interface PackageUsage {
   id: string;
@@ -195,7 +204,14 @@ interface AppContextType {
   refreshBookings: () => Promise<void>;
   userPackages: UserPackage[];
   packageUsageHistory: PackageUsage[];
-  purchasePackage: (pkg: { id: number; name: string; sessions: number | null; validityMonths: number; promoCode?: string | null }) => Promise<void>;
+  purchasePackage: (pkg: {
+    id: number;
+    name: string;
+    sessions: number | null;
+    validityMonths: number;
+    promoCode?: string | null;
+    participant: PackageParticipantSelection;
+  }) => Promise<void>;
   cancelPackage: (userPackageId: string) => Promise<void>;
   refreshUserPackages: () => Promise<void>;
   usePackageCredit: (userPackageId: string, bookingId: string, className: string) => boolean;
@@ -450,6 +466,11 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         status: string; activatedAt?: string | null;
         expiresAt?: string | null; createdAt: string;
         studentEmail: string;
+        participantType?: "self" | "child" | null;
+        participantChildId?: number | null;
+        participantName?: string | null;
+        participantAgeAtPurchase?: number | null;
+        ownershipState?: "assigned" | "legacy_unassigned";
       }>>(`/api/my/packages`);
 
       const mapped: UserPackage[] = orders.map((o) => ({
@@ -461,6 +482,11 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         purchaseDate: o.createdAt.slice(0, 10),
         expiryDate: o.expiresAt?.slice(0, 10) ?? "",
         status: o.status as UserPackage["status"],
+        participantType: o.participantType,
+        participantChildId: o.participantChildId,
+        participantName: o.participantName,
+        participantAgeAtPurchase: o.participantAgeAtPurchase,
+        ownershipState: o.ownershipState,
       }));
 
       if (isMountedRef.current) setUserPackages(mapped);
@@ -504,7 +530,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       const mapped = data.children.map((c) => ({
         id: String(c.id),
         fullName: c.fullName,
-        birthday: c.birthday || "",
+        birthday: c.dateOfBirth || c.birthday || "",
         age: c.age || 0,
         gender: c.gender as "male" | "female",
         medicalNotes: c.medicalNotes || undefined,
@@ -594,6 +620,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     try {
       const payload = {
         fullName: child.fullName,
+        dateOfBirth: child.birthday || null,
         birthday: child.birthday || null,
         age: child.age,
         gender: child.gender,
@@ -615,7 +642,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       const mappedChild: ChildProfile = {
         id: String(c.id),
         fullName: c.fullName,
-        birthday: c.birthday || "",
+        birthday: c.dateOfBirth || c.birthday || "",
         age: c.age || 0,
         gender: c.gender as "male" | "female",
         medicalNotes: c.medicalNotes || undefined,
@@ -648,6 +675,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       }
       const payload = {
         fullName: child.fullName,
+        dateOfBirth: child.birthday || null,
         birthday: child.birthday || null,
         age: child.age,
         gender: child.gender,
@@ -750,20 +778,25 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   }, []);
 
   const purchasePackage = useCallback(
-    async (pkg: { id: number; name: string; sessions: number | null; validityMonths: number; promoCode?: string | null }): Promise<void> => {
+    async (pkg: {
+      id: number;
+      name: string;
+      sessions: number | null;
+      validityMonths: number;
+      promoCode?: string | null;
+      participant: PackageParticipantSelection;
+    }): Promise<void> => {
       const usr = userRef.current;
       if (!usr) return;
       await customFetch("/api/package-orders", {
         method: "POST",
         body: JSON.stringify({
-          studentName: usr.fullName,
-          studentEmail: usr.email,
-          studentPhone: usr.phone ?? null,
           packageId: pkg.id,
-          packageName: pkg.name,
-          totalCredits: pkg.sessions ?? 1,
-          remainingCredits: pkg.sessions ?? 1,
           promoCode: pkg.promoCode ?? null,
+          participantType: pkg.participant.participantType,
+          ...(pkg.participant.participantType === "child"
+            ? { participantChildId: pkg.participant.participantChildId }
+            : {}),
         }),
       });
       // Refresh the list so the new pending order shows up immediately

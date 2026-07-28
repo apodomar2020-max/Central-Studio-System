@@ -100,7 +100,7 @@ test("a successful creation writes exactly +1 order, +1 payment record, +1 creat
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const email = `pkg-zerowriter-${run}@example.com`;
   const student = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ('Zero Writer Test', $1, '0100000000', 'student', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ('Zero Writer Test', $1, '0100000000', 'student', '2000-01-01', true) RETURNING id`,
     [email],
   );
   const studentId = student.rows[0].id as number;

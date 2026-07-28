@@ -27,6 +27,7 @@ import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import { showProfileIncompletePrompt } from "@/utils/profileCompletionRequired";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import type { PackageParticipantSelection } from "@/contexts/AppContext";
 
 function PackageCard({
   pkg,
@@ -175,7 +176,7 @@ export default function PackagesScreen() {
     }
   }, [purchaseId, packages]);
 
-  async function confirmPurchase(promoCode?: string | null) {
+  async function confirmPurchase(participant: PackageParticipantSelection, promoCode?: string | null) {
     if (!confirmPkg) return;
     setPurchasing(true);
     try {
@@ -185,13 +186,14 @@ export default function PackagesScreen() {
         sessions: confirmPkg.sessions ?? 1,
         validityMonths: 0,
         promoCode,
+        participant,
       });
       setConfirmPkg(null);
       router.push("/package-center");
       alert.show({
         tone: "success",
         title: "Request Submitted!",
-        message: `Your ${confirmPkg.name} request has been submitted. Our team will confirm payment and activate it shortly.`,
+        message: `Your ${confirmPkg.name} request for ${participant.participantType === "self" ? "yourself" : "the selected child"} has been submitted. Our team will confirm payment and activate it shortly.`,
       });
     } catch (err: unknown) {
       const msg =

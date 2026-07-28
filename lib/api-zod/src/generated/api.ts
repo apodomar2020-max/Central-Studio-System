@@ -1662,6 +1662,20 @@ export const ListPackageOrdersResponseItem = zod.object({
   expiresAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
+  participantName: zod.string().nullish(),
+  participantAgeAtPurchase: zod.number().nullish(),
+  purchaseEligibilityConfigurationState: zod
+    .union([
+      zod.literal("configured"),
+      zod.literal("legacy_unconfigured"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
 });
 export const ListPackageOrdersResponse = zod.array(
   ListPackageOrdersResponseItem,
@@ -1670,18 +1684,13 @@ export const ListPackageOrdersResponse = zod.array(
 /**
  * @summary Create a package order
  */
+
 export const CreatePackageOrderBody = zod.object({
-  studentName: zod.string(),
-  studentEmail: zod.string(),
-  studentPhone: zod.string().nullish(),
-  packageId: zod.number().nullish(),
-  packageName: zod.string(),
-  totalCredits: zod.number(),
-  remainingCredits: zod.number(),
-  status: zod.string().optional(),
-  notes: zod.string().nullish(),
-  activatedAt: zod.string().nullish(),
-  expiresAt: zod.string().nullish(),
+  packageId: zod.number().min(1),
+  participantType: zod.enum(["self", "child"]),
+  participantChildId: zod.number().min(1).optional(),
+  paymentMode: zod.enum(["pay_at_studio", "online_payment"]).optional(),
+  promoCode: zod.string().nullish(),
 });
 
 export const CreatePackageOrderResponse = zod.object({
@@ -1700,6 +1709,20 @@ export const CreatePackageOrderResponse = zod.object({
   expiresAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
+  participantName: zod.string().nullish(),
+  participantAgeAtPurchase: zod.number().nullish(),
+  purchaseEligibilityConfigurationState: zod
+    .union([
+      zod.literal("configured"),
+      zod.literal("legacy_unconfigured"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
 });
 
 /**
@@ -1725,6 +1748,20 @@ export const GetPackageOrderResponse = zod.object({
   expiresAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
+  participantName: zod.string().nullish(),
+  participantAgeAtPurchase: zod.number().nullish(),
+  purchaseEligibilityConfigurationState: zod
+    .union([
+      zod.literal("configured"),
+      zod.literal("legacy_unconfigured"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
 });
 
 /**
@@ -1758,6 +1795,20 @@ export const UpdatePackageOrderResponse = zod.object({
   expiresAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
+  participantName: zod.string().nullish(),
+  participantAgeAtPurchase: zod.number().nullish(),
+  purchaseEligibilityConfigurationState: zod
+    .union([
+      zod.literal("configured"),
+      zod.literal("legacy_unconfigured"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
 });
 
 /**
@@ -1785,6 +1836,11 @@ export const ListAttendanceResponseItem = zod.object({
   creditDeducted: zod.boolean(),
   notes: zod.string().nullish(),
   studentId: zod.number().nullish(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
+  ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
   classId: zod.number().nullish(),
   scheduleId: zod.number().nullish(),
   bookingId: zod.number().nullish(),
@@ -1829,6 +1885,11 @@ export const CheckInResponse = zod.object({
   creditDeducted: zod.boolean(),
   notes: zod.string().nullish(),
   studentId: zod.number().nullish(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
+  ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
   classId: zod.number().nullish(),
   scheduleId: zod.number().nullish(),
   bookingId: zod.number().nullish(),
@@ -2192,6 +2253,20 @@ export const AdjustCreditsResponse = zod.object({
     expiresAt: zod.string().nullish(),
     createdAt: zod.string(),
     updatedAt: zod.string(),
+    participantType: zod
+      .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+      .nullish(),
+    participantChildId: zod.number().nullish(),
+    participantName: zod.string().nullish(),
+    participantAgeAtPurchase: zod.number().nullish(),
+    purchaseEligibilityConfigurationState: zod
+      .union([
+        zod.literal("configured"),
+        zod.literal("legacy_unconfigured"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
   }),
   transaction: zod.object({
     id: zod.number(),
@@ -2226,6 +2301,20 @@ export const GetMyPackagesResponseItem = zod.object({
   expiresAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
+  participantName: zod.string().nullish(),
+  participantAgeAtPurchase: zod.number().nullish(),
+  purchaseEligibilityConfigurationState: zod
+    .union([
+      zod.literal("configured"),
+      zod.literal("legacy_unconfigured"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
 });
 export const GetMyPackagesResponse = zod.array(GetMyPackagesResponseItem);
 
@@ -2258,6 +2347,19 @@ export const GetMyCreditsResponse = zod.object({
   total: zod.number(),
   page: zod.number(),
   limit: zod.number(),
+  participantBalances: zod
+    .array(
+      zod.object({
+        participantType: zod
+          .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+          .nullable(),
+        participantChildId: zod.number().nullable(),
+        participantName: zod.string().nullable(),
+        remainingCredits: zod.number(),
+        ownershipState: zod.enum(["assigned", "legacy_unassigned"]),
+      }),
+    )
+    .optional(),
 });
 
 export const getMyAttendanceQueryLimitMax = 100;

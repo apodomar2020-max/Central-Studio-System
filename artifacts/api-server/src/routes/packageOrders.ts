@@ -10,6 +10,7 @@ import {
   studentsTable,
   paymentRecordsTable,
   paymentEventsTable,
+  pricePackageDanceTypesTable,
   type PaymentRecordRequestedChannel,
   PAYMENT_RECORD_CONFIRMED_METHODS,
   type PaymentRecordConfirmedMethod,
@@ -24,6 +25,8 @@ import { confirmCanonicalPaymentRecord, appendActivationCreditsIssuedEventOnce }
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { resolvePackageParticipant } from "../lib/participants/resolvePackageParticipant";
+import { evaluatePackagePurchaseEligibility } from "../lib/eligibility/packagePurchaseEligibility";
 import {
   ListPackageOrdersQueryParams,
   ListPackageOrdersResponse,
@@ -42,7 +45,12 @@ async function serializePackageOrderRows(
 ) {
   const canViewAmounts = canViewFinanceAmounts(req.adminUser);
   if (!canViewAmounts || rows.length === 0) {
-    return rows.map((row) => ({ ...row, priceEgp: null }));
+    return rows.map((row) => ({
+      ...row,
+      priceEgp: null,
+      participantName: row.participantNameSnapshot,
+      ownershipState: row.participantType == null ? "legacy_unassigned" as const : "assigned" as const,
+    }));
   }
   const records = await db
     .select({
@@ -60,6 +68,8 @@ async function serializePackageOrderRows(
   return rows.map((row) => ({
     ...row,
     priceEgp: amountByOrderId.get(row.id) ?? null,
+    participantName: row.participantNameSnapshot,
+    ownershipState: row.participantType == null ? "legacy_unassigned" as const : "assigned" as const,
   }));
 }
 
@@ -152,7 +162,16 @@ const PurchasePackageBody = z.object({
   packageId: z.coerce.number().int().positive(),
   paymentMode: z.enum(["pay_at_studio", "online_payment"]).optional(),
   promoCode: z.string().trim().optional().nullable(),
-}).passthrough();
+  participantType: z.enum(["self", "child"]).optional(),
+  participantChildId: z.coerce.number().int().positive().optional(),
+}).passthrough().superRefine((value, ctx) => {
+  if (value.participantType === "self" && value.participantChildId != null) {
+    ctx.addIssue({ code: "custom", path: ["participantChildId"], message: "Self purchases cannot include a child ID." });
+  }
+  if (value.participantType === "child" && value.participantChildId == null) {
+    ctx.addIssue({ code: "custom", path: ["participantChildId"], message: "Child purchases require a child ID." });
+  }
+});
 
 // Membership Engine (Phase 3): studentId/studentEmail are read directly off
 // req.query (not through ListPackageOrdersQueryParams) so this stays a
@@ -272,6 +291,7 @@ router.post(
         email: studentsTable.email,
         phone: studentsTable.phone,
         emailVerified: studentsTable.emailVerified,
+        accountType: studentsTable.accountType,
       })
       .from(studentsTable)
       .where(eq(studentsTable.id, req.studentId!))
@@ -329,8 +349,51 @@ router.post(
   const pushState: { pending: { studentId: number; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
 
   const result = await db.transaction(async (tx) => {
+    const effectiveParticipantType = parsed.data.participantType
+      ?? (student.accountType === "student" ? "self" : undefined);
+    if (!effectiveParticipantType) {
+      return {
+        kind: "participant_error" as const,
+        ok: false as const,
+        status: 400 as const,
+        reason: {
+          code: "PARTICIPANT_REQUIRED" as const,
+          message: "A package participant must be selected.",
+        },
+      };
+    }
+    const resolution = await resolvePackageParticipant(tx, req.studentId!, {
+      participantType: effectiveParticipantType,
+      participantChildId: parsed.data.participantChildId,
+    });
+    if (!resolution.ok) {
+      return { kind: "participant_error" as const, ...resolution };
+    }
+
+    const purchaseEligibility = evaluatePackagePurchaseEligibility(
+      resolution.participant.dateOfBirth,
+      {
+        allowAllAges: packageDefinition.allowAllAges,
+        minAge: packageDefinition.minAge,
+        maxAge: packageDefinition.maxAge,
+      },
+    );
+    if (!purchaseEligibility.eligible) {
+      return {
+        kind: "participant_ineligible" as const,
+        reasons: purchaseEligibility.reasons,
+      };
+    }
+    if (purchaseEligibility.value.purchaseEligibilityConfigurationState === "legacy_unconfigured") {
+      logger.warn({
+        event: "package_purchase_legacy_unconfigured_age_range",
+        packageId: packageDefinition.id,
+        studentId: resolution.account.id,
+      }, "Allowing package purchase with legacy-unconfigured age eligibility.");
+    }
+
     const promotionResult = await validatePackagePromotion({
-      student: { id: student.id, emailVerified: student.emailVerified },
+      student: { id: resolution.account.id, emailVerified: resolution.account.emailVerified },
       package: {
         id: packageDefinition.id,
         name: packageDefinition.name,
@@ -339,7 +402,7 @@ router.post(
       },
       basket: { items: [{ type: "package", id: packageDefinition.id, amount: packageDefinition.priceEgp }] },
       subtotal: packageDefinition.priceEgp,
-      verified: student.emailVerified,
+      verified: resolution.account.emailVerified,
     }, parsed.data.promoCode, tx, { lockRedemptionScope: true });
     if (parsed.data.promoCode && !promotionResult.eligible) {
       return {
@@ -348,15 +411,32 @@ router.post(
       };
     }
 
+    const allowedDanceTypeRows = await tx
+      .select({ danceTypeId: pricePackageDanceTypesTable.danceTypeId })
+      .from(pricePackageDanceTypesTable)
+      .where(eq(pricePackageDanceTypesTable.packageId, packageDefinition.id));
+
     const [inserted] = await tx
       .insert(packageOrdersTable)
       .values({
-        studentName: student.name,
-        studentEmail: normalizeEmail(student.email),
-        studentPhone: student.phone,
+        studentName: resolution.account.name,
+        studentEmail: normalizeEmail(resolution.account.email),
+        studentPhone: resolution.account.phone,
         // Membership Engine (Phase 3): populate the owner FK at creation
         // time so new orders never need backfilling.
-        studentId: student.id,
+        studentId: resolution.account.id,
+        participantType: resolution.participant.participantType,
+        participantChildId: resolution.participant.participantChildId,
+        participantNameSnapshot: resolution.participant.displayName,
+        participantDateOfBirthSnapshot: purchaseEligibility.value.participantDateOfBirthSnapshot,
+        participantAgeAtPurchase: purchaseEligibility.value.participantAgeAtPurchase,
+        eligibilityEvaluatedOn: purchaseEligibility.value.eligibilityEvaluatedOn,
+        packageAllowAllAgesSnapshot: purchaseEligibility.value.packageAllowAllAgesSnapshot,
+        packageMinAgeSnapshot: purchaseEligibility.value.packageMinAgeSnapshot,
+        packageMaxAgeSnapshot: purchaseEligibility.value.packageMaxAgeSnapshot,
+        purchaseEligibilityConfigurationState:
+          purchaseEligibility.value.purchaseEligibilityConfigurationState,
+        allowedDanceTypeIdsSnapshot: allowedDanceTypeRows.map((row) => row.danceTypeId),
         packageId: packageDefinition.id,
         packageName: packageDefinition.name,
         totalCredits,
@@ -416,8 +496,9 @@ router.post(
         requestedPaymentChannel,
         rawRequestedChannel: parsed.data.paymentMode ?? null,
         status: initialStatus,
-        studentId: student.id,
-        childId: null,
+        studentId: resolution.account.id,
+        participantType: resolution.participant.participantType,
+        childId: resolution.participant.participantChildId,
         creationIdempotencyKey: null,
       })
       .returning();
@@ -445,10 +526,12 @@ router.post(
     // false suppresses createStudentNotification's own setTimeout(0) push
     // scheduling — the actual push is dispatched post-commit below instead.
     const notificationTitle = "Package request submitted";
-    const notificationBody = `Your package request for ${inserted.packageName} has been submitted.`;
+    const notificationBody = `Your package request for ${inserted.packageName} (${inserted.participantNameSnapshot}) has been submitted.`;
     const notificationMetadata = {
       packageName: inserted.packageName,
       remainingCredits: inserted.remainingCredits,
+      participantType: inserted.participantType,
+      participantName: inserted.participantNameSnapshot,
     };
     const notificationRow = await createStudentNotification(tx, {
       studentEmail: inserted.studentEmail,
@@ -462,7 +545,7 @@ router.post(
     });
     if (notificationRow) {
       pushState.pending = {
-        studentId: student.id,
+        studentId: resolution.account.id,
         title: notificationTitle,
         body: notificationBody,
         data: { type: "package_created", ...notificationMetadata },
@@ -475,7 +558,7 @@ router.post(
     // inside this transaction, not deferred like the push dispatch, so a
     // failure here still rolls back the package order and both payment rows.
     await createPromotionRedemptions(tx, promotionResult, {
-      studentId: student.id,
+      studentId: resolution.account.id,
       packageOrderId: inserted.id,
       metadata: {
         packageId: packageDefinition.id,
@@ -506,7 +589,27 @@ router.post(
     });
     return;
   }
-  res.status(201).json(GetPackageOrderResponse.parse(result));
+  if ("kind" in result && result.kind === "participant_error") {
+    res.status(result.status).json({
+      code: result.reason.code,
+      message: result.reason.message,
+      eligibility: { eligible: false, reasons: [result.reason] },
+    });
+    return;
+  }
+  if ("kind" in result && result.kind === "participant_ineligible") {
+    res.status(409).json({
+      code: "PACKAGE_PARTICIPANT_INELIGIBLE",
+      message: result.reasons[0]?.message ?? "The selected participant is not eligible for this package.",
+      eligibility: { eligible: false, reasons: result.reasons },
+    });
+    return;
+  }
+  res.status(201).json(GetPackageOrderResponse.parse({
+    ...result,
+    participantName: result.participantNameSnapshot,
+    ownershipState: result.participantType == null ? "legacy_unassigned" : "assigned",
+  }));
   },
 );
 
@@ -528,7 +631,11 @@ router.get("/package-orders/:id", requirePackageOrderReadAccess, async (req, res
     res.status(404).json({ error: "Package order not found" });
     return;
   }
-  res.json(GetPackageOrderResponse.parse(row));
+  res.json(GetPackageOrderResponse.parse({
+    ...row,
+    participantName: row.participantNameSnapshot,
+    ownershipState: row.participantType == null ? "legacy_unassigned" : "assigned",
+  }));
 });
 
 router.get(
@@ -582,6 +689,19 @@ router.patch(
   const params = UpdatePackageOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+  if ([
+    "participantType",
+    "participantChildId",
+    "participantNameSnapshot",
+    "participantDateOfBirthSnapshot",
+    "participantAgeAtPurchase",
+  ].some((field) => Object.prototype.hasOwnProperty.call(req.body ?? {}, field))) {
+    res.status(400).json({
+      error: "Package participant ownership is immutable after purchase.",
+      code: "PACKAGE_PARTICIPANT_IMMUTABLE",
+    });
     return;
   }
   const parsed = UpdatePackageOrderBody.safeParse(req.body);
@@ -680,6 +800,14 @@ router.patch(
         return { kind: "not_activatable" as const, current };
       }
 
+      const validParticipantShape =
+        (current.participantType == null && current.participantChildId == null)
+        || (current.participantType === "self" && current.participantChildId == null)
+        || (current.participantType === "child" && current.participantChildId != null);
+      if (!validParticipantShape) {
+        return { kind: "invalid_participant" as const, current };
+      }
+
       // Finance Phase 2C: this activation is the approved authoritative
       // payment-confirmation moment (policy decision #1). Confirm the
       // existing canonical payment_records row BEFORE mutating
@@ -737,7 +865,9 @@ router.patch(
       // Insert package_activated ledger row
       const [creditTransaction] = await tx.insert(creditTransactionsTable).values({
         packageOrderId: current.id,
-        studentId: null,
+        studentId: current.studentId,
+        participantType: current.participantType,
+        participantChildId: current.participantChildId,
         type: "package_activated",
         delta: current.totalCredits,
         balanceBefore: 0,
@@ -773,6 +903,8 @@ router.patch(
       const activationMetadata = {
         packageName: updated.packageName,
         remainingCredits: updated.remainingCredits,
+        participantType: updated.participantType,
+        participantName: updated.participantNameSnapshot,
       };
       const activationNotificationRow = await createStudentNotification(tx, {
         studentId: updated.studentId,
@@ -825,6 +957,13 @@ router.patch(
       res.status(409).json({
         error: "This package order's payment record is in an inconsistent state and cannot be confirmed automatically. Please contact engineering support.",
         code: "FINANCE_CONFIRMATION_INTEGRITY_ERROR",
+      });
+      return;
+    }
+    if (result.kind === "invalid_participant") {
+      res.status(409).json({
+        error: "Package order participant ownership is invalid and cannot be activated.",
+        code: "PACKAGE_PARTICIPANT_MISMATCH",
       });
       return;
     }

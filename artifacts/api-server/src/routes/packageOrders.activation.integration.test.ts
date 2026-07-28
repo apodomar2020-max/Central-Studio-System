@@ -217,6 +217,69 @@ test("first activation succeeds, credits are issued, and status becomes active",
   assert.equal(await activationCreditCount(id), 1, "exactly one package_activated credit row must exist");
 });
 
+test("activation propagates immutable self and child participant ownership to credits", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const self = await makePendingOrder(run, "participant-self");
+  await pool.query(
+    `UPDATE package_orders SET participant_type = 'self', participant_child_id = NULL WHERE id = $1`,
+    [self.id],
+  );
+  assert.equal((await activate(self.id)).status, 200);
+
+  const childOrder = await makePendingOrder(run, "participant-child");
+  const child = await pool.query(
+    `INSERT INTO children (parent_id, full_name, date_of_birth, gender)
+     VALUES ($1, 'Activation Child', '2015-01-01', 'female') RETURNING id`,
+    [childOrder.studentId],
+  );
+  const childId = child.rows[0].id as number;
+  await pool.query(
+    `UPDATE package_orders SET participant_type = 'child', participant_child_id = $2 WHERE id = $1`,
+    [childOrder.id, childId],
+  );
+  assert.equal((await activate(childOrder.id)).status, 200);
+
+  const rows = await pool.query(
+    `SELECT package_order_id, participant_type, participant_child_id
+     FROM credit_transactions
+     WHERE package_order_id IN ($1, $2) AND type = 'package_activated'
+     ORDER BY package_order_id`,
+    [self.id, childOrder.id],
+  );
+  assert.equal(rows.rowCount, 2);
+  const selfCredit = rows.rows.find((row) => row.package_order_id === self.id);
+  const childCredit = rows.rows.find((row) => row.package_order_id === childOrder.id);
+  assert.deepEqual(
+    [selfCredit.participant_type, selfCredit.participant_child_id],
+    ["self", null],
+  );
+  assert.deepEqual(
+    [childCredit.participant_type, childCredit.participant_child_id],
+    ["child", childId],
+  );
+});
+
+test("Phase C purchase configuration state constraint accepts only canonical nullable values", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const order = await makePendingOrder(run, "configuration-state");
+  await pool.query(
+    `UPDATE package_orders SET purchase_eligibility_configuration_state = 'configured' WHERE id = $1`,
+    [order.id],
+  );
+  await assert.rejects(
+    pool.query(
+      `UPDATE package_orders SET purchase_eligibility_configuration_state = 'invented' WHERE id = $1`,
+      [order.id],
+    ),
+    (error: unknown) => (
+      typeof error === "object"
+      && error !== null
+      && "code" in error
+      && (error as { code: string }).code === "23514"
+    ),
+  );
+});
+
 test("repeated activation of an already-active order is rejected and issues no second credit row", async () => {
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const { id } = await makePendingOrder(run, "repeat");

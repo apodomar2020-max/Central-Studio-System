@@ -6,13 +6,14 @@ import { customFetch } from "@workspace/api-client-react";
 import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
 import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { useAppContext, type PackageParticipantSelection } from "@/contexts/AppContext";
 
 type PackagePurchaseModalProps = {
   pkg: PricePackage | null;
   visible: boolean;
   submitting: boolean;
   onCancel: () => void;
-  onConfirm: (promoCode?: string | null) => void;
+  onConfirm: (participant: PackageParticipantSelection, promoCode?: string | null) => void;
 };
 
 type PromotionPreview = {
@@ -32,16 +33,19 @@ export default function PackagePurchaseModal({
   onCancel,
   onConfirm,
 }: PackagePurchaseModalProps) {
+  const { user, children } = useAppContext();
   const [promoCode, setPromoCode] = useState("");
   const [preview, setPreview] = useState<PromotionPreview | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const [selectedKey, setSelectedKey] = useState("self");
 
   useEffect(() => {
     if (!visible) {
       setPromoCode("");
       setPreview(null);
       setPromoError(null);
+      setSelectedKey("self");
     }
   }, [visible, pkg?.id]);
 
@@ -88,6 +92,51 @@ export default function PackagePurchaseModal({
 
   const appliedCode = preview?.eligible ? promoCode.trim() : null;
   const finalPrice = preview?.eligible ? preview.finalSubtotal : pkg?.priceEgp;
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  function ageOnDate(dob: string | null | undefined): number | null {
+    if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) return null;
+    const [year, month, day] = dob.split("-").map(Number);
+    const [todayYear, todayMonth, todayDay] = today.split("-").map(Number);
+    if (!year || !month || !day || !todayYear || !todayMonth || !todayDay) return null;
+    let age = todayYear - year;
+    if (todayMonth < month || (todayMonth === month && todayDay < day)) age -= 1;
+    return age < 0 ? null : age;
+  }
+
+  function isEligible(age: number | null): boolean {
+    if (age == null || !pkg) return false;
+    if (pkg.allowAllAges === true) return true;
+    if (pkg.allowAllAges == null && pkg.minAge == null && pkg.maxAge == null) return true;
+    if (pkg.minAge == null || age < pkg.minAge) return false;
+    return pkg.maxAge == null || age <= pkg.maxAge;
+  }
+
+  const options = [
+    {
+      key: "self",
+      name: user?.fullName ?? "My Account",
+      type: "self" as const,
+      childId: null,
+      age: ageOnDate(user?.dateOfBirth),
+    },
+    ...(user?.accountType === "parent"
+      ? children.map((child) => ({
+          key: `child:${child.id}`,
+          name: child.fullName,
+          type: "child" as const,
+          childId: Number(child.id),
+          age: ageOnDate(child.birthday),
+        }))
+      : []),
+  ];
+  const selected = options.find((option) => option.key === selectedKey) ?? options[0];
+  const selectedEligible = Boolean(selected && isEligible(selected.age));
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
@@ -119,6 +168,36 @@ export default function PackagePurchaseModal({
                   </View>
                 )}
               </View>
+              <View style={styles.participantBox}>
+                <Text style={styles.promoLabel}>Package participant</Text>
+                {options.map((option) => {
+                  const eligible = isEligible(option.age);
+                  const selectedOption = option.key === selectedKey;
+                  return (
+                    <TouchableOpacity
+                      key={option.key}
+                      disabled={!eligible}
+                      onPress={() => setSelectedKey(option.key)}
+                      style={[
+                        styles.participantOption,
+                        selectedOption && styles.participantOptionSelected,
+                        !eligible && styles.participantOptionDisabled,
+                      ]}
+                    >
+                      <View>
+                        <Text style={styles.participantName}>{option.name}</Text>
+                        <Text style={styles.participantMeta}>
+                          {option.type === "self" ? "My account" : "Child"}
+                          {option.age == null ? " · Date of birth required" : ` · age ${option.age}`}
+                        </Text>
+                      </View>
+                      <Text style={{ color: eligible ? "#22C55E" : "#EF4444", fontSize: 12 }}>
+                        {eligible ? "Eligible" : "Not eligible"}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               <View style={styles.promoBox}>
                 <Text style={styles.promoLabel}>Promo code</Text>
                 <View style={styles.promoRow}>
@@ -149,7 +228,16 @@ export default function PackagePurchaseModal({
                 <AppButton title="Cancel" variant="ghost" onPress={onCancel} style={{ flex: 1 }} />
                 <AppButton
                   title={submitting ? "Submitting…" : "Confirm Purchase"}
-                  onPress={() => onConfirm(appliedCode)}
+                  disabled={!selectedEligible || submitting}
+                  onPress={() => {
+                    if (!selected || !selectedEligible) return;
+                    onConfirm(
+                      selected.type === "child"
+                        ? { participantType: "child", participantChildId: selected.childId! }
+                        : { participantType: "self" },
+                      appliedCode,
+                    );
+                  }}
                   style={{ flex: 1 }}
                 />
               </View>
@@ -213,5 +301,19 @@ const styles = StyleSheet.create({
   promoApplyDisabled: { opacity: 0.5 },
   promoApplyText: { color: "#001014", fontFamily: "Inter_700Bold", fontSize: 13 },
   promoError: { color: "#EF4444", fontFamily: "Inter_500Medium", fontSize: 12 },
+  participantBox: { gap: 8 },
+  participantOption: {
+    borderWidth: 1,
+    borderColor: "#2A2A35",
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  participantOptionSelected: { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "12" },
+  participantOptionDisabled: { opacity: 0.5 },
+  participantName: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  participantMeta: { color: "#9CA3AF", fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
   modalBtns: { flexDirection: "row", gap: 10 },
 });

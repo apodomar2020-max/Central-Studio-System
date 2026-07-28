@@ -856,6 +856,38 @@ export interface DashboardAnalytics {
   totalCampaigns: number;
 }
 
+/**
+ * @nullable
+ */
+export type PackageOrderParticipantType =
+  | (typeof PackageOrderParticipantType)[keyof typeof PackageOrderParticipantType]
+  | null;
+
+export const PackageOrderParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+/**
+ * @nullable
+ */
+export type PackageOrderPurchaseEligibilityConfigurationState =
+  | (typeof PackageOrderPurchaseEligibilityConfigurationState)[keyof typeof PackageOrderPurchaseEligibilityConfigurationState]
+  | null;
+
+export const PackageOrderPurchaseEligibilityConfigurationState = {
+  configured: "configured",
+  legacy_unconfigured: "legacy_unconfigured",
+} as const;
+
+export type PackageOrderOwnershipState =
+  (typeof PackageOrderOwnershipState)[keyof typeof PackageOrderOwnershipState];
+
+export const PackageOrderOwnershipState = {
+  assigned: "assigned",
+  legacy_unassigned: "legacy_unassigned",
+} as const;
+
 export interface PackageOrder {
   id: number;
   studentName: string;
@@ -878,25 +910,44 @@ export interface PackageOrder {
   expiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** @nullable */
+  participantType?: PackageOrderParticipantType;
+  /** @nullable */
+  participantChildId?: number | null;
+  /** @nullable */
+  participantName?: string | null;
+  /** @nullable */
+  participantAgeAtPurchase?: number | null;
+  /** @nullable */
+  purchaseEligibilityConfigurationState?: PackageOrderPurchaseEligibilityConfigurationState;
+  ownershipState?: PackageOrderOwnershipState;
 }
 
+export type CreatePackageOrderBodyParticipantType =
+  (typeof CreatePackageOrderBodyParticipantType)[keyof typeof CreatePackageOrderBodyParticipantType];
+
+export const CreatePackageOrderBodyParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+export type CreatePackageOrderBodyPaymentMode =
+  (typeof CreatePackageOrderBodyPaymentMode)[keyof typeof CreatePackageOrderBodyPaymentMode];
+
+export const CreatePackageOrderBodyPaymentMode = {
+  pay_at_studio: "pay_at_studio",
+  online_payment: "online_payment",
+} as const;
+
 export interface CreatePackageOrderBody {
-  studentName: string;
-  studentEmail: string;
+  /** @minimum 1 */
+  packageId: number;
+  participantType: CreatePackageOrderBodyParticipantType;
+  /** @minimum 1 */
+  participantChildId?: number;
+  paymentMode?: CreatePackageOrderBodyPaymentMode;
   /** @nullable */
-  studentPhone?: string | null;
-  /** @nullable */
-  packageId?: number | null;
-  packageName: string;
-  totalCredits: number;
-  remainingCredits: number;
-  status?: string;
-  /** @nullable */
-  notes?: string | null;
-  /** @nullable */
-  activatedAt?: string | null;
-  /** @nullable */
-  expiresAt?: string | null;
+  promoCode?: string | null;
 }
 
 export interface UpdatePackageOrderBody {
@@ -909,6 +960,26 @@ export interface UpdatePackageOrderBody {
   /** @nullable */
   expiresAt?: string | null;
 }
+
+/**
+ * @nullable
+ */
+export type AttendanceParticipantType =
+  | (typeof AttendanceParticipantType)[keyof typeof AttendanceParticipantType]
+  | null;
+
+export const AttendanceParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+export type AttendanceOwnershipState =
+  (typeof AttendanceOwnershipState)[keyof typeof AttendanceOwnershipState];
+
+export const AttendanceOwnershipState = {
+  assigned: "assigned",
+  legacy_unassigned: "legacy_unassigned",
+} as const;
 
 export type AttendanceProgram =
   (typeof AttendanceProgram)[keyof typeof AttendanceProgram];
@@ -931,6 +1002,11 @@ export interface Attendance {
   notes?: string | null;
   /** @nullable */
   studentId?: number | null;
+  /** @nullable */
+  participantType?: AttendanceParticipantType;
+  /** @nullable */
+  participantChildId?: number | null;
+  ownershipState?: AttendanceOwnershipState;
   /** @nullable */
   classId?: number | null;
   /** @nullable */
@@ -1154,11 +1230,43 @@ export interface ListCreditTransactionsResponse {
   limit: number;
 }
 
+/**
+ * @nullable
+ */
+export type ParticipantCreditBalanceParticipantType =
+  | (typeof ParticipantCreditBalanceParticipantType)[keyof typeof ParticipantCreditBalanceParticipantType]
+  | null;
+
+export const ParticipantCreditBalanceParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+export type ParticipantCreditBalanceOwnershipState =
+  (typeof ParticipantCreditBalanceOwnershipState)[keyof typeof ParticipantCreditBalanceOwnershipState];
+
+export const ParticipantCreditBalanceOwnershipState = {
+  assigned: "assigned",
+  legacy_unassigned: "legacy_unassigned",
+} as const;
+
+export interface ParticipantCreditBalance {
+  /** @nullable */
+  participantType: ParticipantCreditBalanceParticipantType;
+  /** @nullable */
+  participantChildId: number | null;
+  /** @nullable */
+  participantName: string | null;
+  remainingCredits: number;
+  ownershipState: ParticipantCreditBalanceOwnershipState;
+}
+
 export interface MyCreditsResponse {
   data: CreditTransaction[];
   total: number;
   page: number;
   limit: number;
+  participantBalances?: ParticipantCreditBalance[];
 }
 
 export interface MyAttendanceRecord {

@@ -26,6 +26,7 @@ export const packageOrdersTable = pgTable("package_orders", {
   packageAllowAllAgesSnapshot: boolean("package_allow_all_ages_snapshot"),
   packageMinAgeSnapshot: smallint("package_min_age_snapshot"),
   packageMaxAgeSnapshot: smallint("package_max_age_snapshot"),
+  purchaseEligibilityConfigurationState: text("purchase_eligibility_configuration_state"),
   allowedDanceTypeIdsSnapshot: integer("allowed_dance_type_ids_snapshot").array(),
   packageId: integer("package_id"),
   packageName: text("package_name").notNull(),
@@ -58,6 +59,10 @@ export const packageOrdersTable = pgTable("package_orders", {
         or (${table.packageMaxAgeSnapshot} between 0 and 150 and ${table.packageMinAgeSnapshot} <= ${table.packageMaxAgeSnapshot})
       )
     )
+  `),
+  check("package_orders_purchase_eligibility_configuration_state_check", sql`
+    ${table.purchaseEligibilityConfigurationState} is null
+    or ${table.purchaseEligibilityConfigurationState} in ('configured', 'legacy_unconfigured')
   `),
   index("package_orders_owner_participant_status_idx")
     .on(table.studentId, table.participantType, table.participantChildId, table.status),

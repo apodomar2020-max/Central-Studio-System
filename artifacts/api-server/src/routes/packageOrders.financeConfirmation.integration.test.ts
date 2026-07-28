@@ -162,7 +162,7 @@ async function notificationCount(studentId: number, relatedEntityId: number, typ
 async function makeCanonicalPendingOrder(run: string, label: string): Promise<{ id: number; studentId: number; studentEmail: string; paymentRecordId: number; finalPayableAmountMinor: number }> {
   const email = `pkg-finance-${run}-${label}@example.com`;
   const student = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ($1, $2, '0100000000', 'student', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, '0100000000', 'student', '2000-01-01', true) RETURNING id`,
     [`Package Finance Test ${label}`, email],
   );
   const studentId = student.rows[0].id as number;

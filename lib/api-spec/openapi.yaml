@@ -2009,22 +2009,28 @@ components:
         expiresAt: { type: ["string", "null"] }
         createdAt: { type: string }
         updatedAt: { type: string }
+        participantType:
+          type: ["string", "null"]
+          enum: [self, child, null]
+        participantChildId: { type: ["integer", "null"] }
+        participantName: { type: ["string", "null"] }
+        participantAgeAtPurchase: { type: ["integer", "null"] }
+        purchaseEligibilityConfigurationState:
+          type: ["string", "null"]
+          enum: [configured, legacy_unconfigured, null]
+        ownershipState:
+          type: string
+          enum: [assigned, legacy_unassigned]
 
     CreatePackageOrderBody:
       type: object
-      required: [studentName, studentEmail, packageName, totalCredits, remainingCredits]
+      required: [packageId, participantType]
       properties:
-        studentName: { type: string }
-        studentEmail: { type: string }
-        studentPhone: { type: ["string", "null"] }
-        packageId: { type: ["integer", "null"] }
-        packageName: { type: string }
-        totalCredits: { type: integer }
-        remainingCredits: { type: integer }
-        status: { type: string }
-        notes: { type: ["string", "null"] }
-        activatedAt: { type: ["string", "null"] }
-        expiresAt: { type: ["string", "null"] }
+        packageId: { type: integer, minimum: 1 }
+        participantType: { type: string, enum: [self, child] }
+        participantChildId: { type: integer, minimum: 1 }
+        paymentMode: { type: string, enum: [pay_at_studio, online_payment] }
+        promoCode: { type: ["string", "null"] }
 
     UpdatePackageOrderBody:
       type: object
@@ -2047,6 +2053,13 @@ components:
         creditDeducted: { type: boolean }
         notes: { type: ["string", "null"] }
         studentId: { type: ["integer", "null"] }
+        participantType:
+          type: ["string", "null"]
+          enum: [self, child, null]
+        participantChildId: { type: ["integer", "null"] }
+        ownershipState:
+          type: string
+          enum: [assigned, legacy_unassigned]
         classId: { type: ["integer", "null"] }
         scheduleId: { type: ["integer", "null"] }
         bookingId: { type: ["integer", "null"] }
@@ -2225,6 +2238,24 @@ components:
         total: { type: integer }
         page: { type: integer }
         limit: { type: integer }
+        participantBalances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParticipantCreditBalance"
+
+    ParticipantCreditBalance:
+      type: object
+      required: [participantType, participantChildId, participantName, remainingCredits, ownershipState]
+      properties:
+        participantType:
+          type: ["string", "null"]
+          enum: [self, child, null]
+        participantChildId: { type: ["integer", "null"] }
+        participantName: { type: ["string", "null"] }
+        remainingCredits: { type: integer }
+        ownershipState:
+          type: string
+          enum: [assigned, legacy_unassigned]
 
     MyAttendanceRecord:
       type: object
