@@ -1,4 +1,4 @@
-import { boolean, check, date, integer, pgTable, serial, smallint, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, date, index, integer, pgTable, serial, smallint, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -12,6 +12,7 @@ export const bookingsTable = pgTable("bookings", {
   studentEmail: text("student_email").notNull(),
   studentPhone: text("student_phone"),
   accountOwnerStudentId: integer("account_owner_student_id").references(() => studentsTable.id, { onDelete: "set null" }),
+  participantType: text("participant_type"),
   participantChildId: integer("participant_child_id").references(() => childrenTable.id, { onDelete: "set null" }),
   bookingScope: text("booking_scope"),
   scheduleId: integer("schedule_id"),
@@ -76,8 +77,15 @@ export const bookingsTable = pgTable("bookings", {
       and ${table.accountOwnerStudentId} is not null
       and ${table.bookingStatus} in ('pending', 'confirmed')
     `),
+  index("bookings_owner_participant_occurrence_idx")
+    .on(table.accountOwnerStudentId, table.participantType, table.participantChildId, table.scheduleId, table.occurrenceDate),
   check("bookings_participant_age_snapshot_check", sql`
     ${table.participantAgeOnOccurrence} is null or ${table.participantAgeOnOccurrence} between 0 and 150
+  `),
+  check("bookings_participant_shape_check", sql`
+    (${table.participantType} is null and ${table.participantChildId} is null)
+    or (${table.participantType} = 'self' and ${table.participantChildId} is null)
+    or (${table.participantType} = 'child' and ${table.participantChildId} is not null)
   `),
   check("bookings_class_age_range_snapshot_check", sql`
     (${table.classAllowAllAgesSnapshot} is null and ${table.classMinAgeSnapshot} is null and ${table.classMaxAgeSnapshot} is null)

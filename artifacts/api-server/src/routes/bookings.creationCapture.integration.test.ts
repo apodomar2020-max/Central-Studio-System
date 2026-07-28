@@ -55,7 +55,7 @@ async function makeStudent(label: string): Promise<{ id: number; email: string }
   studentCounter += 1;
   const email = `booking-capture-${Date.now()}-${studentCounter}-${label}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ($1, $2, '0100000000', 'student', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, '0100000000', 'student', '1990-01-01', true) RETURNING id`,
     [`Booking Capture Test ${label}`, email],
   );
   return { id: result.rows[0].id as number, email };
@@ -333,13 +333,14 @@ test("no payment_records row is created for an invalid/nonexistent schedule", as
 test("child booking identity: payment record's child_id matches the validated child, never a forged one", async () => {
   const parent = await makeStudent("parent-owner");
   const otherParent = await makeStudent("other-parent");
+  await pool.query(`UPDATE students SET account_type = 'parent' WHERE id = ANY($1)`, [[parent.id, otherParent.id]]);
   const child = await pool.query(
-    `INSERT INTO children (parent_id, full_name, birthday) VALUES ($1, 'Test Child', '2015-01-01') RETURNING id`,
+    `INSERT INTO children (parent_id, full_name, birthday, date_of_birth) VALUES ($1, 'Test Child', '2015-01-01', '2015-01-01') RETURNING id`,
     [parent.id],
   );
   const childId = child.rows[0].id as number;
   const otherChild = await pool.query(
-    `INSERT INTO children (parent_id, full_name, birthday) VALUES ($1, 'Other Child', '2015-01-01') RETURNING id`,
+    `INSERT INTO children (parent_id, full_name, birthday, date_of_birth) VALUES ($1, 'Other Child', '2015-01-01', '2015-01-01') RETURNING id`,
     [otherParent.id],
   );
   const otherChildId = otherChild.rows[0].id as number;
@@ -351,7 +352,7 @@ test("child booking identity: payment record's child_id matches the validated ch
     method: "POST",
     body: JSON.stringify({ studentName: "x", studentEmail: parent.email, scheduleId, classId, paymentMode: "pay_at_studio", participantChildId: otherChildId }),
   });
-  assert.equal(forged.status, 403);
+  assert.equal(forged.status, 404);
 
   // Book for the parent's own real child — must succeed and be attributed correctly.
   const res = await asStudent(token, "/api/bookings", {
@@ -374,12 +375,18 @@ test("a package_credit booking creates no payment_records / payment_events rows"
     `INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('Credit Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`,
   );
   const pkgOrder = await pool.query(
-    `INSERT INTO package_orders (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, status)
-     VALUES ($1, $2, $3, $4, 'Credit Pkg', 8, 8, 'active')
+    `INSERT INTO package_orders (student_name, student_email, student_id, participant_type, package_id, package_name, total_credits, remaining_credits, status, expires_at)
+     VALUES ($1, $2, $3, 'self', $4, 'Credit Pkg', 8, 8, 'active', now() + interval '1 year')
      RETURNING id`,
     [student.email, student.email, student.id, pkgPackage.rows[0].id],
   );
   const packageOrderId = pkgOrder.rows[0].id as number;
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
+     VALUES ($1, $2, 'self', 'package_activated', 8, 0, 8, 'test')`,
+    [packageOrderId, student.id],
+  );
 
   const before = await counts();
   const res = await asStudent(token, "/api/bookings", {
@@ -391,6 +398,167 @@ test("a package_credit booking creates no payment_records / payment_events rows"
   assert.equal(after.bookings, before.bookings + 1, "the booking itself must still be created");
   assert.equal(after.records, before.records, "no payment_records row for package_credit");
   assert.equal(after.events, before.events, "no payment_events row for package_credit");
+  const persisted = await pool.query(
+    `SELECT participant_type, participant_child_id FROM bookings WHERE id = $1`,
+    [(await jsonBody(res)).id],
+  );
+  assert.equal(persisted.rows[0].participant_type, "self");
+  assert.equal(persisted.rows[0].participant_child_id, null);
+  const orderAfter = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [packageOrderId]);
+  assert.equal(orderAfter.rows[0].remaining_credits, 7);
+  const deduction = await pool.query(
+    `SELECT participant_type, participant_child_id, delta, booking_id
+       FROM credit_transactions
+      WHERE package_order_id = $1 AND type = 'booking_deduction'`,
+    [packageOrderId],
+  );
+  assert.equal(deduction.rowCount, 1);
+  assert.equal(deduction.rows[0].participant_type, "self");
+  assert.equal(deduction.rows[0].participant_child_id, null);
+  assert.equal(deduction.rows[0].delta, -1);
+});
+
+test("booking age eligibility uses the occurrence date and authoritative DOB", async () => {
+  const student = await makeStudent("age-ineligible");
+  await pool.query(`UPDATE students SET date_of_birth = '2015-01-01' WHERE id = $1`, [student.id]);
+  await pool.query(`UPDATE classes SET allow_all_ages = false, min_age = 18, max_age = null WHERE id = $1`, [classId]);
+  try {
+    const res = await asStudent(studentToken(student.id, student.email), "/api/bookings", {
+      method: "POST",
+      body: JSON.stringify({
+        studentName: "forged",
+        studentEmail: student.email,
+        participantType: "self",
+        scheduleId,
+        classId,
+        paymentMode: "pay_at_studio",
+      }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await jsonBody(res)).code, "AGE_BELOW_MINIMUM");
+  } finally {
+    await pool.query(`UPDATE classes SET allow_all_ages = null, min_age = null, max_age = null WHERE id = $1`, [classId]);
+  }
+});
+
+test("a Parent child booking consumes only the same child's assigned package", async () => {
+  const parent = await makeStudent("child-package-owner");
+  await pool.query(`UPDATE students SET account_type = 'parent' WHERE id = $1`, [parent.id]);
+  const child = await pool.query(
+    `INSERT INTO children (parent_id, full_name, birthday, date_of_birth)
+     VALUES ($1, 'Package Child', '2015-01-01', '2015-01-01') RETURNING id`,
+    [parent.id],
+  );
+  const pkg = await pool.query(
+    `INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active)
+     VALUES ('Child Pack', 'per_class', 1000, 3, 6, true) RETURNING id`,
+  );
+  const order = await pool.query(
+    `INSERT INTO package_orders
+      (student_name, student_email, student_id, participant_type, participant_child_id,
+       package_id, package_name, total_credits, remaining_credits, status, expires_at)
+     VALUES ($1, $1, $2, 'child', $3, $4, 'Child Pack', 3, 3, 'active', now() + interval '1 year')
+     RETURNING id`,
+    [parent.email, parent.id, child.rows[0].id, pkg.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, participant_child_id, type,
+       delta, balance_before, balance_after, created_by)
+     VALUES ($1, $2, 'child', $3, 'package_activated', 3, 0, 3, 'test')`,
+    [order.rows[0].id, parent.id, child.rows[0].id],
+  );
+  const response = await asStudent(studentToken(parent.id, parent.email), "/api/bookings", {
+    method: "POST",
+    body: JSON.stringify({
+      studentName: "forged",
+      studentEmail: parent.email,
+      participantType: "child",
+      participantChildId: child.rows[0].id,
+      scheduleId,
+      classId,
+      paymentMode: "package_credit",
+      packageOrderId: order.rows[0].id,
+    }),
+  });
+  assert.equal(response.status, 201);
+  const body = await jsonBody(response);
+  assert.equal(body.participantType, "child");
+  assert.equal(body.participantChildId, child.rows[0].id);
+  const deduction = await pool.query(
+    `SELECT participant_type, participant_child_id FROM credit_transactions
+      WHERE package_order_id = $1 AND type = 'booking_deduction'`,
+    [order.rows[0].id],
+  );
+  assert.equal(deduction.rows[0].participant_type, "child");
+  assert.equal(deduction.rows[0].participant_child_id, child.rows[0].id);
+});
+
+test("expired and wrong-dance packages cannot fund a booking and create no deduction", async () => {
+  const student = await makeStudent("package-rules");
+  const token = studentToken(student.id, student.email);
+  const dance = await pool.query(
+    `INSERT INTO dance_types (name, slug, is_active) VALUES ('Phase D Other', $1, true) RETURNING id`,
+    [`phase-d-other-${Date.now()}`],
+  );
+  const pkg = await pool.query(
+    `INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active)
+     VALUES ('Restricted', 'per_class', 1000, 4, 6, true) RETURNING id`,
+  );
+  await pool.query(
+    `INSERT INTO price_package_dance_types (package_id, dance_type_id) VALUES ($1, $2)`,
+    [pkg.rows[0].id, dance.rows[0].id],
+  );
+  const order = await pool.query(
+    `INSERT INTO package_orders
+      (student_name, student_email, student_id, participant_type, package_id, package_name,
+       total_credits, remaining_credits, status, expires_at)
+     VALUES ($1, $1, $2, 'self', $3, 'Restricted', 4, 4, 'active', now() + interval '1 year')
+     RETURNING id`,
+    [student.email, student.id, pkg.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
+     VALUES ($1, $2, 'self', 'package_activated', 4, 0, 4, 'test')`,
+    [order.rows[0].id, student.id],
+  );
+  const response = await asStudent(token, "/api/bookings", {
+    method: "POST",
+    body: JSON.stringify({
+      studentName: student.email,
+      studentEmail: student.email,
+      participantType: "self",
+      scheduleId,
+      classId,
+      paymentMode: "package_credit",
+      packageOrderId: order.rows[0].id,
+    }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await jsonBody(response)).code, "PACKAGE_DANCE_TYPE_MISMATCH");
+  const count = await pool.query(
+    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'booking_deduction'`,
+    [order.rows[0].id],
+  );
+  assert.equal(count.rows[0].n, 0);
+
+  await pool.query(`DELETE FROM price_package_dance_types WHERE package_id = $1`, [pkg.rows[0].id]);
+  await pool.query(`UPDATE package_orders SET expires_at = now() - interval '1 day' WHERE id = $1`, [order.rows[0].id]);
+  const expiredResponse = await asStudent(token, "/api/bookings", {
+    method: "POST",
+    body: JSON.stringify({
+      studentName: student.email,
+      studentEmail: student.email,
+      participantType: "self",
+      scheduleId,
+      classId,
+      paymentMode: "package_credit",
+      packageOrderId: order.rows[0].id,
+    }),
+  });
+  assert.equal(expiredResponse.status, 409);
+  assert.equal((await jsonBody(expiredResponse)).code, "PACKAGE_EXPIRED");
 });
 
 test("a free/complimentary booking attempt creates no Finance rows (currently rejected outright, per existing behavior)", async () => {

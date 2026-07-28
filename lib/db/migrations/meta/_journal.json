@@ -624,6 +624,13 @@
       "when": 1785427200000,
       "tag": "0089_package_order_purchase_eligibility_state",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1785513600000,
+      "tag": "0090_participant_aware_bookings",
+      "breakpoints": true
     }
   ]
 }

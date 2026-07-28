@@ -1729,6 +1729,11 @@ components:
         participantChildId: { type: ["integer", "null"] }
         participantName: { type: ["string", "null"] }
         participantType: { type: ["string", "null"], enum: [self, child, null] }
+        usedCredit: { type: ["boolean", "null"] }
+        creditSource:
+          oneOf:
+            - $ref: "#/components/schemas/BookingCreditSourceSummary"
+            - type: "null"
         bookingScope: { type: ["string", "null"], enum: [self, child, null] }
         # Display-ready fields joined from class / schedule / instructor (list endpoint).
         # All nullable: a booking may have no class, schedule, or instructor.
@@ -1773,6 +1778,7 @@ components:
         accountOwnerStudentId: { type: ["integer", "null"] }
         packageOrderId: { type: ["integer", "null"] }
         participantChildId: { type: ["integer", "null"] }
+        participantType: { type: ["string", "null"], enum: [self, child, null] }
         childId: { type: ["integer", "null"] }
         bookingScope: { type: ["string", "null"], enum: [self, child, null] }
         occurrenceDate: { type: ["string", "null"] }
@@ -1788,6 +1794,14 @@ components:
         paymentMode: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         bookedAt: { type: string }
+
+    BookingCreditSourceSummary:
+      type: object
+      required: [packageOrderId, usedCredit, paymentMethod]
+      properties:
+        packageOrderId: { type: ["integer", "null"] }
+        usedCredit: { type: boolean }
+        paymentMethod: { type: ["string", "null"] }
 
     UpdateBookingBody:
       type: object

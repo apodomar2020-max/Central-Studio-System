@@ -82,6 +82,7 @@ type Booking = {
   bookingScope?: "self" | "child" | null;
   classId?: number | null;
   scheduleId?: number | null;
+  packageOrderId?: number | null;
   classTitle?: string | null;
   scheduleLabel?: string | null;
   scheduleType?: "weekly" | "one_time" | null;
@@ -499,6 +500,11 @@ export default function Bookings() {
                             {paymentStatusLabel(paymentStatus)}
                           </span>
                           <div className="mt-0.5 text-[11px] text-muted-foreground">Payment</div>
+                          {booking.packageOrderId != null && (
+                            <div className="mt-1 text-[10px] text-muted-foreground">
+                              Package order #{booking.packageOrderId}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="py-3 text-right">

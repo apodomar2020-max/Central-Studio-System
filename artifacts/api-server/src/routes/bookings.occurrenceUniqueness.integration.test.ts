@@ -59,7 +59,7 @@ async function makeStudent(label: string): Promise<{ id: number; email: string }
   studentCounter += 1;
   const email = `occ-unique-${Date.now()}-${studentCounter}-${label}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ($1, $2, '0100000000', 'student', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, '0100000000', 'student', '1990-01-01', true) RETURNING id`,
     [`Occ Unique Test ${label}`, email],
   );
   return { id: result.rows[0].id as number, email };

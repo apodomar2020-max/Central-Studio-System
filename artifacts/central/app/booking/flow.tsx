@@ -117,11 +117,7 @@ export default function BookingFlowScreen() {
     });
   }
 
-  const activePackages = userPackages.filter((pkg) => pkg.status === "active" && pkg.remainingCredits > 0);
-  const packageCreditsRemaining = activePackages.reduce((sum, pkg) => sum + pkg.remainingCredits, 0);
-  const selectedPackage = activePackages[0];
   const schedulePackageEligible = primarySchedule?.packageEligible ?? cls?.packageEligible ?? true;
-  const canUsePackageCredits = schedulePackageEligible && packageCreditsRemaining > 0;
 
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {
     query: { queryKey: ["instructor", classQuery.data?.instructorId ?? 0], enabled: !!classQuery.data?.instructorId },
@@ -144,9 +140,7 @@ export default function BookingFlowScreen() {
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
   const [refCodeState, setRefCodeState] = useState<"idle" | "valid" | "invalid">("idle");
   const selectedChild = children.find((child) => child.id === selectedChildId);
-  const isPackageMode = paymentMethod === "packageCredit" && canUsePackageCredits;
   const isFirstBooking = false;
-  const finalPrice = isPackageMode ? 0 : (cls?.price ?? 0);
   const hasSchedule = Boolean(cls?.scheduleId && cls?.dayOfWeek && cls?.startTime);
   const canBookSchedule = hasSchedule && isBookableScheduleStatus(cls?.scheduleStatus);
   const participantName =
@@ -157,6 +151,19 @@ export default function BookingFlowScreen() {
     participantType === "child" && selectedChild?.id
       ? Number(selectedChild.id)
       : null;
+  const activePackages = userPackages.filter((pkg) =>
+    pkg.status === "active"
+    && pkg.remainingCredits > 0
+    && pkg.participantType === participantType
+    && (participantType === "self"
+      ? pkg.participantChildId == null
+      : Number(pkg.participantChildId) === participantChildId),
+  );
+  const packageCreditsRemaining = activePackages.reduce((sum, pkg) => sum + pkg.remainingCredits, 0);
+  const selectedPackage = activePackages[0];
+  const canUsePackageCredits = schedulePackageEligible && packageCreditsRemaining > 0;
+  const isPackageMode = paymentMethod === "packageCredit" && canUsePackageCredits;
+  const finalPrice = isPackageMode ? 0 : (cls?.price ?? 0);
 
   useEffect(() => {
     if (!selectedChildId && children.length > 0) {
@@ -291,9 +298,9 @@ export default function BookingFlowScreen() {
       ].filter(Boolean).join("\n") || undefined;
 
       // 1. Create booking in the database
-      // Policy: every student booking starts as PENDING — Admin confirms it (and,
-      // for package bookings, the credit is deducted only at QR check-in, never at
-      // booking time). Pay-on-arrival and package both create a pending request.
+      // Policy: every student booking starts as PENDING — Admin confirms it.
+      // Package credits are authoritatively resolved and deducted by the booking
+      // transaction for the selected participant.
       const apiBookingStatus = "pending";
       const apiPaymentStatus = isPackageMode || finalPrice === 0 ? "not_required" : "pending_payment";
       const apiPaymentMode = isPackageMode ? "package_credit" : finalPrice === 0 ? "free" : "pay_at_studio";
@@ -302,6 +309,7 @@ export default function BookingFlowScreen() {
           studentName: participantName,
           studentEmail: user.email,
           studentPhone: user.phone,
+          participantType,
           participantChildId: participantType === "child" ? participantChildId : null,
           bookingScope: participantType,
           classId: numericClassId,

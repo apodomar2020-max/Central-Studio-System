@@ -531,6 +531,14 @@ export const BookingScheduleType = {
   one_time: "one_time",
 } as const;
 
+export interface BookingCreditSourceSummary {
+  /** @nullable */
+  packageOrderId: number | null;
+  usedCredit: boolean;
+  /** @nullable */
+  paymentMethod: string | null;
+}
+
 export interface Booking {
   /** @nullable */
   occurrenceDate?: string | null;
@@ -570,6 +578,9 @@ export interface Booking {
   participantName?: string | null;
   /** @nullable */
   participantType?: BookingParticipantType;
+  /** @nullable */
+  usedCredit?: boolean | null;
+  creditSource?: BookingCreditSourceSummary | null;
   /** @nullable */
   bookingScope?: BookingBookingScope;
   /** @nullable */
@@ -625,6 +636,18 @@ export interface ListBookingsResponse {
 /**
  * @nullable
  */
+export type CreateBookingBodyParticipantType =
+  | (typeof CreateBookingBodyParticipantType)[keyof typeof CreateBookingBodyParticipantType]
+  | null;
+
+export const CreateBookingBodyParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+/**
+ * @nullable
+ */
 export type CreateBookingBodyBookingScope =
   | (typeof CreateBookingBodyBookingScope)[keyof typeof CreateBookingBodyBookingScope]
   | null;
@@ -641,6 +664,8 @@ export interface CreateBookingBody {
   packageOrderId?: number | null;
   /** @nullable */
   participantChildId?: number | null;
+  /** @nullable */
+  participantType?: CreateBookingBodyParticipantType;
   /** @nullable */
   childId?: number | null;
   /** @nullable */

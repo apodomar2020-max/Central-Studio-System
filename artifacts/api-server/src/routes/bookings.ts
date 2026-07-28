@@ -14,6 +14,8 @@ import {
   childrenTable,
   paymentRecordsTable,
   paymentEventsTable,
+  packageOrdersTable,
+  creditTransactionsTable,
   type PaymentRecordRequestedChannel,
   PAYMENT_RECORD_CONFIRMED_METHODS,
   type PaymentRecordConfirmedMethod,
@@ -40,6 +42,11 @@ import {
 import { currentOccurrenceDate, checkInWindowState } from "../lib/occurrence";
 import { DUPLICATE_BLOCKING_STATUSES, RESERVED_SEAT_STATUSES, isSeatReservedBooking } from "../lib/bookingStatus";
 import { isClassCapacityEnabled } from "../lib/classCapacitySettings";
+import { resolveBookingParticipant } from "../lib/participants/resolveBookingParticipant";
+import { resolveParticipantPackageCredit } from "../lib/bookings/resolveParticipantPackageCredit";
+import { calculateAgeOnDate, parseIsoDate } from "../lib/eligibility/dateOnly";
+import { evaluateAgeRange } from "../lib/eligibility/ageRange";
+import type { ParticipantSelection } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -622,7 +629,7 @@ router.get("/bookings", requireBookingReadAccess, async (req: AdminRequest, res)
         ? `${r.scheduleType === "one_time" ? dateLabel : dayName} • ${start} - ${end}`
         : null;
     const existing = enrichedById.get(r.booking.id);
-    const bookingScope = r.booking.bookingScope ?? (r.booking.participantChildId != null ? "child" : "self");
+    const bookingScope = r.booking.participantType ?? r.booking.bookingScope ?? (r.booking.participantChildId != null ? "child" : "self");
     const bookingStatus = r.booking.bookingStatus ?? legacyToBookingStatus(r.booking.status) ?? r.booking.status;
     const hasAttendance = Boolean(existing?.hasAttendance || r.attendanceId);
     const participantDuplicateAttendance = !hasAttendance && query.data.studentEmail
@@ -665,6 +672,12 @@ router.get("/bookings", requireBookingReadAccess, async (req: AdminRequest, res)
       participantType: bookingScope,
       participantChildId: r.booking.participantChildId ?? null,
       participantName: r.participantChildName ?? r.booking.studentName,
+      usedCredit: r.booking.paymentMode === "package_credit" && r.booking.packageOrderId != null,
+      creditSource: {
+        packageOrderId: r.booking.packageOrderId ?? null,
+        usedCredit: r.booking.paymentMode === "package_credit" && r.booking.packageOrderId != null,
+        paymentMethod: r.booking.paymentMode ?? null,
+      },
       classTitle: r.classTitle ?? null,
       classDescription: r.classDescription ?? null,
       classCategory: r.classCategory ?? null,
@@ -791,45 +804,48 @@ router.post(
       return;
     }
   }
-
-  const requestedParticipantChildId =
-    parsed.data.participantChildId ?? parsed.data.childId ?? normalized.participantChildId ?? null;
-
-  let participantChildId = requestedParticipantChildId;
-  let bookingScope = normalized.bookingScope ?? (participantChildId != null ? "child" : "self");
-  let participantName = parsed.data.studentName;
-
-  if (participantChildId != null) {
-    if (accountOwnerStudentId == null) {
-      res.status(401).json({
-        error: "Student authentication required to book for a child.",
-      });
-      return;
-    }
-
-    const [child] = await db
-      .select({ id: childrenTable.id, fullName: childrenTable.fullName })
-      .from(childrenTable)
-      .where(and(
-        eq(childrenTable.id, participantChildId),
-        eq(childrenTable.parentId, accountOwnerStudentId),
-      ))
-      .limit(1);
-
-    if (!child) {
-      res.status(403).json({
-        error: "Child profile not found for this account.",
-      });
-      return;
-    }
-
-    participantChildId = child.id;
-    participantName = child.fullName;
-    bookingScope = "child";
-  } else {
-    participantChildId = null;
-    bookingScope = "self";
+  if (occurrenceDate == null) {
+    res.status(400).json({
+      error: "OCCURRENCE_INVALID",
+      code: "OCCURRENCE_INVALID",
+      message: "A valid class schedule occurrence is required for booking.",
+    });
+    return;
   }
+
+  const participantTypeInput = parsed.data.participantType
+    ?? parsed.data.bookingScope
+    ?? ((parsed.data.participantChildId ?? parsed.data.childId) != null ? "child" : "self");
+  const participantSelection = {
+    participantType: participantTypeInput,
+    participantChildId: parsed.data.participantChildId ?? parsed.data.childId ?? null,
+  } as ParticipantSelection;
+  const participantResolution = await resolveBookingParticipant(db, accountOwnerStudentId, participantSelection);
+  if (!participantResolution.ok) {
+    res.status(participantResolution.status).json({
+      error: participantResolution.reason.code,
+      code: participantResolution.reason.code,
+      message: participantResolution.reason.message,
+    });
+    return;
+  }
+  if (
+    participantResolution.account.accountType === "parent"
+    && parsed.data.participantType == null
+    && parsed.data.bookingScope == null
+    && parsed.data.participantChildId == null
+    && parsed.data.childId == null
+  ) {
+    res.status(400).json({
+      error: "PARTICIPANT_REQUIRED",
+      code: "PARTICIPANT_REQUIRED",
+      message: "Select who will attend this class.",
+    });
+    return;
+  }
+  const participantChildId = participantResolution.participant.participantChildId;
+  const bookingScope = participantResolution.participant.participantType;
+  const participantName = participantResolution.participant.displayName;
 
   // ── Duplicate-booking guard (backend-enforced, OCCURRENCE-aware) ────────────
   // Block a second ACTIVE booking by the same account/participant for the same
@@ -911,20 +927,24 @@ router.post(
   try {
     createResult = await db.transaction(async (tx) => {
     const classCapacityEnabled = await isClassCapacityEnabled();
+    let creditOrder: typeof packageOrdersTable.$inferSelect | null = null;
+    let eligibilitySnapshot: Pick<typeof bookingsTable.$inferInsert,
+      "participantDateOfBirthSnapshot" | "participantAgeOnOccurrence" | "eligibilityEvaluatedOn"
+      | "classAllowAllAgesSnapshot" | "classMinAgeSnapshot" | "classMaxAgeSnapshot"
+      | "eligibilityDecisionCode"> = {};
     if (normalized.scheduleId != null) {
       const [lockedSchedule] = await tx
         .select({
           id: schedulesTable.id,
+          classId: schedulesTable.classId,
           status: schedulesTable.status,
           packageEligible: schedulesTable.packageEligible,
           type: schedulesTable.type,
           date: schedulesTable.date,
           dayOfWeek: schedulesTable.dayOfWeek,
           startTime: schedulesTable.startTime,
-          capacity: classesTable.capacity,
         })
         .from(schedulesTable)
-        .innerJoin(classesTable, eq(classesTable.id, schedulesTable.classId))
         .where(eq(schedulesTable.id, normalized.scheduleId))
         .for("update");
 
@@ -935,6 +955,52 @@ router.post(
       if (lockedSchedule.status !== "active") {
         return { kind: "schedule_unavailable" as const, status: lockedSchedule.status };
       }
+      const [lockedClass] = await tx
+        .select({
+          capacity: classesTable.capacity,
+          isActive: classesTable.isActive,
+          danceTypeId: classesTable.danceTypeId,
+          allowAllAges: classesTable.allowAllAges,
+          minAge: classesTable.minAge,
+          maxAge: classesTable.maxAge,
+        })
+        .from(classesTable)
+        .where(eq(classesTable.id, lockedSchedule.classId))
+        .limit(1);
+      if (!lockedClass?.isActive) {
+        return { kind: "class_inactive" as const };
+      }
+
+      const parsedDob = parseIsoDate(participantResolution.participant.dateOfBirth, {
+        today: occurrenceDate as never,
+      });
+      if (!parsedDob.eligible) {
+        return { kind: "eligibility_error" as const, reason: parsedDob.reasons[0] };
+      }
+      const participantAge = calculateAgeOnDate(parsedDob.value!, occurrenceDate as never);
+      const legacyUnconfigured =
+        lockedClass.allowAllAges == null
+        && lockedClass.minAge == null
+        && lockedClass.maxAge == null;
+      if (!legacyUnconfigured) {
+        const ageResult = evaluateAgeRange(participantAge, {
+          allowAllAges: lockedClass.allowAllAges!,
+          minAge: lockedClass.minAge,
+          maxAge: lockedClass.maxAge,
+        });
+        if (!ageResult.eligible) {
+          return { kind: "eligibility_error" as const, reason: ageResult.reasons[0] };
+        }
+      }
+      eligibilitySnapshot = {
+        participantDateOfBirthSnapshot: parsedDob.value,
+        participantAgeOnOccurrence: participantAge,
+        eligibilityEvaluatedOn: occurrenceDate,
+        classAllowAllAgesSnapshot: lockedClass.allowAllAges,
+        classMinAgeSnapshot: lockedClass.minAge,
+        classMaxAgeSnapshot: lockedClass.maxAge,
+        eligibilityDecisionCode: legacyUnconfigured ? "legacy_unconfigured" : "eligible",
+      };
 
       if (normalized.packageOrderId != null && lockedSchedule.packageEligible === false) {
         return { kind: "package_not_eligible" as const };
@@ -976,26 +1042,67 @@ router.post(
             inArray(bookingsTable.bookingStatus, [...RESERVED_SEAT_STATUSES]),
           ));
 
-        if ((reservedSeats?.count ?? 0) >= lockedSchedule.capacity) {
+        if ((reservedSeats?.count ?? 0) >= lockedClass.capacity) {
           return { kind: "capacity_full" as const };
         }
       }
-    }
 
+      if (normalized.paymentMode === "package_credit" && normalized.packageOrderId != null) {
+        const credit = await resolveParticipantPackageCredit(tx, {
+          packageOrderId: normalized.packageOrderId,
+          accountOwnerStudentId,
+          participantType: participantResolution.participant.participantType,
+          participantChildId,
+          occurrenceDate: occurrenceDate!,
+          danceTypeId: lockedClass.danceTypeId,
+        });
+        if (!credit.ok) {
+          return { kind: "package_credit_error" as const, code: credit.code, message: credit.message };
+        }
+        creditOrder = credit.order;
+      }
+    }
     const [inserted] = await tx
       .insert(bookingsTable)
       .values({
         ...normalized,
-        // CreateBookingBody (zod) guarantees studentName/studentEmail at runtime;
-        // normalizeBookingWrite widens them to optional, so assert the insert shape.
         studentName: participantName,
         studentEmail: normalizeEmail(studentEmail),
         accountOwnerStudentId,
+        participantType: participantResolution.participant.participantType,
         participantChildId,
         bookingScope,
         occurrenceDate,
+        ...eligibilitySnapshot,
       } as typeof bookingsTable.$inferInsert)
       .returning();
+
+    if (creditOrder) {
+      const balanceBefore = creditOrder.remainingCredits;
+      const balanceAfter = balanceBefore - 1;
+      await tx
+        .update(packageOrdersTable)
+        .set({
+          remainingCredits: balanceAfter,
+          status: balanceAfter === 0 ? "fullyUsed" : creditOrder.status,
+        })
+        .where(eq(packageOrdersTable.id, creditOrder.id));
+      await tx.insert(creditTransactionsTable).values({
+        packageOrderId: creditOrder.id,
+        studentId: accountOwnerStudentId,
+        participantType: participantResolution.participant.participantType,
+        participantChildId,
+        type: "booking_deduction",
+        delta: -1,
+        balanceBefore,
+        balanceAfter,
+        referenceId: inserted.id,
+        referenceType: "booking",
+        bookingId: inserted.id,
+        notes: "General Studio booking credit deduction",
+        createdBy: "system:booking",
+      });
+    }
 
     // Finance Phase 2B-2: capture the creation-time monetary snapshot as a
     // live payment_records row, plus its opening payment_events "created"
@@ -1054,6 +1161,7 @@ router.post(
           // request body here.
           studentId: accountOwnerStudentId,
           childId: participantChildId,
+          participantType: participantResolution.participant.participantType,
           creationIdempotencyKey: null,
         })
         .returning();
@@ -1099,7 +1207,7 @@ router.post(
       };
     }
 
-    return inserted;
+    return { kind: "created" as const, inserted };
     });
   } catch (error: unknown) {
     // Independent-review Blocker 2: the losing side of a true concurrent
@@ -1131,7 +1239,7 @@ router.post(
     });
   }
 
-  if ("kind" in createResult) {
+  if (createResult.kind !== "created") {
     if (createResult.kind === "schedule_not_found") {
       res.status(400).json({
         error: "schedule_not_found",
@@ -1175,9 +1283,21 @@ router.post(
       });
       return;
     }
+    if (createResult.kind === "class_inactive") {
+      res.status(409).json({ error: "CLASS_INACTIVE", code: "CLASS_INACTIVE", message: "This class is inactive." });
+      return;
+    }
+    if (createResult.kind === "eligibility_error") {
+      res.status(400).json({ error: createResult.reason.code, code: createResult.reason.code, message: createResult.reason.message });
+      return;
+    }
+    if (createResult.kind === "package_credit_error") {
+      res.status(409).json({ error: createResult.code, code: createResult.code, message: createResult.message });
+      return;
+    }
   }
 
-  const row = createResult;
+  const row = createResult.inserted;
 
   res.status(201).json(GetBookingResponse.parse(row));
 });
@@ -1323,6 +1443,18 @@ router.patch(
   const params = UpdateBookingParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+  if (
+    req.body != null
+    && typeof req.body === "object"
+    && ["participantType", "participantChildId", "bookingScope", "childId"].some((key) => key in req.body)
+  ) {
+    res.status(409).json({
+      error: "BOOKING_PARTICIPANT_IMMUTABLE",
+      code: "BOOKING_PARTICIPANT_IMMUTABLE",
+      message: "A booking participant cannot be reassigned after creation.",
+    });
     return;
   }
   const parsed = UpdateBookingBody.safeParse(req.body);

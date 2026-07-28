@@ -967,6 +967,17 @@ export const ListBookingsResponse = zod.object({
       participantType: zod
         .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
         .nullish(),
+      usedCredit: zod.boolean().nullish(),
+      creditSource: zod
+        .union([
+          zod.object({
+            packageOrderId: zod.number().nullable(),
+            usedCredit: zod.boolean(),
+            paymentMethod: zod.string().nullable(),
+          }),
+          zod.null(),
+        ])
+        .optional(),
       bookingScope: zod
         .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
         .nullish(),
@@ -1008,6 +1019,9 @@ export const CreateBookingBody = zod.object({
   accountOwnerStudentId: zod.number().nullish(),
   packageOrderId: zod.number().nullish(),
   participantChildId: zod.number().nullish(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
   childId: zod.number().nullish(),
   bookingScope: zod
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
@@ -1052,6 +1066,17 @@ export const CreateBookingResponse = zod.object({
   participantType: zod
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),
+  usedCredit: zod.boolean().nullish(),
+  creditSource: zod
+    .union([
+      zod.object({
+        packageOrderId: zod.number().nullable(),
+        usedCredit: zod.boolean(),
+        paymentMethod: zod.string().nullable(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
   bookingScope: zod
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),
@@ -1108,6 +1133,17 @@ export const GetBookingResponse = zod.object({
   participantType: zod
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),
+  usedCredit: zod.boolean().nullish(),
+  creditSource: zod
+    .union([
+      zod.object({
+        packageOrderId: zod.number().nullable(),
+        usedCredit: zod.boolean(),
+        paymentMethod: zod.string().nullable(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
   bookingScope: zod
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),
@@ -1177,6 +1213,17 @@ export const UpdateBookingResponse = zod.object({
   participantType: zod
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),
+  usedCredit: zod.boolean().nullish(),
+  creditSource: zod
+    .union([
+      zod.object({
+        packageOrderId: zod.number().nullable(),
+        usedCredit: zod.boolean(),
+        paymentMethod: zod.string().nullable(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
   bookingScope: zod
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),

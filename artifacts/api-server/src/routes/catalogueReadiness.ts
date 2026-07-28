@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import {
   classesTable,
+  bookingsTable,
   creditTransactionsTable,
   db,
   packageOrdersTable,
@@ -30,7 +31,7 @@ router.get(
   requireAdminAuth,
   requireAdminPermission("settings", "view"),
   async (_req, res): Promise<void> => {
-    const [classes, packages, canonicalRestrictions, packageOrders, creditTransactions] = await Promise.all([
+    const [classes, packages, canonicalRestrictions, packageOrders, creditTransactions, bookings] = await Promise.all([
       db.select().from(classesTable),
       db.select().from(pricePackagesTable),
       db.select({ packageId: pricePackageDanceTypesTable.packageId })
@@ -38,6 +39,7 @@ router.get(
         .innerJoin(pricePackagesTable, eq(pricePackageDanceTypesTable.packageId, pricePackagesTable.id)),
       db.select().from(packageOrdersTable),
       db.select().from(creditTransactionsTable),
+      db.select().from(bookingsTable),
     ]);
     const restrictedPackageIds = new Set(canonicalRestrictions.map((row) => row.packageId));
     const activeClasses = classes.filter((row) => row.isActive);
@@ -90,6 +92,34 @@ router.get(
           return !order
             || order.participantType !== credit.participantType
             || order.participantChildId !== credit.participantChildId;
+        })
+        .map((row) => row.id),
+      legacyUnassignedBookings: bookings
+        .filter((row) => row.participantType == null && row.participantChildId == null)
+        .map((row) => row.id),
+      invalidBookingParticipantShape: bookings
+        .filter((row) => !(
+          (row.participantType == null && row.participantChildId == null)
+          || (row.participantType === "self" && row.participantChildId == null)
+          || (row.participantType === "child" && row.participantChildId != null)
+        ))
+        .map((row) => row.id),
+      bookingPackageParticipantMismatch: bookings
+        .filter((booking) => {
+          if (booking.packageOrderId == null) return false;
+          const order = packageOrders.find((candidate) => candidate.id === booking.packageOrderId);
+          return !order
+            || order.participantType !== booking.participantType
+            || order.participantChildId !== booking.participantChildId;
+        })
+        .map((row) => row.id),
+      bookingDeductionParticipantMismatch: creditTransactions
+        .filter((credit) => {
+          if (credit.type !== "booking_deduction" || credit.bookingId == null) return false;
+          const booking = bookings.find((candidate) => candidate.id === credit.bookingId);
+          return !booking
+            || booking.participantType !== credit.participantType
+            || booking.participantChildId !== credit.participantChildId;
         })
         .map((row) => row.id),
     };
