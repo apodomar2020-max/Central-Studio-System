@@ -349,6 +349,16 @@ export default function ClassDetailScreen() {
 
           {!!cls.description && <Text style={styles.desc}>{cls.description}</Text>}
 
+          <View style={styles.section}>
+            <Text style={styles.eyebrow}>Age eligibility</Text>
+            <Text style={styles.desc}>{cls.ageRangeLabel ?? cls.ageGroup}</Text>
+            {cls.catalogueEligibility?.evaluated && cls.catalogueEligibility.eligible === false ? (
+              <Text style={[styles.desc, { color: DANGER }]}>
+                {cls.catalogueEligibility.reasons[0]?.message ?? "This class is not eligible for your profile."}
+              </Text>
+            ) : null}
+          </View>
+
           <View style={styles.divider} />
 
           <View style={styles.section}>

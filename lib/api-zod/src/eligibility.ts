@@ -12,6 +12,17 @@ export interface AgeRange {
   maxAge: number | null;
 }
 
+export function deriveAgeRangeLabel(range: AgeRange): string {
+  if (range.allowAllAges && range.minAge == null && range.maxAge == null) return "All Ages";
+  if (range.minAge === 5 && range.maxAge === 12) return "Kids";
+  if (range.minAge === 13 && range.maxAge === 17) return "Teens";
+  if (range.minAge === 18 && range.maxAge == null) return "Adults";
+  if (range.minAge === 5 && range.maxAge === 17) return "Kids + Teens";
+  if (range.minAge == null) return "Not configured";
+  if (range.maxAge == null) return `${range.minAge}+`;
+  return `${range.minAge}–${range.maxAge}`;
+}
+
 export const ELIGIBILITY_REASON_CODES = [
   "PARTICIPANT_REQUIRED",
   "PARTICIPANT_NOT_FOUND",

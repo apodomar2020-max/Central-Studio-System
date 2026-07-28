@@ -610,6 +610,13 @@
       "when": 1785254400000,
       "tag": "0087_age_eligibility_participant_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1785340800000,
+      "tag": "0088_price_package_dance_types",
+      "breakpoints": true
     }
   ]
 }

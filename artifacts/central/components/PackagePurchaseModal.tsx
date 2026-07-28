@@ -104,6 +104,7 @@ export default function PackagePurchaseModal({
                   {pkg.validityMonths} months validity ·{" "}
                   {pkg.allowedDanceTypes.length > 0 ? pkg.allowedDanceTypes.join(", ") : "Any dance style"}
                 </Text>
+                <Text style={styles.modalPkgValidity}>{pkg.ageRangeLabel}</Text>
                 <Text style={[styles.modalPkgPrice, { color: colors.studio.primary }]}>
                   EGP {pkg.priceEgp.toLocaleString()}
                 </Text>

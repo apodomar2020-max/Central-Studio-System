@@ -9,6 +9,14 @@ import { isClassCapacityEnabled } from "../lib/classCapacitySettings";
 import { createStudentNotification } from "../lib/notifications";
 import { DbClient } from "../lib/dbTypes";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { getCairoBusinessDate } from "../lib/eligibility/dateOnly";
+import {
+  ageRangeMetadata,
+  evaluateScheduleCatalogueEligibility,
+  studentCatalogueVisible,
+  type CatalogueViewer,
+} from "../lib/eligibility/catalogueEligibility";
+import { resolveCatalogueViewer, setCatalogueCacheHeaders } from "../lib/catalogueViewer";
 import {
   ListSchedulesQueryParams,
   CreateScheduleBody,
@@ -163,6 +171,29 @@ function scheduleDisplay(schedule: typeof schedulesTable.$inferSelect): string {
   return `${dateOrDay} ${schedule.startTime}-${schedule.endTime}`;
 }
 
+function presentSchedule(
+  schedule: typeof schedulesTable.$inferSelect & Record<string, unknown>,
+  cls: Pick<typeof classesTable.$inferSelect, "allowAllAges" | "minAge" | "maxAge"> | undefined,
+  viewer: CatalogueViewer,
+) {
+  const range = {
+    allowAllAges: cls?.allowAllAges ?? null,
+    minAge: cls?.minAge ?? null,
+    maxAge: cls?.maxAge ?? null,
+  };
+  const occurrenceDate = currentOccurrenceDate(schedule) ?? getCairoBusinessDate();
+  return {
+    ...schedule,
+    ...ageRangeMetadata(range),
+    occurrenceDateUsedForEligibility: occurrenceDate,
+    catalogueEligibility: evaluateScheduleCatalogueEligibility(
+      viewer,
+      range,
+      occurrenceDate as ReturnType<typeof getCairoBusinessDate>,
+    ),
+  };
+}
+
 function didScheduleChange(
   before: typeof schedulesTable.$inferSelect,
   after: typeof schedulesTable.$inferSelect,
@@ -263,6 +294,9 @@ router.get("/schedules/today", async (req, res): Promise<void> => {
 });
 
 router.get("/schedules", async (req, res): Promise<void> => {
+  const viewer = await resolveCatalogueViewer(req, res);
+  if (!viewer) return;
+  setCatalogueCacheHeaders(res, viewer);
   await syncAutomaticScheduleStatuses();
   const classCapacityEnabled = await isClassCapacityEnabled();
   const query = ListSchedulesQueryParams.safeParse(req.query);
@@ -270,7 +304,7 @@ router.get("/schedules", async (req, res): Promise<void> => {
     res.status(400).json({ error: query.error.message });
     return;
   }
-  const scheduleRows = query.data.classId != null
+  const allScheduleRows = query.data.classId != null
     ? await db
         .select()
         .from(schedulesTable)
@@ -280,6 +314,16 @@ router.get("/schedules", async (req, res): Promise<void> => {
         .select()
         .from(schedulesTable)
         .orderBy(schedulesTable.type, schedulesTable.date, schedulesTable.dayOfWeek, schedulesTable.startTime);
+  const classIdsForVisibility = [...new Set(allScheduleRows.map((row) => row.classId))];
+  const classRows = classIdsForVisibility.length
+    ? await db.select().from(classesTable).where(inArray(classesTable.id, classIdsForVisibility))
+    : [];
+  const classById = new Map(classRows.map((row) => [row.id, row]));
+  const scheduleRows = viewer.kind === "admin"
+    ? allScheduleRows
+    : allScheduleRows.filter((row) =>
+        row.status === "active" && classById.get(row.classId)?.isActive === true,
+      );
 
   // Occurrence-aware booked count (BOOKINGS, not attendance): tally active
   // (non-cancelled/rejected) bookings grouped by (schedule, occurrence_date), then
@@ -311,7 +355,7 @@ router.get("/schedules", async (req, res): Promise<void> => {
     const occ = currentOccurrenceDate(s);
     const actualBookedCount = occ ? countByKey.get(`${s.id}|${occ}`) ?? 0 : 0;
     const legacyBookedCount = classCapacityEnabled ? actualBookedCount : 0;
-    return {
+    return presentSchedule({
       ...s,
       // Backward compatibility: released mobile clients derive "full" locally
       // from bookedCount/capacity and do not know classCapacityEnabled. While
@@ -324,9 +368,12 @@ router.get("/schedules", async (req, res): Promise<void> => {
       classCapacityEnabled,
       capacityDisplayEnabled: classCapacityEnabled,
       capacityEnforcementEnabled: classCapacityEnabled,
-    };
+    }, classById.get(s.classId), viewer);
   });
-  res.json(ListSchedulesResponse.parse(enriched));
+  const visible = viewer.kind === "student"
+    ? enriched.filter((row) => studentCatalogueVisible(row.catalogueEligibility))
+    : enriched;
+  res.json(ListSchedulesResponse.parse(visible));
 });
 
 router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "create"), async (req: AdminRequest, res): Promise<void> => {
@@ -364,10 +411,14 @@ router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermiss
     after: Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
     summary: `Created schedule ${scheduleDisplay(row)}`,
   });
-  res.status(201).json(GetScheduleResponse.parse(row));
+  const [cls] = await db.select().from(classesTable).where(eq(classesTable.id, row.classId));
+  res.status(201).json(GetScheduleResponse.parse(presentSchedule(row, cls, { kind: "admin" })));
 });
 
 router.get("/schedules/:id", async (req, res): Promise<void> => {
+  const viewer = await resolveCatalogueViewer(req, res);
+  if (!viewer) return;
+  setCatalogueCacheHeaders(res, viewer);
   await syncAutomaticScheduleStatuses();
   const params = GetScheduleParams.safeParse(req.params);
   if (!params.success) {
@@ -379,7 +430,8 @@ router.get("/schedules/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Schedule not found" });
     return;
   }
-  res.json(GetScheduleResponse.parse(row));
+  const [cls] = await db.select().from(classesTable).where(eq(classesTable.id, row.classId));
+  res.json(GetScheduleResponse.parse(presentSchedule(row, cls, viewer)));
 });
 
 router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -463,7 +515,8 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
         : `Updated schedule ${scheduleDisplay(row)}: ${changedKeys.join(", ")}`,
     });
   }
-  res.json(UpdateScheduleResponse.parse(row));
+  const [cls] = await db.select().from(classesTable).where(eq(classesTable.id, row.classId));
+  res.json(UpdateScheduleResponse.parse(presentSchedule(row, cls, { kind: "admin" })));
 });
 
 router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req: AdminRequest, res): Promise<void> => {

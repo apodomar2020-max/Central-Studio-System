@@ -467,6 +467,9 @@ function ExploreClassCard({
             <View style={s.chipDark}>
               <Text style={[s.chipDarkText, { color: diffColor(difficulty) }]}>{difficulty}</Text>
             </View>
+            <View style={s.chipDark}>
+              <Text style={s.chipDarkText}>{item.ageRangeLabel ?? item.ageGroup}</Text>
+            </View>
           </View>
           <View style={[s.classCardStatusChip, { backgroundColor: stBg }]}>
             <View style={[s.dot, { backgroundColor: stC }]} />

@@ -1,7 +1,7 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, eq, inArray } from "drizzle-orm";
-import { db, bookingsTable, classesTable } from "@workspace/db";
+import { db, bookingsTable, classesTable, schedulesTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
@@ -29,6 +29,15 @@ const requireClassMediaPermission = (req: Request, res: Response, next: NextFunc
 };
 
 import { DbClient } from "../lib/dbTypes";
+import { currentOccurrenceDate } from "../lib/occurrence";
+import { getCairoBusinessDate } from "../lib/eligibility/dateOnly";
+import { validateAgeRange } from "../lib/eligibility/ageRange";
+import {
+  ageRangeMetadata,
+  evaluateClassCatalogueEligibility,
+  studentCatalogueVisible,
+} from "../lib/eligibility/catalogueEligibility";
+import { resolveCatalogueViewer, setCatalogueCacheHeaders } from "../lib/catalogueViewer";
 
 async function notifyClassBookings(
   client: DbClient,
@@ -68,15 +77,85 @@ async function notifyClassBookings(
   }
 }
 
+function validateClassAgeRange(input: {
+  allowAllAges?: boolean | null;
+  minAge?: number | null;
+  maxAge?: number | null;
+}): string | null {
+  if (input.allowAllAges == null && input.minAge == null && input.maxAge == null) return null;
+  if (input.allowAllAges == null) return "allowAllAges is required when configuring an age range.";
+  const result = validateAgeRange({
+    allowAllAges: input.allowAllAges,
+    minAge: input.minAge ?? null,
+    maxAge: input.maxAge ?? null,
+  });
+  return result.eligible ? null : result.reasons[0]?.message ?? "Invalid age range.";
+}
+
+function presentClassForAdmin(row: typeof classesTable.$inferSelect) {
+  const range = { allowAllAges: row.allowAllAges, minAge: row.minAge, maxAge: row.maxAge };
+  return {
+    ...row,
+    ...ageRangeMetadata(range),
+    catalogueEligibility: {
+      evaluated: false as const,
+      eligible: null,
+      evaluatedOn: null,
+      reasons: [],
+    },
+  };
+}
+
 router.get("/classes", async (req, res): Promise<void> => {
-  const rows = await db.select().from(classesTable).orderBy(classesTable.createdAt);
-  res.json(ListClassesResponse.parse(rows));
+  const viewer = await resolveCatalogueViewer(req, res);
+  if (!viewer) return;
+  setCatalogueCacheHeaders(res, viewer);
+
+  const allRows = await db.select().from(classesTable).orderBy(classesTable.createdAt);
+  const rows = viewer.kind === "admin" ? allRows : allRows.filter((row) => row.isActive);
+  const classIds = rows.map((row) => row.id);
+  const scheduleRows = classIds.length
+    ? await db.select().from(schedulesTable).where(and(
+        inArray(schedulesTable.classId, classIds),
+        eq(schedulesTable.status, "active"),
+      ))
+    : [];
+  const evaluationByClass = new Map<number, string>();
+  for (const schedule of scheduleRows) {
+    const occurrence = currentOccurrenceDate(schedule);
+    if (!occurrence) continue;
+    const current = evaluationByClass.get(schedule.classId);
+    if (!current || occurrence < current) evaluationByClass.set(schedule.classId, occurrence);
+  }
+
+  const enriched = rows.map((row) => {
+    const range = {
+      allowAllAges: row.allowAllAges,
+      minAge: row.minAge,
+      maxAge: row.maxAge,
+    };
+    const evaluationDate = (evaluationByClass.get(row.id) ?? getCairoBusinessDate()) as ReturnType<typeof getCairoBusinessDate>;
+    return {
+      ...row,
+      ...ageRangeMetadata(range),
+      catalogueEligibility: evaluateClassCatalogueEligibility(viewer, range, evaluationDate),
+    };
+  });
+  const visible = viewer.kind === "student"
+    ? enriched.filter((row) => studentCatalogueVisible(row.catalogueEligibility))
+    : enriched;
+  res.json(ListClassesResponse.parse(visible));
 });
 
 router.post("/classes", blockStudentJwt, requireAdminAuth, requireAdminPermission("classes", "create"), requireClassMediaPermission, async (req: AdminRequest, res): Promise<void> => {
   const parsed = CreateClassBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const ageError = validateClassAgeRange(parsed.data);
+  if (ageError) {
+    res.status(400).json({ error: ageError, code: "AGE_RANGE_INVALID" });
     return;
   }
   const [row] = await db.insert(classesTable).values(parsed.data).returning();
@@ -89,10 +168,13 @@ router.post("/classes", blockStudentJwt, requireAdminAuth, requireAdminPermissio
     after: Object.fromEntries(CLASS_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
     summary: `Created class ${row.title}`,
   });
-  res.status(201).json(GetClassResponse.parse(row));
+  res.status(201).json(GetClassResponse.parse(presentClassForAdmin(row)));
 });
 
 router.get("/classes/:id", async (req, res): Promise<void> => {
+  const viewer = await resolveCatalogueViewer(req, res);
+  if (!viewer) return;
+  setCatalogueCacheHeaders(res, viewer);
   const params = GetClassParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -103,7 +185,24 @@ router.get("/classes/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Class not found" });
     return;
   }
-  res.json(GetClassResponse.parse(row));
+  const schedules = await db
+    .select()
+    .from(schedulesTable)
+    .where(and(eq(schedulesTable.classId, row.id), eq(schedulesTable.status, "active")));
+  const nextOccurrence = schedules
+    .map((schedule) => currentOccurrenceDate(schedule))
+    .filter((date): date is string => date != null)
+    .sort()[0] ?? getCairoBusinessDate();
+  const range = { allowAllAges: row.allowAllAges, minAge: row.minAge, maxAge: row.maxAge };
+  res.json(GetClassResponse.parse({
+    ...row,
+    ...ageRangeMetadata(range),
+    catalogueEligibility: evaluateClassCatalogueEligibility(
+      viewer,
+      range,
+      nextOccurrence as ReturnType<typeof getCairoBusinessDate>,
+    ),
+  }));
 });
 
 router.patch("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("classes", "edit"), requireClassMediaPermission, async (req: AdminRequest, res): Promise<void> => {
@@ -121,15 +220,31 @@ router.patch("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPerm
     const [existing] = await tx.select().from(classesTable).where(eq(classesTable.id, params.data.id));
     if (!existing) return null;
 
+    const candidateRange = {
+      allowAllAges: parsed.data.allowAllAges === undefined ? existing.allowAllAges : parsed.data.allowAllAges,
+      minAge: parsed.data.minAge === undefined ? existing.minAge : parsed.data.minAge,
+      maxAge: parsed.data.maxAge === undefined ? existing.maxAge : parsed.data.maxAge,
+    };
+    const ageError = validateClassAgeRange(candidateRange);
+    if (ageError) return { ageError } as const;
+
     const [updated] = await tx.update(classesTable).set(parsed.data).where(eq(classesTable.id, params.data.id)).returning();
+    if (!updated) throw new Error(`Class ${params.data.id} disappeared during update`);
     if (existing.isActive && updated.isActive === false) {
       await notifyClassBookings(tx, updated.id, updated.title);
     }
-    return { beforeClass: existing, row: updated };
+    return { beforeClass: existing, row: updated, ageError: null };
   });
   if (!result) {
     res.status(404).json({ error: "Class not found" });
     return;
+  }
+  if ("ageError" in result && result.ageError) {
+    res.status(400).json({ error: result.ageError, code: "AGE_RANGE_INVALID" });
+    return;
+  }
+  if (!("row" in result) || !result.row || !result.beforeClass) {
+    throw new Error(`Class ${params.data.id} update returned no row`);
   }
   const { beforeClass, row } = result;
   {
@@ -159,7 +274,7 @@ router.patch("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPerm
       });
     }
   }
-  res.json(UpdateClassResponse.parse(row));
+  res.json(UpdateClassResponse.parse(presentClassForAdmin(row)));
 });
 
 router.delete("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("classes", "delete"), async (req: AdminRequest, res): Promise<void> => {

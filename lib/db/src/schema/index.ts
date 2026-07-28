@@ -41,6 +41,7 @@ export * from "./balletPackageLevels";
 export * from "./balletGroupSchedules";
 // Dance Types — Settings-driven category list (migration 0011)
 export * from "./danceTypes";
+export * from "./pricePackageDanceTypes";
 export * from "./classPricingSettings";
 export * from "./classCapacitySettings";
 export * from "./backgroundMusicSettings";

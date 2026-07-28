@@ -180,7 +180,12 @@ async function main() {
       DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_ROUTES_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_OWNERSHIP_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
+      DISPOSABLE_HOTFIX_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
+      DISPOSABLE_ACTIVATION_INDEX_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
+      DISPOSABLE_OCCURRENCE_UNIQUE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
+      DISPOSABLE_PACKAGE_CAPTURE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_ATTENDANCE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5612/central_studio_disposable_attendance",
+      DISPOSABLE_STUDIO_WALKIN_DATABASE_URL: "postgresql://postgres@127.0.0.1:5612/central_studio_disposable_attendance",
       DISPOSABLE_BALLET_CLASS_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_ballet_class?sslmode=disable",
       DISPOSABLE_BALLET_CLASS_LEGACY_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_ballet_class_legacy?sslmode=disable",
       REDIS_URL: "redis://127.0.0.1:6389",
@@ -198,8 +203,8 @@ async function main() {
       "./artifacts/api-server/src/lib/balletClassEntitlementInvariants.test.ts",
     ];
 
-    const specificFile = process.argv[2];
-    const suitesToRun = specificFile ? [specificFile] : targetSuites;
+    const specificFiles = process.argv.slice(2);
+    const suitesToRun = specificFiles.length > 0 ? specificFiles : targetSuites;
 
     let overallFailed = false;
 
@@ -211,7 +216,12 @@ async function main() {
       try {
         const fullSuitePath = resolve(rootDir, suite);
         const tsxExecutable = resolve(rootDir, "node_modules/.pnpm/node_modules/.bin/tsx");
-        execSync(`${tsxExecutable} --test "${fullSuitePath}"`, {
+        const tsxLoader = resolve(rootDir, "node_modules/.pnpm/node_modules/tsx/dist/loader.mjs");
+        const requiresModuleMocks = readFileSync(fullSuitePath, "utf8").includes("mock.module(");
+        const testCommand = requiresModuleMocks
+          ? `"${process.execPath}" --experimental-test-module-mocks --import "${tsxLoader}" --test "${fullSuitePath}"`
+          : `${tsxExecutable} --test "${fullSuitePath}"`;
+        execSync(testCommand, {
           cwd: rootDir,
           env,
           stdio: "inherit",

@@ -98,7 +98,7 @@ export function verifyAdminToken(token: string): AdminTokenPayload {
   return payload;
 }
 
-async function loadAdminIdentity(userId: number): Promise<AdminIdentity | null> {
+export async function loadAdminIdentity(userId: number): Promise<AdminIdentity | null> {
   const [user] = await db
     .select({
       id: systemUsersTable.id,
@@ -148,6 +148,17 @@ async function loadAdminIdentity(userId: number): Promise<AdminIdentity | null> 
     role,
     permissions: role?.permissions ?? {},
   };
+}
+
+export async function resolveOptionalAdminIdentity(req: Request): Promise<AdminIdentity | null> {
+  const token = req.headers["x-admin-token"];
+  if (typeof token !== "string" || token.length === 0) return null;
+  try {
+    const payload = verifyAdminToken(token);
+    return await loadAdminIdentity(payload.sub);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Admin auth middleware ─────────────────────────────────────────────────────

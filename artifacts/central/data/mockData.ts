@@ -52,6 +52,12 @@ export interface DanceClass {
   classCapacityEnabled?: boolean;
   level: "Beginner" | "Intermediate" | "Advanced" | "All Levels";
   ageGroup: AgeGroup;
+  ageRangeLabel?: string;
+  catalogueEligibility?: {
+    evaluated: boolean;
+    eligible: boolean | null;
+    reasons: Array<{ code: string; message: string }>;
+  };
   status: "available" | "fewSeats" | "full" | "waitingList" | "cancelled" | "unavailable";
   policy: string;
   featured: boolean;

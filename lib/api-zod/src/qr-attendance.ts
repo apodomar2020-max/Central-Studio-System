@@ -114,44 +114,6 @@ export const CheckInBodyExtended = zod.object({
   }
 });
 
-// ---------------------------------------------------------------------------
-// POST /api/check-in/qr  (Credit Ledger — new atomic QR check-in endpoint)
-// ---------------------------------------------------------------------------
-
-export const CheckInQrBody = zod.object({
-  /** The student's UUID qrToken scanned from their Studio Pass QR code. */
-  qrToken: zod.string().uuid("qrToken must be a valid UUID"),
-  /** The booking this check-in satisfies (admin selects from student's bookings). */
-  bookingId: zod.number().int().positive(),
-  /** Whether this check-in should consume a package credit or be paid outside packages. */
-  paymentMode: zod.enum(["package_credit", "pay_at_studio"]),
-  /** Required when paymentMode is package_credit; ignored for pay_at_studio. */
-  packageOrderId: zod.number().int().positive().optional(),
-  /** Admin email performing the check-in, for the audit trail. */
-  checkedInBy: zod.string().optional(),
-});
-
-export const CheckInQrResponse = zod.object({
-  attendanceId: zod.number(),
-  studentName: zod.string(),
-  studentEmail: zod.string(),
-  classTitle: zod.string().nullish(),
-  creditDeducted: zod.boolean(),
-  remainingCredits: zod.number().nullish(),
-  checkedInAt: zod.string(),
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/admin/credits/ledger  (paginated credit transaction history)
-// ---------------------------------------------------------------------------
-
-export const ListCreditTransactionsQueryParams = zod.object({
-  packageOrderId: zod.coerce.number().optional(),
-  studentEmail: zod.string().optional(),
-  page: zod.coerce.number().int().min(1).optional(),
-  limit: zod.coerce.number().int().min(1).max(100).optional(),
-});
-
 export const CreditTransactionRecord = zod.object({
   id: zod.number(),
   packageOrderId: zod.number(),
@@ -165,13 +127,6 @@ export const CreditTransactionRecord = zod.object({
   notes: zod.string().nullish(),
   createdBy: zod.string(),
   createdAt: zod.string(),
-});
-
-export const ListCreditTransactionsResponse = zod.object({
-  data: zod.array(CreditTransactionRecord),
-  total: zod.number(),
-  page: zod.number(),
-  limit: zod.number(),
 });
 
 // ---------------------------------------------------------------------------
@@ -191,8 +146,6 @@ export const ListAttendanceHistoryQueryParams = zod.object({
 // ---------------------------------------------------------------------------
 
 export type CheckInBodyExtendedType = zod.infer<typeof CheckInBodyExtended>;
-export type CheckInQrBodyType = zod.infer<typeof CheckInQrBody>;
-export type CheckInQrResponseType = zod.infer<typeof CheckInQrResponse>;
 export type CreditTransactionRecordType = zod.infer<typeof CreditTransactionRecord>;
 export type GetStudentByTokenResponseType = zod.infer<typeof GetStudentByTokenResponse>;
 export type GetSchedulesTodayResponseItemType = zod.infer<typeof GetSchedulesTodayResponseItem>;

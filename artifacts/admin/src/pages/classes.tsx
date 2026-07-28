@@ -27,6 +27,7 @@ import { Trash2, Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { deriveAgeRangeLabel } from "@workspace/api-zod";
 
 // ─── Dance types — loaded from Settings, replaces hardcoded CATEGORIES ────────
 
@@ -57,6 +58,7 @@ interface ClassCapacitySettings {
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "All Levels"];
 const AGE_GROUPS = ["Kids", "Teens", "Adults"] as const;
+const AGE_PRESETS = ["all", "kids", "teens", "adults", "custom"] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,29 +69,51 @@ function normalizeCat(s: string): string {
 
 // ─── Form schema ──────────────────────────────────────────────────────────────
 
+const nullableAge = z.preprocess(
+  (value) => value === "" || value == null ? null : Number(value),
+  z.number().int().min(0, "Age must be 0 or above").max(150, "Age must be 150 or below").nullable(),
+);
+
 const formSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().nullish(),
   instructorId: z.coerce.number().int().nullish(),
   category: z.string().min(1, "Category is required"),
+  danceTypeId: z.coerce.number().int().positive().nullish(),
   level: z.string().min(1, "Level is required"),
   ageGroup: z.string().min(1, "Age Group is required"),
+  allowAllAges: z.boolean(),
+  minAge: nullableAge,
+  maxAge: nullableAge,
   durationMins: z.coerce.number().int().min(1),
   capacity: z.coerce.number().int().min(1),
   photoUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
   classVideoUrl: z.string().url("Must be a valid URL").nullish().or(z.literal("")),
   isActive: z.boolean().default(true),
+}).superRefine((value, ctx) => {
+  if (!value.allowAllAges && value.minAge == null) {
+    ctx.addIssue({ code: "custom", path: ["minAge"], message: "Minimum age is required." });
+  }
+  if (value.minAge != null && value.maxAge != null && value.minAge > value.maxAge) {
+    ctx.addIssue({ code: "custom", path: ["maxAge"], message: "Maximum age cannot be below minimum age." });
+  }
 });
 
-type FormValues = z.input<typeof formSchema>;
+type FormValues = z.output<typeof formSchema>;
 type Class = {
   id: number;
   title: string;
   description?: string | null;
   instructorId?: number | null;
   category: string;
+  danceTypeId?: number | null;
   level: string;
   ageGroup: string;
+  allowAllAges: boolean | null;
+  minAge: number | null;
+  maxAge: number | null;
+  ageRangeLabel: string;
+  configurationState: "configured" | "legacy_unconfigured";
   durationMins: number;
   capacity: number;
   photoUrl?: string | null;
@@ -113,6 +137,7 @@ export default function Classes() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Class | null>(null);
+  const [agePreset, setAgePreset] = useState<(typeof AGE_PRESETS)[number]>("all");
 
   // ── Dynamic dance types from Settings → Dance Types ───────────────────────
   const { data: danceTypes = [] } = useQuery<DanceTypeItem[]>({
@@ -160,6 +185,7 @@ export default function Classes() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "", category: "", level: "All Levels", ageGroup: "Adults",
+      allowAllAges: true, minAge: null, maxAge: null,
       durationMins: 60, capacity: 20, photoUrl: "", classVideoUrl: "", isActive: true,
     },
   });
@@ -168,9 +194,10 @@ export default function Classes() {
     setEditing(null);
     form.reset({
       title: "", description: "", category: "", level: "All Levels",
-      ageGroup: "Adults", durationMins: 60, capacity: 20,
+      ageGroup: "Adults", allowAllAges: true, minAge: null, maxAge: null, durationMins: 60, capacity: 20,
       photoUrl: "", classVideoUrl: "", isActive: true,
     });
+    setAgePreset("all");
     setOpen(true);
   };
 
@@ -181,14 +208,25 @@ export default function Classes() {
       description: cls.description ?? "",
       instructorId: cls.instructorId ?? undefined,
       category: canonicalizeCategory(cls.category),
+      danceTypeId: cls.danceTypeId ?? undefined,
       level: cls.level,
       ageGroup: cls.ageGroup || "Adults",
+      allowAllAges: cls.allowAllAges ?? false,
+      minAge: cls.minAge,
+      maxAge: cls.maxAge,
       durationMins: cls.durationMins,
       capacity: cls.capacity,
       photoUrl: cls.photoUrl ?? "",
       classVideoUrl: cls.classVideoUrl ?? "",
       isActive: cls.isActive,
     });
+    setAgePreset(
+      cls.allowAllAges === true ? "all"
+      : cls.minAge === 5 && cls.maxAge === 12 ? "kids"
+      : cls.minAge === 13 && cls.maxAge === 17 ? "teens"
+      : cls.minAge === 18 && cls.maxAge == null ? "adults"
+      : "custom",
+    );
     setOpen(true);
   };
 
@@ -196,6 +234,7 @@ export default function Classes() {
     const parsed = formSchema.parse(values);
     const payload = {
       ...parsed,
+      danceTypeId: danceTypes.find((item) => item.name === parsed.category)?.id ?? parsed.danceTypeId ?? null,
       photoUrl: parsed.photoUrl || null,
       classVideoUrl: parsed.classVideoUrl || null,
     };
@@ -208,6 +247,18 @@ export default function Classes() {
     } else {
       createClass.mutate({ data: payload }, { onSuccess: invalidate });
     }
+  };
+
+  const applyAgePreset = (preset: (typeof AGE_PRESETS)[number]) => {
+    setAgePreset(preset);
+    const values = preset === "all" ? { allowAllAges: true, minAge: null, maxAge: null }
+      : preset === "kids" ? { allowAllAges: false, minAge: 5, maxAge: 12 }
+      : preset === "teens" ? { allowAllAges: false, minAge: 13, maxAge: 17 }
+      : preset === "adults" ? { allowAllAges: false, minAge: 18, maxAge: null }
+      : { allowAllAges: false, minAge: form.getValues("minAge"), maxAge: form.getValues("maxAge") };
+    form.setValue("allowAllAges", values.allowAllAges, { shouldValidate: true });
+    form.setValue("minAge", values.minAge, { shouldValidate: true });
+    form.setValue("maxAge", values.maxAge, { shouldValidate: true });
   };
 
   const handleDelete = (id: number) => {
@@ -241,7 +292,7 @@ export default function Classes() {
               <TableHead>Instructor</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Level</TableHead>
-              <TableHead>Age Group</TableHead>
+              <TableHead>Age Eligibility</TableHead>
               <TableHead>Duration</TableHead>
               <TableHead>Capacity</TableHead>
               <TableHead>Status</TableHead>
@@ -266,7 +317,12 @@ export default function Classes() {
                   <TableCell>{getInstructorName(cls.instructorId)}</TableCell>
                   <TableCell>{cls.category}</TableCell>
                   <TableCell>{cls.level}</TableCell>
-                  <TableCell>{cls.ageGroup || "Adults"}</TableCell>
+                  <TableCell>
+                    {cls.ageRangeLabel}
+                    {cls.configurationState === "legacy_unconfigured" && (
+                      <Badge variant="outline" className="ml-2">Needs configuration</Badge>
+                    )}
+                  </TableCell>
                   <TableCell>{cls.durationMins} min</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -390,7 +446,7 @@ export default function Classes() {
                 name="ageGroup"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Age Group</FormLabel>
+                    <FormLabel>Legacy Age Group</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-class-age-group">
@@ -407,6 +463,47 @@ export default function Classes() {
                   </FormItem>
                 )}
               />
+              <div className="space-y-3 rounded-md border p-3">
+                <div>
+                  <p className="text-sm font-medium">Age Eligibility</p>
+                  <p className="text-xs text-muted-foreground">The label is derived from the technical range.</p>
+                </div>
+                <Select value={agePreset} onValueChange={(value) => applyAgePreset(value as (typeof AGE_PRESETS)[number])}>
+                  <SelectTrigger data-testid="select-class-age-preset"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Ages</SelectItem>
+                    <SelectItem value="kids">Kids 5–12</SelectItem>
+                    <SelectItem value="teens">Teens 13–17</SelectItem>
+                    <SelectItem value="adults">Adults 18+</SelectItem>
+                    <SelectItem value="custom">Custom range</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!form.watch("allowAllAges") && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField control={form.control} name="minAge" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Minimum Age</FormLabel>
+                        <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="maxAge" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Maximum Age (optional)</FormLabel>
+                        <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                )}
+                <p className="text-sm">
+                  Label: {deriveAgeRangeLabel({
+                    allowAllAges: form.watch("allowAllAges"),
+                    minAge: form.watch("minAge"),
+                    maxAge: form.watch("maxAge"),
+                  })}
+                </p>
+              </div>
               <FormField
                 control={form.control}
                 name="instructorId"

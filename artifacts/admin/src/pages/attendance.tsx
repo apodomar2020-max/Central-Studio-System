@@ -215,7 +215,7 @@ export default function AttendancePage() {
         classTitle: classTitle || null,
         status: checkInStatus,
         notes: null,
-        ...(checkInStatus !== "absent" ? { settlementMode: walkInSettlement } : {}),
+        ...(checkInStatus !== "absent" ? { settlementMode: walkInSettlement! } : {}),
       },
     });
   }

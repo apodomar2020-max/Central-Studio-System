@@ -76,6 +76,10 @@ function PackageCard({
                 <Ionicons name="infinite-outline" size={11} color="#9CA3AF" />
                 <Text style={styles.pkgTagText}>{danceLabel}</Text>
               </View>
+              <View style={[styles.pkgTag, { backgroundColor: "#1E1E26" }]}>
+                <Ionicons name="people-outline" size={11} color="#9CA3AF" />
+                <Text style={styles.pkgTagText}>{pkg.ageRangeLabel}</Text>
+              </View>
             </View>
           </View>
         </View>
@@ -203,6 +207,9 @@ export default function PackagesScreen() {
   }
 
   const visiblePackages = (packages ?? []).filter((p) => p.isActive);
+  const missingDob = visiblePackages.some((pkg) =>
+    pkg.catalogueEligibility?.reasons.some((reason) => reason.code === "DOB_REQUIRED"),
+  );
 
   return (
     <View style={styles.container}>
@@ -236,6 +243,17 @@ export default function PackagesScreen() {
             Packages work across dance styles. Each class attendance deducts 1 credit.
           </Text>
         </View>
+        {missingDob ? (
+          <TouchableOpacity
+            style={[styles.infoBanner, { borderColor: "#F59E0B60" }]}
+            onPress={() => router.push("/edit-profile")}
+          >
+            <Ionicons name="calendar-outline" size={18} color="#F59E0B" />
+            <Text style={styles.infoBannerText}>
+              Add your date of birth in your profile so we can determine eligible classes and packages.
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {packagesLoading ? (
           <View style={{ paddingTop: 8 }}>
             {[1, 2, 3].map((i) => <PackageCardSkeleton key={i} />)}

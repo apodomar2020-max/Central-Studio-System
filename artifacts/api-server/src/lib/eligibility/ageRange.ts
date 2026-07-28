@@ -1,4 +1,4 @@
-import type { AgeRange, EligibilityResult } from "@workspace/api-zod";
+import { deriveAgeRangeLabel as deriveSharedAgeRangeLabel, type AgeRange, type EligibilityResult } from "@workspace/api-zod";
 
 const MAX_SUPPORTED_AGE = 150;
 
@@ -56,11 +56,5 @@ export function evaluateAgeRange(age: number, range: AgeRange): EligibilityResul
 export function deriveAgeRangeLabel(range: AgeRange): string {
   const valid = validateAgeRange(range);
   if (!valid.eligible) return "Invalid age range";
-  if (range.allowAllAges) return "All Ages";
-  if (range.minAge === 5 && range.maxAge === 12) return "Kids";
-  if (range.minAge === 13 && range.maxAge === 17) return "Teens";
-  if (range.minAge === 18 && range.maxAge == null) return "Adults";
-  if (range.minAge === 5 && range.maxAge === 17) return "Kids + Teens";
-  if (range.maxAge == null) return `${range.minAge}+`;
-  return `${range.minAge}–${range.maxAge}`;
+  return deriveSharedAgeRangeLabel(range);
 }

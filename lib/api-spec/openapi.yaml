@@ -567,15 +567,18 @@ paths:
     get:
       operationId: listStudents
       tags: [students]
+      parameters:
+        - { name: accountType, in: query, schema: { type: string, enum: [student, parent] } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
       responses:
         "200":
           description: List of students
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Student"
+                $ref: "#/components/schemas/ListStudentsResponse"
     post:
       operationId: createStudent
       tags: [students]
@@ -1098,6 +1101,209 @@ paths:
               schema:
                 $ref: "#/components/schemas/AttendanceStats"
 
+  /dance-types:
+    get:
+      operationId: listDanceTypes
+      tags: [dance-types]
+      summary: List active public dance types
+      responses:
+        "200":
+          description: Active dance types
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DanceType" }
+
+  /admin/settings/dance-types:
+    get:
+      operationId: listAdminDanceTypes
+      tags: [dance-types]
+      summary: List all dance types for administration
+      responses:
+        "200":
+          description: All dance types
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DanceType" }
+    post:
+      operationId: createDanceType
+      tags: [dance-types]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDanceTypeBody" }
+      responses:
+        "201":
+          description: Created dance type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DanceType" }
+        "400":
+          description: Invalid body
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/settings/dance-types/{id}:
+    patch:
+      operationId: updateDanceType
+      tags: [dance-types]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateDanceTypeBody" }
+      responses:
+        "200":
+          description: Updated dance type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DanceType" }
+    delete:
+      operationId: deleteDanceType
+      tags: [dance-types]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Soft-deleted dance type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DanceType" }
+
+  /admin/settings/dance-types/{id}/icon:
+    post:
+      operationId: uploadDanceTypeIcon
+      tags: [dance-types]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadDanceTypeIconBody" }
+      responses:
+        "200":
+          description: Updated dance type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DanceType" }
+    delete:
+      operationId: clearDanceTypeIcon
+      tags: [dance-types]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Updated dance type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DanceType" }
+
+  /check-in/qr:
+    post:
+      operationId: checkInQr
+      tags: [attendance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckInQrBody" }
+      responses:
+        "201":
+          description: Check-in completed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckInQrResponse" }
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/credits/ledger:
+    get:
+      operationId: listCreditTransactions
+      tags: [credits]
+      parameters:
+        - { name: packageOrderId, in: query, schema: { type: integer, minimum: 1, multipleOf: 1 } }
+        - { name: studentEmail, in: query, schema: { type: string } }
+        - { name: studentId, in: query, schema: { type: integer, minimum: 1, multipleOf: 1 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, multipleOf: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, multipleOf: 1 } }
+      responses:
+        "200":
+          description: Paginated credit ledger
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListCreditTransactionsResponse" }
+
+  /admin/package-orders/{id}/credits:
+    post:
+      operationId: adjustCredits
+      tags: [credits]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1, multipleOf: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdjustCreditsBody" }
+      responses:
+        "200":
+          description: Updated order and ledger transaction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdjustCreditsResponse" }
+
+  /my/packages:
+    get:
+      operationId: getMyPackages
+      tags: [my]
+      responses:
+        "200":
+          description: Authenticated account package orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PackageOrder" }
+
+  /my/credits:
+    get:
+      operationId: getMyCredits
+      tags: [my]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: packageOrderId, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Authenticated account credit history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyCreditsResponse" }
+
+  /my/attendance:
+    get:
+      operationId: getMyAttendance
+      tags: [my]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: Authenticated account attendance history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyAttendanceResponse" }
+
 components:
   schemas:
     HealthStatus:
@@ -1173,7 +1379,7 @@ components:
 
     Instructor:
       type: object
-      required: [id, name, specialties, experienceYears, isActive, createdAt]
+      required: [id, name, specialties, experienceYears, isActive, createdAt, achievements, professionalExperience]
       properties:
         id: { type: integer }
         name: { type: string }
@@ -1183,6 +1389,13 @@ components:
         experienceYears: { type: integer }
         rating: { type: ["number", "null"] }
         isActive: { type: boolean }
+        achievements: { type: array, items: { type: string } }
+        professionalExperience: { type: array, items: { type: string } }
+        teachingLevel: { type: ["string", "null"] }
+        teachingPhilosophy: { type: ["string", "null"] }
+        instagramUrl: { type: ["string", "null"] }
+        tiktokUrl: { type: ["string", "null"] }
+        youtubeUrl: { type: ["string", "null"] }
         createdAt: { type: string }
 
     CreateInstructorBody:
@@ -1196,6 +1409,13 @@ components:
         experienceYears: { type: integer }
         rating: { type: ["number", "null"] }
         isActive: { type: boolean }
+        achievements: { type: array, items: { type: string } }
+        professionalExperience: { type: array, items: { type: string } }
+        teachingLevel: { type: ["string", "null"] }
+        teachingPhilosophy: { type: ["string", "null"] }
+        instagramUrl: { type: ["string", "null"] }
+        tiktokUrl: { type: ["string", "null"] }
+        youtubeUrl: { type: ["string", "null"] }
 
     UpdateInstructorBody:
       type: object
@@ -1207,20 +1427,36 @@ components:
         experienceYears: { type: integer }
         rating: { type: ["number", "null"] }
         isActive: { type: boolean }
+        achievements: { type: array, items: { type: string } }
+        professionalExperience: { type: array, items: { type: string } }
+        teachingLevel: { type: ["string", "null"] }
+        teachingPhilosophy: { type: ["string", "null"] }
+        instagramUrl: { type: ["string", "null"] }
+        tiktokUrl: { type: ["string", "null"] }
+        youtubeUrl: { type: ["string", "null"] }
 
     Class:
       type: object
-      required: [id, title, category, level, durationMins, capacity, isActive, createdAt]
+      required: [id, title, category, level, ageGroup, allowAllAges, minAge, maxAge, durationMins, capacity, isActive, createdAt, ageRangeLabel, configurationState, catalogueEligibility]
       properties:
         id: { type: integer }
         title: { type: string }
         description: { type: ["string", "null"] }
         instructorId: { type: ["integer", "null"] }
         category: { type: string }
+        danceTypeId: { type: ["integer", "null"] }
         level: { type: string }
+        ageGroup: { type: string }
+        allowAllAges: { type: ["boolean", "null"] }
+        minAge: { type: ["integer", "null"] }
+        maxAge: { type: ["integer", "null"] }
+        ageRangeLabel: { type: string }
+        configurationState: { $ref: "#/components/schemas/CatalogueConfigurationState" }
+        catalogueEligibility: { $ref: "#/components/schemas/CatalogueEligibility" }
         durationMins: { type: integer }
         capacity: { type: integer }
         photoUrl: { type: ["string", "null"] }
+        classVideoUrl: { type: ["string", "null"] }
         isActive: { type: boolean }
         createdAt: { type: string }
 
@@ -1232,10 +1468,16 @@ components:
         description: { type: ["string", "null"] }
         instructorId: { type: ["integer", "null"] }
         category: { type: string }
+        danceTypeId: { type: ["integer", "null"] }
         level: { type: string }
+        ageGroup: { type: string }
+        allowAllAges: { type: ["boolean", "null"] }
+        minAge: { type: ["integer", "null"] }
+        maxAge: { type: ["integer", "null"] }
         durationMins: { type: integer }
         capacity: { type: integer }
         photoUrl: { type: ["string", "null"] }
+        classVideoUrl: { type: ["string", "null"] }
         isActive: { type: boolean }
 
     UpdateClassBody:
@@ -1245,21 +1487,32 @@ components:
         description: { type: ["string", "null"] }
         instructorId: { type: ["integer", "null"] }
         category: { type: string }
+        danceTypeId: { type: ["integer", "null"] }
         level: { type: string }
+        ageGroup: { type: string }
+        allowAllAges: { type: ["boolean", "null"] }
+        minAge: { type: ["integer", "null"] }
+        maxAge: { type: ["integer", "null"] }
         durationMins: { type: integer }
         capacity: { type: integer }
         photoUrl: { type: ["string", "null"] }
+        classVideoUrl: { type: ["string", "null"] }
         isActive: { type: boolean }
 
     Schedule:
       type: object
-      required: [id, classId, dayOfWeek, startTime, endTime, isRecurring, createdAt]
+      required: [id, classId, type, status, startTime, endTime, packageEligible, isRecurring, createdAt, allowAllAges, minAge, maxAge, ageRangeLabel, configurationState, catalogueEligibility]
       properties:
         id: { type: integer }
         classId: { type: integer }
-        dayOfWeek: { type: integer }
+        type: { type: string, enum: [weekly, one_time] }
+        status: { type: string, enum: [active, completed, expired, cancelled] }
+        dayOfWeek: { type: ["integer", "null"] }
+        date: { type: ["string", "null"] }
         startTime: { type: string }
         endTime: { type: string }
+        priceEgp: { type: ["integer", "null"] }
+        packageEligible: { type: boolean }
         location: { type: ["string", "null"] }
         isRecurring: { type: boolean }
         effectiveFrom: { type: ["string", "null"] }
@@ -1268,6 +1521,13 @@ components:
         actualBookedCount: { type: integer }
         reservedSeatCount: { type: integer }
         currentOccurrenceDate: { type: ["string", "null"] }
+        occurrenceDateUsedForEligibility: { type: ["string", "null"] }
+        allowAllAges: { type: ["boolean", "null"] }
+        minAge: { type: ["integer", "null"] }
+        maxAge: { type: ["integer", "null"] }
+        ageRangeLabel: { type: string }
+        configurationState: { $ref: "#/components/schemas/CatalogueConfigurationState" }
+        catalogueEligibility: { $ref: "#/components/schemas/CatalogueEligibility" }
         classCapacityEnabled: { type: boolean }
         capacityDisplayEnabled: { type: boolean }
         capacityEnforcementEnabled: { type: boolean }
@@ -1300,10 +1560,15 @@ components:
 
     CreateScheduleBody:
       type: object
-      required: [classId, dayOfWeek, startTime, endTime]
+      required: [classId, startTime, endTime]
       properties:
         classId: { type: integer }
-        dayOfWeek: { type: integer }
+        dayOfWeek: { type: ["integer", "null"] }
+        type: { type: string, enum: [weekly, one_time] }
+        status: { type: string, enum: [active, completed, expired, cancelled] }
+        date: { type: ["string", "null"] }
+        priceEgp: { type: ["integer", "null"] }
+        packageEligible: { type: boolean }
         startTime: { type: string }
         endTime: { type: string }
         location: { type: ["string", "null"] }
@@ -1315,7 +1580,12 @@ components:
       type: object
       properties:
         classId: { type: integer }
-        dayOfWeek: { type: integer }
+        dayOfWeek: { type: ["integer", "null"] }
+        type: { type: string, enum: [weekly, one_time] }
+        status: { type: string, enum: [active, completed, expired, cancelled] }
+        date: { type: ["string", "null"] }
+        priceEgp: { type: ["integer", "null"] }
+        packageEligible: { type: boolean }
         startTime: { type: string }
         endTime: { type: string }
         location: { type: ["string", "null"] }
@@ -1325,7 +1595,7 @@ components:
 
     PricePackage:
       type: object
-      required: [id, name, type, priceEgp, isActive, isFeatured, createdAt]
+      required: [id, name, type, priceEgp, isActive, isFeatured, validityMonths, allowedDanceTypes, features, allowedDanceTypeIds, allowedDanceTypeDetails, danceTypeUnrestricted, allowAllAges, minAge, maxAge, ageRangeLabel, configurationState, danceTypeConfigurationState, catalogueEligibility, createdAt]
       properties:
         id: { type: integer }
         name: { type: string }
@@ -1335,6 +1605,25 @@ components:
         description: { type: ["string", "null"] }
         isActive: { type: boolean }
         isFeatured: { type: boolean }
+        validityMonths: { type: integer }
+        singleClassPriceEgp: { type: ["number", "null"] }
+        allowedDanceTypes: { type: array, items: { type: string } }
+        features: { type: array, items: { type: string } }
+        allowAllAges: { type: ["boolean", "null"] }
+        minAge: { type: ["integer", "null"] }
+        maxAge: { type: ["integer", "null"] }
+        ageRangeLabel: { type: string }
+        configurationState: { $ref: "#/components/schemas/CatalogueConfigurationState" }
+        allowedDanceTypeIds: { type: array, items: { type: integer } }
+        allowedDanceTypeDetails:
+          type: array
+          items:
+            $ref: "#/components/schemas/DanceTypeSummary"
+        danceTypeUnrestricted: { type: boolean }
+        danceTypeConfigurationState:
+          type: string
+          enum: [canonical, legacy_text_only, unrestricted]
+        catalogueEligibility: { $ref: "#/components/schemas/CatalogueEligibility" }
         createdAt: { type: string }
 
     CreatePricePackageBody:
@@ -1348,6 +1637,14 @@ components:
         description: { type: ["string", "null"] }
         isActive: { type: boolean }
         isFeatured: { type: boolean }
+        validityMonths: { type: integer }
+        singleClassPriceEgp: { type: ["number", "null"] }
+        allowedDanceTypes: { type: array, items: { type: string } }
+        features: { type: array, items: { type: string } }
+        allowAllAges: { type: ["boolean", "null"] }
+        minAge: { type: ["integer", "null"] }
+        maxAge: { type: ["integer", "null"] }
+        allowedDanceTypeIds: { type: array, items: { type: integer } }
 
     UpdatePricePackageBody:
       type: object
@@ -1359,11 +1656,58 @@ components:
         description: { type: ["string", "null"] }
         isActive: { type: boolean }
         isFeatured: { type: boolean }
+        validityMonths: { type: integer }
+        singleClassPriceEgp: { type: ["number", "null"] }
+        allowedDanceTypes: { type: array, items: { type: string } }
+        features: { type: array, items: { type: string } }
+        allowAllAges: { type: ["boolean", "null"] }
+        minAge: { type: ["integer", "null"] }
+        maxAge: { type: ["integer", "null"] }
+        allowedDanceTypeIds: { type: array, items: { type: integer } }
+
+    CatalogueConfigurationState:
+      type: string
+      enum: [configured, legacy_unconfigured]
+
+    EligibilityReason:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details:
+          type: ["object", "null"]
+          additionalProperties: true
+
+    CatalogueEligibility:
+      type: object
+      required: [evaluated, eligible, evaluatedOn, reasons]
+      properties:
+        evaluated: { type: boolean }
+        eligible: { type: ["boolean", "null"] }
+        evaluatedOn: { type: ["string", "null"] }
+        participantType:
+          type: string
+          enum: [self]
+        participantAge: { type: ["integer", "null"] }
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/EligibilityReason"
+
+    DanceTypeSummary:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
 
     Booking:
       type: object
       required: [id, studentName, studentEmail, status, bookedAt, createdAt]
       properties:
+        occurrenceDate: { type: ["string", "null"] }
         id: { type: integer }
         studentName: { type: string }
         studentEmail: { type: string }
@@ -1426,6 +1770,12 @@ components:
       type: object
       required: [studentName, studentEmail]
       properties:
+        accountOwnerStudentId: { type: ["integer", "null"] }
+        packageOrderId: { type: ["integer", "null"] }
+        participantChildId: { type: ["integer", "null"] }
+        childId: { type: ["integer", "null"] }
+        bookingScope: { type: ["string", "null"], enum: [self, child, null] }
+        occurrenceDate: { type: ["string", "null"] }
         studentName: { type: string }
         studentEmail: { type: string }
         studentPhone: { type: ["string", "null"] }
@@ -1442,6 +1792,8 @@ components:
     UpdateBookingBody:
       type: object
       properties:
+        bookingStatus: { type: string }
+        paymentStatus: { type: string }
         studentName: { type: string }
         studentEmail: { type: string }
         studentPhone: { type: ["string", "null"] }
@@ -1464,6 +1816,38 @@ components:
         totalBookings: { type: integer }
         joinedAt: { type: string }
         createdAt: { type: string }
+        accountType: { type: ["string", "null"] }
+        childCount: { type: integer }
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/GetStudentChildItem"
+
+    GetStudentChildItem:
+      type: object
+      required: [id, fullName, gender]
+      properties:
+        id: { type: integer }
+        fullName: { type: string }
+        birthday: { type: ["string", "null"] }
+        age: { type: ["integer", "null"] }
+        gender: { type: string }
+        medicalNotes: { type: ["string", "null"] }
+        emergencyName: { type: ["string", "null"] }
+        emergencyPhone: { type: ["string", "null"] }
+
+    ListStudentsResponse:
+      type: object
+      required: [students, total, page, pageSize, totalPages]
+      properties:
+        students:
+          type: array
+          items:
+            $ref: "#/components/schemas/Student"
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
 
     CreateStudentBody:
       type: object
@@ -1616,6 +2000,7 @@ components:
         studentPhone: { type: ["string", "null"] }
         packageId: { type: ["integer", "null"] }
         packageName: { type: string }
+        priceEgp: { type: ["number", "null"] }
         totalCredits: { type: integer }
         remainingCredits: { type: integer }
         status: { type: string }
@@ -1652,7 +2037,7 @@ components:
 
     Attendance:
       type: object
-      required: [id, studentName, studentEmail, creditDeducted, checkedInAt, createdAt, updatedAt]
+      required: [id, studentName, studentEmail, creditDeducted, checkedInAt, createdAt, updatedAt, program]
       properties:
         id: { type: integer }
         studentName: { type: string }
@@ -1661,9 +2046,17 @@ components:
         classTitle: { type: ["string", "null"] }
         creditDeducted: { type: boolean }
         notes: { type: ["string", "null"] }
+        studentId: { type: ["integer", "null"] }
+        classId: { type: ["integer", "null"] }
+        scheduleId: { type: ["integer", "null"] }
+        bookingId: { type: ["integer", "null"] }
+        checkedInBy: { type: ["string", "null"] }
+        status: { type: string }
         checkedInAt: { type: string }
         createdAt: { type: string }
         updatedAt: { type: string }
+        program: { type: string, enum: [studio, ballet] }
+        durationMinutes: { type: ["integer", "null"] }
 
     CheckInBody:
       type: object
@@ -1675,10 +2068,18 @@ components:
         classTitle: { type: ["string", "null"] }
         creditDeducted: { type: boolean }
         notes: { type: ["string", "null"] }
+        studentId: { type: ["integer", "null"] }
+        classId: { type: ["integer", "null"] }
+        scheduleId: { type: ["integer", "null"] }
+        bookingId: { type: ["integer", "null"] }
+        checkedInBy: { type: ["string", "null"] }
+        status: { type: string, enum: [checked_in, late, absent, cancelled] }
+        paid: { type: boolean }
+        settlementMode: { type: string, enum: [package_credit, pay_at_studio, not_paid] }
 
     AttendanceStats:
       type: object
-      required: [period, total, data]
+      required: [period, total, data, checkedInCount, lateCount, absentCount, cancelledCount, studioCreditsConsumed, balletMinutesConsumed]
       properties:
         period: { type: string }
         total: { type: integer }
@@ -1690,3 +2091,201 @@ components:
             properties:
               label: { type: string }
               count: { type: integer }
+        checkedInCount: { type: integer }
+        lateCount: { type: integer }
+        absentCount: { type: integer }
+        cancelledCount: { type: integer }
+        studioCreditsConsumed: { type: integer }
+        balletMinutesConsumed: { type: integer }
+
+    DanceType:
+      type: object
+      required: [id, name, slug, isActive, sortOrder, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: ["string", "null"] }
+        iconUrl: { type: ["string", "null"] }
+        iconSvg: { type: ["string", "null"] }
+        iconMime: { type: ["string", "null"] }
+        coverImageUrl: { type: ["string", "null"] }
+        color: { type: ["string", "null"] }
+        hasIconSvg: { type: boolean }
+        iconSvgUrl: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    CreateDanceTypeBody:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        slug: { type: string, minLength: 1 }
+        description: { type: ["string", "null"], maxLength: 2000 }
+        iconUrl: { type: ["string", "null"], maxLength: 2000 }
+        coverImageUrl: { type: ["string", "null"], maxLength: 2000 }
+        color: { type: ["string", "null"], pattern: "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+
+    UpdateDanceTypeBody:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        slug: { type: string, minLength: 1 }
+        description: { type: ["string", "null"], maxLength: 2000 }
+        iconUrl: { type: ["string", "null"], maxLength: 2000 }
+        coverImageUrl: { type: ["string", "null"], maxLength: 2000 }
+        color: { type: ["string", "null"], pattern: "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+
+    UploadDanceTypeIconBody:
+      type: object
+      required: [svg]
+      properties:
+        svg: { type: string }
+
+    CreditTransaction:
+      type: object
+      required:
+        - id
+        - packageOrderId
+        - type
+        - delta
+        - balanceBefore
+        - balanceAfter
+        - createdBy
+        - createdAt
+      properties:
+        id: { type: integer }
+        packageOrderId: { type: integer }
+        studentId: { type: ["integer", "null"] }
+        type: { type: string }
+        delta: { type: integer }
+        balanceBefore: { type: integer }
+        balanceAfter: { type: integer }
+        referenceId: { type: ["integer", "null"] }
+        referenceType: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        createdBy: { type: string }
+        className: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    CheckInQrBody:
+      type: object
+      required: [qrToken, bookingId, paymentMode]
+      properties:
+        qrToken: { type: string, format: uuid }
+        bookingId: { type: integer, minimum: 1, multipleOf: 1 }
+        paymentMode:
+          type: string
+          enum: [package_credit, pay_at_studio]
+        packageOrderId: { type: integer, minimum: 1, multipleOf: 1 }
+        checkedInBy: { type: string }
+
+    CheckInQrResponse:
+      type: object
+      required:
+        - attendanceId
+        - studentName
+        - studentEmail
+        - creditDeducted
+        - checkedInAt
+      properties:
+        attendanceId: { type: integer }
+        studentName: { type: string }
+        studentEmail: { type: string }
+        classTitle: { type: ["string", "null"] }
+        creditDeducted: { type: boolean }
+        remainingCredits: { type: ["integer", "null"] }
+        checkedInAt: { type: string }
+
+    ListCreditTransactionsResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/CreditTransaction" }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    MyCreditsResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/CreditTransaction" }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    MyAttendanceRecord:
+      type: object
+      required: [id, studentEmail, studentName, creditDeducted, checkedInAt]
+      properties:
+        id: { type: integer }
+        studentEmail: { type: string }
+        studentName: { type: string }
+        classTitle: { type: ["string", "null"] }
+        status: { type: ["string", "null"] }
+        creditDeducted: { type: boolean }
+        checkedInAt: { type: string }
+        packageOrderId: { type: ["integer", "null"] }
+        classId: { type: ["integer", "null"] }
+        scheduleId: { type: ["integer", "null"] }
+        notes: { type: ["string", "null"] }
+        instructorName: { type: ["string", "null"] }
+
+    MyAttendanceResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/MyAttendanceRecord" }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    AdjustCreditsBody:
+      type: object
+      required: [type, delta]
+      properties:
+        type:
+          type: string
+          enum: [manual_adjustment, package_bonus]
+        delta:
+          oneOf:
+            - { type: integer, maximum: -1, multipleOf: 1 }
+            - { type: integer, minimum: 1, multipleOf: 1 }
+        notes: { type: string }
+
+    AdjustCreditsResponse:
+      type: object
+      required: [order, transaction]
+      properties:
+        order: { $ref: "#/components/schemas/PackageOrder" }
+        transaction: { $ref: "#/components/schemas/CreditTransaction" }
+
+    Offer:
+      type: object
+      required: [id, title, discountPercent, isActive, createdAt]
+      description: Legacy released-client display model; no active Offers route is mounted.
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        discountPercent: { type: number }
+        validUntil: { type: ["string", "null"] }
+        isActive: { type: boolean }
+        classIds:
+          type: array
+          items: { type: integer }
+        createdAt: { type: string }

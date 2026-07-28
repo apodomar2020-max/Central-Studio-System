@@ -22,15 +22,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit, Star } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { deriveAgeRangeLabel } from "@workspace/api-zod";
 
 const TYPES = ["per_class", "monthly", "term"];
+const AGE_PRESETS = ["all", "kids", "teens", "adults", "custom"] as const;
+const API = import.meta.env.VITE_API_URL ?? "";
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
 
 const DESC_MAX = 160;
 const FEATURE_MAX = 48;
+
+const nullableAge = z.preprocess(
+  (value) => value === "" || value == null ? null : Number(value),
+  z.number().int().min(0, "Age must be 0 or above").max(150, "Age must be 150 or below").nullable(),
+);
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -42,18 +51,40 @@ const formSchema = z.object({
   isFeatured: z.boolean().default(false),
   validityMonths: z.coerce.number().int().min(1).default(6),
   singleClassPriceEgp: z.coerce.number().nullish(),
-  allowedDanceTypes: z.string().default(""),
+  allowedDanceTypeIds: z.array(z.number().int().positive()).default([]),
+  allowAllAges: z.boolean(),
+  minAge: nullableAge,
+  maxAge: nullableAge,
   // Up to 3 short feature bullets shown on the package card.
   feature1: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
   feature2: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
   feature3: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
+}).superRefine((value, ctx) => {
+  if (!value.allowAllAges && value.minAge == null) {
+    ctx.addIssue({ code: "custom", path: ["minAge"], message: "Minimum age is required." });
+  }
+  if (value.minAge != null && value.maxAge != null && value.minAge > value.maxAge) {
+    ctx.addIssue({ code: "custom", path: ["maxAge"], message: "Maximum age cannot be below minimum age." });
+  }
 });
 
-type FormValues = z.input<typeof formSchema>;
-type Package = { id: number; name: string; type: string; priceEgp: number; sessions?: number | null; description?: string | null; isActive: boolean; isFeatured: boolean; validityMonths: number; singleClassPriceEgp?: number | null; allowedDanceTypes: string[]; features?: string[] };
+type FormValues = z.output<typeof formSchema>;
+type Package = {
+  id: number; name: string; type: string; priceEgp: number; sessions?: number | null;
+  description?: string | null; isActive: boolean; isFeatured: boolean; validityMonths: number;
+  singleClassPriceEgp?: number | null; allowedDanceTypes: string[]; allowedDanceTypeIds: number[];
+  features?: string[]; allowAllAges: boolean | null; minAge: number | null; maxAge: number | null;
+  ageRangeLabel: string; configurationState: "configured" | "legacy_unconfigured";
+};
+
+interface DanceTypeItem {
+  id: number;
+  name: string;
+  isActive: boolean;
+}
 
 export default function Packages() {
-  const { can } = useAdminAuth();
+  const { token, can } = useAdminAuth();
   const canCreate = can("packages", "create");
   const canEdit = can("packages", "edit");
   const canDelete = can("packages", "delete");
@@ -64,15 +95,38 @@ export default function Packages() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Package | null>(null);
+  const [agePreset, setAgePreset] = useState<(typeof AGE_PRESETS)[number]>("all");
+  const { data: danceTypes = [] } = useQuery<DanceTypeItem[]>({
+    queryKey: ["admin-dance-types"],
+    queryFn: async () => {
+      const response = await fetch(`${API}/api/admin/settings/dance-types`, {
+        headers: {
+          ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+          ...(token ? { "x-admin-token": token } : {}),
+        },
+      });
+      if (!response.ok) throw new Error("Unable to load dance types");
+      return response.json() as Promise<DanceTypeItem[]>;
+    },
+  });
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "", feature1: "", feature2: "", feature3: "" },
+    defaultValues: {
+      name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false,
+      validityMonths: 6, allowedDanceTypeIds: [], allowAllAges: true, minAge: null,
+      maxAge: null, feature1: "", feature2: "", feature3: "",
+    },
   });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false, validityMonths: 6, allowedDanceTypes: "", feature1: "", feature2: "", feature3: "" });
+    form.reset({
+      name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false,
+      validityMonths: 6, allowedDanceTypeIds: [], allowAllAges: true, minAge: null,
+      maxAge: null, feature1: "", feature2: "", feature3: "",
+    });
+    setAgePreset("all");
     setOpen(true);
   };
 
@@ -82,28 +136,46 @@ export default function Packages() {
       name: p.name, type: p.type, priceEgp: p.priceEgp, sessions: p.sessions ?? undefined,
       description: p.description ?? "", isActive: p.isActive, isFeatured: p.isFeatured,
       validityMonths: p.validityMonths, singleClassPriceEgp: p.singleClassPriceEgp ?? undefined,
-      allowedDanceTypes: p.allowedDanceTypes.join(", "),
+      allowedDanceTypeIds: p.allowedDanceTypeIds,
+      allowAllAges: p.allowAllAges ?? false,
+      minAge: p.minAge,
+      maxAge: p.maxAge,
       feature1: p.features?.[0] ?? "", feature2: p.features?.[1] ?? "", feature3: p.features?.[2] ?? "",
     });
+    setAgePreset(
+      p.allowAllAges === true ? "all"
+      : p.minAge === 5 && p.maxAge === 12 ? "kids"
+      : p.minAge === 13 && p.maxAge === 17 ? "teens"
+      : p.minAge === 18 && p.maxAge == null ? "adults"
+      : "custom",
+    );
     setOpen(true);
   };
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
-    const { feature1, feature2, feature3, allowedDanceTypes: adtStr, ...rest } = parsed;
-    // Convert comma-separated dance types string to array
-    const allowedDanceTypes = adtStr
-      ? adtStr.split(",").map((s) => s.trim()).filter(Boolean)
-      : [];
+    const { feature1, feature2, feature3, ...rest } = parsed;
     // Collect the 3 feature inputs into an array, dropping blanks.
     const features = [feature1, feature2, feature3].map((s) => s.trim()).filter(Boolean);
-    const data = { ...rest, allowedDanceTypes, features };
+    const data = { ...rest, features };
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListPricePackagesQueryKey() }); setOpen(false); };
     if (editing) {
       updatePackage.mutate({ id: editing.id, data }, { onSuccess: invalidate });
     } else {
       createPackage.mutate({ data }, { onSuccess: invalidate });
     }
+  };
+
+  const applyAgePreset = (preset: (typeof AGE_PRESETS)[number]) => {
+    setAgePreset(preset);
+    const values = preset === "all" ? { allowAllAges: true, minAge: null, maxAge: null }
+      : preset === "kids" ? { allowAllAges: false, minAge: 5, maxAge: 12 }
+      : preset === "teens" ? { allowAllAges: false, minAge: 13, maxAge: 17 }
+      : preset === "adults" ? { allowAllAges: false, minAge: 18, maxAge: null }
+      : { allowAllAges: false, minAge: form.getValues("minAge"), maxAge: form.getValues("maxAge") };
+    form.setValue("allowAllAges", values.allowAllAges, { shouldValidate: true });
+    form.setValue("minAge", values.minAge, { shouldValidate: true });
+    form.setValue("maxAge", values.maxAge, { shouldValidate: true });
   };
 
   const handleDelete = (id: number) => {
@@ -124,6 +196,7 @@ export default function Packages() {
               <TableHead>Type</TableHead>
               <TableHead>Price (EGP)</TableHead>
               <TableHead>Sessions</TableHead>
+              <TableHead>Age</TableHead>
               <TableHead>Featured</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -131,9 +204,9 @@ export default function Packages() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : packages?.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No packages yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No packages yet.</TableCell></TableRow>
             ) : (
               packages?.map((pkg) => (
                 <TableRow key={pkg.id} data-testid={`row-package-${pkg.id}`}>
@@ -141,6 +214,10 @@ export default function Packages() {
                   <TableCell className="capitalize">{pkg.type.replace("_", " ")}</TableCell>
                   <TableCell>{pkg.priceEgp.toLocaleString()} EGP</TableCell>
                   <TableCell>{pkg.sessions ?? "Unlimited"}</TableCell>
+                  <TableCell>
+                    {pkg.ageRangeLabel}
+                    {pkg.configurationState === "legacy_unconfigured" && <Badge variant="outline" className="ml-2">Needs configuration</Badge>}
+                  </TableCell>
                   <TableCell>{pkg.isFeatured ? <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" /> : "—"}</TableCell>
                   <TableCell>
                     <Badge variant={pkg.isActive ? "default" : "outline"}>{pkg.isActive ? "Active" : "Inactive"}</Badge>
@@ -252,10 +329,64 @@ export default function Packages() {
                   </FormItem>
                 )} />
               </div>
-              <FormField control={form.control} name="allowedDanceTypes" render={({ field }) => (
+              <div className="space-y-3 rounded-md border p-3">
+                <p className="text-sm font-medium">Age Eligibility</p>
+                <Select value={agePreset} onValueChange={(value) => applyAgePreset(value as (typeof AGE_PRESETS)[number])}>
+                  <SelectTrigger data-testid="select-package-age-preset"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Ages</SelectItem>
+                    <SelectItem value="kids">Kids 5–12</SelectItem>
+                    <SelectItem value="teens">Teens 13–17</SelectItem>
+                    <SelectItem value="adults">Adults 18+</SelectItem>
+                    <SelectItem value="custom">Custom range</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!form.watch("allowAllAges") && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField control={form.control} name="minAge" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Minimum Age</FormLabel>
+                        <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="maxAge" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Maximum Age (optional)</FormLabel>
+                        <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                )}
+                <p className="text-sm">Label: {deriveAgeRangeLabel({
+                  allowAllAges: form.watch("allowAllAges"),
+                  minAge: form.watch("minAge"),
+                  maxAge: form.watch("maxAge"),
+                })}</p>
+              </div>
+              <FormField control={form.control} name="allowedDanceTypeIds" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Allowed dance types (comma-separated, blank = all)</FormLabel>
-                  <FormControl><Input placeholder="e.g. Hip Hop, Ballet, Jazz" data-testid="input-package-dance-types" {...field} /></FormControl>
+                  <FormLabel>Allowed dance types</FormLabel>
+                  <div className="flex flex-wrap gap-2">
+                    {danceTypes.filter((item) => item.isActive).map((item) => {
+                      const selected = field.value.includes(item.id);
+                      return (
+                        <Button
+                          key={item.id}
+                          type="button"
+                          size="sm"
+                          variant={selected ? "default" : "outline"}
+                          onClick={() => field.onChange(
+                            selected ? field.value.filter((id) => id !== item.id) : [...field.value, item.id],
+                          )}
+                        >
+                          {item.name}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">No selection means unrestricted.</p>
                   <FormMessage />
                 </FormItem>
               )} />

@@ -300,6 +300,8 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
     classCapacityEnabled: true,
     level: coerceLevel(api.level),
     ageGroup: coerceAgeGroup(api.ageGroup),
+    ageRangeLabel: api.ageRangeLabel,
+    catalogueEligibility: api.catalogueEligibility,
     status: "available",
     policy: "",
     featured: false,
