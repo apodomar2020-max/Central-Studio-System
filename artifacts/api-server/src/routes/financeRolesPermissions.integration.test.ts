@@ -192,19 +192,27 @@ test("neither finance.view nor finance.exports returns 403 on export", async () 
   assert.equal(res.status, 403);
 });
 
-test("Dashboard response redacts all financial amounts without finance.view", async () => {
-  const res = await asAdmin("/api/dashboard", noFinanceAdminId);
-  assert.equal(res.status, 200);
-  const body = await res.json() as Record<string, unknown>;
-  for (const key of [
+test("Dashboard response omits every financial amount for all roles", async () => {
+  const financialKeys = [
     "totalRevenue", "grossGenericBookingRevenueEgp", "grossGenericPackageRevenueEgp",
     "grossBalletRevenueEgp", "balletCompletedRefundsEgp",
     "balletPendingRefundExposureEgp", "balletNetRevenueEgp",
     "totalGrossRevenueEgp", "totalNetRevenueEgp",
     "balletPayAtStudioRevenueEgp", "balletOnlineRevenueEgp",
     "balletLegacyBankTransferRevenueEgp", "approvedProcessingRefundExposureEgp",
-  ]) {
-    assert.equal(body[key], null, `${key} must be explicitly redacted, never reported as zero`);
+  ];
+  for (const [label, adminId, isSuperAdmin] of [
+    ["no Finance", noFinanceAdminId, false],
+    ["finance.view", viewOnlyAdminId, false],
+    ["Super Admin", superAdminId, true],
+  ] as const) {
+    const res = await asAdmin("/api/dashboard", adminId, isSuperAdmin);
+    assert.equal(res.status, 200);
+    const body = await res.json() as Record<string, unknown>;
+    assert.equal(typeof body.totalBookings, "number", `${label} keeps operational metrics`);
+    for (const key of financialKeys) {
+      assert.equal(key in body, false, `${key} must be absent for ${label}`);
+    }
   }
 });
 

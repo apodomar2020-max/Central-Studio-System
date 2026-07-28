@@ -26,8 +26,6 @@ export interface DashboardSummary {
   refundedBookings: number;
   activeClasses: number;
   activeInstructors: number;
-  totalRevenue: number | null;
-  revenueTrackingComplete: boolean | null;
   pendingBookings: number;
   activePackages: number;
   pendingPackageOrders: number;
@@ -36,27 +34,10 @@ export interface DashboardSummary {
   missedAttendance: number;
   todayClasses: number;
   upcomingClasses: number;
-  grossGenericBookingRevenueEgp: number | null;
-  grossGenericPackageRevenueEgp: number | null;
-  grossBalletRevenueEgp: number | null;
-  balletCompletedRefundsEgp: number | null;
-  legacyBalletRefundedPaymentsEgp: number | null;
-  balletPendingRefundExposureEgp: number | null;
-  balletNetRevenueEgp: number | null;
-  totalGrossRevenueEgp: number | null;
-  totalNetRevenueEgp: number | null;
-  balletPayAtStudioRevenueEgp: number | null;
-  balletOnlineRevenueEgp: number | null;
-  balletLegacyBankTransferRevenueEgp: number | null;
-  legacyRevenueTrackingLimitations: Array<{
-    code: string;
-    message: string;
-  }>;
   pendingCancellationRequests: number;
   activeBalletEnrollments: number;
   withdrawnBalletEnrollments: number;
   refundsUnderReview: number;
-  approvedProcessingRefundExposureEgp: number | null;
   completedFullRefunds: number;
   completedPartialRefunds: number;
 }

@@ -6,27 +6,22 @@ import {
 } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
-import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Users,
   Ticket,
   CalendarDays,
   UserSquare2,
   Clock,
-  TrendingUp,
   ScanLine,
   ShoppingBag,
   CheckCircle2,
   XCircle,
-  CircleDollarSign,
-  CreditCard,
   PackageCheck,
   UserRound,
   CalendarClock,
   AlertTriangle,
   RotateCcw,
   ArrowUpRight,
-  Activity,
   FileText,
 } from "lucide-react";
 import {
@@ -151,14 +146,8 @@ function formatRefreshTime(date: Date): string {
   }).format(date);
 }
 
-function money(value: number | null | undefined): string {
-  return value == null ? "Restricted" : `EGP ${value.toLocaleString()}`;
-}
-
 export default function Dashboard() {
   const { theme } = useAdminTheme();
-  const { can } = useAdminAuth();
-  const canViewFinance = can("finance", "view");
   const [attendancePeriod, setAttendancePeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
 
   const dashboardQuery = useGetDashboard();
@@ -210,27 +199,11 @@ export default function Dashboard() {
     { title: "Missed Attendance", value: dashboard?.missedAttendance ?? 0, icon: AlertTriangle, accent: RED },
   ];
 
-  const financialMetrics: StatCardProps[] = [
-    { title: "Total Net Revenue", value: money(dashboard?.totalNetRevenueEgp), icon: CircleDollarSign, accent: CYAN, note: "Legacy generic revenue + Ballet net" },
-    { title: "Gross Revenue", value: money(dashboard?.totalGrossRevenueEgp), icon: TrendingUp, accent: GREEN, note: "Before completed Ballet refunds" },
-    { title: "Ballet Gross Revenue", value: money(dashboard?.grossBalletRevenueEgp), icon: Activity, accent: PURPLE, note: "Original collected receipts, including historical refunded receipts" },
-    { title: "Ballet Net Revenue", value: money(dashboard?.balletNetRevenueEgp), icon: CircleDollarSign, accent: CYAN, note: "Gross receipts minus completed refunds" },
-    { title: "Completed Refunds", value: money(dashboard?.balletCompletedRefundsEgp), icon: RotateCcw, accent: RED, note: "Ledger refunds plus unmatched legacy refunded payments" },
-    { title: "Pending Refund Exposure", value: money(dashboard?.balletPendingRefundExposureEgp), icon: AlertTriangle, accent: AMBER, note: "Approved and processing cash refunds not yet completed" },
-  ];
-
-  const balletMethodSplit: StatCardProps[] = [
-    { title: "Pay at Studio", value: money(dashboard?.balletPayAtStudioRevenueEgp), icon: CircleDollarSign, accent: GREEN },
-    { title: "Online Payment", value: money(dashboard?.balletOnlineRevenueEgp), icon: CreditCard, accent: CYAN, note: "Historical/future verified Kashier receipts; checkout not active yet" },
-    { title: "Legacy Bank Transfer", value: money(dashboard?.balletLegacyBankTransferRevenueEgp), icon: RotateCcw, accent: MUTED, note: "Historical reporting only" },
-  ];
-
   const balletLifecycleMetrics: StatCardProps[] = [
     { title: "Pending Cancellation Requests", value: dashboard?.pendingCancellationRequests ?? 0, icon: AlertTriangle, accent: AMBER },
     { title: "Active Ballet Enrollments", value: dashboard?.activeBalletEnrollments ?? 0, icon: CheckCircle2, accent: GREEN },
     { title: "Withdrawn Ballet Enrollments", value: dashboard?.withdrawnBalletEnrollments ?? 0, icon: XCircle, accent: MUTED },
     { title: "Refunds Under Review", value: dashboard?.refundsUnderReview ?? 0, icon: FileText, accent: PURPLE },
-    ...(canViewFinance ? [{ title: "Approved/Processing Exposure", value: money(dashboard?.approvedProcessingRefundExposureEgp), icon: AlertTriangle, accent: AMBER }] : []),
     { title: "Completed Full Refunds", value: dashboard?.completedFullRefunds ?? 0, icon: RotateCcw, accent: RED },
     { title: "Completed Partial Refunds", value: dashboard?.completedPartialRefunds ?? 0, icon: RotateCcw, accent: CYAN },
   ];
@@ -265,76 +238,20 @@ export default function Dashboard() {
       </header>
 
       <section className="space-y-5">
-        <SectionHeader title="Live Today" description={canViewFinance ? "Cairo-day activity and recorded operational revenue." : "Cairo-day operational activity."} />
-        <div className="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
-          {canViewFinance && <article className="revenue-hero relative min-h-60 overflow-hidden rounded-lg border p-5 sm:p-8">
-            <div className="revenue-grid absolute inset-0 opacity-60" />
-            <div className="absolute -right-12 -top-14 h-52 w-52 rounded-full bg-primary/20 blur-3xl" />
-            <div className="absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-[#8A5CFF]/20 blur-3xl" />
-            <div className="relative z-10 flex h-full flex-col justify-between gap-10">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 shadow-[0_0_24px_rgba(0,182,215,.16)]">
-                    <CircleDollarSign className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">Paid classes + activated packages</p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-primary">
-                  <Activity className="h-3 w-3" /> Operational
-                </span>
-              </div>
-              <div>
-                {isLoading ? <Skeleton className="h-12 w-56" /> : (
-                  <p className="text-3xl font-semibold text-foreground sm:text-5xl">
-                    <><span className="mr-2 text-primary">EGP</span>{(dashboard?.totalNetRevenueEgp ?? dashboard?.totalRevenue ?? 0).toLocaleString()}</>
-                  </p>
-                )}
-                <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-                  <TrendingUp className="h-4 w-4 text-emerald-500" />
-                  {dashboard?.revenueTrackingComplete ? "Ballet-aware net revenue; generic revenue remains legacy operational tracking" : "Revenue tracking has known limitations"}
-                </div>
-                {dashboard?.legacyRevenueTrackingLimitations?.length ? (
-                  <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                    {dashboard.legacyRevenueTrackingLimitations.slice(0, 2).map((item) => (
-                      <p key={item.code}>• {item.message}</p>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </article>}
-
-          <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-1">
+        <SectionHeader title="Live Today" description="Cairo-day operational activity." />
+        <div className="grid gap-4 sm:grid-cols-3">
             {isLoading ? [...Array(3)].map((_, index) => <SkeletonCard key={index} />) : [
               { title: "Today's Bookings", value: dashboard?.todayBookings ?? 0, icon: Ticket, accent: CYAN },
               { title: "Today's Classes", value: dashboard?.todayClasses ?? 0, icon: CalendarDays, accent: AMBER },
               { title: "Today's Check-ins", value: dashboard?.todayCheckIns ?? 0, icon: ScanLine, accent: GREEN },
             ].map((metric) => <StatCard key={metric.title} {...metric} />)}
-          </div>
         </div>
       </section>
-
-      {canViewFinance && <section className="space-y-5">
-        <SectionHeader title="Financial Overview" description="Explicit gross/net revenue and Ballet refund exposure." />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {isLoading ? [...Array(6)].map((_, index) => <SkeletonCard key={index} />) : financialMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
-        </div>
-      </section>}
-
-      {canViewFinance && <section className="space-y-5">
-        <SectionHeader title="Ballet Payment Method Split" description="Current methods plus historical Bank Transfer reporting." />
-        <div className="grid gap-4 md:grid-cols-3">
-          {isLoading ? [...Array(3)].map((_, index) => <SkeletonCard key={index} />) : balletMethodSplit.map((metric) => <StatCard key={metric.title} {...metric} />)}
-        </div>
-      </section>}
 
       <section className="space-y-5">
         <SectionHeader title="Ballet Cancellation & Refunds" description="Enrollment lifecycle and refund-ledger workflow indicators." />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {isLoading ? [...Array(7)].map((_, index) => <SkeletonCard key={index} />) : balletLifecycleMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
+          {isLoading ? [...Array(6)].map((_, index) => <SkeletonCard key={index} />) : balletLifecycleMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
       </section>
 

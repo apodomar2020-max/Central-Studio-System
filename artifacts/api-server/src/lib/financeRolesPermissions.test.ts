@@ -124,16 +124,14 @@ test("payment and refund controls are permission-gated in Admin UI", async () =>
   assert.match(files[4]!, /can\("finance", "exports"\)/);
 });
 
-test("Dashboard hides financial sections and API redacts amounts without finance.view", async () => {
+test("Dashboard contains no financial sections or revenue API computation for any role", async () => {
   const [page, route] = await Promise.all([
     readFile(resolve("artifacts/admin/src/pages/dashboard.tsx"), "utf8"),
     readFile(resolve("artifacts/api-server/src/routes/dashboard.ts"), "utf8"),
   ]);
-  assert.match(page, /const canViewFinance = can\("finance", "view"\)/);
-  assert.match(page, /\{canViewFinance && <section/);
-  assert.match(route, /hasRolePermission\(req\.adminUser\?\.permissions, "finance", "view"\)/);
-  assert.match(route, /totalNetRevenueEgp: null/);
-  assert.match(route, /approvedProcessingRefundExposureEgp: null/);
+  assert.doesNotMatch(page, /Total Revenue|Financial Overview|Ballet Payment Method Split/);
+  assert.doesNotMatch(page, /can\("finance", "view"\)/);
+  assert.doesNotMatch(route, /getFinancialAggregates|totalRevenue|RevenueEgp|RefundExposureEgp/);
 });
 
 test("every materially distinct Admin payment confirmation path has a pre-handler finance gate", async () => {

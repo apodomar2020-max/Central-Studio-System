@@ -61,13 +61,11 @@ test("walk-in discovery never returns amounts to payment-confirm-only users", ()
   assert.match(scanDialog, /canConfirmPayments && <button[\s\S]*?Pay at Studio/);
 });
 
-test("Dashboard and Admin rendering never substitute redacted finance values with zero", () => {
+test("Dashboard and Admin response contain no financial values for any role", () => {
   const route = read("artifacts/api-server/src/routes/dashboard.ts");
   const page = read("artifacts/admin/src/pages/dashboard.tsx");
-  assert.doesNotMatch(route, /totalRevenue:\s*0/);
-  assert.match(route, /totalRevenue:\s*null/);
-  assert.match(page, /value == null \? "Restricted"/);
-  assert.match(page, /canViewFinance \? \[\{ title: "Approved\/Processing Exposure"/);
+  assert.doesNotMatch(route, /getFinancialAggregates|totalRevenue|RevenueEgp|RefundExposureEgp/);
+  assert.doesNotMatch(page, /Total Revenue|Financial Overview|Ballet Payment Method Split|EGP/);
 });
 
 test("Ballet detail and PDF paths enforce field-level and export authorization", () => {

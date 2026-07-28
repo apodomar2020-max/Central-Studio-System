@@ -1,13 +1,12 @@
 /**
  * financeOverview — Finance Phase 1 overview aggregation.
  *
- * Deliberately thin: it reuses getFinancialAggregates() (the existing Dashboard
- * math) instead of re-deriving any formula, so Finance and the Dashboard can
- * never disagree about a figure. The only thing this module adds is
+ * Deliberately thin: it reuses getFinancialAggregates() as the canonical
+ * Finance math instead of re-deriving any formula. The only thing this module adds is
  * CLASSIFICATION — splitting the existing numbers into recorded / estimated /
  * hybrid buckets and attaching the mandatory caveats.
  *
- * Discounts are the one figure not already produced by the Dashboard, so they
+ * Discounts are the one figure not already produced by the shared aggregate, so they
  * are queried here — and only when the caller may view Promotions, otherwise
  * the field stays null rather than 0 (0 would read as "no discounts granted").
  */
