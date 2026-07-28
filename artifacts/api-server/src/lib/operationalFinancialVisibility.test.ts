@@ -7,7 +7,7 @@ import {
   canViewPaymentActionAmount,
   canViewRefundActionAmount,
   redactFinancialFields,
-} from "./financialVisibility.ts";
+} from "./financialVisibility";
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
