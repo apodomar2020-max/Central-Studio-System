@@ -1,31 +1,34 @@
 # Fresh Launch Cutover Approval Register
 
-This register records decisions required before production preparation. Blank
-decision and sign-off fields are intentional. Phase G1R Closure does not make
-business, legal, Finance, security, or operational approvals on behalf of
-people.
+All decisions remain `pending`. Defaults and recommendations are technical
+safety guidance, not approval. Approval references must be non-secret internal
+references; do not put names, contact information, credentials, environment
+identifiers, or backup identifiers in Git.
 
-| ID | Subject | Default safe behavior | Options | Recommendation | Required approver | Evidence required | Timing | Blocking impact | Final decision | Sign-off |
-|---|---|---|---|---|---|---|---|---|---|---|
-| ID-01 | Admin identities | Recreate | Secure recreation; narrowly approved subset transfer | Recreate required Admin accounts through the approved bootstrap | Engineering, security/data owner, business owner | Identity inventory, bootstrap test, MFA/password policy, least-privilege roles | Before target bootstrap | Blocks opening Admin access |  |  |
-| ID-02 | Instructor login identities | Exclude credentials and recreate access where needed | Catalogue-only; authenticated user; recreated access; narrow transfer | Keep catalogue instructors separate from authenticated identities and recreate access explicitly | Engineering, business owner, security/data owner | Authentication model and instructor access list | Before identity bootstrap | Blocks instructor login where required |  |  |
-| ID-03 | Ballet contact settings | Exclude and manually re-enter approved public values | Public business configuration; sensitive manual entry; narrow transfer | Manually re-enter reviewed public contact values | Ballet owner, security/data owner, business owner | Field classification and approved public values | Before Ballet launch validation | Blocks Ballet public contact launch |  |  |
-| ID-04 | Source archive retention | Preserve encrypted and inaccessible to normal writers | Retention periods and archive locations per policy | Encrypted read-only archive with audited access and scheduled deletion review | Finance, legal/data owner, database operator | Retention basis, encryption, access controls, deletion approval | Before cutover | Blocks source disposition |  |  |
-| ID-05 | Audit and activity logs | Do not transfer to fresh launch database | Archive only; separate export; transfer approved subset; delete after retention | Retain only in protected source archive unless legally required elsewhere | Security/data owner, business owner, engineering | Log classification and retention obligation | Before source archive | Blocks archive approval |  |  |
-| ID-06 | Media and uploaded files | Transfer only approved public configuration media references | Public catalogue media; instructor media; customer uploads; application attachments | Allow-list public catalogue assets; exclude customer/application files | Business owner, Ballet owner, security/data owner | Asset inventory, ownership/licensing, sensitive-content scan | Before configuration export | Blocks complete public catalogue |  |  |
-| ID-07 | Production backup and restore policy | No cutover without verified restore | Backup types, retention, RTO/RPO, encryption, ownership | Full pre-cutover backup plus isolated restore rehearsal | Database operator, engineering, Finance | Backup identifier in restricted ticket, restore logs, RTO/RPO result | Before maintenance freeze | Hard blocker |  |  |
-| ID-08 | Maintenance window | No cutover outside an approved window | Candidate start/duration and rollback checkpoints | Window covering writer shutdown, validation, rollback decision, and observation | Business owner, engineering, operations | Communications plan, duration rehearsal, staffing | Before Stage 0 | Hard blocker |  |  |
-| ID-09 | Post-write rollback | Never reconnect old writers without reconciliation | Forward-fix; controlled data recovery; reconciled migration | Stop writers, prevent split brain, reconcile transactions, obtain Engineering and Finance approval | Engineering, Finance, database operator | Incident plan and reconciliation procedure | Before opening target writers | Hard blocker |  |  |
-| ID-10 | Notification templates and contact configuration | Exclude ambiguous or sensitive records | Manual recreation; narrow reviewed transfer; archive only | Transfer only templates proven configuration-only and free of customer/device state | Business owner, security/data owner, engineering | Field-level classification and template inventory | Before export approval | Blocks affected notifications, not core cutover |  |  |
-| ID-11 | Finance backfill and report state | Do not transfer progress or generated history | Archive; separate compliance export; approved transfer | Keep operational backfill progress and report jobs in source archive | Finance, engineering, data owner | Finance retention decision and report inventory | Before export approval | Blocks Finance evidence sign-off |  |  |
-| ID-12 | Sequence policy | Preserve configuration IDs and advance only target configuration sequences | Preserve IDs; deterministic remap where specifically approved | Use the tested preserve-and-advance policy | Engineering, database operator | Sequence inventory and post-import collision test | During import approval | Hard blocker if any exception exists |  |  |
+| ID | Subject | Status | Default safe behavior | Available options | Technical recommendation | Required approver roles | Required evidence | Blocking impact | Decision deadline | Final decision | Approval reference | Approval timestamp |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ID-01 | Admin identities | Pending | Recreate | Secure recreation; narrowly approved subset transfer | Recreate required Admin accounts; never transfer passwords, tokens, sessions, or OAuth credentials | business_owner, engineering_owner, security_or_data_owner | Identity inventory, bootstrap test, MFA/password policy, role review | Blocks Admin access | Before target bootstrap |  |  |  |
+| ID-02 | Instructor login identities | Pending | Exclude credentials and recreate access | Catalogue-only transfer; recreate authenticated access; narrowly approved transfer | Transfer catalogue configuration and recreate login access separately | business_owner, engineering_owner, security_or_data_owner | Authentication model and approved access inventory | Blocks required instructor login | Before identity bootstrap |  |  |  |
+| ID-03 | Ballet contact settings | Pending | Exclude and manually re-enter approved public values | Public configuration; manual entry; narrow transfer | Exclude sensitive contact values; manually enter reviewed public business values | ballet_domain_owner, business_owner, security_or_data_owner | Field classification and approved public-value evidence | Blocks Ballet public-contact launch | Before Ballet validation |  |  |  |
+| ID-04 | Source archive retention | Pending | Preserve encrypted and remove normal writer access | Approved retention/storage/access/deletion policies | Encrypt, restrict, audit access, and retain under Finance/legal/data policy | finance_owner, security_or_data_owner, database_operator | Retention basis, encryption, access controls, deletion approval | Blocks source disposition | Before cutover |  |  |  |
+| ID-05 | Audit/activity logs | Pending | Do not transfer | Archive only; separate approved export; approved deletion | Retain only under archive policy | business_owner, engineering_owner, security_or_data_owner | Log classification and retention obligation | Blocks archive approval | Before archive |  |  |  |
+| ID-06 | Media and uploaded files | Pending | Transfer only approved public configuration media | Public catalogue media; approved instructor media; exclude customer uploads/attachments | Allow-list public configuration media only | business_owner, ballet_domain_owner, security_or_data_owner | Asset inventory, ownership/licensing, sensitive-content scan | Blocks complete public catalogue | Before configuration export |  |  |  |
+| ID-07 | Production backup and restore | Pending | No cutover without verified restore | Approved backup/restore design meeting policy | Full pre-cutover backup plus isolated restore rehearsal and Finance/Ballet reconciliation | database_operator, engineering_owner, finance_owner | Completed backup/restore evidence, RTO/RPO, encryption and retention | Hard blocker | Before maintenance freeze |  |  |  |
+| ID-08 | Maintenance window | Pending | No cutover outside approved window | Approved date/duration/checkpoints/staffing plan | Window must cover writer freeze, validation, rollback decision, and observation | business_owner, engineering_owner, release_operator | Window plan, communications, staffing, duration evidence | Hard blocker | Before Stage 0 |  |  |  |
+| ID-09 | Post-write rollback | Pending | Never reconnect old writers automatically | Forward fix; controlled recovery; reconciled migration | Stop all writers, prevent split brain, reconcile both databases, require Engineering and Finance approval | engineering_owner, finance_owner, database_operator, release_operator | Incident and reconciliation policy | Hard blocker | Before opening target writers |  |  |  |
+| ID-10 | Notification configuration | Pending | Exclude ambiguous/sensitive/operational records | Manual recreation; narrow template/config transfer; archive only | Transfer approved templates/configuration only; exclude devices, deliveries, reads, and history | business_owner, engineering_owner, security_or_data_owner | Field classification and template inventory | Blocks affected notifications | Before export approval |  |  |  |
+| ID-11 | Finance backfill/report history | Pending | Do not transfer progress or generated history | Archive; separate compliance export; narrowly approved transfer | Keep progress and report jobs in protected source archive | finance_owner, engineering_owner, security_or_data_owner | Finance retention decision and report inventory | Blocks Finance evidence sign-off | Before export approval |  |  |  |
+| ID-12 | Sequence policy | Pending | Preserve configuration IDs and advance corresponding configuration sequences only | Preserve IDs; explicitly approved deterministic remap | Use tested preserve-and-advance behavior | engineering_owner, database_operator | Sequence inventory and collision test | Hard blocker for exceptions | Before import approval |  |  |  |
 
-## Required named approvals
+## Required approval roles
 
-- Business/product owner:
-- Engineering owner:
-- Finance owner:
-- Ballet domain owner:
-- Security/privacy or data owner:
-- Database operator:
-- Operations/incident owner:
+- `business_owner`
+- `engineering_owner`
+- `finance_owner`
+- `ballet_domain_owner`
+- `security_or_data_owner`
+- `database_operator`
+- `release_operator`
+
+An incident commander is also required by the maintenance package but is not a
+substitute for any approval role.

@@ -1,0 +1,102 @@
+# Example shape only. It is intentionally incomplete and must not be treated as approval.
+schemaVersion: g2a-v1
+approvedCommit: APPROVED_COMMIT_PLACEHOLDER
+manifestVersion: g1r-v1
+manifestHash: MANIFEST_HASH_PLACEHOLDER
+sourceEnvironmentClassification: production_source
+targetEnvironmentClassification: fresh_production_target
+maintenanceWindowReference: null
+backupEvidenceReference: null
+restoreEvidenceReference: null
+approvals:
+  - role: business_owner
+    approvalReference: APPROVAL_REFERENCE_PLACEHOLDER
+    approvedAt: TIMESTAMP_PLACEHOLDER
+    expiresAt: EXPIRY_PLACEHOLDER
+  - role: engineering_owner
+    approvalReference: APPROVAL_REFERENCE_PLACEHOLDER
+    approvedAt: TIMESTAMP_PLACEHOLDER
+    expiresAt: EXPIRY_PLACEHOLDER
+  - role: finance_owner
+    approvalReference: APPROVAL_REFERENCE_PLACEHOLDER
+    approvedAt: TIMESTAMP_PLACEHOLDER
+    expiresAt: EXPIRY_PLACEHOLDER
+  - role: ballet_domain_owner
+    approvalReference: APPROVAL_REFERENCE_PLACEHOLDER
+    approvedAt: TIMESTAMP_PLACEHOLDER
+    expiresAt: EXPIRY_PLACEHOLDER
+  - role: security_or_data_owner
+    approvalReference: APPROVAL_REFERENCE_PLACEHOLDER
+    approvedAt: TIMESTAMP_PLACEHOLDER
+    expiresAt: EXPIRY_PLACEHOLDER
+  - role: database_operator
+    approvalReference: APPROVAL_REFERENCE_PLACEHOLDER
+    approvedAt: TIMESTAMP_PLACEHOLDER
+    expiresAt: EXPIRY_PLACEHOLDER
+  - role: release_operator
+    approvalReference: APPROVAL_REFERENCE_PLACEHOLDER
+    approvedAt: TIMESTAMP_PLACEHOLDER
+    expiresAt: EXPIRY_PLACEHOLDER
+decisions:
+  - id: ID-01
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-02
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-03
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-04
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-05
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-06
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-07
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-08
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-09
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-10
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-11
+    status: pending
+    approvalReference: null
+    approvedAt: null
+  - id: ID-12
+    status: pending
+    approvalReference: null
+    approvedAt: null
+policies:
+  identity: { status: pending, approvalReference: null }
+  archive: { status: pending, approvalReference: null }
+  sequence: { status: pending, approvalReference: null }
+  media: { status: pending, approvalReference: null }
+  auditLogs: { status: pending, approvalReference: null }
+  balletContactSettings: { status: pending, approvalReference: null }
+  notificationConfiguration: { status: pending, approvalReference: null }
+  financeBackfillReportHistory: { status: pending, approvalReference: null }
+  preWriteRollback: { status: pending, approvalReference: null }
+  postWriteIncident: { status: pending, approvalReference: null }
+issuedAt: TIMESTAMP_PLACEHOLDER
+expiresAt: EXPIRY_PLACEHOLDER
+finalStatus: NO_GO

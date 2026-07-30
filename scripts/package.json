@@ -8,6 +8,7 @@
     "backfill-membership-ids": "tsx ./src/backfillMembershipIds.ts",
     "fresh-launch:inventory": "tsx ./src/fresh-launch-cutover/freshLaunchSourceInventory.ts",
     "fresh-launch:rehearse": "tsx ./src/fresh-launch-cutover/runFreshLaunchCutoverRehearsal.ts",
+    "fresh-launch:test-g2a": "tsx ./src/fresh-launch-cutover/runG2aApprovalTests.ts",
     "test:fresh-launch": "tsx --test ./src/fresh-launch-cutover/*.test.ts",
     "test:ballet:integration": "tsx ./src/runDisposableBalletTests.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

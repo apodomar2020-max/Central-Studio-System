@@ -1,0 +1,21 @@
+# Non-secret identity evidence only. Hash raw identity values outside Git.
+schemaVersion: g2a-v1
+environmentRole: production
+serviceRole: database
+databaseRole: source
+providerClassification: managed_postgresql
+regionClassification: regional
+databaseServerFingerprintHash: SHA256_PLACEHOLDER
+databaseNameFingerprintHash: SHA256_PLACEHOLDER
+postgresqlVersion: VERSION_PLACEHOLDER
+migrationCount: 91
+latestMigration: 0091_participant_aware_attendance
+readWriteRoleClassification: read_only
+applicationCommit: APPROVED_COMMIT_PLACEHOLDER
+apiCommit: APPROVED_COMMIT_PLACEHOLDER
+workerCommit: APPROVED_COMMIT_PLACEHOLDER
+inspectedAt: TIMESTAMP_PLACEHOLDER
+expiresAt: EXPIRY_PLACEHOLDER
+
+# Never add hostnames, database names, usernames, URLs, IP addresses, provider
+# project/service identifiers, credentials, or contact information.
