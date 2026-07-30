@@ -1200,33 +1200,6 @@ router.post(
       } as typeof bookingsTable.$inferInsert)
       .returning();
 
-    if (creditOrder) {
-      const balanceBefore = creditOrder.remainingCredits;
-      const balanceAfter = balanceBefore - 1;
-      await tx
-        .update(packageOrdersTable)
-        .set({
-          remainingCredits: balanceAfter,
-          status: balanceAfter === 0 ? "fullyUsed" : creditOrder.status,
-        })
-        .where(eq(packageOrdersTable.id, creditOrder.id));
-      await tx.insert(creditTransactionsTable).values({
-        packageOrderId: creditOrder.id,
-        studentId: accountOwnerStudentId,
-        participantType: participantResolution.participant.participantType,
-        participantChildId,
-        type: "booking_deduction",
-        delta: -1,
-        balanceBefore,
-        balanceAfter,
-        referenceId: inserted.id,
-        referenceType: "booking",
-        bookingId: inserted.id,
-        notes: "General Studio booking credit deduction",
-        createdBy: "system:booking",
-      });
-    }
-
     // Finance Phase 2B-2: capture the creation-time monetary snapshot as a
     // live payment_records row, plus its opening payment_events "created"
     // row, in the same transaction as the bookings write above — only for
@@ -1517,6 +1490,64 @@ router.patch(
       if (existing.bookingStatus === "cancelled") return { kind: "ok" as const, booking: existing };
       if (existing.bookingStatus !== "pending" && existing.bookingStatus !== "confirmed") {
         return { kind: "not_cancellable" as const };
+      }
+      if (existing.packageOrderId != null) {
+        const [historicalDeduction] = await tx
+          .select()
+          .from(creditTransactionsTable)
+          .where(and(
+            eq(creditTransactionsTable.bookingId, existing.id),
+            eq(creditTransactionsTable.type, "booking_deduction"),
+          ))
+          .limit(1);
+
+        if (historicalDeduction) {
+          const [alreadyRestored] = await tx
+            .select()
+            .from(creditTransactionsTable)
+            .where(and(
+              eq(creditTransactionsTable.bookingId, existing.id),
+              eq(creditTransactionsTable.type, "booking_restoration"),
+            ))
+            .limit(1);
+
+          if (!alreadyRestored) {
+            const [order] = await tx
+              .select()
+              .from(packageOrdersTable)
+              .where(eq(packageOrdersTable.id, existing.packageOrderId))
+              .for("update")
+              .limit(1);
+
+            if (order) {
+              const balanceBefore = order.remainingCredits;
+              const balanceAfter = balanceBefore + 1;
+              await tx
+                .update(packageOrdersTable)
+                .set({
+                  remainingCredits: balanceAfter,
+                  status: order.status === "fullyUsed" ? "active" : order.status,
+                })
+                .where(eq(packageOrdersTable.id, order.id));
+
+              await tx.insert(creditTransactionsTable).values({
+                packageOrderId: order.id,
+                studentId: existing.accountOwnerStudentId,
+                participantType: existing.participantType,
+                participantChildId: existing.participantChildId,
+                type: "booking_restoration",
+                delta: 1,
+                balanceBefore,
+                balanceAfter,
+                referenceId: existing.id,
+                referenceType: "booking",
+                bookingId: existing.id,
+                notes: "Restoration of pre-H5 historical booking deduction on cancellation",
+                createdBy: "system:cancellation",
+              });
+            }
+          }
+        }
       }
       const [updated] = await tx
         .update(bookingsTable)

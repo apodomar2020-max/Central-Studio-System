@@ -165,12 +165,55 @@ test("12 races: different occurrences competing for one final participant credit
       postBooking(token, bodyFor(scheduleIds[0])),
       postBooking(token, bodyFor(scheduleIds[1])),
     ]);
-    const statuses = responses.map((response) => response.status).sort((a, b) => a - b);
-    assert.deepEqual(statuses, [201, 409], `iteration ${iteration}: exactly one request must spend the credit`);
+    const statuses = responses.map((response) => response.status);
+    assert.deepEqual(statuses, [201, 201], `iteration ${iteration}: H5 Policy — both bookings succeed as seat reservations`);
 
-    const loser = responses.find((response) => response.status === 409)!;
-    const loserBody = await jsonBody(loser);
-    assert.equal(loserBody.code, "PACKAGE_NO_CREDITS", `unexpected conflict payload: ${JSON.stringify(loserBody)}`);
+    const b1Data = await jsonBody(responses[0]);
+    const b2Data = await jsonBody(responses[1]);
+
+    const packageBeforeCheckin = await pool.query(
+      `SELECT remaining_credits, status FROM package_orders WHERE id = $1`,
+      [packageOrderId],
+    );
+    assert.equal(packageBeforeCheckin.rows[0].remaining_credits, 1, "Package balance remains 1 before check-in");
+
+    // Perform attendance check-in for both bookings concurrently
+    const resolveRes = await fetch(`http://127.0.0.1:${port}/api/admin/attendance/resolve`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": "test-api-secret-key",
+        "x-admin-token": jwtSign({ sub: superAdminId, username: "admin", isSuperAdmin: true }, ADMIN_JWT_SECRET),
+      },
+      body: JSON.stringify({ source: "phone", query: phone }),
+    });
+    const resolveData = await jsonBody(resolveRes);
+    const c1 = (resolveData.accounts as Array<any>)[0]?.candidates?.find((c: any) => c.bookingId === b1Data.id);
+    const c2 = (resolveData.accounts as Array<any>)[0]?.candidates?.find((c: any) => c.bookingId === b2Data.id);
+
+    const [att1, att2] = await Promise.all([
+      fetch(`http://127.0.0.1:${port}/api/admin/attendance/confirm`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": "test-api-secret-key",
+          "x-admin-token": jwtSign({ sub: superAdminId, username: "admin", isSuperAdmin: true }, ADMIN_JWT_SECRET),
+        },
+        body: JSON.stringify({ candidateKey: c1.candidateKey, program: "studio" }),
+      }),
+      fetch(`http://127.0.0.1:${port}/api/admin/attendance/confirm`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": "test-api-secret-key",
+          "x-admin-token": jwtSign({ sub: superAdminId, username: "admin", isSuperAdmin: true }, ADMIN_JWT_SECRET),
+        },
+        body: JSON.stringify({ candidateKey: c2.candidateKey, program: "studio" }),
+      }),
+    ]);
+
+    const attStatuses = [att1.status, att2.status].sort((a, b) => a - b);
+    assert.deepEqual(attStatuses, [200, 409], `iteration ${iteration}: exactly one check-in must spend the last credit`);
 
     const packageState = await pool.query(
       `SELECT remaining_credits, status FROM package_orders WHERE id = $1`,
@@ -179,33 +222,17 @@ test("12 races: different occurrences competing for one final participant credit
     assert.equal(packageState.rows[0].remaining_credits, 0);
     assert.equal(packageState.rows[0].status, "fullyUsed");
 
-    const bookings = await pool.query(
-      `SELECT id, schedule_id, participant_type, participant_child_id, package_order_id,
-              payment_mode, booking_status
-         FROM bookings
-        WHERE account_owner_student_id = $1`,
-      [studentId],
-    );
-    assert.equal(bookings.rowCount, 1, "the losing transaction must leave no booking");
-    assert.equal(bookings.rows[0].participant_type, "self");
-    assert.equal(bookings.rows[0].participant_child_id, null);
-    assert.equal(bookings.rows[0].package_order_id, packageOrderId);
-    assert.equal(bookings.rows[0].payment_mode, "package_credit");
-    assert.ok(scheduleIds.includes(bookings.rows[0].schedule_id));
-    winnerScheduleIndexes.add(scheduleIds.indexOf(bookings.rows[0].schedule_id));
-
     const deductions = await pool.query(
       `SELECT delta, balance_before, balance_after, booking_id, package_order_id,
               participant_type, participant_child_id
          FROM credit_transactions
-        WHERE package_order_id = $1 AND type = 'booking_deduction'`,
+        WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
       [packageOrderId],
     );
     assert.equal(deductions.rowCount, 1);
     assert.equal(deductions.rows[0].delta, -1);
     assert.equal(deductions.rows[0].balance_before, 1);
     assert.equal(deductions.rows[0].balance_after, 0);
-    assert.equal(deductions.rows[0].booking_id, bookings.rows[0].id);
     assert.equal(deductions.rows[0].package_order_id, packageOrderId);
     assert.equal(deductions.rows[0].participant_type, "self");
     assert.equal(deductions.rows[0].participant_child_id, null);

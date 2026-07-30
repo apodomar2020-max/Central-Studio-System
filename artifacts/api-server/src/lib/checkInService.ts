@@ -15,7 +15,7 @@
 //   • (QR only) verifying the booking belongs to the scanned student.
 // Everything after that — every eligibility rule and every write — lives here.
 // ---------------------------------------------------------------------------
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   bookingsTable,
@@ -416,39 +416,106 @@ export async function performBookingCheckIn(
     }
   }
 
-  // ── Step 5 — Verify the booking-time deduction. Phase D already consumed
-  // the credit, so attendance must never lock/decrement the package again.
+  // ── Step 5 — Handle package credit deduction on attendance (H5 Policy)
   const bookingUsesPackage = booking.paymentMode === "package_credit" || booking.packageOrderId != null;
+  let attendanceCreditDeducted = false;
+  let remainingCreditsAfterCheckIn: number | null = null;
+
   if (bookingUsesPackage) {
     if (booking.packageOrderId == null) {
       throw makeCheckInError(409, "booking_credit_integrity_mismatch", "The booking credit source is incomplete.");
     }
-    const [bookingDeduction] = await tx
+
+    const [existingDeduction] = await tx
       .select({
         id: creditTransactionsTable.id,
         studentId: creditTransactionsTable.studentId,
         participantType: creditTransactionsTable.participantType,
         participantChildId: creditTransactionsTable.participantChildId,
         packageOrderId: creditTransactionsTable.packageOrderId,
+        type: creditTransactionsTable.type,
       })
       .from(creditTransactionsTable)
       .where(and(
         eq(creditTransactionsTable.bookingId, booking.id),
         eq(creditTransactionsTable.packageOrderId, booking.packageOrderId),
-        eq(creditTransactionsTable.type, "booking_deduction"),
+        inArray(creditTransactionsTable.type, ["booking_deduction", "attendance_deduction"]),
       ))
       .limit(1);
-    if (
-      !bookingDeduction
-      || bookingDeduction.studentId !== student.id
-      || bookingDeduction.participantType !== participant.participantType
-      || bookingDeduction.participantChildId !== participant.participantChildId
-    ) {
-      throw makeCheckInError(
-        409,
-        "booking_credit_integrity_mismatch",
-        "The booking credit deduction could not be verified. No attendance was recorded.",
-      );
+
+    if (existingDeduction) {
+      if (
+        existingDeduction.studentId !== student.id ||
+        existingDeduction.participantType !== participant.participantType ||
+        existingDeduction.participantChildId !== participant.participantChildId
+      ) {
+        throw makeCheckInError(
+          409,
+          "booking_credit_integrity_mismatch",
+          "The booking credit deduction could not be verified. No attendance was recorded.",
+        );
+      }
+      attendanceCreditDeducted = false;
+      const [order] = await tx
+        .select({ remainingCredits: packageOrdersTable.remainingCredits })
+        .from(packageOrdersTable)
+        .where(eq(packageOrdersTable.id, booking.packageOrderId))
+        .limit(1);
+      remainingCreditsAfterCheckIn = order?.remainingCredits ?? null;
+    } else {
+      // New H5 booking — deduct 1 credit at attendance time
+      let danceTypeId: number | null = null;
+      if (booking.classId != null) {
+        const [cls] = await tx
+          .select({ danceTypeId: classesTable.danceTypeId })
+          .from(classesTable)
+          .where(eq(classesTable.id, booking.classId))
+          .limit(1);
+        danceTypeId = cls?.danceTypeId ?? null;
+      }
+
+      const credit = await resolveParticipantPackageCredit(tx, {
+        packageOrderId: booking.packageOrderId,
+        accountOwnerStudentId: student.id,
+        participantType: participant.participantType,
+        participantChildId: participant.participantChildId,
+        occurrenceDate: booking.occurrenceDate!,
+        danceTypeId,
+      });
+
+      if (!credit.ok) {
+        throw makeCheckInError(409, credit.code, credit.message);
+      }
+
+      const balanceBefore = credit.order.remainingCredits;
+      const balanceAfter = balanceBefore - 1;
+
+      await tx
+        .update(packageOrdersTable)
+        .set({
+          remainingCredits: balanceAfter,
+          status: balanceAfter === 0 ? "fullyUsed" : credit.order.status,
+        })
+        .where(eq(packageOrdersTable.id, credit.order.id));
+
+      await tx.insert(creditTransactionsTable).values({
+        packageOrderId: credit.order.id,
+        studentId: student.id,
+        participantType: participant.participantType,
+        participantChildId: participant.participantChildId,
+        type: "attendance_deduction",
+        delta: -1,
+        balanceBefore,
+        balanceAfter,
+        referenceId: booking.id,
+        referenceType: "booking",
+        bookingId: booking.id,
+        notes: "Attendance check-in package credit deduction",
+        createdBy: performedBy,
+      });
+
+      attendanceCreditDeducted = true;
+      remainingCreditsAfterCheckIn = balanceAfter;
     }
   }
 
@@ -470,11 +537,13 @@ export async function performBookingCheckIn(
       eligibilityEvaluatedOn: booking.eligibilityEvaluatedOn,
       attendanceSource: "booking",
       paymentSource: bookingUsesPackage ? "booking_package_credit" : "booking_pay_at_studio",
-      creditDeducted: false,
+      creditDeducted: attendanceCreditDeducted,
       checkedInBy: performedBy,
       status: "checked_in",
       classTitle: null,
-      notes: bookingUsesPackage ? "Credit deducted at booking" : "Payment mode: pay at studio",
+      notes: bookingUsesPackage
+        ? (attendanceCreditDeducted ? "Package credit deducted at attendance" : "Credit previously deducted at booking")
+        : "Payment mode: pay at studio",
       checkedInAt: new Date().toISOString(),
     })
     .returning();
@@ -511,8 +580,8 @@ export async function performBookingCheckIn(
     studentName: booking.studentName,
     studentEmail: student.email,
     classTitle: null,
-    creditDeducted: false,
-    remainingCredits: null,
+    creditDeducted: attendanceCreditDeducted,
+    remainingCredits: remainingCreditsAfterCheckIn,
     checkedInAt: attendance.checkedInAt,
     participantType: participant.participantType,
     participantChildId: participant.participantChildId,

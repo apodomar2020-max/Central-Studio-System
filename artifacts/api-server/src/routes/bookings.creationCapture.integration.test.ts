@@ -405,17 +405,14 @@ test("a package_credit booking creates no payment_records / payment_events rows"
   assert.equal(persisted.rows[0].participant_type, "self");
   assert.equal(persisted.rows[0].participant_child_id, null);
   const orderAfter = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [packageOrderId]);
-  assert.equal(orderAfter.rows[0].remaining_credits, 7);
+  assert.equal(orderAfter.rows[0].remaining_credits, 8, "H5 Policy: booking creation deducts 0 credits");
   const deduction = await pool.query(
     `SELECT participant_type, participant_child_id, delta, booking_id
        FROM credit_transactions
       WHERE package_order_id = $1 AND type = 'booking_deduction'`,
     [packageOrderId],
   );
-  assert.equal(deduction.rowCount, 1);
-  assert.equal(deduction.rows[0].participant_type, "self");
-  assert.equal(deduction.rows[0].participant_child_id, null);
-  assert.equal(deduction.rows[0].delta, -1);
+  assert.equal(deduction.rowCount, 0, "H5 Policy: booking creation creates 0 credit transactions");
 });
 
 test("booking age eligibility uses the occurrence date and authoritative DOB", async () => {
@@ -490,8 +487,7 @@ test("a Parent child booking consumes only the same child's assigned package", a
       WHERE package_order_id = $1 AND type = 'booking_deduction'`,
     [order.rows[0].id],
   );
-  assert.equal(deduction.rows[0].participant_type, "child");
-  assert.equal(deduction.rows[0].participant_child_id, child.rows[0].id);
+  assert.equal(deduction.rowCount, 0, "H5 Policy: child booking creation creates 0 credit transactions");
 });
 
 test("expired and wrong-dance packages cannot fund a booking and create no deduction", async () => {
