@@ -386,7 +386,7 @@ async function buildStudioWalkInCandidates(
       .map((c) => c.scheduleId as number),
   );
 
-  const [rows, children, hasPackageCredit] = await Promise.all([
+  const [rows, children, packageCredits] = await Promise.all([
     db
       .select({
         scheduleId: schedulesTable.id,
@@ -408,20 +408,19 @@ async function buildStudioWalkInCandidates(
       .select({ id: childrenTable.id, fullName: childrenTable.fullName })
       .from(childrenTable)
       .where(eq(childrenTable.parentId, accountId)),
-    // Existing credit-ledger ownership rule: a package order belongs to the
-    // ACCOUNT (studentEmail), never a specific child — matches
-    // performBookingCheckIn's own `order.studentEmail === student.email`
-    // check exactly. Display-only; confirm() re-validates independently.
+    // Display-only preview from canonical participant ownership. The
+    // confirmation path independently re-resolves every package invariant.
     db
-      .select({ id: packageOrdersTable.id })
+      .select({
+        participantType: packageOrdersTable.participantType,
+        participantChildId: packageOrdersTable.participantChildId,
+      })
       .from(packageOrdersTable)
       .where(and(
-        eq(packageOrdersTable.studentEmail, accountEmail),
+        eq(packageOrdersTable.studentId, accountId),
         eq(packageOrdersTable.status, "active"),
         sql`${packageOrdersTable.remainingCredits} > 0`,
-      ))
-      .limit(1)
-      .then((r) => r.length > 0),
+      )),
   ]);
 
   // Participants this account can walk in as: itself, plus every owned
@@ -451,6 +450,11 @@ async function buildStudioWalkInCandidates(
     const priceEgp = await resolveSingleClassPriceEgp(db, row.scheduleId);
 
     for (const participant of participants) {
+      const hasPackageCredit = packageCredits.some((credit) =>
+        participant.childId == null
+          ? credit.participantType === "self" && credit.participantChildId == null
+          : credit.participantType === "child" && credit.participantChildId === participant.childId,
+      );
       candidates.push({
         candidateKey: computeStudioWalkInCandidateKey(accountId, participant.childId, row.scheduleId, occurrenceDate),
         program: "studio",

@@ -544,7 +544,7 @@ export default function AttendancePage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0" style={{ background: BG_ROW }}>
                 <tr>
-                  {["Student", "Class", "Status", "Credit", "Date"].map((h) => (
+                  {["Payer", "Participant", "Class", "Source", "Status", "Date"].map((h) => (
                     <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider" style={{ color: MUTED_DARK }}>{h}</th>
                   ))}
                 </tr>
@@ -553,7 +553,7 @@ export default function AttendancePage() {
                 {attendanceLoading
                   ? Array.from({ length: 6 }).map((_, i) => (
                       <tr key={i} style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}>
-                        {Array.from({ length: 5 }).map((_, j) => (
+                        {Array.from({ length: 6 }).map((_, j) => (
                           <td key={j} className="px-4 py-3">
                         <Skeleton className="h-3.5 w-full" />
                           </td>
@@ -562,7 +562,7 @@ export default function AttendancePage() {
                     ))
                   : filteredAttendance.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm" style={{ color: MUTED_DARK }}>
+                      <td colSpan={6} className="px-4 py-10 text-center text-sm" style={{ color: MUTED_DARK }}>
                         No attendance records yet
                       </td>
                     </tr>
@@ -574,21 +574,26 @@ export default function AttendancePage() {
                         style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}
                       >
                         <td className="px-4 py-2.5">
-                          <div className="font-medium text-foreground text-xs">{record.studentName}</div>
+                          <div className="font-medium text-foreground text-xs">{record.payerName ?? record.studentName}</div>
                           <div className="text-xs" style={{ color: MUTED_DARK }}>{record.studentEmail}</div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-foreground text-xs">{record.participantName ?? "Legacy"}</div>
+                          <div className="text-[10px] uppercase tracking-wide" style={{ color: record.participantType === "child" ? STUDIO_CYAN : MUTED_DARK }}>
+                            {record.participantType === "child" ? "Child" : record.participantType === "self" ? "Myself" : "Unassigned"}
+                          </div>
                         </td>
                         <td className="px-4 py-2.5 text-xs max-w-[120px] truncate" style={{ color: "#9CA3AF" }}>
                           {record.classTitle ?? "—"}
                         </td>
-                        <td className="px-4 py-2.5">
-                          <StatusBadge status={record.status} />
+                        <td className="px-4 py-2.5 text-xs whitespace-nowrap" style={{ color: MUTED }}>
+                          <div>{record.attendanceSource === "walk_in" ? "Walk-in" : record.attendanceSource === "booking" ? "Booking" : "Legacy"}</div>
+                          <div className="text-[10px]" style={{ color: MUTED_DARK }}>
+                            {record.paymentSource?.replaceAll("_", " ") ?? (record.creditDeducted ? "package credit" : "—")}
+                          </div>
                         </td>
                         <td className="px-4 py-2.5">
-                          {record.creditDeducted ? (
-                            <span className="text-xs font-medium" style={{ color: AMBER }}>−1</span>
-                          ) : (
-                            <span className="text-xs" style={{ color: MUTED_DARK }}>—</span>
-                          )}
+                          <StatusBadge status={record.status} />
                         </td>
                         <td className="px-4 py-2.5 text-xs whitespace-nowrap" style={{ color: MUTED }}>
                           {new Date(record.checkedInAt).toLocaleString("en-GB", {

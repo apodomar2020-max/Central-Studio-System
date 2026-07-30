@@ -82,6 +82,18 @@ function AttendanceRow({ record }: { record: MyAttendanceRecord }) {
             <Ionicons name="person-outline" size={11} color="#6B7280" /> {record.instructorName}
           </Text>
         ) : null}
+        {record.participantName ? (
+          <View style={styles.participantRow}>
+            <Text style={styles.participantName} numberOfLines={1}>
+              {record.participantName}
+            </Text>
+            <View style={styles.participantBadge}>
+              <Text style={styles.participantBadgeText}>
+                {record.participantType === "child" ? "Child" : "Myself"}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <Text style={styles.datetime}>
           {formatDate(record.checkedInAt)} · {formatTime(record.checkedInAt)}
         </Text>
@@ -219,6 +231,10 @@ const styles = StyleSheet.create({
   rowBody: { flex: 1, gap: 3 },
   className: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
   instructor: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#9CA3AF" },
+  participantRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  participantName: { maxWidth: 150, fontSize: 11, fontFamily: "Inter_500Medium", color: "#CBD5E1" },
+  participantBadge: { borderRadius: 7, paddingHorizontal: 5, paddingVertical: 2, backgroundColor: "#123541" },
+  participantBadgeText: { fontSize: 9, fontFamily: "Inter_600SemiBold", color: "#00B6D7" },
   datetime: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#4B5563" },
   rowRight: { alignItems: "flex-end", gap: 4 },
   statusBadge: {

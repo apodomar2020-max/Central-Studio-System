@@ -85,6 +85,16 @@ async function makeStudent(): Promise<{ id: number; email: string; name: string 
   return { id: result.rows[0].id as number, email, name: `Walk-in Test ${studentCounter}` };
 }
 
+async function activateSelfOrder(orderId: number, studentId: number, credits = 8): Promise<void> {
+  await pool.query(`UPDATE package_orders SET participant_type = 'self' WHERE id = $1`, [orderId]);
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
+     VALUES ($1, $2, 'self', 'package_activated', $3, 0, $3, 'test')`,
+    [orderId, studentId, credits],
+  );
+}
+
 async function totals() {
   const [bookings, attendance, records, events, walkinRecords, refunds, credits, activationEvents] = await Promise.all([
     pool.query(`SELECT count(*)::int AS n FROM bookings`),
@@ -303,15 +313,16 @@ test("client-supplied monetary fields cannot override the server-resolved price"
   assert.equal(body.finalPayableAmountMinor, studioDefaultPriceEgp * 100);
 });
 
-test("a walk-in without a linked studentId still captures Finance rows correctly (unlinked walk-in)", async () => {
+test("a walk-in without a resolvable account is rejected before Finance writes", async () => {
+  const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
     body: JSON.stringify({ studentEmail: "unlinked-walkin@example.com", studentName: "Unlinked Walkin", classId, scheduleId, settlementMode: "pay_at_studio" }),
   });
-  assert.equal(res.status, 201);
+  assert.equal(res.status, 404);
   const body = await jsonBody(res);
-  const record = await pool.query(`SELECT student_id FROM payment_records WHERE booking_id = $1`, [body.bookingId]);
-  assert.equal(record.rows[0].student_id, null);
+  assert.equal(body.error, "participant_not_found");
+  assert.deepEqual(await totals(), before);
 });
 
 // ─── Category B: Not Paid ─────────────────────────────────────────────────
@@ -375,7 +386,10 @@ test("valid Package Credit + explicit Pay at Studio leaves credits untouched and
   assert.equal(remaining.rows[0].remaining_credits, 8, "package credits must remain byte-for-byte unchanged");
   assert.equal(remaining.rows[0].status, "active", "package status must remain unchanged");
 
-  const ledger = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1`, [packageOrderId]);
+  const ledger = await pool.query(
+    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
+    [packageOrderId],
+  );
   assert.equal(ledger.rows[0].n, 0, "zero credit ledger entries");
 });
 
@@ -388,6 +402,7 @@ test("valid Package Credit + explicit Package Credit deducts exactly one credit 
     [student.name, student.email, student.id, pkg.rows[0].id],
   );
   const packageOrderId = order.rows[0].id as number;
+  await activateSelfOrder(packageOrderId, student.id);
 
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
@@ -406,7 +421,10 @@ test("valid Package Credit + explicit Package Credit deducts exactly one credit 
   const remaining = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [packageOrderId]);
   assert.equal(remaining.rows[0].remaining_credits, 7, "exactly one credit deducted");
 
-  const ledger = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1`, [packageOrderId]);
+  const ledger = await pool.query(
+    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
+    [packageOrderId],
+  );
   assert.equal(ledger.rows[0].n, 1, "exactly one credit ledger entry");
 });
 
@@ -419,6 +437,7 @@ test("no valid credit + explicit Package Credit returns a business error and wri
     [student.name, student.email, student.id, pkg.rows[0].id],
   );
   const packageOrderId = order.rows[0].id as number;
+  await pool.query(`UPDATE package_orders SET participant_type = 'self' WHERE id = $1`, [packageOrderId]);
 
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
@@ -428,9 +447,9 @@ test("no valid credit + explicit Package Credit returns a business error and wri
       packageOrderId, settlementMode: "package_credit",
     }),
   });
-  assert.equal(res.status, 400);
+  assert.equal(res.status, 409);
   const body = await jsonBody(res);
-  assert.equal(body.error, "no_credits");
+  assert.equal(body.error, "PACKAGE_NO_CREDITS");
   const after = await totals();
   assert.deepEqual(after, before, "a failed Package Credit selection must write zero rows");
 });
@@ -512,8 +531,8 @@ test("an existing-booking check-in creates no studio_walkin payment record", asy
     [classId],
   );
   const booking = await pool.query(
-    `INSERT INTO bookings (student_name, student_email, account_owner_student_id, schedule_id, class_id, occurrence_date, status, booking_status, payment_status, payment_mode)
-     VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'confirmed', 'confirmed', 'pending_payment', 'pay_at_studio') RETURNING id`,
+    `INSERT INTO bookings (student_name, student_email, account_owner_student_id, participant_type, booking_scope, schedule_id, class_id, occurrence_date, status, booking_status, payment_status, payment_mode)
+     VALUES ($1, $2, $3, 'self', 'self', $4, $5, CURRENT_DATE, 'confirmed', 'confirmed', 'pending_payment', 'pay_at_studio') RETURNING id`,
     [student.name, student.email, student.id, todaySchedule.rows[0].id, classId],
   );
   const before = await totals();

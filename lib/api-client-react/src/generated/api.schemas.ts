@@ -1006,6 +1006,32 @@ export const AttendanceOwnershipState = {
   legacy_unassigned: "legacy_unassigned",
 } as const;
 
+/**
+ * @nullable
+ */
+export type AttendanceAttendanceSource =
+  | (typeof AttendanceAttendanceSource)[keyof typeof AttendanceAttendanceSource]
+  | null;
+
+export const AttendanceAttendanceSource = {
+  booking: "booking",
+  walk_in: "walk_in",
+} as const;
+
+/**
+ * @nullable
+ */
+export type AttendancePaymentSource =
+  | (typeof AttendancePaymentSource)[keyof typeof AttendancePaymentSource]
+  | null;
+
+export const AttendancePaymentSource = {
+  booking_package_credit: "booking_package_credit",
+  booking_pay_at_studio: "booking_pay_at_studio",
+  walk_in_package_credit: "walk_in_package_credit",
+  walk_in_pay_at_studio: "walk_in_pay_at_studio",
+} as const;
+
 export type AttendanceProgram =
   (typeof AttendanceProgram)[keyof typeof AttendanceProgram];
 
@@ -1031,6 +1057,10 @@ export interface Attendance {
   participantType?: AttendanceParticipantType;
   /** @nullable */
   participantChildId?: number | null;
+  /** @nullable */
+  participantName?: string | null;
+  /** @nullable */
+  payerName?: string | null;
   ownershipState?: AttendanceOwnershipState;
   /** @nullable */
   classId?: number | null;
@@ -1038,6 +1068,10 @@ export interface Attendance {
   scheduleId?: number | null;
   /** @nullable */
   bookingId?: number | null;
+  /** @nullable */
+  attendanceSource?: AttendanceAttendanceSource;
+  /** @nullable */
+  paymentSource?: AttendancePaymentSource;
   /** @nullable */
   checkedInBy?: string | null;
   status?: string;
@@ -1048,6 +1082,18 @@ export interface Attendance {
   /** @nullable */
   durationMinutes?: number | null;
 }
+
+/**
+ * @nullable
+ */
+export type CheckInBodyParticipantType =
+  | (typeof CheckInBodyParticipantType)[keyof typeof CheckInBodyParticipantType]
+  | null;
+
+export const CheckInBodyParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
 
 export type CheckInBodyStatus =
   (typeof CheckInBodyStatus)[keyof typeof CheckInBodyStatus];
@@ -1080,6 +1126,10 @@ export interface CheckInBody {
   notes?: string | null;
   /** @nullable */
   studentId?: number | null;
+  /** @nullable */
+  participantType?: CheckInBodyParticipantType;
+  /** @nullable */
+  participantChildId?: number | null;
   /** @nullable */
   classId?: number | null;
   /** @nullable */
@@ -1197,6 +1247,18 @@ export interface UploadDanceTypeIconBody {
   svg: string;
 }
 
+/**
+ * @nullable
+ */
+export type CreditTransactionParticipantType =
+  | (typeof CreditTransactionParticipantType)[keyof typeof CreditTransactionParticipantType]
+  | null;
+
+export const CreditTransactionParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
 export interface CreditTransaction {
   id: number;
   packageOrderId: number;
@@ -1212,6 +1274,10 @@ export interface CreditTransaction {
   referenceType?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  participantType?: CreditTransactionParticipantType;
+  /** @nullable */
+  participantChildId?: number | null;
   createdBy: string;
   /** @nullable */
   className?: string | null;
@@ -1236,6 +1302,29 @@ export interface CheckInQrBody {
   checkedInBy?: string;
 }
 
+export type CheckInQrResponseParticipantType =
+  (typeof CheckInQrResponseParticipantType)[keyof typeof CheckInQrResponseParticipantType];
+
+export const CheckInQrResponseParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+export type CheckInQrResponseAttendanceSource =
+  (typeof CheckInQrResponseAttendanceSource)[keyof typeof CheckInQrResponseAttendanceSource];
+
+export const CheckInQrResponseAttendanceSource = {
+  booking: "booking",
+} as const;
+
+export type CheckInQrResponsePaymentSource =
+  (typeof CheckInQrResponsePaymentSource)[keyof typeof CheckInQrResponsePaymentSource];
+
+export const CheckInQrResponsePaymentSource = {
+  booking_package_credit: "booking_package_credit",
+  booking_pay_at_studio: "booking_pay_at_studio",
+} as const;
+
 export interface CheckInQrResponse {
   attendanceId: number;
   studentName: string;
@@ -1246,6 +1335,14 @@ export interface CheckInQrResponse {
   /** @nullable */
   remainingCredits?: number | null;
   checkedInAt: string;
+  participantType: CheckInQrResponseParticipantType;
+  /** @nullable */
+  participantChildId?: number | null;
+  participantName: string;
+  attendanceSource: CheckInQrResponseAttendanceSource;
+  paymentSource: CheckInQrResponsePaymentSource;
+  /** @nullable */
+  packageOrderId?: number | null;
 }
 
 export interface ListCreditTransactionsResponse {
@@ -1294,6 +1391,52 @@ export interface MyCreditsResponse {
   participantBalances?: ParticipantCreditBalance[];
 }
 
+/**
+ * @nullable
+ */
+export type MyAttendanceRecordParticipantType =
+  | (typeof MyAttendanceRecordParticipantType)[keyof typeof MyAttendanceRecordParticipantType]
+  | null;
+
+export const MyAttendanceRecordParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+export type MyAttendanceRecordOwnershipState =
+  (typeof MyAttendanceRecordOwnershipState)[keyof typeof MyAttendanceRecordOwnershipState];
+
+export const MyAttendanceRecordOwnershipState = {
+  assigned: "assigned",
+  legacy_unassigned: "legacy_unassigned",
+} as const;
+
+/**
+ * @nullable
+ */
+export type MyAttendanceRecordAttendanceSource =
+  | (typeof MyAttendanceRecordAttendanceSource)[keyof typeof MyAttendanceRecordAttendanceSource]
+  | null;
+
+export const MyAttendanceRecordAttendanceSource = {
+  booking: "booking",
+  walk_in: "walk_in",
+} as const;
+
+/**
+ * @nullable
+ */
+export type MyAttendanceRecordPaymentSource =
+  | (typeof MyAttendanceRecordPaymentSource)[keyof typeof MyAttendanceRecordPaymentSource]
+  | null;
+
+export const MyAttendanceRecordPaymentSource = {
+  booking_package_credit: "booking_package_credit",
+  booking_pay_at_studio: "booking_pay_at_studio",
+  walk_in_package_credit: "walk_in_package_credit",
+  walk_in_pay_at_studio: "walk_in_pay_at_studio",
+} as const;
+
 export interface MyAttendanceRecord {
   id: number;
   studentEmail: string;
@@ -1306,6 +1449,19 @@ export interface MyAttendanceRecord {
   checkedInAt: string;
   /** @nullable */
   packageOrderId?: number | null;
+  /** @nullable */
+  bookingId?: number | null;
+  /** @nullable */
+  participantType?: MyAttendanceRecordParticipantType;
+  /** @nullable */
+  participantChildId?: number | null;
+  /** @nullable */
+  participantName?: string | null;
+  ownershipState?: MyAttendanceRecordOwnershipState;
+  /** @nullable */
+  attendanceSource?: MyAttendanceRecordAttendanceSource;
+  /** @nullable */
+  paymentSource?: MyAttendanceRecordPaymentSource;
   /** @nullable */
   classId?: number | null;
   /** @nullable */

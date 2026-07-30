@@ -3,10 +3,10 @@
 //
 // QR Check-in (POST /check-in/qr) and Manual booking-based Check-in
 // (POST /attendance with a bookingId) are only two entry points; both call
-// performBookingCheckIn() so the attendance record, credit deduction, ledger
-// row, booking→attended transition and notifications are produced by exactly
-// one code path. Walk-ins (no booking) are a separate, attendance-only path
-// and never run this function.
+// performBookingCheckIn() so participant verification, attendance,
+// booking→attended transition and notification are produced by exactly one
+// code path. Booking credit was already consumed during Phase D booking and
+// is only verified here. Walk-ins use their separate atomic settlement paths.
 //
 // The caller is responsible for:
 //   • opening the DB transaction,
@@ -27,6 +27,7 @@ import {
   creditTransactionsTable,
   paymentRecordsTable,
   paymentEventsTable,
+  studentsTable,
   type PaymentRecordRequestedChannel,
 } from "@workspace/db";
 import { createStudentNotification } from "./notifications";
@@ -35,6 +36,12 @@ import { resolveSingleClassPriceEgp } from "./singleClassPricing";
 import { egpToMinor } from "./money";
 import { sendPushNotification } from "./pushNotifications";
 import { logger } from "./logger";
+import { resolveBookingParticipant } from "./participants/resolveBookingParticipant";
+import { resolveParticipantPackageCredit } from "./bookings/resolveParticipantPackageCredit";
+import type { ParticipantType } from "@workspace/api-zod";
+import { calculateAgeOnDate, parseIsoDate } from "./eligibility/dateOnly";
+import { getCairoBusinessDate } from "./eligibility/dateOnly";
+import type { IsoDate } from "./eligibility/types";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Booking = typeof bookingsTable.$inferSelect;
@@ -54,6 +61,10 @@ export type CheckInErrorCode =
   | "invalid_qr"
   | "booking_not_found"
   | "booking_mismatch"
+  | "booking_participant_missing"
+  | "booking_participant_mismatch"
+  | "booking_credit_integrity_mismatch"
+  | "participant_not_found"
   | "already_attended"
   | "duplicate_attendance"
   | "booking_not_actionable"
@@ -69,7 +80,12 @@ export type CheckInErrorCode =
   | "candidate_key_mismatch"
   | "invalid_price_configuration"
   | "walkin_not_paid"
-  | "walkin_price_changed";
+  | "walkin_price_changed"
+  | "PACKAGE_PARTICIPANT_MISMATCH"
+  | "PACKAGE_EXPIRED"
+  | "PACKAGE_NO_CREDITS"
+  | "PACKAGE_DANCE_TYPE_MISMATCH"
+  | "PACKAGE_CREDIT_INTEGRITY_MISMATCH";
 
 export interface CheckInError {
   isCheckInError: true;
@@ -169,6 +185,9 @@ export interface PerformBookingCheckInParams {
   student: { id: number; name: string; email: string };
   paymentMode: "package_credit" | "pay_at_studio";
   packageOrderId?: number | null;
+  /** Optional caller assertion (manual/gateway flows). The booking remains authoritative. */
+  expectedParticipantType?: ParticipantType | null;
+  expectedParticipantChildId?: number | null;
   /** Audit trail — admin email or "system". */
   performedBy: string;
   /** Override the authoritative clock used for the check-in window check.
@@ -184,14 +203,74 @@ export interface BookingCheckInResult {
   creditDeducted: boolean;
   remainingCredits: number | null;
   checkedInAt: string;
+  participantType: ParticipantType;
+  participantChildId: number | null;
+  participantName: string;
+  attendanceSource: "booking";
+  paymentSource: "booking_package_credit" | "booking_pay_at_studio";
+  packageOrderId: number | null;
 }
 
 export async function performBookingCheckIn(
   tx: Tx,
-  { booking, student, paymentMode, packageOrderId, performedBy, now }: PerformBookingCheckInParams,
+  {
+    booking,
+    student,
+    paymentMode,
+    packageOrderId,
+    expectedParticipantType,
+    expectedParticipantChildId,
+    performedBy,
+    now,
+  }: PerformBookingCheckInParams,
 ): Promise<BookingCheckInResult> {
-  if (paymentMode === "package_credit" && packageOrderId == null) {
-    throw makeCheckInError(400, "package_required", "Package credit check-in requires a packageOrderId.");
+  if (
+    booking.accountOwnerStudentId !== student.id
+    || normalizeLegacyEmail(booking.studentEmail) !== normalizeLegacyEmail(student.email)
+  ) {
+    throw makeCheckInError(403, "booking_mismatch", "This booking does not belong to the resolved account.");
+  }
+  if (booking.participantType !== "self" && booking.participantType !== "child") {
+    throw makeCheckInError(
+      409,
+      "booking_participant_missing",
+      "This booking has no canonical participant identity and cannot be checked in automatically.",
+    );
+  }
+  if (
+    expectedParticipantType != null
+    && (
+      expectedParticipantType !== booking.participantType
+      || (expectedParticipantChildId ?? null) !== booking.participantChildId
+    )
+  ) {
+    throw makeCheckInError(
+      409,
+      "booking_participant_mismatch",
+      "The submitted attendance participant does not match the booking.",
+    );
+  }
+
+  const participantResolution = await resolveBookingParticipant(tx, student.id, {
+    participantType: booking.participantType,
+    participantChildId: booking.participantChildId,
+  });
+  if (!participantResolution.ok) {
+    throw makeCheckInError(
+      participantResolution.status,
+      "booking_participant_mismatch",
+      "The booking participant is no longer valid for this account.",
+    );
+  }
+  const participant = participantResolution.participant;
+  if (
+    participant.participantType !== booking.participantType
+    || participant.participantChildId !== booking.participantChildId
+  ) {
+    throw makeCheckInError(409, "booking_participant_mismatch", "The attendance participant does not match the booking.");
+  }
+  if (packageOrderId != null && packageOrderId !== booking.packageOrderId) {
+    throw makeCheckInError(409, "booking_participant_mismatch", "The submitted package does not match the booking credit source.");
   }
 
   const notificationContext = await getBookingNotificationContext(tx, booking);
@@ -276,41 +355,40 @@ export async function performBookingCheckIn(
     }
   }
 
-  // ── Step 5 — Validate the selected package credit (if any)
-  let selectedOrder: { id: number; studentEmail: string; remainingCredits: number; status: string } | null = null;
-  if (paymentMode === "package_credit") {
-    if (booking.scheduleId != null) {
-      const [schedule] = await tx
-        .select({ packageEligible: schedulesTable.packageEligible })
-        .from(schedulesTable)
-        .where(eq(schedulesTable.id, booking.scheduleId))
-        .limit(1);
-      if (schedule?.packageEligible === false) {
-        throw makeCheckInError(400, "package_not_eligible", "This schedule is not eligible for package credits.");
-      }
+  // ── Step 5 — Verify the booking-time deduction. Phase D already consumed
+  // the credit, so attendance must never lock/decrement the package again.
+  const bookingUsesPackage = booking.paymentMode === "package_credit" || booking.packageOrderId != null;
+  if (bookingUsesPackage) {
+    if (booking.packageOrderId == null) {
+      throw makeCheckInError(409, "booking_credit_integrity_mismatch", "The booking credit source is incomplete.");
     }
-
-    const [order] = await tx
+    const [bookingDeduction] = await tx
       .select({
-        id: packageOrdersTable.id,
-        studentEmail: packageOrdersTable.studentEmail,
-        remainingCredits: packageOrdersTable.remainingCredits,
-        status: packageOrdersTable.status,
+        id: creditTransactionsTable.id,
+        studentId: creditTransactionsTable.studentId,
+        participantType: creditTransactionsTable.participantType,
+        participantChildId: creditTransactionsTable.participantChildId,
+        packageOrderId: creditTransactionsTable.packageOrderId,
       })
-      .from(packageOrdersTable)
-      .where(eq(packageOrdersTable.id, packageOrderId!))
-      .for("update");
-
-    if (!order) {
-      throw makeCheckInError(404, "package_not_found", "The selected package order could not be found.");
+      .from(creditTransactionsTable)
+      .where(and(
+        eq(creditTransactionsTable.bookingId, booking.id),
+        eq(creditTransactionsTable.packageOrderId, booking.packageOrderId),
+        eq(creditTransactionsTable.type, "booking_deduction"),
+      ))
+      .limit(1);
+    if (
+      !bookingDeduction
+      || bookingDeduction.studentId !== student.id
+      || bookingDeduction.participantType !== participant.participantType
+      || bookingDeduction.participantChildId !== participant.participantChildId
+    ) {
+      throw makeCheckInError(
+        409,
+        "booking_credit_integrity_mismatch",
+        "The booking credit deduction could not be verified. No attendance was recorded.",
+      );
     }
-    if (order.studentEmail !== student.email || order.status !== "active") {
-      throw makeCheckInError(403, "invalid_package", "The selected package is not active for this student.");
-    }
-    if (order.remainingCredits <= 0) {
-      throw makeCheckInError(400, "no_credits", "This package has no remaining credits.");
-    }
-    selectedOrder = order;
   }
 
   // ── Step 6 — Create attendance record (real participant identity)
@@ -323,47 +401,30 @@ export async function performBookingCheckIn(
       classId: booking.classId ?? null,
       scheduleId: booking.scheduleId ?? null,
       bookingId: booking.id,
-      packageOrderId: selectedOrder?.id ?? null,
-      creditDeducted: paymentMode === "package_credit",
+      packageOrderId: booking.packageOrderId ?? null,
+      participantType: participant.participantType,
+      participantChildId: participant.participantChildId,
+      participantDateOfBirthSnapshot: booking.participantDateOfBirthSnapshot,
+      participantAgeOnOccurrence: booking.participantAgeOnOccurrence,
+      eligibilityEvaluatedOn: booking.eligibilityEvaluatedOn,
+      attendanceSource: "booking",
+      paymentSource: bookingUsesPackage ? "booking_package_credit" : "booking_pay_at_studio",
+      creditDeducted: false,
       checkedInBy: performedBy,
       status: "checked_in",
       classTitle: null,
-      notes: paymentMode === "pay_at_studio" ? "Payment mode: pay at studio" : null,
+      notes: bookingUsesPackage ? "Credit deducted at booking" : "Payment mode: pay at studio",
       checkedInAt: new Date().toISOString(),
     })
     .returning();
 
-  // ── Step 7 — Deduct one credit + immutable ledger row (package mode only)
-  let remainingCredits: number | null = null;
-  if (selectedOrder) {
-    const newRemaining = selectedOrder.remainingCredits - 1;
-    await tx
-      .update(packageOrdersTable)
-      .set({ remainingCredits: newRemaining, status: newRemaining <= 0 ? "fullyUsed" : selectedOrder.status })
-      .where(eq(packageOrdersTable.id, selectedOrder.id));
-
-    await tx.insert(creditTransactionsTable).values({
-      packageOrderId: selectedOrder.id,
-      studentId: student.id,
-      type: "attendance_deduction",
-      delta: -1,
-      balanceBefore: selectedOrder.remainingCredits,
-      balanceAfter: newRemaining,
-      referenceId: attendance.id,
-      referenceType: "attendance",
-      notes: `Check-in for ${notificationContext.label}`,
-      createdBy: performedBy,
-    });
-    remainingCredits = newRemaining;
-  }
-
-  // ── Step 8 — Mark booking attended
+  // ── Step 7 — Mark booking attended
   await tx
     .update(bookingsTable)
     .set({ status: "attended", bookingStatus: "attended" })
     .where(eq(bookingsTable.id, booking.id));
 
-  // ── Step 9 — Notifications
+  // ── Step 8 — Notification
   await createStudentNotification(tx, {
     studentId: student.id,
     title: "Checked in",
@@ -384,56 +445,20 @@ export async function performBookingCheckIn(
     },
   });
 
-  if (selectedOrder) {
-    await createStudentNotification(tx, {
-      studentId: student.id,
-      title: "Credit used",
-      body: `1 credit was used for ${notificationContext.label}.`,
-      type: "credits_exhausted",
-      relatedEntityType: "booking",
-      relatedEntityId: booking.id,
-      metadata: {
-        bookingId: booking.id,
-        className: notificationContext.className,
-        instructorName: notificationContext.instructorName,
-        branch: notificationContext.branch,
-        scheduleLabel: notificationContext.scheduleLabel,
-        participantName: notificationContext.participantName,
-        bookingScope: notificationContext.bookingScope,
-        remainingCredits,
-      },
-    });
-
-    if (remainingCredits === 0) {
-      await createStudentNotification(tx, {
-        studentId: student.id,
-        title: "Package credits used",
-        body: "Your package credits have been used.",
-        type: "credits_exhausted",
-        relatedEntityType: "package_order",
-        relatedEntityId: selectedOrder.id,
-        metadata: {
-          bookingId: booking.id,
-          className: notificationContext.className,
-          instructorName: notificationContext.instructorName,
-          branch: notificationContext.branch,
-          scheduleLabel: notificationContext.scheduleLabel,
-          participantName: notificationContext.participantName,
-          bookingScope: notificationContext.bookingScope,
-          remainingCredits,
-        },
-      });
-    }
-  }
-
   return {
     attendanceId: attendance.id,
     studentName: booking.studentName,
     studentEmail: student.email,
     classTitle: null,
-    creditDeducted: paymentMode === "package_credit",
-    remainingCredits,
+    creditDeducted: false,
+    remainingCredits: null,
     checkedInAt: attendance.checkedInAt,
+    participantType: participant.participantType,
+    participantChildId: participant.participantChildId,
+    participantName: participant.displayName,
+    attendanceSource: "booking",
+    paymentSource: bookingUsesPackage ? "booking_package_credit" : "booking_pay_at_studio",
+    packageOrderId: booking.packageOrderId ?? null,
   };
 }
 
@@ -502,6 +527,11 @@ export interface StudioWalkInResult {
   grossAmountMinor: number;
   finalPayableAmountMinor: number;
   checkedInAt: string;
+  participantType: ParticipantType;
+  participantChildId: number | null;
+  participantName: string;
+  attendanceSource: "walk_in";
+  paymentSource: "walk_in_pay_at_studio";
   pendingPush: StudioWalkInPendingPush | null;
 }
 
@@ -510,6 +540,32 @@ export async function performStudioWalkIn(
   params: PerformStudioWalkInParams,
 ): Promise<StudioWalkInResult> {
   const now = params.now ?? new Date();
+  let accountOwnerStudentId = params.studentId ?? null;
+  if (accountOwnerStudentId == null) {
+    const [account] = await tx
+      .select({ id: studentsTable.id })
+      .from(studentsTable)
+      .where(sql`lower(trim(${studentsTable.email})) = ${normalizeLegacyEmail(params.studentEmail)}`)
+      .limit(1);
+    accountOwnerStudentId = account?.id ?? null;
+  }
+  if (accountOwnerStudentId == null) {
+    throw makeCheckInError(404, "participant_not_found", "A linked account is required for Studio walk-in attendance.");
+  }
+  const participantResolution = await resolveBookingParticipant(tx, accountOwnerStudentId, {
+    participantType: params.childId != null ? "child" : "self",
+    participantChildId: params.childId ?? null,
+  });
+  if (!participantResolution.ok) {
+    throw makeCheckInError(
+      participantResolution.status,
+      "booking_participant_mismatch",
+      "The selected walk-in participant is unavailable for this account.",
+    );
+  }
+  const participant = participantResolution.participant;
+  const canonicalStudentName = participant.displayName;
+  const canonicalStudentEmail = participantResolution.account.email;
 
   // ── Step: resolve the exact positive server price — never a client value,
   // never a silent zero fallback. Same resolver Single-Class Booking
@@ -563,6 +619,13 @@ export async function performStudioWalkIn(
   }
 
   const checkedInAtIso = now.toISOString();
+  const evaluationDate = (occurrenceDate ?? getCairoBusinessDate(now)) as IsoDate;
+  const parsedDob = participant.dateOfBirth
+    ? parseIsoDate(participant.dateOfBirth, { today: evaluationDate })
+    : null;
+  const participantAge = parsedDob?.eligible
+    ? calculateAgeOnDate(parsedDob.value!, evaluationDate)
+    : null;
 
   // ── Insert the synthetic booking. bookingStatus/paymentStatus/status are
   // set directly to their terminal "already attended, already paid" shape
@@ -571,14 +634,18 @@ export async function performStudioWalkIn(
   const [booking] = await tx
     .insert(bookingsTable)
     .values({
-      studentName: params.studentName,
-      studentEmail: normalizeLegacyEmail(params.studentEmail),
-      accountOwnerStudentId: params.studentId ?? null,
+      studentName: canonicalStudentName,
+      studentEmail: normalizeLegacyEmail(canonicalStudentEmail),
+      accountOwnerStudentId,
+      participantType: participant.participantType,
       participantChildId: params.childId ?? null,
       bookingScope: params.childId != null ? "child" : "self",
       scheduleId: params.scheduleId ?? null,
       classId: params.classId ?? null,
       occurrenceDate,
+      participantDateOfBirthSnapshot: parsedDob?.eligible ? parsedDob.value : null,
+      participantAgeOnOccurrence: participantAge,
+      eligibilityEvaluatedOn: occurrenceDate,
       paymentMode: "pay_at_studio",
       bookingStatus: "attended",
       paymentStatus: "paid",
@@ -614,7 +681,8 @@ export async function performStudioWalkIn(
       confirmingAdminId: params.adminId,
       providerReference: null,
       internalReceiptRef: null,
-      studentId: params.studentId ?? null,
+      studentId: accountOwnerStudentId,
+      participantType: participant.participantType,
       childId: params.childId ?? null,
       creationIdempotencyKey: null,
     })
@@ -641,9 +709,16 @@ export async function performStudioWalkIn(
   const [attendance] = await tx
     .insert(attendanceTable)
     .values({
-      studentName: params.studentName,
-      studentEmail: normalizeLegacyEmail(params.studentEmail),
-      studentId: params.studentId ?? null,
+      studentName: canonicalStudentName,
+      studentEmail: normalizeLegacyEmail(canonicalStudentEmail),
+      studentId: accountOwnerStudentId,
+      participantType: participant.participantType,
+      participantChildId: participant.participantChildId,
+      participantDateOfBirthSnapshot: parsedDob?.eligible ? parsedDob.value : null,
+      participantAgeOnOccurrence: participantAge,
+      eligibilityEvaluatedOn: occurrenceDate,
+      attendanceSource: "walk_in",
+      paymentSource: "walk_in_pay_at_studio",
       classId: params.classId ?? null,
       scheduleId: params.scheduleId ?? null,
       bookingId: booking.id,
@@ -661,13 +736,13 @@ export async function performStudioWalkIn(
   // deferred to the caller post-commit (dispatchPush:false — see module
   // header comment).
   let pendingPush: StudioWalkInPendingPush | null = null;
-  if (params.studentId != null) {
+  if (accountOwnerStudentId != null) {
     const title = "Checked in";
     const body = `You have been checked in for your class.`;
     const metadata = { bookingId: booking.id, classId: params.classId ?? null, scheduleId: params.scheduleId ?? null };
     const notificationRow = await createStudentNotification(tx, {
-      studentId: params.studentId,
-      studentEmail: params.studentEmail,
+      studentId: accountOwnerStudentId,
+      studentEmail: canonicalStudentEmail,
       title,
       body,
       type: "attendance_checked_in",
@@ -678,7 +753,7 @@ export async function performStudioWalkIn(
     });
     if (notificationRow) {
       pendingPush = {
-        studentId: params.studentId,
+        studentId: accountOwnerStudentId,
         title,
         body,
         data: { type: "attendance_checked_in", ...metadata },
@@ -691,11 +766,16 @@ export async function performStudioWalkIn(
     bookingId: booking.id,
     attendanceId: attendance.id,
     paymentRecordId: paymentRecord.id,
-    studentName: params.studentName,
-    studentEmail: normalizeLegacyEmail(params.studentEmail),
+    studentName: canonicalStudentName,
+    studentEmail: normalizeLegacyEmail(canonicalStudentEmail),
     grossAmountMinor,
     finalPayableAmountMinor,
     checkedInAt: attendance.checkedInAt,
+    participantType: participant.participantType,
+    participantChildId: participant.participantChildId,
+    participantName: participant.displayName,
+    attendanceSource: "walk_in",
+    paymentSource: "walk_in_pay_at_studio",
     pendingPush,
   };
 }
@@ -712,4 +792,170 @@ export function dispatchStudioWalkInPush(pendingPush: StudioWalkInPendingPush | 
   void sendPushNotification(pendingPush).catch((error) => {
     logger.error({ err: error, notificationId: pendingPush.notificationId }, "Failed to dispatch studio walk-in push");
   });
+}
+
+export interface StudioPackageWalkInResult {
+  attendanceId: number;
+  bookingId: null;
+  studentName: string;
+  studentEmail: string;
+  participantType: ParticipantType;
+  participantChildId: number | null;
+  participantName: string;
+  packageOrderId: number;
+  creditDeducted: true;
+  remainingCredits: number;
+  attendanceSource: "walk_in";
+  paymentSource: "walk_in_package_credit";
+  checkedInAt: string;
+}
+
+/**
+ * General Studio package walk-in. There is deliberately no booking row:
+ * attendance owns this one deduction and records the participant directly.
+ */
+export async function performStudioPackageWalkIn(
+  tx: Tx,
+  params: {
+    accountOwnerStudentId: number;
+    participantType: ParticipantType;
+    participantChildId: number | null;
+    packageOrderId: number;
+    classId: number | null;
+    scheduleId: number;
+    occurrenceDate: string;
+    performedBy: string;
+    now?: Date;
+  },
+): Promise<StudioPackageWalkInResult> {
+  const participantResolution = await resolveBookingParticipant(tx, params.accountOwnerStudentId, {
+    participantType: params.participantType,
+    participantChildId: params.participantChildId,
+  });
+  if (!participantResolution.ok) {
+    throw makeCheckInError(
+      participantResolution.status,
+      "booking_participant_mismatch",
+      "The selected walk-in participant is unavailable for this account.",
+    );
+  }
+  const { account, participant } = participantResolution;
+  const [schedule] = await tx
+    .select({ classId: schedulesTable.classId, packageEligible: schedulesTable.packageEligible })
+    .from(schedulesTable)
+    .where(eq(schedulesTable.id, params.scheduleId))
+    .limit(1);
+  if (!schedule || schedule.packageEligible === false) {
+    throw makeCheckInError(400, "package_not_eligible", "This schedule is not eligible for package credits.");
+  }
+  if (params.classId != null && schedule.classId !== params.classId) {
+    throw makeCheckInError(409, "booking_mismatch", "The selected class does not match the schedule.");
+  }
+  const classId = schedule.classId ?? params.classId;
+  const [klass] = classId != null
+    ? await tx
+        .select({ danceTypeId: classesTable.danceTypeId })
+        .from(classesTable)
+        .where(eq(classesTable.id, classId))
+        .limit(1)
+    : [];
+
+  const credit = await resolveParticipantPackageCredit(tx, {
+    packageOrderId: params.packageOrderId,
+    accountOwnerStudentId: account.id,
+    participantType: participant.participantType,
+    participantChildId: participant.participantChildId,
+    occurrenceDate: params.occurrenceDate,
+    danceTypeId: klass?.danceTypeId ?? null,
+  });
+  if (!credit.ok) {
+    throw makeCheckInError(409, credit.code, credit.message);
+  }
+
+  const parsedDob = parseIsoDate(participant.dateOfBirth, { today: params.occurrenceDate as never });
+  const participantAge = parsedDob.eligible
+    ? calculateAgeOnDate(parsedDob.value!, params.occurrenceDate as never)
+    : null;
+  const checkedInAt = (params.now ?? new Date()).toISOString();
+  const [attendance] = await tx
+    .insert(attendanceTable)
+    .values({
+      studentName: participant.displayName,
+      studentEmail: normalizeLegacyEmail(account.email),
+      studentId: account.id,
+      participantType: participant.participantType,
+      participantChildId: participant.participantChildId,
+      participantDateOfBirthSnapshot: parsedDob.eligible ? parsedDob.value : null,
+      participantAgeOnOccurrence: participantAge,
+      eligibilityEvaluatedOn: params.occurrenceDate,
+      attendanceSource: "walk_in",
+      paymentSource: "walk_in_package_credit",
+      classId,
+      scheduleId: params.scheduleId,
+      bookingId: null,
+      packageOrderId: credit.order.id,
+      creditDeducted: true,
+      checkedInBy: params.performedBy,
+      status: "checked_in",
+      notes: "Studio walk-in (package credit)",
+      checkedInAt,
+    })
+    .returning();
+
+  const balanceBefore = credit.order.remainingCredits;
+  const balanceAfter = balanceBefore - 1;
+  await tx
+    .update(packageOrdersTable)
+    .set({
+      remainingCredits: balanceAfter,
+      status: balanceAfter === 0 ? "fullyUsed" : credit.order.status,
+    })
+    .where(eq(packageOrdersTable.id, credit.order.id));
+  await tx.insert(creditTransactionsTable).values({
+    packageOrderId: credit.order.id,
+    studentId: account.id,
+    participantType: participant.participantType,
+    participantChildId: participant.participantChildId,
+    type: "attendance_deduction",
+    delta: -1,
+    balanceBefore,
+    balanceAfter,
+    referenceId: attendance.id,
+    referenceType: "attendance",
+    attendanceId: attendance.id,
+    notes: "General Studio package walk-in credit deduction",
+    createdBy: params.performedBy,
+  });
+
+  await createStudentNotification(tx, {
+    studentId: account.id,
+    title: "Checked in",
+    body: "You have been checked in for your class.",
+    type: "attendance_checked_in",
+    relatedEntityType: "attendance",
+    relatedEntityId: attendance.id,
+    metadata: {
+      attendanceId: attendance.id,
+      classId,
+      scheduleId: params.scheduleId,
+      participantName: participant.displayName,
+      participantType: participant.participantType,
+    },
+  });
+
+  return {
+    attendanceId: attendance.id,
+    bookingId: null,
+    studentName: participant.displayName,
+    studentEmail: normalizeLegacyEmail(account.email),
+    participantType: participant.participantType,
+    participantChildId: participant.participantChildId,
+    participantName: participant.displayName,
+    packageOrderId: credit.order.id,
+    creditDeducted: true,
+    remainingCredits: balanceAfter,
+    attendanceSource: "walk_in",
+    paymentSource: "walk_in_package_credit",
+    checkedInAt: attendance.checkedInAt,
+  };
 }

@@ -922,6 +922,7 @@ export default function ProfileScreen() {
                   <View style={styles.attendanceTextCol}>
                     <Text style={styles.attendanceTitle}>{rec.classTitle || "Studio session"}</Text>
                     <Text style={styles.attendanceSubtitle}>
+                      {rec.participantName ? `${rec.participantName} · ` : ""}
                       {rec.instructorName || "Instructor"}{date ? ` · ${date}` : ""}{time ? ` · ${time}` : ""}
                     </Text>
                   </View>

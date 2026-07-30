@@ -9,7 +9,7 @@
  * /api/package-orders (all orders) and filtered client-side.
  */
 import { Router, type IRouter } from "express";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import * as zod from "zod";
 import {
   db,
@@ -283,11 +283,18 @@ router.get("/my/attendance", async (req, res): Promise<void> => {
   const page = (query.success && query.data.page) ? query.data.page : 1;
   const limit = (query.success && query.data.limit) ? query.data.limit : 20;
   const offset = (page - 1) * limit;
+  const ownershipCondition = or(
+    eq(attendanceTable.studentId, req.studentId!),
+    and(
+      sql`lower(trim(${attendanceTable.studentEmail})) = ${req.studentEmail!.trim().toLowerCase()}`,
+      sql`${attendanceTable.participantType} is null`,
+    ),
+  );
 
   const [countRow] = await db
     .select({ total: sql<number>`count(*)::int` })
     .from(attendanceTable)
-    .where(eq(attendanceTable.studentEmail, req.studentEmail!));
+    .where(ownershipCondition);
 
   const total = Number(countRow?.total ?? 0);
 
@@ -301,6 +308,15 @@ router.get("/my/attendance", async (req, res): Promise<void> => {
       creditDeducted: attendanceTable.creditDeducted,
       checkedInAt: attendanceTable.checkedInAt,
       packageOrderId: attendanceTable.packageOrderId,
+      bookingId: attendanceTable.bookingId,
+      participantType: attendanceTable.participantType,
+      participantChildId: attendanceTable.participantChildId,
+      participantName: attendanceTable.studentName,
+      ownershipState: sql<"assigned" | "legacy_unassigned">`
+        case when ${attendanceTable.participantType} is null then 'legacy_unassigned' else 'assigned' end
+      `,
+      attendanceSource: attendanceTable.attendanceSource,
+      paymentSource: attendanceTable.paymentSource,
       classId: attendanceTable.classId,
       scheduleId: attendanceTable.scheduleId,
       notes: attendanceTable.notes,
@@ -310,7 +326,7 @@ router.get("/my/attendance", async (req, res): Promise<void> => {
     .from(attendanceTable)
     .leftJoin(classesTable, eq(attendanceTable.classId, classesTable.id))
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
-    .where(eq(attendanceTable.studentEmail, req.studentEmail!))
+    .where(ownershipCondition)
     .orderBy(desc(attendanceTable.checkedInAt))
     .limit(limit)
     .offset(offset);

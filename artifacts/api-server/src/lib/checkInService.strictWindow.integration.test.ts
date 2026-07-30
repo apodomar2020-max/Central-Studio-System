@@ -91,8 +91,8 @@ async function makeBooking(startTime: string, endTime: string, label: string, oc
     [classId, occurrenceDate, startTime, endTime],
   );
   const booking = await pool.query(
-    `INSERT INTO bookings (student_name, student_email, account_owner_student_id, schedule_id, class_id, occurrence_date, status, booking_status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'confirmed') RETURNING id`,
+    `INSERT INTO bookings (student_name, student_email, account_owner_student_id, participant_type, booking_scope, schedule_id, class_id, occurrence_date, status, booking_status)
+     VALUES ($1, $2, $3, 'self', 'self', $4, $5, $6, 'confirmed', 'confirmed') RETURNING id`,
     [`Studio Cutoff Test ${label}`, studentEmail, studentId, schedule.rows[0].id, classId, occurrenceDate],
   );
   return booking.rows[0].id;
@@ -169,4 +169,117 @@ test("Studio occurrence-specific booking for Tuesday 01:00 opens Monday at 23:00
     attemptCheckIn(endedId, cairoAt(tuesday, "02:00")),
     (err: unknown) => isCheckInError(err) && err.code === "check_in_closed",
   );
+});
+
+test("booking-backed package attendance preserves the booking deduction under concurrent scans", async () => {
+  const schedule = await pool.query(
+    `INSERT INTO schedules (class_id, type, status, date, start_time, end_time, package_eligible)
+     VALUES ($1, 'one_time', 'active', $2, '17:00', '18:00', true) RETURNING id`,
+    [classId, OCCURRENCE_DATE],
+  );
+  const pkg = await pool.query(
+    `INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active)
+     VALUES ('Attendance No Double Deduction', 'per_class', 1000, 5, 6, true) RETURNING id`,
+  );
+  const order = await pool.query(
+    `INSERT INTO package_orders
+      (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits,
+       status, participant_type)
+     VALUES ('Studio Cutoff Test', $1, $2, $3, 'Attendance No Double Deduction', 5, 4, 'active', 'self')
+     RETURNING id`,
+    [studentEmail, studentId, pkg.rows[0].id],
+  );
+  const booking = await pool.query(
+    `INSERT INTO bookings
+      (student_name, student_email, account_owner_student_id, participant_type, booking_scope,
+       schedule_id, class_id, occurrence_date, payment_mode, package_order_id, status, booking_status)
+     VALUES ('Studio Cutoff Test', $1, $2, 'self', 'self', $3, $4, $5,
+       'package_credit', $6, 'confirmed', 'confirmed') RETURNING id`,
+    [studentEmail, studentId, schedule.rows[0].id, classId, OCCURRENCE_DATE, order.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after,
+       reference_id, reference_type, booking_id, created_by)
+     VALUES ($1, $2, 'self', 'booking_deduction', -1, 5, 4, $3, 'booking', $3, 'test')`,
+    [order.rows[0].id, studentId, booking.rows[0].id],
+  );
+
+  const results = await Promise.allSettled([
+    attemptCheckIn(booking.rows[0].id, cairoAt(OCCURRENCE_DATE, "17:30")),
+    attemptCheckIn(booking.rows[0].id, cairoAt(OCCURRENCE_DATE, "17:30")),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+
+  const [balance, deductions, attendance] = await Promise.all([
+    pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [order.rows[0].id]),
+    pool.query(
+      `SELECT type, count(*)::int AS n FROM credit_transactions
+       WHERE package_order_id = $1 GROUP BY type ORDER BY type`,
+      [order.rows[0].id],
+    ),
+    pool.query(
+      `SELECT participant_type, participant_child_id, credit_deducted, attendance_source, payment_source
+       FROM attendance WHERE booking_id = $1`,
+      [booking.rows[0].id],
+    ),
+  ]);
+  assert.equal(balance.rows[0].remaining_credits, 4, "attendance must not decrement the package again");
+  assert.deepEqual(deductions.rows, [{ type: "booking_deduction", n: 1 }]);
+  assert.equal(attendance.rowCount, 1);
+  assert.deepEqual(attendance.rows[0], {
+    participant_type: "self",
+    participant_child_id: null,
+    credit_deducted: false,
+    attendance_source: "booking",
+    payment_source: "booking_package_credit",
+  });
+});
+
+test("child booking attendance rejects a self assertion and persists the owned child", async () => {
+  const child = await pool.query(
+    `INSERT INTO children (parent_id, full_name, date_of_birth)
+     VALUES ($1, 'Attendance Child', '2014-08-03') RETURNING id`,
+    [studentId],
+  );
+  const bookingId = await makeBooking("17:00", "18:00", "child-participant");
+  await pool.query(
+    `UPDATE bookings
+     SET student_name = 'Attendance Child', participant_type = 'child',
+         participant_child_id = $1, booking_scope = 'child'
+     WHERE id = $2`,
+    [child.rows[0].id, bookingId],
+  );
+
+  await assert.rejects(
+    db.transaction(async (tx) => {
+      const [booking] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, bookingId)).for("update");
+      return performBookingCheckIn(tx, {
+        booking,
+        student: { id: studentId, name: "Studio Cutoff Test", email: studentEmail },
+        paymentMode: "pay_at_studio",
+        expectedParticipantType: "self",
+        expectedParticipantChildId: null,
+        performedBy: "test@example.com",
+        now: cairoAt(OCCURRENCE_DATE, "17:30"),
+      });
+    }),
+    (err: unknown) => isCheckInError(err) && err.code === "booking_participant_mismatch",
+  );
+
+  const result = await db.transaction(async (tx) => {
+    const [booking] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, bookingId)).for("update");
+    return performBookingCheckIn(tx, {
+      booking,
+      student: { id: studentId, name: "Studio Cutoff Test", email: studentEmail },
+      paymentMode: "pay_at_studio",
+      expectedParticipantType: "child",
+      expectedParticipantChildId: child.rows[0].id,
+      performedBy: "test@example.com",
+      now: cairoAt(OCCURRENCE_DATE, "17:30"),
+    });
+  });
+  assert.equal(result.participantType, "child");
+  assert.equal(result.participantChildId, child.rows[0].id);
+  assert.equal(result.creditDeducted, false);
 });

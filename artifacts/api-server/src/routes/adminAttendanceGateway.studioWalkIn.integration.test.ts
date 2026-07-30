@@ -89,6 +89,19 @@ async function makeStudent(phone: string): Promise<{ id: number; email: string; 
   return { id: result.rows[0].id as number, email, name: `Gateway Walkin Test ${studentCounter}` };
 }
 
+async function activateSelfOrder(orderId: number, studentId: number, credits = 8): Promise<void> {
+  await pool.query(
+    `UPDATE package_orders SET participant_type = 'self' WHERE id = $1`,
+    [orderId],
+  );
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
+     VALUES ($1, $2, 'self', 'package_activated', $3, 0, $3, 'test')`,
+    [orderId, studentId, credits],
+  );
+}
+
 function uniquePhone(): string {
   studentCounter += 1;
   const suffix = String(Date.now() % 10_000_000).padStart(7, "0") + String(studentCounter).padStart(2, "0");
@@ -284,6 +297,7 @@ test("a Package Credit walk-in through the gateway reuses the existing credit fl
      VALUES ($1, $2, $3, $4, 'GW Walkin Pkg', 8, 8, 'active') RETURNING id`,
     [student.name, student.email, student.id, pkg.rows[0].id],
   );
+  await activateSelfOrder(order.rows[0].id, student.id);
   const candidate = await resolveWalkInCandidate(phone);
 
   const before = await pool.query(`SELECT count(*)::int AS n FROM payment_records WHERE flow_type = 'studio_walkin'`);
@@ -372,6 +386,66 @@ test("a paid child walk-in maps identity correctly: payment_records.student_id i
   const record = await pool.query(`SELECT student_id, child_id FROM payment_records WHERE booking_id = $1`, [attendance.bookingId]);
   assert.equal(record.rows[0].student_id, parent.id);
   assert.equal(record.rows[0].child_id, childId);
+});
+
+test("an owned child package walk-in deducts only that child's entitlement", async () => {
+  const phone = uniquePhone();
+  const parent = await makeStudent(phone);
+  const child = await pool.query(
+    `INSERT INTO children (parent_id, full_name, date_of_birth)
+     VALUES ($1, 'Gateway Package Child', '2014-07-30') RETURNING id`,
+    [parent.id],
+  );
+  const pkg = await pool.query(
+    `INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active)
+     VALUES ('Gateway Child Package', 'per_class', 1000, 3, 6, true) RETURNING id`,
+  );
+  const order = await pool.query(
+    `INSERT INTO package_orders
+      (student_name, student_email, student_id, package_id, package_name, total_credits,
+       remaining_credits, status, participant_type, participant_child_id)
+     VALUES ('Gateway Package Child', $1, $2, $3, 'Gateway Child Package', 3, 3,
+       'active', 'child', $4) RETURNING id`,
+    [parent.email, parent.id, pkg.rows[0].id, child.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, participant_child_id, type,
+       delta, balance_before, balance_after, created_by)
+     VALUES ($1, $2, 'child', $3, 'package_activated', 3, 0, 3, 'test')`,
+    [order.rows[0].id, parent.id, child.rows[0].id],
+  );
+  const candidate = await resolveWalkInCandidate(phone, child.rows[0].id);
+  const res = await asAdmin("/api/admin/attendance/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      candidateKey: candidate.candidateKey,
+      program: "studio",
+      accountId: parent.id,
+      source: "phone",
+      scheduleId,
+      childId: child.rows[0].id,
+      paymentMode: "package_credit",
+      packageOrderId: order.rows[0].id,
+    }),
+  });
+  assert.equal(res.status, 201);
+  expectedPushCalls += 2;
+  const [balance, attendance] = await Promise.all([
+    pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [order.rows[0].id]),
+    pool.query(
+      `SELECT participant_type, participant_child_id, booking_id, payment_source
+       FROM attendance WHERE package_order_id = $1`,
+      [order.rows[0].id],
+    ),
+  ]);
+  assert.equal(balance.rows[0].remaining_credits, 2);
+  assert.deepEqual(attendance.rows[0], {
+    participant_type: "child",
+    participant_child_id: child.rows[0].id,
+    booking_id: null,
+    payment_source: "walk_in_package_credit",
+  });
 });
 
 test("an unrelated child id (belonging to a different parent) is rejected before any write", async () => {
@@ -632,6 +706,7 @@ test("Part D: package-credit walk-in deducts exactly one credit, one ledger row,
     [student.name, student.email, student.id, pkg.rows[0].id],
   );
   const packageOrderId = order.rows[0].id as number;
+  await activateSelfOrder(packageOrderId, student.id);
   const candidate = await resolveWalkInCandidate(phone);
 
   const paymentRecordsBefore = await pool.query(`SELECT count(*)::int AS n FROM payment_records`);
@@ -710,6 +785,7 @@ test("Part D: two concurrent package-credit check-ins for the same candidateKey 
     [student.name, student.email, student.id, pkg.rows[0].id],
   );
   const packageOrderId = order.rows[0].id as number;
+  await activateSelfOrder(packageOrderId, student.id);
   const candidate = await resolveWalkInCandidate(phone);
   const confirmBody = JSON.stringify({
     candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",

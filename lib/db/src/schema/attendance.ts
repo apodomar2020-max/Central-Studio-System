@@ -27,8 +27,11 @@ export const attendanceTable = pgTable("attendance", {
   studentId: integer("student_id"),   // → students.id (set when scanned via QR token)
   participantType: text("participant_type"),
   participantChildId: integer("participant_child_id").references(() => childrenTable.id, { onDelete: "set null" }),
+  participantDateOfBirthSnapshot: date("participant_date_of_birth_snapshot", { mode: "string" }),
   participantAgeOnOccurrence: smallint("participant_age_on_occurrence"),
   eligibilityEvaluatedOn: date("eligibility_evaluated_on", { mode: "string" }),
+  attendanceSource: text("attendance_source"),
+  paymentSource: text("payment_source"),
   classId: integer("class_id"),       // → classes.id  (set when admin picks from dropdown)
   scheduleId: integer("schedule_id"), // → schedules.id (set when admin picks from dropdown)
   // Ballet system separation: set for ballet check-ins. classId/scheduleId
@@ -79,7 +82,21 @@ export const attendanceTable = pgTable("attendance", {
   check("attendance_participant_age_snapshot_check", sql`
     ${table.participantAgeOnOccurrence} is null or ${table.participantAgeOnOccurrence} between 0 and 150
   `),
+  check("attendance_source_check", sql`
+    ${table.attendanceSource} is null or ${table.attendanceSource} in ('booking', 'walk_in')
+  `),
+  check("attendance_payment_source_check", sql`
+    ${table.paymentSource} is null
+    or ${table.paymentSource} in (
+      'booking_package_credit',
+      'booking_pay_at_studio',
+      'walk_in_package_credit',
+      'walk_in_pay_at_studio'
+    )
+  `),
   index("attendance_participant_child_checked_in_at_idx").on(table.participantChildId, table.checkedInAt),
+  index("attendance_owner_participant_checked_in_at_idx")
+    .on(table.studentId, table.participantType, table.participantChildId, table.checkedInAt),
 ]));
 
 export const insertAttendanceSchema = createInsertSchema(attendanceTable).omit({ id: true, createdAt: true, updatedAt: true });

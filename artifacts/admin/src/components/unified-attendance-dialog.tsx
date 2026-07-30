@@ -401,8 +401,9 @@ export function UnifiedAttendanceDialog({
     if (!selected || submitLock) return;
     const { account, candidate } = selected;
     if (candidate.eligibility !== "eligible") return;
-    if (candidate.program === "studio" && paymentMode == null) return;
-    if (candidate.program === "studio" && paymentMode === "package_credit" && !canPackageDeduct) {
+    const isStudioWalkIn = candidate.program === "studio" && candidate.bookingId == null;
+    if (isStudioWalkIn && paymentMode == null) return;
+    if (isStudioWalkIn && paymentMode === "package_credit" && !canPackageDeduct) {
       setErrorMessage("You do not have permission to deduct package credits.");
       return;
     }
@@ -418,11 +419,11 @@ export function UnifiedAttendanceDialog({
         source: resolverResult?.source ?? "qr",
       };
       if (candidate.program === "studio") {
-        body.paymentMode = paymentMode;
-        if (paymentMode === "package_credit") body.packageOrderId = selectedPackageId;
         if (candidate.bookingId != null) {
           body.bookingId = candidate.bookingId;
         } else {
+          body.paymentMode = paymentMode;
+          if (paymentMode === "package_credit") body.packageOrderId = selectedPackageId;
           // Studio walk-in (Finance Phase 2B-4): no pre-existing booking.
           // The resolved price is echoed back exactly as displayed — never
           // editable, never re-entered — so the server can guarantee it
@@ -649,7 +650,7 @@ export function UnifiedAttendanceDialog({
 
               return (
                 <>
-                  {selected.candidate.program === "studio" && (
+                  {selected.candidate.program === "studio" && isWalkIn && (
                     <div className="space-y-2">
                       <p className="text-sm font-semibold">Payment</p>
                       <div className="flex gap-2">
@@ -718,7 +719,7 @@ export function UnifiedAttendanceDialog({
                       onClick={() => void confirmAttendance()}
                       disabled={
                         submitLock ||
-                        (selected.candidate.program === "studio" &&
+                        (isWalkIn &&
                           (paymentMode == null ||
                             (paymentMode === "package_credit" && selectedPackageId == null)))
                       }

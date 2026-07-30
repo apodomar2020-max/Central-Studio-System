@@ -55,7 +55,6 @@ type Phase = "scanning" | "resolving" | "selecting" | "submitting" | "done" | "e
  * error       – started but html5-qrcode threw (driver issue, already in use, etc.)
  */
 type CameraStatus = "idle" | "requesting" | "active" | "denied" | "unsupported" | "error";
-type PaymentMode = "package_credit" | "pay_at_studio";
 
 type ScanResult =
   | { type: "token"; token: string }
@@ -285,7 +284,6 @@ export function ScanCheckInDialog({
   // Quick filter for the booking list: all participants, self only, or children only.
   const [scopeFilter, setScopeFilter] = useState<"all" | "self" | "child">("all");
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
-  const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
 
   const { data: allPackageOrders = [] } = useListPackageOrders();
 
@@ -366,7 +364,6 @@ export function ScanCheckInDialog({
     setShowAllBookings(false);
     setSelectedBookingId(null);
     setScopeFilter("all");
-    setPaymentMode(null);
   }
 
   const handleScanResult = useCallback(async (decoded: string) => {
@@ -440,23 +437,12 @@ export function ScanCheckInDialog({
     setPhase("submitting");
 
     // ── Path A: QR endpoint (token scan + booking selected) ──────────────────
-    // Uses the credit ledger and atomically marks the booking as attended.
+    // The booking already owns its payment/credit decision. Check-in verifies
+    // that source and creates attendance without choosing or deducting again.
     if (scannedQrToken && selectedBookingId) {
-      if (!paymentMode) {
-        setDuplicateError("Choose Package Credit or Pay at Studio before checking in.");
-        setPhase("selecting");
-        return;
-      }
-      if (paymentMode === "package_credit" && !selectedPackageId) {
-        setDuplicateError("Choose the package to deduct from before checking in.");
-        setPhase("selecting");
-        return;
-      }
-      if (paymentMode === "package_credit" && !canPackageDeduct) {
-        setDuplicateError("You do not have permission to deduct package credits.");
-        setPhase("selecting");
-        return;
-      }
+      const booking = studentBookings.find((item) => item.id === selectedBookingId);
+      if (!booking) return;
+      const bookingPaymentMode = booking.paymentMode === "package_credit" ? "package_credit" : "pay_at_studio";
 
       try {
         const row = await customFetch<CheckInQrResponse>("/api/check-in/qr", {
@@ -464,8 +450,8 @@ export function ScanCheckInDialog({
           body: JSON.stringify({
             qrToken: scannedQrToken,
             bookingId: selectedBookingId,
-            paymentMode,
-            packageOrderId: paymentMode === "package_credit" ? selectedPackageId : undefined,
+            paymentMode: bookingPaymentMode,
+            packageOrderId: bookingPaymentMode === "package_credit" ? booking.packageOrderId : undefined,
           }),
         });
 
@@ -1062,7 +1048,6 @@ export function ScanCheckInDialog({
                         const nextId = selectedBookingId === bk.id ? null : bk.id;
                         setSelectedBookingId(nextId);
                         setSelectedPackageId(null);
-                        setPaymentMode(null);
                       }}
                       disabled={!eligible}
                       className="w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl text-sm text-left transition-all disabled:cursor-not-allowed"
@@ -1119,7 +1104,7 @@ export function ScanCheckInDialog({
                 {selectedBookingId && selectedBookingEligible && (
                   <>
                     <p className="text-xs" style={{ color: STUDIO_CYAN }}>
-                      Choose how this check-in is being paid before confirming.
+                      Payment was resolved when this booking was created. Check-in will not deduct another credit.
                     </p>
                     {studentBookings.find((bk) => bk.id === selectedBookingId)?.paymentMode === "pay_at_studio" &&
                       studentBookings.find((bk) => bk.id === selectedBookingId)?.paymentStatus !== "paid" && (
@@ -1145,73 +1130,6 @@ export function ScanCheckInDialog({
                 <p className="text-xs" style={{ color: "#8A9AB0" }}>
                   This member has no confirmed booking for today&apos;s class. Check-in opens 2 hours before the class starts.
                 </p>
-              </div>
-            )}
-
-            {canCheckIn && isTokenFlow && selectedBookingId && selectedBookingEligible && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8A9AB0" }}>
-                  Check-in Mode
-                </p>
-                {canPackageDeduct && selectedBooking && bookingScopeOf(selectedBooking) === "child" && activePackages.length > 0 && (
-                  <p className="text-[11px] px-1" style={{ color: AMBER }}>
-                    Credits will be deducted from the account owner&apos;s package.
-                  </p>
-                )}
-                <button
-                  onClick={() => {
-                    setPaymentMode("pay_at_studio");
-                    setSelectedPackageId(null);
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
-                  style={{
-                    background: paymentMode === "pay_at_studio" ? `${AMBER}15` : "hsl(203 30% 14%)",
-                    border: `1px solid ${paymentMode === "pay_at_studio" ? AMBER + "55" : "hsl(203 30% 18%)"}`,
-                  }}
-                >
-                  <span className="font-medium text-white">Pay at Studio / Cash</span>
-                  <span className="text-xs" style={{ color: AMBER }}>No credit deduction</span>
-                </button>
-
-                {canPackageDeduct && (activePackages.length === 0 ? (
-                  <div
-                    className="text-sm px-3 py-2.5 rounded-xl"
-                    style={{ background: `${AMBER}10`, color: AMBER, border: `1px solid ${AMBER}25` }}
-                  >
-                    No active packages with credits found.
-                  </div>
-                ) : (
-                  activePackages.map((pkg) => (
-                    <button
-                      key={pkg.id}
-                      onClick={() => {
-                        setPaymentMode("package_credit");
-                        setSelectedPackageId(pkg.id);
-                      }}
-                      disabled={pkg.remainingCredits <= 0}
-                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all disabled:opacity-40"
-                      style={{
-                        background:
-                          paymentMode === "package_credit" && selectedPackageId === pkg.id
-                            ? `${STUDIO_CYAN}15`
-                            : "hsl(203 30% 14%)",
-                        border: `1px solid ${
-                          paymentMode === "package_credit" && selectedPackageId === pkg.id
-                            ? STUDIO_CYAN + "50"
-                            : "hsl(203 30% 18%)"
-                        }`,
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <CreditCard className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
-                        <span className="font-medium text-white">{pkg.packageName}</span>
-                      </div>
-                      <span className="text-xs font-semibold" style={{ color: STUDIO_CYAN }}>
-                        {pkg.remainingCredits} credit{pkg.remainingCredits !== 1 ? "s" : ""} left
-                      </span>
-                    </button>
-                  ))
-                ))}
               </div>
             )}
 
@@ -1379,9 +1297,7 @@ export function ScanCheckInDialog({
                     Boolean(
                       scannedQrToken
                         ? !selectedBookingId ||
-                            !selectedBookingEligible ||
-                            !paymentMode ||
-                            (paymentMode === "package_credit" && (!canPackageDeduct || !selectedPackageId))
+                            !selectedBookingEligible
                         : !isTokenFlow &&
                             (!walkInSettlement ||
                               (walkInSettlement === "package_credit" && (!canPackageDeduct || !selectedPackageId))),

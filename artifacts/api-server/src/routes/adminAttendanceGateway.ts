@@ -38,7 +38,7 @@ import { logger } from "../lib/logger";
 import { logActivity } from "../lib/activityLog";
 import { computeBalletMonthlyAttendanceSummary } from "../lib/balletAttendance";
 import { attendanceOccurrenceDateForWeeklySchedule, cairoNow, checkInWindowState } from "../lib/occurrence";
-import { performBookingCheckIn, performStudioWalkIn, dispatchStudioWalkInPush, makeCheckInError, isCheckInError } from "../lib/checkInService";
+import { performBookingCheckIn, performStudioWalkIn, performStudioPackageWalkIn, dispatchStudioWalkInPush, makeCheckInError, isCheckInError } from "../lib/checkInService";
 import { performBalletAttendanceWrite, isBalletAttendanceError } from "../lib/balletAttendanceWrite";
 import {
   resolveAttendanceCandidates,
@@ -180,8 +180,8 @@ const ConfirmBody = z
     note: z.string().optional(),
   })
   .strict()
-  .refine((b) => b.program !== "studio" || b.paymentMode != null, {
-    message: "paymentMode is required to confirm a Studio candidate",
+  .refine((b) => b.program !== "studio" || b.bookingId != null || b.paymentMode != null, {
+    message: "paymentMode is required to confirm a Studio walk-in",
   })
   .refine((b) => b.program !== "studio" || (b.bookingId != null) !== (b.scheduleId != null), {
     message: "Exactly one of bookingId (existing booking) or scheduleId (walk-in) is required to confirm a Studio candidate",
@@ -199,7 +199,7 @@ function requireQrCheckInForStudio(req: Request, res: Response, next: NextFuncti
 }
 
 function requirePackageDeductForStudioCredit(req: Request, res: Response, next: NextFunction): void {
-  if (req.body?.program !== "studio" || req.body?.paymentMode !== "package_credit") { next(); return; }
+  if (req.body?.program !== "studio" || req.body?.scheduleId == null || req.body?.paymentMode !== "package_credit") { next(); return; }
   requireAdminPermission("qr", "packageDeduct")(req, res, next);
 }
 
@@ -209,7 +209,7 @@ function requirePackageDeductForStudioCredit(req: Request, res: Response, next: 
 // the existing attendance.checkIn permission, even though this is launched
 // from the Attendance Gateway rather than Finance.
 function requirePaymentConfirmForPayAtStudio(req: Request, res: Response, next: NextFunction): void {
-  if (req.body?.program !== "studio" || req.body?.paymentMode !== "pay_at_studio") { next(); return; }
+  if (req.body?.program !== "studio" || req.body?.scheduleId == null || req.body?.paymentMode !== "pay_at_studio") { next(); return; }
   requireAdminPermission("finance", "paymentsConfirm")(req, res, next);
 }
 
@@ -247,7 +247,10 @@ router.post(
 
           const [booking] = await tx.select().from(bookingsTable).where(eq(bookingsTable.id, body.bookingId!)).for("update");
           if (!booking) throw makeCheckInError(404, "booking_not_found", "Booking not found.");
-          if (booking.studentEmail !== account.email) {
+          if (
+            booking.accountOwnerStudentId !== account.id
+            || booking.studentEmail.trim().toLowerCase() !== account.email.trim().toLowerCase()
+          ) {
             throw makeCheckInError(403, "booking_mismatch", "This booking does not belong to the resolved account.");
           }
 
@@ -263,7 +266,7 @@ router.post(
           return performBookingCheckIn(tx, {
             booking,
             student: { id: account.id, name: account.name, email: account.email },
-            paymentMode: body.paymentMode!,
+            paymentMode: body.paymentMode ?? (booking.paymentMode === "package_credit" ? "package_credit" : "pay_at_studio"),
             packageOrderId: body.packageOrderId ?? null,
             performedBy,
             now,
@@ -298,8 +301,8 @@ router.post(
     // No pre-existing booking: the Admin selected a live schedule occurrence
     // through the SAME gateway resolve() step (walk-in candidates —
     // attendanceResolver.ts's buildStudioWalkInCandidates). Package Credit
-    // reuses the existing performBookingCheckIn credit/ledger path exactly,
-    // after creating the synthetic booking it operates on. A pay-at-studio
+    // uses the participant-owned walk-in deduction path and does not create
+    // a synthetic booking. A pay-at-studio
     // walk-in with paid:false aborts before any write. paid:true delegates
     // to performStudioWalkIn, which performs the entire atomic capture.
     if (body.program === "studio" && body.scheduleId != null) {
@@ -374,6 +377,7 @@ router.post(
             .from(attendanceTable)
             .where(and(
               eq(attendanceTable.studentEmail, account.email),
+              sql`${attendanceTable.participantChildId} is not distinct from ${childId}`,
               eq(attendanceTable.scheduleId, schedule.id),
               sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
             ))
@@ -383,40 +387,21 @@ router.post(
           }
 
           if (body.paymentMode === "package_credit") {
-            // Reuse the EXISTING package lock + credit-ledger flow exactly:
-            // create the required synthetic booking first (status
-            // "confirmed", matching what performBookingCheckIn requires of
-            // any booking it processes), then hand off to the same shared
-            // function existing-booking check-ins use. No credit logic is
-            // duplicated here.
-            const [syntheticBooking] = await tx
-              .insert(bookingsTable)
-              .values({
-                studentName: participantName,
-                studentEmail: account.email,
-                accountOwnerStudentId: account.id,
-                participantChildId: childId,
-                bookingScope: childId != null ? "child" : "self",
-                scheduleId: schedule.id,
-                classId: schedule.classId,
-                occurrenceDate,
-                paymentMode: "package_credit",
-                bookingStatus: "confirmed",
-                paymentStatus: "not_required",
-                status: "confirmed",
-                notes: "Studio walk-in (package credit)",
-              })
-              .returning();
-
-            const creditResult = await performBookingCheckIn(tx, {
-              booking: syntheticBooking,
-              student: { id: account.id, name: account.name, email: account.email },
-              paymentMode: "package_credit",
-              packageOrderId: body.packageOrderId ?? null,
+            if (body.packageOrderId == null) {
+              throw makeCheckInError(400, "package_required", "A package must be selected for a package-credit walk-in.");
+            }
+            const creditResult = await performStudioPackageWalkIn(tx, {
+              accountOwnerStudentId: account.id,
+              participantType: childId == null ? "self" : "child",
+              participantChildId: childId,
+              packageOrderId: body.packageOrderId,
+              classId: schedule.classId,
+              scheduleId: schedule.id,
+              occurrenceDate,
               performedBy,
               now,
             });
-            return { kind: "credit" as const, result: creditResult, bookingId: syntheticBooking.id };
+            return { kind: "credit" as const, result: creditResult, bookingId: null };
           }
 
           // pay_at_studio — the mandatory Paid/Not Paid confirmation.
@@ -463,6 +448,12 @@ router.post(
               creditDeducted: false,
               remainingCredits: null,
               checkedInAt: walkInResult.result.checkedInAt,
+              participantType: walkInResult.result.participantType,
+              participantChildId: walkInResult.result.participantChildId,
+              participantName: walkInResult.result.participantName,
+              attendanceSource: walkInResult.result.attendanceSource,
+              paymentSource: walkInResult.result.paymentSource,
+              packageOrderId: null,
               paid: true,
               finalPayableAmountMinor: walkInResult.result.finalPayableAmountMinor,
             },

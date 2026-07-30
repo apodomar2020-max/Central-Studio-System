@@ -1887,10 +1887,24 @@ export const ListAttendanceResponseItem = zod.object({
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),
   participantChildId: zod.number().nullish(),
+  participantName: zod.string().nullish(),
+  payerName: zod.string().nullish(),
   ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
   classId: zod.number().nullish(),
   scheduleId: zod.number().nullish(),
   bookingId: zod.number().nullish(),
+  attendanceSource: zod
+    .union([zod.literal("booking"), zod.literal("walk_in"), zod.literal(null)])
+    .nullish(),
+  paymentSource: zod
+    .union([
+      zod.literal("booking_package_credit"),
+      zod.literal("booking_pay_at_studio"),
+      zod.literal("walk_in_package_credit"),
+      zod.literal("walk_in_pay_at_studio"),
+      zod.literal(null),
+    ])
+    .nullish(),
   checkedInBy: zod.string().nullish(),
   status: zod.string().optional(),
   checkedInAt: zod.string(),
@@ -1912,6 +1926,10 @@ export const CheckInBody = zod.object({
   creditDeducted: zod.boolean().optional(),
   notes: zod.string().nullish(),
   studentId: zod.number().nullish(),
+  participantType: zod
+    .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+    .nullish(),
+  participantChildId: zod.number().nullish(),
   classId: zod.number().nullish(),
   scheduleId: zod.number().nullish(),
   bookingId: zod.number().nullish(),
@@ -1936,10 +1954,24 @@ export const CheckInResponse = zod.object({
     .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
     .nullish(),
   participantChildId: zod.number().nullish(),
+  participantName: zod.string().nullish(),
+  payerName: zod.string().nullish(),
   ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
   classId: zod.number().nullish(),
   scheduleId: zod.number().nullish(),
   bookingId: zod.number().nullish(),
+  attendanceSource: zod
+    .union([zod.literal("booking"), zod.literal("walk_in"), zod.literal(null)])
+    .nullish(),
+  paymentSource: zod
+    .union([
+      zod.literal("booking_package_credit"),
+      zod.literal("booking_pay_at_studio"),
+      zod.literal("walk_in_package_credit"),
+      zod.literal("walk_in_pay_at_studio"),
+      zod.literal(null),
+    ])
+    .nullish(),
   checkedInBy: zod.string().nullish(),
   status: zod.string().optional(),
   checkedInAt: zod.string(),
@@ -2201,6 +2233,12 @@ export const CheckInQrResponse = zod.object({
   creditDeducted: zod.boolean(),
   remainingCredits: zod.number().nullish(),
   checkedInAt: zod.string(),
+  participantType: zod.enum(["self", "child"]),
+  participantChildId: zod.number().nullish(),
+  participantName: zod.string(),
+  attendanceSource: zod.enum(["booking"]),
+  paymentSource: zod.enum(["booking_package_credit", "booking_pay_at_studio"]),
+  packageOrderId: zod.number().nullish(),
 });
 
 export const listCreditTransactionsQueryPackageOrderIdMultipleOf = 1;
@@ -2250,6 +2288,10 @@ export const ListCreditTransactionsResponse = zod.object({
       referenceId: zod.number().nullish(),
       referenceType: zod.string().nullish(),
       notes: zod.string().nullish(),
+      participantType: zod
+        .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+        .nullish(),
+      participantChildId: zod.number().nullish(),
       createdBy: zod.string(),
       className: zod.string().nullish(),
       createdAt: zod.string(),
@@ -2326,6 +2368,10 @@ export const AdjustCreditsResponse = zod.object({
     referenceId: zod.number().nullish(),
     referenceType: zod.string().nullish(),
     notes: zod.string().nullish(),
+    participantType: zod
+      .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+      .nullish(),
+    participantChildId: zod.number().nullish(),
     createdBy: zod.string(),
     className: zod.string().nullish(),
     createdAt: zod.string(),
@@ -2386,6 +2432,10 @@ export const GetMyCreditsResponse = zod.object({
       referenceId: zod.number().nullish(),
       referenceType: zod.string().nullish(),
       notes: zod.string().nullish(),
+      participantType: zod
+        .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+        .nullish(),
+      participantChildId: zod.number().nullish(),
       createdBy: zod.string(),
       className: zod.string().nullish(),
       createdAt: zod.string(),
@@ -2431,6 +2481,29 @@ export const GetMyAttendanceResponse = zod.object({
       creditDeducted: zod.boolean(),
       checkedInAt: zod.string(),
       packageOrderId: zod.number().nullish(),
+      bookingId: zod.number().nullish(),
+      participantType: zod
+        .union([zod.literal("self"), zod.literal("child"), zod.literal(null)])
+        .nullish(),
+      participantChildId: zod.number().nullish(),
+      participantName: zod.string().nullish(),
+      ownershipState: zod.enum(["assigned", "legacy_unassigned"]).optional(),
+      attendanceSource: zod
+        .union([
+          zod.literal("booking"),
+          zod.literal("walk_in"),
+          zod.literal(null),
+        ])
+        .nullish(),
+      paymentSource: zod
+        .union([
+          zod.literal("booking_package_credit"),
+          zod.literal("booking_pay_at_studio"),
+          zod.literal("walk_in_package_credit"),
+          zod.literal("walk_in_pay_at_studio"),
+          zod.literal(null),
+        ])
+        .nullish(),
       classId: zod.number().nullish(),
       scheduleId: zod.number().nullish(),
       notes: zod.string().nullish(),

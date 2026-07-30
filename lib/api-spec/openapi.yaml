@@ -2071,12 +2071,20 @@ components:
           type: ["string", "null"]
           enum: [self, child, null]
         participantChildId: { type: ["integer", "null"] }
+        participantName: { type: ["string", "null"] }
+        payerName: { type: ["string", "null"] }
         ownershipState:
           type: string
           enum: [assigned, legacy_unassigned]
         classId: { type: ["integer", "null"] }
         scheduleId: { type: ["integer", "null"] }
         bookingId: { type: ["integer", "null"] }
+        attendanceSource:
+          type: ["string", "null"]
+          enum: [booking, walk_in, null]
+        paymentSource:
+          type: ["string", "null"]
+          enum: [booking_package_credit, booking_pay_at_studio, walk_in_package_credit, walk_in_pay_at_studio, null]
         checkedInBy: { type: ["string", "null"] }
         status: { type: string }
         checkedInAt: { type: string }
@@ -2096,6 +2104,10 @@ components:
         creditDeducted: { type: boolean }
         notes: { type: ["string", "null"] }
         studentId: { type: ["integer", "null"] }
+        participantType:
+          type: ["string", "null"]
+          enum: [self, child, null]
+        participantChildId: { type: ["integer", "null"] }
         classId: { type: ["integer", "null"] }
         scheduleId: { type: ["integer", "null"] }
         bookingId: { type: ["integer", "null"] }
@@ -2198,6 +2210,10 @@ components:
         referenceId: { type: ["integer", "null"] }
         referenceType: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        participantType:
+          type: ["string", "null"]
+          enum: [self, child, null]
+        participantChildId: { type: ["integer", "null"] }
         createdBy: { type: string }
         className: { type: ["string", "null"] }
         createdAt: { type: string }
@@ -2222,6 +2238,10 @@ components:
         - studentEmail
         - creditDeducted
         - checkedInAt
+        - participantType
+        - participantName
+        - attendanceSource
+        - paymentSource
       properties:
         attendanceId: { type: integer }
         studentName: { type: string }
@@ -2230,6 +2250,16 @@ components:
         creditDeducted: { type: boolean }
         remainingCredits: { type: ["integer", "null"] }
         checkedInAt: { type: string }
+        participantType:
+          type: string
+          enum: [self, child]
+        participantChildId: { type: ["integer", "null"] }
+        participantName: { type: string }
+        attendanceSource: { type: string, enum: [booking] }
+        paymentSource:
+          type: string
+          enum: [booking_package_credit, booking_pay_at_studio]
+        packageOrderId: { type: ["integer", "null"] }
 
     ListCreditTransactionsResponse:
       type: object
@@ -2283,6 +2313,21 @@ components:
         creditDeducted: { type: boolean }
         checkedInAt: { type: string }
         packageOrderId: { type: ["integer", "null"] }
+        bookingId: { type: ["integer", "null"] }
+        participantType:
+          type: ["string", "null"]
+          enum: [self, child, null]
+        participantChildId: { type: ["integer", "null"] }
+        participantName: { type: ["string", "null"] }
+        ownershipState:
+          type: string
+          enum: [assigned, legacy_unassigned]
+        attendanceSource:
+          type: ["string", "null"]
+          enum: [booking, walk_in, null]
+        paymentSource:
+          type: ["string", "null"]
+          enum: [booking_package_credit, booking_pay_at_studio, walk_in_package_credit, walk_in_pay_at_studio, null]
         classId: { type: ["integer", "null"] }
         scheduleId: { type: ["integer", "null"] }
         notes: { type: ["string", "null"] }

@@ -210,6 +210,13 @@ test("an explicit package_credit walk-in adds zero monetary Finance rows", async
      VALUES ($1, $2, $3, $4, 'ZW Pkg', 8, 8, 'active') RETURNING id`,
     [student.name, student.email, student.id, pkg.rows[0].id],
   );
+  await pool.query(`UPDATE package_orders SET participant_type = 'self' WHERE id = $1`, [order.rows[0].id]);
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
+     VALUES ($1, $2, 'self', 'package_activated', 8, 0, 8, 'test')`,
+    [order.rows[0].id, student.id],
+  );
 
   const before = await totals();
   const res = await asAdmin("/api/attendance", {

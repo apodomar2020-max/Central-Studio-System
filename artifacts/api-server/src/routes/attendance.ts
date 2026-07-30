@@ -2,16 +2,17 @@ import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import * as zod from "zod";
-import { db, attendanceTable, bookingsTable, studentsTable, packageOrdersTable, creditTransactionsTable, schedulesTable } from "@workspace/db";
+import { db, attendanceTable, bookingsTable, studentsTable } from "@workspace/db";
 import { createStudentNotification } from "../lib/notifications";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
-import { performBookingCheckIn, makeCheckInError, isCheckInError, performStudioWalkIn, dispatchStudioWalkInPush } from "../lib/checkInService";
+import { performBookingCheckIn, makeCheckInError, isCheckInError, performStudioWalkIn, performStudioPackageWalkIn, dispatchStudioWalkInPush } from "../lib/checkInService";
 import { logActivity } from "../lib/activityLog";
 import {
   ListAttendanceResponse,
   GetAttendanceStatsQueryParams,
   CheckInBodyExtended,
 } from "@workspace/api-zod";
+import { getCairoBusinessDate } from "../lib/eligibility/dateOnly";
 
 const router: IRouter = Router();
 
@@ -78,15 +79,17 @@ router.get("/attendance", requireAdminAuth, requireAdminPermission("attendance",
 
   const rows = whereClause
     ? await db
-        .select()
+        .select({ attendance: attendanceTable, payerName: studentsTable.name })
         .from(attendanceTable)
+        .leftJoin(studentsTable, eq(studentsTable.id, attendanceTable.studentId))
         .where(whereClause)
         .orderBy(desc(attendanceTable.checkedInAt))
         .limit(pageSize)
         .offset(offset)
     : await db
-        .select()
+        .select({ attendance: attendanceTable, payerName: studentsTable.name })
         .from(attendanceTable)
+        .leftJoin(studentsTable, eq(studentsTable.id, attendanceTable.studentId))
         .orderBy(desc(attendanceTable.checkedInAt))
         .limit(pageSize)
         .offset(offset);
@@ -95,7 +98,18 @@ router.get("/attendance", requireAdminAuth, requireAdminPermission("attendance",
   res.setHeader("X-Page", String(page));
   res.setHeader("X-Page-Size", String(pageSize));
   res.setHeader("X-Total-Pages", String(total === 0 ? 0 : Math.ceil(total / pageSize)));
-  res.json(ListAttendanceResponse.parse(rows));
+  res.json(ListAttendanceResponse.parse(rows.map(({ attendance, payerName }) => ({
+    ...attendance,
+    payerName,
+    participantName: attendance.participantType == null ? null : attendance.studentName,
+    ownershipState: attendance.participantType == null ? "legacy_unassigned" : "assigned",
+    program:
+      attendance.balletLevelAssignmentId != null
+      || attendance.balletClassId != null
+      || attendance.balletScheduleId != null
+        ? "ballet"
+        : "studio",
+  }))));
 });
 
 // ---------------------------------------------------------------------------
@@ -108,9 +122,9 @@ router.get("/attendance", requireAdminAuth, requireAdminPermission("attendance",
 // Guarantees (enforced inside a single DB transaction):
 //   1. Duplicate prevention — if classId or scheduleId is supplied, we block
 //      a second check-in for the same student + class/schedule on the same day.
-//   2. Package integrity — credit is only deducted if the package exists and
-//      has credits remaining; the package is locked for the duration of the
-//      transaction to prevent double-deduction under concurrent requests.
+//   2. Booking integrity — booking-backed attendance verifies the existing
+//      booking deduction and never consumes credit again. Walk-ins settle
+//      participant-owned package/payment effects atomically.
 //   3. Atomic write — attendance record and credit deduction either both
 //      commit or both roll back.
 // ---------------------------------------------------------------------------
@@ -136,6 +150,8 @@ router.post(
     creditDeducted,
     notes,
     studentId,
+    participantType,
+    participantChildId,
     classId,
     scheduleId,
     bookingId,
@@ -150,9 +166,9 @@ router.post(
     // ── Booking-based MANUAL check-in ──────────────────────────────────────
     // When a bookingId is supplied this is a manual entry point into the SAME
     // shared flow as QR check-in: it resolves the booking + account owner and
-    // delegates to performBookingCheckIn(), which performs the one and only
-    // attended-transition (attendance + credit + ledger + booking→attended +
-    // notifications). No business logic is duplicated here.
+    // delegates to performBookingCheckIn(), which creates attendance and moves
+    // the booking to attended. The existing booking deduction is verified and
+    // remains authoritative; this transition never consumes credit again.
     if (bookingId != null) {
       const result = await db.transaction(async (tx) => {
         const [booking] = await tx
@@ -194,6 +210,8 @@ router.post(
           student: owner,
           paymentMode: resolvedPaymentMode,
           packageOrderId: resolvedPaymentMode === "package_credit" ? packageOrderId : null,
+          expectedParticipantType: participantType ?? null,
+          expectedParticipantChildId: participantChildId ?? null,
           performedBy,
         });
       });
@@ -256,6 +274,7 @@ router.post(
 
         const dupConditions = [
           eq(attendanceTable.studentEmail, studentEmail),
+          sql`${attendanceTable.participantChildId} is not distinct from ${participantChildId ?? null}`,
           // Same-day comparison in Africa/Cairo (no UTC drift).
           sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date`,
         ];
@@ -293,6 +312,7 @@ router.post(
           studentName,
           studentEmail,
           studentId: studentId ?? null,
+          childId: participantType === "child" ? participantChildId ?? null : null,
           classId: classId ?? null,
           scheduleId: scheduleId ?? null,
           adminId,
@@ -301,58 +321,21 @@ router.post(
         return { kind: "paidWalkIn" as const, result };
       }
 
-      // Step 2 — Credit deduction + ledger (with row-level lock). Only
-      // reachable when the Admin explicitly chose "package_credit".
-      let remainingCreditsAfterDeduction: number | null = null;
       if (settlementMode === "package_credit") {
-        // Enforced by CheckInBodyExtended's superRefine, re-checked here so
-        // the compiler (and runtime) never treats packageOrderId as present
-        // just because settlementMode is "package_credit".
-        if (packageOrderId == null) {
+        if (packageOrderId == null || studentId == null || scheduleId == null) {
           throw makeCheckInError(400, "package_not_found", "packageOrderId is required when settlementMode is \"package_credit\".");
         }
-        if (scheduleId != null) {
-          const [schedule] = await tx
-            .select({ packageEligible: schedulesTable.packageEligible })
-            .from(schedulesTable)
-            .where(eq(schedulesTable.id, scheduleId))
-            .limit(1);
-          if (schedule?.packageEligible === false) {
-            throw makeCheckInError(400, "package_not_eligible", "This schedule is not eligible for package credits.");
-          }
-        }
-
-        const [order] = await tx
-          .select()
-          .from(packageOrdersTable)
-          .where(eq(packageOrdersTable.id, packageOrderId))
-          .for("update"); // prevents concurrent deductions on the same package
-        if (!order) {
-          throw makeCheckInError(404, "package_not_found", "Package order not found.");
-        }
-        if (order.remainingCredits <= 0) {
-          throw makeCheckInError(400, "no_credits", "This package has no remaining credits.");
-        }
-
-        const newRemaining = order.remainingCredits - 1;
-        remainingCreditsAfterDeduction = newRemaining;
-        await tx
-          .update(packageOrdersTable)
-          .set({ remainingCredits: newRemaining, status: newRemaining <= 0 ? "fullyUsed" : order.status })
-          .where(eq(packageOrdersTable.id, packageOrderId));
-
-        await tx.insert(creditTransactionsTable).values({
+        const result = await performStudioPackageWalkIn(tx, {
+          accountOwnerStudentId: studentId,
+          participantType: participantType ?? (participantChildId != null ? "child" : "self"),
+          participantChildId: participantChildId ?? null,
           packageOrderId,
-          studentId: studentId ?? null,
-          type: "attendance_deduction",
-          delta: -1,
-          balanceBefore: order.remainingCredits,
-          balanceAfter: newRemaining,
-          referenceId: null,
-          referenceType: null,
-          notes: `Check-in for "${classTitle ?? "class"}"`,
-          createdBy: performedBy,
+          classId: classId ?? null,
+          scheduleId,
+          occurrenceDate: getCairoBusinessDate(),
+          performedBy,
         });
+        return { kind: "packageWalkIn" as const, result };
       }
 
       // Step 3 — Insert attendance record
@@ -385,32 +368,6 @@ router.post(
         relatedEntityId: inserted.id,
         metadata: { className: classTitle, classId, scheduleId },
       });
-
-      if (settlementMode === "package_credit") {
-        await createStudentNotification(tx, {
-          studentId: studentId ?? null,
-          studentEmail,
-          title: "Credit used",
-          body: `1 credit was used${classTitle ? ` for ${classTitle}` : ""}.`,
-          type: "credits_exhausted",
-          relatedEntityType: "attendance",
-          relatedEntityId: inserted.id,
-          metadata: { className: classTitle, packageOrderId, remainingCredits: remainingCreditsAfterDeduction },
-        });
-
-        if (remainingCreditsAfterDeduction === 0) {
-          await createStudentNotification(tx, {
-            studentId: studentId ?? null,
-            studentEmail,
-            title: "Package credits used",
-            body: "Your package credits have been used.",
-            type: "credits_exhausted",
-            relatedEntityType: "package_order",
-            relatedEntityId: packageOrderId,
-            metadata: { className: classTitle, packageOrderId, remainingCredits: remainingCreditsAfterDeduction },
-          });
-        }
-      }
 
       return { kind: "legacy" as const, row: inserted };
     });
@@ -454,9 +411,28 @@ router.post(
         creditDeducted: false,
         remainingCredits: null,
         checkedInAt: result.checkedInAt,
+        participantType: result.participantType,
+        participantChildId: result.participantChildId,
+        participantName: result.participantName,
+        attendanceSource: result.attendanceSource,
+        paymentSource: result.paymentSource,
+        packageOrderId: null,
         paid: true,
         finalPayableAmountMinor: result.finalPayableAmountMinor,
       });
+      return;
+    }
+    if (walkInResult.kind === "packageWalkIn") {
+      await logActivity(req, {
+        action: "checkIn",
+        module: "attendance",
+        entityType: "attendance",
+        entityId: walkInResult.result.attendanceId,
+        entityLabel: walkInResult.result.participantName,
+        after: { ...walkInResult.result },
+        summary: `Recorded Studio package walk-in for ${walkInResult.result.participantName}`,
+      });
+      res.status(201).json(walkInResult.result);
       return;
     }
 

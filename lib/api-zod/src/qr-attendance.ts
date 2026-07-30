@@ -68,6 +68,8 @@ export const CheckInBodyExtended = zod.object({
   notes: zod.string().nullish(),
   // QR attendance additions (all optional)
   studentId: zod.number().nullish(),
+  participantType: zod.enum(["self", "child"]).optional(),
+  participantChildId: zod.number().int().positive().nullish(),
   classId: zod.number().nullish(),
   scheduleId: zod.number().nullish(),
   // Credit ledger additions (all optional — backward-compat with existing callers)
@@ -110,6 +112,20 @@ export const CheckInBodyExtended = zod.object({
       code: zod.ZodIssueCode.custom,
       path: ["packageOrderId"],
       message: "packageOrderId is required when settlementMode is \"package_credit\".",
+    });
+  }
+  if (body.bookingId == null && body.participantType === "self" && body.participantChildId != null) {
+    ctx.addIssue({
+      code: zod.ZodIssueCode.custom,
+      path: ["participantChildId"],
+      message: "Self attendance cannot include a child ID.",
+    });
+  }
+  if (body.bookingId == null && body.participantType === "child" && body.participantChildId == null) {
+    ctx.addIssue({
+      code: zod.ZodIssueCode.custom,
+      path: ["participantChildId"],
+      message: "Child attendance requires participantChildId.",
     });
   }
 });
