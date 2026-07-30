@@ -1068,6 +1068,8 @@ export interface CreditTransactionSourceRow {
   id: number;
   packageOrderId: number;
   studentId: number | null;
+  participantType: string | null;
+  participantChildId: number | null;
   type: string;
   delta: number;
   balanceBefore: number;
@@ -1081,6 +1083,8 @@ export interface CreditTransactionSourceRow {
   studentName: string | null;
   studentEmail: string | null;
   studentPhone: string | null;
+  participantName: string | null;
+  childName: string | null;
 }
 
 /**
@@ -1150,9 +1154,16 @@ export function mapCreditTransaction(row: CreditTransactionSourceRow): UnifiedFi
       name: textOrNull(row.studentName),
       email: textOrNull(row.studentEmail),
       phone: textOrNull(row.studentPhone),
-      participantScope: "unknown",
-      childId: null,
-      childName: null,
+      participantScope:
+        row.participantType === "child"
+          ? "child"
+          : row.participantType === "self"
+            ? "self"
+            : "unknown",
+      childId: row.participantType === "child" ? row.participantChildId : null,
+      childName: row.participantType === "child"
+        ? textOrNull(row.childName ?? row.participantName)
+        : null,
     },
     references: {
       // referenceType tells us what referenceId points at — only trust the

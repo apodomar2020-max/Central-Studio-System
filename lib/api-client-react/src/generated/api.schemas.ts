@@ -1472,6 +1472,49 @@ export interface MyAttendanceRecord {
   instructorName?: string | null;
 }
 
+export type BookingParticipantCandidateParticipantType =
+  (typeof BookingParticipantCandidateParticipantType)[keyof typeof BookingParticipantCandidateParticipantType];
+
+export const BookingParticipantCandidateParticipantType = {
+  self: "self",
+  child: "child",
+} as const;
+
+export type BookingParticipantCandidateReasonCode =
+  (typeof BookingParticipantCandidateReasonCode)[keyof typeof BookingParticipantCandidateReasonCode];
+
+export const BookingParticipantCandidateReasonCode = {
+  ELIGIBLE: "ELIGIBLE",
+  PARTICIPANT_DOB_REQUIRED: "PARTICIPANT_DOB_REQUIRED",
+  PARTICIPANT_DOB_INVALID: "PARTICIPANT_DOB_INVALID",
+  BELOW_MINIMUM_AGE: "BELOW_MINIMUM_AGE",
+  ABOVE_MAXIMUM_AGE: "ABOVE_MAXIMUM_AGE",
+  PARTICIPANT_NOT_ELIGIBLE: "PARTICIPANT_NOT_ELIGIBLE",
+  EXISTING_BOOKING: "EXISTING_BOOKING",
+  EXISTING_ATTENDANCE: "EXISTING_ATTENDANCE",
+} as const;
+
+export interface BookingParticipantCandidate {
+  participantType: BookingParticipantCandidateParticipantType;
+  /** @nullable */
+  participantChildId: number | null;
+  participantName: string;
+  /** @nullable */
+  ageOnOccurrenceDate: number | null;
+  eligible: boolean;
+  reasonCode: BookingParticipantCandidateReasonCode;
+  /** @nullable */
+  existingBookingState: string | null;
+  /** @nullable */
+  existingAttendanceState: string | null;
+}
+
+export interface BookingParticipantCandidatesResponse {
+  scheduleId: number;
+  occurrenceDate: string;
+  candidates: BookingParticipantCandidate[];
+}
+
 export interface MyAttendanceResponse {
   data: MyAttendanceRecord[];
   total: number;
@@ -1554,6 +1597,14 @@ export const ListBookingsScope = {
   self: "self",
   child: "child",
 } as const;
+
+export type GetBookingParticipantCandidatesParams = {
+  /**
+   * @minimum 1
+   */
+  scheduleId: number;
+  occurrenceDate: string;
+};
 
 export type ListStudentsParams = {
   accountType?: ListStudentsAccountType;

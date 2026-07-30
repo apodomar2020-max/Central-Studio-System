@@ -46,9 +46,15 @@ import { resolveBookingParticipant } from "../lib/participants/resolveBookingPar
 import { resolveParticipantPackageCredit } from "../lib/bookings/resolveParticipantPackageCredit";
 import { calculateAgeOnDate, parseIsoDate } from "../lib/eligibility/dateOnly";
 import { evaluateAgeRange } from "../lib/eligibility/ageRange";
+import { evaluateParticipantOnOccurrence } from "../lib/eligibility/participantOccurrenceEligibility";
 import type { ParticipantSelection } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+const ParticipantCandidatesQuery = z.object({
+  scheduleId: z.coerce.number().int().positive(),
+  occurrenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
 
 // dayOfWeek matches schedulesTable.dayOfWeek / JavaScript Date.getDay():
 //   0 = Sunday, 1 = Monday, ..., 6 = Saturday
@@ -80,6 +86,123 @@ type NotificationPayload = {
 };
 type BookingNotificationClient = Pick<typeof db, "select">;
 type BookingOwnerClient = Pick<typeof db, "select">;
+
+router.get(
+  "/bookings/participant-candidates",
+  requireStudentAuth,
+  requireVerifiedStudent,
+  async (req, res): Promise<void> => {
+    const parsed = ParticipantCandidatesQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "OCCURRENCE_INVALID", message: "A valid schedule and occurrence date are required." });
+      return;
+    }
+    const { scheduleId, occurrenceDate } = parsed.data;
+    const [[account], [schedule], children] = await Promise.all([
+      db.select({
+        id: studentsTable.id,
+        name: studentsTable.name,
+        accountType: studentsTable.accountType,
+        dateOfBirth: studentsTable.dateOfBirth,
+      }).from(studentsTable).where(eq(studentsTable.id, req.studentId!)).limit(1),
+      db.select({
+        id: schedulesTable.id,
+        classId: schedulesTable.classId,
+        status: schedulesTable.status,
+        type: schedulesTable.type,
+        date: schedulesTable.date,
+        dayOfWeek: schedulesTable.dayOfWeek,
+        startTime: schedulesTable.startTime,
+        allowAllAges: classesTable.allowAllAges,
+        minAge: classesTable.minAge,
+        maxAge: classesTable.maxAge,
+      }).from(schedulesTable)
+        .innerJoin(classesTable, eq(classesTable.id, schedulesTable.classId))
+        .where(eq(schedulesTable.id, scheduleId))
+        .limit(1),
+      db.select({
+        id: childrenTable.id,
+        fullName: childrenTable.fullName,
+        dateOfBirth: childrenTable.dateOfBirth,
+      }).from(childrenTable).where(eq(childrenTable.parentId, req.studentId!)),
+    ]);
+    if (!account || !schedule || schedule.status !== "active") {
+      res.status(404).json({ error: "OCCURRENCE_UNAVAILABLE", message: "This occurrence is unavailable." });
+      return;
+    }
+    if (currentOccurrenceDate(schedule) !== occurrenceDate) {
+      res.status(409).json({
+        error: "OCCURRENCE_UNAVAILABLE",
+        message: "This occurrence is stale or does not belong to the selected schedule.",
+      });
+      return;
+    }
+
+    const existing = await db.select({
+      participantType: bookingsTable.participantType,
+      participantChildId: bookingsTable.participantChildId,
+      bookingStatus: bookingsTable.bookingStatus,
+    }).from(bookingsTable).where(and(
+      eq(bookingsTable.accountOwnerStudentId, account.id),
+      eq(bookingsTable.scheduleId, scheduleId),
+      eq(bookingsTable.occurrenceDate, occurrenceDate),
+      inArray(bookingsTable.bookingStatus, ["pending", "confirmed", "attended"]),
+    ));
+    const existingAttendance = await db.select({
+      participantType: attendanceTable.participantType,
+      participantChildId: attendanceTable.participantChildId,
+    }).from(attendanceTable).where(and(
+      eq(attendanceTable.studentId, account.id),
+      eq(attendanceTable.scheduleId, scheduleId),
+      sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = ${occurrenceDate}::date`,
+    ));
+
+    const range = {
+      allowAllAges: schedule.allowAllAges === true,
+      minAge: schedule.minAge,
+      maxAge: schedule.maxAge,
+    };
+    const people = [
+      { participantType: "self" as const, participantChildId: null, participantName: account.name, dateOfBirth: account.dateOfBirth },
+      ...(account.accountType === "parent"
+        ? children.map((child) => ({
+            participantType: "child" as const,
+            participantChildId: child.id,
+            participantName: child.fullName,
+            dateOfBirth: child.dateOfBirth,
+          }))
+        : []),
+    ];
+    const candidates = people.map((person) => {
+      const age = schedule.allowAllAges == null && schedule.minAge == null && schedule.maxAge == null
+        ? { eligible: true, reasonCode: "ELIGIBLE" as const, ageOnOccurrenceDate: null }
+        : evaluateParticipantOnOccurrence(person.dateOfBirth, occurrenceDate, range);
+      const booking = existing.find((row) =>
+        row.participantType === person.participantType
+        && row.participantChildId === person.participantChildId);
+      const attendance = existingAttendance.find((row) =>
+        row.participantType === person.participantType
+        && row.participantChildId === person.participantChildId);
+      const reasonCode = attendance
+        ? "EXISTING_ATTENDANCE"
+        : booking
+          ? "EXISTING_BOOKING"
+          : age.reasonCode;
+      return {
+        participantType: person.participantType,
+        participantChildId: person.participantChildId,
+        participantName: person.participantName,
+        ageOnOccurrenceDate: age.ageOnOccurrenceDate,
+        eligible: age.eligible && !booking && !attendance,
+        reasonCode,
+        existingBookingState: booking?.bookingStatus ?? null,
+        existingAttendanceState: attendance ? "checked_in" : null,
+      };
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json({ scheduleId, occurrenceDate, candidates });
+  },
+);
 
 async function refreshScheduleLifecycle(scheduleId: number): Promise<void> {
   await db

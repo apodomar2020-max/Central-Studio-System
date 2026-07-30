@@ -271,7 +271,7 @@ function TransactionDetail({ transaction }: { transaction: UnifiedFinanceTransac
       </DetailSection>
 
       <DetailSection title="Customer & Participant">
-        <DetailField label="Customer" value={customer.name ?? "—"} />
+        <DetailField label="Account / Payer" value={customer.name ?? "—"} />
         <DetailField label="Email" value={customer.email ?? "—"} />
         <DetailField label="Phone" value={customer.phone ?? "—"} />
         <DetailField

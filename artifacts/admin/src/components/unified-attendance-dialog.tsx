@@ -76,7 +76,7 @@ interface Candidate {
   durationMinutes: number | null;
   level: { id: number; name: string } | null;
   group: { id: number; name: string } | null;
-  eligibility: "eligible" | "too_early" | "ended" | "already_recorded" | "inactive_enrollment" | "no_active_subscription" | "cancelled" | "invalid_assignment" | "not_scheduled_today";
+  eligibility: "eligible" | "booking_payment_required" | "booking_pending_approval" | "ambiguous_active_bookings" | "participant_not_eligible" | "participant_dob_required" | "too_early" | "ended" | "already_recorded" | "inactive_enrollment" | "no_active_subscription" | "cancelled" | "invalid_assignment" | "not_scheduled_today";
   reason: string | null;
   existingAttendanceId: number | null;
   // Finance Phase 2B-4: set only on a Studio WALK-IN candidate (bookingId
@@ -85,6 +85,7 @@ interface Candidate {
   walkinPriceEgp: number | null;
   walkinChildId: number | null;
   hasPackageCredit: boolean;
+  bookingState: "confirmed" | "package_pending" | "payment_required" | "pending_approval" | "ambiguous" | "attended" | "none";
 }
 
 interface AccountGroup {
@@ -142,6 +143,11 @@ function eligibilityLabel(candidate: Candidate): { label: string; color: string 
       return isBookedCandidate(candidate)
         ? { label: "Booked for this class", color: GREEN }
         : { label: "Available as Walk-in", color: CYAN };
+    case "booking_payment_required": return { label: "Payment required", color: AMBER };
+    case "booking_pending_approval": return { label: "Awaiting approval", color: AMBER };
+    case "ambiguous_active_bookings": return { label: "Admin review required", color: AMBER };
+    case "participant_dob_required": return { label: "Date of birth required", color: RED };
+    case "participant_not_eligible": return { label: candidate.reason ?? "Not eligible", color: RED };
     case "too_early": return { label: candidate.reason ?? "Too early", color: AMBER };
     case "ended": return { label: candidate.reason ?? "Closed", color: MUTED };
     case "already_recorded": return { label: candidate.reason ?? "Already recorded", color: MUTED };
@@ -203,6 +209,7 @@ export function UnifiedAttendanceDialog({
   // unchanged by the explicit Walk-in settlement policy.
   const [paymentMode, setPaymentMode] = useState<"package_credit" | "pay_at_studio" | null>("pay_at_studio");
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState<"cash" | "card" | null>(null);
   // Prevents a double-click/double-submit from firing the confirm request twice.
   const [submitLock, setSubmitLock] = useState(false);
   const [walkInActionAmount, setWalkInActionAmount] = useState<number | null>(null);
@@ -222,6 +229,7 @@ export function UnifiedAttendanceDialog({
     setSelected(null);
     setPaymentMode("pay_at_studio");
     setSelectedPackageId(null);
+    setConfirmedPaymentMethod(null);
     setSubmitLock(false);
     setWalkInActionAmount(null);
     setWalkInActionAmountLoading(false);
@@ -400,7 +408,7 @@ export function UnifiedAttendanceDialog({
   async function confirmAttendance(paidDecision?: boolean) {
     if (!selected || submitLock) return;
     const { account, candidate } = selected;
-    if (candidate.eligibility !== "eligible") return;
+    if (candidate.eligibility !== "eligible" && candidate.eligibility !== "booking_payment_required") return;
     const isStudioWalkIn = candidate.program === "studio" && candidate.bookingId == null;
     if (isStudioWalkIn && paymentMode == null) return;
     if (isStudioWalkIn && paymentMode === "package_credit" && !canPackageDeduct) {
@@ -421,6 +429,11 @@ export function UnifiedAttendanceDialog({
       if (candidate.program === "studio") {
         if (candidate.bookingId != null) {
           body.bookingId = candidate.bookingId;
+          if (candidate.bookingState === "payment_required") {
+            body.paymentMode = "pay_at_studio";
+            body.paid = true;
+            body.confirmedPaymentMethod = confirmedPaymentMethod;
+          }
         } else {
           body.paymentMode = paymentMode;
           if (paymentMode === "package_credit") body.packageOrderId = selectedPackageId;
@@ -434,6 +447,7 @@ export function UnifiedAttendanceDialog({
           if (candidate.walkinChildId != null) body.childId = candidate.walkinChildId;
           if (walkInActionAmount != null) body.expectedPriceEgp = walkInActionAmount;
           if (paymentMode === "pay_at_studio") body.paid = paidDecision ?? true;
+          if (paymentMode === "pay_at_studio") body.confirmedPaymentMethod = confirmedPaymentMethod;
         }
       } else {
         body.balletLevelAssignmentId = candidate.balletLevelAssignmentId;
@@ -584,7 +598,7 @@ export function UnifiedAttendanceDialog({
                         </p>
                         {visibleCandidates.map((candidate) => {
                           const elig = eligibilityLabel(candidate);
-                          const clickable = candidate.eligibility === "eligible";
+                          const clickable = candidate.eligibility === "eligible" || candidate.eligibility === "booking_payment_required";
                           return (
                             <button
                               key={candidate.candidateKey}
@@ -647,6 +661,7 @@ export function UnifiedAttendanceDialog({
               // the prior canPackageDeduct-only gate exactly as before.
               const showPackageCreditOption = canPackageDeduct && (!isWalkIn || selected.candidate.hasPackageCredit);
               const showPaidNotPaid = isWalkIn && paymentMode === "pay_at_studio";
+              const needsExistingBookingPayment = selected.candidate.bookingState === "payment_required";
 
               return (
                 <>
@@ -689,6 +704,29 @@ export function UnifiedAttendanceDialog({
                     </div>
                   )}
 
+                  {selected.candidate.program === "studio"
+                    && (needsExistingBookingPayment || showPaidNotPaid) && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold">Confirmed payment method</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["cash", "card"] as const).map((method) => (
+                          <button
+                            key={method}
+                            type="button"
+                            onClick={() => setConfirmedPaymentMethod(method)}
+                            className="px-3 py-2 rounded-lg text-sm font-semibold capitalize"
+                            style={{
+                              background: confirmedPaymentMethod === method ? CYAN : "hsl(var(--muted))",
+                              color: confirmedPaymentMethod === method ? "hsl(var(--primary-foreground))" : undefined,
+                            }}
+                          >
+                            {method}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {errorMessage && (
                     <div className="flex items-center gap-2 rounded-lg p-3 text-sm" style={{ background: "hsl(var(--destructive) / 0.1)", color: RED }}>
                       <AlertTriangle className="h-4 w-4 flex-shrink-0" /> {errorMessage}
@@ -707,7 +745,7 @@ export function UnifiedAttendanceDialog({
                       </button>
                       <button
                         onClick={() => void confirmAttendance(true)}
-                        disabled={submitLock}
+                        disabled={submitLock || confirmedPaymentMethod == null}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold disabled:opacity-50"
                         style={{ background: GREEN, color: "white" }}
                       >
@@ -719,6 +757,7 @@ export function UnifiedAttendanceDialog({
                       onClick={() => void confirmAttendance()}
                       disabled={
                         submitLock ||
+                        (needsExistingBookingPayment && confirmedPaymentMethod == null) ||
                         (isWalkIn &&
                           (paymentMode == null ||
                             (paymentMode === "package_credit" && selectedPackageId == null)))

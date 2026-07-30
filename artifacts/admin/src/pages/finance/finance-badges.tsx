@@ -78,7 +78,8 @@ export function eventNatureLabel(nature: FinanceEventNature): string {
 }
 
 export function paymentMethodLabel(method: FinanceNormalizedPaymentMethod | null): string {
-  return method == null ? "—" : FINANCE_PAYMENT_METHOD_LABELS[method];
+  if (method == null) return "—";
+  return method === "unknown" ? "Not recorded" : FINANCE_PAYMENT_METHOD_LABELS[method];
 }
 
 /**

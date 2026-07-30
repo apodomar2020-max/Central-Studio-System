@@ -1104,6 +1104,37 @@ export const CreateBookingResponse = zod.object({
   checkInBlockedReason: zod.string().nullish(),
 });
 
+export const GetBookingParticipantCandidatesQueryParams = zod.object({
+  scheduleId: zod.coerce.number().min(1),
+  occurrenceDate: zod.date(),
+});
+
+export const GetBookingParticipantCandidatesResponse = zod.object({
+  scheduleId: zod.number(),
+  occurrenceDate: zod.coerce.date(),
+  candidates: zod.array(
+    zod.object({
+      participantType: zod.enum(["self", "child"]),
+      participantChildId: zod.number().nullable(),
+      participantName: zod.string(),
+      ageOnOccurrenceDate: zod.number().nullable(),
+      eligible: zod.boolean(),
+      reasonCode: zod.enum([
+        "ELIGIBLE",
+        "PARTICIPANT_DOB_REQUIRED",
+        "PARTICIPANT_DOB_INVALID",
+        "BELOW_MINIMUM_AGE",
+        "ABOVE_MAXIMUM_AGE",
+        "PARTICIPANT_NOT_ELIGIBLE",
+        "EXISTING_BOOKING",
+        "EXISTING_ATTENDANCE",
+      ]),
+      existingBookingState: zod.string().nullable(),
+      existingAttendanceState: zod.string().nullable(),
+    }),
+  ),
+});
+
 export const GetBookingParams = zod.object({
   id: zod.coerce.number(),
 });

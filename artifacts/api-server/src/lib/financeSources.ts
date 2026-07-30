@@ -941,6 +941,7 @@ const packageCredits: FinanceFamilyDescriptor = {
       .from(creditTransactionsTable)
       .leftJoin(packageOrdersTable, eq(creditTransactionsTable.packageOrderId, packageOrdersTable.id))
       .leftJoin(studentsTable, eq(creditTransactionsTable.studentId, studentsTable.id))
+      .leftJoin(childrenTable, eq(creditTransactionsTable.participantChildId, childrenTable.id))
       .where(where);
     return Number(row?.total ?? 0);
   },
@@ -950,6 +951,8 @@ const packageCredits: FinanceFamilyDescriptor = {
         id: creditTransactionsTable.id,
         packageOrderId: creditTransactionsTable.packageOrderId,
         studentId: creditTransactionsTable.studentId,
+        participantType: creditTransactionsTable.participantType,
+        participantChildId: creditTransactionsTable.participantChildId,
         type: creditTransactionsTable.type,
         delta: creditTransactionsTable.delta,
         balanceBefore: creditTransactionsTable.balanceBefore,
@@ -963,10 +966,13 @@ const packageCredits: FinanceFamilyDescriptor = {
         studentName: studentsTable.name,
         studentEmail: studentsTable.email,
         studentPhone: studentsTable.phone,
+        participantName: packageOrdersTable.participantNameSnapshot,
+        childName: childrenTable.fullName,
       })
       .from(creditTransactionsTable)
       .leftJoin(packageOrdersTable, eq(creditTransactionsTable.packageOrderId, packageOrdersTable.id))
       .leftJoin(studentsTable, eq(creditTransactionsTable.studentId, studentsTable.id))
+      .leftJoin(childrenTable, eq(creditTransactionsTable.participantChildId, childrenTable.id))
       .where(where)
       .orderBy(sql`${creditTransactionsTable.createdAt} desc`, sql`${creditTransactionsTable.id} desc`)
       .limit(take);

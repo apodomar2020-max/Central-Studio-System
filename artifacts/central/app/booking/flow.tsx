@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useGetClass, useGetInstructor, useCreateBooking, useListSchedules } from "@workspace/api-client-react";
+import { customFetch, useGetClass, useGetInstructor, useCreateBooking, useListSchedules } from "@workspace/api-client-react";
 
 import { useAppContext, type Booking } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
@@ -34,6 +34,15 @@ import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/se
 import { getBookingErrorMessage } from "@/services/bookingErrorMessages";
 
 type PaymentMethod = "online" | "cash" | "packageCredit";
+type ParticipantCandidate = {
+  participantType: "self" | "child";
+  participantChildId: number | null;
+  participantName: string;
+  ageOnOccurrenceDate: number | null;
+  eligible: boolean;
+  reasonCode: string;
+  existingBookingState: string | null;
+};
 
 const INK = {
   bg: "#0A0B0D",     // --cs-ink-900
@@ -82,6 +91,30 @@ export default function BookingFlowScreen() {
   const cls = classQuery.data
     ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp, classCapacityEnabled)
     : null;
+  const participantCandidatesQuery = useQuery({
+    queryKey: ["booking-participant-candidates", cls?.scheduleId, cls?.date],
+    queryFn: () => customFetch<{ candidates: ParticipantCandidate[] }>(
+      `/api/bookings/participant-candidates?scheduleId=${encodeURIComponent(String(cls!.scheduleId))}&occurrenceDate=${encodeURIComponent(cls!.date)}`,
+    ),
+    enabled: Boolean(cls?.scheduleId && cls?.date),
+    staleTime: 0,
+  });
+  const participantCandidates = participantCandidatesQuery.data?.candidates ?? [];
+  const selfCandidate = participantCandidates.find((candidate) => candidate.participantType === "self");
+  const childCandidate = (childId: string) => participantCandidates.find(
+    (candidate) => candidate.participantType === "child"
+      && String(candidate.participantChildId) === String(childId),
+  );
+  const candidateReason = (candidate: ParticipantCandidate | undefined) => {
+    if (!candidate) return "Eligibility unavailable";
+    if (candidate.reasonCode === "PARTICIPANT_DOB_REQUIRED") return "Date of birth required";
+    if (candidate.reasonCode === "EXISTING_BOOKING") return "Already booked";
+    if (candidate.reasonCode === "EXISTING_ATTENDANCE") return "Already attended";
+    if (candidate.reasonCode === "BELOW_MINIMUM_AGE") return "Below the minimum age for this class";
+    if (candidate.reasonCode === "ABOVE_MAXIMUM_AGE") return "Above the maximum age for this class";
+    if (candidate.reasonCode === "PARTICIPANT_NOT_ELIGIBLE") return "Not eligible for this age range";
+    return candidate.eligible ? null : "Not eligible";
+  };
   // Finance Batch 1 (Part F1): an already-booked participant must be
   // disabled, not merely rejected after submission. "Active" here mirrors
   // the backend's own DUPLICATE_BLOCKING_STATUSES (bookings.ts) — pending
@@ -97,7 +130,9 @@ export default function BookingFlowScreen() {
         && (b.bookingStatus === "pending" || b.bookingStatus === "confirmed"),
       )
     : [];
-  const selfAlreadyBooked = occurrenceBookings.some((b) => b.participantType === "self");
+  const selfAlreadyBooked = occurrenceBookings.some((b) => b.participantType === "self")
+    || selfCandidate?.reasonCode === "EXISTING_BOOKING";
+  const selfDisabled = participantCandidatesQuery.isLoading || !selfCandidate?.eligible;
   // Review Blocker 1: identity must be a stable id (children.id /
   // participantChildId), never participantName — two children can share a
   // name, names are editable, and casing/spacing can differ. The name
@@ -171,6 +206,21 @@ export default function BookingFlowScreen() {
       setSelectedChildId(children[0].id);
     }
   }, [children, selectedChildId]);
+
+  useEffect(() => {
+    if (!participantCandidatesQuery.data) return;
+    if (participantType === "self" && !selfCandidate?.eligible) {
+      const firstEligibleChild = children.find((child) => childCandidate(child.id)?.eligible);
+      if (firstEligibleChild) {
+        setParticipantType("child");
+        setSelectedChildId(firstEligibleChild.id);
+      }
+    } else if (participantType === "child" && selectedChildId && !childCandidate(selectedChildId)?.eligible) {
+      const firstEligibleChild = children.find((child) => childCandidate(child.id)?.eligible);
+      if (firstEligibleChild) setSelectedChildId(firstEligibleChild.id);
+      else if (selfCandidate?.eligible) setParticipantType("self");
+    }
+  }, [participantCandidatesQuery.data, participantType, selectedChildId, children, selfCandidate]);
 
   useEffect(() => {
     if (!packageParamApplied && usePackage === "true" && canUsePackageCredits) {
@@ -485,15 +535,15 @@ export default function BookingFlowScreen() {
 
             <TouchableOpacity
               onPress={() => {
-                if (selfAlreadyBooked) return;
+                if (selfDisabled) return;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setParticipantType("self");
               }}
-              disabled={selfAlreadyBooked}
+              disabled={selfDisabled}
               style={[
                 styles.participantCard,
                 participantType === "self" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "15" },
-                selfAlreadyBooked && styles.disabledCard,
+                selfDisabled && styles.disabledCard,
               ]}
             >
               <ParticipantAvatar type="self" name={user.fullName} avatarUrl={user.avatarUrl} size={48} />
@@ -505,6 +555,8 @@ export default function BookingFlowScreen() {
               </View>
               {selfAlreadyBooked ? (
                 <Text style={styles.alreadyBookedBadge}>Already booked</Text>
+              ) : selfDisabled ? (
+                <Text style={styles.alreadyBookedBadge}>{candidateReason(selfCandidate)}</Text>
               ) : participantType === "self" && (
                 <View style={[styles.checkCircle, { backgroundColor: colors.studio.primary }]}>
                   <Ionicons name="checkmark" size={14} color="#000" />
@@ -557,31 +609,39 @@ export default function BookingFlowScreen() {
               <View style={styles.childPicker}>
                 {children.map((child) => {
                   const isAlreadyBooked = childAlreadyBooked(child);
+                  const candidate = childCandidate(child.id);
+                  const disabled = isAlreadyBooked || !candidate?.eligible;
                   return (
                     <TouchableOpacity
                       key={child.id}
                       onPress={() => {
-                        if (isAlreadyBooked) return;
+                        if (disabled) return;
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         setSelectedChildId(child.id);
                       }}
-                      disabled={isAlreadyBooked}
+                      disabled={disabled}
                       style={[
                         styles.childOption,
                         selectedChildId === child.id && {
                           borderColor: colors.studio.primary,
                           backgroundColor: colors.studio.primary + "12",
                         },
-                        isAlreadyBooked && styles.disabledCard,
+                        disabled && styles.disabledCard,
                       ]}
                     >
                       <ParticipantAvatar type="child" name={child.fullName} gender={child.gender} size={36} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.childName}>{child.fullName}</Text>
-                        <Text style={styles.participantSub}>Age {child.age}</Text>
+                        <Text style={styles.participantSub}>
+                          {candidate?.ageOnOccurrenceDate != null
+                            ? `Age ${candidate.ageOnOccurrenceDate}`
+                            : candidateReason(candidate) ?? ""}
+                        </Text>
                       </View>
                       {isAlreadyBooked ? (
                         <Text style={styles.alreadyBookedBadge}>Already booked</Text>
+                      ) : disabled ? (
+                        <Text style={styles.alreadyBookedBadge}>{candidateReason(candidate)}</Text>
                       ) : selectedChildId === child.id && (
                         <Ionicons name="checkmark-circle" size={20} color={colors.studio.primary} />
                       )}

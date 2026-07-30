@@ -117,8 +117,8 @@ test("12 races: different occurrences competing for one final participant credit
       `INSERT INTO schedules
         (class_id, type, status, date, start_time, end_time, package_eligible)
        VALUES
-        ($1, 'one_time', 'active', CURRENT_DATE, '00:00', '11:00', true),
-        ($1, 'one_time', 'active', CURRENT_DATE, '12:00', '23:59', true)
+        ($1, 'one_time', 'active', CURRENT_DATE + interval '1 day', '00:00', '11:00', true),
+        ($1, 'one_time', 'active', CURRENT_DATE + interval '1 day', '12:00', '23:59', true)
        RETURNING id`,
       [classId],
     );
@@ -170,7 +170,7 @@ test("12 races: different occurrences competing for one final participant credit
 
     const loser = responses.find((response) => response.status === 409)!;
     const loserBody = await jsonBody(loser);
-    assert.equal(loserBody.code, "PACKAGE_NO_CREDITS");
+    assert.equal(loserBody.code, "PACKAGE_NO_CREDITS", `unexpected conflict payload: ${JSON.stringify(loserBody)}`);
 
     const packageState = await pool.query(
       `SELECT remaining_credits, status FROM package_orders WHERE id = $1`,

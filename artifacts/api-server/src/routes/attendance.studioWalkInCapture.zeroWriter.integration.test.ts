@@ -186,7 +186,7 @@ test("an explicit pay_at_studio no-credit walk-in writes exactly +1 studio_walki
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(res.status, 201);
   expectedPushCalls += 1; // performStudioWalkIn's post-commit push dispatch

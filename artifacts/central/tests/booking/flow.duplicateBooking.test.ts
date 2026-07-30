@@ -42,7 +42,8 @@ test("duplicate detection is scoped to the exact schedule + occurrence, and only
 
 test("the Self card is disabled and labeled Already booked when the account already has an active booking for this occurrence", () => {
   assert.match(source, /const selfAlreadyBooked = occurrenceBookings\.some\(\(b\) => b\.participantType === "self"\)/);
-  assert.match(source, /disabled=\{selfAlreadyBooked\}/);
+  assert.match(source, /const selfDisabled = participantCandidatesQuery\.isLoading \|\| !selfCandidate\?\.eligible/);
+  assert.match(source, /disabled=\{selfDisabled\}/);
   assert.match(source, /selfAlreadyBooked \? \(\s*<Text style=\{styles\.alreadyBookedBadge\}>Already booked<\/Text>/);
 });
 
@@ -63,19 +64,40 @@ test("Blocker 1: child duplicate detection keys on the stable participantChildId
 
 test("each child in the picker is independently disabled and labeled — an unrelated sibling remains selectable", () => {
   assert.match(source, /const isAlreadyBooked = childAlreadyBooked\(child\);/);
-  assert.match(source, /disabled=\{isAlreadyBooked\}/);
+  assert.match(source, /const disabled = isAlreadyBooked \|\| !candidate\?\.eligible/);
+  assert.match(source, /disabled=\{disabled\}/);
   assert.match(source, /isAlreadyBooked \? \(\s*<Text style=\{styles\.alreadyBookedBadge\}>Already booked<\/Text>/);
 });
 
 test("pressing an already-booked card is a no-op — it never calls setParticipantType/setSelectedChildId", () => {
-  assert.match(source, /if \(selfAlreadyBooked\) return;\s*\n\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\);\s*\n\s*setParticipantType\("self"\);/);
-  assert.match(source, /if \(isAlreadyBooked\) return;\s*\n\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\);\s*\n\s*setSelectedChildId\(child\.id\);/);
+  assert.match(source, /if \(selfDisabled\) return;\s*\n\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\);\s*\n\s*setParticipantType\("self"\);/);
+  assert.match(source, /if \(disabled\) return;\s*\n\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\);\s*\n\s*setSelectedChildId\(child\.id\);/);
 });
 
 test("Booking type and the API->local mapper carry a stable participantChildId (Blocker 1, mobile Booking model)", () => {
   const contextSource = readFileSync(new URL("../../contexts/AppContext.tsx", import.meta.url), "utf8");
   assert.match(contextSource, /participantChildId\?: number \| null;/);
   assert.match(contextSource, /participantChildId: r\.participantChildId \?\? null,/);
+});
+
+test("participant selection is fed by the server occurrence-candidate endpoint and renders stable eligibility reasons", () => {
+  assert.match(source, /\/api\/bookings\/participant-candidates\?scheduleId=/);
+  assert.match(source, /candidate\.reasonCode === "BELOW_MINIMUM_AGE"/);
+  assert.match(source, /candidate\.reasonCode === "ABOVE_MAXIMUM_AGE"/);
+  assert.match(source, /const disabled = isAlreadyBooked \|\| !candidate\?\.eligible/);
+});
+
+test("historical bookings with missing class or schedule relations are visibly unavailable and non-actionable", () => {
+  const cardSource = readFileSync(new URL("../../components/BookingCard.tsx", import.meta.url), "utf8");
+  const myBookingsSource = readFileSync(
+    new URL("../../../api-server/src/routes/myRoutes.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(cardSource, /sourceUnavailable/);
+  assert.match(myBookingsSource, /Class details unavailable/);
+  assert.match(myBookingsSource, /CLASS_OR_SCHEDULE_REMOVED/);
+  assert.match(cardSource, /historical booking references a class or schedule that is no longer available/i);
+  assert.match(cardSource, /const isUpcomingActive =\s*!item\.sourceUnavailable/);
 });
 
 // ─── Behavioral re-implementation: exercises real scenarios 1-7 ────────────

@@ -172,7 +172,7 @@ test("the push dispatch for a paid walk-in is invoked only after the creating tr
   const beforeCallCount = pushCalls.length;
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(res.status, 201);
   await waitForPushCalls(beforeCallCount + 1);
@@ -193,7 +193,7 @@ test("a rejected post-commit push does not roll back the committed walk-in, and 
   forceNextPushRejection = true;
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   const body = await res.json() as Record<string, unknown>;
 

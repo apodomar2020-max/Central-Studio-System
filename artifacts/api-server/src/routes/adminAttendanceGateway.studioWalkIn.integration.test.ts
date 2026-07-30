@@ -37,6 +37,7 @@ assertDisposableUrl(DATABASE_URL);
 
 process.env.DATABASE_URL = DATABASE_URL;
 process.env.API_SECRET_KEY = "test-api-secret-key";
+process.env.STUDENT_JWT_SECRET = "test-student-secret";
 delete process.env.REDIS_URL;
 delete process.env.PUSH_NOTIFICATIONS_ENABLED;
 
@@ -62,6 +63,13 @@ function adminToken(): string {
   return jwtSign({ sub: superAdminId, username: `gw-walkin-super-${superAdminId}`, isSuperAdmin: true, roleId: null }, ADMIN_JWT_SECRET);
 }
 
+function studentToken(studentId: number, email: string): string {
+  return jwtSign(
+    { sub: studentId, email, type: "student", emailVerified: true },
+    "test-student-secret",
+  );
+}
+
 async function asAdmin(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(apiUrl(path), {
     ...init,
@@ -70,6 +78,14 @@ async function asAdmin(path: string, init: RequestInit = {}): Promise<Response> 
       "x-api-key": "test-api-secret-key",
       "x-admin-token": adminToken(),
       ...(init.headers as Record<string, string> | undefined),
+    },
+  });
+}
+
+async function asStudent(studentId: number, email: string, path: string): Promise<Response> {
+  return fetch(apiUrl(path), {
+    headers: {
+      authorization: `Bearer ${studentToken(studentId, email)}`,
     },
   });
 }
@@ -148,6 +164,7 @@ before(async () => {
   jwtSign = jwtModule.default.sign;
   const { requireAuth } = await import("../middlewares/auth");
   const gatewayRouter = (await import("./adminAttendanceGateway")).default;
+  const bookingsRouter = (await import("./bookings")).default;
   const dbModule = await import("@workspace/db");
   pool = dbModule.pool;
 
@@ -155,6 +172,7 @@ before(async () => {
   app.use(express.json());
   app.use("/api", requireAuth);
   app.use("/api", gatewayRouter);
+  app.use("/api", bookingsRouter);
   await new Promise<void>((resolve) => {
     server = app.listen(0, "127.0.0.1", () => resolve());
   });
@@ -237,6 +255,128 @@ test("resolve() returns a walk-in candidate with the server-resolved display pri
   assert.equal(candidate.eligibility, "eligible");
 });
 
+test("the booking participant-candidates HTTP endpoint evaluates canonical DOB on the exact server occurrence", async () => {
+  const phone = uniquePhone();
+  const parent = await makeStudent(phone);
+  await pool.query(`UPDATE students SET date_of_birth = '1990-01-01' WHERE id = $1`, [parent.id]);
+  const occurrence = new Date();
+  occurrence.setUTCDate(occurrence.getUTCDate() + 1);
+  const occurrenceDate = occurrence.toISOString().slice(0, 10);
+  const birthdayAtAge = (age: number): string => {
+    const date = new Date(`${occurrenceDate}T12:00:00Z`);
+    date.setUTCFullYear(date.getUTCFullYear() - age);
+    return date.toISOString().slice(0, 10);
+  };
+  const children = await pool.query(
+    `INSERT INTO children (parent_id, full_name, date_of_birth)
+     VALUES ($1, 'Boundary Five', $2), ($1, 'Boundary Thirteen', $3)
+     RETURNING id, full_name`,
+    [parent.id, birthdayAtAge(5), birthdayAtAge(13)],
+  );
+  const instructor = await pool.query(
+    `INSERT INTO instructors (name, is_active) VALUES ($1, true) RETURNING id`,
+    [`Booking Candidates Instructor ${Date.now()}`],
+  );
+  const klass = await pool.query(
+    `INSERT INTO classes
+      (title, category, instructor_id, is_active, allow_all_ages, min_age, max_age)
+     VALUES ($1, 'general', $2, true, false, 5, 12) RETURNING id`,
+    [`Booking Candidates Kids ${Date.now()}`, instructor.rows[0].id],
+  );
+  const schedule = await pool.query(
+    `INSERT INTO schedules (class_id, type, status, date, start_time, end_time)
+     VALUES ($1, 'one_time', 'active', $2, '10:00', '11:00') RETURNING id`,
+    [klass.rows[0].id, occurrenceDate],
+  );
+
+  const response = await asStudent(
+    parent.id,
+    parent.email,
+    `/api/bookings/participant-candidates?scheduleId=${schedule.rows[0].id}&occurrenceDate=${occurrenceDate}`,
+  );
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control") ?? "", /private/i);
+  const body = await jsonBody(response);
+  const candidates = body.candidates as Array<Record<string, unknown>>;
+  const self = candidates.find((row) => row.participantType === "self");
+  const ageFive = candidates.find((row) => row.participantChildId === children.rows[0].id);
+  const ageThirteen = candidates.find((row) => row.participantChildId === children.rows[1].id);
+  assert.deepEqual(
+    { eligible: self?.eligible, reasonCode: self?.reasonCode },
+    { eligible: false, reasonCode: "ABOVE_MAXIMUM_AGE" },
+  );
+  assert.deepEqual(
+    { age: ageFive?.ageOnOccurrenceDate, eligible: ageFive?.eligible, reasonCode: ageFive?.reasonCode },
+    { age: 5, eligible: true, reasonCode: "ELIGIBLE" },
+  );
+  assert.deepEqual(
+    { age: ageThirteen?.ageOnOccurrenceDate, eligible: ageThirteen?.eligible, reasonCode: ageThirteen?.reasonCode },
+    { age: 13, eligible: false, reasonCode: "ABOVE_MAXIMUM_AGE" },
+  );
+
+  const stale = await asStudent(
+    parent.id,
+    parent.email,
+    `/api/bookings/participant-candidates?scheduleId=${schedule.rows[0].id}&occurrenceDate=2099-01-01`,
+  );
+  assert.equal(stale.status, 409);
+});
+
+test("an age-ineligible participant is disabled by discovery and rejected again at the transactional walk-in boundary", async () => {
+  const phone = uniquePhone();
+  const student = await makeStudent(phone);
+  await pool.query(`UPDATE students SET date_of_birth = '1990-01-01' WHERE id = $1`, [student.id]);
+  const instructor = await pool.query(
+    `INSERT INTO instructors (name, is_active) VALUES ($1, true) RETURNING id`,
+    [`Gateway Kids Instructor ${Date.now()}`],
+  );
+  const klass = await pool.query(
+    `INSERT INTO classes
+      (title, category, instructor_id, is_active, allow_all_ages, min_age, max_age)
+     VALUES ($1, 'general', $2, true, false, 5, 12) RETURNING id`,
+    [`Gateway Kids Class ${Date.now()}`, instructor.rows[0].id],
+  );
+  const schedule = await pool.query(
+    `INSERT INTO schedules (class_id, type, status, date, start_time, end_time)
+     VALUES ($1, 'one_time', 'active', CURRENT_DATE, '00:00', '23:59') RETURNING id`,
+    [klass.rows[0].id],
+  );
+  const candidate = await resolveWalkInCandidate(phone, null, schedule.rows[0].id);
+  assert.equal(candidate.eligibility, "participant_not_eligible");
+
+  const before = await pool.query(
+    `SELECT
+       (SELECT count(*)::int FROM bookings WHERE account_owner_student_id = $1 AND schedule_id = $2) AS bookings,
+       (SELECT count(*)::int FROM attendance WHERE student_id = $1 AND schedule_id = $2) AS attendance,
+       (SELECT count(*)::int FROM payment_records WHERE student_id = $1) AS payments`,
+    [student.id, schedule.rows[0].id],
+  );
+  const response = await asAdmin("/api/admin/attendance/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      candidateKey: candidate.candidateKey,
+      program: "studio",
+      accountId: student.id,
+      source: "phone",
+      scheduleId: schedule.rows[0].id,
+      paymentMode: "pay_at_studio",
+      paid: true,
+      confirmedPaymentMethod: "cash",
+    }),
+  });
+  assert.equal(response.status, 409);
+  const body = await jsonBody(response);
+  assert.equal(body.error, "WALKIN_PARTICIPANT_INELIGIBLE");
+  const after = await pool.query(
+    `SELECT
+       (SELECT count(*)::int FROM bookings WHERE account_owner_student_id = $1 AND schedule_id = $2) AS bookings,
+       (SELECT count(*)::int FROM attendance WHERE student_id = $1 AND schedule_id = $2) AS attendance,
+       (SELECT count(*)::int FROM payment_records WHERE student_id = $1) AS payments`,
+    [student.id, schedule.rows[0].id],
+  );
+  assert.deepEqual(after.rows[0], before.rows[0]);
+});
+
 test("a paid walk-in confirm through the gateway atomically creates booking, attendance, payment record, and event", async () => {
   const phone = uniquePhone();
   const student = await makeStudent(phone);
@@ -246,7 +386,7 @@ test("a paid walk-in confirm through the gateway atomically creates booking, att
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
     }),
   });
   assert.equal(res.status, 201);
@@ -260,12 +400,231 @@ test("a paid walk-in confirm through the gateway atomically creates booking, att
   assert.equal(record.rowCount, 1);
   assert.equal(record.rows[0].flow_type, "studio_walkin");
   assert.equal(record.rows[0].status, "paid");
+  assert.equal(record.rows[0].confirmed_payment_method, "cash");
   assert.equal(record.rows[0].confirming_admin_id, superAdminId);
 
   const events = await pool.query(`SELECT * FROM payment_events WHERE payment_record_id = $1`, [record.rows[0].id]);
   assert.equal(events.rowCount, 1);
   assert.equal(events.rows[0].event_type, "created_and_confirmed");
   assert.equal(events.rows[0].actor_admin_id, superAdminId);
+});
+
+test("Paid without an explicit payment method is rejected with zero writes", async () => {
+  const phone = uniquePhone();
+  const student = await makeStudent(phone);
+  const candidate = await resolveWalkInCandidate(phone);
+  const before = await pool.query(`SELECT count(*)::int AS n FROM payment_records WHERE flow_type = 'studio_walkin'`);
+  const res = await asAdmin("/api/admin/attendance/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      candidateKey: candidate.candidateKey,
+      program: "studio",
+      accountId: student.id,
+      source: "phone",
+      scheduleId,
+      paymentMode: "pay_at_studio",
+      paid: true,
+    }),
+  });
+  assert.equal(res.status, 400);
+  const after = await pool.query(`SELECT count(*)::int AS n FROM payment_records WHERE flow_type = 'studio_walkin'`);
+  assert.equal(after.rows[0].n, before.rows[0].n);
+});
+
+test("a pending existing booking is returned explicitly and suppresses Walk-in fallback", async () => {
+  const phone = uniquePhone();
+  const student = await makeStudent(phone);
+  const cairoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const booking = await pool.query(
+    `INSERT INTO bookings
+      (student_name, student_email, account_owner_student_id, participant_type, booking_scope,
+       schedule_id, class_id, occurrence_date, payment_mode, payment_status, booking_status, status)
+     VALUES ($1, $2, $3, 'self', 'self', $4, $5, $6, 'pay_at_studio', 'pending_payment', 'pending', 'pendingPayment')
+     RETURNING id`,
+    [student.name, student.email, student.id, scheduleId, classId, cairoDate],
+  );
+  const res = await asAdmin("/api/admin/attendance/resolve", {
+    method: "POST",
+    body: JSON.stringify({ source: "phone", query: phone }),
+  });
+  assert.equal(res.status, 200);
+  const body = await jsonBody(res);
+  const accounts = body.accounts as Array<{ candidates: Array<Record<string, unknown>> }>;
+  const candidates = accounts[0].candidates;
+  const booked = candidates.find((candidate) => candidate.bookingId === booking.rows[0].id);
+  assert.ok(booked);
+  assert.equal(booked!.bookingState, "payment_required");
+  assert.equal(booked!.eligibility, "booking_payment_required");
+  assert.equal(
+    candidates.some((candidate) => candidate.bookingId == null && candidate.scheduleId === scheduleId),
+    false,
+    "a known pending booking must block account-wide Walk-in fallback for that occurrence",
+  );
+});
+
+for (const method of ["cash", "card"] as const) {
+  test(`an existing Pay-at-Studio booking is settled in place with ${method} and creates no replacement booking`, async () => {
+    const phone = uniquePhone();
+    const student = await makeStudent(phone);
+    const cairoDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const booking = await pool.query(
+      `INSERT INTO bookings
+        (student_name, student_email, account_owner_student_id, participant_type, booking_scope,
+         schedule_id, class_id, occurrence_date, payment_mode, payment_status, booking_status, status)
+       VALUES ($1, $2, $3, 'self', 'self', $4, $5, $6, 'pay_at_studio', 'pending_payment', 'pending', 'pendingPayment')
+       RETURNING id`,
+      [student.name, student.email, student.id, scheduleId, classId, cairoDate],
+    );
+    const bookingId = booking.rows[0].id as number;
+    const payment = await pool.query(
+      `INSERT INTO payment_records
+        (flow_type, booking_id, capture_origin, occurred_at, evidence_class, amount_availability, amount_source,
+         gross_amount_minor, discount_amount_minor, final_payable_amount_minor, paid_amount_minor, refunded_amount_minor,
+         currency, requested_payment_channel, raw_requested_channel, status, student_id, participant_type)
+       VALUES ('single_class_booking', $1, 'live_capture', now(), 'confirmed', 'exact', 'creation_snapshot',
+               $2, 0, $2, 0, 0, 'EGP', 'pay_at_studio', 'pay_at_studio', 'pending_confirmation', $3, 'self')
+       RETURNING id`,
+      [bookingId, studioDefaultPriceEgp * 100, student.id],
+    );
+    await pool.query(
+      `INSERT INTO payment_events (payment_record_id, event_type, new_status)
+       VALUES ($1, 'created', 'pending_confirmation')`,
+      [payment.rows[0].id],
+    );
+
+    const resolve = await asAdmin("/api/admin/attendance/resolve", {
+      method: "POST",
+      body: JSON.stringify({ source: "phone", query: phone }),
+    });
+    assert.equal(resolve.status, 200);
+    const resolved = await jsonBody(resolve);
+    const candidate = (resolved.accounts as Array<{ candidates: Array<Record<string, unknown>> }>)[0]
+      .candidates.find((row) => row.bookingId === bookingId);
+    assert.ok(candidate);
+    const confirmation = await asAdmin("/api/admin/attendance/confirm", {
+      method: "POST",
+      body: JSON.stringify({
+        candidateKey: candidate!.candidateKey,
+        program: "studio",
+        accountId: student.id,
+        source: "phone",
+        bookingId,
+        confirmedPaymentMethod: method,
+      }),
+    });
+    assert.equal(confirmation.status, 201);
+    expectedPushCalls += 1;
+
+    const bookings = await pool.query(`SELECT booking_status, payment_status FROM bookings WHERE id = $1`, [bookingId]);
+    assert.equal(bookings.rows[0].booking_status, "attended");
+    assert.equal(bookings.rows[0].payment_status, "paid");
+    const bookingCount = await pool.query(
+      `SELECT count(*)::int AS n FROM bookings WHERE account_owner_student_id = $1 AND schedule_id = $2 AND occurrence_date = $3`,
+      [student.id, scheduleId, cairoDate],
+    );
+    assert.equal(bookingCount.rows[0].n, 1);
+    const attendance = await pool.query(`SELECT count(*)::int AS n FROM attendance WHERE booking_id = $1`, [bookingId]);
+    assert.equal(attendance.rows[0].n, 1);
+    const paymentState = await pool.query(
+      `SELECT status, confirmed_payment_method FROM payment_records WHERE id = $1`,
+      [payment.rows[0].id],
+    );
+    assert.equal(paymentState.rows[0].status, "paid");
+    assert.equal(paymentState.rows[0].confirmed_payment_method, method);
+    const creditRows = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE booking_id = $1`, [bookingId]);
+    assert.equal(creditRows.rows[0].n, 0);
+  });
+}
+
+test("a pending package booking checks in against its original deduction without a second credit or payment", async () => {
+  const phone = uniquePhone();
+  const student = await makeStudent(phone);
+  const cairoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const pkg = await pool.query(
+    `INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active)
+     VALUES ($1, 'per_class', 1000, 8, 6, true) RETURNING id`,
+    [`Gateway Existing Booking Package ${Date.now()}`],
+  );
+  const order = await pool.query(
+    `INSERT INTO package_orders
+      (student_name, student_email, student_id, participant_type, package_id, package_name,
+       total_credits, remaining_credits, status, expires_at)
+     VALUES ($1, $2, $3, 'self', $4, 'Gateway Existing Booking Package', 8, 7, 'active', now() + interval '6 months')
+     RETURNING id`,
+    [student.name, student.email, student.id, pkg.rows[0].id],
+  );
+  const booking = await pool.query(
+    `INSERT INTO bookings
+      (student_name, student_email, account_owner_student_id, participant_type, booking_scope,
+       schedule_id, class_id, occurrence_date, payment_mode, payment_status, booking_status, status, package_order_id)
+     VALUES ($1, $2, $3, 'self', 'self', $4, $5, $6, 'package_credit', 'not_required', 'pending', 'pendingPayment', $7)
+     RETURNING id`,
+    [student.name, student.email, student.id, scheduleId, classId, cairoDate, order.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO credit_transactions
+      (package_order_id, student_id, participant_type, booking_id, type, delta,
+       balance_before, balance_after, created_by)
+     VALUES
+      ($1, $2, 'self', NULL, 'package_activated', 8, 0, 8, 'test'),
+      ($1, $2, 'self', $3, 'booking_deduction', -1, 8, 7, 'test')`,
+    [order.rows[0].id, student.id, booking.rows[0].id],
+  );
+
+  const resolve = await asAdmin("/api/admin/attendance/resolve", {
+    method: "POST",
+    body: JSON.stringify({ source: "phone", query: phone }),
+  });
+  assert.equal(resolve.status, 200);
+  const resolved = await jsonBody(resolve);
+  const candidate = (resolved.accounts as Array<{ candidates: Array<Record<string, unknown>> }>)[0]
+    .candidates.find((row) => row.bookingId === booking.rows[0].id);
+  assert.ok(candidate);
+  assert.equal(candidate!.bookingState, "package_pending");
+
+  const confirmation = await asAdmin("/api/admin/attendance/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      candidateKey: candidate!.candidateKey,
+      program: "studio",
+      accountId: student.id,
+      source: "phone",
+      bookingId: booking.rows[0].id,
+    }),
+  });
+  assert.equal(confirmation.status, 201);
+  expectedPushCalls += 1;
+  const credits = await pool.query(
+    `SELECT type, delta FROM credit_transactions WHERE package_order_id = $1 ORDER BY id`,
+    [order.rows[0].id],
+  );
+  assert.deepEqual(credits.rows, [
+    { type: "package_activated", delta: 8 },
+    { type: "booking_deduction", delta: -1 },
+  ]);
+  const remaining = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [order.rows[0].id]);
+  assert.equal(remaining.rows[0].remaining_credits, 7);
+  const payments = await pool.query(`SELECT count(*)::int AS n FROM payment_records WHERE booking_id = $1`, [booking.rows[0].id]);
+  assert.equal(payments.rows[0].n, 0);
+  const attendance = await pool.query(`SELECT credit_deducted, package_order_id FROM attendance WHERE booking_id = $1`, [booking.rows[0].id]);
+  assert.equal(attendance.rowCount, 1);
+  assert.equal(attendance.rows[0].credit_deducted, false);
+  assert.equal(attendance.rows[0].package_order_id, order.rows[0].id);
 });
 
 test("Not Paid through the gateway creates no rows", async () => {
@@ -328,7 +687,7 @@ test("a stale/mismatched candidateKey is rejected before any write", async () =>
     method: "POST",
     body: JSON.stringify({
       candidateKey: "studioWalkin:999999:1:2099-01-01", program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
     }),
   });
   assert.equal(res.status, 409);
@@ -375,7 +734,7 @@ test("a paid child walk-in maps identity correctly: payment_records.student_id i
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: parent.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true, childId, expectedPriceEgp: candidate.walkinPriceEgp,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash", childId, expectedPriceEgp: candidate.walkinPriceEgp,
     }),
   });
   assert.equal(res.status, 201);
@@ -464,7 +823,7 @@ test("an unrelated child id (belonging to a different parent) is rejected before
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: parentA.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true, childId: childOfB.rows[0].id,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash", childId: childOfB.rows[0].id,
     }),
   });
   // Rejected even earlier than the candidateKey check: childId ownership
@@ -486,7 +845,7 @@ test("a price change between resolve and confirm returns 409 walkin_price_change
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
       expectedPriceEgp: (candidate.walkinPriceEgp as number) + 1, // stale/wrong displayed price
     }),
   });
@@ -506,7 +865,7 @@ test("Paid confirms exactly the displayed price when expectedPriceEgp matches th
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true, expectedPriceEgp: candidate.walkinPriceEgp,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash", expectedPriceEgp: candidate.walkinPriceEgp,
     }),
   });
   assert.equal(res.status, 201);
@@ -539,7 +898,7 @@ test("a schedule price override binds correctly through the price-binding guard"
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId: overridePriceScheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId: overridePriceScheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
       expectedPriceEgp: candidate.walkinPriceEgp,
     }),
   });
@@ -561,7 +920,7 @@ test("the Studio-wide fallback price binds correctly through the price-binding g
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
       expectedPriceEgp: candidate.walkinPriceEgp,
     }),
   });
@@ -584,7 +943,7 @@ test("a forged expectedPriceEgp that is off by a fraction of an EGP is rejected 
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
       expectedPriceEgp: realPriceEgp - 0.5, // forged: sub-EGP skew, still egpToMinor-distinct from the real price
     }),
   });
@@ -605,7 +964,7 @@ test("a matching decimal-formatted expectedPriceEgp (e.g. 275.0) still binds cor
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
       expectedPriceEgp: realPriceEgp + 0.0, // exact-integer-valued decimal — must still bind
     }),
   });
@@ -635,7 +994,7 @@ test("a price mismatch creates literally zero rows across every affected table (
     method: "POST",
     body: JSON.stringify({
       candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-      scheduleId, paymentMode: "pay_at_studio", paid: true,
+      scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash",
       expectedPriceEgp: (candidate.walkinPriceEgp as number) + 1,
     }),
   });
@@ -664,7 +1023,7 @@ test("a duplicate confirmation attempt (same candidate, submitted twice) produce
   const candidate = await resolveWalkInCandidate(phone);
   const confirmBody = JSON.stringify({
     candidateKey: candidate.candidateKey, program: "studio", accountId: student.id, source: "phone",
-    scheduleId, paymentMode: "pay_at_studio", paid: true, expectedPriceEgp: candidate.walkinPriceEgp,
+    scheduleId, paymentMode: "pay_at_studio", paid: true, confirmedPaymentMethod: "cash", expectedPriceEgp: candidate.walkinPriceEgp,
   });
 
   const first = await asAdmin("/api/admin/attendance/confirm", { method: "POST", body: confirmBody });

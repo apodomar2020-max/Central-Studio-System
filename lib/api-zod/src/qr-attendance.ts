@@ -89,6 +89,7 @@ export const CheckInBodyExtended = zod.object({
   // state — it must come from an explicit Admin choice. See
   // STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
   settlementMode: zod.enum(["package_credit", "pay_at_studio", "not_paid"]).optional(),
+  confirmedPaymentMethod: zod.enum(["cash", "card"]).optional(),
 }).superRefine((body, ctx) => {
   // "absent" is a no-show status record, not an arrival — it is not a
   // Studio Walk-in in the payment-settlement sense (no attendance-linked
@@ -112,6 +113,13 @@ export const CheckInBodyExtended = zod.object({
       code: zod.ZodIssueCode.custom,
       path: ["packageOrderId"],
       message: "packageOrderId is required when settlementMode is \"package_credit\".",
+    });
+  }
+  if (body.bookingId == null && body.settlementMode === "pay_at_studio" && body.confirmedPaymentMethod == null) {
+    ctx.addIssue({
+      code: zod.ZodIssueCode.custom,
+      path: ["confirmedPaymentMethod"],
+      message: "confirmedPaymentMethod is required for a paid Pay-at-Studio walk-in.",
     });
   }
   if (body.bookingId == null && body.participantType === "self" && body.participantChildId != null) {

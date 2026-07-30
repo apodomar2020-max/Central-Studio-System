@@ -101,6 +101,8 @@ export interface Booking {
   bookingNumber: string;
   attendanceStatus: "booked" | "attended" | "noShow" | "cancelled";
   createdAt: string;
+  sourceUnavailable?: boolean;
+  sourceUnavailableReason?: "CLASS_OR_SCHEDULE_REMOVED" | null;
 }
 
 export interface Package {
@@ -270,6 +272,8 @@ interface ApiMyBooking {
   bookingNumber: string;
   attendanceStatus: string;
   createdAt: string;
+  sourceUnavailable?: boolean;
+  sourceUnavailableReason?: "CLASS_OR_SCHEDULE_REMOVED" | null;
 }
 
 /** Map a server booking row onto the app's local Booking shape. The backend is
@@ -280,9 +284,9 @@ function mapMyBookingToLocal(r: ApiMyBooking): Booking {
     classId: r.classId != null ? String(r.classId) : "",
     scheduleId: r.scheduleId != null ? String(r.scheduleId) : undefined,
     occurrenceDate: r.occurrenceDate ?? undefined,
-    className: r.className || "Class",
+    className: r.sourceUnavailable ? "Class details unavailable" : (r.className || "Class"),
     danceType: r.danceType || "",
-    instructorName: r.instructorName || "Instructor",
+    instructorName: r.sourceUnavailable ? "" : (r.instructorName || "Instructor"),
     instructorImage: r.instructorImage ? normalizeMediaUrl(r.instructorImage, "image") : undefined,
     date: r.date || "",
     time: r.time || "",
@@ -308,6 +312,8 @@ function mapMyBookingToLocal(r: ApiMyBooking): Booking {
             ? "noShow"
             : "booked",
     createdAt: r.createdAt || new Date().toISOString(),
+    sourceUnavailable: r.sourceUnavailable === true,
+    sourceUnavailableReason: r.sourceUnavailableReason ?? null,
   };
 }
 

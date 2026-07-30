@@ -130,6 +130,14 @@ export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo
 
         {/* Title */}
         <Text style={styles.className} numberOfLines={2}>{item.className}</Text>
+        {item.sourceUnavailable && (
+          <View style={styles.warningBox}>
+            <SBI name="alert" size={15} stroke={2.4} color="#FFB02E" />
+            <Text style={styles.warningText}>
+              This historical booking references a class or schedule that is no longer available.
+            </Text>
+          </View>
+        )}
 
         {/* Meta Grid */}
         <View style={styles.metaWrap}>
@@ -161,7 +169,7 @@ export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo
             </View>
           )}
 
-          <View style={styles.slot}>
+          {!item.sourceUnavailable && <View style={styles.slot}>
             <View style={styles.slotAvatar}>
               {item.instructorImage ? (
                 <Image source={{ uri: item.instructorImage }} style={styles.slotImage} />
@@ -173,7 +181,7 @@ export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo
               <Text style={styles.slotLabel}>Instructor</Text>
               <Text style={styles.slotName} numberOfLines={1}>{item.instructorName}</Text>
             </View>
-          </View>
+          </View>}
         </View>
 
         {/* Payment Pill */}
@@ -206,7 +214,10 @@ export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo
         {(() => {
           const isPackage = item.bookingType === "package" || item.paymentMethod === "packageCredit";
           const isUpcomingActive =
-            phase === "upcoming" && item.bookingStatus !== "cancelled" && item.bookingStatus !== "rejected";
+            !item.sourceUnavailable
+            && phase === "upcoming"
+            && item.bookingStatus !== "cancelled"
+            && item.bookingStatus !== "rejected";
 
           const viewBtn = <ActionBtn key="view" label="View Details" icon="eye" onPress={onPress} />;
           const cancelBtn = <ActionBtn key="cancel" label="Cancel" icon="cancel" danger onPress={onCancel} />;

@@ -177,7 +177,7 @@ test("a payment_records insert failure leaves zero new bookings, attendance, pay
   try {
     const res = await asAdmin("/api/attendance", {
       method: "POST",
-      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio" }),
+      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
     });
     assert.notEqual(res.status, 201);
     const counts = await countsFor(student.email);
@@ -193,7 +193,7 @@ test("a payment_events insert failure leaves zero new bookings, attendance, paym
   try {
     const res = await asAdmin("/api/attendance", {
       method: "POST",
-      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio" }),
+      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
     });
     assert.notEqual(res.status, 201);
     const counts = await countsFor(student.email);
@@ -209,7 +209,7 @@ test("an attendance insert failure rolls back the synthetic booking and all Fina
   try {
     const res = await asAdmin("/api/attendance", {
       method: "POST",
-      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio" }),
+      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
     });
     assert.notEqual(res.status, 201);
     const counts = await countsFor(student.email);
@@ -225,7 +225,7 @@ test("a notifications insert failure rolls back the synthetic booking and all Fi
   try {
     const res = await asAdmin("/api/attendance", {
       method: "POST",
-      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio" }),
+      body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
     });
     assert.notEqual(res.status, 201);
     const counts = await countsFor(student.email);
@@ -239,7 +239,7 @@ test("concurrent duplicate paid walk-in attempts for the same student+class prod
   const student = await makeStudent();
   const attempt = () => asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, paid: true, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
 
   const responses = await Promise.all([attempt(), attempt(), attempt()]);

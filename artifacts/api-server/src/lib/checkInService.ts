@@ -42,6 +42,7 @@ import type { ParticipantType } from "@workspace/api-zod";
 import { calculateAgeOnDate, parseIsoDate } from "./eligibility/dateOnly";
 import { getCairoBusinessDate } from "./eligibility/dateOnly";
 import type { IsoDate } from "./eligibility/types";
+import { evaluateParticipantOnOccurrence } from "./eligibility/participantOccurrenceEligibility";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Booking = typeof bookingsTable.$inferSelect;
@@ -81,6 +82,14 @@ export type CheckInErrorCode =
   | "invalid_price_configuration"
   | "walkin_not_paid"
   | "walkin_price_changed"
+  | "WALKIN_BLOCKED_BY_EXISTING_BOOKING"
+  | "WALKIN_PARTICIPANT_INELIGIBLE"
+  | "PARTICIPANT_DOB_REQUIRED"
+  | "PAYMENT_METHOD_REQUIRED"
+  | "payment_integrity_error"
+  | "BOOKING_PENDING_APPROVAL"
+  | "AMBIGUOUS_ACTIVE_BOOKINGS"
+  | "SOURCE_CLASS_OR_SCHEDULE_UNAVAILABLE"
   | "PACKAGE_PARTICIPANT_MISMATCH"
   | "PACKAGE_EXPIRED"
   | "PACKAGE_NO_CREDITS"
@@ -113,6 +122,58 @@ export function isCheckInError(e: unknown): e is CheckInError {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function normalizeLegacyEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+async function assertGenuineEligibleWalkIn(
+  tx: Tx,
+  params: {
+    accountId: number;
+    participantChildId: number | null;
+    participantDateOfBirth: string | null;
+    scheduleId: number;
+    classId: number | null;
+    occurrenceDate: string;
+  },
+): Promise<void> {
+  const [blockingBooking] = await tx
+    .select({ id: bookingsTable.id })
+    .from(bookingsTable)
+    .where(and(
+      eq(bookingsTable.accountOwnerStudentId, params.accountId),
+      eq(bookingsTable.scheduleId, params.scheduleId),
+      eq(bookingsTable.occurrenceDate, params.occurrenceDate),
+      sql`${bookingsTable.participantChildId} is not distinct from ${params.participantChildId}`,
+      sql`${bookingsTable.bookingStatus} in ('pending','confirmed','attended')`,
+    ))
+    .limit(1);
+  if (blockingBooking) {
+    throw makeCheckInError(409, "WALKIN_BLOCKED_BY_EXISTING_BOOKING", "An existing booking already covers this participant and occurrence.");
+  }
+  if (params.classId == null) return;
+  const [klass] = await tx
+    .select({
+      allowAllAges: classesTable.allowAllAges,
+      minAge: classesTable.minAge,
+      maxAge: classesTable.maxAge,
+    })
+    .from(classesTable)
+    .where(eq(classesTable.id, params.classId))
+    .limit(1);
+  if (!klass || (klass.allowAllAges == null && klass.minAge == null && klass.maxAge == null)) return;
+  const eligibility = evaluateParticipantOnOccurrence(params.participantDateOfBirth, params.occurrenceDate, {
+    allowAllAges: klass.allowAllAges === true,
+    minAge: klass.minAge,
+    maxAge: klass.maxAge,
+  });
+  if (!eligibility.eligible) {
+    throw makeCheckInError(
+      409,
+      eligibility.reasonCode === "PARTICIPANT_DOB_REQUIRED" ? "PARTICIPANT_DOB_REQUIRED" : "WALKIN_PARTICIPANT_INELIGIBLE",
+      eligibility.reasonCode === "PARTICIPANT_DOB_REQUIRED"
+        ? "A canonical date of birth is required for this participant."
+        : "This participant is not eligible for the selected class occurrence.",
+    );
+  }
 }
 
 function bookingParticipantKey(booking: Booking): string {
@@ -496,6 +557,7 @@ export interface PerformStudioWalkInParams {
   scheduleId?: number | null;
   /** Authenticated admin confirming payment — system_users.id. */
   adminId: number;
+  confirmedPaymentMethod: "cash" | "card";
   /** Audit trail — admin email, matches the existing checkedInBy convention. */
   performedBy: string;
   /**
@@ -620,6 +682,16 @@ export async function performStudioWalkIn(
 
   const checkedInAtIso = now.toISOString();
   const evaluationDate = (occurrenceDate ?? getCairoBusinessDate(now)) as IsoDate;
+  if (params.scheduleId != null && occurrenceDate != null) {
+    await assertGenuineEligibleWalkIn(tx, {
+      accountId: accountOwnerStudentId,
+      participantChildId: participant.participantChildId,
+      participantDateOfBirth: participant.dateOfBirth,
+      scheduleId: params.scheduleId,
+      classId: params.classId ?? null,
+      occurrenceDate,
+    });
+  }
   const parsedDob = participant.dateOfBirth
     ? parseIsoDate(participant.dateOfBirth, { today: evaluationDate })
     : null;
@@ -674,7 +746,7 @@ export async function performStudioWalkIn(
       currency: "EGP",
       requestedPaymentChannel: "pay_at_studio" as PaymentRecordRequestedChannel,
       rawRequestedChannel: "pay_at_studio",
-      confirmedPaymentMethod: "unknown",
+      confirmedPaymentMethod: params.confirmedPaymentMethod,
       rawConfirmedMethod: null,
       status: "paid",
       paidAt: checkedInAtIso,
@@ -859,6 +931,15 @@ export async function performStudioPackageWalkIn(
         .where(eq(classesTable.id, classId))
         .limit(1)
     : [];
+
+  await assertGenuineEligibleWalkIn(tx, {
+    accountId: account.id,
+    participantChildId: participant.participantChildId,
+    participantDateOfBirth: participant.dateOfBirth,
+    scheduleId: params.scheduleId,
+    classId,
+    occurrenceDate: params.occurrenceDate,
+  });
 
   const credit = await resolveParticipantPackageCredit(tx, {
     packageOrderId: params.packageOrderId,

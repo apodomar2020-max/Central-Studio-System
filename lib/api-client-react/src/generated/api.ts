@@ -22,6 +22,7 @@ import type {
   Attendance,
   AttendanceStats,
   Booking,
+  BookingParticipantCandidatesResponse,
   Campaign,
   CheckInBody,
   CheckInQrBody,
@@ -44,6 +45,7 @@ import type {
   DashboardSummary,
   ErrorResponse,
   GetAttendanceStatsParams,
+  GetBookingParticipantCandidatesParams,
   GetMyAttendanceParams,
   GetMyCreditsParams,
   HealthStatus,
@@ -2239,6 +2241,110 @@ export const useCreateBooking = <
 > => {
   return useMutation(getCreateBookingMutationOptions(options));
 };
+
+export const getGetBookingParticipantCandidatesUrl = (
+  params: GetBookingParticipantCandidatesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/bookings/participant-candidates?${stringifiedParams}`
+    : `/api/bookings/participant-candidates`;
+};
+
+export const getBookingParticipantCandidates = async (
+  params: GetBookingParticipantCandidatesParams,
+  options?: RequestInit,
+): Promise<BookingParticipantCandidatesResponse> => {
+  return customFetch<BookingParticipantCandidatesResponse>(
+    getGetBookingParticipantCandidatesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetBookingParticipantCandidatesQueryKey = (
+  params?: GetBookingParticipantCandidatesParams,
+) => {
+  return [
+    `/api/bookings/participant-candidates`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetBookingParticipantCandidatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBookingParticipantCandidates>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetBookingParticipantCandidatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBookingParticipantCandidates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetBookingParticipantCandidatesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBookingParticipantCandidates>>
+  > = ({ signal }) =>
+    getBookingParticipantCandidates(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBookingParticipantCandidates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBookingParticipantCandidatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBookingParticipantCandidates>>
+>;
+export type GetBookingParticipantCandidatesQueryError =
+  ErrorType<ErrorResponse>;
+
+export function useGetBookingParticipantCandidates<
+  TData = Awaited<ReturnType<typeof getBookingParticipantCandidates>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetBookingParticipantCandidatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBookingParticipantCandidates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBookingParticipantCandidatesQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetBookingUrl = (id: number) => {
   return `/api/bookings/${id}`;

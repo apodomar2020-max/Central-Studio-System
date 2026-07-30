@@ -229,7 +229,7 @@ test("a paid walk-in creates a synthetic booking, attendance, and matching Finan
     method: "POST",
     body: JSON.stringify({
       studentEmail: student.email, studentName: student.name, studentId: student.id,
-      classId, scheduleId, settlementMode: "pay_at_studio",
+      classId, scheduleId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash",
     }),
   });
   assert.equal(res.status, 201);
@@ -253,7 +253,7 @@ test("a paid walk-in creates a synthetic booking, attendance, and matching Finan
   assert.equal(r.currency, "EGP");
   assert.equal(r.requested_payment_channel, "pay_at_studio");
   assert.equal(r.raw_requested_channel, "pay_at_studio");
-  assert.equal(r.confirmed_payment_method, "unknown");
+  assert.equal(r.confirmed_payment_method, "cash");
   assert.equal(r.raw_confirmed_method, null);
   assert.equal(r.status, "paid");
   assert.ok(r.paid_at);
@@ -290,7 +290,7 @@ test("a schedule-level price override is used over the Studio default, and the d
   const student = await makeStudent();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(res.status, 201);
   const body = await jsonBody(res);
@@ -304,7 +304,7 @@ test("client-supplied monetary fields cannot override the server-resolved price"
   const res = await asAdmin("/api/attendance", {
     method: "POST",
     body: JSON.stringify({
-      studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio",
+      studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash",
       priceEgp: 1, amount: 1, amountMinor: 1, grossAmountMinor: 1,
     }),
   });
@@ -317,7 +317,7 @@ test("a walk-in without a resolvable account is rejected before Finance writes",
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: "unlinked-walkin@example.com", studentName: "Unlinked Walkin", classId, scheduleId, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: "unlinked-walkin@example.com", studentName: "Unlinked Walkin", classId, scheduleId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(res.status, 404);
   const body = await jsonBody(res);
@@ -365,7 +365,7 @@ test("valid Package Credit + explicit Pay at Studio leaves credits untouched and
     method: "POST",
     body: JSON.stringify({
       studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId,
-      packageOrderId, settlementMode: "pay_at_studio",
+      packageOrderId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash",
     }),
   });
   assert.equal(res.status, 201);
@@ -461,7 +461,7 @@ test("no valid credit + explicit Pay at Studio still creates the payment and att
     method: "POST",
     body: JSON.stringify({
       studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId,
-      settlementMode: "pay_at_studio",
+      settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash",
     }),
   });
   assert.equal(res.status, 201);
@@ -482,12 +482,12 @@ test("a retry of an explicit Pay at Studio walk-in for a distinct request does n
   const student = await makeStudent();
   const first = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(first.status, 201);
   const dup = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: scheduleOverrideId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(dup.status, 409, "the existing same-day duplicate-attendance guard still applies on the pay_at_studio path");
 });
@@ -556,7 +556,7 @@ test("a zero schedule price with no valid fallback fails atomically and is not c
   const before = await totals();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: zeroSchedule.rows[0].id, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId: zeroSchedule.rows[0].id, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(res.status, 409);
   const body = await jsonBody(res);
@@ -572,7 +572,7 @@ test("a missing schedule price with a valid Studio-default fallback still succee
   const student = await makeStudent();
   const res = await asAdmin("/api/attendance", {
     method: "POST",
-    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentEmail: student.email, studentName: student.name, studentId: student.id, classId, scheduleId, settlementMode: "pay_at_studio", confirmedPaymentMethod: "cash" }),
   });
   assert.equal(res.status, 201);
   const body = await jsonBody(res);

@@ -505,6 +505,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/Booking"
 
+  /bookings/participant-candidates:
+    get:
+      operationId: getBookingParticipantCandidates
+      tags: [bookings]
+      parameters:
+        - { name: scheduleId, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: occurrenceDate, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Server-authoritative participant eligibility for one occurrence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingParticipantCandidatesResponse"
+        "400":
+          description: Invalid occurrence
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Student authentication required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /bookings/{id}:
     get:
       operationId: getBooking
@@ -2332,6 +2357,32 @@ components:
         scheduleId: { type: ["integer", "null"] }
         notes: { type: ["string", "null"] }
         instructorName: { type: ["string", "null"] }
+
+    BookingParticipantCandidate:
+      type: object
+      required:
+        [participantType, participantChildId, participantName, ageOnOccurrenceDate, eligible, reasonCode, existingBookingState, existingAttendanceState]
+      properties:
+        participantType: { type: string, enum: [self, child] }
+        participantChildId: { type: ["integer", "null"] }
+        participantName: { type: string }
+        ageOnOccurrenceDate: { type: ["integer", "null"] }
+        eligible: { type: boolean }
+        reasonCode:
+          type: string
+          enum: [ELIGIBLE, PARTICIPANT_DOB_REQUIRED, PARTICIPANT_DOB_INVALID, BELOW_MINIMUM_AGE, ABOVE_MAXIMUM_AGE, PARTICIPANT_NOT_ELIGIBLE, EXISTING_BOOKING, EXISTING_ATTENDANCE]
+        existingBookingState: { type: ["string", "null"] }
+        existingAttendanceState: { type: ["string", "null"] }
+
+    BookingParticipantCandidatesResponse:
+      type: object
+      required: [scheduleId, occurrenceDate, candidates]
+      properties:
+        scheduleId: { type: integer }
+        occurrenceDate: { type: string, format: date }
+        candidates:
+          type: array
+          items: { $ref: "#/components/schemas/BookingParticipantCandidate" }
 
     MyAttendanceResponse:
       type: object

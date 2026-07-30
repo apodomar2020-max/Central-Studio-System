@@ -30,9 +30,9 @@
  *                          requirePackageDeductForQr exactly)
  */
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, studentsTable, bookingsTable, balletLevelAssignmentsTable, balletApplicationsTable, balletSchedulesTable, schedulesTable, childrenTable, attendanceTable } from "@workspace/db";
+import { db, studentsTable, bookingsTable, balletLevelAssignmentsTable, balletApplicationsTable, balletSchedulesTable, schedulesTable, childrenTable, attendanceTable, classesTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { logActivity } from "../lib/activityLog";
@@ -49,6 +49,8 @@ import {
 } from "../lib/attendanceResolver";
 import { resolveSingleClassPriceEgp } from "../lib/singleClassPricing";
 import { canViewFinanceAmounts } from "../lib/financialVisibility";
+import { evaluateParticipantOnOccurrence } from "../lib/eligibility/participantOccurrenceEligibility";
+import { confirmCanonicalPaymentRecord } from "../lib/financeConfirmation";
 
 const router: IRouter = Router();
 
@@ -172,6 +174,7 @@ const ConfirmBody = z
     // and rejects with 409 walkin_price_changed if it no longer matches.
     scheduleId: z.number().int().positive().optional(),
     paid: z.boolean().optional(),
+    confirmedPaymentMethod: z.enum(["cash", "card"]).optional(),
     childId: z.number().int().positive().optional(),
     expectedPriceEgp: z.number().nonnegative().optional(),
     // Ballet — identity only, never business fields (status/date/duration).
@@ -188,6 +191,9 @@ const ConfirmBody = z
   })
   .refine((b) => b.program !== "studio" || b.scheduleId == null || b.paymentMode !== "pay_at_studio" || b.paid != null, {
     message: "A Paid/Not Paid confirmation (paid:true|false) is required for a pay-at-studio walk-in",
+  })
+  .refine((b) => b.program !== "studio" || b.paid !== true || b.confirmedPaymentMethod != null, {
+    message: "confirmedPaymentMethod is required for a paid Studio attendance",
   })
   .refine((b) => b.program !== "ballet" || (b.balletLevelAssignmentId != null && b.balletScheduleId != null), {
     message: "balletLevelAssignmentId and balletScheduleId are required to confirm a Ballet candidate",
@@ -209,7 +215,10 @@ function requirePackageDeductForStudioCredit(req: Request, res: Response, next: 
 // the existing attendance.checkIn permission, even though this is launched
 // from the Attendance Gateway rather than Finance.
 function requirePaymentConfirmForPayAtStudio(req: Request, res: Response, next: NextFunction): void {
-  if (req.body?.program !== "studio" || req.body?.scheduleId == null || req.body?.paymentMode !== "pay_at_studio") { next(); return; }
+  if (
+    req.body?.program !== "studio"
+    || (req.body?.paymentMode !== "pay_at_studio" && req.body?.confirmedPaymentMethod == null)
+  ) { next(); return; }
   requireAdminPermission("finance", "paymentsConfirm")(req, res, next);
 }
 
@@ -253,6 +262,32 @@ router.post(
           ) {
             throw makeCheckInError(403, "booking_mismatch", "This booking does not belong to the resolved account.");
           }
+          if (booking.scheduleId == null || booking.occurrenceDate == null) {
+            throw makeCheckInError(
+              409,
+              "SOURCE_CLASS_OR_SCHEDULE_UNAVAILABLE",
+              "This historical booking no longer has an actionable schedule occurrence.",
+            );
+          }
+          const participantChildId = booking.participantChildId ?? null;
+          const duplicateActiveBookings = await tx
+            .select({ id: bookingsTable.id })
+            .from(bookingsTable)
+            .where(and(
+              eq(bookingsTable.accountOwnerStudentId, account.id),
+              eq(bookingsTable.scheduleId, booking.scheduleId),
+              eq(bookingsTable.occurrenceDate, booking.occurrenceDate),
+              sql`${bookingsTable.participantChildId} is not distinct from ${participantChildId}`,
+              inArray(bookingsTable.bookingStatus, ["pending", "confirmed", "attended"]),
+            ))
+            .for("update");
+          if (duplicateActiveBookings.length > 1) {
+            throw makeCheckInError(
+              409,
+              "AMBIGUOUS_ACTIVE_BOOKINGS",
+              "Multiple active bookings exist for this participant and occurrence. Admin review is required.",
+            );
+          }
 
           // CandidateKey binding: recompute from the SERVER's own resolved
           // booking (never the client's submitted occurrenceDate) and
@@ -263,11 +298,47 @@ router.post(
             throw makeCheckInError(409, "candidate_key_mismatch", "This selection is stale or was not issued for this account — please search again.");
           }
 
+          const bookingUsesPackage = booking.paymentMode === "package_credit" || booking.packageOrderId != null;
+          if (booking.bookingStatus === "pending") {
+            if (bookingUsesPackage) {
+              await tx
+                .update(bookingsTable)
+                .set({ bookingStatus: "confirmed", status: "confirmed" })
+                .where(eq(bookingsTable.id, booking.id));
+              booking.bookingStatus = "confirmed";
+              booking.status = "confirmed";
+            } else if (booking.paymentMode === "pay_at_studio" && booking.paymentStatus === "pending_payment") {
+              if (!body.confirmedPaymentMethod) {
+                throw makeCheckInError(400, "PAYMENT_METHOD_REQUIRED", "Select Cash or Card before confirming attendance.");
+              }
+              const confirmation = await confirmCanonicalPaymentRecord(tx, {
+                flowType: "single_class_booking",
+                bookingId: booking.id,
+                confirmedPaymentMethod: body.confirmedPaymentMethod,
+                confirmingAdminId: req.adminUser!.id,
+              });
+              if (confirmation.kind !== "confirmed" && confirmation.kind !== "already_confirmed") {
+                throw makeCheckInError(409, "payment_integrity_error", "The existing booking payment could not be confirmed safely.");
+              }
+              await tx
+                .update(bookingsTable)
+                .set({ bookingStatus: "confirmed", paymentStatus: "paid", status: "confirmed" })
+                .where(eq(bookingsTable.id, booking.id));
+              booking.bookingStatus = "confirmed";
+              booking.paymentStatus = "paid";
+              booking.status = "confirmed";
+            } else {
+              throw makeCheckInError(409, "BOOKING_PENDING_APPROVAL", "This booking is awaiting approval and cannot be checked in yet.");
+            }
+          }
+
           return performBookingCheckIn(tx, {
             booking,
             student: { id: account.id, name: account.name, email: account.email },
-            paymentMode: body.paymentMode ?? (booking.paymentMode === "package_credit" ? "package_credit" : "pay_at_studio"),
-            packageOrderId: body.packageOrderId ?? null,
+            paymentMode: booking.paymentMode === "package_credit" || booking.packageOrderId != null
+              ? "package_credit"
+              : "pay_at_studio",
+            packageOrderId: booking.packageOrderId ?? null,
             performedBy,
             now,
           });
@@ -338,8 +409,12 @@ router.post(
               dayOfWeek: schedulesTable.dayOfWeek,
               startTime: schedulesTable.startTime,
               endTime: schedulesTable.endTime,
+              classAllowAllAges: classesTable.allowAllAges,
+              classMinAge: classesTable.minAge,
+              classMaxAge: classesTable.maxAge,
             })
             .from(schedulesTable)
+            .innerJoin(classesTable, eq(classesTable.id, schedulesTable.classId))
             .where(eq(schedulesTable.id, body.scheduleId!))
             .for("update");
           if (!schedule) throw makeCheckInError(404, "booking_not_found", "Schedule not found.");
@@ -371,6 +446,47 @@ router.post(
           // (or a naive client retry after a slow response) could both pass
           // the duplicate check below before either commits.
           await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`walkin:${account.email}:${schedule.id}:${childId ?? "self"}:${occurrenceDate}`}))`);
+
+          const [blockingBooking] = await tx
+            .select({ id: bookingsTable.id })
+            .from(bookingsTable)
+            .where(and(
+              eq(bookingsTable.accountOwnerStudentId, account.id),
+              eq(bookingsTable.scheduleId, schedule.id),
+              eq(bookingsTable.occurrenceDate, occurrenceDate),
+              sql`${bookingsTable.participantChildId} is not distinct from ${childId}`,
+              inArray(bookingsTable.bookingStatus, ["pending", "confirmed", "attended"]),
+            ))
+            .limit(1);
+          if (blockingBooking) {
+            throw makeCheckInError(409, "WALKIN_BLOCKED_BY_EXISTING_BOOKING", "An existing booking already covers this participant and occurrence.");
+          }
+
+          const participantDob = childId == null
+            ? account.dateOfBirth
+            : (await tx
+                .select({ dateOfBirth: childrenTable.dateOfBirth })
+                .from(childrenTable)
+                .where(eq(childrenTable.id, childId))
+                .limit(1))[0]?.dateOfBirth ?? null;
+          if (!(schedule.classAllowAllAges == null && schedule.classMinAge == null && schedule.classMaxAge == null)) {
+            const ageEligibility = evaluateParticipantOnOccurrence(participantDob, occurrenceDate, {
+              allowAllAges: schedule.classAllowAllAges === true,
+              minAge: schedule.classMinAge,
+              maxAge: schedule.classMaxAge,
+            });
+            if (!ageEligibility.eligible) {
+              throw makeCheckInError(
+                409,
+                ageEligibility.reasonCode === "PARTICIPANT_DOB_REQUIRED"
+                  ? "PARTICIPANT_DOB_REQUIRED"
+                  : "WALKIN_PARTICIPANT_INELIGIBLE",
+                ageEligibility.reasonCode === "PARTICIPANT_DOB_REQUIRED"
+                  ? "A canonical date of birth is required for this participant."
+                  : "This participant is not eligible for the selected class occurrence.",
+              );
+            }
+          }
 
           const [existingAttendance] = await tx
             .select({ id: attendanceTable.id })
@@ -408,6 +524,9 @@ router.post(
           if (body.paid !== true) {
             throw makeCheckInError(400, "walkin_not_paid", "This walk-in was not marked as paid — no records were created.");
           }
+          if (!body.confirmedPaymentMethod) {
+            throw makeCheckInError(400, "PAYMENT_METHOD_REQUIRED", "Select Cash or Card before confirming payment.");
+          }
           const paidResult = await performStudioWalkIn(tx, {
             studentName: participantName,
             studentEmail: account.email,
@@ -416,6 +535,7 @@ router.post(
             classId: schedule.classId,
             scheduleId: schedule.id,
             adminId: req.adminUser!.id,
+            confirmedPaymentMethod: body.confirmedPaymentMethod,
             performedBy,
             expectedPriceEgp: body.expectedPriceEgp ?? null,
             now,

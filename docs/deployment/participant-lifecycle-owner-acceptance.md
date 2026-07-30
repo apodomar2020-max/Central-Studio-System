@@ -207,3 +207,27 @@ Result / Notes / Screenshot:
 Include the screenshot reference, approximate time, test account label,
 selected participant, class/schedule, package state, expected result, and actual
 result. Never include credentials, tokens, or customer PII.
+
+## H3 participant-integrity retest
+
+Run in this order after the H3 deployment. Record `Pass`, `Fail`, `Notes`, and
+`Screenshot reference` for every row; never include credentials.
+
+| # | Retest | Pass/Fail | Notes | Screenshot reference |
+|---|---|---|---|---|
+| 1 | Adults-only class participant selector |  |  |  |
+| 2 | Kids-only class participant selector |  |  |  |
+| 3 | Parent self versus each child |  |  |  |
+| 4 | Package-credit booking for an eligible child |  |  |  |
+| 5 | QR scan for that exact child booking |  |  |  |
+| 6 | Only the booked child appears |  |  |  |
+| 7 | No package/payment reselection appears |  |  |  |
+| 8 | No second credit deduction occurs |  |  |  |
+| 9 | Existing Pay-at-Studio booking |  |  |  |
+| 10 | Select Cash or Card |  |  |  |
+| 11 | Finance shows the selected method |  |  |  |
+| 12 | Genuine Package Walk-in |  |  |  |
+| 13 | Genuine Pay-at-Studio Walk-in |  |  |  |
+| 14 | Unpaid Walk-in creates no records |  |  |  |
+| 15 | Finance distinguishes payer and participant |  |  |  |
+| 16 | Historical unavailable schedule card |  |  |  |

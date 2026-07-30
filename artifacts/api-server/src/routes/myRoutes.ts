@@ -406,6 +406,7 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
         : bookingStatus === "cancelled" || bookingStatus === "rejected"
           ? "cancelled"
           : "booked";
+    const sourceUnavailable = r.classTitle == null || r.scheduleType == null;
 
     return {
       id: b.id,
@@ -414,9 +415,9 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       // Raw occurrence key (YYYY-MM-DD) — used by the app to scope Cancel CTAs
       // and to decide whether a confirmed booking is past.
       occurrenceDate: b.occurrenceDate ?? null,
-      className: r.classTitle ?? "Class",
+      className: r.classTitle ?? "Class details unavailable",
       danceType: r.classCategory ?? "",
-      instructorName: r.instructorName ?? "Instructor",
+      instructorName: r.instructorName ?? "",
       // Raw stored URL — the app normalizes it to an absolute media URL.
       instructorImage: r.instructorPhotoUrl ?? null,
       date: b.occurrenceDate ?? r.scheduleDate ?? "",
@@ -439,6 +440,8 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       bookingNumber: "CS" + String(b.id).padStart(6, "0"),
       attendanceStatus,
       createdAt: b.createdAt,
+      sourceUnavailable,
+      sourceUnavailableReason: sourceUnavailable ? "CLASS_OR_SCHEDULE_REMOVED" : null,
     };
   });
 

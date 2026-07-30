@@ -41,11 +41,17 @@ import {
   isoDateDayOfWeek,
   type CheckInWindowState,
 } from "./occurrence";
+import { evaluateParticipantOnOccurrence } from "./eligibility/participantOccurrenceEligibility";
 
 export type ResolverSource = "qr" | "phone" | "childName";
 export type CandidateProgram = "studio" | "ballet";
 export type CandidateEligibility =
   | "eligible"
+  | "booking_payment_required"
+  | "booking_pending_approval"
+  | "ambiguous_active_bookings"
+  | "participant_not_eligible"
+  | "participant_dob_required"
   | "too_early"
   | "ended"
   | "already_recorded"
@@ -102,6 +108,14 @@ export interface AttendanceCandidate {
    * all. confirm() re-validates the real package order independently.
    */
   hasPackageCredit: boolean;
+  bookingState:
+    | "confirmed"
+    | "package_pending"
+    | "payment_required"
+    | "pending_approval"
+    | "ambiguous"
+    | "attended"
+    | "none";
 }
 
 export interface AttendanceAccountCandidates {
@@ -295,12 +309,27 @@ async function buildStudioCandidates(
     .where(and(
       eq(bookingsTable.studentEmail, accountEmail),
       inArray(bookingsTable.occurrenceDate, [nowCairo.date, tomorrow]),
-      inArray(bookingsTable.bookingStatus, ["confirmed", "attended"]),
+      inArray(bookingsTable.bookingStatus, ["pending", "confirmed", "attended"]),
     ));
 
   const candidates: AttendanceCandidate[] = [];
+  const activeBookingCounts = new Map<string, number>();
+  for (const row of rows) {
+    const key = [
+      row.booking.scheduleId ?? "no-schedule",
+      row.booking.occurrenceDate ?? "no-occurrence",
+      row.booking.participantChildId ?? "self",
+    ].join(":");
+    activeBookingCounts.set(key, (activeBookingCounts.get(key) ?? 0) + 1);
+  }
   for (const row of rows) {
     const booking = row.booking;
+    const bookingGroupKey = [
+      booking.scheduleId ?? "no-schedule",
+      booking.occurrenceDate ?? "no-occurrence",
+      booking.participantChildId ?? "self",
+    ].join(":");
+    const ambiguous = (activeBookingCounts.get(bookingGroupKey) ?? 0) > 1;
     const windowState = checkInWindowState(
       { startTime: row.scheduleStartTime, endTime: row.scheduleEndTime },
       booking.occurrenceDate,
@@ -308,10 +337,18 @@ async function buildStudioCandidates(
     );
     if (booking.occurrenceDate === tomorrow && windowState !== "open") continue;
     const alreadyAttended = booking.bookingStatus === "attended";
+    const packagePending = booking.bookingStatus === "pending"
+      && (booking.paymentMode === "package_credit" || booking.packageOrderId != null);
+    const paymentRequired = booking.bookingStatus === "pending"
+      && booking.paymentMode === "pay_at_studio"
+      && booking.paymentStatus === "pending_payment";
     let existingAttendanceId: number | null = null;
     let eligibility: CandidateEligibility;
     let reason: string | null;
-    if (alreadyAttended) {
+    if (ambiguous) {
+      eligibility = "ambiguous_active_bookings";
+      reason = "Multiple active bookings require Admin review";
+    } else if (alreadyAttended) {
       const [existing] = await db
         .select({ id: attendanceTable.id })
         .from(attendanceTable)
@@ -320,6 +357,15 @@ async function buildStudioCandidates(
       existingAttendanceId = existing?.id ?? null;
       eligibility = "already_recorded";
       reason = "Already checked in";
+    } else if (packagePending) {
+      eligibility = "eligible";
+      reason = "Package credit already reserved at booking";
+    } else if (paymentRequired) {
+      eligibility = "booking_payment_required";
+      reason = "Payment is required for this existing booking";
+    } else if (booking.bookingStatus === "pending") {
+      eligibility = "booking_pending_approval";
+      reason = "Booking is awaiting approval";
     } else {
       ({ eligibility, reason } = eligibilityFromWindow(windowState));
     }
@@ -354,6 +400,17 @@ async function buildStudioCandidates(
       walkinPriceEgp: null,
       walkinChildId: participantIsChild ? booking.participantChildId! : null,
       hasPackageCredit: false,
+      bookingState: ambiguous
+        ? "ambiguous"
+        : alreadyAttended
+        ? "attended"
+        : packagePending
+          ? "package_pending"
+          : paymentRequired
+            ? "payment_required"
+            : booking.bookingStatus === "pending"
+              ? "pending_approval"
+              : "confirmed",
     });
   }
 
@@ -398,6 +455,9 @@ async function buildStudioWalkInCandidates(
         startTime: schedulesTable.startTime,
         endTime: schedulesTable.endTime,
         priceEgp: schedulesTable.priceEgp,
+        allowAllAges: classesTable.allowAllAges,
+        minAge: classesTable.minAge,
+        maxAge: classesTable.maxAge,
       })
       .from(schedulesTable)
       .leftJoin(classesTable, eq(classesTable.id, schedulesTable.classId))
@@ -405,7 +465,7 @@ async function buildStudioWalkInCandidates(
     // Existing parent/child ownership model — the SAME table Ballet candidate
     // resolution already uses for a child's identity (childrenTable.parentId).
     db
-      .select({ id: childrenTable.id, fullName: childrenTable.fullName })
+      .select({ id: childrenTable.id, fullName: childrenTable.fullName, dateOfBirth: childrenTable.dateOfBirth })
       .from(childrenTable)
       .where(eq(childrenTable.parentId, accountId)),
     // Display-only preview from canonical participant ownership. The
@@ -426,9 +486,14 @@ async function buildStudioWalkInCandidates(
   // Participants this account can walk in as: itself, plus every owned
   // child — mirrors exactly who the Ballet candidate builder already
   // resolves attendance for under this same account.
-  const participants: Array<{ type: "account" | "child"; id: number; name: string; childId: number | null }> = [
-    { type: "account", id: accountId, name: accountName, childId: null },
-    ...children.map((child) => ({ type: "child" as const, id: child.id, name: child.fullName, childId: child.id })),
+  const [accountDob] = await db
+    .select({ dateOfBirth: studentsTable.dateOfBirth })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, accountId))
+    .limit(1);
+  const participants: Array<{ type: "account" | "child"; id: number; name: string; childId: number | null; dateOfBirth: string | null }> = [
+    { type: "account", id: accountId, name: accountName, childId: null, dateOfBirth: accountDob?.dateOfBirth ?? null },
+    ...children.map((child) => ({ type: "child" as const, id: child.id, name: child.fullName, childId: child.id, dateOfBirth: child.dateOfBirth })),
   ];
 
   const candidates: AttendanceCandidate[] = [];
@@ -450,6 +515,13 @@ async function buildStudioWalkInCandidates(
     const priceEgp = await resolveSingleClassPriceEgp(db, row.scheduleId);
 
     for (const participant of participants) {
+      const ageEligibility = row.allowAllAges == null && row.minAge == null && row.maxAge == null
+        ? { eligible: true, reasonCode: "ELIGIBLE" as const }
+        : evaluateParticipantOnOccurrence(participant.dateOfBirth, occurrenceDate, {
+            allowAllAges: row.allowAllAges === true,
+            minAge: row.minAge,
+            maxAge: row.maxAge,
+          });
       const hasPackageCredit = packageCredits.some((credit) =>
         participant.childId == null
           ? credit.participantType === "self" && credit.participantChildId == null
@@ -477,8 +549,16 @@ async function buildStudioWalkInCandidates(
         durationMinutes: null,
         level: null,
         group: null,
-        eligibility: "eligible",
-        reason: null,
+        eligibility: ageEligibility.eligible
+          ? "eligible"
+          : ageEligibility.reasonCode === "PARTICIPANT_DOB_REQUIRED"
+            ? "participant_dob_required"
+            : "participant_not_eligible",
+        reason: ageEligibility.eligible
+          ? null
+          : ageEligibility.reasonCode === "PARTICIPANT_DOB_REQUIRED"
+            ? "Date of birth is required"
+            : "Participant is outside this class age range",
         existingAttendanceId: null,
         // Display-only preview — the confirm step re-resolves this exact
         // value server-side via the same resolveSingleClassPriceEgp() rather
@@ -486,6 +566,7 @@ async function buildStudioWalkInCandidates(
         walkinPriceEgp: priceEgp,
         walkinChildId: participant.childId,
         hasPackageCredit,
+        bookingState: "none",
       });
     }
   }
@@ -636,6 +717,7 @@ async function buildBalletCandidates(
         walkinPriceEgp: null,
         walkinChildId: null,
         hasPackageCredit: false,
+        bookingState: "none",
       });
     }
   }

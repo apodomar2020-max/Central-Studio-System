@@ -158,7 +158,8 @@ router.post(
     checkedInBy,
     status,
     settlementMode,
-  } = parsed.data;
+    confirmedPaymentMethod,
+  } = parsed.data as typeof parsed.data & { confirmedPaymentMethod?: "cash" | "card" };
 
   const performedBy = checkedInBy ?? "system";
 
@@ -316,6 +317,7 @@ router.post(
           classId: classId ?? null,
           scheduleId: scheduleId ?? null,
           adminId,
+          confirmedPaymentMethod: confirmedPaymentMethod!,
           performedBy,
         });
         return { kind: "paidWalkIn" as const, result };

@@ -118,6 +118,8 @@ function creditRow(overrides: Record<string, unknown> = {}) {
     id: 300,
     packageOrderId: 12,
     studentId: 55,
+    participantType: "self",
+    participantChildId: null,
     type: "package_activated",
     delta: 8,
     balanceBefore: 0,
@@ -131,9 +133,31 @@ function creditRow(overrides: Record<string, unknown> = {}) {
     studentName: "Nour Hassan",
     studentEmail: "nour@example.com",
     studentPhone: "+20 100 000 0000",
+    participantName: "Nour Hassan",
+    childName: null,
     ...overrides,
   } as Parameters<Awaited<ReturnType<typeof load>>["mapCreditTransaction"]>[0];
 }
+
+test("credit transactions preserve payer and participant attribution without changing service-credit semantics", async () => {
+  const { mapCreditTransaction } = await load();
+  const childEvent = mapCreditTransaction(creditRow({
+    participantType: "child",
+    participantChildId: 7,
+    participantName: "Purchase-time child",
+    childName: "Current child",
+  }));
+  assert.equal(childEvent.customer.studentId, 55);
+  assert.equal(childEvent.customer.participantScope, "child");
+  assert.equal(childEvent.customer.childId, 7);
+  assert.equal(childEvent.customer.childName, "Current child");
+  assert.equal(childEvent.eventNature, "service_credit");
+  assert.equal(childEvent.amounts.amountEgp, null);
+
+  const selfEvent = mapCreditTransaction(creditRow());
+  assert.equal(selfEvent.customer.participantScope, "self");
+  assert.equal(selfEvent.customer.childId, null);
+});
 
 // ─── 1. Active package order proves activation, not payment ───────────────────
 
