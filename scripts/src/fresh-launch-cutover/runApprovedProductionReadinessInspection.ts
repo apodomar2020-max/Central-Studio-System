@@ -7,6 +7,7 @@ import { captureSourceFingerprint } from "./configurationVerification";
 import { createPool, latestMigration, quoteIdent } from "./database";
 import { scanEvidenceOutput } from "./evidenceOutputScanner";
 import { freshLaunchConfigurationManifest, MANIFEST_HASH, MANIFEST_VERSION } from "./freshLaunchConfigurationManifest";
+import { validateG2bInspectionAuthorization } from "./g2bInspectionAuthorization";
 import {
   approvalBundleHash,
   deterministicJson,
@@ -185,6 +186,7 @@ export async function runApprovedProductionReadinessInspection(input: {
   mode: "g2a_local_test" | "g2b_approved_read_only";
   databaseUrl: string;
   approvalBundle: unknown;
+  g2bAuthorization?: unknown;
   environmentIdentity: unknown;
   expectedCommit: string;
   acknowledgement: string;
@@ -216,6 +218,14 @@ export async function runApprovedProductionReadinessInspection(input: {
     requiredDatabaseRole: "source",
     requireReadOnly: true,
   });
+  if (input.mode === "g2b_approved_read_only") {
+    validateG2bInspectionAuthorization(input.g2bAuthorization, {
+      approvedCommit: input.expectedCommit,
+      approvalBundleHash: approvalBundleHash(bundle),
+      productionSourceEnvironmentIdentityHash: productionEnvironmentIdentityHash(identity),
+      now,
+    });
+  }
   const url = validateApprovedInspectionTransport(input.databaseUrl, input.mode, input.env ?? {});
   if (identity.databaseServerFingerprintHash !== oneWayIdentityFingerprint(url.hostname)
     || identity.databaseNameFingerprintHash !== oneWayIdentityFingerprint(decodeURIComponent(url.pathname.replace(/^\/+/, "")))) {
