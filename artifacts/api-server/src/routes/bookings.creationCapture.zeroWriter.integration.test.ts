@@ -50,7 +50,9 @@ async function makeStudent(): Promise<{ id: number; email: string }> {
   studentCounter += 1;
   const email = `booking-zerowriter-${Date.now()}-${studentCounter}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ('Zero Writer Test', $1, '0100000000', 'student', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified, profile_completed)
+     VALUES ('Zero Writer Test', $1, '0100000000', 'student', '2000-01-01', true, true)
+     RETURNING id`,
     [email],
   );
   return { id: result.rows[0].id as number, email };
@@ -105,7 +107,9 @@ before(async () => {
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const instructor = await pool.query(`INSERT INTO instructors (name, is_active) VALUES ('Zero Writer Instructor', true) RETURNING id`);
   const klass = await pool.query(
-    `INSERT INTO classes (title, category, instructor_id, is_active) VALUES ($1, 'general', $2, true) RETURNING id`,
+    `INSERT INTO classes (
+       title, category, instructor_id, is_active, allow_all_ages, min_age, max_age
+     ) VALUES ($1, 'general', $2, true, true, NULL, NULL) RETURNING id`,
     [`Zero Writer Class ${run}`, instructor.rows[0].id],
   );
   classId = klass.rows[0].id as number;
@@ -130,7 +134,7 @@ test("a successful direct-payment booking writes exactly +1 booking, +1 single_c
   const res = await fetch(apiUrl("/api/bookings"), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ studentName: student.email, studentEmail: student.email, scheduleId, classId, paymentMode: "pay_at_studio" }),
+    body: JSON.stringify({ studentName: student.email, studentEmail: student.email, participantType: "self", scheduleId, classId, paymentMode: "pay_at_studio" }),
   });
   assert.equal(res.status, 201);
   const after = await totals();
@@ -149,19 +153,43 @@ test("a package_credit booking adds a booking but zero Finance rows from this sl
   const student = await makeStudent();
   const token = studentToken(student.id, student.email);
   const pkgPackage = await pool.query(
-    `INSERT INTO price_packages (name, type, price_egp, sessions, validity_months, is_active) VALUES ('Zero Writer Pkg', 'per_class', 1000, 8, 6, true) RETURNING id`,
+    `INSERT INTO price_packages (
+       name, type, price_egp, sessions, validity_months, is_active,
+       allow_all_ages, min_age, max_age
+     ) VALUES ('Zero Writer Pkg', 'per_class', 1000, 8, 6, true, true, NULL, NULL) RETURNING id`,
   );
   const pkgOrder = await pool.query(
-    `INSERT INTO package_orders (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, status)
-     VALUES ($1, $2, $3, $4, 'Zero Writer Pkg', 8, 8, 'active') RETURNING id`,
+    `INSERT INTO package_orders (
+       student_name, student_email, student_id, package_id, package_name,
+       total_credits, remaining_credits, status, activated_at, expires_at,
+       participant_type, participant_name_snapshot,
+       participant_date_of_birth_snapshot, participant_age_at_purchase,
+       eligibility_evaluated_on, package_allow_all_ages_snapshot,
+       purchase_eligibility_configuration_state, allowed_dance_type_ids_snapshot
+     )
+     VALUES (
+       $1, $2, $3, $4, 'Zero Writer Pkg',
+       8, 8, 'active', now(), now() + interval '6 months',
+       'self', 'Zero Writer Test',
+       '2000-01-01', 26,
+       CURRENT_DATE, true,
+       'configured', ARRAY[]::integer[]
+     ) RETURNING id`,
     [student.email, student.email, student.id, pkgPackage.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO credit_transactions (
+       package_order_id, student_id, participant_type, type, delta,
+       balance_before, balance_after, created_by
+     ) VALUES ($1, $2, 'self', 'package_activated', 8, 0, 8, 'test')`,
+    [pkgOrder.rows[0].id, student.id],
   );
 
   const before = await totals();
   const res = await fetch(apiUrl("/api/bookings"), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ studentName: student.email, studentEmail: student.email, scheduleId, classId, paymentMode: "package_credit", packageOrderId: pkgOrder.rows[0].id }),
+    body: JSON.stringify({ studentName: student.email, studentEmail: student.email, participantType: "self", scheduleId, classId, paymentMode: "package_credit", packageOrderId: pkgOrder.rows[0].id }),
   });
   assert.equal(res.status, 201);
   const after = await totals();
@@ -179,7 +207,7 @@ test("a free-booking attempt adds zero rows of any kind (currently rejected outr
   const res = await fetch(apiUrl("/api/bookings"), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ studentName: student.email, studentEmail: student.email, scheduleId, classId, paymentMode: "free" }),
+    body: JSON.stringify({ studentName: student.email, studentEmail: student.email, participantType: "self", scheduleId, classId, paymentMode: "free" }),
   });
   assert.equal(res.status, 400);
   const after = await totals();

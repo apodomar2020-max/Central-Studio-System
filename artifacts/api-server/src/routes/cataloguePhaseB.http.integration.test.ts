@@ -645,13 +645,45 @@ test("Catalogue readiness is permission-protected, PII-free, and read-only", asy
   assert.ok(result.ids.packagesWithLegacyRestrictionOnly.includes(packageIds["legacy-dance"]));
   assert.equal(result.counts.classesWithInvalidAgeRange, 0);
   assert.equal(result.counts.packagesWithInvalidAgeRange, 0);
-  assert.doesNotMatch(JSON.stringify(result), /email|phone|dateOfBirth|studentName|child/i);
+  assert.ok(["ready", "ready_with_legacy_data", "blocked"].includes(result.overallStatus));
+  assert.equal(typeof result.participantLifecycle.participantShapes.invalidBookings, "number");
+  assert.equal(typeof result.participantLifecycle.creditIntegrity.negativeBalances, "number");
+  assert.equal(typeof result.participantLifecycle.doubleDeductionRisk.bookingBackedAttendanceDeductions, "number");
+  assert.equal(typeof result.participantLifecycle.launchResetInventory.bookings, "number");
+  assert.doesNotMatch(JSON.stringify(result), /"email"|"phone"|"dateOfBirth"|"studentName"|"fullName"/i);
 
   const repeated = await request("/admin/catalogue-readiness", {
     adminId: superAdminId,
     guest: false,
   });
   assert.equal(repeated.status, 200);
+  const integrityPackage = await pool.query(
+    `INSERT INTO price_packages (name, type, price_egp, is_active)
+     VALUES ($1, 'per_class', 1, false) RETURNING id`,
+    [`Readiness integrity fixture ${Date.now()}`],
+  );
+  const integrityOrder = await pool.query(
+    `INSERT INTO package_orders (
+       student_name, student_email, package_id, package_name,
+       total_credits, remaining_credits, status
+     ) VALUES ('Readiness Fixture', 'readiness-fixture@example.invalid', $1,
+       'Readiness Fixture', 1, -1, 'active') RETURNING id`,
+    [integrityPackage.rows[0].id],
+  );
+  try {
+    const blockedResponse = await request("/admin/catalogue-readiness", {
+      adminId: superAdminId,
+      guest: false,
+    });
+    assert.equal(blockedResponse.status, 200);
+    const blocked = await body<Record<string, any>>(blockedResponse);
+    assert.equal(blocked.overallStatus, "blocked");
+    assert.ok(blocked.integrityBlockerCount >= 1);
+    assert.ok(blocked.participantLifecycle.creditIntegrity.negativeBalances >= 1);
+  } finally {
+    await pool.query(`DELETE FROM package_orders WHERE id = $1`, [integrityOrder.rows[0].id]);
+    await pool.query(`DELETE FROM price_packages WHERE id = $1`, [integrityPackage.rows[0].id]);
+  }
   const afterCounts = await pool.query(
     `SELECT
        (SELECT count(*) FROM classes)::int AS classes,

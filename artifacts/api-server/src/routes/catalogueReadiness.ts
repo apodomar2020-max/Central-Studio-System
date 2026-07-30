@@ -10,6 +10,7 @@ import {
   pricePackagesTable,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission } from "./adminAuth";
+import { readParticipantLifecycleReadiness } from "../lib/participantLifecycleReadiness";
 
 const router: IRouter = Router();
 
@@ -31,7 +32,7 @@ router.get(
   requireAdminAuth,
   requireAdminPermission("settings", "view"),
   async (_req, res): Promise<void> => {
-    const [classes, packages, canonicalRestrictions, packageOrders, creditTransactions, bookings] = await Promise.all([
+    const [classes, packages, canonicalRestrictions, packageOrders, creditTransactions, bookings, participantLifecycle] = await Promise.all([
       db.select().from(classesTable),
       db.select().from(pricePackagesTable),
       db.select({ packageId: pricePackageDanceTypesTable.packageId })
@@ -40,6 +41,7 @@ router.get(
       db.select().from(packageOrdersTable),
       db.select().from(creditTransactionsTable),
       db.select().from(bookingsTable),
+      readParticipantLifecycleReadiness(),
     ]);
     const restrictedPackageIds = new Set(canonicalRestrictions.map((row) => row.packageId));
     const activeClasses = classes.filter((row) => row.isActive);
@@ -123,11 +125,27 @@ router.get(
         })
         .map((row) => row.id),
     };
+    const configurationBlockerCount = groups.activeClassesUnconfiguredAge.length
+      + groups.activePackagesUnconfiguredAge.length
+      + groups.activeClassesMissingCanonicalDanceType.length
+      + groups.packagesWithLegacyRestrictionOnly.length
+      + groups.classesWithInvalidAgeRange.length
+      + groups.packagesWithInvalidAgeRange.length
+      + participantLifecycle.ageConfiguration.invalidPackageDanceRelations;
+    const overallStatus = configurationBlockerCount > 0 || participantLifecycle.integrityBlockerCount > 0
+      ? "blocked"
+      : participantLifecycle.legacyRecordCount > 0
+        ? "ready_with_legacy_data"
+        : "ready";
     res.json({
-      ready: Object.values(groups).every((ids) => ids.length === 0),
+      ready: overallStatus === "ready",
+      overallStatus,
       generatedAt: new Date().toISOString(),
+      configurationBlockerCount,
+      integrityBlockerCount: participantLifecycle.integrityBlockerCount,
       counts: Object.fromEntries(Object.entries(groups).map(([key, ids]) => [key, ids.length])),
       ids: groups,
+      participantLifecycle,
     });
   },
 );

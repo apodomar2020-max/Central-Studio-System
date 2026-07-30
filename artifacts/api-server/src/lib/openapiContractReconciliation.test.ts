@@ -72,6 +72,12 @@ test("QR check-in contract preserves UUID and positive integer validation", () =
     creditDeducted: true,
     remainingCredits: 3,
     checkedInAt: "2026-01-01T00:00:00.000Z",
+    participantType: "self",
+    participantChildId: null,
+    participantName: "Sample",
+    attendanceSource: "booking",
+    paymentSource: "booking_package_credit",
+    packageOrderId: 2,
   }).success, true);
 });
 
