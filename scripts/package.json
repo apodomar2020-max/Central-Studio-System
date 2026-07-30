@@ -6,15 +6,20 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backfill-membership-ids": "tsx ./src/backfillMembershipIds.ts",
+    "fresh-launch:inventory": "tsx ./src/fresh-launch-cutover/freshLaunchSourceInventory.ts",
+    "fresh-launch:rehearse": "tsx ./src/fresh-launch-cutover/runFreshLaunchCutoverRehearsal.ts",
+    "test:fresh-launch": "tsx --test ./src/fresh-launch-cutover/*.test.ts",
     "test:ballet:integration": "tsx ./src/runDisposableBalletTests.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
-    "drizzle-orm": "catalog:"
+    "drizzle-orm": "catalog:",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "^8.18.0",
     "tsx": "catalog:"
   }
 }
