@@ -381,6 +381,7 @@ router.post(
     if (!purchaseEligibility.eligible) {
       return {
         kind: "participant_ineligible" as const,
+        participantType: resolution.participant.participantType,
         reasons: purchaseEligibility.reasons,
       };
     }
@@ -598,9 +599,13 @@ router.post(
     return;
   }
   if ("kind" in result && result.kind === "participant_ineligible") {
+    const missingChildDob = result.participantType === "child"
+      && result.reasons.some((reason) => reason.code === "DOB_REQUIRED");
     res.status(409).json({
-      code: "PACKAGE_PARTICIPANT_INELIGIBLE",
-      message: result.reasons[0]?.message ?? "The selected participant is not eligible for this package.",
+      code: missingChildDob ? "PARTICIPANT_DOB_REQUIRED" : "PACKAGE_PARTICIPANT_INELIGIBLE",
+      message: missingChildDob
+        ? "Date of birth is required for the selected participant."
+        : result.reasons[0]?.message ?? "The selected participant is not eligible for this package.",
       eligibility: { eligible: false, reasons: result.reasons },
     });
     return;

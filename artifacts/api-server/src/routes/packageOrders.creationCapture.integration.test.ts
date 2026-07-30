@@ -368,6 +368,12 @@ test("missing DOB and age-ineligible self or child purchases fail before financi
     }),
   });
   assert.equal(missingChildResponse.status, 409);
+  const missingChildBody = await jsonBody(missingChildResponse);
+  assert.equal(missingChildBody.code, "PARTICIPANT_DOB_REQUIRED");
+  assert.equal(
+    (missingChildBody.eligibility as { reasons: Array<{ code: string }> }).reasons[0]?.code,
+    "DOB_REQUIRED",
+  );
 
   assert.deepEqual(
     { orders: await packageOrderCount(), payments: await paymentRecordCount() },

@@ -55,6 +55,9 @@ export interface User {
 export interface ChildProfile {
   id: string;
   fullName: string;
+  /** Canonical server DOB used by General Studio eligibility. */
+  dateOfBirth?: string | null;
+  /** Legacy/profile-form compatibility value; never an eligibility authority. */
   birthday: string;
   age: number;
   gender: "male" | "female";
@@ -196,6 +199,7 @@ interface AppContextType {
   addChild: (child: ChildProfile) => Promise<ChildProfile | null>;
   updateChild: (child: ChildProfile) => void;
   removeChild: (childId: string) => void;
+  refreshChildren: () => Promise<void>;
   bookings: Booking[];
   addBooking: (booking: Booking) => void;
   cancelBooking: (bookingId: string) => Promise<void>;
@@ -530,6 +534,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       const mapped = data.children.map((c) => ({
         id: String(c.id),
         fullName: c.fullName,
+        dateOfBirth: c.dateOfBirth ?? null,
         birthday: c.dateOfBirth || c.birthday || "",
         age: c.age || 0,
         gender: c.gender as "male" | "female",
@@ -642,6 +647,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       const mappedChild: ChildProfile = {
         id: String(c.id),
         fullName: c.fullName,
+        dateOfBirth: c.dateOfBirth ?? null,
         birthday: c.dateOfBirth || c.birthday || "",
         age: c.age || 0,
         gender: c.gender as "male" | "female",
@@ -697,7 +703,8 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       const mappedChild: ChildProfile = {
         id: String(c.id),
         fullName: c.fullName,
-        birthday: c.birthday || "",
+        dateOfBirth: c.dateOfBirth ?? null,
+        birthday: c.dateOfBirth || c.birthday || "",
         age: c.age || 0,
         gender: c.gender as "male" | "female",
         medicalNotes: c.medicalNotes || undefined,
@@ -771,6 +778,10 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   const refreshUserPackages = useCallback(async () => {
     await fetchAndSetPackages();
+  }, []);
+
+  const refreshChildren = useCallback(async () => {
+    await fetchAndSetChildren();
   }, []);
 
   const refreshBookings = useCallback(async () => {
@@ -927,6 +938,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         purchasePackage,
         cancelPackage,
         refreshUserPackages,
+        refreshChildren,
         usePackageCredit,
         baletApplications,
         submitBalletApplication,

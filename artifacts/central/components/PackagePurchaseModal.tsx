@@ -7,6 +7,10 @@ import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
 import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useAppContext, type PackageParticipantSelection } from "@/contexts/AppContext";
+import {
+  buildPackageParticipantOptions,
+  participantSelectionFor,
+} from "@/utils/packagePurchaseParticipants";
 
 type PackagePurchaseModalProps = {
   pkg: PricePackage | null;
@@ -99,44 +103,15 @@ export default function PackagePurchaseModal({
     day: "2-digit",
   }).format(new Date());
 
-  function ageOnDate(dob: string | null | undefined): number | null {
-    if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) return null;
-    const [year, month, day] = dob.split("-").map(Number);
-    const [todayYear, todayMonth, todayDay] = today.split("-").map(Number);
-    if (!year || !month || !day || !todayYear || !todayMonth || !todayDay) return null;
-    let age = todayYear - year;
-    if (todayMonth < month || (todayMonth === month && todayDay < day)) age -= 1;
-    return age < 0 ? null : age;
-  }
-
-  function isEligible(age: number | null): boolean {
-    if (age == null || !pkg) return false;
-    if (pkg.allowAllAges === true) return true;
-    if (pkg.allowAllAges == null && pkg.minAge == null && pkg.maxAge == null) return true;
-    if (pkg.minAge == null || age < pkg.minAge) return false;
-    return pkg.maxAge == null || age <= pkg.maxAge;
-  }
-
-  const options = [
-    {
-      key: "self",
-      name: user?.fullName ?? "My Account",
-      type: "self" as const,
-      childId: null,
-      age: ageOnDate(user?.dateOfBirth),
-    },
-    ...(user?.accountType === "parent"
-      ? children.map((child) => ({
-          key: `child:${child.id}`,
-          name: child.fullName,
-          type: "child" as const,
-          childId: Number(child.id),
-          age: ageOnDate(child.birthday),
-        }))
-      : []),
-  ];
+  const options = pkg ? buildPackageParticipantOptions(user, children, pkg, today) : [];
   const selected = options.find((option) => option.key === selectedKey) ?? options[0];
-  const selectedEligible = Boolean(selected && isEligible(selected.age));
+  const selectedEligible = Boolean(selected?.eligible);
+
+  useEffect(() => {
+    if (!options.some((option) => option.key === selectedKey)) {
+      setSelectedKey("self");
+    }
+  }, [options, selectedKey]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
@@ -171,7 +146,7 @@ export default function PackagePurchaseModal({
               <View style={styles.participantBox}>
                 <Text style={styles.promoLabel}>Package participant</Text>
                 {options.map((option) => {
-                  const eligible = isEligible(option.age);
+                  const eligible = option.eligible;
                   const selectedOption = option.key === selectedKey;
                   return (
                     <TouchableOpacity
@@ -197,6 +172,11 @@ export default function PackagePurchaseModal({
                     </TouchableOpacity>
                   );
                 })}
+                {selected?.type === "child" && selected.age == null ? (
+                  <Text style={styles.participantDobHelp}>
+                    Add this child’s date of birth in their profile before purchasing an age-restricted package.
+                  </Text>
+                ) : null}
               </View>
               <View style={styles.promoBox}>
                 <Text style={styles.promoLabel}>Promo code</Text>
@@ -232,9 +212,7 @@ export default function PackagePurchaseModal({
                   onPress={() => {
                     if (!selected || !selectedEligible) return;
                     onConfirm(
-                      selected.type === "child"
-                        ? { participantType: "child", participantChildId: selected.childId! }
-                        : { participantType: "self" },
+                      participantSelectionFor(selected),
                       appliedCode,
                     );
                   }}
@@ -315,5 +293,6 @@ const styles = StyleSheet.create({
   participantOptionDisabled: { opacity: 0.5 },
   participantName: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 14 },
   participantMeta: { color: "#9CA3AF", fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  participantDobHelp: { color: "#FCA5A5", fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 17 },
   modalBtns: { flexDirection: "row", gap: 10 },
 });

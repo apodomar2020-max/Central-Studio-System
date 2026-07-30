@@ -28,6 +28,7 @@ import { showProfileIncompletePrompt } from "@/utils/profileCompletionRequired";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import type { PackageParticipantSelection } from "@/contexts/AppContext";
+import { presentPackagePurchaseError } from "@/utils/packagePurchasePresentation";
 
 function PackageCard({
   pkg,
@@ -124,7 +125,7 @@ function PackageCard({
 }
 
 export default function PackagesScreen() {
-  const { user, userPackages, purchasePackage, refreshUserPackages } = useAppContext();
+  const { user, userPackages, purchasePackage, refreshUserPackages, refreshChildren } = useAppContext();
   const alert = useCentralAlert();
   const {
     data: packages,
@@ -139,7 +140,8 @@ export default function PackagesScreen() {
   const onRefresh = useCallback(() => {
     refetchPackages();
     refreshUserPackages();
-  }, [refetchPackages, refreshUserPackages]);
+    refreshChildren();
+  }, [refetchPackages, refreshUserPackages, refreshChildren]);
   const insets = useSafeAreaInsets();
   const [confirmPkg, setConfirmPkg] = useState<PricePackage | null>(null);
   const [purchasing, setPurchasing] = useState(false);
@@ -196,12 +198,11 @@ export default function PackagesScreen() {
         message: `Your ${confirmPkg.name} request for ${participant.participantType === "self" ? "yourself" : "the selected child"} has been submitted. Our team will confirm payment and activate it shortly.`,
       });
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Unknown error";
+      const presentation = presentPackagePurchaseError(err);
       alert.show({
         tone: "error",
-        title: "Request Failed",
-        message: `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`,
+        title: presentation.title,
+        message: presentation.message,
       });
     } finally {
       setPurchasing(false);

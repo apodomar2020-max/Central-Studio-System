@@ -113,6 +113,24 @@ history distinguishes Parent self and each child.
 
 Result / Notes / Screenshot:
 
+### Child package-purchase DOB hotfix retest
+
+1. Reload Expo Go; clear the development cache only if the previous bundle is
+   still displayed.
+2. Log in with the same synthetic Parent test account.
+3. Open the same Kids package and select the same owned child.
+4. Confirm that the displayed age and eligibility match the child's current
+   profile, then submit the purchase.
+5. Open Admin Package Orders and confirm the Parent is the payer while the
+   selected child is the participant.
+6. Confirm no duplicate order exists from earlier failed attempts.
+
+Expected: a child with canonical DOB submits successfully. A child without
+canonical DOB shows no age, is not marked eligible, and cannot submit until the
+profile is updated.
+
+Result / Notes / Screenshot:
+
 ## Restrictions
 
 Test each case independently:
