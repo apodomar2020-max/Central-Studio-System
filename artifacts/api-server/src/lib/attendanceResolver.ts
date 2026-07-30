@@ -357,6 +357,8 @@ async function buildStudioCandidates(
       existingAttendanceId = existing?.id ?? null;
       eligibility = "already_recorded";
       reason = "Already checked in";
+    } else if (windowState === "ended" || windowState === "too_early" || windowState === "not_today") {
+      ({ eligibility, reason } = eligibilityFromWindow(windowState));
     } else if (packagePending) {
       eligibility = "eligible";
       reason = "Package credit already reserved at booking";

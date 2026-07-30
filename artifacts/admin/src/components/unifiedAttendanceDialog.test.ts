@@ -63,3 +63,33 @@ test("pickCandidate never pre-selects a settlement mode for a Walk-in, even when
 test("Confirm Attendance is disabled for a Studio candidate until an explicit settlement mode is chosen", () => {
   assert.match(source, /paymentMode == null \|\|/);
 });
+
+// ─── H4 Hotfix Mutation Boundary & Candidate Identity Tests ─────────────────
+
+test("package selection and settlement mode toggles perform zero write mutations in UI component logic", () => {
+  // setPaymentMode and setSelectedPackageId update local React state only.
+  assert.match(source, /setPaymentMode\(isWalkIn \? null : "pay_at_studio"\)/);
+  assert.match(source, /setSelectedPackageId\(e\.target\.value \? Number\(e\.target\.value\) : null\)/);
+  // Confirm that customFetch is called ONLY inside runResolve, pickCandidate (amount lookup), and confirmAttendance.
+  assert.doesNotMatch(source, /setSelectedPackageId[^{}]*customFetch/);
+  assert.doesNotMatch(source, /setPaymentMode[^{}]*customFetch/);
+});
+
+test("backToResults, declineWalkInPayment, and resetAll perform zero write mutations", () => {
+  assert.match(source, /function backToResults\(\)\s*\{\s*setSelected\(null\);\s*setPhase\("results"\);\s*\}/);
+  assert.match(source, /function declineWalkInPayment\(\)\s*\{\s*backToResults\(\);\s*\}/);
+  assert.doesNotMatch(source, /declineWalkInPayment[^{}]*customFetch/);
+  assert.doesNotMatch(source, /backToResults[^{}]*customFetch/);
+});
+
+test("only final confirmation invokes the write endpoint and enforces submitLock against duplicate clicks", () => {
+  assert.match(source, /async function confirmAttendance\(paidDecision\?: boolean\)/);
+  assert.match(source, /if \(!selected \|\| submitLock\) return;/);
+  assert.match(source, /setSubmitLock\(true\);/);
+  assert.match(source, /await customFetch\("\/api\/admin\/attendance\/confirm", \{ method: "POST", body: JSON\.stringify\(body\) \}\);/);
+  assert.match(source, /finally \{\s*setSubmitLock\(false\);\s*\}/);
+});
+
+test("candidate items use the tamper-evident candidateKey as their React list key", () => {
+  assert.match(source, /key=\{candidate\.candidateKey\}/);
+});

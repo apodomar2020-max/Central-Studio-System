@@ -190,6 +190,7 @@ async function main() {
       REMINDERS_TEST_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_routes",
       DISPOSABLE_ATTENDANCE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5612/central_studio_disposable_attendance",
       DISPOSABLE_STUDIO_WALKIN_DATABASE_URL: "postgresql://postgres@127.0.0.1:5612/central_studio_disposable_attendance",
+      DISPOSABLE_H4_ATTENDANCE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5612/central_studio_disposable_attendance",
       DISPOSABLE_BALLET_CLASS_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_ballet_class?sslmode=disable",
       DISPOSABLE_BALLET_CLASS_LEGACY_DATABASE_URL: "postgresql://postgres@127.0.0.1:5602/central_studio_disposable_ballet_class_legacy?sslmode=disable",
       REDIS_URL: "redis://127.0.0.1:6389",

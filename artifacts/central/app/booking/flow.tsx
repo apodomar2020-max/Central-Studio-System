@@ -207,18 +207,32 @@ export default function BookingFlowScreen() {
     }
   }, [children, selectedChildId]);
 
+  const eligibleChildren = children.filter(
+    (child) => childCandidate(child.id)?.eligible && !childAlreadyBooked(child),
+  );
+  const hasEligibleChildren = eligibleChildren.length > 0;
+  const isLoadingCandidates = participantCandidatesQuery.isLoading;
+
   useEffect(() => {
     if (!participantCandidatesQuery.data) return;
-    if (participantType === "self" && !selfCandidate?.eligible) {
-      const firstEligibleChild = children.find((child) => childCandidate(child.id)?.eligible);
+    if (participantType === "self" && !selfCandidate?.eligible && hasEligibleChildren) {
+      const firstEligibleChild = eligibleChildren[0];
       if (firstEligibleChild) {
         setParticipantType("child");
         setSelectedChildId(firstEligibleChild.id);
       }
-    } else if (participantType === "child" && selectedChildId && !childCandidate(selectedChildId)?.eligible) {
-      const firstEligibleChild = children.find((child) => childCandidate(child.id)?.eligible);
-      if (firstEligibleChild) setSelectedChildId(firstEligibleChild.id);
-      else if (selfCandidate?.eligible) setParticipantType("self");
+    } else if (participantType === "child" && selectedChildId) {
+      const currentCandidate = childCandidate(selectedChildId);
+      const currentSelectedChild = children.find((c) => c.id === selectedChildId);
+      const isStillEligible = currentCandidate?.eligible && (currentSelectedChild ? !childAlreadyBooked(currentSelectedChild) : true);
+      if (!isStillEligible) {
+        const nextEligible = eligibleChildren[0];
+        if (nextEligible) {
+          setSelectedChildId(nextEligible.id);
+        } else if (selfCandidate?.eligible) {
+          setParticipantType("self");
+        }
+      }
     }
   }, [participantCandidatesQuery.data, participantType, selectedChildId, children, selfCandidate]);
 
@@ -566,15 +580,15 @@ export default function BookingFlowScreen() {
 
             <TouchableOpacity
               onPress={() => {
-                if (!children.length) return;
+                if (!children.length || isLoadingCandidates || !hasEligibleChildren) return;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setParticipantType("child");
               }}
-              disabled={!children.length}
+              disabled={!children.length || isLoadingCandidates || !hasEligibleChildren}
               style={[
                 styles.participantCard,
                 participantType === "child" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "15" },
-                !children.length && styles.disabledCard,
+                (!children.length || isLoadingCandidates || !hasEligibleChildren) && styles.disabledCard,
               ]}
             >
               <ParticipantAvatar
@@ -588,10 +602,18 @@ export default function BookingFlowScreen() {
                   My Child
                 </Text>
                 <Text style={styles.participantSub}>
-                  {children.length > 0 ? selectedChild?.fullName ?? children[0].fullName : "No children added yet"}
+                  {isLoadingCandidates
+                    ? "Checking eligibility..."
+                    : !children.length
+                    ? "No children added yet"
+                    : !hasEligibleChildren
+                    ? "No eligible children for this class"
+                    : selectedChild?.fullName ?? children[0].fullName}
                 </Text>
               </View>
-              {participantType === "child" && (
+              {isLoadingCandidates ? null : !hasEligibleChildren && children.length > 0 ? (
+                <Text style={styles.alreadyBookedBadge}>No eligible children</Text>
+              ) : participantType === "child" && (
                 <View style={[styles.checkCircle, { backgroundColor: colors.studio.primary }]}>
                   <Ionicons name="checkmark" size={14} color="#000" />
                 </View>
