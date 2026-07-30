@@ -35,6 +35,11 @@ notifications, Finance history, and sequence handling. Each approval is
 role-specific, time-limited, evidence-backed, and tied to the exact code and
 manifest. A recommendation is not approval.
 
+## Package Credit Policy (H5 Canonical Rules)
+
+- **Booking reserves the seat**: Creating a package-backed booking deducts zero credits and creates zero credit transactions.
+- **Package credit is deducted only after successful attendance**: Exactly one credit is deducted atomically when attendance/check-in is successfully confirmed for the exact participant and occurrence.
+
 ## Why backup and restore are mandatory
 
 A backup is useful only if it can be restored and reconciled. Before any
