@@ -24,7 +24,7 @@ test("accepts IPv6 loopback", () => {
 test("accepts an explicit local Unix socket", () => {
   assert.doesNotThrow(() => validateCutoverEnvironment({
     ...valid,
-    sourceUrl: "postgresql://tester@/central_cutover_source_unit?host=%2Ftmp",
+    sourceUrl: "postgresql:///central_cutover_source_unit?host=%2Ftmp",
   }));
 });
 

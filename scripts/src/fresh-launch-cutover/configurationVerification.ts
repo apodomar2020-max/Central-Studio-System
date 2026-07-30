@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { deterministicHash, exportFreshLaunchConfiguration } from "./configurationExport";
 import { freshLaunchConfigurationManifest } from "./freshLaunchConfigurationManifest";
-import { quoteIdent, withReadOnlyTransaction } from "./database";
+import { latestMigration, quoteIdent, withReadOnlyTransaction } from "./database";
 import type { FreshLaunchExport } from "./types";
 
 export async function verifyConfigurationEquivalence(
@@ -52,6 +52,7 @@ export async function captureSourceFingerprint(pool: Pool): Promise<string> {
       `SELECT pg_get_viewdef(c.oid, true) AS definition FROM pg_class c
        JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='v' ORDER BY c.relname`,
     );
-    return deterministicHash({ counts, dataHashes, sequences: sequenceResult.rows, views: schemaResult.rows });
+    const migration = await latestMigration(client);
+    return deterministicHash({ counts, dataHashes, sequences: sequenceResult.rows, views: schemaResult.rows, migration });
   });
 }

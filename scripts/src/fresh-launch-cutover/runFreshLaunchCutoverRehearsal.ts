@@ -33,12 +33,22 @@ async function main(): Promise<void> {
   const port = randomInt(5700, 5900);
   const source = `central_cutover_source_disposable_${process.pid}`;
   const target = `central_cutover_target_disposable_${process.pid}`;
+  const failureNames = ["lock", "statement", "mutation", "smoke"] as const;
+  const failurePairs = Object.fromEntries(failureNames.map((name) => [name, {
+    source: `central_cutover_source_${name}_disposable_${process.pid}`,
+    target: `central_cutover_target_${name}_disposable_${process.pid}`,
+  }])) as Record<(typeof failureNames)[number], { source: string; target: string }>;
   let processHandle: ChildProcess | undefined;
   try {
     execFileSync(initdb, ["-D", dataDir, "-U", "postgres", "-A", "trust", "--no-locale", "--encoding=UTF8"], { stdio: "ignore" });
     processHandle = spawn(postgres, ["-D", dataDir, "-p", String(port), "-k", tempRoot, "-c", "listen_addresses=127.0.0.1"], { stdio: "ignore" });
     await waitForDatabase(port);
-    for (const database of [source, target]) {
+    const allDatabases = [
+      source,
+      target,
+      ...failureNames.flatMap((name) => [failurePairs[name].source, failurePairs[name].target]),
+    ];
+    for (const database of allDatabases) {
       execFileSync(createdb, ["-h", "127.0.0.1", "-p", String(port), "-U", "postgres", database]);
       const migrations = readdirSync(join(root, "lib/db/migrations")).filter((file) => file.endsWith(".sql")).sort();
       if (migrations.length !== 91) throw new Error(`MIGRATION_COUNT_MISMATCH:${migrations.length}`);
@@ -54,6 +64,12 @@ async function main(): Promise<void> {
       FRESH_LAUNCH_REHEARSAL: "I_UNDERSTAND_THIS_IS_LOCAL_AND_DISPOSABLE",
       FRESH_LAUNCH_SOURCE_DATABASE_URL: `postgresql://postgres@127.0.0.1:${port}/${source}`,
       FRESH_LAUNCH_TARGET_DATABASE_URL: `postgresql://postgres@127.0.0.1:${port}/${target}`,
+      FRESH_LAUNCH_FAILURE_DATABASES_JSON: JSON.stringify(Object.fromEntries(
+        failureNames.map((name) => [name, {
+          sourceUrl: `postgresql://postgres@127.0.0.1:${port}/${failurePairs[name].source}`,
+          targetUrl: `postgresql://postgres@127.0.0.1:${port}/${failurePairs[name].target}`,
+        }]),
+      )),
       DATABASE_URL: `postgresql://postgres@127.0.0.1:${port}/${target}`,
       DISPOSABLE_ROUTES_DATABASE_URL: `postgresql://postgres@127.0.0.1:${port}/${target}`,
       DISPOSABLE_OWNERSHIP_DATABASE_URL: `postgresql://postgres@127.0.0.1:${port}/${target}`,
@@ -66,6 +82,7 @@ async function main(): Promise<void> {
       DISPOSABLE_BALLET_CLASS_DATABASE_URL: `postgresql://postgres@127.0.0.1:${port}/${target}?sslmode=disable`,
     };
     const tsx = resolve(root, "scripts/node_modules/.bin/tsx");
+    execFileSync(tsx, ["--test", resolve(import.meta.dirname, "operationalFailures.integration.test.ts")], { cwd: root, env, stdio: "inherit" });
     execFileSync(tsx, ["--test", resolve(import.meta.dirname, "freshLaunchCutover.integration.test.ts")], { cwd: root, env, stdio: "inherit" });
     const smokeSuites = [
       "artifacts/api-server/src/lib/participantLifecycleReadiness.integration.test.ts",
@@ -87,7 +104,7 @@ async function main(): Promise<void> {
         execFileSync(tsx, ["--test", fullPath], { cwd: root, env, stdio: "inherit" });
       }
     }
-    process.stdout.write(`[fresh-launch-cutover] local rehearsal passed; migrations=91; source=${source}; target=${target}\n`);
+    process.stdout.write(`[fresh-launch-cutover] failure exercises and clean rehearsal passed; migrations=91; disposable_databases=${allDatabases.length}\n`);
   } finally {
     if (processHandle) {
       try { execFileSync(pgCtl, ["stop", "-D", dataDir, "-m", "immediate"], { stdio: "ignore" }); } catch {}

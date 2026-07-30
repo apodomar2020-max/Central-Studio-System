@@ -76,10 +76,21 @@ async function advanceSequence(client: PoolClient, group: TransferGroup): Promis
 export async function importFreshLaunchConfiguration(
   pool: Pool,
   artifact: FreshLaunchExport,
+  options: {
+    /**
+     * Closure-test hook only. The scripts package is never bundled into a
+     * deployed runtime. This permits real PostgreSQL timeout injection without
+     * adding sleep/override behavior to application code or command-line APIs.
+     */
+    testOnlyTransactionSetup?: (client: PoolClient) => Promise<void>;
+    /** Safety checkpoint executed while the target transaction is still open. */
+    preCommitValidation?: () => Promise<void>;
+  } = {},
 ): Promise<{ imported: Record<string, number>; advancedSequences: string[] }> {
   validateExportArtifact(artifact);
   if (artifact.manifestHash !== MANIFEST_HASH) throw new Error("TARGET_MANIFEST_MISMATCH");
   return withImportTransaction(pool, async (client) => {
+    if (options.testOnlyTransactionSetup) await options.testOnlyTransactionSetup(client);
     const targetMigration = await latestMigration(client);
     if (targetMigration !== artifact.sourceMigration) throw new Error("TARGET_MIGRATION_MISMATCH");
     await assertTargetReady(client, artifact);
@@ -96,6 +107,7 @@ export async function importFreshLaunchConfiguration(
       const sequence = await advanceSequence(client, group);
       if (sequence) advancedSequences.push(sequence);
     }
+    if (options.preCommitValidation) await options.preCommitValidation();
     return { imported, advancedSequences };
   });
 }
