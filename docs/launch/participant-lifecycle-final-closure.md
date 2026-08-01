@@ -162,7 +162,7 @@ All owner acceptance tests performed against the deployed production baseline pa
 - **TypeScript Typechecks**:
   - `@workspace/central`: 0 errors (PASS)
   - `@workspace/admin`: 0 errors (PASS)
-  - `@workspace/api-server`: 0 errors (PASS)
+  - `@workspace/api-server`: Focused Participant Lifecycle and Finance checks passed. The repository-wide API TypeScript check retains pre-existing unrelated Ballet and test helper errors (no Participant Lifecycle or H6 file is implicated).
 - *Note*: Pre-existing non-blocking build warnings regarding unused dependencies in root package.json are noted and do not impact runtime or lifecycle correctness.
 
 ---
