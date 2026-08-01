@@ -512,7 +512,7 @@ test("the reusable view is the only place the transactions table is built", () =
 test("the transactions table renders every required column", () => {
   for (const column of [
     "Date", "Event ID", "Type", "Customer / Participant", "Source",
-    "Method", "Amount / Credits", "Status", "Reliability", "Actions",
+    "Method", "Amount", "Status", "Reliability", "Actions",
   ]) {
     assert.ok(
       transactionsView.includes(`>${column}<`),

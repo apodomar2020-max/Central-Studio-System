@@ -51,7 +51,7 @@ import {
 import {
   financeAdminCan,
   financeRequiredPermissions,
-  resolveRequestScope,
+  resolveMonetaryRequestScope,
   resolveVisibleFamilies,
 } from "../lib/financeAccess";
 import {
@@ -221,7 +221,7 @@ router.get(
 
     const admin = req.adminUser!;
     const visibleFamilies = resolveVisibleFamilies(admin);
-    const scope = resolveRequestScope(parsed.data, visibleFamilies);
+    const scope = resolveMonetaryRequestScope(parsed.data, visibleFamilies);
     const filters = buildFilters(parsed.data, scope.eventTypes);
 
     const { page, limit } = parsed.data;
@@ -235,7 +235,14 @@ router.get(
     res.setHeader("X-Page-Size", String(limit));
     res.setHeader("X-Total-Pages", String(totalPages));
 
-    res.json({ data, total, page, limit, totalPages, visibleFamilies });
+    res.json({
+      data,
+      total,
+      page,
+      limit,
+      totalPages,
+      visibleFamilies: visibleFamilies.filter((family) => family !== "package_credits"),
+    });
   },
 );
 
@@ -354,7 +361,7 @@ router.get(
     // Identical permission filtering to the transactions endpoint — the export
     // can never widen what an admin is allowed to see.
     const visibleFamilies = resolveVisibleFamilies(admin);
-    const scope = resolveRequestScope(parsed.data, visibleFamilies);
+    const scope = resolveMonetaryRequestScope(parsed.data, visibleFamilies);
     const filters = buildFilters({ ...parsed.data, page: 1 } as ParsedQuery, scope.eventTypes);
 
     const { data, total, truncated } = await queryFinanceTransactionsForExport(

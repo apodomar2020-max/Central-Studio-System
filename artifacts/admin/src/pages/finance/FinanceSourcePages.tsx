@@ -70,7 +70,8 @@ function FinanceScopedPage({
 // ─── Package Payments — /finance/packages ─────────────────────────────────────
 
 /**
- * Package purchase events plus the credit ledger movements they cause.
+ * Package purchase/payment lifecycle only. Credit issuance and consumption are
+ * operational service-unit movements and remain in package credit history.
  *
  * Package purchases carry no payment status at all (an active order does not
  * prove collection), so the payment-status and refund-status filters are hidden
@@ -80,24 +81,19 @@ export function FinancePackagesPage() {
   return (
     <FinanceScopedPage
       title="Package Payments"
-      description="Generic package purchase events and the session-credit movements they produce. Read-only."
+      description="Generic package purchase and payment lifecycle events. Read-only."
       caveatTitle="What these figures mean"
       caveats={[
-        "Package activation implies operational approval and credit issuance, but payment collection is not independently recorded — package events carry no payment status.",
+        "Package activation implies operational approval, but payment collection is not independently recorded — package purchase events carry no payment status.",
         "Amounts are the CURRENT catalog price, not a historically stored payment amount. A later price change alters these figures retroactively.",
-        "Credit issuance and consumption are session units, never money. They are never converted to EGP.",
+        "Credit issuance, consumption, restoration, and adjustments remain available in operational package/student credit history and are excluded here.",
         "Package orders attached to a Ballet payment are excluded here to avoid double-counting them against Ballet receipts.",
       ]}
       queryKey="packages"
-      lockedFamilies={["package_purchases", "package_credits"]}
-      allowedEventTypes={[
-        "package_purchase",
-        "package_credit_issuance",
-        "package_credit_consumption",
-        "future_manual_adjustment",
-      ]}
+      lockedFamilies={["package_purchases"]}
+      allowedEventTypes={["package_purchase"]}
       filters={{ eventType: true, reliability: true, amountAvailability: true }}
-      emptyMessage="No package purchase or credit events recorded yet."
+      emptyMessage="No package purchase events recorded yet."
     />
   );
 }
@@ -122,7 +118,7 @@ export function FinanceClassPaymentsPage() {
         "Bookings do not store a historical payment amount. Every amount here is derived from the current schedule price, or the global single-class price setting when the schedule has none.",
         "No booking column records when money was taken, so no payment timestamp is shown. An attendance check-in time is never treated as a payment time.",
         "Walk-ins are identified only from the server-written check-in audit record — never from editable booking notes.",
-        "Package-credit bookings are not payments and do not appear here; their credit deduction appears under Package Payments.",
+        "Package-credit bookings are not payments and do not appear here; their deductions remain in operational package/student credit history.",
       ]}
       queryKey="class-payments"
       lockedFamilies={["class_payments", "walkin_payments"]}

@@ -35,6 +35,7 @@ import {
   FINANCE_EVENT_NATURE_LABELS,
   FINANCE_EVENT_TYPE_LABELS,
   type FinanceSourceFamily,
+  type FinanceEventNature,
   type UnifiedFinanceTransaction,
 } from "@workspace/api-zod";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +100,8 @@ export interface FinanceTransactionsViewProps {
   lockedFamilies?: FinanceSourceFamily[];
   /** Restrict the event-type dropdown to the ones this page can show. */
   allowedEventTypes?: readonly UnifiedFinanceTransaction["eventType"][];
+  /** Restrict event-nature choices to those valid for this page. */
+  allowedEventNatures?: readonly FinanceEventNature[];
   filters?: FinanceFilterVisibility;
   /** Distinguishes react-query cache entries between scoped pages. */
   queryKey: string;
@@ -367,6 +370,7 @@ function TransactionDetail({ transaction }: { transaction: UnifiedFinanceTransac
 export function FinanceTransactionsView({
   lockedFamilies,
   allowedEventTypes,
+  allowedEventNatures,
   filters: filterVisibility = ALL_FILTERS,
   queryKey,
   emptyMessage = "No financial events match the current filters.",
@@ -492,7 +496,7 @@ export function FinanceTransactionsView({
                 value={state.eventNatures}
                 onChange={(next) => setState((prev) => ({ ...prev, eventNatures: next }))}
                 placeholder="All natures"
-                options={FINANCE_EVENT_NATURES.map((nature) => ({
+                options={(allowedEventNatures ?? FINANCE_EVENT_NATURES).map((nature) => ({
                   value: nature,
                   label: FINANCE_EVENT_NATURE_LABELS[nature],
                 }))}
@@ -575,7 +579,7 @@ export function FinanceTransactionsView({
               <TableHead>Customer / Participant</TableHead>
               <TableHead>Source</TableHead>
               <TableHead>Method</TableHead>
-              <TableHead>Amount / Credits</TableHead>
+              <TableHead>Amount</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Reliability</TableHead>
               <TableHead className="text-right">Actions</TableHead>

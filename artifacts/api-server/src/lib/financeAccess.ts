@@ -103,6 +103,29 @@ export interface FinanceScope {
 }
 
 /**
+ * Monetary Finance pages must never query the service-unit ledger. The generic
+ * scope resolver remains available to operational diagnostics, while this
+ * wrapper is the explicit contract for Finance Transactions and exports.
+ */
+export const MONETARY_FINANCE_FAMILIES = FINANCE_SOURCE_FAMILIES.filter(
+  (family): family is Exclude<FinanceSourceFamily, "package_credits"> => family !== "package_credits",
+);
+
+export const MONETARY_FINANCE_EVENT_TYPES = MONETARY_FINANCE_FAMILIES.flatMap(
+  (family) => [...FINANCE_FAMILY_EVENT_TYPES[family]],
+);
+
+export function resolveMonetaryRequestScope(
+  request: FinanceScopeRequest,
+  visibleFamilies: readonly FinanceSourceFamily[],
+): FinanceScope {
+  return resolveRequestScope(
+    request,
+    visibleFamilies.filter((family) => family !== "package_credits"),
+  );
+}
+
+/**
  * Collapse the request's four overlapping "which rows" dimensions into one
  * concrete event-type set, intersected with what the caller may see.
  *
