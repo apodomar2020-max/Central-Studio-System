@@ -36,6 +36,16 @@ test("one Schedule array entry remains one", () => {
   assert.equal(normalizeBalletClasses([balletClass(1, [schedule(1, 1, "16:00", "17:00")])]).at(0)?.schedules.length, 1);
 });
 
+test("resolved Branch and Room survive Ballet schedule normalization", () => {
+  const resolved = schedule(1, 1, "16:00", "17:00", {
+    branch: { id: 2, name: "Downtown", code: "BR-002" },
+    room: { id: 7, branchId: 2, name: "Studio A", code: "RM-007" },
+  });
+  const normalized = normalizeBalletClasses([balletClass(1, [resolved])]).at(0)?.schedules.at(0);
+  assert.equal(normalized?.branch?.name, "Downtown");
+  assert.equal(normalized?.room?.name, "Studio A");
+});
+
 test("three Schedule array entries are preserved and sorted", () => {
   const [item] = normalizeBalletClasses([balletClass(1, [
     schedule(3, 4, "16:00", "17:00"),

@@ -68,6 +68,8 @@ import {
   balletRefundsTable,
   BALLET_PAYMENT_METHODS,
   studentsTable,
+  studioBranchesTable,
+  studioRoomsTable,
 } from "@workspace/db";
 import { BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS } from "@workspace/api-zod";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
@@ -925,17 +927,30 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
             startTime:    balletSchedulesTable.startTime,
             endTime:      balletSchedulesTable.endTime,
             durationMins: balletSchedulesTable.durationMins,
+            branchId:     balletSchedulesTable.branchId,
+            branchName:   studioBranchesTable.name,
+            branchCode:   studioBranchesTable.code,
+            roomId:       balletSchedulesTable.roomId,
+            roomBranchId: studioRoomsTable.branchId,
+            roomName:     studioRoomsTable.name,
+            roomCode:     studioRoomsTable.code,
           })
           .from(balletSchedulesTable)
+          .leftJoin(studioBranchesTable, eq(balletSchedulesTable.branchId, studioBranchesTable.id))
+          .leftJoin(studioRoomsTable, eq(balletSchedulesTable.roomId, studioRoomsTable.id))
           .where(and(inArray(balletSchedulesTable.classId, classIds), scheduleShapeCondition()))
           .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime), asc(balletSchedulesTable.id))
       : [];
 
-    type PublicSchedule = { id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null };
+    type PublicSchedule = { id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null; branch: { id: number; name: string; code: string } | null; room: { id: number; branchId: number; name: string; code: string } | null };
     const schedulesByClass = new Map<number, PublicSchedule[]>();
     for (const s of scheduleRows) {
       const schedules = schedulesByClass.get(s.classId) ?? [];
-      schedules.push({ id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null });
+      schedules.push({
+        id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null,
+        branch: s.branchId != null && s.branchName && s.branchCode ? { id: s.branchId, name: s.branchName, code: s.branchCode } : null,
+        room: s.roomId != null && s.roomBranchId != null && s.roomName && s.roomCode ? { id: s.roomId, branchId: s.roomBranchId, name: s.roomName, code: s.roomCode } : null,
+      });
       schedulesByClass.set(s.classId, schedules);
     }
 
@@ -1086,8 +1101,17 @@ router.get(
               endTime: balletSchedulesTable.endTime,
               durationMins: balletSchedulesTable.durationMins,
               status: balletSchedulesTable.status,
+              branchId: balletSchedulesTable.branchId,
+              branchName: studioBranchesTable.name,
+              branchCode: studioBranchesTable.code,
+              roomId: balletSchedulesTable.roomId,
+              roomBranchId: studioRoomsTable.branchId,
+              roomName: studioRoomsTable.name,
+              roomCode: studioRoomsTable.code,
             })
             .from(balletSchedulesTable)
+            .leftJoin(studioBranchesTable, eq(balletSchedulesTable.branchId, studioBranchesTable.id))
+            .leftJoin(studioRoomsTable, eq(balletSchedulesTable.roomId, studioRoomsTable.id))
             .where(and(inArray(balletSchedulesTable.classId, classIds), scheduleShapeCondition()))
             .orderBy(
               asc(balletSchedulesTable.dayOfWeek),
@@ -1107,7 +1131,15 @@ router.get(
           ...item,
           instructorPhotoUrl: normalizeInstructorPhotoUrlForResponse(item.instructorPhotoUrl),
         })),
-        schedules,
+        schedules: schedules.map((schedule) => ({
+          ...schedule,
+          branch: schedule.branchId != null && schedule.branchName && schedule.branchCode
+            ? { id: schedule.branchId, name: schedule.branchName, code: schedule.branchCode }
+            : null,
+          room: schedule.roomId != null && schedule.roomBranchId != null && schedule.roomName && schedule.roomCode
+            ? { id: schedule.roomId, branchId: schedule.roomBranchId, name: schedule.roomName, code: schedule.roomCode }
+            : null,
+        })),
       }));
     } catch (err) {
       logger.error({ err, parentStudentId }, "GET /ballet/classes/my failed");
@@ -1186,6 +1218,8 @@ router.get(
         startTime: string;
         endTime: string;
         durationMins: number | null;
+        branch: { id: number; name: string; code: string } | null;
+        room: { id: number; branchId: number; name: string; code: string } | null;
       }[]>();
       const instructorsByGroupId = new Map<number, string[]>();
 
@@ -1203,9 +1237,18 @@ router.get(
             startTime: balletSchedulesTable.startTime,
             endTime:   balletSchedulesTable.endTime,
             durationMins: balletSchedulesTable.durationMins,
+            branchId: balletSchedulesTable.branchId,
+            branchName: studioBranchesTable.name,
+            branchCode: studioBranchesTable.code,
+            roomId: balletSchedulesTable.roomId,
+            roomBranchId: studioRoomsTable.branchId,
+            roomName: studioRoomsTable.name,
+            roomCode: studioRoomsTable.code,
           })
           .from(balletClassesTable)
           .innerJoin(balletSchedulesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
+          .leftJoin(studioBranchesTable, eq(balletSchedulesTable.branchId, studioBranchesTable.id))
+          .leftJoin(studioRoomsTable, eq(balletSchedulesTable.roomId, studioRoomsTable.id))
           .where(and(
             inArray(balletClassesTable.groupId, activeGroupIds),
             isOperationalBalletSchedule(),
@@ -1221,6 +1264,8 @@ router.get(
             startTime: row.startTime,
             endTime: row.endTime,
             durationMins: row.durationMins,
+            branch: row.branchId != null && row.branchName && row.branchCode ? { id: row.branchId, name: row.branchName, code: row.branchCode } : null,
+            room: row.roomId != null && row.roomBranchId != null && row.roomName && row.roomCode ? { id: row.roomId, branchId: row.roomBranchId, name: row.roomName, code: row.roomCode } : null,
           });
           schedulesByGroupId.set(row.groupId, list);
         }

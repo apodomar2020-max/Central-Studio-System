@@ -6,6 +6,8 @@ export interface BalletClassSchedule {
   endTime: string;
   durationMins: number;
   status: "active";
+  branch: { id: number; name: string; code: string } | null;
+  room: { id: number; branchId: number; name: string; code: string } | null;
 }
 
 export interface BalletClass {
@@ -64,6 +66,11 @@ function normalizeSchedule(value: unknown, parentClassId: number): BalletClassSc
   const durationMins = Number(row.durationMins);
   const status = typeof row.status === "string" ? row.status : "active";
   const derivedDuration = minuteOfDay(endTime) - minuteOfDay(startTime);
+  const branch = asRecord(row.branch);
+  const room = asRecord(row.room);
+  const branchId = positiveInteger(branch?.id);
+  const roomId = positiveInteger(room?.id);
+  const roomBranchId = positiveInteger(room?.branchId);
 
   if (status !== "active"
     || !Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6
@@ -80,6 +87,12 @@ function normalizeSchedule(value: unknown, parentClassId: number): BalletClassSc
     endTime,
     durationMins,
     status: "active",
+    branch: branchId != null && typeof branch?.name === "string" && typeof branch?.code === "string"
+      ? { id: branchId, name: branch.name, code: branch.code }
+      : null,
+    room: roomId != null && roomBranchId != null && typeof room?.name === "string" && typeof room?.code === "string"
+      ? { id: roomId, branchId: roomBranchId, name: room.name, code: room.code }
+      : null,
   };
 }
 

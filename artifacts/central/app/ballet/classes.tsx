@@ -37,6 +37,7 @@ import {
 } from "@/services/balletAssessmentService";
 import type { DanceClass, Instructor } from "@/data/mockData";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
+import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 
 const BASE = "#0A0B0D";
 const CYAN = "#00B6D7";
@@ -97,7 +98,9 @@ function toDanceClass(item: BalletClass, child: BalletMyClassesChild): DanceClas
     endTime: firstScheduleForCard ? formatTime(firstScheduleForCard.endTime) : "",
     scheduleLabel: scheduleSummary(item),
     duration: durationLabel(item),
-    location: "",
+    location: firstScheduleForCard
+      ? scheduleLocationLabel({ branch: firstScheduleForCard.branch, room: firstScheduleForCard.room }) ?? ""
+      : "",
     room: "",
     price: 0,
     capacity: 0,

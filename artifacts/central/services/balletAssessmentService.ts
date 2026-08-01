@@ -305,6 +305,8 @@ export interface ResolvedBalletSchedule {
   dayOfWeek: number;
   startTime: string; // "16:00"
   endTime: string;   // "17:00"
+  branch: { id: number; name: string; code: string } | null;
+  room: { id: number; branchId: number; name: string; code: string } | null;
 }
 
 /**

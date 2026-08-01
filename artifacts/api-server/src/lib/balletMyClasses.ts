@@ -73,6 +73,8 @@ export interface BalletMyClassesScheduleRow {
   endTime: string;
   durationMins: number | null;
   status: string;
+  branch?: { id: number; name: string; code: string } | null;
+  room?: { id: number; branchId: number; name: string; code: string } | null;
 }
 
 export interface BalletMyClassesSchedule {
@@ -83,6 +85,8 @@ export interface BalletMyClassesSchedule {
   endTime: string;
   durationMins: number;
   status: "active";
+  branch: { id: number; name: string; code: string } | null;
+  room: { id: number; branchId: number; name: string; code: string } | null;
 }
 
 export interface BalletMyClassesClass {
@@ -178,7 +182,7 @@ function normalizeSchedule(row: BalletMyClassesScheduleRow): BalletMyClassesSche
     || !TIME_PATTERN.test(startTime) || !TIME_PATTERN.test(endTime)
     || endTime <= startTime
     || row.durationMins == null || row.durationMins <= 0 || row.durationMins !== duration) return null;
-  return { ...row, startTime, endTime, durationMins: row.durationMins, status: "active" };
+  return { ...row, startTime, endTime, durationMins: row.durationMins, status: "active", branch: row.branch ?? null, room: row.room ?? null };
 }
 
 function compareSchedules(a: BalletMyClassesSchedule, b: BalletMyClassesSchedule): number {

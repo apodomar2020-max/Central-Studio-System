@@ -51,6 +51,7 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import OfflineState from "@/components/OfflineState";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 
 const BALLET_COLOR = "#00B6D6";
 
@@ -509,6 +510,9 @@ export default function ApplicationStatusScreen() {
         const levelName = application.assignedLevelId != null ? levelNameById.get(application.assignedLevelId) : null;
         const groupName = application.assignedGroupId != null ? groupNameById.get(application.assignedGroupId) : null;
         const groupSchedules = application.assignedGroupId != null ? schedulesByGroupId.get(application.assignedGroupId) : undefined;
+        const groupLocations = [...new Set((groupSchedules ?? [])
+          .map((schedule) => scheduleLocationLabel({ branch: schedule.branch, room: schedule.room }))
+          .filter((value): value is string => value != null))];
         const meta = getStatusMeta(application.status, levelName, groupName, groupSchedules);
         const isCancellable = hasExplicitApplicationContext && CANCELLABLE_APPLICATION_STATUSES.has(application.status);
         const isEditable    = EDITABLE_APPLICATION_STATUSES.has(application.status);
@@ -553,6 +557,7 @@ export default function ApplicationStatusScreen() {
                 })}
               />
               <InfoRow label="Application ID" value={`#${application.id}`} />
+              {groupLocations.length > 0 && <InfoRow label="Location" value={groupLocations.join(", ")} />}
             </View>
 
             {/* D3: full monthly attendance section for an active Ballet

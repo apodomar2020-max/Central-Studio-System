@@ -39,6 +39,7 @@ import {
 import { isOfflineError } from "@/services/connectivity";
 import { BALLET_APPLICATION_STATUSES, type BalletApplicationStatus } from "@workspace/api-zod";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 
 // Terminal statuses (assessment concluded) — derived from the canonical enum
 // rather than hand-typed, so the Upcoming/Past/Cancelled tab partition below
@@ -75,6 +76,7 @@ type BalletActiveDisplay = {
   daysLabel: string;          // e.g. "Mon, Wed"
   timesLabel: string;         // e.g. "16:00–17:00"
   instructorLabel: string;    // e.g. "Ms. Nour"
+  locationLabel: string;
 };
 
 // Derives the real schedule/instructor strings for an active, grouped student.
@@ -88,6 +90,9 @@ function getBalletActiveDisplay(app: BalletApplication): BalletActiveDisplay {
 
   const days = [...new Set(schedules.map((s) => formatDay(s.dayOfWeek)))];
   const times = [...new Set(schedules.map((s) => `${s.startTime}–${s.endTime}`))];
+  const locations = [...new Set(schedules
+    .map((s) => scheduleLocationLabel({ branch: s.branch, room: s.room }))
+    .filter((value): value is string => value != null))];
 
   return {
     isActiveGrouped,
@@ -96,6 +101,7 @@ function getBalletActiveDisplay(app: BalletApplication): BalletActiveDisplay {
     daysLabel: days.join(", "),
     timesLabel: times.join(", "),
     instructorLabel: instructors.join(", "),
+    locationLabel: locations.join(", "),
   };
 }
 
@@ -277,7 +283,7 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
   const time = isBallet
     ? (balletIsClass && balletActive?.hasSchedule ? balletActive.timesLabel : "TBD")
     : (b.time ? `${b.time} (${b.duration})` : b.duration);
-  const branch = isBallet ? "Main Branch" : b.location;
+  const branch = isBallet ? (balletActive?.locationLabel || "—") : b.location;
 
   const studentName = isBallet ? b.childName : b.participantName;
   const instName = isBallet

@@ -20,6 +20,7 @@ import {
   formatDateKeyLabel,
   getNextCairoScheduleDate,
 } from "@/utils/cairoDate";
+import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 
 
 function initialsFromName(name: string): string {
@@ -218,7 +219,12 @@ function applySchedule(
     startTime,
     endTime,
     scheduleLabel,
-    location: schedule.location ?? cls.location,
+    location: scheduleLocationLabel({
+      branch: schedule.branch,
+      room: schedule.room,
+      legacyLocation: schedule.location,
+      classLocation: cls.location,
+    }) ?? cls.location,
     price: schedule.priceEgp ?? cls.price,
     bookedCount,
     classCapacityEnabled: effectiveClassCapacityEnabled,

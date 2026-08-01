@@ -375,6 +375,7 @@ export default function ClassDetailScreen() {
                 </View>
               ))}
             </View>
+            {!!cls.location && <Text style={styles.desc}>{cls.location}</Text>}
           </View>
 
           <View style={styles.section}>

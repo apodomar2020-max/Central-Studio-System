@@ -142,6 +142,14 @@ export default function ClassCard({
                 </Text>
               </View>
             )}
+            {!!item.location && (
+              <View style={styles.balletMetaItemWide}>
+                <Ionicons name="location-outline" size={14} color={c.mutedForeground} />
+                <Text style={[styles.balletMetaText, { color: c.mutedForeground }]} numberOfLines={1}>
+                  {item.location}
+                </Text>
+              </View>
+            )}
           </View>
 
           {instructor && (
@@ -212,6 +220,14 @@ export default function ClassCard({
             </Text>
           </View>
         </View>
+        {!!item.location && (
+          <View style={styles.metaRow}>
+            <View style={styles.metaItemWide}>
+              <Ionicons name="location-outline" size={13} color={c.mutedForeground} />
+              <Text style={[styles.metaText, { color: c.mutedForeground }]} numberOfLines={1}>{item.location}</Text>
+            </View>
+          </View>
+        )}
 
         <View style={styles.footer}>
           {instructor && (

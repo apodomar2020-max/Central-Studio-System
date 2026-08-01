@@ -22,6 +22,8 @@ import {
   schedulesTable,
   childrenTable,
   pricePackagesTable,
+  studioBranchesTable,
+  studioRoomsTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 
@@ -362,12 +364,16 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       scheduleStartTime: schedulesTable.startTime,
       scheduleEndTime: schedulesTable.endTime,
       scheduleLocation: schedulesTable.location,
+      branchName: studioBranchesTable.name,
+      roomName: studioRoomsTable.name,
       schedulePriceEgp: schedulesTable.priceEgp,
       participantChildName: childrenTable.fullName,
     })
     .from(bookingsTable)
     .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
     .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
+    .leftJoin(studioBranchesTable, eq(schedulesTable.branchId, studioBranchesTable.id))
+    .leftJoin(studioRoomsTable, eq(schedulesTable.roomId, studioRoomsTable.id))
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
     .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
     .where(sql`(${bookingsTable.accountOwnerStudentId} = ${req.studentId!} OR lower(trim(${bookingsTable.studentEmail})) = ${email})`)
@@ -424,7 +430,9 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       time,
       scheduleLabel,
       duration: r.classDurationMins != null ? `${r.classDurationMins} min` : "",
-      location: r.scheduleLocation ?? "Central Studio",
+      location: r.branchName && r.roomName
+        ? `${r.branchName} · ${r.roomName}`
+        : r.scheduleLocation ?? "Central Studio",
       price: r.schedulePriceEgp ?? 0,
       participantType,
       participantName: r.participantChildName ?? b.studentName,
