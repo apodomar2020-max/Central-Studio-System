@@ -10,7 +10,7 @@ import { createStudentNotification } from "../lib/notifications";
 import { DbClient } from "../lib/dbTypes";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { getCairoBusinessDate } from "../lib/eligibility/dateOnly";
-import { ScheduleLocationError, validateScheduleLocation } from "../lib/scheduleLocation";
+import { ScheduleLocationError, validateScheduleLocation, validateScheduleLocationChangeAllowed } from "../lib/scheduleLocation";
 import {
   ageRangeMetadata,
   evaluateScheduleCatalogueEligibility,
@@ -500,6 +500,13 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
       const branchId = parsed.data.branchId === undefined ? existing.branchId : parsed.data.branchId;
       const roomId = parsed.data.roomId === undefined ? existing.roomId : parsed.data.roomId;
       await validateScheduleLocation(tx, branchId, roomId, { branchId: existing.branchId, roomId: existing.roomId });
+      await validateScheduleLocationChangeAllowed(
+        tx,
+        "regular",
+        existing.id,
+        { branchId: existing.branchId, roomId: existing.roomId },
+        { branchId, roomId },
+      );
     }
     const [updated] = await tx.update(schedulesTable).set(normalized).where(eq(schedulesTable.id, params.data.id)).returning();
     if (!updated) return null;

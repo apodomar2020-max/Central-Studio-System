@@ -35,7 +35,7 @@ import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./a
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 import type { DbClient } from "../lib/dbTypes";
-import { ScheduleLocationError, validateScheduleLocation } from "../lib/scheduleLocation";
+import { ScheduleLocationError, validateScheduleLocation, validateScheduleLocationChangeAllowed } from "../lib/scheduleLocation";
 
 const router: IRouter = Router();
 const BALLET_SCHEDULE_ACTIVITY_FIELDS = ["classId", "branchId", "roomId", "dayOfWeek", "startTime", "endTime", "status", "durationMins"] as const;
@@ -355,6 +355,13 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
         const branchId = parsed.data.branchId === undefined ? existing.branchId : parsed.data.branchId;
         const roomId = parsed.data.roomId === undefined ? existing.roomId : parsed.data.roomId;
         await validateScheduleLocation(tx, branchId, roomId, { branchId: existing.branchId, roomId: existing.roomId });
+        await validateScheduleLocationChangeAllowed(
+          tx,
+          "ballet",
+          existing.id,
+          { branchId: existing.branchId, roomId: existing.roomId },
+          { branchId, roomId },
+        );
       }
 
       await assertScheduleSlotAvailable(tx, existing.classId, dayOfWeek, startTime, endTime, status, id);

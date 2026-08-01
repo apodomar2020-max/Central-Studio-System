@@ -1,11 +1,77 @@
 import { eq, sql } from "drizzle-orm";
-import { studioBranchesTable, studioRoomsTable } from "@workspace/db";
+import {
+  attendanceTable,
+  balletApplicationsTable,
+  bookingsTable,
+  studioBranchesTable,
+  studioRoomsTable,
+} from "@workspace/db";
 import type { DbClient } from "./dbTypes";
 
-export type ScheduleLocationErrorCode = "BRANCH_NOT_FOUND" | "ROOM_NOT_FOUND" | "ROOM_BRANCH_MISMATCH" | "BRANCH_INACTIVE" | "ROOM_INACTIVE" | "LOCATION_PAIR_REQUIRED";
+export type ScheduleLocationErrorCode = "BRANCH_NOT_FOUND" | "ROOM_NOT_FOUND" | "ROOM_BRANCH_MISMATCH" | "BRANCH_INACTIVE" | "ROOM_INACTIVE" | "LOCATION_PAIR_REQUIRED" | "SCHEDULE_LOCATION_IMMUTABLE";
 
 export class ScheduleLocationError extends Error {
   constructor(public readonly status: 404 | 422, public readonly code: ScheduleLocationErrorCode, message: string) { super(message); }
+}
+
+type ScheduleLocation = { branchId: number | null; roomId: number | null };
+type ScheduleDomain = "regular" | "ballet";
+
+export const IMMUTABLE_SCHEDULE_LOCATION_MESSAGE = "Branch or Room cannot be changed after schedule activity exists. Cancel this schedule and create a new one.";
+
+export async function assertScheduleLocationChangeAllowed(
+  existing: ScheduleLocation,
+  requested: ScheduleLocation,
+  hasHistoricalActivity: () => Promise<boolean>,
+): Promise<void> {
+  if (existing.branchId === requested.branchId && existing.roomId === requested.roomId) return;
+  if (await hasHistoricalActivity()) {
+    throw new ScheduleLocationError(422, "SCHEDULE_LOCATION_IMMUTABLE", IMMUTABLE_SCHEDULE_LOCATION_MESSAGE);
+  }
+}
+
+async function scheduleHasHistoricalActivity(
+  client: DbClient,
+  domain: ScheduleDomain,
+  scheduleId: number,
+): Promise<boolean> {
+  const bookingCondition = domain === "regular"
+    ? eq(bookingsTable.scheduleId, scheduleId)
+    : eq(bookingsTable.balletScheduleId, scheduleId);
+  const attendanceCondition = domain === "regular"
+    ? eq(attendanceTable.scheduleId, scheduleId)
+    : eq(attendanceTable.balletScheduleId, scheduleId);
+
+  const [booking] = await client.select({ id: bookingsTable.id }).from(bookingsTable).where(bookingCondition).limit(1);
+  if (booking) return true;
+
+  const [attendance] = await client.select({ id: attendanceTable.id }).from(attendanceTable).where(attendanceCondition).limit(1);
+  if (attendance) return true;
+
+  if (domain === "ballet") {
+    const [application] = await client
+      .select({ id: balletApplicationsTable.id })
+      .from(balletApplicationsTable)
+      .where(eq(balletApplicationsTable.assessmentScheduleId, scheduleId))
+      .limit(1);
+    if (application) return true;
+  }
+
+  return false;
+}
+
+export async function validateScheduleLocationChangeAllowed(
+  client: DbClient,
+  domain: ScheduleDomain,
+  scheduleId: number,
+  existing: ScheduleLocation,
+  requested: ScheduleLocation,
+): Promise<void> {
+  await assertScheduleLocationChangeAllowed(
+    existing,
+    requested,
+    () => scheduleHasHistoricalActivity(client, domain, scheduleId),
+  );
 }
 
 export async function validateScheduleLocation(
