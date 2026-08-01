@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -135,7 +136,7 @@ export default function Branches() {
       </div>
 
       <Dialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editingBranch ? "Edit Branch" : "Add Branch"}</DialogTitle></DialogHeader><Form {...branchForm}><form onSubmit={branchForm.handleSubmit(submitBranch)} className="space-y-4">
-        {editingBranch && <FormItem><FormLabel>Branch Code</FormLabel><Input value={editingBranch.code} readOnly className="font-mono" /></FormItem>}
+        {editingBranch && <FormItem><Label>Branch Code</Label><Input value={editingBranch.code} readOnly className="font-mono" /></FormItem>}
         <FormField control={branchForm.control} name="name" render={({ field }) => <FormItem><FormLabel>Branch Name *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
         <FormField control={branchForm.control} name="address" render={({ field }) => <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
         <FormField control={branchForm.control} name="googleMapsLink" render={({ field }) => <FormItem><FormLabel>Google Maps Link</FormLabel><FormControl><Input placeholder="https://maps.google.com/…" {...field} /></FormControl><FormMessage /></FormItem>} />
@@ -155,7 +156,7 @@ export default function Branches() {
       </DialogContent></Dialog>
 
       <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editingRoom ? "Edit Room" : "Add Room"}</DialogTitle></DialogHeader><div className="rounded-md bg-muted px-3 py-2 text-sm">Branch: <strong>{roomsBranch?.name}</strong></div><Form {...roomForm}><form onSubmit={roomForm.handleSubmit(submitRoom)} className="space-y-4">
-        {editingRoom && <FormItem><FormLabel>Room Code</FormLabel><Input value={editingRoom.code} readOnly className="font-mono" /></FormItem>}
+        {editingRoom && <FormItem><Label>Room Code</Label><Input value={editingRoom.code} readOnly className="font-mono" /></FormItem>}
         <FormField control={roomForm.control} name="name" render={({ field }) => <FormItem><FormLabel>Room Name *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
         <FormField control={roomForm.control} name="isActive" render={({ field }) => <FormItem className="flex items-center gap-3"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel className="!mt-0">Active</FormLabel></FormItem>} />
         <DialogFooter><Button type="button" variant="outline" onClick={() => setRoomDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={createRoom.isPending || updateRoom.isPending}>{editingRoom ? "Save Changes" : "Create Room"}</Button></DialogFooter>
