@@ -24,6 +24,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { BranchRoomFields } from "@/components/schedules/BranchRoomFields";
+import type { ScheduleBranch, ScheduleRoom } from "@workspace/api-client-react";
 import { Trash2, Edit, Loader2 } from "lucide-react";
 import { adminFetch, scheduleErrorMessage } from "./balletScheduleApiClient";
 import {
@@ -53,6 +55,10 @@ function statusBadgeClass(status: string) {
 interface BalletSchedule {
   id: number;
   classId: number;
+  branchId: number | null;
+  roomId: number | null;
+  branch: ScheduleBranch | null;
+  room: ScheduleRoom | null;
   dayOfWeek: number;
   startTime: string;
   endTime: string;
@@ -81,6 +87,8 @@ type FormValues = BalletScheduleFormValues;
 
 const EMPTY_VALUES: FormValues = {
   classId: 0,
+  branchId: null,
+  roomId: null,
   dayOfWeek: 1,
   startTime: "16:00",
   endTime: "17:00",
@@ -195,6 +203,8 @@ export default function BalletSchedulesPage() {
     setEditing(s);
     form.reset({
       classId: s.classId,
+      branchId: s.branchId,
+      roomId: s.roomId,
       dayOfWeek: s.dayOfWeek,
       startTime: s.startTime,
       endTime: s.endTime,
@@ -204,12 +214,17 @@ export default function BalletSchedulesPage() {
   };
 
   const onSubmit = (values: FormValues) => {
+    if (!editing && !values.branchId) { form.setError("branchId", { message: "Branch is required" }); return; }
+    if (!editing && !values.roomId) { form.setError("roomId", { message: "Room is required" }); return; }
+    if (values.branchId && !values.roomId) { form.setError("roomId", { message: "Room is required after selecting a Branch" }); return; }
     const parsed = balletScheduleFormSchema.parse(values);
     if (editing) {
       updateMutation.mutate({
         id: editing.id,
         body: {
           dayOfWeek: parsed.dayOfWeek,
+          branchId: parsed.branchId,
+          roomId: parsed.roomId,
           startTime: parsed.startTime,
           endTime: parsed.endTime,
           status: parsed.status,
@@ -241,6 +256,7 @@ export default function BalletSchedulesPage() {
               <TableHead>Level</TableHead>
               <TableHead>Group</TableHead>
               <TableHead>Instructor</TableHead>
+              <TableHead>Location</TableHead>
               <TableHead>Day</TableHead>
               <TableHead>Time</TableHead>
               <TableHead>Duration</TableHead>
@@ -250,9 +266,9 @@ export default function BalletSchedulesPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={9} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
             ) : schedules.length === 0 ? (
-              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No ballet schedules yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No ballet schedules yet.</TableCell></TableRow>
             ) : (
               schedules.map((s) => {
                 const item = classById.get(s.classId);
@@ -268,6 +284,7 @@ export default function BalletSchedulesPage() {
                     <TableCell>{level?.name ?? "—"}</TableCell>
                     <TableCell>{group?.name ?? "—"}</TableCell>
                     <TableCell>{instructor?.name ?? "—"}</TableCell>
+                    <TableCell>{s.branch && s.room ? `${s.branch.name} · ${s.room.name}` : "—"}</TableCell>
                     <TableCell>{DAY_SHORT[s.dayOfWeek] ?? "—"}</TableCell>
                     <TableCell>{s.startTime} – {s.endTime}</TableCell>
                     <TableCell>{s.durationMins != null ? `${s.durationMins} min` : "—"}</TableCell>
@@ -328,6 +345,17 @@ export default function BalletSchedulesPage() {
                   </FormItem>
                 )} />
               )}
+
+              <BranchRoomFields
+                branchId={form.watch("branchId")}
+                roomId={form.watch("roomId")}
+                currentBranch={editing?.branch}
+                currentRoom={editing?.room}
+                onBranchChange={(id) => { form.setValue("branchId", id, { shouldValidate: true }); form.setValue("roomId", null, { shouldValidate: true }); }}
+                onRoomChange={(id) => form.setValue("roomId", id, { shouldValidate: true })}
+                branchError={form.formState.errors.branchId?.message}
+                roomError={form.formState.errors.roomId?.message}
+              />
 
               <FormField control={form.control} name="dayOfWeek" render={({ field }) => (
                 <FormItem>

@@ -42,6 +42,66 @@ export interface DashboardSummary {
   completedPartialRefunds: number;
 }
 
+export interface Branch {
+  id: number;
+  name: string;
+  code: string;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  googleMapsLink?: string | null;
+  isActive: boolean;
+  roomCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BranchListResponse = Branch[];
+
+export interface CreateBranchBody {
+  /** @minLength 1 */
+  name: string;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  googleMapsLink?: string | null;
+  isActive?: boolean;
+}
+
+export interface UpdateBranchBody {
+  /** @minLength 1 */
+  name?: string;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  googleMapsLink?: string | null;
+  isActive?: boolean;
+}
+
+export interface Room {
+  id: number;
+  branchId: number;
+  name: string;
+  code: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RoomListResponse = Room[];
+
+export interface CreateRoomBody {
+  /** @minLength 1 */
+  name: string;
+  isActive?: boolean;
+}
+
+export interface UpdateRoomBody {
+  /** @minLength 1 */
+  name?: string;
+  isActive?: boolean;
+}
+
 export interface Instructor {
   id: number;
   name: string;
@@ -258,9 +318,34 @@ export const ScheduleStatus = {
   cancelled: "cancelled",
 } as const;
 
+export interface ScheduleBranch {
+  id: number;
+  name: string;
+  code: string;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  googleMapsLink?: string | null;
+  isActive: boolean;
+}
+
+export interface ScheduleRoom {
+  id: number;
+  branchId: number;
+  name: string;
+  code: string;
+  isActive: boolean;
+}
+
 export interface Schedule {
   id: number;
   classId: number;
+  /** @nullable */
+  branchId?: number | null;
+  /** @nullable */
+  roomId?: number | null;
+  branch?: ScheduleBranch | null;
+  room?: ScheduleRoom | null;
   type: ScheduleType;
   status: ScheduleStatus;
   /** @nullable */
@@ -340,6 +425,8 @@ export const CreateScheduleBodyStatus = {
 
 export interface CreateScheduleBody {
   classId: number;
+  branchId: number;
+  roomId: number;
   /** @nullable */
   dayOfWeek?: number | null;
   type?: CreateScheduleBodyType;
@@ -381,6 +468,10 @@ export const UpdateScheduleBodyStatus = {
 export interface UpdateScheduleBody {
   classId?: number;
   /** @nullable */
+  branchId?: number | null;
+  /** @nullable */
+  roomId?: number | null;
+  /** @nullable */
   dayOfWeek?: number | null;
   type?: UpdateScheduleBodyType;
   status?: UpdateScheduleBodyStatus;
@@ -398,6 +489,95 @@ export interface UpdateScheduleBody {
   effectiveFrom?: string | null;
   /** @nullable */
   effectiveUntil?: string | null;
+}
+
+export type BalletScheduleStatus =
+  (typeof BalletScheduleStatus)[keyof typeof BalletScheduleStatus];
+
+export const BalletScheduleStatus = {
+  active: "active",
+  deactivated: "deactivated",
+  cancelled: "cancelled",
+} as const;
+
+export interface BalletSchedule {
+  id: number;
+  classId: number;
+  /** @nullable */
+  branchId: number | null;
+  /** @nullable */
+  roomId: number | null;
+  branch: ScheduleBranch | null;
+  room: ScheduleRoom | null;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  status: BalletScheduleStatus;
+  /** @nullable */
+  durationMins?: number | null;
+  /** @nullable */
+  capacity?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BalletScheduleListResponse {
+  data: BalletSchedule[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface BalletScheduleMutationResponse {
+  schedule: BalletSchedule;
+}
+
+export type CreateBalletScheduleBodyStatus =
+  (typeof CreateBalletScheduleBodyStatus)[keyof typeof CreateBalletScheduleBodyStatus];
+
+export const CreateBalletScheduleBodyStatus = {
+  active: "active",
+  deactivated: "deactivated",
+  cancelled: "cancelled",
+} as const;
+
+export interface CreateBalletScheduleBody {
+  classId: number;
+  branchId: number;
+  roomId: number;
+  /**
+   * @minimum 0
+   * @maximum 6
+   */
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  status?: CreateBalletScheduleBodyStatus;
+}
+
+export type UpdateBalletScheduleBodyStatus =
+  (typeof UpdateBalletScheduleBodyStatus)[keyof typeof UpdateBalletScheduleBodyStatus];
+
+export const UpdateBalletScheduleBodyStatus = {
+  active: "active",
+  deactivated: "deactivated",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdateBalletScheduleBody {
+  /** @nullable */
+  branchId?: number | null;
+  /** @nullable */
+  roomId?: number | null;
+  /**
+   * @minimum 0
+   * @maximum 6
+   */
+  dayOfWeek?: number;
+  startTime?: string;
+  endTime?: string;
+  status?: UpdateBalletScheduleBodyStatus;
 }
 
 export type PricePackageDanceTypeConfigurationState =
@@ -1570,6 +1750,11 @@ export type UpdateAdminClassCapacitySettings409 = {
 
 export type ListSchedulesParams = {
   classId?: number;
+};
+
+export type ListAdminBalletSchedulesParams = {
+  page?: number;
+  limit?: number;
 };
 
 export type ListBookingsParams = {

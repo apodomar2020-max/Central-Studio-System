@@ -638,6 +638,20 @@
       "when": 1785600000000,
       "tag": "0091_participant_aware_attendance",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1785686400000,
+      "tag": "0092_studio_branches_rooms",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1785772800000,
+      "tag": "0093_schedule_branch_rooms",
+      "breakpoints": true
     }
   ]
 }

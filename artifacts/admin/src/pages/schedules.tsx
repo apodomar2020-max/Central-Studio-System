@@ -26,6 +26,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { BranchRoomFields } from "@/components/schedules/BranchRoomFields";
+import type { ScheduleBranch, ScheduleRoom } from "@workspace/api-client-react";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -33,6 +35,8 @@ const SCHEDULE_STATUSES = ["active", "completed", "expired", "cancelled"] as con
 
 const formSchema = z.object({
   classId: z.coerce.number().int().min(1, "Class is required"),
+  branchId: z.number().int().positive().nullable().optional(),
+  roomId: z.number().int().positive().nullable().optional(),
   type: z.enum(["weekly", "one_time"]).default("weekly"),
   status: z.enum(SCHEDULE_STATUSES).default("active"),
   dayOfWeek: z.coerce.number().int().min(0).max(6).nullish(),
@@ -61,6 +65,10 @@ type FormValues = z.input<typeof formSchema>;
 type Schedule = {
   id: number;
   classId: number;
+  branchId?: number | null;
+  roomId?: number | null;
+  branch?: ScheduleBranch | null;
+  room?: ScheduleRoom | null;
   type: "weekly" | "one_time";
   status: "active" | "completed" | "expired" | "cancelled";
   dayOfWeek?: number | null;
@@ -109,6 +117,8 @@ export default function Schedules() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       type: "weekly",
+      branchId: null,
+      roomId: null,
       status: "active",
       dayOfWeek: 1,
       date: "",
@@ -125,6 +135,8 @@ export default function Schedules() {
     setEditing(null);
     form.reset({
       type: "weekly",
+      branchId: null,
+      roomId: null,
       status: "active",
       dayOfWeek: 1,
       date: "",
@@ -141,6 +153,8 @@ export default function Schedules() {
     setEditing(s);
     form.reset({
       classId: s.classId,
+      branchId: s.branchId ?? null,
+      roomId: s.roomId ?? null,
       type: s.type ?? (s.isRecurring ? "weekly" : "one_time"),
       status: s.status ?? "active",
       dayOfWeek: s.dayOfWeek ?? 1,
@@ -156,9 +170,14 @@ export default function Schedules() {
   };
 
   const onSubmit = (values: FormValues) => {
+    if (!editing && !values.branchId) { form.setError("branchId", { message: "Branch is required" }); return; }
+    if (!editing && !values.roomId) { form.setError("roomId", { message: "Room is required" }); return; }
+    if (values.branchId && !values.roomId) { form.setError("roomId", { message: "Room is required after selecting a Branch" }); return; }
     const parsed = formSchema.parse(values);
     const payload = {
       ...parsed,
+      branchId: values.branchId,
+      roomId: values.roomId,
       dayOfWeek: parsed.type === "weekly" ? parsed.dayOfWeek : parsed.dayOfWeek ?? undefined,
       date: parsed.type === "one_time" ? parsed.date : null,
       isRecurring: parsed.type === "weekly",
@@ -169,7 +188,7 @@ export default function Schedules() {
     if (editing) {
       updateSchedule.mutate({ id: editing.id, data: payload }, { onSuccess: invalidate });
     } else {
-      createSchedule.mutate({ data: payload }, { onSuccess: invalidate });
+      createSchedule.mutate({ data: { ...payload, branchId: values.branchId!, roomId: values.roomId! } }, { onSuccess: invalidate });
     }
   };
 
@@ -231,7 +250,7 @@ export default function Schedules() {
                       {schedule.packageEligible ? "Eligible" : "Pay only"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{schedule.location ?? "—"}</TableCell>
+                  <TableCell>{schedule.branch && schedule.room ? `${schedule.branch.name} · ${schedule.room.name}` : schedule.location ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     {canEdit && (
                       <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
@@ -270,6 +289,16 @@ export default function Schedules() {
                   <FormMessage />
                 </FormItem>
               )} />
+              <BranchRoomFields
+                branchId={form.watch("branchId")}
+                roomId={form.watch("roomId")}
+                currentBranch={editing?.branch}
+                currentRoom={editing?.room}
+                onBranchChange={(id) => { form.setValue("branchId", id, { shouldValidate: true }); form.setValue("roomId", null, { shouldValidate: true }); }}
+                onRoomChange={(id) => form.setValue("roomId", id, { shouldValidate: true })}
+                branchError={form.formState.errors.branchId?.message}
+                roomError={form.formState.errors.roomId?.message}
+              />
               <FormField control={form.control} name="type" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Schedule Type</FormLabel>

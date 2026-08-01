@@ -1,4 +1,5 @@
 export * from "./instructors";
+export * from "./studioBranches";
 export * from "./classes";
 export * from "./schedules";
 export * from "./pricePackages";

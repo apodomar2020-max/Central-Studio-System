@@ -21,15 +21,21 @@ import type {
   AdjustCreditsResponse,
   Attendance,
   AttendanceStats,
+  BalletScheduleListResponse,
+  BalletScheduleMutationResponse,
   Booking,
   BookingParticipantCandidatesResponse,
+  Branch,
+  BranchListResponse,
   Campaign,
   CheckInBody,
   CheckInQrBody,
   CheckInQrResponse,
   Class,
   ClassCapacitySettings,
+  CreateBalletScheduleBody,
   CreateBookingBody,
+  CreateBranchBody,
   CreateCampaignBody,
   CreateClassBody,
   CreateDanceTypeBody,
@@ -38,6 +44,7 @@ import type {
   CreateNotificationBody,
   CreatePackageOrderBody,
   CreatePricePackageBody,
+  CreateRoomBody,
   CreateScheduleBody,
   CreateStudentBody,
   DanceType,
@@ -51,6 +58,7 @@ import type {
   HealthStatus,
   HeroItem,
   Instructor,
+  ListAdminBalletSchedulesParams,
   ListAttendanceParams,
   ListBookingsParams,
   ListBookingsResponse,
@@ -65,12 +73,18 @@ import type {
   Notification,
   PackageOrder,
   PricePackage,
+  Room,
+  RoomListResponse,
   Schedule,
+  ScheduleBranch,
+  ScheduleRoom,
   SendCampaignResponse,
   Student,
   UpdateAdminClassCapacitySettings409,
   UpdateAdminClassCapacitySettingsBody,
+  UpdateBalletScheduleBody,
   UpdateBookingBody,
+  UpdateBranchBody,
   UpdateCampaignBody,
   UpdateClassBody,
   UpdateDanceTypeBody,
@@ -79,6 +93,7 @@ import type {
   UpdateNotificationBody,
   UpdatePackageOrderBody,
   UpdatePricePackageBody,
+  UpdateRoomBody,
   UpdateScheduleBody,
   UpdateStudentBody,
   UploadDanceTypeIconBody,
@@ -491,6 +506,753 @@ export const useUpdateAdminClassCapacitySettings = <
     getUpdateAdminClassCapacitySettingsMutationOptions(options),
   );
 };
+
+export const getListAdminBranchesUrl = () => {
+  return `/api/admin/branches`;
+};
+
+/**
+ * @summary List all studio branches, including inactive branches
+ */
+export const listAdminBranches = async (
+  options?: RequestInit,
+): Promise<BranchListResponse> => {
+  return customFetch<BranchListResponse>(getListAdminBranchesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAdminBranchesQueryKey = () => {
+  return [`/api/admin/branches`] as const;
+};
+
+export const getListAdminBranchesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminBranches>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminBranches>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAdminBranchesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminBranches>>
+  > = ({ signal }) => listAdminBranches({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminBranches>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminBranchesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminBranches>>
+>;
+export type ListAdminBranchesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List all studio branches, including inactive branches
+ */
+
+export function useListAdminBranches<
+  TData = Awaited<ReturnType<typeof listAdminBranches>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminBranches>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminBranchesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateAdminBranchUrl = () => {
+  return `/api/admin/branches`;
+};
+
+/**
+ * @summary Create a studio branch
+ */
+export const createAdminBranch = async (
+  createBranchBody: CreateBranchBody,
+  options?: RequestInit,
+): Promise<Branch> => {
+  return customFetch<Branch>(getCreateAdminBranchUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createBranchBody),
+  });
+};
+
+export const getCreateAdminBranchMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminBranch>>,
+    TError,
+    { data: BodyType<CreateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAdminBranch>>,
+  TError,
+  { data: BodyType<CreateBranchBody> },
+  TContext
+> => {
+  const mutationKey = ["createAdminBranch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAdminBranch>>,
+    { data: BodyType<CreateBranchBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createAdminBranch(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAdminBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAdminBranch>>
+>;
+export type CreateAdminBranchMutationBody = BodyType<CreateBranchBody>;
+export type CreateAdminBranchMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a studio branch
+ */
+export const useCreateAdminBranch = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminBranch>>,
+    TError,
+    { data: BodyType<CreateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAdminBranch>>,
+  TError,
+  { data: BodyType<CreateBranchBody> },
+  TContext
+> => {
+  return useMutation(getCreateAdminBranchMutationOptions(options));
+};
+
+export const getGetAdminBranchUrl = (id: number) => {
+  return `/api/admin/branches/${id}`;
+};
+
+export const getAdminBranch = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Branch> => {
+  return customFetch<Branch>(getGetAdminBranchUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAdminBranchQueryKey = (id: number) => {
+  return [`/api/admin/branches/${id}`] as const;
+};
+
+export const getGetAdminBranchQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminBranch>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminBranch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminBranchQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminBranch>>> = ({
+    signal,
+  }) => getAdminBranch(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminBranch>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminBranchQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminBranch>>
+>;
+export type GetAdminBranchQueryError = ErrorType<ErrorResponse>;
+
+export function useGetAdminBranch<
+  TData = Awaited<ReturnType<typeof getAdminBranch>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminBranch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminBranchQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateAdminBranchUrl = (id: number) => {
+  return `/api/admin/branches/${id}`;
+};
+
+export const updateAdminBranch = async (
+  id: number,
+  updateBranchBody: UpdateBranchBody,
+  options?: RequestInit,
+): Promise<Branch> => {
+  return customFetch<Branch>(getUpdateAdminBranchUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateBranchBody),
+  });
+};
+
+export const getUpdateAdminBranchMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminBranch>>,
+    TError,
+    { id: number; data: BodyType<UpdateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAdminBranch>>,
+  TError,
+  { id: number; data: BodyType<UpdateBranchBody> },
+  TContext
+> => {
+  const mutationKey = ["updateAdminBranch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAdminBranch>>,
+    { id: number; data: BodyType<UpdateBranchBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAdminBranch(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAdminBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminBranch>>
+>;
+export type UpdateAdminBranchMutationBody = BodyType<UpdateBranchBody>;
+export type UpdateAdminBranchMutationError = ErrorType<ErrorResponse>;
+
+export const useUpdateAdminBranch = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminBranch>>,
+    TError,
+    { id: number; data: BodyType<UpdateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdminBranch>>,
+  TError,
+  { id: number; data: BodyType<UpdateBranchBody> },
+  TContext
+> => {
+  return useMutation(getUpdateAdminBranchMutationOptions(options));
+};
+
+export const getListAdminBranchRoomsUrl = (branchId: number) => {
+  return `/api/admin/branches/${branchId}/rooms`;
+};
+
+/**
+ * @summary List all rooms for a branch, including inactive rooms
+ */
+export const listAdminBranchRooms = async (
+  branchId: number,
+  options?: RequestInit,
+): Promise<RoomListResponse> => {
+  return customFetch<RoomListResponse>(getListAdminBranchRoomsUrl(branchId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAdminBranchRoomsQueryKey = (branchId: number) => {
+  return [`/api/admin/branches/${branchId}/rooms`] as const;
+};
+
+export const getListAdminBranchRoomsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminBranchRooms>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  branchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAdminBranchRooms>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAdminBranchRoomsQueryKey(branchId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminBranchRooms>>
+  > = ({ signal }) =>
+    listAdminBranchRooms(branchId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: branchId !== null && branchId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminBranchRooms>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminBranchRoomsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminBranchRooms>>
+>;
+export type ListAdminBranchRoomsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List all rooms for a branch, including inactive rooms
+ */
+
+export function useListAdminBranchRooms<
+  TData = Awaited<ReturnType<typeof listAdminBranchRooms>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  branchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAdminBranchRooms>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminBranchRoomsQueryOptions(branchId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateAdminBranchRoomUrl = (branchId: number) => {
+  return `/api/admin/branches/${branchId}/rooms`;
+};
+
+export const createAdminBranchRoom = async (
+  branchId: number,
+  createRoomBody: CreateRoomBody,
+  options?: RequestInit,
+): Promise<Room> => {
+  return customFetch<Room>(getCreateAdminBranchRoomUrl(branchId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createRoomBody),
+  });
+};
+
+export const getCreateAdminBranchRoomMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminBranchRoom>>,
+    TError,
+    { branchId: number; data: BodyType<CreateRoomBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAdminBranchRoom>>,
+  TError,
+  { branchId: number; data: BodyType<CreateRoomBody> },
+  TContext
+> => {
+  const mutationKey = ["createAdminBranchRoom"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAdminBranchRoom>>,
+    { branchId: number; data: BodyType<CreateRoomBody> }
+  > = (props) => {
+    const { branchId, data } = props ?? {};
+
+    return createAdminBranchRoom(branchId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAdminBranchRoomMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAdminBranchRoom>>
+>;
+export type CreateAdminBranchRoomMutationBody = BodyType<CreateRoomBody>;
+export type CreateAdminBranchRoomMutationError = ErrorType<ErrorResponse>;
+
+export const useCreateAdminBranchRoom = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminBranchRoom>>,
+    TError,
+    { branchId: number; data: BodyType<CreateRoomBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAdminBranchRoom>>,
+  TError,
+  { branchId: number; data: BodyType<CreateRoomBody> },
+  TContext
+> => {
+  return useMutation(getCreateAdminBranchRoomMutationOptions(options));
+};
+
+export const getUpdateAdminRoomUrl = (id: number) => {
+  return `/api/admin/rooms/${id}`;
+};
+
+export const updateAdminRoom = async (
+  id: number,
+  updateRoomBody: UpdateRoomBody,
+  options?: RequestInit,
+): Promise<Room> => {
+  return customFetch<Room>(getUpdateAdminRoomUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateRoomBody),
+  });
+};
+
+export const getUpdateAdminRoomMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminRoom>>,
+    TError,
+    { id: number; data: BodyType<UpdateRoomBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAdminRoom>>,
+  TError,
+  { id: number; data: BodyType<UpdateRoomBody> },
+  TContext
+> => {
+  const mutationKey = ["updateAdminRoom"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAdminRoom>>,
+    { id: number; data: BodyType<UpdateRoomBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAdminRoom(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAdminRoomMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminRoom>>
+>;
+export type UpdateAdminRoomMutationBody = BodyType<UpdateRoomBody>;
+export type UpdateAdminRoomMutationError = ErrorType<ErrorResponse>;
+
+export const useUpdateAdminRoom = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminRoom>>,
+    TError,
+    { id: number; data: BodyType<UpdateRoomBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdminRoom>>,
+  TError,
+  { id: number; data: BodyType<UpdateRoomBody> },
+  TContext
+> => {
+  return useMutation(getUpdateAdminRoomMutationOptions(options));
+};
+
+export const getListScheduleLocationBranchesUrl = () => {
+  return `/api/admin/schedule-location-options/branches`;
+};
+
+/**
+ * @summary List active Branches for authorized schedule editors
+ */
+export const listScheduleLocationBranches = async (
+  options?: RequestInit,
+): Promise<ScheduleBranch[]> => {
+  return customFetch<ScheduleBranch[]>(getListScheduleLocationBranchesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListScheduleLocationBranchesQueryKey = () => {
+  return [`/api/admin/schedule-location-options/branches`] as const;
+};
+
+export const getListScheduleLocationBranchesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScheduleLocationBranches>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listScheduleLocationBranches>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListScheduleLocationBranchesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listScheduleLocationBranches>>
+  > = ({ signal }) =>
+    listScheduleLocationBranches({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScheduleLocationBranches>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScheduleLocationBranchesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScheduleLocationBranches>>
+>;
+export type ListScheduleLocationBranchesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List active Branches for authorized schedule editors
+ */
+
+export function useListScheduleLocationBranches<
+  TData = Awaited<ReturnType<typeof listScheduleLocationBranches>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listScheduleLocationBranches>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScheduleLocationBranchesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListScheduleLocationRoomsUrl = (branchId: number) => {
+  return `/api/admin/schedule-location-options/branches/${branchId}/rooms`;
+};
+
+/**
+ * @summary List active Rooms for an active Branch for authorized schedule editors
+ */
+export const listScheduleLocationRooms = async (
+  branchId: number,
+  options?: RequestInit,
+): Promise<ScheduleRoom[]> => {
+  return customFetch<ScheduleRoom[]>(
+    getListScheduleLocationRoomsUrl(branchId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListScheduleLocationRoomsQueryKey = (branchId: number) => {
+  return [
+    `/api/admin/schedule-location-options/branches/${branchId}/rooms`,
+  ] as const;
+};
+
+export const getListScheduleLocationRoomsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScheduleLocationRooms>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  branchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScheduleLocationRooms>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListScheduleLocationRoomsQueryKey(branchId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listScheduleLocationRooms>>
+  > = ({ signal }) =>
+    listScheduleLocationRooms(branchId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: branchId !== null && branchId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScheduleLocationRooms>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScheduleLocationRoomsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScheduleLocationRooms>>
+>;
+export type ListScheduleLocationRoomsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List active Rooms for an active Branch for authorized schedule editors
+ */
+
+export function useListScheduleLocationRooms<
+  TData = Awaited<ReturnType<typeof listScheduleLocationRooms>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  branchId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScheduleLocationRooms>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScheduleLocationRoomsQueryOptions(
+    branchId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListInstructorsUrl = () => {
   return `/api/instructors`;
@@ -1686,6 +2448,271 @@ export const useDeleteSchedule = <
   TContext
 > => {
   return useMutation(getDeleteScheduleMutationOptions(options));
+};
+
+export const getListAdminBalletSchedulesUrl = (
+  params?: ListAdminBalletSchedulesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/ballet/schedules?${stringifiedParams}`
+    : `/api/admin/ballet/schedules`;
+};
+
+export const listAdminBalletSchedules = async (
+  params?: ListAdminBalletSchedulesParams,
+  options?: RequestInit,
+): Promise<BalletScheduleListResponse> => {
+  return customFetch<BalletScheduleListResponse>(
+    getListAdminBalletSchedulesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAdminBalletSchedulesQueryKey = (
+  params?: ListAdminBalletSchedulesParams,
+) => {
+  return [`/api/admin/ballet/schedules`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAdminBalletSchedulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminBalletSchedules>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAdminBalletSchedulesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAdminBalletSchedules>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAdminBalletSchedulesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminBalletSchedules>>
+  > = ({ signal }) =>
+    listAdminBalletSchedules(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminBalletSchedules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminBalletSchedulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminBalletSchedules>>
+>;
+export type ListAdminBalletSchedulesQueryError = ErrorType<unknown>;
+
+export function useListAdminBalletSchedules<
+  TData = Awaited<ReturnType<typeof listAdminBalletSchedules>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAdminBalletSchedulesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAdminBalletSchedules>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminBalletSchedulesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateAdminBalletScheduleUrl = () => {
+  return `/api/admin/ballet/schedules`;
+};
+
+export const createAdminBalletSchedule = async (
+  createBalletScheduleBody: CreateBalletScheduleBody,
+  options?: RequestInit,
+): Promise<BalletScheduleMutationResponse> => {
+  return customFetch<BalletScheduleMutationResponse>(
+    getCreateAdminBalletScheduleUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createBalletScheduleBody),
+    },
+  );
+};
+
+export const getCreateAdminBalletScheduleMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminBalletSchedule>>,
+    TError,
+    { data: BodyType<CreateBalletScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAdminBalletSchedule>>,
+  TError,
+  { data: BodyType<CreateBalletScheduleBody> },
+  TContext
+> => {
+  const mutationKey = ["createAdminBalletSchedule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAdminBalletSchedule>>,
+    { data: BodyType<CreateBalletScheduleBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createAdminBalletSchedule(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAdminBalletScheduleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAdminBalletSchedule>>
+>;
+export type CreateAdminBalletScheduleMutationBody =
+  BodyType<CreateBalletScheduleBody>;
+export type CreateAdminBalletScheduleMutationError = ErrorType<ErrorResponse>;
+
+export const useCreateAdminBalletSchedule = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminBalletSchedule>>,
+    TError,
+    { data: BodyType<CreateBalletScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAdminBalletSchedule>>,
+  TError,
+  { data: BodyType<CreateBalletScheduleBody> },
+  TContext
+> => {
+  return useMutation(getCreateAdminBalletScheduleMutationOptions(options));
+};
+
+export const getUpdateAdminBalletScheduleUrl = (id: number) => {
+  return `/api/admin/ballet/schedules/${id}`;
+};
+
+export const updateAdminBalletSchedule = async (
+  id: number,
+  updateBalletScheduleBody: UpdateBalletScheduleBody,
+  options?: RequestInit,
+): Promise<BalletScheduleMutationResponse> => {
+  return customFetch<BalletScheduleMutationResponse>(
+    getUpdateAdminBalletScheduleUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateBalletScheduleBody),
+    },
+  );
+};
+
+export const getUpdateAdminBalletScheduleMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminBalletSchedule>>,
+    TError,
+    { id: number; data: BodyType<UpdateBalletScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAdminBalletSchedule>>,
+  TError,
+  { id: number; data: BodyType<UpdateBalletScheduleBody> },
+  TContext
+> => {
+  const mutationKey = ["updateAdminBalletSchedule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAdminBalletSchedule>>,
+    { id: number; data: BodyType<UpdateBalletScheduleBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAdminBalletSchedule(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAdminBalletScheduleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminBalletSchedule>>
+>;
+export type UpdateAdminBalletScheduleMutationBody =
+  BodyType<UpdateBalletScheduleBody>;
+export type UpdateAdminBalletScheduleMutationError = ErrorType<ErrorResponse>;
+
+export const useUpdateAdminBalletSchedule = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminBalletSchedule>>,
+    TError,
+    { id: number; data: BodyType<UpdateBalletScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdminBalletSchedule>>,
+  TError,
+  { id: number; data: BodyType<UpdateBalletScheduleBody> },
+  TContext
+> => {
+  return useMutation(getUpdateAdminBalletScheduleMutationOptions(options));
 };
 
 export const getListPricePackagesUrl = () => {

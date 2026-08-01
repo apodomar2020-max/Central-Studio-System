@@ -94,6 +94,13 @@ const permissionCatalog = [
     actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
   },
   {
+    key: "branches",
+    label: "Branches",
+    description: "Studio branches and their rooms.",
+    group: "Studio",
+    actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"]),
+  },
+  {
     key: "classes",
     label: "Classes",
     description: "Class setup, publishing, and class media.",

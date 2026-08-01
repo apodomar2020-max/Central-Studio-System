@@ -53,6 +53,7 @@ import {
   PiggyBank,
   BadgePercent,
   FileDown,
+  Building2,
 } from "lucide-react";
 import type { PermRequirement } from "@/lib/permissions";
 
@@ -112,6 +113,7 @@ export const NAV_TREE: NavNode[] = [
   link("Attendance", "/attendance", [["attendance", "view"]], ScanLine),
 
   group("Studio", Warehouse, [
+    link("Branches", "/branches", [["branches", "view"]], Building2),
     link("Instructors", "/instructors", [["instructors", "view"]], Users),
     link("Classes", "/classes", [["classes", "view"]], CalendarDays),
     link("Schedules", "/schedules", [["schedules", "view"]], CalendarRange),

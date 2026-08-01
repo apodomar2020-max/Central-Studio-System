@@ -1,8 +1,8 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { db, bookingsTable, schedulesTable, classesTable, instructorsTable } from "@workspace/db";
+import { db, bookingsTable, schedulesTable, classesTable, instructorsTable, studioBranchesTable, studioRoomsTable } from "@workspace/db";
 import { currentOccurrenceDate } from "../lib/occurrence";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
 import { isClassCapacityEnabled } from "../lib/classCapacitySettings";
@@ -10,6 +10,7 @@ import { createStudentNotification } from "../lib/notifications";
 import { DbClient } from "../lib/dbTypes";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { getCairoBusinessDate } from "../lib/eligibility/dateOnly";
+import { ScheduleLocationError, validateScheduleLocation } from "../lib/scheduleLocation";
 import {
   ageRangeMetadata,
   evaluateScheduleCatalogueEligibility,
@@ -30,7 +31,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
-const SCHEDULE_ACTIVITY_FIELDS = ["classId", "type", "status", "dayOfWeek", "date", "startTime", "endTime", "priceEgp", "packageEligible", "location", "isRecurring", "effectiveFrom", "effectiveUntil"] as const;
+const SCHEDULE_ACTIVITY_FIELDS = ["classId", "branchId", "roomId", "type", "status", "dayOfWeek", "date", "startTime", "endTime", "priceEgp", "packageEligible", "location", "isRecurring", "effectiveFrom", "effectiveUntil"] as const;
 
 const SCHEDULE_TYPES = ["weekly", "one_time"] as const;
 const SCHEDULE_STATUSES = ["active", "completed", "expired", "cancelled"] as const;
@@ -39,6 +40,8 @@ type ScheduleStatus = (typeof SCHEDULE_STATUSES)[number];
 
 type ScheduleInput = {
   classId?: number;
+  branchId?: number | null;
+  roomId?: number | null;
   type?: ScheduleType;
   status?: ScheduleStatus;
   dayOfWeek?: number | null;
@@ -192,6 +195,24 @@ function presentSchedule(
       occurrenceDate as ReturnType<typeof getCairoBusinessDate>,
     ),
   };
+}
+
+async function attachScheduleLocations<T extends { branchId: number | null; roomId: number | null }>(rows: T[]) {
+  const branchIds = [...new Set(rows.flatMap((row) => row.branchId == null ? [] : [row.branchId]))];
+  const roomIds = [...new Set(rows.flatMap((row) => row.roomId == null ? [] : [row.roomId]))];
+  const [branches, rooms] = await Promise.all([
+    branchIds.length ? db.select().from(studioBranchesTable).where(inArray(studioBranchesTable.id, branchIds)) : [],
+    roomIds.length ? db.select().from(studioRoomsTable).where(inArray(studioRoomsTable.id, roomIds)) : [],
+  ]);
+  const branchById = new Map(branches.map((row) => [row.id, row]));
+  const roomById = new Map(rooms.map((row) => [row.id, row]));
+  return rows.map((row) => ({ ...row, branch: row.branchId == null ? null : branchById.get(row.branchId) ?? null, room: row.roomId == null ? null : roomById.get(row.roomId) ?? null }));
+}
+
+function respondWithLocationError(res: Response, error: unknown): boolean {
+  if (!(error instanceof ScheduleLocationError)) return false;
+  res.status(error.status).json({ error: error.message, code: error.code });
+  return true;
 }
 
 function didScheduleChange(
@@ -351,7 +372,8 @@ router.get("/schedules", async (req, res): Promise<void> => {
   for (const c of countRows) {
     countByKey.set(`${c.scheduleId}|${c.occ ?? ""}`, Number(c.n));
   }
-  const enriched = scheduleRows.map((s) => {
+  const locatedScheduleRows = await attachScheduleLocations(scheduleRows);
+  const enriched = locatedScheduleRows.map((s) => {
     const occ = currentOccurrenceDate(s);
     const actualBookedCount = occ ? countByKey.get(`${s.id}|${occ}`) ?? 0 : 0;
     const legacyBookedCount = classCapacityEnabled ? actualBookedCount : 0;
@@ -398,10 +420,17 @@ router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermiss
   // normalizeScheduleInput widens every field to optional, but CreateScheduleBody
   // (zod) already guarantees the required columns (classId/startTime/endTime) are
   // present, so this insert payload is complete at runtime.
-  const [row] = await db
-    .insert(schedulesTable)
-    .values(normalized as typeof schedulesTable.$inferInsert)
-    .returning();
+  let row: typeof schedulesTable.$inferSelect;
+  try {
+    row = await db.transaction(async (tx) => {
+      await validateScheduleLocation(tx, normalized.branchId ?? null, normalized.roomId ?? null);
+      const [created] = await tx.insert(schedulesTable).values(normalized as typeof schedulesTable.$inferInsert).returning();
+      return created;
+    });
+  } catch (error) {
+    if (respondWithLocationError(res, error)) return;
+    throw error;
+  }
   await logActivity(req, {
     action: "create",
     module: "schedules",
@@ -412,7 +441,8 @@ router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermiss
     summary: `Created schedule ${scheduleDisplay(row)}`,
   });
   const [cls] = await db.select().from(classesTable).where(eq(classesTable.id, row.classId));
-  res.status(201).json(GetScheduleResponse.parse(presentSchedule(row, cls, { kind: "admin" })));
+  const [located] = await attachScheduleLocations([row]);
+  res.status(201).json(GetScheduleResponse.parse(presentSchedule(located, cls, { kind: "admin" })));
 });
 
 router.get("/schedules/:id", async (req, res): Promise<void> => {
@@ -431,7 +461,8 @@ router.get("/schedules/:id", async (req, res): Promise<void> => {
     return;
   }
   const [cls] = await db.select().from(classesTable).where(eq(classesTable.id, row.classId));
-  res.json(GetScheduleResponse.parse(presentSchedule(row, cls, viewer)));
+  const [located] = await attachScheduleLocations([row]);
+  res.json(GetScheduleResponse.parse(presentSchedule(located, cls, viewer)));
 });
 
 router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -461,7 +492,15 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
     res.status(400).json({ error: activeError });
     return;
   }
-  const row = await db.transaction(async (tx) => {
+  let row: typeof schedulesTable.$inferSelect | null;
+  try {
+    row = await db.transaction(async (tx) => {
+    const locationProvided = Object.prototype.hasOwnProperty.call(parsed.data, "branchId") || Object.prototype.hasOwnProperty.call(parsed.data, "roomId");
+    if (locationProvided) {
+      const branchId = parsed.data.branchId === undefined ? existing.branchId : parsed.data.branchId;
+      const roomId = parsed.data.roomId === undefined ? existing.roomId : parsed.data.roomId;
+      await validateScheduleLocation(tx, branchId, roomId, { branchId: existing.branchId, roomId: existing.roomId });
+    }
     const [updated] = await tx.update(schedulesTable).set(normalized).where(eq(schedulesTable.id, params.data.id)).returning();
     if (!updated) return null;
 
@@ -482,7 +521,11 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
     }
 
     return updated;
-  });
+    });
+  } catch (error) {
+    if (respondWithLocationError(res, error)) return;
+    throw error;
+  }
   if (!row) {
     res.status(404).json({ error: "Schedule not found" });
     return;
@@ -516,7 +559,8 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
     });
   }
   const [cls] = await db.select().from(classesTable).where(eq(classesTable.id, row.classId));
-  res.json(UpdateScheduleResponse.parse(presentSchedule(row, cls, { kind: "admin" })));
+  const [located] = await attachScheduleLocations([row]);
+  res.json(UpdateScheduleResponse.parse(presentSchedule(located, cls, { kind: "admin" })));
 });
 
 router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req: AdminRequest, res): Promise<void> => {

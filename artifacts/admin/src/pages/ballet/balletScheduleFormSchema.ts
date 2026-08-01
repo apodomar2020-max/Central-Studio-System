@@ -7,6 +7,8 @@ const timeField = (requiredMessage: string) => z.string().trim().min(1, required
 
 export const balletScheduleFormSchema = z.object({
   classId: z.number({ required_error: "Class is required" }).int().positive("Class is required"),
+  branchId: z.number().int().positive().nullable().optional(),
+  roomId: z.number().int().positive().nullable().optional(),
   dayOfWeek: z.number({ required_error: "Day of week is required" }).int().min(0).max(6),
   startTime: timeField("Start time is required"),
   endTime: timeField("End time is required"),

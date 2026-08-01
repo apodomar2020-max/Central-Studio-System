@@ -115,6 +115,181 @@ export const UpdateAdminClassCapacitySettingsResponse = zod.object({
 });
 
 /**
+ * @summary List all studio branches, including inactive branches
+ */
+export const ListAdminBranchesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  googleMapsLink: zod.string().url().nullish(),
+  isActive: zod.boolean(),
+  roomCount: zod.number(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListAdminBranchesResponse = zod.array(
+  ListAdminBranchesResponseItem,
+);
+
+/**
+ * @summary Create a studio branch
+ */
+
+export const createAdminBranchBodyIsActiveDefault = true;
+
+export const CreateAdminBranchBody = zod.object({
+  name: zod.string().min(1),
+  address: zod.string().nullish(),
+  googleMapsLink: zod.string().url().nullish(),
+  isActive: zod.boolean().default(createAdminBranchBodyIsActiveDefault),
+});
+
+export const CreateAdminBranchResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  googleMapsLink: zod.string().url().nullish(),
+  isActive: zod.boolean(),
+  roomCount: zod.number(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const GetAdminBranchParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetAdminBranchResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  googleMapsLink: zod.string().url().nullish(),
+  isActive: zod.boolean(),
+  roomCount: zod.number(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const UpdateAdminBranchParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateAdminBranchBody = zod.object({
+  name: zod.string().min(1).optional(),
+  address: zod.string().nullish(),
+  googleMapsLink: zod.string().url().nullish(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateAdminBranchResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  googleMapsLink: zod.string().url().nullish(),
+  isActive: zod.boolean(),
+  roomCount: zod.number(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary List all rooms for a branch, including inactive rooms
+ */
+export const ListAdminBranchRoomsParams = zod.object({
+  branchId: zod.coerce.number(),
+});
+
+export const ListAdminBranchRoomsResponseItem = zod.object({
+  id: zod.number(),
+  branchId: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  isActive: zod.boolean(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListAdminBranchRoomsResponse = zod.array(
+  ListAdminBranchRoomsResponseItem,
+);
+
+export const CreateAdminBranchRoomParams = zod.object({
+  branchId: zod.coerce.number(),
+});
+
+export const createAdminBranchRoomBodyIsActiveDefault = true;
+
+export const CreateAdminBranchRoomBody = zod.object({
+  name: zod.string().min(1),
+  isActive: zod.boolean().default(createAdminBranchRoomBodyIsActiveDefault),
+});
+
+export const CreateAdminBranchRoomResponse = zod.object({
+  id: zod.number(),
+  branchId: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  isActive: zod.boolean(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const UpdateAdminRoomParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateAdminRoomBody = zod.object({
+  name: zod.string().min(1).optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateAdminRoomResponse = zod.object({
+  id: zod.number(),
+  branchId: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  isActive: zod.boolean(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary List active Branches for authorized schedule editors
+ */
+export const ListScheduleLocationBranchesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  googleMapsLink: zod.string().url().nullish(),
+  isActive: zod.boolean(),
+});
+export const ListScheduleLocationBranchesResponse = zod.array(
+  ListScheduleLocationBranchesResponseItem,
+);
+
+/**
+ * @summary List active Rooms for an active Branch for authorized schedule editors
+ */
+export const ListScheduleLocationRoomsParams = zod.object({
+  branchId: zod.coerce.number(),
+});
+
+export const ListScheduleLocationRoomsResponseItem = zod.object({
+  id: zod.number(),
+  branchId: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  isActive: zod.boolean(),
+});
+export const ListScheduleLocationRoomsResponse = zod.array(
+  ListScheduleLocationRoomsResponseItem,
+);
+
+/**
  * @summary List all instructors
  */
 export const ListInstructorsResponseItem = zod.object({
@@ -450,6 +625,33 @@ export const ListSchedulesQueryParams = zod.object({
 export const ListSchedulesResponseItem = zod.object({
   id: zod.number(),
   classId: zod.number(),
+  branchId: zod.number().nullish(),
+  roomId: zod.number().nullish(),
+  branch: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        address: zod.string().nullish(),
+        googleMapsLink: zod.string().url().nullish(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+  room: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        branchId: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
   type: zod.enum(["weekly", "one_time"]),
   status: zod.enum(["active", "completed", "expired", "cancelled"]),
   dayOfWeek: zod.number().nullish(),
@@ -495,6 +697,8 @@ export const ListSchedulesResponse = zod.array(ListSchedulesResponseItem);
 
 export const CreateScheduleBody = zod.object({
   classId: zod.number(),
+  branchId: zod.number(),
+  roomId: zod.number(),
   dayOfWeek: zod.number().nullish(),
   type: zod.enum(["weekly", "one_time"]).optional(),
   status: zod.enum(["active", "completed", "expired", "cancelled"]).optional(),
@@ -512,6 +716,33 @@ export const CreateScheduleBody = zod.object({
 export const CreateScheduleResponse = zod.object({
   id: zod.number(),
   classId: zod.number(),
+  branchId: zod.number().nullish(),
+  roomId: zod.number().nullish(),
+  branch: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        address: zod.string().nullish(),
+        googleMapsLink: zod.string().url().nullish(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+  room: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        branchId: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
   type: zod.enum(["weekly", "one_time"]),
   status: zod.enum(["active", "completed", "expired", "cancelled"]),
   dayOfWeek: zod.number().nullish(),
@@ -561,6 +792,33 @@ export const GetScheduleParams = zod.object({
 export const GetScheduleResponse = zod.object({
   id: zod.number(),
   classId: zod.number(),
+  branchId: zod.number().nullish(),
+  roomId: zod.number().nullish(),
+  branch: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        address: zod.string().nullish(),
+        googleMapsLink: zod.string().url().nullish(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+  room: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        branchId: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
   type: zod.enum(["weekly", "one_time"]),
   status: zod.enum(["active", "completed", "expired", "cancelled"]),
   dayOfWeek: zod.number().nullish(),
@@ -609,6 +867,8 @@ export const UpdateScheduleParams = zod.object({
 
 export const UpdateScheduleBody = zod.object({
   classId: zod.number().optional(),
+  branchId: zod.number().nullish(),
+  roomId: zod.number().nullish(),
   dayOfWeek: zod.number().nullish(),
   type: zod.enum(["weekly", "one_time"]).optional(),
   status: zod.enum(["active", "completed", "expired", "cancelled"]).optional(),
@@ -626,6 +886,33 @@ export const UpdateScheduleBody = zod.object({
 export const UpdateScheduleResponse = zod.object({
   id: zod.number(),
   classId: zod.number(),
+  branchId: zod.number().nullish(),
+  roomId: zod.number().nullish(),
+  branch: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        address: zod.string().nullish(),
+        googleMapsLink: zod.string().url().nullish(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+  room: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        branchId: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
   type: zod.enum(["weekly", "one_time"]),
   status: zod.enum(["active", "completed", "expired", "cancelled"]),
   dayOfWeek: zod.number().nullish(),
@@ -673,6 +960,170 @@ export const DeleteScheduleParams = zod.object({
 });
 
 export const DeleteScheduleResponse = zod.void();
+
+export const listAdminBalletSchedulesQueryPageDefault = 1;
+export const listAdminBalletSchedulesQueryLimitDefault = 20;
+
+export const ListAdminBalletSchedulesQueryParams = zod.object({
+  page: zod.coerce.number().default(listAdminBalletSchedulesQueryPageDefault),
+  limit: zod.coerce.number().default(listAdminBalletSchedulesQueryLimitDefault),
+});
+
+export const ListAdminBalletSchedulesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.number(),
+      classId: zod.number(),
+      branchId: zod.number().nullable(),
+      roomId: zod.number().nullable(),
+      branch: zod.union([
+        zod.object({
+          id: zod.number(),
+          name: zod.string(),
+          code: zod.string(),
+          address: zod.string().nullish(),
+          googleMapsLink: zod.string().url().nullish(),
+          isActive: zod.boolean(),
+        }),
+        zod.null(),
+      ]),
+      room: zod.union([
+        zod.object({
+          id: zod.number(),
+          branchId: zod.number(),
+          name: zod.string(),
+          code: zod.string(),
+          isActive: zod.boolean(),
+        }),
+        zod.null(),
+      ]),
+      dayOfWeek: zod.number(),
+      startTime: zod.string(),
+      endTime: zod.string(),
+      status: zod.enum(["active", "deactivated", "cancelled"]),
+      durationMins: zod.number().nullish(),
+      capacity: zod.number().nullish(),
+      createdAt: zod.string(),
+      updatedAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  limit: zod.number(),
+  totalPages: zod.number(),
+});
+
+export const createAdminBalletScheduleBodyDayOfWeekMin = 0;
+export const createAdminBalletScheduleBodyDayOfWeekMax = 6;
+
+export const CreateAdminBalletScheduleBody = zod.object({
+  classId: zod.number(),
+  branchId: zod.number(),
+  roomId: zod.number(),
+  dayOfWeek: zod
+    .number()
+    .min(createAdminBalletScheduleBodyDayOfWeekMin)
+    .max(createAdminBalletScheduleBodyDayOfWeekMax),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  status: zod.enum(["active", "deactivated", "cancelled"]).optional(),
+});
+
+export const CreateAdminBalletScheduleResponse = zod.object({
+  schedule: zod.object({
+    id: zod.number(),
+    classId: zod.number(),
+    branchId: zod.number().nullable(),
+    roomId: zod.number().nullable(),
+    branch: zod.union([
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        address: zod.string().nullish(),
+        googleMapsLink: zod.string().url().nullish(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ]),
+    room: zod.union([
+      zod.object({
+        id: zod.number(),
+        branchId: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ]),
+    dayOfWeek: zod.number(),
+    startTime: zod.string(),
+    endTime: zod.string(),
+    status: zod.enum(["active", "deactivated", "cancelled"]),
+    durationMins: zod.number().nullish(),
+    capacity: zod.number().nullish(),
+    createdAt: zod.string(),
+    updatedAt: zod.string(),
+  }),
+});
+
+export const UpdateAdminBalletScheduleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateAdminBalletScheduleBodyDayOfWeekMin = 0;
+export const updateAdminBalletScheduleBodyDayOfWeekMax = 6;
+
+export const UpdateAdminBalletScheduleBody = zod.object({
+  branchId: zod.number().nullish(),
+  roomId: zod.number().nullish(),
+  dayOfWeek: zod
+    .number()
+    .min(updateAdminBalletScheduleBodyDayOfWeekMin)
+    .max(updateAdminBalletScheduleBodyDayOfWeekMax)
+    .optional(),
+  startTime: zod.string().optional(),
+  endTime: zod.string().optional(),
+  status: zod.enum(["active", "deactivated", "cancelled"]).optional(),
+});
+
+export const UpdateAdminBalletScheduleResponse = zod.object({
+  schedule: zod.object({
+    id: zod.number(),
+    classId: zod.number(),
+    branchId: zod.number().nullable(),
+    roomId: zod.number().nullable(),
+    branch: zod.union([
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        address: zod.string().nullish(),
+        googleMapsLink: zod.string().url().nullish(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ]),
+    room: zod.union([
+      zod.object({
+        id: zod.number(),
+        branchId: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        isActive: zod.boolean(),
+      }),
+      zod.null(),
+    ]),
+    dayOfWeek: zod.number(),
+    startTime: zod.string(),
+    endTime: zod.string(),
+    status: zod.enum(["active", "deactivated", "cancelled"]),
+    durationMins: zod.number().nullish(),
+    capacity: zod.number().nullish(),
+    createdAt: zod.string(),
+    updatedAt: zod.string(),
+  }),
+});
 
 export const ListPricePackagesResponseItem = zod.object({
   id: zod.number(),

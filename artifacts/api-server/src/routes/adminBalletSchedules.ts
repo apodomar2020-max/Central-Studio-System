@@ -18,7 +18,7 @@
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, count, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -28,14 +28,17 @@ import {
   balletLevelsTable,
   balletSchedulesTable,
   BALLET_SCHEDULE_STATUSES,
+  studioBranchesTable,
+  studioRoomsTable,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 import type { DbClient } from "../lib/dbTypes";
+import { ScheduleLocationError, validateScheduleLocation } from "../lib/scheduleLocation";
 
 const router: IRouter = Router();
-const BALLET_SCHEDULE_ACTIVITY_FIELDS = ["classId", "dayOfWeek", "startTime", "endTime", "status", "durationMins"] as const;
+const BALLET_SCHEDULE_ACTIVITY_FIELDS = ["classId", "branchId", "roomId", "dayOfWeek", "startTime", "endTime", "status", "durationMins"] as const;
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -56,11 +59,25 @@ const ListQuerySchema = z.object({
 
 const CreateScheduleBody = z.object({
   classId: z.number({ required_error: "classId is required" }).int().positive(),
+  branchId: z.number({ required_error: "branchId is required" }).int().positive(),
+  roomId: z.number({ required_error: "roomId is required" }).int().positive(),
   dayOfWeek: z.number({ required_error: "dayOfWeek is required" }).int().min(0).max(6),
   startTime: z.string().trim().regex(TIME_PATTERN, "startTime must use HH:MM"),
   endTime: z.string().trim().regex(TIME_PATTERN, "endTime must use HH:MM"),
   status: z.enum(BALLET_SCHEDULE_STATUSES).default("active"),
 }).strict();
+
+async function attachLocations<T extends { branchId: number | null; roomId: number | null }>(rows: T[]) {
+  const branchIds = [...new Set(rows.flatMap((row) => row.branchId == null ? [] : [row.branchId]))];
+  const roomIds = [...new Set(rows.flatMap((row) => row.roomId == null ? [] : [row.roomId]))];
+  const [branches, rooms] = await Promise.all([
+    branchIds.length ? db.select().from(studioBranchesTable).where(inArray(studioBranchesTable.id, branchIds)) : [],
+    roomIds.length ? db.select().from(studioRoomsTable).where(inArray(studioRoomsTable.id, roomIds)) : [],
+  ]);
+  const branchById = new Map(branches.map((row) => [row.id, row]));
+  const roomById = new Map(rooms.map((row) => [row.id, row]));
+  return rows.map((row) => ({ ...row, branch: row.branchId == null ? null : branchById.get(row.branchId) ?? null, room: row.roomId == null ? null : roomById.get(row.roomId) ?? null }));
+}
 
 /**
  * Single source of truth for "is this classId+dayOfWeek+startTime+endTime
@@ -180,13 +197,15 @@ router.get("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("
       db.select({ total: count(balletSchedulesTable.id) }).from(balletSchedulesTable),
     ]);
 
-    res.json({ data: rows, total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });
+    res.json({ data: await attachLocations(rows), total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });
   } catch (err) {
     respondWithScheduleError(req, res, err, "GET /admin/ballet/schedules");
   }
 });
 
 const UpdateScheduleBody = z.object({
+  branchId: z.number().int().positive().nullable().optional(),
+  roomId: z.number().int().positive().nullable().optional(),
   dayOfWeek: z.number().int().min(0).max(6).optional(),
   startTime: z.string().trim().regex(TIME_PATTERN, "startTime must use HH:MM").optional(),
   endTime: z.string().trim().regex(TIME_PATTERN, "endTime must use HH:MM").optional(),
@@ -230,6 +249,7 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
       await tx.execute(sql`select id from ballet_classes where id = ${parsed.data.classId} for update`);
       const classError = await validateScheduleClass(tx, parsed.data.classId);
       if (classError) throw new Error(classError);
+      await validateScheduleLocation(tx, parsed.data.branchId, parsed.data.roomId);
 
       const durationMins = deriveBalletScheduleDuration(parsed.data.startTime, parsed.data.endTime);
       await assertScheduleSlotAvailable(
@@ -243,6 +263,8 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
 
       const [created] = await tx.insert(balletSchedulesTable).values({
         classId: parsed.data.classId,
+        branchId: parsed.data.branchId,
+        roomId: parsed.data.roomId,
         dayOfWeek: parsed.data.dayOfWeek,
         startTime: parsed.data.startTime,
         endTime: parsed.data.endTime,
@@ -261,8 +283,9 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
       after: Object.fromEntries(BALLET_SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, schedule[key]])),
       summary: `Created ballet schedule ${schedule.startTime}-${schedule.endTime}`,
     });
-    res.status(201).json({ schedule });
+    res.status(201).json({ schedule: (await attachLocations([schedule]))[0] });
   } catch (err) {
+    if (err instanceof ScheduleLocationError) { res.status(err.status).json({ error: err.message, code: err.code }); return; }
     if (err instanceof Error) {
       if (err.message === "INVALID_BALLET_SCHEDULE_TIME_RANGE") {
         res.status(422).json({ error: "End time must be later than start time.", code: "INVALID_BALLET_SCHEDULE_TIME_RANGE" });
@@ -327,6 +350,13 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
       const status = parsed.data.status ?? existing.status;
       const durationMins = deriveBalletScheduleDuration(startTime, endTime);
 
+      const locationProvided = Object.prototype.hasOwnProperty.call(parsed.data, "branchId") || Object.prototype.hasOwnProperty.call(parsed.data, "roomId");
+      if (locationProvided) {
+        const branchId = parsed.data.branchId === undefined ? existing.branchId : parsed.data.branchId;
+        const roomId = parsed.data.roomId === undefined ? existing.roomId : parsed.data.roomId;
+        await validateScheduleLocation(tx, branchId, roomId, { branchId: existing.branchId, roomId: existing.roomId });
+      }
+
       await assertScheduleSlotAvailable(tx, existing.classId, dayOfWeek, startTime, endTime, status, id);
 
       const now = new Date().toISOString();
@@ -358,8 +388,9 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
         summary: `Updated ballet schedule ${schedule.startTime}-${schedule.endTime}: ${changedKeys.join(", ")}`,
       });
     }
-    res.json({ schedule });
+    res.json({ schedule: (await attachLocations([schedule]))[0] });
   } catch (err) {
+    if (err instanceof ScheduleLocationError) { res.status(err.status).json({ error: err.message, code: err.code }); return; }
     if (err instanceof Error && err.message === "INVALID_BALLET_SCHEDULE_TIME_RANGE") {
       res.status(422).json({ error: "End time must be later than start time.", code: "INVALID_BALLET_SCHEDULE_TIME_RANGE" });
       return;

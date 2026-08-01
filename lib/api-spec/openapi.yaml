@@ -111,6 +111,107 @@ paths:
                     items:
                       $ref: "#/components/schemas/OverCapacityOccurrence"
 
+  /admin/branches:
+    get:
+      operationId: listAdminBranches
+      tags: [branches]
+      summary: List all studio branches, including inactive branches
+      responses:
+        "200":
+          description: Branch list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BranchListResponse" }
+        "401": { description: Admin authentication required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Permission denied, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    post:
+      operationId: createAdminBranch
+      tags: [branches]
+      summary: Create a studio branch
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateBranchBody" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409": { description: Branch name conflict, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /admin/branches/{id}:
+    get:
+      operationId: getAdminBranch
+      tags: [branches]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: Branch, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    patch:
+      operationId: updateAdminBranch
+      tags: [branches]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateBranchBody" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409": { description: Branch name conflict, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /admin/branches/{branchId}/rooms:
+    get:
+      operationId: listAdminBranchRooms
+      tags: [branches]
+      summary: List all rooms for a branch, including inactive rooms
+      parameters: [{ name: branchId, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: Room list, content: { application/json: { schema: { $ref: "#/components/schemas/RoomListResponse" } } } }
+        "404": { description: Branch not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    post:
+      operationId: createAdminBranchRoom
+      tags: [branches]
+      parameters: [{ name: branchId, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateRoomBody" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Room" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Branch not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409": { description: Room name conflict, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /admin/rooms/{id}:
+    patch:
+      operationId: updateAdminRoom
+      tags: [branches]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateRoomBody" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Room" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Room not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409": { description: Room name conflict, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /admin/schedule-location-options/branches:
+    get:
+      operationId: listScheduleLocationBranches
+      tags: [branches]
+      summary: List active Branches for authorized schedule editors
+      responses:
+        "200": { description: Active Branches, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ScheduleBranch" } } } } }
+        "403": { description: Permission denied, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /admin/schedule-location-options/branches/{branchId}/rooms:
+    get:
+      operationId: listScheduleLocationRooms
+      tags: [branches]
+      summary: List active Rooms for an active Branch for authorized schedule editors
+      parameters: [{ name: branchId, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: Active Rooms, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ScheduleRoom" } } } } }
+        "404": { description: Branch not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "422": { description: Branch inactive, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /instructors:
     get:
       operationId: listInstructors
@@ -341,6 +442,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
     patch:
       operationId: updateSchedule
       tags: [schedules]
@@ -379,6 +481,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/ballet/schedules:
+    get:
+      operationId: listAdminBalletSchedules
+      tags: [ballet]
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 20 } }
+      responses:
+        "200": { description: Ballet schedules, content: { application/json: { schema: { $ref: "#/components/schemas/BalletScheduleListResponse" } } } }
+    post:
+      operationId: createAdminBalletSchedule
+      tags: [ballet]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateBalletScheduleBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/BalletScheduleMutationResponse" } } } }
+        "422": { description: Invalid location or Ballet relationship, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /admin/ballet/schedules/{id}:
+    patch:
+      operationId: updateAdminBalletSchedule
+      tags: [ballet]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateBalletScheduleBody" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/BalletScheduleMutationResponse" } } } }
+        "422": { description: Invalid location or Ballet relationship, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /price-packages:
     get:
@@ -1402,6 +1530,69 @@ components:
         completedFullRefunds: { type: integer }
         completedPartialRefunds: { type: integer }
 
+    Branch:
+      type: object
+      required: [id, name, code, isActive, roomCount, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        code: { type: string }
+        address: { type: ["string", "null"] }
+        googleMapsLink: { type: ["string", "null"], format: uri }
+        isActive: { type: boolean }
+        roomCount: { type: integer }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    BranchListResponse:
+      type: array
+      items: { $ref: "#/components/schemas/Branch" }
+    CreateBranchBody:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        address: { type: ["string", "null"] }
+        googleMapsLink: { type: ["string", "null"], format: uri }
+        isActive: { type: boolean, default: true }
+    UpdateBranchBody:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1 }
+        address: { type: ["string", "null"] }
+        googleMapsLink: { type: ["string", "null"], format: uri }
+        isActive: { type: boolean }
+    Room:
+      type: object
+      required: [id, branchId, name, code, isActive, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        branchId: { type: integer }
+        name: { type: string }
+        code: { type: string }
+        isActive: { type: boolean }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    RoomListResponse:
+      type: array
+      items: { $ref: "#/components/schemas/Room" }
+    CreateRoomBody:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        isActive: { type: boolean, default: true }
+    UpdateRoomBody:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1 }
+        isActive: { type: boolean }
+
     Instructor:
       type: object
       required: [id, name, specialties, experienceYears, isActive, createdAt, achievements, professionalExperience]
@@ -1530,6 +1721,10 @@ components:
       properties:
         id: { type: integer }
         classId: { type: integer }
+        branchId: { type: ["integer", "null"] }
+        roomId: { type: ["integer", "null"] }
+        branch: { oneOf: [{ $ref: "#/components/schemas/ScheduleBranch" }, { type: "null" }] }
+        room: { oneOf: [{ $ref: "#/components/schemas/ScheduleRoom" }, { type: "null" }] }
         type: { type: string, enum: [weekly, one_time] }
         status: { type: string, enum: [active, completed, expired, cancelled] }
         dayOfWeek: { type: ["integer", "null"] }
@@ -1585,9 +1780,11 @@ components:
 
     CreateScheduleBody:
       type: object
-      required: [classId, startTime, endTime]
+      required: [classId, branchId, roomId, startTime, endTime]
       properties:
         classId: { type: integer }
+        branchId: { type: integer }
+        roomId: { type: integer }
         dayOfWeek: { type: ["integer", "null"] }
         type: { type: string, enum: [weekly, one_time] }
         status: { type: string, enum: [active, completed, expired, cancelled] }
@@ -1605,6 +1802,8 @@ components:
       type: object
       properties:
         classId: { type: integer }
+        branchId: { type: ["integer", "null"] }
+        roomId: { type: ["integer", "null"] }
         dayOfWeek: { type: ["integer", "null"] }
         type: { type: string, enum: [weekly, one_time] }
         status: { type: string, enum: [active, completed, expired, cancelled] }
@@ -1617,6 +1816,80 @@ components:
         isRecurring: { type: boolean }
         effectiveFrom: { type: ["string", "null"] }
         effectiveUntil: { type: ["string", "null"] }
+
+    ScheduleBranch:
+      type: object
+      required: [id, name, code, isActive]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        code: { type: string }
+        address: { type: ["string", "null"] }
+        googleMapsLink: { type: ["string", "null"], format: uri }
+        isActive: { type: boolean }
+    ScheduleRoom:
+      type: object
+      required: [id, branchId, name, code, isActive]
+      properties:
+        id: { type: integer }
+        branchId: { type: integer }
+        name: { type: string }
+        code: { type: string }
+        isActive: { type: boolean }
+    BalletSchedule:
+      type: object
+      required: [id, classId, dayOfWeek, startTime, endTime, status, branchId, roomId, branch, room, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        classId: { type: integer }
+        branchId: { type: ["integer", "null"] }
+        roomId: { type: ["integer", "null"] }
+        branch: { oneOf: [{ $ref: "#/components/schemas/ScheduleBranch" }, { type: "null" }] }
+        room: { oneOf: [{ $ref: "#/components/schemas/ScheduleRoom" }, { type: "null" }] }
+        dayOfWeek: { type: integer }
+        startTime: { type: string }
+        endTime: { type: string }
+        status: { type: string, enum: [active, deactivated, cancelled] }
+        durationMins: { type: ["integer", "null"] }
+        capacity: { type: ["integer", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    BalletScheduleListResponse:
+      type: object
+      required: [data, total, page, limit, totalPages]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/BalletSchedule" } }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+        totalPages: { type: integer }
+    BalletScheduleMutationResponse:
+      type: object
+      required: [schedule]
+      properties:
+        schedule: { $ref: "#/components/schemas/BalletSchedule" }
+    CreateBalletScheduleBody:
+      type: object
+      additionalProperties: false
+      required: [classId, branchId, roomId, dayOfWeek, startTime, endTime]
+      properties:
+        classId: { type: integer }
+        branchId: { type: integer }
+        roomId: { type: integer }
+        dayOfWeek: { type: integer, minimum: 0, maximum: 6 }
+        startTime: { type: string }
+        endTime: { type: string }
+        status: { type: string, enum: [active, deactivated, cancelled] }
+    UpdateBalletScheduleBody:
+      type: object
+      additionalProperties: false
+      properties:
+        branchId: { type: ["integer", "null"] }
+        roomId: { type: ["integer", "null"] }
+        dayOfWeek: { type: integer, minimum: 0, maximum: 6 }
+        startTime: { type: string }
+        endTime: { type: string }
+        status: { type: string, enum: [active, deactivated, cancelled] }
 
     PricePackage:
       type: object

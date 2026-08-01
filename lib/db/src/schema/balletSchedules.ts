@@ -1,7 +1,8 @@
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { balletClassesTable } from "./balletClasses";
+import { studioBranchesTable, studioRoomsTable } from "./studioBranches";
 
 /**
  * ballet_schedules — weekly time slots for ballet classes, independent of the
@@ -16,6 +17,8 @@ export type BalletScheduleStatus = (typeof BALLET_SCHEDULE_STATUSES)[number];
 export const balletSchedulesTable = pgTable("ballet_schedules", {
   id:           serial("id").primaryKey(),
   classId:      integer("class_id").notNull().references(() => balletClassesTable.id, { onDelete: "cascade" }),
+  branchId:     integer("branch_id").references(() => studioBranchesTable.id, { onDelete: "restrict" }),
+  roomId:       integer("room_id").references(() => studioRoomsTable.id, { onDelete: "restrict" }),
   dayOfWeek:    integer("day_of_week").notNull(), // 0-6
   startTime:    text("start_time").notNull(),
   endTime:      text("end_time").notNull(),
@@ -24,7 +27,10 @@ export const balletSchedulesTable = pgTable("ballet_schedules", {
   capacity:     integer("capacity"),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
-});
+}, (table) => [
+  index("ballet_schedules_branch_id_idx").on(table.branchId),
+  index("ballet_schedules_room_id_idx").on(table.roomId),
+]);
 
 export const insertBalletScheduleSchema = createInsertSchema(balletSchedulesTable).omit({
   id: true, createdAt: true, updatedAt: true,
