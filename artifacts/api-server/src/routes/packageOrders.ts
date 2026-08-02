@@ -829,7 +829,10 @@ router.patch(
       if (confirmation.kind === "integrity_error" || confirmation.kind === "terminal") {
         return { kind: "finance_integrity_error" as const, current, confirmation };
       }
-      let confirmedPaymentRecordId: number | null = null;
+      const confirmedPaymentRecord = confirmation.kind === "legacy_missing"
+        ? null
+        : confirmation.record;
+      const confirmedPaymentRecordId = confirmedPaymentRecord?.id ?? null;
       if (confirmation.kind === "legacy_missing") {
         // Phase 2C approved policy #4: a pre-Phase-2B order has no
         // canonical payment_records row. Do not fabricate one — preserve
@@ -841,8 +844,6 @@ router.patch(
           flowType: "package_purchase",
           packageOrderId: current.id,
         }, "Activating a package order with no canonical payment_records row — legacy/pre-Phase-2B source, Phase 2D backfill scope.");
-      } else {
-        confirmedPaymentRecordId = confirmation.record.id;
       }
 
       // Bind the Expiration Date: when activating, default expiresAt to
@@ -886,23 +887,23 @@ router.patch(
 
       // Package Credit Allocation Phase B: issue the purchased origin lot in
       // the same transaction as its operational ledger row. The purchase-time
-      // snapshot is the only permitted monetary source; catalog pricing must
-      // never be consulted here.
+      // snapshot is the only permitted monetary source; catalog pricing and
+      // package_orders' nullable per-credit compatibility snapshot must never
+      // be consulted here. The confirmed paid total is preserved directly so
+      // non-divisible package totals retain every minor unit.
       const [existingLot] = await tx
         .select({ id: packageCreditLotsTable.id })
         .from(packageCreditLotsTable)
         .where(eq(packageCreditLotsTable.issuingCreditTransactionId, creditTransaction.id))
         .limit(1);
       if (!existingLot) {
-        const hasPurchaseValue = current.purchaseUnitPriceMinor != null;
+        const hasPurchaseValue = confirmedPaymentRecord != null;
         await tx.insert(packageCreditLotsTable).values({
           packageOrderId: current.id,
           sourceType: "purchased",
           creditsIssued: current.totalCredits,
           creditsRemaining: current.totalCredits,
-          totalValueMinor: hasPurchaseValue
-            ? current.purchaseUnitPriceMinor! * current.totalCredits
-            : null,
+          totalValueMinor: hasPurchaseValue ? confirmedPaymentRecord.paidAmountMinor : null,
           valueBasis: hasPurchaseValue ? "recorded_purchase_price" : "unknown",
           expiresAt: updated.expiresAt,
           issuingCreditTransactionId: creditTransaction.id,

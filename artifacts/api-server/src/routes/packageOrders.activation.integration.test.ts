@@ -114,6 +114,25 @@ async function activationLots(packageOrderId: number): Promise<Array<Record<stri
   return result.rows as Array<Record<string, unknown>>;
 }
 
+async function attachCanonicalPendingPayment(
+  packageOrderId: number,
+  studentId: number,
+  finalPayableAmountMinor: number,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO payment_records
+       (flow_type, package_order_id, capture_origin, occurred_at, evidence_class,
+        amount_availability, amount_source, gross_amount_minor, discount_amount_minor,
+        final_payable_amount_minor, paid_amount_minor, refunded_amount_minor, currency,
+        status, student_id)
+     VALUES
+       ('package_purchase', $1, 'live_capture', now(), 'confirmed',
+        'exact', 'creation_snapshot', $3, 0, $3, 0, 0, 'EGP',
+        'pending_confirmation', $2)`,
+    [packageOrderId, studentId, finalPayableAmountMinor],
+  );
+}
+
 /** Creates a fresh pendingPayment package order, ready to be activated. */
 async function makePendingOrder(
   run: string,
@@ -218,7 +237,7 @@ after(async () => {
 
 // ─── 1–3: first activation, exact credit count, repeated activation ─────────
 
-test("first activation succeeds, credits are issued, and status becomes active", async () => {
+test("legacy activation without payment evidence remains unknown-valued", async () => {
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const { id } = await makePendingOrder(run, "first");
 
@@ -238,15 +257,23 @@ test("first activation succeeds, credits are issued, and status becomes active",
   assert.equal(lots[0].value_basis, "unknown");
 });
 
-test("activation values its purchased lot only from the order price snapshot", async () => {
+test("activation values its purchased lot from the exact confirmed payment and makes it refundable", async () => {
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const { id } = await makePendingOrder(run, "snapshot-value", 6, 12_345);
+  const { id, studentId } = await makePendingOrder(run, "snapshot-value", 6, 12_345);
+  const exactPaidTotalMinor = 100_003;
+  await attachCanonicalPendingPayment(id, studentId, exactPaidTotalMinor);
   await pool.query(`UPDATE price_packages SET price_egp = 999999 WHERE id = $1`, [packageId]);
 
   assert.equal((await activate(id)).status, 200);
   const [lot] = await activationLots(id);
-  assert.equal(lot.total_value_minor, 74_070);
+  assert.equal(lot.total_value_minor, exactPaidTotalMinor);
   assert.equal(lot.value_basis, "recorded_purchase_price");
+
+  const { calculatePackageRefundEligibility } = await import("../lib/packageRefundService");
+  const eligibility = await calculatePackageRefundEligibility(id);
+  assert.equal(eligibility.eligible, true);
+  assert.equal(eligibility.refundableAmountMinor, exactPaidTotalMinor);
+  assert.equal(eligibility.refundableCredits, 6);
 });
 
 test("activation propagates immutable self and child participant ownership to credits", async () => {
