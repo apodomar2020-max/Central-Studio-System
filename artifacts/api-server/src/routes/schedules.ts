@@ -26,7 +26,6 @@ import {
   UpdateScheduleParams,
   UpdateScheduleBody,
   UpdateScheduleResponse,
-  DeleteScheduleParams,
   ListSchedulesResponse,
 } from "@workspace/api-zod";
 
@@ -570,40 +569,11 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
   res.json(UpdateScheduleResponse.parse(presentSchedule(located, cls, { kind: "admin" })));
 });
 
-router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req: AdminRequest, res): Promise<void> => {
-  const params = DeleteScheduleParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const row = await db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(schedulesTable).where(eq(schedulesTable.id, params.data.id));
-    if (!existing) return null;
-
-    await notifyScheduleBookings(
-      tx,
-      existing.id,
-      "Class cancelled",
-      "A booked class schedule was cancelled.",
-    );
-
-    const [deleted] = await tx.delete(schedulesTable).where(eq(schedulesTable.id, params.data.id)).returning();
-    return deleted ?? null;
+router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), (_req: AdminRequest, res): void => {
+  res.status(409).json({
+    error: "Schedules cannot be deleted. Cancel the schedule instead.",
+    code: "SCHEDULE_DELETE_NOT_ALLOWED",
   });
-  if (!row) {
-    res.status(404).json({ error: "Schedule not found" });
-    return;
-  }
-  await logActivity(req, {
-    action: "delete",
-    module: "schedules",
-    entityType: "schedule",
-    entityId: row.id,
-    entityLabel: scheduleDisplay(row),
-    before: Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
-    summary: `Deleted schedule ${scheduleDisplay(row)}`,
-  });
-  res.sendStatus(204);
 });
 
 export default router;

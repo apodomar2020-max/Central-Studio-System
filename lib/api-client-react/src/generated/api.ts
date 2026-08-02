@@ -2383,11 +2383,14 @@ export const getDeleteScheduleUrl = (id: number) => {
   return `/api/schedules/${id}`;
 };
 
+/**
+ * Schedule hard deletion is prohibited. Cancel the schedule through the update endpoint instead.
+ */
 export const deleteSchedule = async (
   id: number,
   options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteScheduleUrl(id), {
+): Promise<unknown> => {
+  return customFetch<unknown>(getDeleteScheduleUrl(id), {
     ...options,
     method: "DELETE",
   });

@@ -955,6 +955,9 @@ export const UpdateScheduleResponse = zod.object({
   createdAt: zod.string(),
 });
 
+/**
+ * Schedule hard deletion is prohibited. Cancel the schedule through the update endpoint instead.
+ */
 export const DeleteScheduleParams = zod.object({
   id: zod.coerce.number(),
 });

@@ -7,7 +7,6 @@ import {
   useListClasses,
   useCreateSchedule,
   useUpdateSchedule,
-  useDeleteSchedule,
   getListSchedulesQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { Trash2, Edit } from "lucide-react";
+import { Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { BranchRoomFields } from "@/components/schedules/BranchRoomFields";
@@ -103,12 +102,10 @@ export default function Schedules() {
   const { can } = useAdminAuth();
   const canCreate = can("schedules", "create");
   const canEdit = can("schedules", "edit");
-  const canDelete = can("schedules", "delete");
   const { data: schedules, isLoading } = useListSchedules();
   const { data: classes } = useListClasses();
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
-  const deleteSchedule = useDeleteSchedule();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
@@ -192,12 +189,6 @@ export default function Schedules() {
     }
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Delete this schedule?")) {
-      deleteSchedule.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() }) });
-    }
-  };
-
   const getClassName = (id: number) => classes?.find((c) => c.id === id)?.title ?? `Class #${id}`;
 
   return (
@@ -255,11 +246,6 @@ export default function Schedules() {
                     {canEdit && (
                       <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
                         <Edit className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button variant="ghost" size="icon" data-testid={`button-delete-schedule-${schedule.id}`} onClick={() => handleDelete(schedule.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     )}
                   </TableCell>

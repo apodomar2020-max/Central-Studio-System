@@ -470,13 +470,12 @@ paths:
     delete:
       operationId: deleteSchedule
       tags: [schedules]
+      description: Schedule hard deletion is prohibited. Cancel the schedule through the update endpoint instead.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        "204":
-          description: Deleted
-        "404":
-          description: Not found
+        "409":
+          description: Schedule deletion is not allowed
           content:
             application/json:
               schema:
