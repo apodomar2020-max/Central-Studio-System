@@ -14,7 +14,6 @@ function clean(value: string | null | undefined): string | null {
 
 export function scheduleLocationLabel(source: ScheduleLocationSource): string | null {
   const branchName = clean(source.branch?.name);
-  const roomName = clean(source.room?.name);
-  if (branchName && roomName) return `${branchName} · ${roomName}`;
+  if (branchName) return branchName;
   return clean(source.legacyLocation) ?? clean(source.classLocation);
 }

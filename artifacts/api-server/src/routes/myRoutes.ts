@@ -430,9 +430,7 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       time,
       scheduleLabel,
       duration: r.classDurationMins != null ? `${r.classDurationMins} min` : "",
-      location: r.branchName && r.roomName
-        ? `${r.branchName} · ${r.roomName}`
-        : r.scheduleLocation ?? "Central Studio",
+      location: r.branchName ?? r.scheduleLocation ?? "Central Studio",
       price: r.schedulePriceEgp ?? 0,
       participantType,
       participantName: r.participantChildName ?? b.studentName,
