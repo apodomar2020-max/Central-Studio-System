@@ -69,12 +69,16 @@ function StatItem({
 }) {
   return (
     <View style={s.statItem}>
-      <CsIcon name={icon} size={30} stroke={2.2} color={CYAN} />
-      <View style={s.statValueRow}>
-        <Text style={[s.statValue, compact && s.statValueCompact]} numberOfLines={1}>{value}</Text>
-        {suffix ? <Text style={s.statSuffix}>{suffix}</Text> : null}
+      <View style={s.statIconSlot}>
+        <CsIcon name={icon} size={30} stroke={2.2} color={CYAN} />
       </View>
-      <Text style={s.statLabel} numberOfLines={1}>{label}</Text>
+      <View style={s.statValueSlot}>
+        <Text style={[s.statValue, compact && s.statValueCompact]} numberOfLines={1}>{value}</Text>
+        {suffix ? <Text style={s.statSuffix} numberOfLines={1}>{suffix}</Text> : null}
+      </View>
+      <View style={s.statLabelSlot}>
+        <Text style={s.statLabel} numberOfLines={1}>{label}</Text>
+      </View>
     </View>
   );
 }
@@ -145,7 +149,17 @@ export default function PackageDetailsSheet({
       <View style={s.backdrop}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
         <View style={[s.sheet, { maxHeight: "88%", paddingBottom: insets.bottom + 14 }]}>
-          <View style={s.handle} />
+          {pkg.isFeatured ? (
+            <View style={s.featuredRibbonWrap} pointerEvents="none">
+              <Image
+                source={require("@/assets/images/featured-badge.png")}
+                style={s.featuredBadgeAsset}
+                resizeMode="contain"
+              />
+            </View>
+          ) : (
+            <View style={s.handle} />
+          )}
 
           <ScrollView showsVerticalScrollIndicator={false} bounces={false} contentContainerStyle={s.scrollContent}>
             {/* Hero — image fills the top, name/description/price overlaid */}
@@ -169,15 +183,6 @@ export default function PackageDetailsSheet({
                 locations={[0, 0.26, 0.6, 1]}
                 style={StyleSheet.absoluteFill}
               />
-
-              {pkg.isFeatured && (
-                <View style={s.featuredRibbonWrap} pointerEvents="none">
-                  <View style={s.featuredRibbon}>
-                    <CsIcon name="star" size={12} color={INK_900} />
-                    <Text style={s.featuredRibbonText}>FEATURED</Text>
-                  </View>
-                </View>
-              )}
 
               <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="close" size={20} color="#FFFFFF" />
@@ -371,7 +376,7 @@ const s = StyleSheet.create({
     backgroundColor: INK_900,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    overflow: "hidden",
+    overflow: "visible",
   },
   handle: {
     width: 40, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.28)",
@@ -380,16 +385,25 @@ const s = StyleSheet.create({
   scrollContent: { paddingBottom: 8 },
 
   // ── Hero ──────────────────────────────────────────────────────────────────
-  hero: { justifyContent: "flex-end" },
+  hero: {
+    justifyContent: "flex-end",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
+  },
   heroFallbackGlyph: { flex: 1, alignItems: "center", justifyContent: "center" },
   featuredRibbonWrap: {
-    position: "absolute", top: 16, left: 0, right: 0, zIndex: 2, alignItems: "center",
+    position: "absolute",
+    top: -16,
+    left: 0,
+    right: 0,
+    zIndex: 99,
+    alignItems: "center",
   },
-  featuredRibbon: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: CYAN, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6,
+  featuredBadgeAsset: {
+    width: 170,
+    height: 32.5,
   },
-  featuredRibbonText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold", color: INK_900, letterSpacing: 1 },
   closeBtn: {
     position: "absolute", top: 14, right: 14, zIndex: 2,
     width: 34, height: 34, borderRadius: 17,
@@ -411,12 +425,12 @@ const s = StyleSheet.create({
     ...iosDisplayTextStyle(24, 26, "inter"),
   },
   heroDesc: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "rgba(255,255,255,0.72)", lineHeight: 17, marginTop: 2 },
-  heroRight: { alignItems: "flex-end", flexShrink: 0 },
+  heroRight: { flexDirection: "row", alignItems: "baseline", gap: 4, flexShrink: 0 },
   heroPriceNum: {
-    fontSize: 30, fontFamily: "Anton_400Regular", color: CYAN_400, lineHeight: 28,
-    ...iosDisplayTextStyle(30, 28),
+    fontSize: 56, fontFamily: "Anton_400Regular", color: CYAN_400, lineHeight: 52,
+    ...iosDisplayTextStyle(56, 52),
   },
-  heroPriceUnit: { fontSize: 12, fontFamily: "Archivo_700Bold", color: "rgba(255,255,255,0.7)", letterSpacing: 0.6, marginTop: 1 },
+  heroPriceUnit: { fontSize: 20, fontFamily: "Anton_400Regular", color: "#FFFFFF", letterSpacing: 0.5 },
 
   // ── Body ──────────────────────────────────────────────────────────────────
   body: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 4, gap: 20 },
@@ -425,13 +439,15 @@ const s = StyleSheet.create({
   statsBarWrap: { borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)" },
   statsBarWebBg: { backgroundColor: "rgba(21,23,27,0.92)" },
   statsBar: { flexDirection: "row", alignItems: "stretch", paddingVertical: 16, paddingHorizontal: 6 },
-  statItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 4 },
-  statValueRow: { flexDirection: "row", alignItems: "baseline", gap: 2 },
-  statValue: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
+  statItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
+  statIconSlot: { height: 32, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  statValueSlot: { height: 22, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, marginBottom: 3 },
+  statValue: { fontSize: 16, fontFamily: "Archivo_800ExtraBold", color: "#fff", textAlign: "center" },
   statValueCompact: { fontSize: 12.5, textAlign: "center" },
   statSuffix: { fontSize: 10, fontFamily: "Archivo_700Bold", color: INK_300 },
+  statLabelSlot: { height: 16, alignItems: "center", justifyContent: "center" },
   statLabel: { fontSize: 9.5, fontFamily: "Archivo_600SemiBold", color: INK_300, textTransform: "uppercase", letterSpacing: 0.3, textAlign: "center" },
-  statDivider: { width: 1, alignSelf: "stretch", backgroundColor: "rgba(255,255,255,0.10)", marginVertical: 2 },
+  statDivider: { width: 1, alignSelf: "stretch", backgroundColor: "rgba(255,255,255,0.10)", marginVertical: 4 },
 
   sectionBlock: { gap: 10 },
   sectionLabel: { fontSize: 11, fontFamily: "SpaceMono_700Bold", color: CYAN, textTransform: "uppercase", letterSpacing: 1.4 },
