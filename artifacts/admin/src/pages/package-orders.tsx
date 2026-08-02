@@ -95,6 +95,33 @@ type RefundEligibility = { eligible: boolean; refundableAmountMinor: number; ref
 type PackageRefund = { id: number; status: string; requestedAmountMinor: number; approvedAmountMinor?: number | null; refundedAmountMinor?: number | null };
 type RefundOverview = { eligibility: RefundEligibility; refund: PackageRefund | null };
 
+const REFUND_INTEGRITY_WARNING_LABELS: Record<string, string> = {
+  package_order_not_found: "Package order could not be found.",
+  package_order_not_active: "Only active or fully used packages can be refunded.",
+  payment_record_missing: "No payment record is linked to this package.",
+  payment_record_multiple: "Multiple payment records require Finance review.",
+  payment_record_not_refundable: "The linked payment is not refundable.",
+  payment_amount_unavailable: "The recorded payment amount is unavailable.",
+  lot_balance_mismatch: "The package credit balance does not match its credit lots.",
+  restored_lot_provenance_invalid: "A restored credit has incomplete purchase history.",
+  no_refundable_value: "No refundable purchased credit value remains.",
+  refundable_value_exceeds_payment_capacity: "Refundable credit value exceeds the remaining payment capacity.",
+};
+
+const REFUND_EXCLUDED_LOT_REASON_LABELS: Record<string, string> = {
+  no_remaining_credits: "The original credit lot has no remaining credits.",
+  bonus: "Bonus credits have no refundable cash value.",
+  non_purchased_source: "Non-purchased credits have no refundable cash value.",
+  expired: "Expired credits are not refundable.",
+  unknown_value: "The purchase value for these credits is unknown.",
+  unsupported_value_basis: "The recorded credit value is not supported for refunds.",
+  corrupt_provenance: "The credit purchase history is incomplete or inconsistent.",
+};
+
+function refundReasonLabel(code: string, labels: Record<string, string>): string {
+  return labels[code] ?? code.replaceAll("_", " ");
+}
+
 function makeHeaders(token?: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
@@ -123,6 +150,7 @@ function RefundDialog({ order, onClose }: { order: PackageOrder; onClose: () => 
   const [reference, setReference] = useState("");
   const [failureReason, setFailureReason] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [pending, setPending] = useState(false);
   const requestKey = useRef(crypto.randomUUID());
   const completionKey = useRef(crypto.randomUUID());
@@ -134,19 +162,38 @@ function RefundDialog({ order, onClose }: { order: PackageOrder; onClose: () => 
   };
   useEffect(() => { void load().catch((e: Error) => setError(e.message)); }, [order.id]);
 
-  async function action(path: string, body: object) {
-    setPending(true); setError("");
+  async function action(path: string, body: object, successMessage: string) {
+    setPending(true); setError(""); setSuccess("");
     try {
       const res = await fetch(`${API_BASE}/api/${path}`, { method: "POST", headers: makeHeaders(token), body: JSON.stringify(body) });
       const data = await res.json() as { refund?: PackageRefund; message?: string; error?: string };
       if (!res.ok) throw new Error(data.message ?? data.error ?? "Refund action failed");
       setOverview((current) => current ? { ...current, refund: data.refund ?? current.refund } : current);
+      setSuccess(successMessage);
     } catch (e) { setError(e instanceof Error ? e.message : "Refund action failed"); }
     finally { setPending(false); }
   }
-  if (!overview) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"><div className="rounded-xl p-6" style={{ background: BG_CARD }}>{error || "Loading refund eligibility…"}</div></div>;
+  if (!overview) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="w-full max-w-sm rounded-xl p-6 space-y-4" style={{ background: BG_CARD }} onClick={(e) => e.stopPropagation()}>
+      <p role={error ? "alert" : "status"} className={error ? "text-sm text-red-500" : "text-sm"}>{error || "Loading refund eligibility…"}</p>
+      {error && <button onClick={onClose} className="w-full rounded-lg px-3 py-2 text-sm font-semibold" style={{ background: BG_ROW }}>Close</button>}
+    </div>
+  </div>;
   const { eligibility, refund } = overview;
   const excludedCredits = (source: string) => eligibility.excludedLots.filter((lot) => lot.sourceType === source).reduce((sum, lot) => sum + lot.creditsRemaining, 0);
+  const eligibilityFailureReasons = [...new Set([
+    ...eligibility.integrityWarnings.map((warning) => refundReasonLabel(warning, REFUND_INTEGRITY_WARNING_LABELS)),
+    ...eligibility.excludedLots.map((lot) => refundReasonLabel(lot.reason ?? "", REFUND_EXCLUDED_LOT_REASON_LABELS)).filter(Boolean),
+  ])];
+  const reasonMissing = !reason.trim();
+  const requestDisabled = pending || !eligibility.eligible || reasonMissing;
+  const requestDisabledExplanation = pending
+    ? "Refund request is being submitted."
+    : reasonMissing
+      ? "Refund reason is required."
+      : !eligibility.eligible
+        ? "Refund eligibility requirements are not met."
+        : undefined;
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
     <div className="w-full max-w-lg rounded-2xl p-6 space-y-4" style={{ background: BG_CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
       <div><h2 className="text-lg font-bold">Package Refund</h2><p className="text-xs" style={{ color: MUTED }}>{order.studentName} · {order.packageName}</p></div>
@@ -157,16 +204,23 @@ function RefundDialog({ order, onClose }: { order: PackageOrder; onClose: () => 
         <div className="rounded-lg p-3" style={{ background: BG_ROW }}>Expired value <strong>{(eligibility.expiredValueMinor / 100).toFixed(2)} EGP</strong></div>
       </div>
       <p className="text-xs" style={{ color: MUTED }}>Excluded credits: bonus {excludedCredits("bonus")} · complimentary {excludedCredits("manual_complimentary")} · unknown {eligibility.excludedLots.filter((lot) => lot.reason === "unknown_value").reduce((s, l) => s + l.creditsRemaining, 0)}</p>
+      {!eligibility.eligible && <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-500">
+        <p className="font-semibold">Refund cannot be requested:</p>
+        <ul className="mt-1 list-disc space-y-1 pl-5">
+          {(eligibilityFailureReasons.length > 0 ? eligibilityFailureReasons : ["Refund eligibility requirements are not met."]).map((message) => <li key={message}>{message}</li>)}
+        </ul>
+      </div>}
       {refund && <div className="rounded-lg p-3 text-sm" style={{ background: `${STUDIO_CYAN}15` }}>Refund status: <strong>{refund.status}</strong></div>}
-      {!refund && <><textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Refund reason" className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }} /><select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }}><option value="original_payment_method">Original payment method</option><option value="cash">Cash</option></select></>}
+      {!refund && <><div><textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Refund reason" aria-invalid={reasonMissing} aria-describedby={reasonMissing ? "refund-reason-required" : undefined} className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }} />{reasonMissing && <p id="refund-reason-required" className="mt-1 text-xs text-amber-500">Refund reason is required.</p>}</div><select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }}><option value="original_payment_method">Original payment method</option><option value="cash">Cash</option></select></>}
       {(refund?.status === "approved" || refund?.status === "processing") && <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Payout transaction reference" className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }} />}
       {(refund?.status === "approved" || refund?.status === "processing") && <input value={failureReason} onChange={(e) => setFailureReason(e.target.value)} placeholder="Failure reason (if payout failed)" className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }} />}
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+      {success && <p role="status" className="text-sm text-green-500">{success}</p>}
       <div className="flex flex-wrap gap-2 justify-end">
         <button onClick={onClose} className="px-3 py-2 rounded-lg" style={{ background: BG_ROW }}>Close</button>
-        {!refund && <button disabled={pending || !eligibility.eligible || !reason.trim()} onClick={() => action(`admin/package-orders/${order.id}/refunds`, { refundMethod: method, requestedReason: reason, idempotencyKey: requestKey.current })} className="px-3 py-2 rounded-lg bg-cyan-600 text-white">Request refund</button>}
-        {refund?.status === "underReview" && <><button disabled={pending} onClick={() => action(`admin/package-refunds/${refund.id}/reject`, {})} className="px-3 py-2 rounded-lg bg-red-600 text-white">Reject</button><button disabled={pending} onClick={() => action(`admin/package-refunds/${refund.id}/approve`, {})} className="px-3 py-2 rounded-lg bg-green-600 text-white">Approve</button></>}
-        {(refund?.status === "approved" || refund?.status === "processing") && <><button disabled={pending || !failureReason.trim()} onClick={() => action(`admin/package-refunds/${refund.id}/fail`, { failedReason: failureReason })} className="px-3 py-2 rounded-lg bg-red-600 text-white">Mark failed</button><button disabled={pending || !reference.trim()} onClick={() => action(`admin/package-refunds/${refund.id}/complete`, { completionIdempotencyKey: completionKey.current, transactionReference: reference })} className="px-3 py-2 rounded-lg bg-green-600 text-white">Complete payout</button></>}
+        {!refund && <div className="flex flex-col items-end gap-1"><button disabled={requestDisabled} title={requestDisabledExplanation} onClick={() => action(`admin/package-orders/${order.id}/refunds`, { refundMethod: method, requestedReason: reason, idempotencyKey: requestKey.current }, "Refund request submitted for review.")} className="px-3 py-2 rounded-lg bg-cyan-600 text-white disabled:cursor-not-allowed disabled:opacity-50">{pending ? "Requesting…" : "Request refund"}</button>{requestDisabledExplanation && !pending && <p className="max-w-xs text-right text-xs" style={{ color: MUTED }}>{requestDisabledExplanation}</p>}</div>}
+        {refund?.status === "underReview" && <><button disabled={pending} onClick={() => action(`admin/package-refunds/${refund.id}/reject`, {}, "Refund request rejected.")} className="px-3 py-2 rounded-lg bg-red-600 text-white disabled:cursor-not-allowed disabled:opacity-50">Reject</button><button disabled={pending} onClick={() => action(`admin/package-refunds/${refund.id}/approve`, {}, "Refund request approved.")} className="px-3 py-2 rounded-lg bg-green-600 text-white disabled:cursor-not-allowed disabled:opacity-50">Approve</button></>}
+        {(refund?.status === "approved" || refund?.status === "processing") && <><button disabled={pending || !failureReason.trim()} onClick={() => action(`admin/package-refunds/${refund.id}/fail`, { failedReason: failureReason }, "Refund payout marked as failed.")} className="px-3 py-2 rounded-lg bg-red-600 text-white disabled:cursor-not-allowed disabled:opacity-50">Mark failed</button><button disabled={pending || !reference.trim()} onClick={() => action(`admin/package-refunds/${refund.id}/complete`, { completionIdempotencyKey: completionKey.current, transactionReference: reference }, "Refund payout completed.")} className="px-3 py-2 rounded-lg bg-green-600 text-white disabled:cursor-not-allowed disabled:opacity-50">Complete payout</button></>}
       </div>
     </div>
   </div>;
