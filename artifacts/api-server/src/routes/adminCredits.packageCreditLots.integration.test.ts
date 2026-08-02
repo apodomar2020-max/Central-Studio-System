@@ -127,16 +127,82 @@ test("manual paid requires explicit value and records purchase value basis", asy
   assert.equal(lot.value_basis, "recorded_purchase_price");
 });
 
-test("negative adjustment creates no lot and an exact retry is idempotent", async () => {
-  const id = await makeOrder("negative");
-  const body = { type: "manual_adjustment", delta: -2, idempotencyKey: crypto.randomUUID() };
-  assert.equal((await adjust(id, body)).status, 201);
-  assert.equal((await adjust(id, body)).status, 201);
-  assert.equal((await lots(id)).length, 0);
-  const order = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [id]);
-  assert.equal(order.rows[0].remaining_credits, 3);
-  const transactions = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1`, [id]);
-  assert.equal(transactions.rows[0].n, 1);
+test("negative adjustment reduces credit lots FIFO, creates single credit_transaction and manual_adjustment allocations", async () => {
+  const id = await makeOrder("negative-fifo", 0);
+  // Add Lot A (3 credits, paid 30,000 minor)
+  const addA = await adjust(id, {
+    type: "manual_adjustment", delta: 3, sourceType: "manual_paid", totalValueMinor: 30_000, idempotencyKey: crypto.randomUUID(),
+  });
+  assert.equal(addA.status, 201);
+
+  // Add Lot B (4 credits, complimentary)
+  const addB = await adjust(id, {
+    type: "manual_adjustment", delta: 4, sourceType: "manual_complimentary", idempotencyKey: crypto.randomUUID(),
+  });
+  assert.equal(addB.status, 201);
+
+  // Package order now has remaining_credits = 7, Lot A = 3, Lot B = 4
+  const body = { type: "manual_adjustment", delta: -5, idempotencyKey: crypto.randomUUID() };
+  const res1 = await adjust(id, body);
+  assert.equal(res1.status, 201);
+
+  // Idempotent retry returns 201
+  const res2 = await adjust(id, body);
+  assert.equal(res2.status, 201);
+
+  // Verify package_orders.remaining_credits = 2
+  const orderRes = await pool.query(`SELECT remaining_credits, status FROM package_orders WHERE id = $1`, [id]);
+  assert.equal(orderRes.rows[0].remaining_credits, 2);
+  assert.equal(orderRes.rows[0].status, "active");
+
+  // Verify lot balances: Lot A remaining = 0, Lot B remaining = 2, total sum = 2
+  const currentLots = await lots(id);
+  assert.equal(currentLots.length, 2);
+  assert.equal(currentLots[0].credits_remaining, 0); // Lot A completely deducted
+  assert.equal(currentLots[1].credits_remaining, 2); // Lot B partially deducted (4 - 2 = 2)
+
+  const lotSumRes = await pool.query(`SELECT SUM(credits_remaining)::int AS total FROM package_credit_lots WHERE package_order_id = $1`, [id]);
+  assert.equal(lotSumRes.rows[0].total, 2);
+  assert.equal(orderRes.rows[0].remaining_credits, lotSumRes.rows[0].total);
+
+  // Verify credit_transactions: 1 transaction for Lot A (+3), 1 for Lot B (+4), 1 for the negative adjustment (-5)
+  const txRes = await pool.query(`SELECT id, delta, type FROM credit_transactions WHERE package_order_id = $1 ORDER BY id`, [id]);
+  assert.equal(txRes.rows.length, 3);
+  const negTx = txRes.rows[2];
+  assert.equal(negTx.delta, -5);
+  assert.equal(negTx.type, "manual_adjustment");
+
+  // Verify package_credit_allocations: 2 allocation rows, both referencing negTx.id
+  const allocRes = await pool.query(
+    `SELECT lot_id, event_type, credits, total_value_minor, unit_value_minor, value_basis
+     FROM package_credit_allocations
+     WHERE credit_transaction_id = $1 ORDER BY id`,
+    [negTx.id],
+  );
+  assert.equal(allocRes.rows.length, 2);
+  assert.equal(allocRes.rows[0].lot_id, currentLots[0].id);
+  assert.equal(allocRes.rows[0].event_type, "manual_adjustment");
+  assert.equal(allocRes.rows[0].credits, 3);
+  assert.equal(allocRes.rows[0].total_value_minor, 30_000); // 100% of Lot A value
+  assert.equal(allocRes.rows[0].value_basis, "recorded_purchase_price");
+
+  assert.equal(allocRes.rows[1].lot_id, currentLots[1].id);
+  assert.equal(allocRes.rows[1].event_type, "manual_adjustment");
+  assert.equal(allocRes.rows[1].credits, 2);
+  assert.equal(allocRes.rows[1].total_value_minor, 0); // Complimentary Lot B
+});
+
+test("insufficient lot balance fails safely without mutating balances", async () => {
+  const id = await makeOrder("insufficient", 0);
+  await adjust(id, { type: "manual_adjustment", delta: 2, sourceType: "manual_complimentary", idempotencyKey: crypto.randomUUID() });
+
+  const failRes = await adjust(id, { type: "manual_adjustment", delta: -5, idempotencyKey: crypto.randomUUID() });
+  assert.equal(failRes.status, 400);
+
+  const orderRes = await pool.query(`SELECT remaining_credits FROM package_orders WHERE id = $1`, [id]);
+  assert.equal(orderRes.rows[0].remaining_credits, 2);
+  const lotSumRes = await pool.query(`SELECT SUM(credits_remaining)::int AS total FROM package_credit_lots WHERE package_order_id = $1`, [id]);
+  assert.equal(lotSumRes.rows[0].total, 2);
 });
 
 test("positive issuance rejects missing source and concurrent exact retries do not duplicate the lot", async () => {

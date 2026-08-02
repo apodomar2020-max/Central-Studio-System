@@ -150,30 +150,44 @@ const AdjustCreditsBody = zod.object({
     ctx.addIssue({ code: "custom", path: ["sourceType"], message: "package_bonus requires sourceType bonus" });
   }
   if (value.type === "manual_adjustment" && value.sourceType === "bonus") {
-    ctx.addIssue({ code: "custom", path: ["sourceType"], message: "Positive manual adjustments require manual_complimentary or manual_paid" });
-  }
-  if (value.sourceType === "manual_paid" && value.totalValueMinor == null) {
-    ctx.addIssue({ code: "custom", path: ["totalValueMinor"], message: "manual_paid credits require totalValueMinor" });
-  }
-  if (value.sourceType !== "manual_paid" && value.totalValueMinor != null) {
-    ctx.addIssue({ code: "custom", path: ["totalValueMinor"], message: "Only manual_paid credits may include totalValueMinor" });
+  delta: zod.number().int().refine((val) => val !== 0, { message: "delta cannot be 0" }),
+  sourceType: zod.enum(["manual_paid", "manual_complimentary", "bonus"]).optional(),
+  totalValueMinor: zod.number().int().min(0).optional(),
+  idempotencyKey: zod.string().min(1).max(255),
+  notes: zod.string().max(1000).optional(),
+}).superRefine((data, ctx) => {
+  if (data.delta > 0) {
+    if (!data.sourceType) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "sourceType is required when adding credits (delta > 0)",
+        path: ["sourceType"],
+      });
+    }
+    if (data.sourceType === "manual_paid" && data.totalValueMinor == null) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "totalValueMinor is required for manual_paid additions",
+        path: ["totalValueMinor"],
+      });
+    }
   }
 });
 
 router.post(
-  "/admin/package-orders/:id/credits",
+  "/admin/package-orders/:id/adjust-credits",
   requireAdminAuth,
   requireAdminPermission("credits", "adjust"),
   async (req: AdminRequest, res): Promise<void> => {
-    const params = AdjustCreditsParams.safeParse(req.params);
+    const params = AdjustCreditsParamsSchema.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
     }
 
-    const body = AdjustCreditsBody.safeParse(req.body);
+    const body = AdjustCreditsBodySchema.safeParse(req.body);
     if (!body.success) {
-      res.status(400).json({ error: body.error.message });
+      res.status(400).json({ error: body.error.flatten() });
       return;
     }
 
@@ -184,12 +198,8 @@ router.post(
 
     try {
       const result = await db.transaction(async (tx) => {
-        // Serialize equal request keys even when retries arrive concurrently.
-        // The exact key is also persisted on credit_transactions so retries
-        // after commit can return the original write without changing balance.
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`${id}:${idempotencyKey}`}, 0))`);
 
-        // Step 1 — Lock the order row
         const [order] = await tx
           .select()
           .from(packageOrdersTable)
@@ -214,11 +224,16 @@ router.post(
             .from(packageCreditLotsTable)
             .where(eq(packageCreditLotsTable.issuingCreditTransactionId, existingTransaction.id))
             .limit(1);
+          const [existingAllocation] = await tx
+            .select()
+            .from(packageCreditAllocationsTable)
+            .where(eq(packageCreditAllocationsTable.creditTransactionId, existingTransaction.id))
+            .limit(1);
           const expectedLotValue = sourceType === "manual_paid" ? totalValueMinor : delta > 0 ? 0 : undefined;
           const requestMatches = existingTransaction.type === type
             && existingTransaction.delta === delta
             && (delta < 0
-              ? existingLot == null
+              ? existingAllocation != null
               : existingLot?.sourceType === sourceType && existingLot.totalValueMinor === expectedLotValue);
           if (!requestMatches) {
             throw new ExposableHttpError(409, "Idempotency key was already used for a different credit adjustment");
@@ -237,7 +252,31 @@ router.post(
           throw new ExposableHttpError(400, `Cannot remove ${Math.abs(delta)} credits — only ${order.remainingCredits} remaining`);
         }
 
-        // Step 2 — Determine new status
+        // Step 2 — Handle delta < 0 credit lot reduction and allocation
+        let activeLots: Array<typeof packageCreditLotsTable.$inferSelect> = [];
+        if (delta < 0) {
+          const neededDeduct = Math.abs(delta);
+          activeLots = await tx
+            .select()
+            .from(packageCreditLotsTable)
+            .where(and(
+              eq(packageCreditLotsTable.packageOrderId, id),
+              gt(packageCreditLotsTable.creditsRemaining, 0),
+            ))
+            .orderBy(
+              sql`${packageCreditLotsTable.expiresAt} asc nulls last`,
+              asc(packageCreditLotsTable.createdAt),
+              asc(packageCreditLotsTable.id),
+            )
+            .for("update");
+
+          const totalAvailableLotCredits = activeLots.reduce((sum, lot) => sum + lot.creditsRemaining, 0);
+          if (neededDeduct > totalAvailableLotCredits) {
+            throw new ExposableHttpError(400, `Cannot remove ${neededDeduct} credits — only ${totalAvailableLotCredits} remaining across credit lots`);
+          }
+        }
+
+        // Step 3 — Determine new status
         let newStatus = order.status;
         if (newRemaining <= 0) {
           newStatus = "fullyUsed";
@@ -246,14 +285,14 @@ router.post(
           newStatus = "active";
         }
 
-        // Step 3 — Update packageOrders
+        // Step 4 — Update packageOrders
         const [updated] = await tx
           .update(packageOrdersTable)
           .set({ remainingCredits: newRemaining, status: newStatus })
           .where(eq(packageOrdersTable.id, id))
           .returning();
 
-        // Step 4 — Append immutable ledger row
+        // Step 5 — Append single immutable ledger transaction row
         const [transaction] = await tx
           .insert(creditTransactionsTable)
           .values({
@@ -283,6 +322,54 @@ router.post(
             createdBy: adminEmail,
             notes: notes ?? null,
           });
+        } else if (delta < 0) {
+          let remainingToDeduct = Math.abs(delta);
+          for (const lot of activeLots) {
+            if (remainingToDeduct <= 0) break;
+            const deductCount = Math.min(lot.creditsRemaining, remainingToDeduct);
+
+            let allocatedTotalValueMinor = 0;
+            let unitValueMinor: number | null = null;
+            if (lot.totalValueMinor != null && lot.creditsIssued > 0) {
+              const consumedBefore = BigInt(lot.creditsIssued - lot.creditsRemaining);
+              const consumedAfter = consumedBefore + BigInt(deductCount);
+              const value = BigInt(lot.totalValueMinor);
+              const issued = BigInt(lot.creditsIssued);
+              const valStart = (value * consumedBefore) / issued;
+              const valEnd = (value * consumedAfter) / issued;
+              allocatedTotalValueMinor = Number(valEnd - valStart);
+              unitValueMinor = deductCount === 1 ? allocatedTotalValueMinor : null;
+            }
+
+            const [updatedLot] = await tx
+              .update(packageCreditLotsTable)
+              .set({ creditsRemaining: lot.creditsRemaining - deductCount })
+              .where(and(
+                eq(packageCreditLotsTable.id, lot.id),
+                eq(packageCreditLotsTable.creditsRemaining, lot.creditsRemaining),
+              ))
+              .returning({ id: packageCreditLotsTable.id });
+
+            if (!updatedLot) {
+              throw new ExposableHttpError(409, "Credit lot changed during manual credit adjustment");
+            }
+
+            await tx.insert(packageCreditAllocationsTable).values({
+              lotId: lot.id,
+              eventType: "manual_adjustment",
+              creditTransactionId: transaction.id,
+              packageOrderId: id,
+              credits: deductCount,
+              unitValueMinor,
+              totalValueMinor: allocatedTotalValueMinor,
+              valueBasis: allocatedTotalValueMinor > 0 ? lot.valueBasis : "unknown",
+              policyVersion: "manual_adjustment_v1_expiry_fifo",
+              createdBy: adminEmail,
+              notes: notes ?? null,
+            });
+
+            remainingToDeduct -= deductCount;
+          }
         }
 
         await createStudentNotification(tx, {

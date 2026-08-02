@@ -14,6 +14,7 @@ export const PACKAGE_CREDIT_ALLOCATION_EVENT_TYPES = [
   "expiration",
   "reversal",
   "refund_retirement",
+  "manual_adjustment",
 ] as const;
 
 /**
@@ -43,7 +44,7 @@ export const packageCreditAllocationsTable = pgTable("package_credit_allocations
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   notes: text("notes"),
 }, (table) => ([
-  uniqueIndex("package_credit_allocations_credit_transaction_unique").on(table.creditTransactionId),
+  index("package_credit_allocations_credit_transaction_id_idx").on(table.creditTransactionId),
   uniqueIndex("package_credit_allocations_consumption_attendance_unique")
     .on(table.attendanceId)
     .where(sql`${table.eventType} = 'consumption' and ${table.attendanceId} is not null`),
@@ -57,7 +58,7 @@ export const packageCreditAllocationsTable = pgTable("package_credit_allocations
   index("package_credit_allocations_package_order_id_idx").on(table.packageOrderId),
   index("package_credit_allocations_schedule_id_idx").on(table.scheduleId),
   index("package_credit_allocations_branch_id_idx").on(table.branchId),
-  check("package_credit_allocations_event_type_check", sql`${table.eventType} in ('consumption','expiration','reversal','refund_retirement')`),
+  check("package_credit_allocations_event_type_check", sql`${table.eventType} in ('consumption','expiration','reversal','refund_retirement','manual_adjustment')`),
   check("package_credit_allocations_credits_positive_check", sql`${table.credits} > 0`),
   check("package_credit_allocations_total_value_non_negative_check", sql`${table.totalValueMinor} >= 0`),
   check("package_credit_allocations_value_basis_check", sql`${table.valueBasis} in ('recorded_purchase_price','estimated_catalog_price','unknown')`),

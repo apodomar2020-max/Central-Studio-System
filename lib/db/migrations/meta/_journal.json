@@ -687,6 +687,13 @@
       "when": 1786204800000,
       "tag": "0098_attendance_reversal_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1786291200000,
+      "tag": "0086_package_credit_allocations_manual_adjustment",
+      "breakpoints": true
     }
   ]
 }
