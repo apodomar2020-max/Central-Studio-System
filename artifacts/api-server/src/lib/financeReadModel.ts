@@ -43,6 +43,7 @@ export const FINANCE_ID_PREFIXES = {
   bookings: "bk",
   ballet_payments: "bp",
   ballet_refunds: "br",
+  payment_refunds: "pf",
   promotion_redemptions: "pr",
   credit_transactions: "ct",
 } as const;
@@ -974,7 +975,143 @@ export function mapBalletRefund(row: BalletRefundSourceRow): UnifiedFinanceTrans
   };
 }
 
-// ─── F. Promotion discount (promotion_redemptions) ────────────────────────────
+// ─── F. Package refund (payment_refunds) ─────────────────────────────────────
+
+export interface PackageRefundSourceRow {
+  id: number;
+  status: string;
+  requestedAmountMinor: number;
+  approvedAmountMinor: number | null;
+  refundedAmountMinor: number | null;
+  refundMethod: string;
+  requestedReason: string;
+  transactionReference: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  processedAt: string | null;
+  requestedByAdminId: number | null;
+  reviewedByAdminId: number | null;
+  processedByAdminId: number | null;
+  requestedByAdminEmail: string | null;
+  reviewedByAdminEmail: string | null;
+  processedByAdminEmail: string | null;
+  originalPaymentMethod: string | null;
+  originalPaymentAmountMinor: number | null;
+  packageOrderId: number;
+  packageId: number | null;
+  packageName: string;
+  studentId: number | null;
+  studentName: string;
+  studentEmail: string;
+  studentPhone: string | null;
+  participantType: string | null;
+  participantChildId: number | null;
+  participantName: string | null;
+}
+
+function minorToEgpOrNull(value: number | null): number | null {
+  return value == null || !Number.isFinite(value) ? null : value / 100;
+}
+
+/**
+ * Normalize the existing package-refund lifecycle without recalculating it.
+ * Requested/approved amounts remain exposure; only a refunded row with stored
+ * completion evidence becomes a cash outflow.
+ */
+export function mapPackageRefund(row: PackageRefundSourceRow): UnifiedFinanceTransaction {
+  const completed = row.status === "refunded"
+    && row.processedAt != null
+    && (row.refundedAmountMinor ?? 0) > 0;
+  const requested = minorToEgpOrNull(row.requestedAmountMinor);
+  const approved = minorToEgpOrNull(row.approvedAmountMinor);
+  const refunded = minorToEgpOrNull(row.refundedAmountMinor);
+  const amounts = emptyAmounts();
+  amounts.requestedRefundAmountEgp = requested;
+  amounts.approvedRefundAmountEgp = approved;
+  amounts.grossAmountEgp = minorToEgpOrNull(row.originalPaymentAmountMinor);
+  if (completed && refunded != null) {
+    amounts.refundedAmountEgp = refunded;
+    amounts.amountEgp = refunded;
+    amounts.netAmountEgp = -refunded;
+  }
+
+  const effectivePaymentMethod = row.refundMethod === "original_payment_method"
+    ? row.originalPaymentMethod
+    : row.refundMethod;
+  const approvedAt = ["approved", "processing", "refunded"].includes(row.status)
+    ? row.reviewedAt
+    : null;
+
+  return {
+    id: financeEventId(FINANCE_ID_PREFIXES.payment_refunds, row.id),
+    eventType: "package_refund",
+    eventNature: "cash_outflow",
+    sourceTable: "payment_refunds",
+    sourceId: row.id,
+    amounts,
+    amountAvailability: "exact",
+    amountSource: "package_refund_snapshot",
+    credit: emptyCredit(),
+    paymentStatus: null,
+    refundStatus: normalizeRefundStatus(row.status),
+    rawSourceStatus: row.status,
+    rawPaymentMethod: effectivePaymentMethod,
+    normalizedPaymentMethod: normalizePaymentRecordMethod(effectivePaymentMethod),
+    occurredAt: row.processedAt ?? row.reviewedAt ?? row.createdAt,
+    paidAt: null,
+    refundedAt: completed ? row.processedAt : null,
+    customer: {
+      studentId: row.studentId,
+      name: textOrNull(row.studentName),
+      email: textOrNull(row.studentEmail),
+      phone: textOrNull(row.studentPhone),
+      participantScope: row.participantType === "self" || row.participantType === "child"
+        ? row.participantType
+        : "unknown",
+      childId: row.participantType === "child" ? row.participantChildId : null,
+      childName: row.participantType === "child" ? textOrNull(row.participantName) : null,
+    },
+    references: {
+      bookingId: null,
+      attendanceId: null,
+      packageOrderId: row.packageOrderId,
+      packageId: row.packageId,
+      packageName: row.packageName,
+      balletApplicationId: null,
+      balletPaymentId: null,
+      balletRefundId: null,
+      paymentRefundId: row.id,
+      promotionRedemptionId: null,
+      creditTransactionId: null,
+    },
+    scheduleContext: null,
+    actor:
+      row.processedByAdminId != null || row.processedByAdminEmail != null
+        ? { adminId: row.processedByAdminId, adminEmail: textOrNull(row.processedByAdminEmail) }
+        : row.reviewedByAdminId != null || row.reviewedByAdminEmail != null
+          ? { adminId: row.reviewedByAdminId, adminEmail: textOrNull(row.reviewedByAdminEmail) }
+          : row.requestedByAdminId != null || row.requestedByAdminEmail != null
+            ? { adminId: row.requestedByAdminId, adminEmail: textOrNull(row.requestedByAdminEmail) }
+            : null,
+    providerReference: textOrNull(row.transactionReference),
+    refundDetails: {
+      reason: textOrNull(row.requestedReason),
+      requestedAt: row.createdAt,
+      approvedAt,
+      completedAt: completed ? row.processedAt : null,
+    },
+    reliability: completed
+      ? reliability("recorded_refund")
+      : {
+        badge: "recorded_refund",
+        explanation:
+          "Requested and approved amounts are stored exactly as recorded, but this package refund has not completed — no cash has been paid out yet.",
+      },
+    sourceDeepLink: "/package-orders",
+  };
+}
+
+// ─── G. Promotion discount (promotion_redemptions) ────────────────────────────
 
 export interface PromotionRedemptionSourceRow {
   id: number;
@@ -1207,6 +1344,7 @@ export function familyForEventType(eventType: FinanceEventType): FinanceSourceFa
     case "studio_walkin_payment": return "walkin_payments";
     case "ballet_payment": return "ballet_payments";
     case "ballet_refund": return "ballet_refunds";
+    case "package_refund": return "package_refunds";
     case "promotion_discount": return "discounts";
     case "package_credit_issuance":
     case "package_credit_consumption":

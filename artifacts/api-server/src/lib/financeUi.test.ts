@@ -498,10 +498,20 @@ test("all five source-filtered pages reuse the shared view with a locked scope",
     assert.match(sourcePages, new RegExp(`export function ${component}`), `missing ${component}`);
     assert.ok(sourcePages.includes(`"${family}"`), `${component} does not lock ${family}`);
   }
+  assert.ok(sourcePages.includes('"package_refunds"'), "FinanceRefundsPage does not include package refunds");
   // Exactly one table implementation exists, and the scoped pages go through it.
   assert.match(sourcePages, /<FinanceTransactionsView/);
   assert.doesNotMatch(sourcePages, /<Table>/, "a scoped page duplicates the table");
   assert.doesNotMatch(sourcePages, /useQuery/, "a scoped page duplicates the query");
+});
+
+test("Refunds & Cancellations explicitly requests both package and Ballet refund sources", () => {
+  const refundPage = sourcePages.slice(
+    sourcePages.indexOf("export function FinanceRefundsPage"),
+    sourcePages.indexOf("export function FinanceDiscountsPage"),
+  );
+  assert.match(refundPage, /lockedFamilies=\{\["ballet_refunds", "package_refunds"\]\}/);
+  assert.match(refundPage, /allowedEventTypes=\{\["ballet_refund", "package_refund"\]\}/);
 });
 
 test("the reusable view is the only place the transactions table is built", () => {

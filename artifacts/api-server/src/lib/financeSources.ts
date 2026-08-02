@@ -39,6 +39,7 @@ import {
   classPricingSettingsTable,
   creditTransactionsTable,
   packageOrdersTable,
+  paymentRefundsTable,
   paymentRecordsTable,
   pricePackagesTable,
   promotionRedemptionsTable,
@@ -67,6 +68,7 @@ import {
   mapBookingPayment,
   mapCreditTransaction,
   mapPackagePurchase,
+  mapPackageRefund,
   mapPromotionDiscount,
 } from "./financeReadModel";
 
@@ -207,6 +209,7 @@ const REFUND_COMPLETED = sql`(
 const OCCURRED_PACKAGE_ORDER = sql`coalesce(${packageOrdersTable.activatedAt}, ${packageOrdersTable.createdAt})`;
 const OCCURRED_BALLET_PAYMENT = sql`coalesce(${balletPaymentsTable.paidAt}, ${balletPaymentsTable.createdAt})`;
 const OCCURRED_BALLET_REFUND = sql`coalesce(${balletRefundsTable.processedAt}, ${balletRefundsTable.reviewedAt}, ${balletRefundsTable.createdAt})`;
+const OCCURRED_PACKAGE_REFUND = sql`coalesce(${paymentRefundsTable.processedAt}, ${paymentRefundsTable.reviewedAt}, ${paymentRefundsTable.createdAt})`;
 
 function dateRange(expression: SQL, filters: FinanceTransactionFilters): SQL | undefined {
   const conditions: SQL[] = [];
@@ -779,6 +782,142 @@ const balletRefunds: FinanceFamilyDescriptor = {
   },
 };
 
+// ─── Family: package refunds (payment_refunds) ────────────────────────────────
+
+const packageRefundRequester = alias(systemUsersTable, "finance_package_refund_requester");
+const packageRefundReviewer = alias(systemUsersTable, "finance_package_refund_reviewer");
+const packageRefundProcessor = alias(systemUsersTable, "finance_package_refund_processor");
+
+const packageRefunds: FinanceFamilyDescriptor = {
+  family: "package_refunds",
+  eventTypes: ["package_refund"],
+  plan(filters) {
+    if (
+      excludedBy(filters.eventTypes, this.eventTypes) ||
+      filters.paymentStatuses.length > 0 ||
+      excludedBy(filters.paymentMethods, ["cash", "card", "kashier", "bank_transfer", "unknown"]) ||
+      excludedBy(filters.amountAvailabilities, ["exact"]) ||
+      excludedBy(filters.reliabilityBadges, ["recorded_refund"])
+    ) {
+      return { where: null };
+    }
+
+    const conditions: Array<SQL | undefined> = [
+      eq(paymentRecordsTable.flowType, "package_purchase"),
+      dateRange(OCCURRED_PACKAGE_REFUND, filters),
+    ];
+
+    if (filters.refundStatuses.length > 0) {
+      conditions.push(inArray(paymentRefundsTable.status, filters.refundStatuses));
+    }
+
+    if (filters.paymentMethods.length > 0) {
+      const branches: SQL[] = [];
+      for (const method of filters.paymentMethods) {
+        if (method === "cash") {
+          branches.push(or(
+            eq(paymentRefundsTable.refundMethod, "cash"),
+            and(
+              eq(paymentRefundsTable.refundMethod, "original_payment_method"),
+              eq(paymentRecordsTable.confirmedPaymentMethod, "cash"),
+            ),
+          )!);
+        } else if (method === "card" || method === "kashier" || method === "bank_transfer") {
+          branches.push(and(
+            eq(paymentRefundsTable.refundMethod, "original_payment_method"),
+            eq(paymentRecordsTable.confirmedPaymentMethod, method),
+          )!);
+        } else if (method === "unknown") {
+          branches.push(and(
+            eq(paymentRefundsTable.refundMethod, "original_payment_method"),
+            or(
+              sql`${paymentRecordsTable.confirmedPaymentMethod} is null`,
+              eq(paymentRecordsTable.confirmedPaymentMethod, "unknown"),
+            ),
+          )!);
+        }
+      }
+      const combined = branches.length === 1 ? branches[0] : or(...branches);
+      if (combined) conditions.push(combined);
+    }
+
+    const search = parseSearch(filters.search);
+    if (search) {
+      if (search.idPrefix != null) {
+        conditions.push(
+          search.idPrefix === "pf" ? eq(paymentRefundsTable.id, search.numericId!) : sql`false`,
+        );
+      } else if (search.numericId != null) {
+        conditions.push(eq(paymentRefundsTable.id, search.numericId));
+      } else {
+        const pattern = likePattern(search.raw);
+        conditions.push(or(
+          sql`${packageOrdersTable.studentName} ilike ${pattern}`,
+          sql`${packageOrdersTable.studentEmail} ilike ${pattern}`,
+          sql`${packageOrdersTable.studentPhone} ilike ${pattern}`,
+          sql`${packageOrdersTable.packageName} ilike ${pattern}`,
+          sql`${paymentRefundsTable.transactionReference} ilike ${pattern}`,
+        ));
+      }
+    }
+
+    return { where: all(...conditions) };
+  },
+  async count(where) {
+    const [row] = await db
+      .select({ total: count() })
+      .from(paymentRefundsTable)
+      .innerJoin(paymentRecordsTable, eq(paymentRefundsTable.paymentRecordId, paymentRecordsTable.id))
+      .innerJoin(packageOrdersTable, eq(paymentRecordsTable.packageOrderId, packageOrdersTable.id))
+      .where(where);
+    return Number(row?.total ?? 0);
+  },
+  async fetch(where, take) {
+    const rows = await db
+      .select({
+        id: paymentRefundsTable.id,
+        status: paymentRefundsTable.status,
+        requestedAmountMinor: paymentRefundsTable.requestedAmountMinor,
+        approvedAmountMinor: paymentRefundsTable.approvedAmountMinor,
+        refundedAmountMinor: paymentRefundsTable.refundedAmountMinor,
+        refundMethod: paymentRefundsTable.refundMethod,
+        requestedReason: paymentRefundsTable.requestedReason,
+        transactionReference: paymentRefundsTable.transactionReference,
+        createdAt: paymentRefundsTable.createdAt,
+        reviewedAt: paymentRefundsTable.reviewedAt,
+        processedAt: paymentRefundsTable.processedAt,
+        requestedByAdminId: paymentRefundsTable.requestedByAdminId,
+        reviewedByAdminId: paymentRefundsTable.reviewedByAdminId,
+        processedByAdminId: paymentRefundsTable.processedByAdminId,
+        requestedByAdminEmail: packageRefundRequester.email,
+        reviewedByAdminEmail: packageRefundReviewer.email,
+        processedByAdminEmail: packageRefundProcessor.email,
+        originalPaymentMethod: paymentRecordsTable.confirmedPaymentMethod,
+        originalPaymentAmountMinor: paymentRecordsTable.paidAmountMinor,
+        packageOrderId: packageOrdersTable.id,
+        packageId: packageOrdersTable.packageId,
+        packageName: packageOrdersTable.packageName,
+        studentId: packageOrdersTable.studentId,
+        studentName: packageOrdersTable.studentName,
+        studentEmail: packageOrdersTable.studentEmail,
+        studentPhone: packageOrdersTable.studentPhone,
+        participantType: packageOrdersTable.participantType,
+        participantChildId: packageOrdersTable.participantChildId,
+        participantName: packageOrdersTable.participantNameSnapshot,
+      })
+      .from(paymentRefundsTable)
+      .innerJoin(paymentRecordsTable, eq(paymentRefundsTable.paymentRecordId, paymentRecordsTable.id))
+      .innerJoin(packageOrdersTable, eq(paymentRecordsTable.packageOrderId, packageOrdersTable.id))
+      .leftJoin(packageRefundRequester, eq(paymentRefundsTable.requestedByAdminId, packageRefundRequester.id))
+      .leftJoin(packageRefundReviewer, eq(paymentRefundsTable.reviewedByAdminId, packageRefundReviewer.id))
+      .leftJoin(packageRefundProcessor, eq(paymentRefundsTable.processedByAdminId, packageRefundProcessor.id))
+      .where(where)
+      .orderBy(sql`${OCCURRED_PACKAGE_REFUND} desc`, sql`${paymentRefundsTable.id} desc`)
+      .limit(take);
+    return rows.map(mapPackageRefund);
+  },
+};
+
 // ─── Family: promotion discounts (promotion_redemptions) ──────────────────────
 
 const discounts: FinanceFamilyDescriptor = {
@@ -988,6 +1127,7 @@ export const FINANCE_FAMILY_DESCRIPTORS: readonly FinanceFamilyDescriptor[] = [
   bookingFamily("walkin_payments"),
   balletPayments,
   balletRefunds,
+  packageRefunds,
   discounts,
   packageCredits,
 ];

@@ -51,6 +51,7 @@ test("search parses synthetic ids, bare ids and free text distinctly", async () 
   assert.deepEqual(parseSearch("bp:41"), { raw: "bp:41", idPrefix: "bp", numericId: 41 });
   // Tolerant of spacing and case, since admins copy ids by hand.
   assert.deepEqual(parseSearch("BP : 41"), { raw: "BP : 41", idPrefix: "bp", numericId: 41 });
+  assert.deepEqual(parseSearch("pf:6"), { raw: "pf:6", idPrefix: "pf", numericId: 6 });
   assert.deepEqual(parseSearch("41"), { raw: "41", idPrefix: null, numericId: 41 });
   assert.deepEqual(parseSearch("nour@example.com"), {
     raw: "nour@example.com", idPrefix: null, numericId: null,
@@ -79,15 +80,16 @@ test("filtering by payment status excludes families that have no payment status"
   assert.ok(!families.includes("package_purchases"));
   // Refunds, discounts and credits have no payment status either.
   assert.ok(!families.includes("ballet_refunds"));
+  assert.ok(!families.includes("package_refunds"));
   assert.ok(!families.includes("discounts"));
   assert.ok(!families.includes("package_credits"));
   // The two that do carry one survive.
   assert.deepEqual(families, ["class_payments", "walkin_payments", "ballet_payments"]);
 });
 
-test("filtering by refund status leaves only the Ballet refund family", async () => {
+test("filtering by refund status leaves only refund families", async () => {
   const families = await plannedFamilies(noFilters({ refundStatuses: ["approved"] }));
-  assert.deepEqual(families, ["ballet_refunds"]);
+  assert.deepEqual(families, ["ballet_refunds", "package_refunds"]);
 });
 
 // ─── Payment method filters ───────────────────────────────────────────────────
@@ -99,11 +101,11 @@ test("payment method filters narrow to the families that can record that method"
   );
   assert.deepEqual(
     await plannedFamilies(noFilters({ paymentMethods: ["kashier"] })),
-    ["ballet_payments", "ballet_refunds"],
+    ["ballet_payments", "ballet_refunds", "package_refunds"],
   );
   assert.deepEqual(
     await plannedFamilies(noFilters({ paymentMethods: ["bank_transfer"] })),
-    ["ballet_payments", "ballet_refunds"],
+    ["ballet_payments", "ballet_refunds", "package_refunds"],
   );
   // package_credit only ever describes a credit-ledger event.
   assert.deepEqual(
@@ -121,7 +123,7 @@ test("reliability filters select exactly the families that can produce that badg
   );
   assert.deepEqual(
     await plannedFamilies(noFilters({ reliabilityBadges: ["recorded_refund"] })),
-    ["ballet_refunds"],
+    ["ballet_refunds", "package_refunds"],
   );
   assert.deepEqual(
     await plannedFamilies(noFilters({ reliabilityBadges: ["recorded_discount"] })),
@@ -179,6 +181,7 @@ test("event type filters map one-to-one onto families", async () => {
     studio_walkin_payment: ["walkin_payments"],
     ballet_payment: ["ballet_payments"],
     ballet_refund: ["ballet_refunds"],
+    package_refund: ["package_refunds"],
     promotion_discount: ["discounts"],
     package_credit_issuance: ["package_credits"],
     package_credit_consumption: ["package_credits"],

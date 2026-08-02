@@ -51,6 +51,7 @@ export const FINANCE_EVENT_TYPES = [
   "studio_walkin_payment",
   "ballet_payment",
   "ballet_refund",
+  "package_refund",
   "promotion_discount",
   "package_credit_issuance",
   "package_credit_consumption",
@@ -89,6 +90,7 @@ export type FinanceAmountAvailability = (typeof FINANCE_AMOUNT_AVAILABILITIES)[n
 export const FINANCE_AMOUNT_SOURCES = [
   "ballet_payment_snapshot",
   "ballet_refund_snapshot",
+  "package_refund_snapshot",
   "promotion_redemption_snapshot",
   /** Canonical payment_records creation-time snapshot (Phase 2B writers). */
   "payment_record_snapshot",
@@ -129,6 +131,7 @@ export const FINANCE_SOURCE_TABLES = [
   "bookings",
   "ballet_payments",
   "ballet_refunds",
+  "payment_refunds",
   "promotion_redemptions",
   "credit_transactions",
 ] as const;
@@ -223,8 +226,19 @@ export interface UnifiedFinanceReferences {
   balletPaymentId: number | null;
   balletRefundId: number | null;
 
+  /** Present for package refunds sourced from payment_refunds. */
+  paymentRefundId?: number | null;
+
   promotionRedemptionId: number | null;
   creditTransactionId: number | null;
+}
+
+/** Read-only lifecycle evidence carried by refund events. */
+export interface UnifiedFinanceRefundDetails {
+  reason: string | null;
+  requestedAt: string | null;
+  approvedAt: string | null;
+  completedAt: string | null;
 }
 
 export interface UnifiedFinanceScheduleContext {
@@ -302,6 +316,9 @@ export interface UnifiedFinanceTransaction {
    */
   providerReference: string | null;
 
+  /** Refund-only audit metadata; omitted for non-refund events. */
+  refundDetails?: UnifiedFinanceRefundDetails | null;
+
   reliability: UnifiedFinanceReliability;
 
   /** Route into the existing operational page that owns this record. */
@@ -321,6 +338,7 @@ export const FINANCE_SOURCE_FAMILIES = [
   "walkin_payments",
   "ballet_payments",
   "ballet_refunds",
+  "package_refunds",
   "discounts",
   "package_credits",
 ] as const;
@@ -335,6 +353,7 @@ export const FINANCE_FAMILY_PERMISSIONS: Readonly<
   walkin_payments: ["attendance", "view"],
   ballet_payments: ["ballet.payments", "view"],
   ballet_refunds: ["ballet.payments", "view"],
+  package_refunds: ["packageOrders", "view"],
   discounts: ["promotions", "view"],
   package_credits: ["credits", "history"],
 };
@@ -348,6 +367,7 @@ export const FINANCE_FAMILY_EVENT_TYPES: Readonly<
   walkin_payments: ["studio_walkin_payment"],
   ballet_payments: ["ballet_payment"],
   ballet_refunds: ["ballet_refund"],
+  package_refunds: ["package_refund"],
   discounts: ["promotion_discount"],
   package_credits: [
     "package_credit_issuance",
@@ -443,6 +463,7 @@ export const FINANCE_EVENT_TYPE_LABELS: Readonly<Record<FinanceEventType, string
   studio_walkin_payment: "Studio Walk-in Payment",
   ballet_payment: "Ballet Payment",
   ballet_refund: "Ballet Refund",
+  package_refund: "Package Refund",
   promotion_discount: "Promotion Discount",
   package_credit_issuance: "Package Credit Issued",
   package_credit_consumption: "Package Credit Used",
@@ -491,6 +512,7 @@ export const FINANCE_SOURCE_FAMILY_LABELS: Readonly<Record<FinanceSourceFamily, 
   walkin_payments: "Studio Walk-ins",
   ballet_payments: "Ballet Payments",
   ballet_refunds: "Ballet Refunds",
+  package_refunds: "Package Refunds",
   discounts: "Discounts",
   package_credits: "Package Credits",
 };

@@ -58,9 +58,13 @@ export function resolveVisibleFamilies(subject: FinanceAccessSubject): FinanceSo
 
 /** Every (module, action) pair that would grant at least some Finance access. */
 export function financeRequiredPermissions(): Array<{ module: string; action: string }> {
-  return FINANCE_SOURCE_FAMILIES.map((family) => {
+  const seen = new Set<string>();
+  return FINANCE_SOURCE_FAMILIES.flatMap((family) => {
     const [module, action] = FINANCE_FAMILY_PERMISSIONS[family];
-    return { module, action };
+    const key = `${module}.${action}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ module, action }];
   });
 }
 
@@ -71,6 +75,7 @@ export const FINANCE_NATURE_BY_EVENT_TYPE: Readonly<Record<FinanceEventType, Fin
   studio_walkin_payment: "operational_estimate",
   ballet_payment: "cash_inflow",
   ballet_refund: "cash_outflow",
+  package_refund: "cash_outflow",
   promotion_discount: "discount",
   package_credit_issuance: "service_credit",
   package_credit_consumption: "service_credit",
@@ -86,6 +91,7 @@ export const FINANCE_FAMILIES_BY_SOURCE_TABLE: Readonly<
   bookings: ["class_payments", "walkin_payments"],
   ballet_payments: ["ballet_payments"],
   ballet_refunds: ["ballet_refunds"],
+  payment_refunds: ["package_refunds"],
   promotion_redemptions: ["discounts"],
   credit_transactions: ["package_credits"],
 };
@@ -108,7 +114,10 @@ export interface FinanceScope {
  * wrapper is the explicit contract for Finance Transactions and exports.
  */
 export const MONETARY_FINANCE_FAMILIES = FINANCE_SOURCE_FAMILIES.filter(
-  (family): family is Exclude<FinanceSourceFamily, "package_credits"> => family !== "package_credits",
+  (
+    family,
+  ): family is Exclude<FinanceSourceFamily, "package_credits" | "package_refunds"> =>
+    family !== "package_credits" && family !== "package_refunds",
 );
 
 export const MONETARY_FINANCE_EVENT_TYPES = MONETARY_FINANCE_FAMILIES.flatMap(
@@ -119,9 +128,22 @@ export function resolveMonetaryRequestScope(
   request: FinanceScopeRequest,
   visibleFamilies: readonly FinanceSourceFamily[],
 ): FinanceScope {
+  // Package refunds are an opt-in read source for Refunds & Cancellations.
+  // The general Transactions feed already represents the refunded package
+  // payment through payment_records, so including this lifecycle row in the
+  // default scope would duplicate it there. Explicit family/event/source
+  // filters still make the row available to the dedicated refunds view.
+  const packageRefundsRequested =
+    request.family.includes("package_refunds") ||
+    request.eventType.includes("package_refund") ||
+    request.source.includes("payment_refunds");
   return resolveRequestScope(
     request,
-    visibleFamilies.filter((family) => family !== "package_credits"),
+    visibleFamilies.filter(
+      (family) =>
+        family !== "package_credits" &&
+        (family !== "package_refunds" || packageRefundsRequested),
+    ),
   );
 }
 

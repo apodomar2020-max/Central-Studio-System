@@ -81,6 +81,14 @@ test("Phase 1 introduces no new permission codes — every family reuses a catal
   }
 });
 
+test("shared family permissions are reported once in access-denied guidance", async () => {
+  const { financeRequiredPermissions } = await loadAccess();
+  const required = financeRequiredPermissions();
+  const keys = required.map(({ module, action }) => `${module}.${action}`);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.equal(keys.filter((key) => key === "packageOrders.view").length, 1);
+});
+
 // ─── Cross-source leakage ─────────────────────────────────────────────────────
 
 test("Bookings-only admin receives no Ballet payment or refund event types", async () => {
@@ -135,7 +143,7 @@ test("legacy permission aliases still grant Finance visibility", async () => {
   // packageOrders declares the legacy alias `package_orders`; roles that were
   // never migrated must not silently lose Finance access.
   const visible = resolveVisibleFamilies(admin({ package_orders: { view: true } }));
-  assert.deepEqual(visible, ["package_purchases"]);
+  assert.deepEqual(visible, ["package_purchases", "package_refunds"]);
 });
 
 // ─── Filter scope resolution ──────────────────────────────────────────────────
@@ -162,7 +170,27 @@ test("event nature filter resolves to exactly the matching event types", async (
     { ...EMPTY_QUERY, eventNature: ["cash_outflow"] as never },
     visible,
   );
-  assert.deepEqual(outflow.eventTypes, ["ballet_refund"]);
+  assert.deepEqual(outflow.eventTypes, ["ballet_refund", "package_refund"]);
+});
+
+test("monetary default preserves Transactions while the refunds view opts into package refunds", async () => {
+  const { resolveMonetaryRequestScope, resolveVisibleFamilies } = await loadAccess();
+  const visible = resolveVisibleFamilies(admin({}, true));
+
+  const transactions = resolveMonetaryRequestScope(EMPTY_QUERY, visible);
+  assert.ok(!transactions.families.includes("package_refunds"));
+  assert.ok(!transactions.eventTypes.includes("package_refund"));
+
+  const refunds = resolveMonetaryRequestScope(
+    {
+      ...EMPTY_QUERY,
+      family: ["ballet_refunds", "package_refunds"] as never,
+      eventType: ["ballet_refund", "package_refund"] as never,
+    },
+    visible,
+  );
+  assert.deepEqual(refunds.families, ["ballet_refunds", "package_refunds"]);
+  assert.deepEqual(refunds.eventTypes, ["ballet_refund", "package_refund"]);
 });
 
 test("source table filter maps bookings to both booking families", async () => {

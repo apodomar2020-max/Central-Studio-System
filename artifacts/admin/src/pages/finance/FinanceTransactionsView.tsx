@@ -242,6 +242,24 @@ function TransactionDetail({ transaction }: { transaction: UnifiedFinanceTransac
         </DetailSection>
       )}
 
+      {transaction.refundDetails && (
+        <DetailSection title="Refund Lifecycle">
+          <DetailField label="Reason" value={transaction.refundDetails.reason ?? "—"} />
+          <DetailField
+            label="Requested At"
+            value={transaction.refundDetails.requestedAt ? formatFinanceDateTime(transaction.refundDetails.requestedAt) : "—"}
+          />
+          <DetailField
+            label="Approved At"
+            value={transaction.refundDetails.approvedAt ? formatFinanceDateTime(transaction.refundDetails.approvedAt) : "—"}
+          />
+          <DetailField
+            label="Completed At"
+            value={transaction.refundDetails.completedAt ? formatFinanceDateTime(transaction.refundDetails.completedAt) : "—"}
+          />
+        </DetailSection>
+      )}
+
       <DetailSection title="Status & Method">
         <DetailField
           label="Payment Status"
@@ -338,6 +356,9 @@ function TransactionDetail({ transaction }: { transaction: UnifiedFinanceTransac
         )}
         {references.balletRefundId != null && (
           <DetailField label="Ballet Refund" value={`#${references.balletRefundId}`} />
+        )}
+        {references.paymentRefundId != null && (
+          <DetailField label="Package Refund" value={`#${references.paymentRefundId}`} />
         )}
         {references.promotionRedemptionId != null && (
           <DetailField label="Promotion Redemption" value={`#${references.promotionRedemptionId}`} />

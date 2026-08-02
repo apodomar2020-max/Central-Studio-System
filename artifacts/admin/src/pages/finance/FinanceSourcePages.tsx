@@ -172,7 +172,7 @@ export function FinanceBalletPage() {
 // ─── Refunds & Cancellations — /finance/refunds ───────────────────────────────
 
 /**
- * Ballet refund lifecycle. Requested, approved and completed amounts stay in
+ * Ballet and package refund lifecycles. Requested, approved and completed amounts stay in
  * separate columns in the detail drawer precisely so a pending refund can be
  * seen as exposure without ever being counted as cash that left the studio.
  */
@@ -180,17 +180,17 @@ export function FinanceRefundsPage() {
   return (
     <FinanceScopedPage
       title="Refunds & Cancellations"
-      description="Ballet refund register entries across the full refund lifecycle. Read-only."
+      description="Package and Ballet refund register entries across the full refund lifecycle. Read-only."
       caveatTitle="What these figures mean"
       caveats={[
         "Only a completed refund (status refunded, with a processed timestamp and a positive amount) represents cash that actually left the studio.",
         "Requested and approved amounts are stored exactly as recorded but are exposure, not completed payouts — they are never added to completed refund totals.",
         "A provider reference is shown only when the refund record carries a real transaction reference. Administrator notes are never treated as one.",
-        "Refund approval and completion remain on the Ballet Refunds page — Finance does not approve or process refunds.",
+        "Refund approval and completion remain on Package Orders or the Ballet Refunds page — Finance does not approve or process refunds.",
       ]}
       queryKey="refunds"
-      lockedFamilies={["ballet_refunds"]}
-      allowedEventTypes={["ballet_refund"]}
+      lockedFamilies={["ballet_refunds", "package_refunds"]}
+      allowedEventTypes={["ballet_refund", "package_refund"]}
       filters={{ refundStatus: true, paymentMethod: true, reliability: true }}
       emptyMessage="No refund events recorded yet."
     />

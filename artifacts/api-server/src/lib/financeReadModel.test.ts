@@ -113,6 +113,41 @@ function balletRefundRow(overrides: Record<string, unknown> = {}) {
   } as Parameters<Awaited<ReturnType<typeof load>>["mapBalletRefund"]>[0];
 }
 
+function packageRefundRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 6,
+    status: "refunded",
+    requestedAmountMinor: 100003,
+    approvedAmountMinor: 66700,
+    refundedAmountMinor: 66700,
+    refundMethod: "original_payment_method",
+    requestedReason: "Unused package credits",
+    transactionReference: "PKG-REF-1",
+    createdAt: "2026-06-17T09:00:00.000Z",
+    reviewedAt: "2026-06-18T09:00:00.000Z",
+    processedAt: "2026-06-20T09:00:00.000Z",
+    requestedByAdminId: 4,
+    reviewedByAdminId: 3,
+    processedByAdminId: 2,
+    requestedByAdminEmail: "desk@central.studio",
+    reviewedByAdminEmail: "ops@central.studio",
+    processedByAdminEmail: "finance@central.studio",
+    originalPaymentMethod: "card",
+    originalPaymentAmountMinor: 100003,
+    packageOrderId: 12,
+    packageId: 3,
+    packageName: "3-Class Pack",
+    studentId: 55,
+    studentName: "Nour Hassan",
+    studentEmail: "nour@example.com",
+    studentPhone: "+20 100 000 0000",
+    participantType: "self",
+    participantChildId: null,
+    participantName: "Nour Hassan",
+    ...overrides,
+  } as Parameters<Awaited<ReturnType<typeof load>>["mapPackageRefund"]>[0];
+}
+
 function creditRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 300,
@@ -586,6 +621,54 @@ test("refund actor prefers the processing admin and falls back to the reviewer",
 
 // ─── 10. Promotion discount ───────────────────────────────────────────────────
 
+test("completed package refund is a recorded cash outflow with exact lifecycle evidence", async () => {
+  const { mapPackageRefund } = await load();
+  const event = mapPackageRefund(packageRefundRow());
+
+  assert.equal(event.id, "pf:6");
+  assert.equal(event.eventType, "package_refund");
+  assert.equal(event.sourceTable, "payment_refunds");
+  assert.equal(event.eventNature, "cash_outflow");
+  assert.equal(event.refundStatus, "refunded");
+  assert.equal(event.amounts.requestedRefundAmountEgp, 1000.03);
+  assert.equal(event.amounts.approvedRefundAmountEgp, 667);
+  assert.equal(event.amounts.refundedAmountEgp, 667);
+  assert.equal(event.amounts.netAmountEgp, -667);
+  assert.equal(event.amounts.grossAmountEgp, 1000.03);
+  assert.equal(event.amountSource, "package_refund_snapshot");
+  assert.equal(event.reliability.badge, "recorded_refund");
+  assert.equal(event.normalizedPaymentMethod, "card");
+  assert.equal(event.references.packageOrderId, 12);
+  assert.equal(event.references.paymentRefundId, 6);
+  assert.equal(event.references.packageName, "3-Class Pack");
+  assert.equal(event.providerReference, "PKG-REF-1");
+  assert.equal(event.refundDetails?.reason, "Unused package credits");
+  assert.equal(event.refundDetails?.requestedAt, "2026-06-17T09:00:00.000Z");
+  assert.equal(event.refundDetails?.approvedAt, "2026-06-18T09:00:00.000Z");
+  assert.equal(event.refundDetails?.completedAt, "2026-06-20T09:00:00.000Z");
+  assert.equal(event.sourceDeepLink, "/package-orders");
+});
+
+test("pending package refund exposes review state but never reports a completed payout", async () => {
+  const { mapPackageRefund } = await load();
+  const event = mapPackageRefund(packageRefundRow({
+    status: "underReview",
+    approvedAmountMinor: null,
+    refundedAmountMinor: null,
+    reviewedAt: null,
+    processedAt: null,
+  }));
+
+  assert.equal(event.refundStatus, "underReview");
+  assert.equal(event.amounts.requestedRefundAmountEgp, 1000.03);
+  assert.equal(event.amounts.refundedAmountEgp, null);
+  assert.equal(event.amounts.amountEgp, null);
+  assert.equal(event.amounts.netAmountEgp, null);
+  assert.equal(event.refundedAt, null);
+  assert.equal(event.refundDetails?.approvedAt, null);
+  assert.equal(event.refundDetails?.completedAt, null);
+});
+
 test("promotion redemption is a discount — never cash inflow or outflow", async () => {
   const { mapPromotionDiscount } = await load();
   const event = mapPromotionDiscount({
@@ -727,7 +810,7 @@ test("no mapper ever uses 0 to represent an unknown amount", async () => {
 
 test("event nature is a pure function of event type across every mapper", async () => {
   const {
-    mapPackagePurchase, mapBookingPayment, mapBalletPayment, mapBalletRefund,
+    mapPackagePurchase, mapBookingPayment, mapBalletPayment, mapBalletRefund, mapPackageRefund,
     mapPromotionDiscount, mapCreditTransaction, familyForEventType,
   } = await load();
 
@@ -737,6 +820,7 @@ test("event nature is a pure function of event type across every mapper", async 
     studio_walkin_payment: "operational_estimate",
     ballet_payment: "cash_inflow",
     ballet_refund: "cash_outflow",
+    package_refund: "cash_outflow",
     promotion_discount: "discount",
     package_credit_issuance: "service_credit",
     package_credit_consumption: "service_credit",
@@ -749,6 +833,7 @@ test("event nature is a pure function of event type across every mapper", async 
     mapBookingPayment(bookingRow({ isWalkIn: true })),
     mapBalletPayment(balletPaymentRow()),
     mapBalletRefund(balletRefundRow()),
+    mapPackageRefund(packageRefundRow()),
     mapPromotionDiscount({
       id: 23, promotionId: 4, promotionName: "X", studentId: 55, bookingId: 1, packageOrderId: null,
       discountAmount: 10, originalSubtotal: 100, finalSubtotal: 90,

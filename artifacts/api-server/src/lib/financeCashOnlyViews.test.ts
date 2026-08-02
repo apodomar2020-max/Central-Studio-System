@@ -28,6 +28,7 @@ const ALL_FAMILIES: FinanceSourceFamily[] = [
   "walkin_payments",
   "ballet_payments",
   "ballet_refunds",
+  "package_refunds",
   "discounts",
   "package_credits",
 ];
@@ -50,6 +51,7 @@ test("the monetary Finance scope includes payment/refund/discount families but e
   assert.ok(scope.eventTypes.includes("studio_walkin_payment"));
   assert.ok(scope.eventTypes.includes("ballet_payment"));
   assert.ok(scope.eventTypes.includes("ballet_refund"));
+  assert.ok(!scope.eventTypes.includes("package_refund"));
   assert.ok(scope.eventTypes.includes("promotion_discount"));
   assert.ok(!(scope.families as readonly string[]).includes("package_credits"));
   for (const eventType of SERVICE_CREDIT_TYPES) assert.ok(!scope.eventTypes.includes(eventType));
