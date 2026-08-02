@@ -8,6 +8,7 @@ export const QUEUE_NAMES = {
   notificationAutomation: "notification-automation",
   balletCancellationFinalization: "ballet-cancellation-finalization",
   balletAutoAbsence: "ballet-auto-absence",
+  packageCreditExpiration: "package-credit-expiration",
 } as const;
 
 export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];
@@ -64,6 +65,12 @@ export type BalletAutoAbsenceJob =
   | { type: "process_occurrence"; balletScheduleId: number; classDate: string; source?: "scheduler" | "admin" | "system" }
   | { type: "deliver_absence_push"; notificationId: number; source?: "scheduler" | "system" };
 
+export type PackageCreditExpirationJob = {
+  type: "expire_due_packages";
+  source?: "scheduler" | "admin" | "system";
+  batchSize?: number;
+};
+
 /**
  * Production scheduling for notification automation (Option B — BullMQ Job
  * Schedulers registered by the worker at startup). Each entry has a STABLE
@@ -103,6 +110,10 @@ export const BALLET_CANCELLATION_FINALIZATION_SCHEDULES: readonly { schedulerId:
 // ever falls in the gap between two consecutive planner runs.
 export const BALLET_AUTO_ABSENCE_SCHEDULES: readonly { schedulerId: string; pattern: string }[] = [
   { schedulerId: "ballet-auto-absence:plan-due-occurrences", pattern: "*/15 * * * *" },
+] as const;
+
+export const PACKAGE_CREDIT_EXPIRATION_SCHEDULES: readonly { schedulerId: string; pattern: string }[] = [
+  { schedulerId: "package-credit-expiration:hourly", pattern: "10 * * * *" },
 ] as const;
 
 /**

@@ -15,6 +15,8 @@ import {
   workerEnabled,
   type ReportJob,
   type WhatsAppCampaignSendJob,
+  PACKAGE_CREDIT_EXPIRATION_SCHEDULES,
+  type PackageCreditExpirationJob,
 } from "./lib/queue";
 import { processWhatsAppCampaignBatch } from "./lib/marketingCampaignSender";
 import { processReportJob } from "./lib/reportJobs";
@@ -28,6 +30,7 @@ import { processBalletAutoAbsenceJob } from "./lib/balletAutoAbsence";
 import { recordReminderWorkerRun } from "./lib/reminderWorkerHeartbeat";
 import { getPushStatus } from "./lib/pushNotifications";
 import { resolveCodeCommit } from "./lib/codeCommit";
+import { runPackageCreditExpirationBatch } from "./lib/packageCreditExpiration";
 
 const deployedVersion = await resolveCodeCommit();
 
@@ -130,10 +133,45 @@ const balletAutoAbsenceWorker = new Worker<BalletAutoAbsenceJob>(
   { connection, concurrency: Number.parseInt(process.env["BALLET_AUTO_ABSENCE_QUEUE_CONCURRENCY"] ?? "1", 10) },
 );
 
-for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker]) {
+const packageCreditExpirationWorker = new Worker<PackageCreditExpirationJob>(
+  QUEUE_NAMES.packageCreditExpiration,
+  async (job) => {
+    logger.info({ jobId: job.id, type: job.data.type }, "Processing package credit expiration job");
+    if (job.data.type !== "expire_due_packages") throw new Error(`Unsupported package credit expiration job type: ${job.data.type}`);
+    return runPackageCreditExpirationBatch({ batchSize: job.data.batchSize });
+  },
+  { connection, concurrency: Number.parseInt(process.env["PACKAGE_CREDIT_EXPIRATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
+);
+
+for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker, packageCreditExpirationWorker]) {
   worker.on("failed", (job, err) => {
     captureError(err, { component: "queue-worker", queue: worker.name, jobId: job?.id });
   });
+}
+
+async function registerPackageCreditExpirationSchedulers(): Promise<void> {
+  const queue = getQueue(QUEUE_NAMES.packageCreditExpiration);
+  if (!queue) {
+    logger.warn("Package credit expiration queue unavailable; skipping scheduler registration");
+    return;
+  }
+  for (const schedule of PACKAGE_CREDIT_EXPIRATION_SCHEDULES) {
+    try {
+      await queue.upsertJobScheduler(
+        schedule.schedulerId,
+        { pattern: schedule.pattern },
+        {
+          name: "expire_due_packages",
+          data: { type: "expire_due_packages", source: "scheduler" } satisfies PackageCreditExpirationJob,
+          opts: defaultJobOptions(),
+        },
+      );
+      logger.info({ schedulerId: schedule.schedulerId, pattern: schedule.pattern }, "Registered package credit expiration scheduler");
+    } catch (err) {
+      captureError(err, { component: "queue-worker", phase: "package-credit-expiration-scheduler-registration", schedulerId: schedule.schedulerId });
+      logger.error({ err, schedulerId: schedule.schedulerId }, "Failed to register package credit expiration scheduler");
+    }
+  }
 }
 
 async function registerBalletCancellationFinalizationSchedulers(): Promise<void> {
@@ -235,13 +273,14 @@ async function registerBalletAutoAbsenceSchedulers(): Promise<void> {
 await registerNotificationAutomationSchedulers();
 await registerBalletCancellationFinalizationSchedulers();
 await registerBalletAutoAbsenceSchedulers();
+await registerPackageCreditExpirationSchedulers();
 
 logger.info("Queue worker started");
 
 async function shutdown() {
   logger.info("Queue worker shutting down");
   const connectionQuit = connection ? connection.quit() : Promise.resolve();
-  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), balletAutoAbsenceWorker.close(), connectionQuit]);
+  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), balletAutoAbsenceWorker.close(), packageCreditExpirationWorker.close(), connectionQuit]);
   process.exit(0);
 }
 
