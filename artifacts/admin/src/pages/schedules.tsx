@@ -99,6 +99,17 @@ function statusBadgeClass(status: Schedule["status"]) {
   }
 }
 
+function formatScheduleLocation(schedule: Schedule): string {
+  const branchName = schedule.branch?.name?.trim();
+  const roomName = schedule.room?.name?.trim();
+  const legacyLocation = schedule.location?.trim();
+
+  if (branchName && roomName) return `${branchName} · ${roomName}`;
+  if (branchName) return branchName;
+  if (legacyLocation) return legacyLocation;
+  return "—";
+}
+
 export default function Schedules() {
   const { can } = useAdminAuth();
   const canCreate = can("schedules", "create");
@@ -260,7 +271,7 @@ export default function Schedules() {
                       {schedule.packageEligible ? "Eligible" : "Pay only"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{schedule.branch && schedule.room ? `${schedule.branch.name} · ${schedule.room.name}` : schedule.location ?? "—"}</TableCell>
+                  <TableCell>{formatScheduleLocation(schedule)}</TableCell>
                   <TableCell className="text-right">
                     {canEdit && (
                       <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
