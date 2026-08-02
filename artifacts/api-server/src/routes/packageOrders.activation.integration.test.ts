@@ -102,11 +102,24 @@ async function activationCreditCount(packageOrderId: number): Promise<number> {
   return result.rows[0].n as number;
 }
 
+async function activationLots(packageOrderId: number): Promise<Array<Record<string, unknown>>> {
+  const result = await pool.query(
+    `SELECT l.*, t.type AS issuing_transaction_type
+     FROM package_credit_lots l
+     JOIN credit_transactions t ON t.id = l.issuing_credit_transaction_id
+     WHERE l.package_order_id = $1 AND t.type = 'package_activated'
+     ORDER BY l.id`,
+    [packageOrderId],
+  );
+  return result.rows as Array<Record<string, unknown>>;
+}
+
 /** Creates a fresh pendingPayment package order, ready to be activated. */
 async function makePendingOrder(
   run: string,
   label: string,
   totalCredits = 8,
+  purchaseUnitPriceMinor: number | null = null,
 ): Promise<{ id: number; studentEmail: string; studentId: number }> {
   const studentEmail = `pkg-activate-${run}-${label}@example.com`;
   const student = await pool.query(
@@ -116,10 +129,10 @@ async function makePendingOrder(
   const studentId = student.rows[0].id as number;
   const order = await pool.query(
     `INSERT INTO package_orders
-       (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, status)
-     VALUES ($1, $2, $3, $4, 'Activation Test Package', $5, $5, 'pendingPayment')
+       (student_name, student_email, student_id, package_id, package_name, total_credits, remaining_credits, purchase_unit_price_minor, status)
+     VALUES ($1, $2, $3, $4, 'Activation Test Package', $5, $5, $6, 'pendingPayment')
      RETURNING id`,
-    [`Package Activate Test ${label}`, studentEmail, studentId, packageId, totalCredits],
+    [`Package Activate Test ${label}`, studentEmail, studentId, packageId, totalCredits, purchaseUnitPriceMinor],
   );
   return { id: order.rows[0].id as number, studentEmail, studentId };
 }
@@ -215,6 +228,25 @@ test("first activation succeeds, credits are issued, and status becomes active",
   assert.equal(body.status, "active");
   assert.equal(await orderStatus(id), "active");
   assert.equal(await activationCreditCount(id), 1, "exactly one package_activated credit row must exist");
+  const lots = await activationLots(id);
+  assert.equal(lots.length, 1, "activation must issue exactly one purchased lot");
+  assert.equal(lots[0].source_type, "purchased");
+  assert.equal(lots[0].credits_issued, 8);
+  assert.equal(lots[0].credits_remaining, 8);
+  assert.equal(lots[0].issuing_transaction_type, "package_activated");
+  assert.equal(lots[0].total_value_minor, null);
+  assert.equal(lots[0].value_basis, "unknown");
+});
+
+test("activation values its purchased lot only from the order price snapshot", async () => {
+  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { id } = await makePendingOrder(run, "snapshot-value", 6, 12_345);
+  await pool.query(`UPDATE price_packages SET price_egp = 999999 WHERE id = $1`, [packageId]);
+
+  assert.equal((await activate(id)).status, 200);
+  const [lot] = await activationLots(id);
+  assert.equal(lot.total_value_minor, 74_070);
+  assert.equal(lot.value_basis, "recorded_purchase_price");
 });
 
 test("activation propagates immutable self and child participant ownership to credits", async () => {
@@ -293,6 +325,7 @@ test("repeated activation of an already-active order is rejected and issues no s
   const body = await jsonBody(second);
   assert.equal(body.code, "PACKAGE_ORDER_NOT_ACTIVATABLE");
   assert.equal(await activationCreditCount(id), 1, "no second credit row may be created by the repeated attempt");
+  assert.equal((await activationLots(id)).length, 1, "no second lot may be created by the repeated attempt");
   assert.equal(await orderStatus(id), "active", "the order must remain active, not be mutated by the rejected attempt");
 });
 

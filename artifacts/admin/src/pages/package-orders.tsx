@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useUpdatePackageOrder,
@@ -49,6 +49,13 @@ const CONFIRMED_PAYMENT_METHOD_LABELS: Record<ConfirmedPaymentMethod, string> = 
 // body to `any`.
 type UpdatePackageOrderBodyWithPaymentMethod = UpdatePackageOrderBody & {
   confirmedPaymentMethod?: ConfirmedPaymentMethod;
+};
+
+type CreditSourceType = "bonus" | "manual_complimentary" | "manual_paid";
+type ClassifiedAdjustCreditsBody = AdjustCreditsBody & {
+  sourceType?: CreditSourceType;
+  totalValueMinor?: number;
+  idempotencyKey: string;
 };
 
 const STUDIO_CYAN = "#00B6D7";
@@ -114,17 +121,21 @@ function AdjustCreditsDialog({
 }) {
   const queryClient = useQueryClient();
   const { token } = useAdminAuth();
-  const [type, setType] = useState<AdjustCreditsBody["type"]>("manual_adjustment");
+  const [sourceType, setSourceType] = useState<CreditSourceType>("manual_complimentary");
   const [rawDelta, setRawDelta] = useState("");
+  const [rawPaidValue, setRawPaidValue] = useState("");
   const [notes, setNotes] = useState("");
+  const lastAttempt = useRef<{ signature: string; key: string } | null>(null);
 
   const delta = parseInt(rawDelta, 10);
   const isValidDelta = !isNaN(delta) && delta !== 0;
   const newBalance = isValidDelta ? order.remainingCredits + delta : order.remainingCredits;
   const balanceSafe = newBalance >= 0;
+  const paidValueEgp = Number(rawPaidValue);
+  const paidValueValid = sourceType !== "manual_paid" || (Number.isFinite(paidValueEgp) && paidValueEgp > 0);
 
   const { mutate, isPending } = useMutation({
-    mutationFn: async (data: AdjustCreditsBody) => {
+    mutationFn: async (data: ClassifiedAdjustCreditsBody) => {
       const res = await fetch(`${API_BASE}/api/admin/package-orders/${order.id}/credits`, {
         method: "POST",
         headers: makeHeaders(token),
@@ -146,8 +157,25 @@ function AdjustCreditsDialog({
   });
 
   function handleSubmit() {
-    if (!isValidDelta || !balanceSafe) return;
-    mutate({ type, delta, notes: notes.trim() || undefined });
+    if (!isValidDelta || !balanceSafe || (delta > 0 && !paidValueValid)) return;
+    const type = delta > 0 && sourceType === "bonus" ? "package_bonus" : "manual_adjustment";
+    const normalizedNotes = notes.trim() || undefined;
+    const totalValueMinor = delta > 0 && sourceType === "manual_paid"
+      ? Math.round(paidValueEgp * 100)
+      : undefined;
+    const signature = JSON.stringify({ type, delta, sourceType: delta > 0 ? sourceType : undefined, totalValueMinor, notes: normalizedNotes });
+    const idempotencyKey = lastAttempt.current?.signature === signature
+      ? lastAttempt.current.key
+      : crypto.randomUUID();
+    lastAttempt.current = { signature, key: idempotencyKey };
+    mutate({
+      type,
+      delta,
+      sourceType: delta > 0 ? sourceType : undefined,
+      totalValueMinor,
+      idempotencyKey,
+      notes: normalizedNotes,
+    });
   }
 
   return (
@@ -184,26 +212,43 @@ function AdjustCreditsDialog({
         </div>
 
         <div className="space-y-4">
-          {/* Type selector */}
+          {delta > 0 && (
           <div>
-            <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: MUTED }}>Type</label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["manual_adjustment", "package_bonus"] as const).map((t) => (
+            <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: MUTED }}>Credit Source</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["bonus", "manual_complimentary", "manual_paid"] as const).map((source) => (
                 <button
-                  key={t}
-                  onClick={() => setType(t)}
+                  key={source}
+                  onClick={() => setSourceType(source)}
                   className="px-3 py-2 rounded-xl text-xs font-semibold transition-all"
                   style={
-                    type === t
+                    sourceType === source
                       ? { background: `${STUDIO_CYAN}20`, border: `1px solid ${STUDIO_CYAN}60`, color: STUDIO_CYAN }
                       : { background: BG_ROW, border: `1px solid ${BORDER}`, color: MUTED }
                   }
                 >
-                  {t === "manual_adjustment" ? "Manual Adjustment" : "Bonus Credits"}
+                  {source === "bonus" ? "Bonus" : source === "manual_complimentary" ? "Complimentary" : "Paid Credit"}
                 </button>
               ))}
             </div>
           </div>
+          )}
+
+          {delta > 0 && sourceType === "manual_paid" && (
+            <div>
+              <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: MUTED }}>Total Paid Value (EGP)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={rawPaidValue}
+                onChange={(e) => setRawPaidValue(e.target.value)}
+                placeholder="e.g. 250.00"
+                className="w-full rounded-xl px-3 py-2 text-sm text-foreground"
+                style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
+              />
+            </div>
+          )}
 
           {/* Delta input */}
           <div>
@@ -265,7 +310,7 @@ function AdjustCreditsDialog({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={isPending || !isValidDelta || !balanceSafe}
+            disabled={isPending || !isValidDelta || !balanceSafe || (delta > 0 && !paidValueValid)}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-40"
             style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
           >

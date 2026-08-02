@@ -10,7 +10,7 @@
 import { Router, type IRouter } from "express";
 import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import * as zod from "zod";
-import { db, creditTransactionsTable, packageOrdersTable } from "@workspace/db";
+import { db, creditTransactionsTable, packageCreditLotsTable, packageOrdersTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { ListCreditTransactionsQueryParams } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
@@ -124,7 +124,40 @@ const AdjustCreditsBody = zod.object({
   type: zod.enum(["manual_adjustment", "package_bonus"]),
   /** Signed credit change. Positive = add credits, negative = remove credits. */
   delta: zod.number().int().refine((n) => n !== 0, { message: "delta must be non-zero" }),
+  sourceType: zod.enum(["bonus", "manual_complimentary", "manual_paid"]).optional(),
+  totalValueMinor: zod.number().int().positive().optional(),
+  idempotencyKey: zod.string().uuid(),
   notes: zod.string().optional(),
+}).superRefine((value, ctx) => {
+  if (value.delta < 0) {
+    if (value.type !== "manual_adjustment") {
+      ctx.addIssue({ code: "custom", path: ["type"], message: "Negative adjustments must use manual_adjustment" });
+    }
+    if (value.sourceType != null) {
+      ctx.addIssue({ code: "custom", path: ["sourceType"], message: "Negative adjustments do not issue credit lots" });
+    }
+    if (value.totalValueMinor != null) {
+      ctx.addIssue({ code: "custom", path: ["totalValueMinor"], message: "Negative adjustments cannot include monetary value" });
+    }
+    return;
+  }
+
+  if (value.sourceType == null) {
+    ctx.addIssue({ code: "custom", path: ["sourceType"], message: "Positive credit issuance requires sourceType" });
+    return;
+  }
+  if (value.type === "package_bonus" && value.sourceType !== "bonus") {
+    ctx.addIssue({ code: "custom", path: ["sourceType"], message: "package_bonus requires sourceType bonus" });
+  }
+  if (value.type === "manual_adjustment" && value.sourceType === "bonus") {
+    ctx.addIssue({ code: "custom", path: ["sourceType"], message: "Positive manual adjustments require manual_complimentary or manual_paid" });
+  }
+  if (value.sourceType === "manual_paid" && value.totalValueMinor == null) {
+    ctx.addIssue({ code: "custom", path: ["totalValueMinor"], message: "manual_paid credits require totalValueMinor" });
+  }
+  if (value.sourceType !== "manual_paid" && value.totalValueMinor != null) {
+    ctx.addIssue({ code: "custom", path: ["totalValueMinor"], message: "Only manual_paid credits may include totalValueMinor" });
+  }
 });
 
 router.post(
@@ -145,11 +178,17 @@ router.post(
     }
 
     const { id } = params.data;
-    const { type, delta, notes } = body.data;
+    const { type, delta, sourceType, totalValueMinor, idempotencyKey, notes } = body.data;
     const adminEmail = req.adminUser?.username ?? "admin";
+    const idempotencyReference = `admin_credit_adjustment:${idempotencyKey}`;
 
     try {
       const result = await db.transaction(async (tx) => {
+        // Serialize equal request keys even when retries arrive concurrently.
+        // The exact key is also persisted on credit_transactions so retries
+        // after commit can return the original write without changing balance.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`${id}:${idempotencyKey}`}, 0))`);
+
         // Step 1 — Lock the order row
         const [order] = await tx
           .select()
@@ -159,6 +198,37 @@ router.post(
 
         if (!order) {
           throw new ExposableHttpError(404, "Package order not found");
+        }
+
+        const [existingTransaction] = await tx
+          .select()
+          .from(creditTransactionsTable)
+          .where(and(
+            eq(creditTransactionsTable.packageOrderId, id),
+            eq(creditTransactionsTable.referenceType, idempotencyReference),
+          ))
+          .limit(1);
+        if (existingTransaction) {
+          const [existingLot] = await tx
+            .select()
+            .from(packageCreditLotsTable)
+            .where(eq(packageCreditLotsTable.issuingCreditTransactionId, existingTransaction.id))
+            .limit(1);
+          const expectedLotValue = sourceType === "manual_paid" ? totalValueMinor : delta > 0 ? 0 : undefined;
+          const requestMatches = existingTransaction.type === type
+            && existingTransaction.delta === delta
+            && (delta < 0
+              ? existingLot == null
+              : existingLot?.sourceType === sourceType && existingLot.totalValueMinor === expectedLotValue);
+          if (!requestMatches) {
+            throw new ExposableHttpError(409, "Idempotency key was already used for a different credit adjustment");
+          }
+          return {
+            order,
+            transaction: existingTransaction,
+            before: { remainingCredits: existingTransaction.balanceBefore, status: order.status },
+            replayed: true,
+          };
         }
 
         const newRemaining = order.remainingCredits + delta;
@@ -194,11 +264,26 @@ router.post(
             balanceBefore: order.remainingCredits,
             balanceAfter: newRemaining,
             referenceId: null,
-            referenceType: null,
+            referenceType: idempotencyReference,
             notes: notes ?? null,
             createdBy: adminEmail,
           })
           .returning();
+
+        if (delta > 0) {
+          await tx.insert(packageCreditLotsTable).values({
+            packageOrderId: id,
+            sourceType: sourceType!,
+            creditsIssued: delta,
+            creditsRemaining: delta,
+            totalValueMinor: sourceType === "manual_paid" ? totalValueMinor! : 0,
+            valueBasis: sourceType === "manual_paid" ? "recorded_purchase_price" : "unknown",
+            expiresAt: updated.expiresAt,
+            issuingCreditTransactionId: transaction.id,
+            createdBy: adminEmail,
+            notes: notes ?? null,
+          });
+        }
 
         await createStudentNotification(tx, {
           studentEmail: updated.studentEmail,
@@ -235,10 +320,11 @@ router.post(
             remainingCredits: order.remainingCredits,
             status: order.status,
           },
+          replayed: false,
         };
       });
 
-      await logActivity(req, {
+      if (!result.replayed) await logActivity(req, {
         action: "creditAdjust",
         module: "packageOrders",
         entityType: "package_order",

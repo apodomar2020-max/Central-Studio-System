@@ -6,6 +6,7 @@ import {
   db,
   packageOrdersTable,
   creditTransactionsTable,
+  packageCreditLotsTable,
   pricePackagesTable,
   studentsTable,
   paymentRecordsTable,
@@ -882,6 +883,32 @@ router.patch(
         notes: `Package "${current.packageName}" activated`,
         createdBy: "admin",
       }).returning();
+
+      // Package Credit Allocation Phase B: issue the purchased origin lot in
+      // the same transaction as its operational ledger row. The purchase-time
+      // snapshot is the only permitted monetary source; catalog pricing must
+      // never be consulted here.
+      const [existingLot] = await tx
+        .select({ id: packageCreditLotsTable.id })
+        .from(packageCreditLotsTable)
+        .where(eq(packageCreditLotsTable.issuingCreditTransactionId, creditTransaction.id))
+        .limit(1);
+      if (!existingLot) {
+        const hasPurchaseValue = current.purchaseUnitPriceMinor != null;
+        await tx.insert(packageCreditLotsTable).values({
+          packageOrderId: current.id,
+          sourceType: "purchased",
+          creditsIssued: current.totalCredits,
+          creditsRemaining: current.totalCredits,
+          totalValueMinor: hasPurchaseValue
+            ? current.purchaseUnitPriceMinor! * current.totalCredits
+            : null,
+          valueBasis: hasPurchaseValue ? "recorded_purchase_price" : "unknown",
+          expiresAt: updated.expiresAt,
+          issuingCreditTransactionId: creditTransaction.id,
+          createdBy: "admin",
+        });
+      }
 
       // Finance Phase 2C: the credit issuance above is the fulfillment side
       // effect of payment confirmation — append the dedicated
