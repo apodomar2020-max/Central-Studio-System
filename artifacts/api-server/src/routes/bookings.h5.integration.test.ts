@@ -96,7 +96,7 @@ async function makeChild(parentId: number, name: string): Promise<number> {
   return res.rows[0].id;
 }
 
-async function makeClassAndSchedule(): Promise<{ classId: number; scheduleId: number; today: string }> {
+async function makeClassAndSchedule(): Promise<{ classId: number; scheduleId: number; branchId: number; roomId: number; today: string }> {
   const todayRes = await pool.query<{ today: string; start_time: string }>(
     `SELECT (now() AT TIME ZONE 'Africa/Cairo')::date::text as today,
             to_char((now() AT TIME ZONE 'Africa/Cairo') + interval '5 minutes', 'HH24:MI') as start_time`,
@@ -107,12 +107,20 @@ async function makeClassAndSchedule(): Promise<{ classId: number; scheduleId: nu
     `INSERT INTO classes (title, category, is_active, allow_all_ages) VALUES ('H5 Ballet Class', 'Ballet', true, true) RETURNING id`,
   );
   const classId = clsRes.rows[0].id;
-  const schedRes = await pool.query<{ id: number }>(
-    `INSERT INTO schedules (class_id, day_of_week, start_time, end_time, price_egp, status, type)
-     VALUES ($1, extract(dow from $2::date)::int, $3, '23:59', 200, 'active', 'weekly') RETURNING id`,
-    [classId, today, startTime],
+  const branch = await pool.query<{ id: number }>(
+    `INSERT INTO studio_branches (name) VALUES ($1) RETURNING id`,
+    [`H5 Branch ${Date.now()}-${Math.random()}`],
   );
-  return { classId, scheduleId: schedRes.rows[0].id, today };
+  const room = await pool.query<{ id: number }>(
+    `INSERT INTO studio_rooms (branch_id, name) VALUES ($1, $2) RETURNING id`,
+    [branch.rows[0].id, `H5 Room ${Date.now()}-${Math.random()}`],
+  );
+  const schedRes = await pool.query<{ id: number }>(
+    `INSERT INTO schedules (class_id, branch_id, room_id, day_of_week, start_time, end_time, price_egp, status, type)
+     VALUES ($1, $2, $3, extract(dow from $4::date)::int, $5, '23:59', 200, 'active', 'weekly') RETURNING id`,
+    [classId, branch.rows[0].id, room.rows[0].id, today, startTime],
+  );
+  return { classId, scheduleId: schedRes.rows[0].id, branchId: branch.rows[0].id, roomId: room.rows[0].id, today };
 }
 
 async function makePackage(studentId: number, participantType: "self" | "child", participantChildId: number | null = null, credits = 5): Promise<number> {
@@ -124,10 +132,16 @@ async function makePackage(studentId: number, participantType: "self" | "child",
   );
   const packageOrderId = pkgRes.rows[0].id;
 
-  await pool.query(
+  const activation = await pool.query<{ id: number }>(
     `INSERT INTO credit_transactions (package_order_id, student_id, type, delta, balance_before, balance_after, participant_type, participant_child_id)
-     VALUES ($1, $2, 'package_activated', $3, 0, $3, $4, $5)`,
+     VALUES ($1, $2, 'package_activated', $3, 0, $3, $4, $5) RETURNING id`,
     [packageOrderId, studentId, credits, participantType, participantChildId],
+  );
+  await pool.query(
+    `INSERT INTO package_credit_lots
+       (package_order_id, source_type, credits_issued, credits_remaining, total_value_minor, value_basis, issuing_credit_transaction_id, created_by)
+     VALUES ($1, 'purchased', $2, $2, $3, 'recorded_purchase_price', $4, 'test')`,
+    [packageOrderId, credits, credits * 10_000, activation.rows[0].id],
   );
   return packageOrderId;
 }
@@ -258,7 +272,7 @@ test("H5 Policy: Child package booking creation deducts ZERO credits", async () 
 test("H5 Policy: Attendance check-in deducts exactly 1 credit atomically", async () => {
   const student = await makeStudent("5000000003");
   const token = studentToken(student.id, student.email);
-  const { classId, scheduleId, today } = await makeClassAndSchedule();
+  const { classId, scheduleId, branchId, roomId, today } = await makeClassAndSchedule();
   const packageOrderId = await makePackage(student.id, "self", null, 3);
 
   // Create booking (0 credit deduction)
@@ -317,6 +331,18 @@ test("H5 Policy: Attendance check-in deducts exactly 1 credit atomically", async
   assert.equal(txRes.rows.length, 1);
   assert.equal(txRes.rows[0].delta, -1);
   assert.equal(txRes.rows[0].booking_id, booking.id);
+
+  const allocation = await pool.query(
+    `SELECT * FROM package_credit_allocations WHERE credit_transaction_id = $1`,
+    [txRes.rows[0].id],
+  );
+  assert.equal(allocation.rowCount, 1);
+  assert.equal(allocation.rows[0].attendance_id, confirmData.attendance.attendanceId);
+  assert.equal(allocation.rows[0].booking_id, booking.id);
+  assert.equal(allocation.rows[0].schedule_id, scheduleId);
+  assert.equal(allocation.rows[0].branch_id, branchId);
+  assert.equal(allocation.rows[0].room_id, roomId);
+  assert.equal(allocation.rows[0].total_value_minor, 10_000);
 
   // Verify booking status transitioned to attended
   const bkRes = await pool.query<{ status: string; booking_status: string }>(

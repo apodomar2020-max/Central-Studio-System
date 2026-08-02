@@ -43,6 +43,7 @@ import { calculateAgeOnDate, parseIsoDate } from "./eligibility/dateOnly";
 import { getCairoBusinessDate } from "./eligibility/dateOnly";
 import type { IsoDate } from "./eligibility/types";
 import { evaluateParticipantOnOccurrence } from "./eligibility/participantOccurrenceEligibility";
+import { allocateAttendanceConsumption, ConsumptionAllocationError } from "./packageCredits/selectConsumptionLot";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Booking = typeof bookingsTable.$inferSelect;
@@ -420,6 +421,7 @@ export async function performBookingCheckIn(
   const bookingUsesPackage = booking.paymentMode === "package_credit" || booking.packageOrderId != null;
   let attendanceCreditDeducted = false;
   let remainingCreditsAfterCheckIn: number | null = null;
+  let attendanceDeduction: { id: number; packageOrderId: number } | null = null;
 
   if (bookingUsesPackage) {
     if (booking.packageOrderId == null) {
@@ -498,7 +500,7 @@ export async function performBookingCheckIn(
         })
         .where(eq(packageOrdersTable.id, credit.order.id));
 
-      await tx.insert(creditTransactionsTable).values({
+      const [creditTransaction] = await tx.insert(creditTransactionsTable).values({
         packageOrderId: credit.order.id,
         studentId: student.id,
         participantType: participant.participantType,
@@ -512,7 +514,8 @@ export async function performBookingCheckIn(
         bookingId: booking.id,
         notes: "Attendance check-in package credit deduction",
         createdBy: performedBy,
-      });
+      }).returning({ id: creditTransactionsTable.id, packageOrderId: creditTransactionsTable.packageOrderId });
+      attendanceDeduction = creditTransaction;
 
       attendanceCreditDeducted = true;
       remainingCreditsAfterCheckIn = balanceAfter;
@@ -547,6 +550,23 @@ export async function performBookingCheckIn(
       checkedInAt: new Date().toISOString(),
     })
     .returning();
+
+  if (attendanceDeduction) {
+    try {
+      await allocateAttendanceConsumption(tx, {
+        creditTransactionId: attendanceDeduction.id,
+        packageOrderId: attendanceDeduction.packageOrderId,
+        attendanceId: attendance.id,
+        bookingId: booking.id,
+        createdBy: performedBy,
+      });
+    } catch (error) {
+      if (error instanceof ConsumptionAllocationError) {
+        throw makeCheckInError(409, "PACKAGE_CREDIT_INTEGRITY_MISMATCH", error.message);
+      }
+      throw error;
+    }
+  }
 
   // ── Step 7 — Mark booking attended
   await tx
@@ -1061,7 +1081,7 @@ export async function performStudioPackageWalkIn(
       status: balanceAfter === 0 ? "fullyUsed" : credit.order.status,
     })
     .where(eq(packageOrdersTable.id, credit.order.id));
-  await tx.insert(creditTransactionsTable).values({
+  const [creditTransaction] = await tx.insert(creditTransactionsTable).values({
     packageOrderId: credit.order.id,
     studentId: account.id,
     participantType: participant.participantType,
@@ -1075,7 +1095,22 @@ export async function performStudioPackageWalkIn(
     attendanceId: attendance.id,
     notes: "General Studio package walk-in credit deduction",
     createdBy: params.performedBy,
-  });
+  }).returning({ id: creditTransactionsTable.id, packageOrderId: creditTransactionsTable.packageOrderId });
+
+  try {
+    await allocateAttendanceConsumption(tx, {
+      creditTransactionId: creditTransaction.id,
+      packageOrderId: creditTransaction.packageOrderId,
+      attendanceId: attendance.id,
+      bookingId: null,
+      createdBy: params.performedBy,
+    });
+  } catch (error) {
+    if (error instanceof ConsumptionAllocationError) {
+      throw makeCheckInError(409, "PACKAGE_CREDIT_INTEGRITY_MISMATCH", error.message);
+    }
+    throw error;
+  }
 
   await createStudentNotification(tx, {
     studentId: account.id,

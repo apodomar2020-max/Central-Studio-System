@@ -47,6 +47,8 @@ let jwtSign: (payload: object, secret: string, opts?: object) => string;
 let superAdminId: number;
 let classId: number;
 let scheduleId: number;
+let branchId: number;
+let roomId: number;
 let scheduleOverrideId: number;
 let studioDefaultPriceEgp: number;
 
@@ -87,11 +89,17 @@ async function makeStudent(): Promise<{ id: number; email: string; name: string 
 
 async function activateSelfOrder(orderId: number, studentId: number, credits = 8): Promise<void> {
   await pool.query(`UPDATE package_orders SET participant_type = 'self' WHERE id = $1`, [orderId]);
-  await pool.query(
+  const activation = await pool.query(
     `INSERT INTO credit_transactions
       (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
-     VALUES ($1, $2, 'self', 'package_activated', $3, 0, $3, 'test')`,
+     VALUES ($1, $2, 'self', 'package_activated', $3, 0, $3, 'test') RETURNING id`,
     [orderId, studentId, credits],
+  );
+  await pool.query(
+    `INSERT INTO package_credit_lots
+       (package_order_id, source_type, credits_issued, credits_remaining, total_value_minor, value_basis, issuing_credit_transaction_id, created_by)
+     VALUES ($1, 'purchased', $2, $2, $3, 'recorded_purchase_price', $4, 'test')`,
+    [orderId, credits, credits * 10_000, activation.rows[0].id],
   );
 }
 
@@ -194,9 +202,14 @@ before(async () => {
   );
   classId = klass.rows[0].id as number;
 
+  const branch = await pool.query(`INSERT INTO studio_branches (name) VALUES ($1) RETURNING id`, [`Walk-in Branch ${run}`]);
+  branchId = branch.rows[0].id as number;
+  const room = await pool.query(`INSERT INTO studio_rooms (branch_id, name) VALUES ($1, $2) RETURNING id`, [branchId, `Walk-in Room ${run}`]);
+  roomId = room.rows[0].id as number;
+
   const schedule = await pool.query(
-    `INSERT INTO schedules (class_id, type, status, day_of_week, start_time, end_time, price_egp) VALUES ($1, 'weekly', 'active', 1, '10:00', '11:00', NULL) RETURNING id`,
-    [classId],
+    `INSERT INTO schedules (class_id, branch_id, room_id, type, status, day_of_week, start_time, end_time, price_egp) VALUES ($1, $2, $3, 'weekly', 'active', 1, '10:00', '11:00', NULL) RETURNING id`,
+    [classId, branchId, roomId],
   );
   scheduleId = schedule.rows[0].id as number;
 
@@ -422,10 +435,17 @@ test("valid Package Credit + explicit Package Credit deducts exactly one credit 
   assert.equal(remaining.rows[0].remaining_credits, 7, "exactly one credit deducted");
 
   const ledger = await pool.query(
-    `SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
+    `SELECT * FROM credit_transactions WHERE package_order_id = $1 AND type = 'attendance_deduction'`,
     [packageOrderId],
   );
-  assert.equal(ledger.rows[0].n, 1, "exactly one credit ledger entry");
+  assert.equal(ledger.rowCount, 1, "exactly one credit ledger entry");
+  const allocation = await pool.query(`SELECT * FROM package_credit_allocations WHERE credit_transaction_id = $1`, [ledger.rows[0].id]);
+  assert.equal(allocation.rowCount, 1);
+  assert.equal(allocation.rows[0].booking_id, null);
+  assert.equal(allocation.rows[0].schedule_id, scheduleId);
+  assert.equal(allocation.rows[0].branch_id, branchId);
+  assert.equal(allocation.rows[0].room_id, roomId);
+  assert.equal(allocation.rows[0].total_value_minor, 10_000);
 });
 
 test("no valid credit + explicit Package Credit returns a business error and writes zero rows", async () => {
