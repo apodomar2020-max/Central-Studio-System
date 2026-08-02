@@ -217,6 +217,7 @@ interface AppContextType {
     validityMonths: number;
     promoCode?: string | null;
     participant: PackageParticipantSelection;
+    paymentMode?: "pay_at_studio" | "online_payment";
   }) => Promise<void>;
   cancelPackage: (userPackageId: string) => Promise<void>;
   refreshUserPackages: () => Promise<void>;
@@ -802,6 +803,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       validityMonths: number;
       promoCode?: string | null;
       participant: PackageParticipantSelection;
+      paymentMode?: "pay_at_studio" | "online_payment";
     }): Promise<void> => {
       const usr = userRef.current;
       if (!usr) return;
@@ -814,6 +816,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           ...(pkg.participant.participantType === "child"
             ? { participantChildId: pkg.participant.participantChildId }
             : {}),
+          ...(pkg.paymentMode ? { paymentMode: pkg.paymentMode } : {}),
         }),
       });
       // Refresh the list so the new pending order shows up immediately

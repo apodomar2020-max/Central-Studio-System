@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,6 +8,7 @@ import {
   useUpdatePricePackage,
   useDeletePricePackage,
   getListPricePackagesQueryKey,
+  normalizeMediaUrl,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -59,6 +60,10 @@ const formSchema = z.object({
   feature1: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
   feature2: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
   feature3: z.string().max(FEATURE_MAX, `Max ${FEATURE_MAX} characters`).default(""),
+  // Admin-controlled artwork — Home card background + details sheet hero.
+  // Blank clears the field (server normalizes/validates on save).
+  cardImageUrl: z.string().nullish(),
+  detailsImageUrl: z.string().nullish(),
 }).superRefine((value, ctx) => {
   if (!value.allowAllAges && value.minAge == null) {
     ctx.addIssue({ code: "custom", path: ["minAge"], message: "Minimum age is required." });
@@ -75,7 +80,29 @@ type Package = {
   singleClassPriceEgp?: number | null; allowedDanceTypes: string[]; allowedDanceTypeIds: number[];
   features?: string[]; allowAllAges: boolean | null; minAge: number | null; maxAge: number | null;
   ageRangeLabel: string; configurationState: "configured" | "legacy_unconfigured";
+  cardImageUrl?: string | null; detailsImageUrl?: string | null;
 };
+
+function ImageUrlPreview({ url, label }: { url?: string | null; label: string }) {
+  const [failed, setFailed] = useState(false);
+  const normalized = normalizeMediaUrl(url, "image");
+  useEffect(() => setFailed(false), [normalized]);
+  if (!normalized || failed) {
+    return (
+      <div className="flex h-28 w-full items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+        {url?.trim() && failed ? "Preview failed. Check that the image is public." : `No ${label.toLowerCase()} set.`}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={normalized}
+      alt={label}
+      className="h-28 w-full rounded-md border object-cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 interface DanceTypeItem {
   id: number;
@@ -116,6 +143,7 @@ export default function Packages() {
       name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false,
       validityMonths: 6, allowedDanceTypeIds: [], allowAllAges: true, minAge: null,
       maxAge: null, feature1: "", feature2: "", feature3: "",
+      cardImageUrl: "", detailsImageUrl: "",
     },
   });
 
@@ -125,6 +153,7 @@ export default function Packages() {
       name: "", type: "per_class", priceEgp: 0, isActive: true, isFeatured: false,
       validityMonths: 6, allowedDanceTypeIds: [], allowAllAges: true, minAge: null,
       maxAge: null, feature1: "", feature2: "", feature3: "",
+      cardImageUrl: "", detailsImageUrl: "",
     });
     setAgePreset("all");
     setOpen(true);
@@ -141,6 +170,7 @@ export default function Packages() {
       minAge: p.minAge,
       maxAge: p.maxAge,
       feature1: p.features?.[0] ?? "", feature2: p.features?.[1] ?? "", feature3: p.features?.[2] ?? "",
+      cardImageUrl: p.cardImageUrl ?? "", detailsImageUrl: p.detailsImageUrl ?? "",
     });
     setAgePreset(
       p.allowAllAges === true ? "all"
@@ -390,6 +420,45 @@ export default function Packages() {
                   <FormMessage />
                 </FormItem>
               )} />
+              <div className="space-y-3 rounded-md border p-3">
+                <p className="text-sm font-medium">Package Artwork</p>
+                <p className="text-xs text-muted-foreground">
+                  Card image shows on the Home package card; details image is the hero in the package details sheet
+                  (falls back to the card image when blank).
+                </p>
+                <FormField control={form.control} name="cardImageUrl" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Card Image URL</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="url"
+                        placeholder="https://example.com/package-card.jpg"
+                        data-testid="input-package-card-image"
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <ImageUrlPreview url={form.watch("cardImageUrl")} label="Card image" />
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="detailsImageUrl" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Details Hero Image URL (optional)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="url"
+                        placeholder="Falls back to card image if left blank"
+                        data-testid="input-package-details-image"
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <ImageUrlPreview url={form.watch("detailsImageUrl") || form.watch("cardImageUrl")} label="Details image" />
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
               <div className="flex gap-6">
                 <FormField control={form.control} name="isActive" render={({ field }) => (
                   <FormItem className="flex items-center gap-3">

@@ -23,6 +23,10 @@ export const pricePackagesTable = pgTable("price_packages", {
   allowedDanceTypes: text("allowed_dance_types").array().notNull().default([]),
   // Up to 3 short selling-point bullets shown on the package card (CMS-managed)
   features: text("features").array().notNull().default([]),
+  // Admin-controlled artwork. cardImageUrl backs the Home package card;
+  // detailsImageUrl backs the details sheet hero (falls back to cardImageUrl).
+  cardImageUrl: text("card_image_url"),
+  detailsImageUrl: text("details_image_url"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 }, (table) => ([

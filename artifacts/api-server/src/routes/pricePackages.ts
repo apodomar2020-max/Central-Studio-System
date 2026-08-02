@@ -24,7 +24,7 @@ import {
 import { resolveCatalogueViewer, setCatalogueCacheHeaders } from "../lib/catalogueViewer";
 
 const router: IRouter = Router();
-const PRICE_PACKAGE_ACTIVITY_FIELDS = ["name", "type", "priceEgp", "sessions", "description", "isActive", "isFeatured", "validityMonths", "singleClassPriceEgp", "allowedDanceTypes", "allowAllAges", "minAge", "maxAge", "features"] as const;
+const PRICE_PACKAGE_ACTIVITY_FIELDS = ["name", "type", "priceEgp", "sessions", "description", "isActive", "isFeatured", "validityMonths", "singleClassPriceEgp", "allowedDanceTypes", "allowAllAges", "minAge", "maxAge", "features", "cardImageUrl", "detailsImageUrl"] as const;
 
 function validatePackageAgeRange(input: {
   allowAllAges?: boolean | null;
@@ -39,6 +39,63 @@ function validatePackageAgeRange(input: {
     maxAge: input.maxAge ?? null,
   });
   return result.eligible ? null : result.reasons[0]?.message ?? "Invalid age range.";
+}
+
+// Same validation shape as the Ballet home-card image field
+// (adminBallet.ts's normalizeBalletImageUrl): HTTPS-only, public Google
+// Drive share links rewritten to a direct-view URL.
+const GOOGLE_DRIVE_IMAGE_HOSTS = new Set(["drive.google.com", "www.drive.google.com", "docs.google.com"]);
+
+function extractGoogleDriveFileId(input: URL): string | null {
+  const pathMatch = input.pathname.match(/\/file\/d\/([^/]+)/i);
+  const raw = pathMatch?.[1] ?? input.searchParams.get("id");
+  if (!raw) return null;
+  const decoded = decodeURIComponent(raw).trim();
+  return /^[A-Za-z0-9_-]{10,}$/.test(decoded) ? decoded : null;
+}
+
+function normalizePackageImageUrl(input: string | null | undefined, label: string): string | null {
+  const trimmed = input?.trim();
+  if (!trimmed) return null;
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+
+  if (url.protocol !== "https:") {
+    throw new Error(`${label} must use HTTPS.`);
+  }
+
+  if (!url.username && !url.password && !GOOGLE_DRIVE_IMAGE_HOSTS.has(url.hostname.toLowerCase())) {
+    return url.toString();
+  }
+
+  if (url.username || url.password) {
+    throw new Error(`${label} must not include credentials.`);
+  }
+
+  const driveId = extractGoogleDriveFileId(url);
+  if (!driveId) {
+    throw new Error("Google Drive image URL must include a public file ID.");
+  }
+
+  return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`;
+}
+
+function normalizePackageImageFields<T extends { cardImageUrl?: string | null; detailsImageUrl?: string | null }>(
+  data: T,
+): T {
+  const result = { ...data };
+  if ("cardImageUrl" in data) {
+    result.cardImageUrl = normalizePackageImageUrl(data.cardImageUrl, "Card image URL") as T["cardImageUrl"];
+  }
+  if ("detailsImageUrl" in data) {
+    result.detailsImageUrl = normalizePackageImageUrl(data.detailsImageUrl, "Details image URL") as T["detailsImageUrl"];
+  }
+  return result;
 }
 
 async function loadDanceTypeRestrictions(packageIds: number[]) {
@@ -122,7 +179,14 @@ router.post("/price-packages", blockStudentJwt, requireAdminAuth, requireAdminPe
     res.status(400).json({ error: "One or more dance type IDs are invalid." });
     return;
   }
-  const { allowedDanceTypeIds: _ids, ...packageData } = parsed.data;
+  const { allowedDanceTypeIds: _ids, ...rest } = parsed.data;
+  let packageData: typeof rest;
+  try {
+    packageData = normalizePackageImageFields(rest);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Invalid image URL." });
+    return;
+  }
   const row = await db.transaction(async (tx) => {
     const [created] = await tx.insert(pricePackagesTable).values({
       ...packageData,
@@ -203,7 +267,14 @@ router.patch("/price-packages/:id", blockStudentJwt, requireAdminAuth, requireAd
     res.status(400).json({ error: "One or more dance type IDs are invalid." });
     return;
   }
-  const { allowedDanceTypeIds: _ids, ...packageData } = parsed.data;
+  const { allowedDanceTypeIds: _ids, ...rest } = parsed.data;
+  let packageData: typeof rest;
+  try {
+    packageData = normalizePackageImageFields(rest);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Invalid image URL." });
+    return;
+  }
   const row = await db.transaction(async (tx) => {
     const [updated] = await tx.update(pricePackagesTable).set({
       ...packageData,

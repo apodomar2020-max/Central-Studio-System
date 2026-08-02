@@ -1171,6 +1171,8 @@ export const ListPricePackagesResponseItem = zod.object({
       }),
     ),
   }),
+  cardImageUrl: zod.string().nullish(),
+  detailsImageUrl: zod.string().nullish(),
   createdAt: zod.string(),
 });
 export const ListPricePackagesResponse = zod.array(
@@ -1193,6 +1195,8 @@ export const CreatePricePackageBody = zod.object({
   minAge: zod.number().nullish(),
   maxAge: zod.number().nullish(),
   allowedDanceTypeIds: zod.array(zod.number()).optional(),
+  cardImageUrl: zod.string().nullish(),
+  detailsImageUrl: zod.string().nullish(),
 });
 
 export const CreatePricePackageResponse = zod.object({
@@ -1241,6 +1245,8 @@ export const CreatePricePackageResponse = zod.object({
       }),
     ),
   }),
+  cardImageUrl: zod.string().nullish(),
+  detailsImageUrl: zod.string().nullish(),
   createdAt: zod.string(),
 });
 
@@ -1294,6 +1300,8 @@ export const GetPricePackageResponse = zod.object({
       }),
     ),
   }),
+  cardImageUrl: zod.string().nullish(),
+  detailsImageUrl: zod.string().nullish(),
   createdAt: zod.string(),
 });
 
@@ -1317,6 +1325,8 @@ export const UpdatePricePackageBody = zod.object({
   minAge: zod.number().nullish(),
   maxAge: zod.number().nullish(),
   allowedDanceTypeIds: zod.array(zod.number()).optional(),
+  cardImageUrl: zod.string().nullish(),
+  detailsImageUrl: zod.string().nullish(),
 });
 
 export const UpdatePricePackageResponse = zod.object({
@@ -1365,6 +1375,8 @@ export const UpdatePricePackageResponse = zod.object({
       }),
     ),
   }),
+  cardImageUrl: zod.string().nullish(),
+  detailsImageUrl: zod.string().nullish(),
   createdAt: zod.string(),
 });
 

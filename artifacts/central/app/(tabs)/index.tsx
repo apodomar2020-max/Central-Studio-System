@@ -52,7 +52,8 @@ import {
 } from "@/data/apiAdapters";
 import { formatCairoDateKey, getCairoTomorrowDateKey } from "@/utils/cairoDate";
 import colors from "@/constants/colors";
-import PackagePurchaseModal from "@/components/PackagePurchaseModal";
+import PackageVisualCard, { PACKAGE_CARD_HEIGHT, PACKAGE_CARD_WIDTH } from "@/components/PackageVisualCard";
+import PackageDetailsSheet from "@/components/PackageDetailsSheet";
 import type { PackageParticipantSelection } from "@/contexts/AppContext";
 import BalletFeaturedProgramCard from "@/components/BalletFeaturedProgramCard";
 import NewStudentBanner from "@/components/NewStudentBanner";
@@ -599,95 +600,41 @@ function ClassCard({
 
 // ─── Package cards ────────────────────────────────────────────────────────────
 
-function PackageCard({ pkg, onChoose }: { pkg: PricePackage; onChoose: (pkg: PricePackage) => void }) {
-  const { user } = useAppContext();
-  const hot     = pkg.isFeatured;
-  const credits = pkg.sessions ?? 1;
-  const iconName: "star" | "ticket" | "infinity" = hot ? "star" : credits === 1 ? "ticket" : "infinity";
-
-  return (
-    <TouchableOpacity
-      style={[s.pkgCard, hot && s.pkgCardHot]}
-      activeOpacity={0.88}
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        if (!user) {
-          showAuthRequiredPrompt();
-          return;
-        }
-        onChoose(pkg);
-      }}
-    >
-      {/* Top row: icon left + POPULAR badge right (design: space-between) */}
-      <View style={s.pkgTopRow}>
-        <View style={[s.pkgIcon, hot && { backgroundColor: CYAN }]}>
-          <CsIcon name={iconName} size={22} stroke={2.2} color={hot ? INK_900 : CYAN} />
-        </View>
-        {hot && (
-          <View style={s.pkgBadge}>
-            <CsIcon name="star" size={12} color={INK_900} />
-            <Text style={s.pkgBadgeText}>POPULAR</Text>
-          </View>
-        )}
-      </View>
-      <Text style={s.pkgName}>{pkg.name}</Text>
-      <View style={s.pkgPriceRow}>
-        <Text style={[s.pkgPrice, !hot && { color: "#fff" }]}>EGP {pkg.priceEgp}</Text>
-        <Text style={s.pkgUnit}>/{credits === 1 ? "class" : `${credits} cls`}</Text>
-      </View>
-      {/* Description (design parity) */}
-      {pkg.description ? <Text style={s.pkgDesc}>{pkg.description}</Text> : null}
-      {/* Feature bullets with check icons (design parity) */}
-      {pkg.features?.length ? (
-        <View style={s.pkgFeatures}>
-          {pkg.features.map((f, i) => (
-            <View key={i} style={s.pkgFeatureRow}>
-              <CsIcon name="check" size={15} stroke={2.6} color={CYAN_400} />
-              <Text style={s.pkgFeatureText}>{f}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-      <View style={[s.pkgBtn, hot && { backgroundColor: CYAN }]}>
-        <Text style={[s.pkgBtnText, hot && { color: INK_900 }]}>Choose {pkg.name}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 function PackagesSection() {
   const { user, purchasePackage } = useAppContext();
   const alert = useCentralAlert();
   const { data: raw, isLoading, isError } = useListPricePackages();
-  const [confirmPkg, setConfirmPkg] = useState<PricePackage | null>(null);
+  const [detailsPkg, setDetailsPkg] = useState<PricePackage | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const pkgs = React.useMemo(
     () => (raw ?? []).filter((p: PricePackage) => p.isActive !== false),
     [raw],
   );
 
-  const handleChoosePackage = useCallback((pkg: PricePackage) => {
+  const handleOpenDetails = useCallback((pkg: PricePackage) => {
     if (!user) {
       showAuthRequiredPrompt();
       return;
     }
-    setConfirmPkg(pkg);
+    setDetailsPkg(pkg);
   }, [user]);
 
-  const confirmPurchase = useCallback(async (participant: PackageParticipantSelection, promoCode?: string | null) => {
-    if (!confirmPkg) return;
+  const confirmPurchase = useCallback(async (participant: PackageParticipantSelection) => {
+    if (!detailsPkg) return;
     setPurchasing(true);
     try {
       await purchasePackage({
-        id: confirmPkg.id,
-        name: confirmPkg.name,
-        sessions: confirmPkg.sessions ?? 1,
+        id: detailsPkg.id,
+        name: detailsPkg.name,
+        sessions: detailsPkg.sessions ?? 1,
         validityMonths: 0,
-        promoCode,
         participant,
+        // Online Payment is disabled in this UI (Coming Soon) — Pay at
+        // Studio / Cash is the only enabled path today.
+        paymentMode: "pay_at_studio",
       });
-      const packageName = confirmPkg.name;
-      setConfirmPkg(null);
+      const packageName = detailsPkg.name;
+      setDetailsPkg(null);
       router.push("/package-center");
       alert.show({
         tone: "success",
@@ -704,7 +651,7 @@ function PackagesSection() {
     } finally {
       setPurchasing(false);
     }
-  }, [confirmPkg, purchasePackage, alert]);
+  }, [detailsPkg, purchasePackage, alert]);
 
   if (isError || (!isLoading && pkgs.length === 0)) {
     return (
@@ -742,23 +689,32 @@ function PackagesSection() {
       </View>
       {isLoading ? (
         <View style={{ paddingLeft: 20, flexDirection: "row", gap: 12 }}>
-          {[1, 2].map((i) => <View key={i} style={[s.pkgCard, { opacity: 0.3 }]} />)}
+          {[1, 2].map((i) => (
+            <View
+              key={i}
+              style={{
+                width: PACKAGE_CARD_WIDTH, height: PACKAGE_CARD_HEIGHT,
+                borderRadius: R_LG, backgroundColor: INK_800,
+                borderWidth: 1, borderColor: BORDER, opacity: 0.3,
+              }}
+            />
+          ))}
         </View>
       ) : (
         <FlatList
           data={pkgs}
           keyExtractor={(p) => String(p.id)}
-          renderItem={({ item }) => <PackageCard pkg={item} onChoose={handleChoosePackage} />}
+          renderItem={({ item }) => <PackageVisualCard pkg={item} onPress={handleOpenDetails} />}
           horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingLeft: 20, gap: 12, paddingRight: 20 }}
         />
       )}
-      <PackagePurchaseModal
-        pkg={confirmPkg}
-        visible={!!confirmPkg}
+      <PackageDetailsSheet
+        pkg={detailsPkg}
+        visible={!!detailsPkg}
         submitting={purchasing}
-        onCancel={() => setConfirmPkg(null)}
-        onConfirm={confirmPurchase}
+        onClose={() => setDetailsPkg(null)}
+        onContinue={confirmPurchase}
       />
     </View>
   );
@@ -1311,41 +1267,6 @@ const s = StyleSheet.create({
   },
   emptyTitle: { fontSize: 26, fontFamily: "Archivo_800ExtraBold", color: "#fff", textAlign: "center", letterSpacing: -0.3 },
   emptyDesc: { fontSize: 16, fontFamily: "Archivo_400Regular", color: INK_300, textAlign: "center", lineHeight: 24, maxWidth: 280 },
-
-  // ── Package cards — Fix Pack 2: width 200→230; hot border full cyan, 1.5px ──
-  pkgCard: {
-    width: 230, borderRadius: R_LG, overflow: "hidden",
-    backgroundColor: INK_800, borderWidth: 1, borderColor: BORDER, padding: 18,
-  },
-  // Fix Pack 2: borderColor CYAN+"60"→CYAN (full opacity), borderWidth 1→1.5
-  pkgCardHot: { borderColor: CYAN, borderWidth: 1.5, backgroundColor: "rgba(0,182,215,0.08)" },
-  // Icon + badge share one row (design: justify-content space-between).
-  pkgTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  pkgBadge: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: CYAN,
-    borderRadius: R_PILL, paddingHorizontal: 10, paddingVertical: 4,
-  },
-  pkgBadgeText: { fontSize: 11, fontFamily: "Archivo_800ExtraBold", color: INK_900, letterSpacing: 1 },
-  pkgIcon: {
-    width: 40, height: 40, borderRadius: R_MD,
-    backgroundColor: "rgba(255,255,255,0.07)",
-    alignItems: "center", justifyContent: "center",
-  },
-  pkgName: { fontSize: 19, fontFamily: "Archivo_700Bold", color: "#fff" },
-  pkgPriceRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 6, marginBottom: 8 },
-  pkgPrice: { fontSize: 38, fontFamily: "Anton_400Regular", color: CYAN, lineHeight: 34, ...iosDisplayTextStyle(38, 34) },
-  pkgUnit: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400 },
-  // Description + feature bullets (design parity).
-  pkgDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 19, marginBottom: 14 },
-  pkgFeatures: { gap: 8, marginBottom: 16 },
-  pkgFeatureRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  pkgFeatureText: { flex: 1, fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_200 },
-  pkgBtn: {
-    marginTop: "auto" as any, paddingVertical: 13, borderRadius: R_MD,
-    backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center",
-  },
-  pkgBtnText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: "#fff" },
 
   // ── Package promo fallback ─────────────────────────────────────────────────
   pkgPromo: {

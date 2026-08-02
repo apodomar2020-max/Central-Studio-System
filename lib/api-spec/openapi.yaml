@@ -1922,6 +1922,8 @@ components:
           type: string
           enum: [canonical, legacy_text_only, unrestricted]
         catalogueEligibility: { $ref: "#/components/schemas/CatalogueEligibility" }
+        cardImageUrl: { type: ["string", "null"] }
+        detailsImageUrl: { type: ["string", "null"] }
         createdAt: { type: string }
 
     CreatePricePackageBody:
@@ -1943,6 +1945,8 @@ components:
         minAge: { type: ["integer", "null"] }
         maxAge: { type: ["integer", "null"] }
         allowedDanceTypeIds: { type: array, items: { type: integer } }
+        cardImageUrl: { type: ["string", "null"] }
+        detailsImageUrl: { type: ["string", "null"] }
 
     UpdatePricePackageBody:
       type: object
@@ -1962,6 +1966,8 @@ components:
         minAge: { type: ["integer", "null"] }
         maxAge: { type: ["integer", "null"] }
         allowedDanceTypeIds: { type: array, items: { type: integer } }
+        cardImageUrl: { type: ["string", "null"] }
+        detailsImageUrl: { type: ["string", "null"] }
 
     CatalogueConfigurationState:
       type: string

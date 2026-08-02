@@ -624,6 +624,10 @@ export interface PricePackage {
   danceTypeUnrestricted: boolean;
   danceTypeConfigurationState: PricePackageDanceTypeConfigurationState;
   catalogueEligibility: CatalogueEligibility;
+  /** @nullable */
+  cardImageUrl?: string | null;
+  /** @nullable */
+  detailsImageUrl?: string | null;
   createdAt: string;
 }
 
@@ -649,6 +653,10 @@ export interface CreatePricePackageBody {
   /** @nullable */
   maxAge?: number | null;
   allowedDanceTypeIds?: number[];
+  /** @nullable */
+  cardImageUrl?: string | null;
+  /** @nullable */
+  detailsImageUrl?: string | null;
 }
 
 export interface UpdatePricePackageBody {
@@ -673,6 +681,10 @@ export interface UpdatePricePackageBody {
   /** @nullable */
   maxAge?: number | null;
   allowedDanceTypeIds?: number[];
+  /** @nullable */
+  cardImageUrl?: string | null;
+  /** @nullable */
+  detailsImageUrl?: string | null;
 }
 
 /**
