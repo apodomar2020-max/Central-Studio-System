@@ -32,6 +32,8 @@ export const packageOrdersTable = pgTable("package_orders", {
   packageName: text("package_name").notNull(),
   totalCredits: integer("total_credits").notNull(),
   remainingCredits: integer("remaining_credits").notNull(),
+  purchaseUnitPriceMinor: integer("purchase_unit_price_minor"),
+  priceSnapshotBasis: text("price_snapshot_basis"),
   status: text("status").notNull().default("pendingPayment"),
   notes: text("notes"),
   activatedAt: timestamp("activated_at", { withTimezone: true, mode: "string" }),
@@ -63,6 +65,10 @@ export const packageOrdersTable = pgTable("package_orders", {
   check("package_orders_purchase_eligibility_configuration_state_check", sql`
     ${table.purchaseEligibilityConfigurationState} is null
     or ${table.purchaseEligibilityConfigurationState} in ('configured', 'legacy_unconfigured')
+  `),
+  check("package_orders_price_snapshot_basis_check", sql`
+    ${table.priceSnapshotBasis} is null
+    or ${table.priceSnapshotBasis} in ('recorded_purchase_price', 'estimated_catalog_price', 'unknown')
   `),
   index("package_orders_owner_participant_status_idx")
     .on(table.studentId, table.participantType, table.participantChildId, table.status),

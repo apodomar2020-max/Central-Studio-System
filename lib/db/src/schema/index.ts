@@ -51,6 +51,8 @@ export * from "./appFaqItems";
 export * from "./appContactLinks";
 // Credit Ledger — immutable audit trail for credit changes (migration 0013)
 export * from "./creditTransactions";
+export * from "./packageCreditLots";
+export * from "./packageCreditAllocations";
 // Instagram token — persisted long-lived token with auto-refresh (migration 0020)
 export * from "./instagramToken";
 // Profile Completion Engine — "Your Vibe" dance interests (Phase 4, migration 0035)
