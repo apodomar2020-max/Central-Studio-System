@@ -53,6 +53,7 @@ export * from "./appContactLinks";
 export * from "./creditTransactions";
 export * from "./packageCreditLots";
 export * from "./packageCreditAllocations";
+export * from "./attendanceReversals";
 // Instagram token — persisted long-lived token with auto-refresh (migration 0020)
 export * from "./instagramToken";
 // Profile Completion Engine — "Your Vibe" dance interests (Phase 4, migration 0035)

@@ -50,6 +50,9 @@ export const packageCreditAllocationsTable = pgTable("package_credit_allocations
   uniqueIndex("package_credit_allocations_refund_lot_unique")
     .on(table.paymentRefundId, table.lotId)
     .where(sql`${table.eventType} = 'refund_retirement'`),
+  uniqueIndex("package_credit_allocations_reversal_original_unique")
+    .on(table.reversesAllocationId)
+    .where(sql`${table.eventType} = 'reversal' and ${table.reversesAllocationId} is not null`),
   index("package_credit_allocations_lot_id_idx").on(table.lotId),
   index("package_credit_allocations_package_order_id_idx").on(table.packageOrderId),
   index("package_credit_allocations_schedule_id_idx").on(table.scheduleId),
@@ -61,6 +64,10 @@ export const packageCreditAllocationsTable = pgTable("package_credit_allocations
   check("package_credit_allocations_refund_linkage_check", sql`
     (${table.eventType} = 'refund_retirement' and ${table.paymentRefundId} is not null)
     or (${table.eventType} <> 'refund_retirement' and ${table.paymentRefundId} is null)
+  `),
+  check("package_credit_allocations_reversal_linkage_check", sql`
+    (${table.eventType} = 'reversal' and ${table.reversesAllocationId} is not null and ${table.paymentRefundId} is null)
+    or (${table.eventType} <> 'reversal' and ${table.reversesAllocationId} is null)
   `),
 ]));
 
