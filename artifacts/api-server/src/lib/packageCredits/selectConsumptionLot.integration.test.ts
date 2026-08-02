@@ -156,3 +156,41 @@ test("non-attendance credit transaction types cannot create consumption allocati
   const lot = await pool.query(`SELECT credits_remaining FROM package_credit_lots WHERE id = $1`, [lotId]);
   assert.equal(lot.rows[0].credits_remaining, 1);
 });
+
+test("lot expiring today in Cairo remains consumable, while lot expired yesterday is rejected", async () => {
+  const orderId = await makeOrder("cairo-dates", 2);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const yesterdayIso = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+  // Lot expired yesterday in Cairo (e.g. 2026-08-01 12:00:00Z)
+  await issueLot({ orderId, credits: 1, totalValueMinor: 100, expiresAt: `${yesterdayIso}T12:00:00.000Z` });
+
+  // Lot expiring today in Cairo (e.g. 2026-08-02 12:00:00Z)
+  const todayLot = await issueLot({ orderId, credits: 1, totalValueMinor: 100, sourceType: "manual_complimentary", transactionType: "manual_adjustment", expiresAt: `${todayIso}T12:00:00.000Z` });
+
+  const allocation = await allocate(orderId, await makeDeduction(orderId));
+  assert.equal(allocation.lotId, todayLot);
+});
+
+test("UTC midnight boundary cases do not diverge from Cairo business date expiration rules", async () => {
+  const orderId = await makeOrder("utc-boundary", 1);
+
+  // Lot expiring on Cairo date 2026-08-03 00:00:00+03 (stored as 2026-08-02 21:00:00Z)
+  const lotId = await issueLot({ orderId, credits: 1, totalValueMinor: 100, expiresAt: "2026-08-02T21:00:00.000Z" });
+
+  const deduction = await makeDeduction(orderId);
+
+  // Evaluate allocation at Cairo date 2026-08-02 22:30:00+03 (19:30:00Z UTC)
+  const nowEvening = new Date("2026-08-02T19:30:00.000Z");
+
+  const allocation = await db.transaction((tx) => allocateAttendanceConsumption(tx, {
+    creditTransactionId: deduction.creditTransactionId,
+    packageOrderId: orderId,
+    attendanceId: deduction.attendanceId,
+    bookingId: null,
+    createdBy: "test",
+    now: nowEvening,
+  }));
+
+  assert.equal(allocation.lotId, lotId);
+});

@@ -93,13 +93,16 @@ export async function allocateAttendanceConsumption(
         .where(eq(schedulesTable.id, attendance.scheduleId))
         .limit(1);
 
+  const now = params.now ?? new Date();
+  const nowIso = now.toISOString();
+
   const [lot] = await tx
     .select()
     .from(packageCreditLotsTable)
     .where(and(
       eq(packageCreditLotsTable.packageOrderId, params.packageOrderId),
       gt(packageCreditLotsTable.creditsRemaining, 0),
-      sql`(${packageCreditLotsTable.expiresAt} is null or ${packageCreditLotsTable.expiresAt} > now())`,
+      sql`(${packageCreditLotsTable.expiresAt} is null or (${packageCreditLotsTable.expiresAt} at time zone 'Africa/Cairo')::date >= (${nowIso}::timestamptz at time zone 'Africa/Cairo')::date)`,
     ))
     .orderBy(
       sql`${packageCreditLotsTable.expiresAt} asc nulls last`,
