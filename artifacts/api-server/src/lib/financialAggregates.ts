@@ -6,6 +6,7 @@ import {
   bookingsTable,
   classPricingSettingsTable,
   packageOrdersTable,
+  paymentRecordsTable,
   pricePackagesTable,
   schedulesTable,
 } from "@workspace/db";
@@ -31,26 +32,58 @@ export async function getFinancialAggregates(): Promise<FinancialAggregates> {
     db
       .select({
         grossRevenue: sql<number>`
-          coalesce(sum(coalesce(${schedulesTable.priceEgp}, ${classPricingSettingsTable.singleClassPriceEgp})), 0)::int
+          coalesce(sum(coalesce(
+            ${paymentRecordsTable.paidAmountMinor} / 100,
+            ${schedulesTable.priceEgp},
+            ${classPricingSettingsTable.singleClassPriceEgp}
+          )), 0)::int
         `,
         unknownItems: sql<number>`
-          count(*) filter (where ${schedulesTable.priceEgp} is null and ${classPricingSettingsTable.singleClassPriceEgp} is null)::int
+          count(*) filter (
+            where ${paymentRecordsTable.paidAmountMinor} is null
+              and ${schedulesTable.priceEgp} is null
+              and ${classPricingSettingsTable.singleClassPriceEgp} is null
+          )::int
         `,
       })
       .from(bookingsTable)
       .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
       .leftJoin(classPricingSettingsTable, eq(classPricingSettingsTable.id, sql`1`))
+      .leftJoin(
+        paymentRecordsTable,
+        and(
+          eq(paymentRecordsTable.bookingId, bookingsTable.id),
+          eq(paymentRecordsTable.flowType, "single_class_booking"),
+        ),
+      )
       .where(and(
         eq(bookingsTable.paymentStatus, "paid"),
         inArray(bookingsTable.paymentMode, ["pay_at_studio", "online_payment"]),
       )),
     db
       .select({
-        grossRevenue: sql<number>`coalesce(sum(${pricePackagesTable.priceEgp}), 0)::int`,
-        unknownItems: sql<number>`count(*) filter (where ${pricePackagesTable.priceEgp} is null)::int`,
+        grossRevenue: sql<number>`
+          coalesce(sum(coalesce(
+            ${paymentRecordsTable.paidAmountMinor} / 100,
+            ${pricePackagesTable.priceEgp}
+          )), 0)::int
+        `,
+        unknownItems: sql<number>`
+          count(*) filter (
+            where ${paymentRecordsTable.paidAmountMinor} is null
+              and ${pricePackagesTable.priceEgp} is null
+          )::int
+        `,
       })
       .from(packageOrdersTable)
       .leftJoin(pricePackagesTable, eq(packageOrdersTable.packageId, pricePackagesTable.id))
+      .leftJoin(
+        paymentRecordsTable,
+        and(
+          eq(paymentRecordsTable.packageOrderId, packageOrdersTable.id),
+          eq(paymentRecordsTable.flowType, "package_purchase"),
+        ),
+      )
       .where(and(
         inArray(packageOrdersTable.status, ["active", "fullyUsed", "expired"]),
         // Double-count prevention: if a generic package_order is referenced by
