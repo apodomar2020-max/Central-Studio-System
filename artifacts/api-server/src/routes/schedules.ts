@@ -2,7 +2,7 @@ import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { Router, type IRouter, type Response } from "express";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { db, bookingsTable, schedulesTable, classesTable, instructorsTable, studioBranchesTable, studioRoomsTable } from "@workspace/db";
+import { db, bookingsTable, schedulesTable, classesTable, instructorsTable, studioBranchesTable, studioRoomsTable, attendanceTable, packageCreditAllocationsTable } from "@workspace/db";
 import { currentOccurrenceDate } from "../lib/occurrence";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
 import { isClassCapacityEnabled } from "../lib/classCapacitySettings";
@@ -27,6 +27,7 @@ import {
   UpdateScheduleBody,
   UpdateScheduleResponse,
   ListSchedulesResponse,
+  DeleteScheduleParams,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -569,11 +570,48 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
   res.json(UpdateScheduleResponse.parse(presentSchedule(located, cls, { kind: "admin" })));
 });
 
-router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), (_req: AdminRequest, res): void => {
-  res.status(409).json({
-    error: "Schedules cannot be deleted. Cancel the schedule instead.",
-    code: "SCHEDULE_DELETE_NOT_ALLOWED",
+router.delete("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPermission("schedules", "delete"), async (req: AdminRequest, res): Promise<void> => {
+  const params = DeleteScheduleParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const scheduleId = params.data.id;
+  const [existing] = await db.select().from(schedulesTable).where(eq(schedulesTable.id, scheduleId));
+  if (!existing) {
+    res.status(404).json({ error: "Schedule not found" });
+    return;
+  }
+
+  const [booking] = await db.select({ id: bookingsTable.id }).from(bookingsTable).where(eq(bookingsTable.scheduleId, scheduleId)).limit(1);
+  const [attendance] = await db.select({ id: attendanceTable.id }).from(attendanceTable).where(eq(attendanceTable.scheduleId, scheduleId)).limit(1);
+  const [allocation] = await db.select({ id: packageCreditAllocationsTable.id }).from(packageCreditAllocationsTable).where(eq(packageCreditAllocationsTable.scheduleId, scheduleId)).limit(1);
+
+  if (booking || attendance || allocation) {
+    res.status(409).json({
+      error: "Schedules with existing bookings, attendance, or credit records cannot be permanently deleted. Cancel the schedule instead.",
+      code: "SCHEDULE_DELETE_NOT_ALLOWED",
+    });
+    return;
+  }
+
+  const [deleted] = await db.delete(schedulesTable).where(eq(schedulesTable.id, scheduleId)).returning();
+  if (!deleted) {
+    res.status(404).json({ error: "Schedule not found" });
+    return;
+  }
+
+  await logActivity(req, {
+    action: "delete",
+    module: "schedules",
+    entityType: "schedule",
+    entityId: existing.id,
+    entityLabel: scheduleDisplay(existing),
+    before: Object.fromEntries(SCHEDULE_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+    summary: `Deleted unused schedule ${scheduleDisplay(existing)}`,
   });
+
+  res.sendStatus(204);
 });
 
 export default router;

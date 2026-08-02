@@ -262,7 +262,7 @@ export default function Classes() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("Delete this class?")) {
+    if (confirm("Archive this class? It will be deactivated to preserve historical schedules, bookings, and reports.")) {
       deleteClass.mutate({ id }, {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: getListClassesQueryKey() }),
       });

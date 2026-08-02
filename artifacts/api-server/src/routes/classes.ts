@@ -287,6 +287,13 @@ router.delete("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPer
     const [existing] = await tx.select().from(classesTable).where(eq(classesTable.id, params.data.id));
     if (!existing) return null;
 
+    const [linkedSchedule] = await tx.select({ id: schedulesTable.id }).from(schedulesTable).where(eq(schedulesTable.classId, existing.id)).limit(1);
+
+    if (linkedSchedule || existing.isActive) {
+      const [archived] = await tx.update(classesTable).set({ isActive: false }).where(eq(classesTable.id, params.data.id)).returning();
+      return archived ?? null;
+    }
+
     await notifyClassBookings(tx, existing.id, existing.title);
     const [deleted] = await tx.delete(classesTable).where(eq(classesTable.id, params.data.id)).returning();
     return deleted ?? null;
@@ -296,13 +303,13 @@ router.delete("/classes/:id", blockStudentJwt, requireAdminAuth, requireAdminPer
     return;
   }
   await logActivity(req, {
-    action: "delete",
+    action: "deactivate",
     module: "classes",
     entityType: "class",
     entityId: row.id,
     entityLabel: row.title,
     before: Object.fromEntries(CLASS_ACTIVITY_FIELDS.map((key) => [key, row[key]])),
-    summary: `Deleted class ${row.title}`,
+    summary: `Archived class ${row.title}`,
   });
   res.sendStatus(204);
 });

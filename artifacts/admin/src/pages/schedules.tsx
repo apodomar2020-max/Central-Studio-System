@@ -7,6 +7,7 @@ import {
   useListClasses,
   useCreateSchedule,
   useUpdateSchedule,
+  useDeleteSchedule,
   getListSchedulesQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { Edit } from "lucide-react";
+import { Edit, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { BranchRoomFields } from "@/components/schedules/BranchRoomFields";
@@ -114,13 +115,40 @@ export default function Schedules() {
   const { can } = useAdminAuth();
   const canCreate = can("schedules", "create");
   const canEdit = can("schedules", "edit");
+  const canDelete = can("schedules", "delete");
   const { data: schedules, isLoading } = useListSchedules();
   const { data: classes } = useListClasses();
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const deleteSchedule = useDeleteSchedule();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
+
+  const handleDeleteSchedule = (id: number) => {
+    if (confirm("Permanently delete this schedule? (Schedules with existing bookings or attendance cannot be deleted and should be cancelled instead.)")) {
+      deleteSchedule.mutate(
+        { id },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() });
+            toast({ title: "Schedule deleted successfully" });
+          },
+          onError: (err: unknown) => {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const isBlocked = /SCHEDULE_DELETE_NOT_ALLOWED|existing bookings|attendance|credit records/i.test(errMsg);
+            toast({
+              title: "Cannot delete schedule",
+              description: isBlocked
+                ? "This schedule has existing bookings or attendance records and cannot be permanently deleted. Change its status to 'Cancelled' instead."
+                : errMsg || "Failed to delete schedule.",
+              variant: "destructive",
+            });
+          },
+        },
+      );
+    }
+  };
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -272,10 +300,15 @@ export default function Schedules() {
                     </Badge>
                   </TableCell>
                   <TableCell>{formatScheduleLocation(schedule)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right space-x-1">
                     {canEdit && (
                       <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
                         <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" data-testid={`button-delete-schedule-${schedule.id}`} onClick={() => handleDeleteSchedule(schedule.id)}>
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
                   </TableCell>

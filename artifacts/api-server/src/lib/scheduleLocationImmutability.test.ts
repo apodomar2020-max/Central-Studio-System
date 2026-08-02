@@ -56,6 +56,15 @@ test("historical NULL assignments remain unchanged without being blocked", async
   ));
 });
 
+test("legacy schedules with null branch can receive initial branch assignment even with historical activity", async () => {
+  const { assertScheduleLocationChangeAllowed } = await loadGuard();
+  await assert.doesNotReject(assertScheduleLocationChangeAllowed(
+    { branchId: null, roomId: null },
+    { branchId: 1, roomId: 2 },
+    async () => true,
+  ));
+});
+
 test("Regular and Ballet PATCH routes invoke the shared guard for their own domain", () => {
   const regularSource = readFileSync(resolve(process.cwd(), "artifacts/api-server/src/routes/schedules.ts"), "utf8");
   const balletSource = readFileSync(resolve(process.cwd(), "artifacts/api-server/src/routes/adminBalletSchedules.ts"), "utf8");

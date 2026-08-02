@@ -25,6 +25,7 @@ export async function assertScheduleLocationChangeAllowed(
   hasHistoricalActivity: () => Promise<boolean>,
 ): Promise<void> {
   if (existing.branchId === requested.branchId && existing.roomId === requested.roomId) return;
+  if (existing.branchId == null && requested.branchId != null) return;
   if (await hasHistoricalActivity()) {
     throw new ScheduleLocationError(422, "SCHEDULE_LOCATION_IMMUTABLE", IMMUTABLE_SCHEDULE_LOCATION_MESSAGE);
   }
