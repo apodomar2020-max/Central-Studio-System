@@ -10,6 +10,7 @@ import {
   getListSchedulesQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -166,10 +167,11 @@ export default function Schedules() {
     setOpen(true);
   };
 
+  const { toast } = useToast();
+
   const onSubmit = (values: FormValues) => {
-    if (!editing && !values.branchId) { form.setError("branchId", { message: "Branch is required" }); return; }
-    if (!editing && !values.roomId) { form.setError("roomId", { message: "Room is required" }); return; }
-    if (values.branchId && !values.roomId) { form.setError("roomId", { message: "Room is required after selecting a Branch" }); return; }
+    if (!values.branchId) { form.setError("branchId", { message: "Branch is required" }); return; }
+    if (!values.roomId) { form.setError("roomId", { message: "Room is required" }); return; }
     const parsed = formSchema.parse(values);
     const payload = {
       ...parsed,
@@ -183,7 +185,24 @@ export default function Schedules() {
     };
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() }); setOpen(false); };
     if (editing) {
-      updateSchedule.mutate({ id: editing.id, data: payload }, { onSuccess: invalidate });
+      updateSchedule.mutate(
+        { id: editing.id, data: payload },
+        {
+          onSuccess: invalidate,
+          onError: (err: unknown) => {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const errCode = (err as { code?: string })?.code;
+            const isImmutable = errCode === "SCHEDULE_LOCATION_IMMUTABLE" || /SCHEDULE_LOCATION_IMMUTABLE|cannot be changed after schedule activity/i.test(errMsg);
+            toast({
+              title: "Schedule update failed",
+              description: isImmutable
+                ? "This schedule location cannot be changed because it has existing bookings or attendance."
+                : errMsg || "Failed to update schedule. Please try again.",
+              variant: "destructive",
+            });
+          },
+        },
+      );
     } else {
       createSchedule.mutate({ data: { ...payload, branchId: values.branchId!, roomId: values.roomId! } }, { onSuccess: invalidate });
     }
