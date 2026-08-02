@@ -36,6 +36,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import FeedbackGate from "@/components/feedback/FeedbackGate";
 import PushRegistrationGate from "@/components/PushRegistrationGate";
 import { BackgroundMusicProvider } from "@/components/BackgroundMusicProvider";
+import { SplashSceneGate } from "@/components/SplashSceneGate";
 import { AppContextProvider } from "@/contexts/AppContext";
 import { useAppContext } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
@@ -304,12 +305,6 @@ function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  useEffect(() => {
     const subscription = AppState.addEventListener("change", onAppStateChange);
     return () => subscription.remove();
   }, []);
@@ -321,18 +316,20 @@ function RootLayout() {
       <ErrorBoundary>
         <CentralAlertProvider>
           <AppContextProvider>
-            <QueryClientProvider client={queryClient}>
-              <GestureHandlerRootView>
-                <KeyboardProvider>
-                  <BackgroundMusicProvider>
-                    <FeedbackGate />
-                    <PushRegistrationGate />
-                    <NotificationRoutingGate />
-                    <RootLayoutNav />
-                  </BackgroundMusicProvider>
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </QueryClientProvider>
+            <SplashSceneGate fontsLoaded={fontsLoaded || Boolean(fontError)}>
+              <QueryClientProvider client={queryClient}>
+                <GestureHandlerRootView>
+                  <KeyboardProvider>
+                    <BackgroundMusicProvider>
+                      <FeedbackGate />
+                      <PushRegistrationGate />
+                      <NotificationRoutingGate />
+                      <RootLayoutNav />
+                    </BackgroundMusicProvider>
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </QueryClientProvider>
+            </SplashSceneGate>
           </AppContextProvider>
         </CentralAlertProvider>
       </ErrorBoundary>
