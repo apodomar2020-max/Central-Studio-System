@@ -8,9 +8,9 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import * as zod from "zod";
-import { db, creditTransactionsTable, packageCreditLotsTable, packageOrdersTable } from "@workspace/db";
+import { db, creditTransactionsTable, packageCreditAllocationsTable, packageCreditLotsTable, packageOrdersTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { ListCreditTransactionsQueryParams } from "@workspace/api-zod";
 import { createStudentNotification } from "../lib/notifications";
@@ -150,44 +150,30 @@ const AdjustCreditsBody = zod.object({
     ctx.addIssue({ code: "custom", path: ["sourceType"], message: "package_bonus requires sourceType bonus" });
   }
   if (value.type === "manual_adjustment" && value.sourceType === "bonus") {
-  delta: zod.number().int().refine((val) => val !== 0, { message: "delta cannot be 0" }),
-  sourceType: zod.enum(["manual_paid", "manual_complimentary", "bonus"]).optional(),
-  totalValueMinor: zod.number().int().min(0).optional(),
-  idempotencyKey: zod.string().min(1).max(255),
-  notes: zod.string().max(1000).optional(),
-}).superRefine((data, ctx) => {
-  if (data.delta > 0) {
-    if (!data.sourceType) {
-      ctx.addIssue({
-        code: zod.ZodIssueCode.custom,
-        message: "sourceType is required when adding credits (delta > 0)",
-        path: ["sourceType"],
-      });
-    }
-    if (data.sourceType === "manual_paid" && data.totalValueMinor == null) {
-      ctx.addIssue({
-        code: zod.ZodIssueCode.custom,
-        message: "totalValueMinor is required for manual_paid additions",
-        path: ["totalValueMinor"],
-      });
-    }
+    ctx.addIssue({ code: "custom", path: ["sourceType"], message: "Positive manual adjustments require manual_complimentary or manual_paid" });
+  }
+  if (value.sourceType === "manual_paid" && value.totalValueMinor == null) {
+    ctx.addIssue({ code: "custom", path: ["totalValueMinor"], message: "manual_paid credits require totalValueMinor" });
+  }
+  if (value.sourceType !== "manual_paid" && value.totalValueMinor != null) {
+    ctx.addIssue({ code: "custom", path: ["totalValueMinor"], message: "Only manual_paid credits may include totalValueMinor" });
   }
 });
 
 router.post(
-  "/admin/package-orders/:id/adjust-credits",
+  "/admin/package-orders/:id/credits",
   requireAdminAuth,
   requireAdminPermission("credits", "adjust"),
   async (req: AdminRequest, res): Promise<void> => {
-    const params = AdjustCreditsParamsSchema.safeParse(req.params);
+    const params = AdjustCreditsParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
     }
 
-    const body = AdjustCreditsBodySchema.safeParse(req.body);
+    const body = AdjustCreditsBody.safeParse(req.body);
     if (!body.success) {
-      res.status(400).json({ error: body.error.flatten() });
+      res.status(400).json({ error: body.error.message });
       return;
     }
 
@@ -360,7 +346,7 @@ router.post(
               creditTransactionId: transaction.id,
               packageOrderId: id,
               credits: deductCount,
-              unitValueMinor,
+              unitValueMinor: unitValueMinor != null ? unitValueMinor : undefined,
               totalValueMinor: allocatedTotalValueMinor,
               valueBasis: allocatedTotalValueMinor > 0 ? lot.valueBasis : "unknown",
               policyVersion: "manual_adjustment_v1_expiry_fifo",
