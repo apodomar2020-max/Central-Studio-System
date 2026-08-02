@@ -375,7 +375,14 @@ export default function ClassDetailScreen() {
                 </View>
               ))}
             </View>
-            {!!cls.location && <Text style={styles.desc}>{cls.location}</Text>}
+            {!!cls.location && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+                <Ionicons name="location-outline" size={15} color={CYAN} />
+                <Text style={[styles.desc, { color: "#FFFFFF", fontFamily: "Archivo_600SemiBold", marginTop: 0 }]}>
+                  {cls.location}
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>

@@ -506,6 +506,12 @@ function ExploreClassCard({
               <Text style={s.metaText}>{item.duration}</Text>
             </View>
           )}
+          {!!item.location && (
+            <View style={s.metaItem}>
+              <Ionicons name="location-outline" size={13} color={INK_400} />
+              <Text style={s.metaText}>{item.location}</Text>
+            </View>
+          )}
         </View>
         <View style={s.classCardInstRow}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
