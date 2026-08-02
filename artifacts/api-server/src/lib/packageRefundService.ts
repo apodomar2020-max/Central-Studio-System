@@ -18,7 +18,8 @@ export type PackageRefundExcludedLotReason =
   | "non_purchased_source"
   | "expired"
   | "unknown_value"
-  | "unsupported_value_basis";
+  | "unsupported_value_basis"
+  | "corrupt_provenance";
 
 export type PackageRefundIntegrityWarning =
   | "package_order_not_found"
@@ -28,6 +29,7 @@ export type PackageRefundIntegrityWarning =
   | "payment_record_not_refundable"
   | "payment_amount_unavailable"
   | "lot_balance_mismatch"
+  | "restored_lot_provenance_invalid"
   | "no_refundable_value"
   | "refundable_value_exceeds_payment_capacity";
 
@@ -140,6 +142,27 @@ async function lockPackageContext(tx: Tx, packageOrderId: number): Promise<Locke
   return { order, payments, lots, allocations };
 }
 
+function resolveRefundLotProvenance(
+  lot: CreditLot,
+  lotsById: Map<number, CreditLot>,
+  allocationsById: Map<number, CreditAllocation>,
+): { root: CreditLot; restored: boolean } | null {
+  let current = lot;
+  let restored = false;
+  const visited = new Set<number>();
+  for (let depth = 0; current.sourceType === "restored"; depth += 1) {
+    restored = true;
+    if (depth >= 32 || visited.has(current.id) || current.restoredFromAllocationId == null) return null;
+    visited.add(current.id);
+    const allocation = allocationsById.get(current.restoredFromAllocationId);
+    if (!allocation || allocation.eventType !== "consumption" || allocation.packageOrderId !== lot.packageOrderId) return null;
+    const source = lotsById.get(allocation.lotId);
+    if (!source || source.packageOrderId !== lot.packageOrderId) return null;
+    current = source;
+  }
+  return { root: current, restored };
+}
+
 function buildEligibility(
   packageOrderId: number,
   context: LockedPackageContext,
@@ -174,12 +197,19 @@ function buildEligibility(
 
   const refundableLots: RefundablePackageCreditLot[] = [];
   const excludedLots: ExcludedPackageCreditLot[] = [];
+  const lotsById = new Map(lots.map((lot) => [lot.id, lot]));
+  const allocationsById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
   const today = getCairoBusinessDate(now);
   for (const lot of lots) {
     let reason: PackageRefundExcludedLotReason | null = null;
+    const ancestry = resolveRefundLotProvenance(lot, lotsById, allocationsById);
     if (lot.creditsRemaining <= 0) reason = "no_remaining_credits";
-    else if (lot.sourceType === "bonus") reason = "bonus";
-    else if (lot.sourceType !== "purchased") reason = "non_purchased_source";
+    else if (!ancestry) {
+      reason = "corrupt_provenance";
+      if (!warnings.includes("restored_lot_provenance_invalid")) warnings.push("restored_lot_provenance_invalid");
+    }
+    else if (ancestry.root.sourceType === "bonus") reason = "bonus";
+    else if (ancestry.root.sourceType !== "purchased") reason = "non_purchased_source";
     else if (lot.expiresAt != null && getCairoBusinessDate(new Date(lot.expiresAt)) < today) reason = "expired";
     else if (lot.totalValueMinor == null || lot.valueBasis === "unknown") reason = "unknown_value";
     else if (lot.valueBasis !== "recorded_purchase_price") reason = "unsupported_value_basis";

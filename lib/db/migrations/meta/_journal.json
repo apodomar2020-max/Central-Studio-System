@@ -680,6 +680,13 @@
       "when": 1786118400000,
       "tag": "0097_attendance_reversal_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1786204800000,
+      "tag": "0098_attendance_reversal_lifecycle",
+      "breakpoints": true
     }
   ]
 }

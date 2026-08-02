@@ -40,6 +40,12 @@ export const attendanceReversalsTable = pgTable("attendance_reversals", {
   uniqueIndex("attendance_reversals_request_idempotency_unique").on(table.requestIdempotencyKey),
   uniqueIndex("attendance_reversals_completed_attendance_unique").on(table.attendanceId).where(sql`${table.status} = 'completed'`),
   uniqueIndex("attendance_reversals_completed_consumption_unique").on(table.originalConsumptionAllocationId).where(sql`${table.status} = 'completed'`),
+  uniqueIndex("attendance_reversals_active_attendance_unique")
+    .on(table.attendanceId)
+    .where(sql`${table.status} in ('requested','approved')`),
+  uniqueIndex("attendance_reversals_active_consumption_unique")
+    .on(table.originalConsumptionAllocationId)
+    .where(sql`${table.status} in ('requested','approved')`),
   uniqueIndex("attendance_reversals_resulting_transaction_unique").on(table.resultingCreditTransactionId).where(sql`${table.resultingCreditTransactionId} is not null`),
   uniqueIndex("attendance_reversals_resulting_allocation_unique").on(table.resultingReversalAllocationId).where(sql`${table.resultingReversalAllocationId} is not null`),
   uniqueIndex("attendance_reversals_resulting_lot_unique").on(table.resultingRestoredLotId).where(sql`${table.resultingRestoredLotId} is not null`),

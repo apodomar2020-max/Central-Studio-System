@@ -82,6 +82,9 @@ export const bookingsTable = pgTable("bookings", {
   check("bookings_participant_age_snapshot_check", sql`
     ${table.participantAgeOnOccurrence} is null or ${table.participantAgeOnOccurrence} between 0 and 150
   `),
+  check("bookings_booking_status_check", sql`
+    ${table.bookingStatus} in ('pending', 'confirmed', 'rejected', 'cancelled', 'attended', 'completed', 'attendance_reversed')
+  `),
   check("bookings_participant_shape_check", sql`
     (${table.participantType} is null and ${table.participantChildId} is null)
     or (${table.participantType} = 'self' and ${table.participantChildId} is null)

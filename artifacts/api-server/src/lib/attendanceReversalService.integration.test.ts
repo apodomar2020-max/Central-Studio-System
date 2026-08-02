@@ -99,14 +99,14 @@ test("bonus attendance is eligible, zero-valued and promotional", async () => {
   assert.deepEqual(result.requiredPermissions, ["attendance.reverse"]);
 });
 
-test("restored credit preserves purchased provenance", async () => {
+test("cross-package restored lineage is rejected as corrupt rather than guessed", async () => {
   const root = await fixture({ label: "root" });
   const target = await fixture({ label: "restored", sourceType: "restored" });
   await pool.query(`update package_credit_lots set restored_from_allocation_id=$1 where id=$2`, [root.allocationId, target.lotId]);
   const result = await calculate(target.attendanceId, { now: NOW });
-  assert.equal(result.futureRefundEligibilityClassification, "restored_from_purchased");
-  assert.equal(result.paymentBackedProvenance?.cashBacked, true);
-  assert.equal(result.paymentBackedProvenance?.rootLotId, root.lotId);
+  assert.equal(result.eligible, false);
+  assert.equal(result.nonEligibilityReason, "integrity_conflict");
+  assert.ok(result.integrityWarnings.includes("restored_lot_provenance_invalid"));
 });
 
 test("expiry is preserved and an expired restoration requires immediate expiration", async () => {
@@ -206,7 +206,7 @@ test("allocation reversal linkage constraints and uniqueness are enforced", asyn
 test("migration is additive, journaled, and all new foreign keys restrict deletion", () => {
   const migration = readFileSync(resolve("lib/db/migrations/0097_attendance_reversal_foundation.sql"), "utf8");
   const journal = JSON.parse(readFileSync(resolve("lib/db/migrations/meta/_journal.json"), "utf8"));
-  assert.equal(journal.entries.at(-1).tag, "0097_attendance_reversal_foundation");
+  assert.equal(journal.entries.find((entry: { idx: number }) => entry.idx === 97)?.tag, "0097_attendance_reversal_foundation");
   assert.match(migration, /attendance_reversals_completed_attendance_unique/);
   assert.match(migration, /attendance_reversals_completed_consumption_unique/);
   assert.match(migration, /package_credit_allocations_reversal_original_unique/);

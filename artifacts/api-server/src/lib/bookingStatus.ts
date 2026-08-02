@@ -9,9 +9,11 @@
 //   attended  — student attended (counts as a used/reserved seat + history).
 //   cancelled / completed — legacy statuses, kept for history (see report). Not
 //               used to reserve a seat.
+//   attendance_reversed — terminal historical evidence that an attended
+//               booking was later reversed; never a cancellation or free seat.
 
 /** Statuses that RESERVE a seat → counted in bookedCount / progress / capacity. */
-export const RESERVED_SEAT_STATUSES = ["confirmed", "attended"] as const;
+export const RESERVED_SEAT_STATUSES = ["confirmed", "attended", "attendance_reversed"] as const;
 
 /** Statuses that BLOCK a duplicate request for the same occurrence (a live
  *  request the user already owns), even though `pending` does not reserve a seat. */
