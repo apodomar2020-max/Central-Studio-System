@@ -2872,6 +2872,278 @@ export const AdjustCreditsResponse = zod.object({
   }),
 });
 
+export const GetPackageRefundEligibilityParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const GetPackageRefundEligibilityResponse = zod.object({
+  eligibility: zod.object({
+    packageOrderId: zod.number(),
+    paymentRecordId: zod.number().nullish(),
+    eligible: zod.boolean(),
+    refundableAmountMinor: zod.number(),
+    refundableCredits: zod.number(),
+    consumedValueMinor: zod.number(),
+    expiredValueMinor: zod.number(),
+    paymentCapacityMinor: zod.number(),
+    refundableLots: zod.array(zod.record(zod.string(), zod.unknown())),
+    excludedLots: zod.array(zod.record(zod.string(), zod.unknown())),
+    integrityWarnings: zod.array(zod.string()),
+  }),
+  refund: zod.union([
+    zod.object({
+      id: zod.number(),
+      paymentRecordId: zod.number(),
+      status: zod.enum([
+        "underReview",
+        "approved",
+        "rejected",
+        "processing",
+        "refunded",
+        "failed",
+      ]),
+      requestedAmountMinor: zod.number(),
+      approvedAmountMinor: zod.number().nullish(),
+      refundedAmountMinor: zod.number().nullish(),
+      refundMethod: zod.enum(["cash", "original_payment_method"]),
+      requestedReason: zod.string(),
+      transactionReference: zod.string().nullish(),
+      failedReason: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+    zod.null(),
+  ]),
+});
+
+export const RequestPackageRefundParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const requestPackageRefundBodyRequestedReasonMax = 2000;
+
+export const RequestPackageRefundBody = zod.object({
+  refundMethod: zod.enum(["cash", "original_payment_method"]),
+  requestedReason: zod
+    .string()
+    .min(1)
+    .max(requestPackageRefundBodyRequestedReasonMax),
+  idempotencyKey: zod.string().uuid(),
+});
+
+export const RequestPackageRefundResponse = zod.object({
+  refund: zod.object({
+    id: zod.number(),
+    paymentRecordId: zod.number(),
+    status: zod.enum([
+      "underReview",
+      "approved",
+      "rejected",
+      "processing",
+      "refunded",
+      "failed",
+    ]),
+    requestedAmountMinor: zod.number(),
+    approvedAmountMinor: zod.number().nullish(),
+    refundedAmountMinor: zod.number().nullish(),
+    refundMethod: zod.enum(["cash", "original_payment_method"]),
+    requestedReason: zod.string(),
+    transactionReference: zod.string().nullish(),
+    failedReason: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  replayed: zod.boolean(),
+});
+
+export const GetPackageRefundParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const GetPackageRefundResponse = zod.object({
+  refund: zod.object({
+    id: zod.number(),
+    paymentRecordId: zod.number(),
+    status: zod.enum([
+      "underReview",
+      "approved",
+      "rejected",
+      "processing",
+      "refunded",
+      "failed",
+    ]),
+    requestedAmountMinor: zod.number(),
+    approvedAmountMinor: zod.number().nullish(),
+    refundedAmountMinor: zod.number().nullish(),
+    refundMethod: zod.enum(["cash", "original_payment_method"]),
+    requestedReason: zod.string(),
+    transactionReference: zod.string().nullish(),
+    failedReason: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  packageOrderId: zod.number(),
+});
+
+export const ApprovePackageRefundParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const approvePackageRefundBodyAdminNotesMax = 2000;
+
+export const ApprovePackageRefundBody = zod.object({
+  adminNotes: zod
+    .string()
+    .min(1)
+    .max(approvePackageRefundBodyAdminNotesMax)
+    .optional(),
+});
+
+export const ApprovePackageRefundResponse = zod.object({
+  refund: zod.object({
+    id: zod.number(),
+    paymentRecordId: zod.number(),
+    status: zod.enum([
+      "underReview",
+      "approved",
+      "rejected",
+      "processing",
+      "refunded",
+      "failed",
+    ]),
+    requestedAmountMinor: zod.number(),
+    approvedAmountMinor: zod.number().nullish(),
+    refundedAmountMinor: zod.number().nullish(),
+    refundMethod: zod.enum(["cash", "original_payment_method"]),
+    requestedReason: zod.string(),
+    transactionReference: zod.string().nullish(),
+    failedReason: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  replayed: zod.boolean(),
+});
+
+export const RejectPackageRefundParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const rejectPackageRefundBodyAdminNotesMax = 2000;
+
+export const RejectPackageRefundBody = zod.object({
+  adminNotes: zod
+    .string()
+    .min(1)
+    .max(rejectPackageRefundBodyAdminNotesMax)
+    .optional(),
+});
+
+export const RejectPackageRefundResponse = zod.object({
+  refund: zod.object({
+    id: zod.number(),
+    paymentRecordId: zod.number(),
+    status: zod.enum([
+      "underReview",
+      "approved",
+      "rejected",
+      "processing",
+      "refunded",
+      "failed",
+    ]),
+    requestedAmountMinor: zod.number(),
+    approvedAmountMinor: zod.number().nullish(),
+    refundedAmountMinor: zod.number().nullish(),
+    refundMethod: zod.enum(["cash", "original_payment_method"]),
+    requestedReason: zod.string(),
+    transactionReference: zod.string().nullish(),
+    failedReason: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  replayed: zod.boolean(),
+});
+
+export const CompletePackageRefundParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const completePackageRefundBodyTransactionReferenceMax = 255;
+
+export const CompletePackageRefundBody = zod.object({
+  completionIdempotencyKey: zod.string().uuid(),
+  transactionReference: zod
+    .string()
+    .min(1)
+    .max(completePackageRefundBodyTransactionReferenceMax),
+});
+
+export const CompletePackageRefundResponse = zod.object({
+  refund: zod.object({
+    id: zod.number(),
+    paymentRecordId: zod.number(),
+    status: zod.enum([
+      "underReview",
+      "approved",
+      "rejected",
+      "processing",
+      "refunded",
+      "failed",
+    ]),
+    requestedAmountMinor: zod.number(),
+    approvedAmountMinor: zod.number().nullish(),
+    refundedAmountMinor: zod.number().nullish(),
+    refundMethod: zod.enum(["cash", "original_payment_method"]),
+    requestedReason: zod.string(),
+    transactionReference: zod.string().nullish(),
+    failedReason: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  replayed: zod.boolean(),
+});
+
+export const FailPackageRefundParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const failPackageRefundBodyFailedReasonMax = 2000;
+
+export const failPackageRefundBodyAdminNotesMax = 2000;
+
+export const FailPackageRefundBody = zod.object({
+  failedReason: zod.string().min(1).max(failPackageRefundBodyFailedReasonMax),
+  adminNotes: zod
+    .string()
+    .min(1)
+    .max(failPackageRefundBodyAdminNotesMax)
+    .optional(),
+});
+
+export const FailPackageRefundResponse = zod.object({
+  refund: zod.object({
+    id: zod.number(),
+    paymentRecordId: zod.number(),
+    status: zod.enum([
+      "underReview",
+      "approved",
+      "rejected",
+      "processing",
+      "refunded",
+      "failed",
+    ]),
+    requestedAmountMinor: zod.number(),
+    approvedAmountMinor: zod.number().nullish(),
+    refundedAmountMinor: zod.number().nullish(),
+    refundMethod: zod.enum(["cash", "original_payment_method"]),
+    requestedReason: zod.string(),
+    transactionReference: zod.string().nullish(),
+    failedReason: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  replayed: zod.boolean(),
+});
+
 export const GetMyPackagesResponseItem = zod.object({
   id: zod.number(),
   studentName: zod.string(),

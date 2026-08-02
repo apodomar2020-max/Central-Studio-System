@@ -64,6 +64,8 @@ export const paymentRefundsTable = pgTable("payment_refunds", {
   processedByAdminId: integer("processed_by_admin_id").references(() => systemUsersTable.id, { onDelete: "set null" }),
 
   transactionReference: text("transaction_reference"),
+  requestIdempotencyKey: text("request_idempotency_key"),
+  completionIdempotencyKey: text("completion_idempotency_key"),
   adminNotes: text("admin_notes"),
   failedReason: text("failed_reason"),
 
@@ -76,6 +78,12 @@ export const paymentRefundsTable = pgTable("payment_refunds", {
   uniqueIndex("payment_refunds_open_idx")
     .on(table.paymentRecordId)
     .where(sql`${table.status} in ('underReview','approved','processing')`),
+  uniqueIndex("payment_refunds_request_idempotency_key_unique")
+    .on(table.requestIdempotencyKey)
+    .where(sql`${table.requestIdempotencyKey} is not null`),
+  uniqueIndex("payment_refunds_completion_idempotency_key_unique")
+    .on(table.completionIdempotencyKey)
+    .where(sql`${table.completionIdempotencyKey} is not null`),
 
   // Supporting composite-FK target for payment_events — see module doc above.
   unique("payment_refunds_id_payment_record_unique").on(table.id, table.paymentRecordId),

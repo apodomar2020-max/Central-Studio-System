@@ -1733,6 +1733,133 @@ export interface AdjustCreditsResponse {
   transaction: CreditTransaction;
 }
 
+export type PackageRefundStatus =
+  (typeof PackageRefundStatus)[keyof typeof PackageRefundStatus];
+
+export const PackageRefundStatus = {
+  underReview: "underReview",
+  approved: "approved",
+  rejected: "rejected",
+  processing: "processing",
+  refunded: "refunded",
+  failed: "failed",
+} as const;
+
+export type PackageRefundRefundMethod =
+  (typeof PackageRefundRefundMethod)[keyof typeof PackageRefundRefundMethod];
+
+export const PackageRefundRefundMethod = {
+  cash: "cash",
+  original_payment_method: "original_payment_method",
+} as const;
+
+export interface PackageRefund {
+  id: number;
+  paymentRecordId: number;
+  status: PackageRefundStatus;
+  requestedAmountMinor: number;
+  /** @nullable */
+  approvedAmountMinor?: number | null;
+  /** @nullable */
+  refundedAmountMinor?: number | null;
+  refundMethod: PackageRefundRefundMethod;
+  requestedReason: string;
+  /** @nullable */
+  transactionReference?: string | null;
+  /** @nullable */
+  failedReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PackageRefundEligibilityRefundableLotsItem = {
+  [key: string]: unknown;
+};
+
+export type PackageRefundEligibilityExcludedLotsItem = {
+  [key: string]: unknown;
+};
+
+export interface PackageRefundEligibility {
+  packageOrderId: number;
+  /** @nullable */
+  paymentRecordId?: number | null;
+  eligible: boolean;
+  refundableAmountMinor: number;
+  refundableCredits: number;
+  consumedValueMinor: number;
+  expiredValueMinor: number;
+  paymentCapacityMinor: number;
+  refundableLots: PackageRefundEligibilityRefundableLotsItem[];
+  excludedLots: PackageRefundEligibilityExcludedLotsItem[];
+  integrityWarnings: string[];
+  [key: string]: unknown;
+}
+
+export interface PackageRefundOverview {
+  eligibility: PackageRefundEligibility;
+  refund: PackageRefund | null;
+}
+
+export interface PackageRefundLookup {
+  refund: PackageRefund;
+  packageOrderId: number;
+}
+
+export type PackageRefundRequestRefundMethod =
+  (typeof PackageRefundRequestRefundMethod)[keyof typeof PackageRefundRequestRefundMethod];
+
+export const PackageRefundRequestRefundMethod = {
+  cash: "cash",
+  original_payment_method: "original_payment_method",
+} as const;
+
+export interface PackageRefundRequest {
+  refundMethod: PackageRefundRequestRefundMethod;
+  /**
+   * @minLength 1
+   * @maxLength 2000
+   */
+  requestedReason: string;
+  idempotencyKey: string;
+}
+
+export interface PackageRefundReview {
+  /**
+   * @minLength 1
+   * @maxLength 2000
+   */
+  adminNotes?: string;
+}
+
+export interface PackageRefundComplete {
+  completionIdempotencyKey: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  transactionReference: string;
+}
+
+export interface PackageRefundFail {
+  /**
+   * @minLength 1
+   * @maxLength 2000
+   */
+  failedReason: string;
+  /**
+   * @minLength 1
+   * @maxLength 2000
+   */
+  adminNotes?: string;
+}
+
+export interface PackageRefundMutationResponse {
+  refund: PackageRefund;
+  replayed: boolean;
+  [key: string]: unknown;
+}
+
 /**
  * Legacy released-client display model; no active Offers route is mounted.
  */

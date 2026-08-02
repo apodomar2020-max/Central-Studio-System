@@ -90,6 +90,11 @@ type PackageOrder = {
   ownershipState?: "assigned" | "legacy_unassigned";
 };
 
+type RefundLot = { sourceType?: string; creditsIssued: number; creditsRemaining: number; totalValueMinor: number | null; remainingValueMinor?: number; reason?: string };
+type RefundEligibility = { eligible: boolean; refundableAmountMinor: number; refundableCredits: number; consumedValueMinor: number; expiredValueMinor: number; refundableLots: RefundLot[]; excludedLots: RefundLot[]; integrityWarnings: string[] };
+type PackageRefund = { id: number; status: string; requestedAmountMinor: number; approvedAmountMinor?: number | null; refundedAmountMinor?: number | null };
+type RefundOverview = { eligibility: RefundEligibility; refund: PackageRefund | null };
+
 function makeHeaders(token?: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
@@ -108,6 +113,63 @@ function StatusBadge({ status }: { status: string }) {
       {cfg.label}
     </span>
   );
+}
+
+function RefundDialog({ order, onClose }: { order: PackageOrder; onClose: () => void }) {
+  const { token } = useAdminAuth();
+  const [overview, setOverview] = useState<RefundOverview | null>(null);
+  const [reason, setReason] = useState("");
+  const [method, setMethod] = useState<"cash" | "original_payment_method">("original_payment_method");
+  const [reference, setReference] = useState("");
+  const [failureReason, setFailureReason] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const requestKey = useRef(crypto.randomUUID());
+  const completionKey = useRef(crypto.randomUUID());
+
+  const load = async () => {
+    const res = await fetch(`${API_BASE}/api/admin/package-orders/${order.id}/refund-eligibility`, { headers: makeHeaders(token) });
+    if (!res.ok) throw new Error("Could not load refund eligibility");
+    setOverview(await res.json() as RefundOverview);
+  };
+  useEffect(() => { void load().catch((e: Error) => setError(e.message)); }, [order.id]);
+
+  async function action(path: string, body: object) {
+    setPending(true); setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/${path}`, { method: "POST", headers: makeHeaders(token), body: JSON.stringify(body) });
+      const data = await res.json() as { refund?: PackageRefund; message?: string; error?: string };
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Refund action failed");
+      setOverview((current) => current ? { ...current, refund: data.refund ?? current.refund } : current);
+    } catch (e) { setError(e instanceof Error ? e.message : "Refund action failed"); }
+    finally { setPending(false); }
+  }
+  if (!overview) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"><div className="rounded-xl p-6" style={{ background: BG_CARD }}>{error || "Loading refund eligibility…"}</div></div>;
+  const { eligibility, refund } = overview;
+  const excludedCredits = (source: string) => eligibility.excludedLots.filter((lot) => lot.sourceType === source).reduce((sum, lot) => sum + lot.creditsRemaining, 0);
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="w-full max-w-lg rounded-2xl p-6 space-y-4" style={{ background: BG_CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+      <div><h2 className="text-lg font-bold">Package Refund</h2><p className="text-xs" style={{ color: MUTED }}>{order.studentName} · {order.packageName}</p></div>
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="rounded-lg p-3" style={{ background: BG_ROW }}>Refundable <strong>{(eligibility.refundableAmountMinor / 100).toFixed(2)} EGP</strong></div>
+        <div className="rounded-lg p-3" style={{ background: BG_ROW }}>Purchased credits <strong>{eligibility.refundableCredits}</strong></div>
+        <div className="rounded-lg p-3" style={{ background: BG_ROW }}>Consumed value <strong>{(eligibility.consumedValueMinor / 100).toFixed(2)} EGP</strong></div>
+        <div className="rounded-lg p-3" style={{ background: BG_ROW }}>Expired value <strong>{(eligibility.expiredValueMinor / 100).toFixed(2)} EGP</strong></div>
+      </div>
+      <p className="text-xs" style={{ color: MUTED }}>Excluded credits: bonus {excludedCredits("bonus")} · complimentary {excludedCredits("manual_complimentary")} · unknown {eligibility.excludedLots.filter((lot) => lot.reason === "unknown_value").reduce((s, l) => s + l.creditsRemaining, 0)}</p>
+      {refund && <div className="rounded-lg p-3 text-sm" style={{ background: `${STUDIO_CYAN}15` }}>Refund status: <strong>{refund.status}</strong></div>}
+      {!refund && <><textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Refund reason" className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }} /><select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }}><option value="original_payment_method">Original payment method</option><option value="cash">Cash</option></select></>}
+      {(refund?.status === "approved" || refund?.status === "processing") && <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Payout transaction reference" className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }} />}
+      {(refund?.status === "approved" || refund?.status === "processing") && <input value={failureReason} onChange={(e) => setFailureReason(e.target.value)} placeholder="Failure reason (if payout failed)" className="w-full rounded-lg p-3 text-sm" style={{ background: BG_ROW }} />}
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex flex-wrap gap-2 justify-end">
+        <button onClick={onClose} className="px-3 py-2 rounded-lg" style={{ background: BG_ROW }}>Close</button>
+        {!refund && <button disabled={pending || !eligibility.eligible || !reason.trim()} onClick={() => action(`admin/package-orders/${order.id}/refunds`, { refundMethod: method, requestedReason: reason, idempotencyKey: requestKey.current })} className="px-3 py-2 rounded-lg bg-cyan-600 text-white">Request refund</button>}
+        {refund?.status === "underReview" && <><button disabled={pending} onClick={() => action(`admin/package-refunds/${refund.id}/reject`, {})} className="px-3 py-2 rounded-lg bg-red-600 text-white">Reject</button><button disabled={pending} onClick={() => action(`admin/package-refunds/${refund.id}/approve`, {})} className="px-3 py-2 rounded-lg bg-green-600 text-white">Approve</button></>}
+        {(refund?.status === "approved" || refund?.status === "processing") && <><button disabled={pending || !failureReason.trim()} onClick={() => action(`admin/package-refunds/${refund.id}/fail`, { failedReason: failureReason })} className="px-3 py-2 rounded-lg bg-red-600 text-white">Mark failed</button><button disabled={pending || !reference.trim()} onClick={() => action(`admin/package-refunds/${refund.id}/complete`, { completionIdempotencyKey: completionKey.current, transactionReference: reference })} className="px-3 py-2 rounded-lg bg-green-600 text-white">Complete payout</button></>}
+      </div>
+    </div>
+  </div>;
 }
 
 // ─── Adjust Credits Dialog ────────────────────────────────────────────────────
@@ -492,6 +554,7 @@ export default function PackageOrders() {
   const { can, token } = useAdminAuth();
   const canApprove = can("packageOrders", "approve");
   const canCancel = can("packageOrders", "cancel");
+  const canManageRefunds = canCancel && can("finance", "refundsManage");
   // Finance Roles & Permissions integration: activating a package order is
   // the payment-confirmation moment for a package purchase — it requires
   // finance.paymentsConfirm in addition to the existing packageOrders.approve
@@ -512,6 +575,7 @@ export default function PackageOrders() {
   const [activationAmount, setActivationAmount] = useState<number | null>(null);
   const [activationAmountLoading, setActivationAmountLoading] = useState(false);
   const [expandedLedger, setExpandedLedger] = useState<number | null>(null);
+  const [refundingOrder, setRefundingOrder] = useState<PackageOrder | null>(null);
 
   // Changing the status tab resets pagination.
   useEffect(() => {
@@ -817,6 +881,9 @@ export default function PackageOrders() {
                               <XCircle className="h-3.5 w-3.5" />
                             </button>
                           )}
+                          {canManageRefunds && (order.status === "active" || order.status === "fullyUsed") && (
+                            <button onClick={() => setRefundingOrder(order)} className="px-2 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "#F59E0B20", color: AMBER }}>Refund</button>
+                          )}
                           {canDelete && (
                             <button
                               onClick={() => handleDelete(order.id)}
@@ -921,6 +988,7 @@ export default function PackageOrders() {
       {canAdjustCredits && adjustingOrder && (
         <AdjustCreditsDialog order={adjustingOrder} onClose={() => setAdjustingOrder(null)} />
       )}
+      {canManageRefunds && refundingOrder && <RefundDialog order={refundingOrder} onClose={() => setRefundingOrder(null)} />}
 
       {/* Activate Package dialog */}
       {canApprove && activatingOrder && (

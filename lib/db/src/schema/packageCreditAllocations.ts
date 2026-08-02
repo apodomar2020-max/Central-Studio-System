@@ -7,6 +7,7 @@ import { attendanceTable } from "./attendance";
 import { bookingsTable } from "./bookings";
 import { schedulesTable } from "./schedules";
 import { studioBranchesTable, studioRoomsTable } from "./studioBranches";
+import { paymentRefundsTable } from "./paymentRefunds";
 
 export const PACKAGE_CREDIT_ALLOCATION_EVENT_TYPES = [
   "consumption",
@@ -26,6 +27,7 @@ export const packageCreditAllocationsTable = pgTable("package_credit_allocations
   eventType: text("event_type").notNull(),
   creditTransactionId: integer("credit_transaction_id").notNull().references(() => creditTransactionsTable.id, { onDelete: "restrict" }),
   packageOrderId: integer("package_order_id").notNull().references(() => packageOrdersTable.id, { onDelete: "restrict" }),
+  paymentRefundId: integer("payment_refund_id").references(() => paymentRefundsTable.id, { onDelete: "restrict" }),
   attendanceId: integer("attendance_id").references(() => attendanceTable.id, { onDelete: "restrict" }),
   bookingId: integer("booking_id").references(() => bookingsTable.id, { onDelete: "restrict" }),
   scheduleId: integer("schedule_id").references(() => schedulesTable.id, { onDelete: "restrict" }),
@@ -45,6 +47,9 @@ export const packageCreditAllocationsTable = pgTable("package_credit_allocations
   uniqueIndex("package_credit_allocations_consumption_attendance_unique")
     .on(table.attendanceId)
     .where(sql`${table.eventType} = 'consumption' and ${table.attendanceId} is not null`),
+  uniqueIndex("package_credit_allocations_refund_lot_unique")
+    .on(table.paymentRefundId, table.lotId)
+    .where(sql`${table.eventType} = 'refund_retirement'`),
   index("package_credit_allocations_lot_id_idx").on(table.lotId),
   index("package_credit_allocations_package_order_id_idx").on(table.packageOrderId),
   index("package_credit_allocations_schedule_id_idx").on(table.scheduleId),
@@ -53,6 +58,10 @@ export const packageCreditAllocationsTable = pgTable("package_credit_allocations
   check("package_credit_allocations_credits_positive_check", sql`${table.credits} > 0`),
   check("package_credit_allocations_total_value_non_negative_check", sql`${table.totalValueMinor} >= 0`),
   check("package_credit_allocations_value_basis_check", sql`${table.valueBasis} in ('recorded_purchase_price','estimated_catalog_price','unknown')`),
+  check("package_credit_allocations_refund_linkage_check", sql`
+    (${table.eventType} = 'refund_retirement' and ${table.paymentRefundId} is not null)
+    or (${table.eventType} <> 'refund_retirement' and ${table.paymentRefundId} is null)
+  `),
 ]));
 
 export type PackageCreditAllocation = typeof packageCreditAllocationsTable.$inferSelect;

@@ -72,6 +72,13 @@ import type {
   MyCreditsResponse,
   Notification,
   PackageOrder,
+  PackageRefundComplete,
+  PackageRefundFail,
+  PackageRefundLookup,
+  PackageRefundMutationResponse,
+  PackageRefundOverview,
+  PackageRefundRequest,
+  PackageRefundReview,
   PricePackage,
   Room,
   RoomListResponse,
@@ -6879,6 +6886,595 @@ export const useAdjustCredits = <
   TContext
 > => {
   return useMutation(getAdjustCreditsMutationOptions(options));
+};
+
+export const getGetPackageRefundEligibilityUrl = (id: number) => {
+  return `/api/admin/package-orders/${id}/refund-eligibility`;
+};
+
+export const getPackageRefundEligibility = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PackageRefundOverview> => {
+  return customFetch<PackageRefundOverview>(
+    getGetPackageRefundEligibilityUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPackageRefundEligibilityQueryKey = (id: number) => {
+  return [`/api/admin/package-orders/${id}/refund-eligibility`] as const;
+};
+
+export const getGetPackageRefundEligibilityQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPackageRefundEligibility>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPackageRefundEligibility>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPackageRefundEligibilityQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPackageRefundEligibility>>
+  > = ({ signal }) =>
+    getPackageRefundEligibility(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPackageRefundEligibility>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPackageRefundEligibilityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPackageRefundEligibility>>
+>;
+export type GetPackageRefundEligibilityQueryError = ErrorType<unknown>;
+
+export function useGetPackageRefundEligibility<
+  TData = Awaited<ReturnType<typeof getPackageRefundEligibility>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPackageRefundEligibility>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPackageRefundEligibilityQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getRequestPackageRefundUrl = (id: number) => {
+  return `/api/admin/package-orders/${id}/refunds`;
+};
+
+export const requestPackageRefund = async (
+  id: number,
+  packageRefundRequest: PackageRefundRequest,
+  options?: RequestInit,
+): Promise<PackageRefundMutationResponse> => {
+  return customFetch<PackageRefundMutationResponse>(
+    getRequestPackageRefundUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(packageRefundRequest),
+    },
+  );
+};
+
+export const getRequestPackageRefundMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestPackageRefund>>,
+    TError,
+    { id: number; data: BodyType<PackageRefundRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof requestPackageRefund>>,
+  TError,
+  { id: number; data: BodyType<PackageRefundRequest> },
+  TContext
+> => {
+  const mutationKey = ["requestPackageRefund"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof requestPackageRefund>>,
+    { id: number; data: BodyType<PackageRefundRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return requestPackageRefund(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RequestPackageRefundMutationResult = NonNullable<
+  Awaited<ReturnType<typeof requestPackageRefund>>
+>;
+export type RequestPackageRefundMutationBody = BodyType<PackageRefundRequest>;
+export type RequestPackageRefundMutationError = ErrorType<unknown>;
+
+export const useRequestPackageRefund = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestPackageRefund>>,
+    TError,
+    { id: number; data: BodyType<PackageRefundRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof requestPackageRefund>>,
+  TError,
+  { id: number; data: BodyType<PackageRefundRequest> },
+  TContext
+> => {
+  return useMutation(getRequestPackageRefundMutationOptions(options));
+};
+
+export const getGetPackageRefundUrl = (id: number) => {
+  return `/api/admin/package-refunds/${id}`;
+};
+
+export const getPackageRefund = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PackageRefundLookup> => {
+  return customFetch<PackageRefundLookup>(getGetPackageRefundUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPackageRefundQueryKey = (id: number) => {
+  return [`/api/admin/package-refunds/${id}`] as const;
+};
+
+export const getGetPackageRefundQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPackageRefund>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPackageRefund>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPackageRefundQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPackageRefund>>
+  > = ({ signal }) => getPackageRefund(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPackageRefund>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPackageRefundQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPackageRefund>>
+>;
+export type GetPackageRefundQueryError = ErrorType<unknown>;
+
+export function useGetPackageRefund<
+  TData = Awaited<ReturnType<typeof getPackageRefund>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPackageRefund>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPackageRefundQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getApprovePackageRefundUrl = (id: number) => {
+  return `/api/admin/package-refunds/${id}/approve`;
+};
+
+export const approvePackageRefund = async (
+  id: number,
+  packageRefundReview?: PackageRefundReview,
+  options?: RequestInit,
+): Promise<PackageRefundMutationResponse> => {
+  return customFetch<PackageRefundMutationResponse>(
+    getApprovePackageRefundUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(packageRefundReview),
+    },
+  );
+};
+
+export const getApprovePackageRefundMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approvePackageRefund>>,
+    TError,
+    { id: number; data?: BodyType<PackageRefundReview> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approvePackageRefund>>,
+  TError,
+  { id: number; data?: BodyType<PackageRefundReview> },
+  TContext
+> => {
+  const mutationKey = ["approvePackageRefund"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approvePackageRefund>>,
+    { id: number; data?: BodyType<PackageRefundReview> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return approvePackageRefund(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApprovePackageRefundMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approvePackageRefund>>
+>;
+export type ApprovePackageRefundMutationBody =
+  | BodyType<PackageRefundReview>
+  | undefined;
+export type ApprovePackageRefundMutationError = ErrorType<unknown>;
+
+export const useApprovePackageRefund = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approvePackageRefund>>,
+    TError,
+    { id: number; data?: BodyType<PackageRefundReview> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approvePackageRefund>>,
+  TError,
+  { id: number; data?: BodyType<PackageRefundReview> },
+  TContext
+> => {
+  return useMutation(getApprovePackageRefundMutationOptions(options));
+};
+
+export const getRejectPackageRefundUrl = (id: number) => {
+  return `/api/admin/package-refunds/${id}/reject`;
+};
+
+export const rejectPackageRefund = async (
+  id: number,
+  packageRefundReview?: PackageRefundReview,
+  options?: RequestInit,
+): Promise<PackageRefundMutationResponse> => {
+  return customFetch<PackageRefundMutationResponse>(
+    getRejectPackageRefundUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(packageRefundReview),
+    },
+  );
+};
+
+export const getRejectPackageRefundMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectPackageRefund>>,
+    TError,
+    { id: number; data?: BodyType<PackageRefundReview> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectPackageRefund>>,
+  TError,
+  { id: number; data?: BodyType<PackageRefundReview> },
+  TContext
+> => {
+  const mutationKey = ["rejectPackageRefund"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectPackageRefund>>,
+    { id: number; data?: BodyType<PackageRefundReview> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return rejectPackageRefund(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectPackageRefundMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectPackageRefund>>
+>;
+export type RejectPackageRefundMutationBody =
+  | BodyType<PackageRefundReview>
+  | undefined;
+export type RejectPackageRefundMutationError = ErrorType<unknown>;
+
+export const useRejectPackageRefund = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectPackageRefund>>,
+    TError,
+    { id: number; data?: BodyType<PackageRefundReview> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectPackageRefund>>,
+  TError,
+  { id: number; data?: BodyType<PackageRefundReview> },
+  TContext
+> => {
+  return useMutation(getRejectPackageRefundMutationOptions(options));
+};
+
+export const getCompletePackageRefundUrl = (id: number) => {
+  return `/api/admin/package-refunds/${id}/complete`;
+};
+
+export const completePackageRefund = async (
+  id: number,
+  packageRefundComplete: PackageRefundComplete,
+  options?: RequestInit,
+): Promise<PackageRefundMutationResponse> => {
+  return customFetch<PackageRefundMutationResponse>(
+    getCompletePackageRefundUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(packageRefundComplete),
+    },
+  );
+};
+
+export const getCompletePackageRefundMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completePackageRefund>>,
+    TError,
+    { id: number; data: BodyType<PackageRefundComplete> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completePackageRefund>>,
+  TError,
+  { id: number; data: BodyType<PackageRefundComplete> },
+  TContext
+> => {
+  const mutationKey = ["completePackageRefund"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completePackageRefund>>,
+    { id: number; data: BodyType<PackageRefundComplete> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return completePackageRefund(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompletePackageRefundMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completePackageRefund>>
+>;
+export type CompletePackageRefundMutationBody = BodyType<PackageRefundComplete>;
+export type CompletePackageRefundMutationError = ErrorType<unknown>;
+
+export const useCompletePackageRefund = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completePackageRefund>>,
+    TError,
+    { id: number; data: BodyType<PackageRefundComplete> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof completePackageRefund>>,
+  TError,
+  { id: number; data: BodyType<PackageRefundComplete> },
+  TContext
+> => {
+  return useMutation(getCompletePackageRefundMutationOptions(options));
+};
+
+export const getFailPackageRefundUrl = (id: number) => {
+  return `/api/admin/package-refunds/${id}/fail`;
+};
+
+export const failPackageRefund = async (
+  id: number,
+  packageRefundFail: PackageRefundFail,
+  options?: RequestInit,
+): Promise<PackageRefundMutationResponse> => {
+  return customFetch<PackageRefundMutationResponse>(
+    getFailPackageRefundUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(packageRefundFail),
+    },
+  );
+};
+
+export const getFailPackageRefundMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof failPackageRefund>>,
+    TError,
+    { id: number; data: BodyType<PackageRefundFail> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof failPackageRefund>>,
+  TError,
+  { id: number; data: BodyType<PackageRefundFail> },
+  TContext
+> => {
+  const mutationKey = ["failPackageRefund"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof failPackageRefund>>,
+    { id: number; data: BodyType<PackageRefundFail> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return failPackageRefund(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FailPackageRefundMutationResult = NonNullable<
+  Awaited<ReturnType<typeof failPackageRefund>>
+>;
+export type FailPackageRefundMutationBody = BodyType<PackageRefundFail>;
+export type FailPackageRefundMutationError = ErrorType<unknown>;
+
+export const useFailPackageRefund = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof failPackageRefund>>,
+    TError,
+    { id: number; data: BodyType<PackageRefundFail> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof failPackageRefund>>,
+  TError,
+  { id: number; data: BodyType<PackageRefundFail> },
+  TContext
+> => {
+  return useMutation(getFailPackageRefundMutationOptions(options));
 };
 
 export const getGetMyPackagesUrl = () => {

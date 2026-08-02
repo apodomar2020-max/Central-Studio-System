@@ -48,6 +48,7 @@ import classReminderSettingsRouter from "./classReminderSettings";
 import financeRouter from "./finance";
 import financeBackfillBatchesRouter from "./financeBackfillBatches";
 import catalogueReadinessRouter from "./catalogueReadiness";
+import packageRefundsRouter from "./packageRefunds";
 
 const router: IRouter = Router();
 
@@ -98,6 +99,7 @@ router.use(reportsRouter);
 router.use(backgroundMusicRouter);
 router.use(classReminderSettingsRouter);
 router.use(catalogueReadinessRouter);
+router.use(packageRefundsRouter);
 // Finance Department (Phase 1) — read-only aggregation over the existing
 // operational tables. Registered last; it adds no mutation routes.
 router.use(financeRouter);

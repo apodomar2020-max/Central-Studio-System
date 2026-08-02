@@ -1415,6 +1415,60 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AdjustCreditsResponse" }
 
+  /admin/package-orders/{id}/refund-eligibility:
+    get:
+      operationId: getPackageRefundEligibility
+      tags: [package-refunds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { description: Refund eligibility and current lifecycle, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundOverview" } } } }
+  /admin/package-orders/{id}/refunds:
+    post:
+      operationId: requestPackageRefund
+      tags: [package-refunds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundRequest" } } } }
+      responses:
+        "201": { description: Refund request created for review, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundMutationResponse" } } } }
+  /admin/package-refunds/{id}:
+    get:
+      operationId: getPackageRefund
+      tags: [package-refunds]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { description: Refund lifecycle state, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundLookup" } } } }
+  /admin/package-refunds/{id}/approve:
+    post:
+      operationId: approvePackageRefund
+      tags: [package-refunds]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }]
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundReview" } } } }
+      responses: { "200": { description: Refund approved, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundMutationResponse" } } } } }
+  /admin/package-refunds/{id}/reject:
+    post:
+      operationId: rejectPackageRefund
+      tags: [package-refunds]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }]
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundReview" } } } }
+      responses: { "200": { description: Refund rejected, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundMutationResponse" } } } } }
+  /admin/package-refunds/{id}/complete:
+    post:
+      operationId: completePackageRefund
+      tags: [package-refunds]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundComplete" } } } }
+      responses: { "200": { description: Payout completion recorded, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundMutationResponse" } } } } }
+  /admin/package-refunds/{id}/fail:
+    post:
+      operationId: failPackageRefund
+      tags: [package-refunds]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundFail" } } } }
+      responses: { "200": { description: Payout failure recorded, content: { application/json: { schema: { $ref: "#/components/schemas/PackageRefundMutationResponse" } } } } }
+
   /my/packages:
     get:
       operationId: getMyPackages
@@ -2693,6 +2747,80 @@ components:
       properties:
         order: { $ref: "#/components/schemas/PackageOrder" }
         transaction: { $ref: "#/components/schemas/CreditTransaction" }
+
+    PackageRefund:
+      type: object
+      required: [id, paymentRecordId, status, requestedAmountMinor, refundMethod, requestedReason, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        paymentRecordId: { type: integer }
+        status: { type: string, enum: [underReview, approved, rejected, processing, refunded, failed] }
+        requestedAmountMinor: { type: integer }
+        approvedAmountMinor: { type: [integer, "null"] }
+        refundedAmountMinor: { type: [integer, "null"] }
+        refundMethod: { type: string, enum: [cash, original_payment_method] }
+        requestedReason: { type: string }
+        transactionReference: { type: [string, "null"] }
+        failedReason: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PackageRefundEligibility:
+      type: object
+      required: [packageOrderId, eligible, refundableAmountMinor, refundableCredits, consumedValueMinor, expiredValueMinor, paymentCapacityMinor, refundableLots, excludedLots, integrityWarnings]
+      additionalProperties: true
+      properties:
+        packageOrderId: { type: integer }
+        paymentRecordId: { type: [integer, "null"] }
+        eligible: { type: boolean }
+        refundableAmountMinor: { type: integer }
+        refundableCredits: { type: integer }
+        consumedValueMinor: { type: integer }
+        expiredValueMinor: { type: integer }
+        paymentCapacityMinor: { type: integer }
+        refundableLots: { type: array, items: { type: object, additionalProperties: true } }
+        excludedLots: { type: array, items: { type: object, additionalProperties: true } }
+        integrityWarnings: { type: array, items: { type: string } }
+    PackageRefundOverview:
+      type: object
+      required: [eligibility, refund]
+      properties:
+        eligibility: { $ref: "#/components/schemas/PackageRefundEligibility" }
+        refund: { oneOf: [{ $ref: "#/components/schemas/PackageRefund" }, { type: "null" }] }
+    PackageRefundLookup:
+      type: object
+      required: [refund, packageOrderId]
+      properties:
+        refund: { $ref: "#/components/schemas/PackageRefund" }
+        packageOrderId: { type: integer }
+    PackageRefundRequest:
+      type: object
+      required: [refundMethod, requestedReason, idempotencyKey]
+      properties:
+        refundMethod: { type: string, enum: [cash, original_payment_method] }
+        requestedReason: { type: string, minLength: 1, maxLength: 2000 }
+        idempotencyKey: { type: string, format: uuid }
+    PackageRefundReview:
+      type: object
+      properties: { adminNotes: { type: string, minLength: 1, maxLength: 2000 } }
+    PackageRefundComplete:
+      type: object
+      required: [completionIdempotencyKey, transactionReference]
+      properties:
+        completionIdempotencyKey: { type: string, format: uuid }
+        transactionReference: { type: string, minLength: 1, maxLength: 255 }
+    PackageRefundFail:
+      type: object
+      required: [failedReason]
+      properties:
+        failedReason: { type: string, minLength: 1, maxLength: 2000 }
+        adminNotes: { type: string, minLength: 1, maxLength: 2000 }
+    PackageRefundMutationResponse:
+      type: object
+      required: [refund, replayed]
+      additionalProperties: true
+      properties:
+        refund: { $ref: "#/components/schemas/PackageRefund" }
+        replayed: { type: boolean }
 
     Offer:
       type: object
