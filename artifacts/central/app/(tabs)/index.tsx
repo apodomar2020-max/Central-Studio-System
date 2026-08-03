@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
@@ -549,6 +550,13 @@ function ClassCard({
             <View style={s.classMetaSep} />
             <CsIcon name="clock" size={15} stroke={2} color={INK_300} />
             <Text style={s.classMetaText}>{item.duration}</Text>
+            {!!item.location && (
+              <>
+                <View style={s.classMetaSep} />
+                <Ionicons name="location-outline" size={13} color={INK_300} />
+                <Text style={s.classMetaText} numberOfLines={1}>{item.location}</Text>
+              </>
+            )}
           </View>
         )}
       </View>
