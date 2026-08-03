@@ -4,6 +4,8 @@ import { addDays, format, startOfWeek } from "date-fns";
 import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Users } from "lucide-react";
 import {
   useListAdminCalendar,
+  useGetAdminCalendarResourceView,
+  getGetAdminCalendarResourceViewQueryKey,
   useListScheduleLocationBranches,
   useListScheduleLocationRooms,
   getListScheduleLocationRoomsQueryKey,
@@ -21,7 +23,7 @@ import {
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-type CalendarViewMode = "week" | "day";
+type CalendarViewMode = "week" | "day" | "resource";
 
 // Fixed studio operating-hours window — 12:00 PM through 12:00 AM. Deliberately
 // NOT data-driven (earlier morning hours are hidden even if a stray occurrence
@@ -186,6 +188,25 @@ export default function CalendarPage() {
   });
   const occurrences = calendarQuery.data ?? [];
 
+  const resourceParams = useMemo(
+    () => ({
+      date: format(focusedDate, "yyyy-MM-dd"),
+      ...(branchId != null ? { branchId } : {}),
+      ...(roomId != null ? { roomId } : {}),
+    }),
+    [focusedDate, branchId, roomId],
+  );
+
+  const resourceViewQuery = useGetAdminCalendarResourceView(
+    resourceParams,
+    {
+      query: {
+        enabled: viewMode === "resource",
+        queryKey: getGetAdminCalendarResourceViewQueryKey(resourceParams),
+      },
+    },
+  );
+
   const hourMarks = useMemo(() => {
     const marks: number[] = [];
     for (let m = GRID_START_MIN; m <= GRID_END_MIN; m += 60) marks.push(m);
@@ -227,7 +248,7 @@ export default function CalendarPage() {
 
   const handleAddScheduleClick = () => {
     navigate(buildScheduleCreatePath({
-      date: viewMode === "day" ? format(focusedDate, "yyyy-MM-dd") : null,
+      date: viewMode === "day" || viewMode === "resource" ? format(focusedDate, "yyyy-MM-dd") : null,
       branchId,
       roomId,
     }));
@@ -263,6 +284,15 @@ export default function CalendarPage() {
               onClick={() => setViewMode("day")}
             >
               Day
+            </Button>
+            <Button
+              variant={viewMode === "resource" ? "default" : "ghost"}
+              size="sm"
+              className="h-7 px-3"
+              data-testid="button-calendar-view-resource"
+              onClick={() => setViewMode("resource")}
+            >
+              Resource
             </Button>
           </div>
           <Button variant="outline" size="icon" data-testid="button-calendar-prev" onClick={goPrev}>
@@ -325,7 +355,68 @@ export default function CalendarPage() {
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border-2 border-destructive" />Conflict</span>
       </div>
 
-      {calendarQuery.isLoading ? (
+      {viewMode === "resource" ? (
+        resourceViewQuery.isLoading ? (
+          <div className="rounded-md border py-16 text-center text-sm text-muted-foreground">Loading resource view…</div>
+        ) : resourceViewQuery.isError ? (
+          <div className="rounded-md border py-16 text-center text-sm text-destructive">Could not load resource view. Please try again.</div>
+        ) : (
+          <div className="overflow-x-auto rounded-md border" data-testid="calendar-resource-view-grid">
+            <div style={{ minWidth: `${Math.max(420, 64 + (resourceViewQuery.data?.rooms.length ?? 1) * 180)}px` }}>
+              <div
+                className="grid border-b bg-muted/40"
+                style={{ gridTemplateColumns: `64px repeat(${resourceViewQuery.data?.rooms.length ?? 1}, 1fr)` }}
+              >
+                <div />
+                {resourceViewQuery.data?.rooms.map((room) => (
+                  <div key={room.roomId} className="border-l px-2 py-2 text-center" data-testid={`calendar-resource-room-header-${room.roomId}`}>
+                    <div className="text-xs font-medium text-muted-foreground">Room</div>
+                    <div className="text-sm font-semibold text-foreground truncate">{room.roomName}</div>
+                  </div>
+                ))}
+              </div>
+              <div
+                className="grid"
+                style={{ gridTemplateColumns: `64px repeat(${resourceViewQuery.data?.rooms.length ?? 1}, 1fr)` }}
+              >
+                <div className="relative overflow-hidden" style={{ height: gridHeight }}>
+                  {hourMarks.map((minute) => (
+                    <div
+                      key={minute}
+                      className="absolute right-2 -translate-y-1/2 text-[11px] text-muted-foreground"
+                      style={{ top: (minute - GRID_START_MIN) * PX_PER_MIN }}
+                    >
+                      {formatHourLabel(minute)}
+                    </div>
+                  ))}
+                </div>
+                {resourceViewQuery.data?.rooms.map((room) => {
+                  const roomOccurrences = packDayColumns(room.occurrences as unknown as CalendarOccurrence[]);
+                  return (
+                    <div
+                      key={room.roomId}
+                      className="relative overflow-hidden border-l"
+                      style={{ height: gridHeight }}
+                      data-testid={`calendar-resource-room-column-${room.roomId}`}
+                    >
+                      {hourMarks.map((minute) => (
+                        <div key={minute} className="absolute left-0 right-0 border-t border-border/60" style={{ top: (minute - GRID_START_MIN) * PX_PER_MIN }} />
+                      ))}
+                      {roomOccurrences.map((occurrence) => (
+                        <OccurrenceCard
+                          key={`${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
+                          occurrence={occurrence}
+                          onOpen={openOccurrenceInScheduleManager}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      ) : calendarQuery.isLoading ? (
         <div className="rounded-md border py-16 text-center text-sm text-muted-foreground">Loading calendar…</div>
       ) : calendarQuery.isError ? (
         <div className="rounded-md border py-16 text-center text-sm text-destructive">Could not load the calendar. Please try again.</div>

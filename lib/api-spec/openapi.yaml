@@ -434,6 +434,25 @@ paths:
         "403": { description: Permission denied, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
         "404": { description: Schedule not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
+  /admin/calendar/resource-view:
+    get:
+      operationId: getAdminCalendarResourceView
+      tags: [schedules]
+      summary: Operational resource view for studio rooms on a given date
+      description: >
+        Read-only. Returns active room occurrences grouped by room for a single date,
+        for the Calendar Resource View mode (Phase 4B). Only active schedules assigned to a branch
+        AND room are included.
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "Date for resource view, YYYY-MM-DD" }
+        - { name: branchId, in: query, required: false, schema: { type: integer } }
+        - { name: roomId, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: Resource view, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarResourceViewResponse" } } } }
+        "400": { description: Invalid parameters, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "401": { description: Admin authentication required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Permission denied, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /schedules:
     get:
       operationId: listSchedules
@@ -1999,6 +2018,52 @@ components:
         roster:
           type: array
           items: { $ref: "#/components/schemas/CalendarOccurrenceRosterItem" }
+
+    CalendarResourceOccurrence:
+      type: object
+      required: [id, scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, classId, classTitle, title, instructorId, instructorName, branchId, roomId, roomName, capacity, bookingCount, conflict]
+      properties:
+        id: { type: integer }
+        scheduleId: { type: integer }
+        source: { type: string, enum: [class, ballet], description: "Source type. Compatible with future sources like private_event, block." }
+        scheduleType: { type: string, enum: [weekly, one_time] }
+        occurrenceDate: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+        classId: { type: integer }
+        classTitle: { type: string }
+        title: { type: string }
+        instructorId: { type: ["integer", "null"] }
+        instructorName: { type: ["string", "null"] }
+        branchId: { type: integer }
+        roomId: { type: integer }
+        roomName: { type: string }
+        capacity: { type: ["integer", "null"] }
+        bookingCount: { type: integer }
+        conflict:
+          oneOf:
+            - { type: "null" }
+            - $ref: "#/components/schemas/CalendarOccurrenceConflict"
+
+    CalendarResourceRoom:
+      type: object
+      required: [roomId, roomName, occurrences]
+      properties:
+        roomId: { type: integer }
+        roomName: { type: string }
+        occurrences:
+          type: array
+          items: { $ref: "#/components/schemas/CalendarResourceOccurrence" }
+
+    CalendarResourceViewResponse:
+      type: object
+      required: [date, branchId, rooms]
+      properties:
+        date: { type: string }
+        branchId: { type: ["integer", "null"] }
+        rooms:
+          type: array
+          items: { $ref: "#/components/schemas/CalendarResourceRoom" }
 
     BalletSchedule:
       type: object

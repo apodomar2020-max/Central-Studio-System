@@ -29,6 +29,7 @@ import type {
   BranchListResponse,
   CalendarOccurrenceListResponse,
   CalendarOccurrenceRosterResponse,
+  CalendarResourceViewResponse,
   Campaign,
   CheckInBody,
   CheckInQrBody,
@@ -54,6 +55,7 @@ import type {
   DashboardSummary,
   ErrorResponse,
   GetAdminCalendarOccurrenceRosterParams,
+  GetAdminCalendarResourceViewParams,
   GetAttendanceStatsParams,
   GetBookingParticipantCandidatesParams,
   GetMyAttendanceParams,
@@ -2257,6 +2259,116 @@ export function useGetAdminCalendarOccurrenceRoster<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetAdminCalendarOccurrenceRosterQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetAdminCalendarResourceViewUrl = (
+  params: GetAdminCalendarResourceViewParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/calendar/resource-view?${stringifiedParams}`
+    : `/api/admin/calendar/resource-view`;
+};
+
+/**
+ * Read-only. Returns active room occurrences grouped by room for a single date, for the Calendar Resource View mode (Phase 4B). Only active schedules assigned to a branch AND room are included.
+ * @summary Operational resource view for studio rooms on a given date
+ */
+export const getAdminCalendarResourceView = async (
+  params: GetAdminCalendarResourceViewParams,
+  options?: RequestInit,
+): Promise<CalendarResourceViewResponse> => {
+  return customFetch<CalendarResourceViewResponse>(
+    getGetAdminCalendarResourceViewUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetAdminCalendarResourceViewQueryKey = (
+  params?: GetAdminCalendarResourceViewParams,
+) => {
+  return [
+    `/api/admin/calendar/resource-view`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetAdminCalendarResourceViewQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminCalendarResourceView>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetAdminCalendarResourceViewParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminCalendarResourceView>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminCalendarResourceViewQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAdminCalendarResourceView>>
+  > = ({ signal }) =>
+    getAdminCalendarResourceView(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminCalendarResourceView>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminCalendarResourceViewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminCalendarResourceView>>
+>;
+export type GetAdminCalendarResourceViewQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Operational resource view for studio rooms on a given date
+ */
+
+export function useGetAdminCalendarResourceView<
+  TData = Awaited<ReturnType<typeof getAdminCalendarResourceView>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetAdminCalendarResourceViewParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminCalendarResourceView>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminCalendarResourceViewQueryOptions(
     params,
     options,
   );

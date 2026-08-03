@@ -28,7 +28,7 @@
  *     permissions already grant read access to.
  */
 import { Router, type IRouter } from "express";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   bookingsTable,
@@ -41,7 +41,12 @@ import {
   balletClassesTable,
   balletInstructorsTable,
 } from "@workspace/db";
-import { ListAdminCalendarQueryParams, ListAdminCalendarResponse } from "@workspace/api-zod";
+import {
+  ListAdminCalendarQueryParams,
+  ListAdminCalendarResponse,
+  GetAdminCalendarResourceViewQueryParams,
+  GetAdminCalendarResourceViewResponse,
+} from "@workspace/api-zod";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
 import { InvalidCalendarRangeError, isoDateRange, scheduleOccursOnDate } from "../lib/calendarOccurrence";
 import { findScheduleConflict, type ScheduleOccupancy } from "../lib/scheduleConflict";
@@ -344,6 +349,264 @@ router.get(
     );
 
     res.json(ListAdminCalendarResponse.parse(withConflicts));
+  },
+);
+
+router.get(
+  "/admin/calendar/resource-view",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireScheduleLocationLookup,
+  async (req: AdminRequest, res): Promise<void> => {
+    const parsed = GetAdminCalendarResourceViewQueryParams.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    const { date, branchId, roomId } = parsed.data;
+
+    const regularConditions = [
+      eq(schedulesTable.status, "active"),
+      isNotNull(schedulesTable.branchId),
+      isNotNull(schedulesTable.roomId),
+    ];
+    if (branchId != null) regularConditions.push(eq(schedulesTable.branchId, branchId));
+    if (roomId != null) regularConditions.push(eq(schedulesTable.roomId, roomId));
+
+    const balletConditions = [
+      eq(balletSchedulesTable.status, "active"),
+      isNotNull(balletSchedulesTable.branchId),
+      isNotNull(balletSchedulesTable.roomId),
+    ];
+    if (branchId != null) balletConditions.push(eq(balletSchedulesTable.branchId, branchId));
+    if (roomId != null) balletConditions.push(eq(balletSchedulesTable.roomId, roomId));
+
+    const [regularRows, balletRows] = await Promise.all([
+      db
+        .select({
+          id: schedulesTable.id,
+          branchId: schedulesTable.branchId,
+          roomId: schedulesTable.roomId,
+          type: schedulesTable.type,
+          dayOfWeek: schedulesTable.dayOfWeek,
+          date: schedulesTable.date,
+          startTime: schedulesTable.startTime,
+          endTime: schedulesTable.endTime,
+          effectiveFrom: schedulesTable.effectiveFrom,
+          effectiveUntil: schedulesTable.effectiveUntil,
+          classId: classesTable.id,
+          classTitle: classesTable.title,
+          classCapacity: classesTable.capacity,
+          instructorId: instructorsTable.id,
+          instructorName: instructorsTable.name,
+        })
+        .from(schedulesTable)
+        .innerJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
+        .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
+        .where(and(...regularConditions)),
+      db
+        .select({
+          id: balletSchedulesTable.id,
+          branchId: balletSchedulesTable.branchId,
+          roomId: balletSchedulesTable.roomId,
+          dayOfWeek: balletSchedulesTable.dayOfWeek,
+          startTime: balletSchedulesTable.startTime,
+          endTime: balletSchedulesTable.endTime,
+          capacity: balletSchedulesTable.capacity,
+          classId: balletClassesTable.id,
+          classTitle: balletClassesTable.title,
+          instructorId: balletInstructorsTable.id,
+          instructorName: balletInstructorsTable.name,
+        })
+        .from(balletSchedulesTable)
+        .innerJoin(balletClassesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
+        .leftJoin(balletInstructorsTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
+        .where(and(...balletConditions)),
+    ]);
+
+    const roomConditions = [eq(studioRoomsTable.isActive, true)];
+    if (branchId != null) roomConditions.push(eq(studioRoomsTable.branchId, branchId));
+    if (roomId != null) roomConditions.push(eq(studioRoomsTable.id, roomId));
+
+    const activeRooms = await db
+      .select({
+        id: studioRoomsTable.id,
+        name: studioRoomsTable.name,
+        branchId: studioRoomsTable.branchId,
+      })
+      .from(studioRoomsTable)
+      .where(and(...roomConditions));
+
+    const roomById = new Map(activeRooms.map((r) => [r.id, r]));
+
+    const branchIds = new Set<number>();
+    for (const r of activeRooms) branchIds.add(r.branchId);
+    for (const row of [...regularRows, ...balletRows]) {
+      if (row.branchId != null) branchIds.add(row.branchId);
+    }
+    const branches = branchIds.size
+      ? await db.select().from(studioBranchesTable).where(inArray(studioBranchesTable.id, [...branchIds]))
+      : [];
+    const branchById = new Map(branches.map((b) => [b.id, b]));
+
+    const regularScheduleIds = regularRows.map((r) => r.id);
+    const balletScheduleIds = balletRows.map((r) => r.id);
+
+    const [regularCountRows, balletCountRows] = await Promise.all([
+      regularScheduleIds.length
+        ? db
+            .select({
+              scheduleId: bookingsTable.scheduleId,
+              occurrenceDate: bookingsTable.occurrenceDate,
+              n: sql<number>`count(*)::int`,
+            })
+            .from(bookingsTable)
+            .where(and(
+              inArray(bookingsTable.scheduleId, regularScheduleIds),
+              inArray(bookingsTable.bookingStatus, [...RESERVED_SEAT_STATUSES]),
+            ))
+            .groupBy(bookingsTable.scheduleId, bookingsTable.occurrenceDate)
+        : [],
+      balletScheduleIds.length
+        ? db
+            .select({
+              balletScheduleId: bookingsTable.balletScheduleId,
+              n: sql<number>`count(*)::int`,
+            })
+            .from(bookingsTable)
+            .where(and(
+              inArray(bookingsTable.balletScheduleId, balletScheduleIds),
+              inArray(bookingsTable.bookingStatus, [...RESERVED_SEAT_STATUSES]),
+            ))
+            .groupBy(bookingsTable.balletScheduleId)
+        : [],
+    ]);
+
+    const regularCountByKey = new Map<string, number>();
+    for (const row of regularCountRows) {
+      regularCountByKey.set(`${row.scheduleId}|${row.occurrenceDate ?? ""}`, Number(row.n));
+    }
+    const balletCountById = new Map<number, number>();
+    for (const row of balletCountRows) {
+      if (row.balletScheduleId != null) balletCountById.set(row.balletScheduleId, Number(row.n));
+    }
+
+    const occurrences: Array<Omit<CalendarOccurrence, "conflict"> & { branchId: number | null; roomId: number | null }> = [];
+
+    for (const row of regularRows) {
+      const schedule = {
+        type: row.type as "weekly" | "one_time",
+        date: row.date,
+        dayOfWeek: row.dayOfWeek,
+        effectiveFrom: row.effectiveFrom,
+        effectiveUntil: row.effectiveUntil,
+      };
+      if (scheduleOccursOnDate(schedule, date)) {
+        occurrences.push({
+          scheduleId: row.id,
+          source: "class",
+          scheduleType: schedule.type,
+          occurrenceDate: date,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          classId: row.classId,
+          classTitle: row.classTitle,
+          instructorId: row.instructorId,
+          instructorName: row.instructorName,
+          capacity: row.classCapacity,
+          branchId: row.branchId,
+          roomId: row.roomId,
+          branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,
+          roomName: row.roomId != null ? roomById.get(row.roomId)?.name ?? null : null,
+          bookingCount: regularCountByKey.get(`${row.id}|${date}`) ?? 0,
+        });
+      }
+    }
+
+    for (const row of balletRows) {
+      const schedule = { type: "weekly" as const, dayOfWeek: row.dayOfWeek };
+      if (scheduleOccursOnDate(schedule, date)) {
+        occurrences.push({
+          scheduleId: row.id,
+          source: "ballet",
+          scheduleType: "weekly",
+          occurrenceDate: date,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          classId: row.classId,
+          classTitle: row.classTitle,
+          instructorId: row.instructorId,
+          instructorName: row.instructorName,
+          capacity: row.capacity,
+          branchId: row.branchId,
+          roomId: row.roomId,
+          branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,
+          roomName: row.roomId != null ? roomById.get(row.roomId)?.name ?? null : null,
+          bookingCount: balletCountById.get(row.id) ?? 0,
+        });
+      }
+    }
+
+    const conflictByKey = annotateConflicts(occurrences);
+
+    const occurrencesByRoom = new Map<number, any[]>();
+    for (const occurrence of occurrences) {
+      if (occurrence.roomId == null) continue;
+      const roomOccs = occurrencesByRoom.get(occurrence.roomId) ?? [];
+      const conflict = conflictByKey.get(`${occurrence.source}|${occurrence.scheduleId}|${occurrence.occurrenceDate}`) ?? null;
+      roomOccs.push({
+        id: occurrence.scheduleId,
+        scheduleId: occurrence.scheduleId,
+        source: occurrence.source,
+        scheduleType: occurrence.scheduleType,
+        occurrenceDate: occurrence.occurrenceDate,
+        startTime: occurrence.startTime,
+        endTime: occurrence.endTime,
+        classId: occurrence.classId,
+        classTitle: occurrence.classTitle,
+        title: occurrence.classTitle,
+        instructorId: occurrence.instructorId,
+        instructorName: occurrence.instructorName,
+        branchId: occurrence.branchId!,
+        roomId: occurrence.roomId!,
+        roomName: occurrence.roomName ?? `Room ${occurrence.roomId}`,
+        capacity: occurrence.capacity,
+        bookingCount: occurrence.bookingCount,
+        conflict,
+      });
+      occurrencesByRoom.set(occurrence.roomId, roomOccs);
+    }
+
+    const roomGroups = activeRooms.map((room) => {
+      const roomOccs = occurrencesByRoom.get(room.id) ?? [];
+      roomOccs.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      return {
+        roomId: room.id,
+        roomName: room.name,
+        occurrences: roomOccs,
+      };
+    });
+
+    for (const [rId, rOccs] of occurrencesByRoom.entries()) {
+      if (!activeRooms.some((r) => r.id === rId)) {
+        rOccs.sort((a, b) => a.startTime.localeCompare(b.startTime));
+        roomGroups.push({
+          roomId: rId,
+          roomName: rOccs[0]?.roomName ?? `Room ${rId}`,
+          occurrences: rOccs,
+        });
+      }
+    }
+
+    roomGroups.sort((a, b) => a.roomName.localeCompare(b.roomName));
+
+    res.json(
+      GetAdminCalendarResourceViewResponse.parse({
+        date,
+        branchId: branchId ?? null,
+        rooms: roomGroups,
+      }),
+    );
   },
 );
 

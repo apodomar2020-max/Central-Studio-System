@@ -108,3 +108,12 @@ test("Pre-existing direct /schedules usage (create button, edit button, submit) 
   assert.match(schedulesSource, /button-submit-schedule/);
   assert.match(schedulesSource, /const onSubmit = \(values: FormValues\) => \{/);
 });
+
+test("Resource view mode is integrated into existing Calendar page without creating a new page", () => {
+  assert.match(calendarSource, /type CalendarViewMode = "week" \| "day" \| "resource";/);
+  assert.match(calendarSource, /button-calendar-view-resource/);
+  assert.match(calendarSource, /useGetAdminCalendarResourceView/);
+  assert.match(calendarSource, /calendar-resource-view-grid/);
+  assert.match(calendarSource, /calendar-resource-room-header-/);
+  assert.match(calendarSource, /calendar-resource-room-column-/);
+});

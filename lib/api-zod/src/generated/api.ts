@@ -767,6 +767,71 @@ export const GetAdminCalendarOccurrenceRosterResponse = zod.object({
   ),
 });
 
+/**
+ * Read-only. Returns active room occurrences grouped by room for a single date, for the Calendar Resource View mode (Phase 4B). Only active schedules assigned to a branch AND room are included.
+ * @summary Operational resource view for studio rooms on a given date
+ */
+export const getAdminCalendarResourceViewQueryDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const GetAdminCalendarResourceViewQueryParams = zod.object({
+  date: zod.coerce
+    .string()
+    .regex(getAdminCalendarResourceViewQueryDateRegExp)
+    .describe("Date for resource view, YYYY-MM-DD"),
+  branchId: zod.coerce.number().optional(),
+  roomId: zod.coerce.number().optional(),
+});
+
+export const GetAdminCalendarResourceViewResponse = zod.object({
+  date: zod.string(),
+  branchId: zod.number().nullable(),
+  rooms: zod.array(
+    zod.object({
+      roomId: zod.number(),
+      roomName: zod.string(),
+      occurrences: zod.array(
+        zod.object({
+          id: zod.number(),
+          scheduleId: zod.number(),
+          source: zod
+            .enum(["class", "ballet"])
+            .describe(
+              "Source type. Compatible with future sources like private_event, block.",
+            ),
+          scheduleType: zod.enum(["weekly", "one_time"]),
+          occurrenceDate: zod.string(),
+          startTime: zod.string(),
+          endTime: zod.string(),
+          classId: zod.number(),
+          classTitle: zod.string(),
+          title: zod.string(),
+          instructorId: zod.number().nullable(),
+          instructorName: zod.string().nullable(),
+          branchId: zod.number(),
+          roomId: zod.number(),
+          roomName: zod.string(),
+          capacity: zod.number().nullable(),
+          bookingCount: zod.number(),
+          conflict: zod.union([
+            zod.null(),
+            zod.object({
+              scheduleId: zod.number(),
+              source: zod.enum(["class", "ballet"]),
+              classTitle: zod.string(),
+              startTime: zod.string(),
+              endTime: zod.string(),
+              branchName: zod.string().nullable(),
+              roomName: zod.string().nullable(),
+            }),
+          ]),
+        }),
+      ),
+    }),
+  ),
+});
+
 export const ListSchedulesQueryParams = zod.object({
   classId: zod.coerce.number().optional(),
 });

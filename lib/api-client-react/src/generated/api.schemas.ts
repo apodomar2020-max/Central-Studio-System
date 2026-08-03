@@ -638,6 +638,63 @@ export interface CalendarOccurrenceRosterResponse {
   roster: CalendarOccurrenceRosterItem[];
 }
 
+/**
+ * Source type. Compatible with future sources like private_event, block.
+ */
+export type CalendarResourceOccurrenceSource =
+  (typeof CalendarResourceOccurrenceSource)[keyof typeof CalendarResourceOccurrenceSource];
+
+export const CalendarResourceOccurrenceSource = {
+  class: "class",
+  ballet: "ballet",
+} as const;
+
+export type CalendarResourceOccurrenceScheduleType =
+  (typeof CalendarResourceOccurrenceScheduleType)[keyof typeof CalendarResourceOccurrenceScheduleType];
+
+export const CalendarResourceOccurrenceScheduleType = {
+  weekly: "weekly",
+  one_time: "one_time",
+} as const;
+
+export interface CalendarResourceOccurrence {
+  id: number;
+  scheduleId: number;
+  /** Source type. Compatible with future sources like private_event, block. */
+  source: CalendarResourceOccurrenceSource;
+  scheduleType: CalendarResourceOccurrenceScheduleType;
+  occurrenceDate: string;
+  startTime: string;
+  endTime: string;
+  classId: number;
+  classTitle: string;
+  title: string;
+  /** @nullable */
+  instructorId: number | null;
+  /** @nullable */
+  instructorName: string | null;
+  branchId: number;
+  roomId: number;
+  roomName: string;
+  /** @nullable */
+  capacity: number | null;
+  bookingCount: number;
+  conflict: null | CalendarOccurrenceConflict;
+}
+
+export interface CalendarResourceRoom {
+  roomId: number;
+  roomName: string;
+  occurrences: CalendarResourceOccurrence[];
+}
+
+export interface CalendarResourceViewResponse {
+  date: string;
+  /** @nullable */
+  branchId: number | null;
+  rooms: CalendarResourceRoom[];
+}
+
 export type BalletScheduleStatus =
   (typeof BalletScheduleStatus)[keyof typeof BalletScheduleStatus];
 
@@ -2069,6 +2126,16 @@ export const GetAdminCalendarOccurrenceRosterSource = {
   class: "class",
   ballet: "ballet",
 } as const;
+
+export type GetAdminCalendarResourceViewParams = {
+  /**
+   * Date for resource view, YYYY-MM-DD
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  date: string;
+  branchId?: number;
+  roomId?: number;
+};
 
 export type ListSchedulesParams = {
   classId?: number;
