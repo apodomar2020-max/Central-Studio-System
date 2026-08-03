@@ -694,6 +694,13 @@
       "when": 1786291200000,
       "tag": "0086_package_credit_allocations_manual_adjustment",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1786377600000,
+      "tag": "0099_studio_room_reservations",
+      "breakpoints": true
     }
   ]
 }
