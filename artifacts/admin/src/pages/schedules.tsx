@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -100,6 +101,12 @@ function statusBadgeClass(status: Schedule["status"]) {
   }
 }
 
+function addOneHour(time: string): string {
+  const [hours, minutes] = time.split(":").map(Number);
+  const total = (hours * 60 + minutes + 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
 function formatScheduleLocation(schedule: Schedule): string {
   const branchName = schedule.branch?.name?.trim();
   const roomName = schedule.room?.name?.trim();
@@ -116,6 +123,8 @@ export default function Schedules() {
   const canCreate = can("schedules", "create");
   const canEdit = can("schedules", "edit");
   const canDelete = can("schedules", "delete");
+  const [, navigate] = useLocation();
+  const urlSearch = useSearch();
   const { data: schedules, isLoading } = useListSchedules();
   const { data: classes } = useListClasses();
   const createSchedule = useCreateSchedule();
@@ -205,6 +214,61 @@ export default function Schedules() {
     });
     setOpen(true);
   };
+
+  // Calendar Phase 3 deep-link support: Calendar navigates here rather than
+  // owning any create/edit UI of its own (see pages/calendar.tsx). This
+  // reuses the exact same openCreate/openEdit + form + onSubmit already
+  // above — no second schedule form exists anywhere.
+  const openCreateWithContext = (context: { date?: string | null; startTime?: string | null; branchId?: number | null; roomId?: number | null }) => {
+    setEditing(null);
+    const dayOfWeek = context.date ? new Date(`${context.date}T00:00:00Z`).getUTCDay() : 1;
+    form.reset({
+      type: "weekly",
+      branchId: context.branchId ?? null,
+      roomId: context.roomId ?? null,
+      status: "active",
+      dayOfWeek,
+      date: context.date ?? "",
+      startTime: context.startTime ?? "10:00",
+      endTime: context.startTime ? addOneHour(context.startTime) : "11:00",
+      priceEgp: null,
+      packageEligible: true,
+      isRecurring: true,
+    });
+    setOpen(true);
+  };
+
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return;
+    const params = new URLSearchParams(urlSearch);
+    const editScheduleId = params.get("editScheduleId");
+    if (editScheduleId) {
+      if (!schedules) return; // wait for the list to load before deciding
+      deepLinkHandledRef.current = true;
+      const target = schedules.find((s) => s.id === Number(editScheduleId));
+      if (target && canEdit) openEdit(target);
+      navigate("/schedules", { replace: true });
+      return;
+    }
+    const date = params.get("date");
+    const startTime = params.get("startTime");
+    const branchIdParam = params.get("branchId");
+    const roomIdParam = params.get("roomId");
+    if (date || startTime || branchIdParam || roomIdParam) {
+      deepLinkHandledRef.current = true;
+      if (canCreate) {
+        openCreateWithContext({
+          date,
+          startTime,
+          branchId: branchIdParam ? Number(branchIdParam) : null,
+          roomId: roomIdParam ? Number(roomIdParam) : null,
+        });
+      }
+      navigate("/schedules", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules, urlSearch]);
 
   const { toast } = useToast();
 

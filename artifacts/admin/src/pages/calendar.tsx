@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { addDays, format, startOfWeek } from "date-fns";
-import { AlertTriangle, ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Users } from "lucide-react";
 import {
   useListAdminCalendar,
   useListScheduleLocationBranches,
@@ -11,6 +12,13 @@ import {
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import {
+  buildBalletScheduleListPath,
+  buildScheduleCreatePath,
+  buildScheduleEditPath,
+  pixelOffsetToTimeString,
+} from "@/lib/scheduleCalendarNavigation";
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -67,7 +75,7 @@ function formatConflictSummary(conflict: NonNullable<PositionedOccurrence["confl
   return `${conflict.classTitle} · ${conflict.startTime}–${conflict.endTime} · ${location}`;
 }
 
-function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
+function OccurrenceCard({ occurrence, onOpen }: { occurrence: PositionedOccurrence; onOpen: (occurrence: PositionedOccurrence) => void }) {
   const startMin = toMinutes(occurrence.startTime);
   const endMin = Math.max(toMinutes(occurrence.endTime), startMin + 15);
   const top = (startMin - GRID_START_MIN) * PX_PER_MIN;
@@ -91,8 +99,11 @@ function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={
         "absolute overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm text-foreground " +
+        "cursor-pointer transition-[filter] hover:brightness-125 hover:shadow-md " +
         categoryBg + " " +
         (conflict ? "border-2 border-destructive" : categoryBorder)
       }
@@ -104,6 +115,16 @@ function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
       }}
       data-testid={`calendar-card-${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
       title={tooltip}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen(occurrence);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        onOpen(occurrence);
+      }}
     >
       {conflict && (
         <div
@@ -137,6 +158,9 @@ function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
 }
 
 export default function CalendarPage() {
+  const [, navigate] = useLocation();
+  const { can } = useAdminAuth();
+  const canCreateSchedule = can("schedules", "create");
   const [viewMode, setViewMode] = useState<CalendarViewMode>("week");
   const [focusedDate, setFocusedDate] = useState(() => new Date());
   const [branchId, setBranchId] = useState<number | null>(null);
@@ -189,6 +213,34 @@ export default function CalendarPage() {
 
   const gridColsClass = viewMode === "week" ? "grid-cols-[64px_repeat(7,1fr)]" : "grid-cols-[64px_1fr]";
 
+  // Navigation only — see the buildSchedule*/buildBallet* helpers' own doc
+  // comments. Neither of these ever creates, edits, or validates anything.
+  const openOccurrenceInScheduleManager = (occurrence: CalendarOccurrence) => {
+    navigate(
+      occurrence.source === "ballet"
+        ? buildBalletScheduleListPath()
+        : buildScheduleEditPath(occurrence.scheduleId),
+    );
+  };
+
+  const openCreateForDate = (dateKey: string, startTime?: string) => {
+    navigate(buildScheduleCreatePath({ date: dateKey, startTime, branchId, roomId }));
+  };
+
+  const handleAddScheduleClick = () => {
+    navigate(buildScheduleCreatePath({
+      date: viewMode === "day" ? format(focusedDate, "yyyy-MM-dd") : null,
+      branchId,
+      roomId,
+    }));
+  };
+
+  const handleEmptySlotClick = (event: React.MouseEvent<HTMLDivElement>, dateKey: string) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offsetMinutes = event.clientY - rect.top;
+    openCreateForDate(dateKey, pixelOffsetToTimeString(offsetMinutes, GRID_START_MIN, GRID_END_MIN));
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader title="Calendar" description="Studio schedule at a glance" mode="studio" />
@@ -225,6 +277,12 @@ export default function CalendarPage() {
             <ChevronRight className="h-4 w-4" />
           </Button>
           <span className="ml-2 text-sm font-medium text-foreground">{rangeLabel}</span>
+          {canCreateSchedule && (
+            <Button size="sm" className="gap-1.5" data-testid="button-calendar-add-schedule" onClick={handleAddScheduleClick}>
+              <Plus className="h-4 w-4" />
+              Add Schedule
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -301,7 +359,14 @@ export default function CalendarPage() {
                 const dateKey = format(date, "yyyy-MM-dd");
                 const dayOccurrences = packDayColumns(occurrencesByDate.get(dateKey) ?? []);
                 return (
-                  <div key={dateKey} className="relative overflow-hidden border-l" style={{ height: gridHeight }} data-testid={`calendar-day-column-${dateKey}`}>
+                  <div
+                    key={dateKey}
+                    className={"relative overflow-hidden border-l" + (canCreateSchedule ? " cursor-pointer hover:bg-muted/20" : "")}
+                    style={{ height: gridHeight }}
+                    data-testid={`calendar-day-column-${dateKey}`}
+                    onClick={canCreateSchedule ? (event) => handleEmptySlotClick(event, dateKey) : undefined}
+                    title={canCreateSchedule ? "Click to add a schedule at this time" : undefined}
+                  >
                     {hourMarks.map((minute) => (
                       <div key={minute} className="absolute left-0 right-0 border-t border-border/60" style={{ top: (minute - GRID_START_MIN) * PX_PER_MIN }} />
                     ))}
@@ -309,6 +374,7 @@ export default function CalendarPage() {
                       <OccurrenceCard
                         key={`${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
                         occurrence={occurrence}
+                        onOpen={openOccurrenceInScheduleManager}
                       />
                     ))}
                   </div>
