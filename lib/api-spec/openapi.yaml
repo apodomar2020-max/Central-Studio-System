@@ -1912,7 +1912,7 @@ components:
 
     CalendarOccurrence:
       type: object
-      required: [scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, classTitle, instructorName, branchName, roomName, bookingCount]
+      required: [scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, classTitle, instructorName, branchName, roomName, bookingCount, conflict]
       properties:
         scheduleId: { type: integer }
         source: { type: string, enum: [class, ballet], description: "Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules." }
@@ -1925,6 +1925,22 @@ components:
         branchName: { type: ["string", "null"] }
         roomName: { type: ["string", "null"] }
         bookingCount: { type: integer, description: "Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model)." }
+        conflict:
+          description: "Present when this occurrence overlaps another active occurrence in the same branch+room on this date (regular-vs-regular, ballet-vs-ballet, or regular-vs-ballet), computed server-side by the Phase 2 schedule conflict engine — null when there is no conflict. The frontend must not recompute this."
+          oneOf:
+            - { type: "null" }
+            - $ref: "#/components/schemas/CalendarOccurrenceConflict"
+    CalendarOccurrenceConflict:
+      type: object
+      required: [scheduleId, source, classTitle, startTime, endTime, branchName, roomName]
+      properties:
+        scheduleId: { type: integer }
+        source: { type: string, enum: [class, ballet] }
+        classTitle: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+        branchName: { type: ["string", "null"] }
+        roomName: { type: ["string", "null"] }
     CalendarOccurrenceListResponse:
       type: array
       items: { $ref: "#/components/schemas/CalendarOccurrence" }

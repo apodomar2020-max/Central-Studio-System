@@ -513,6 +513,26 @@ export const CalendarOccurrenceScheduleType = {
   one_time: "one_time",
 } as const;
 
+export type CalendarOccurrenceConflictSource =
+  (typeof CalendarOccurrenceConflictSource)[keyof typeof CalendarOccurrenceConflictSource];
+
+export const CalendarOccurrenceConflictSource = {
+  class: "class",
+  ballet: "ballet",
+} as const;
+
+export interface CalendarOccurrenceConflict {
+  scheduleId: number;
+  source: CalendarOccurrenceConflictSource;
+  classTitle: string;
+  startTime: string;
+  endTime: string;
+  /** @nullable */
+  branchName: string | null;
+  /** @nullable */
+  roomName: string | null;
+}
+
 export interface CalendarOccurrence {
   scheduleId: number;
   /** Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules. */
@@ -532,6 +552,8 @@ export interface CalendarOccurrence {
   roomName: string | null;
   /** Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model). */
   bookingCount: number;
+  /** Present when this occurrence overlaps another active occurrence in the same branch+room on this date (regular-vs-regular, ballet-vs-ballet, or regular-vs-ballet), computed server-side by the Phase 2 schedule conflict engine — null when there is no conflict. The frontend must not recompute this. */
+  conflict: null | CalendarOccurrenceConflict;
 }
 
 export type CalendarOccurrenceListResponse = CalendarOccurrence[];

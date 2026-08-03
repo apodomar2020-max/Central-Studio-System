@@ -44,11 +44,22 @@ import {
 import { ListAdminCalendarQueryParams, ListAdminCalendarResponse } from "@workspace/api-zod";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
 import { InvalidCalendarRangeError, isoDateRange, scheduleOccursOnDate } from "../lib/calendarOccurrence";
+import { findScheduleConflict, type ScheduleOccupancy } from "../lib/scheduleConflict";
 import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, type AdminRequest } from "./adminAuth";
 import { requireScheduleLocationLookup } from "./studioBranches";
 
 const router: IRouter = Router();
+
+type CalendarOccurrenceConflict = {
+  scheduleId: number;
+  source: "class" | "ballet";
+  classTitle: string;
+  startTime: string;
+  endTime: string;
+  branchName: string | null;
+  roomName: string | null;
+};
 
 type CalendarOccurrence = {
   scheduleId: number;
@@ -62,7 +73,71 @@ type CalendarOccurrence = {
   branchName: string | null;
   roomName: string | null;
   bookingCount: number;
+  conflict: CalendarOccurrenceConflict | null;
 };
+
+/**
+ * Phase 2D — annotates each already-projected occurrence with the occurrence
+ * (if any) it conflicts with, reusing the Phase 2A engine's
+ * findScheduleConflict rather than re-deriving overlap logic here. Two
+ * occurrences can only conflict if they land on the same calendar date, so
+ * this groups by occurrenceDate first, then treats each occurrence in that
+ * group as a one-off ("one_time") ScheduleOccupancy pinned to that date —
+ * exactly what the underlying recurring schedule resolves to on that
+ * specific day, so this is a faithful, non-duplicated reuse of the same
+ * conflict predicate the create/update routes already enforce (Phase 2B/2C),
+ * not a re-implementation of it. Read-only: this never blocks anything, it
+ * only labels the response.
+ */
+function annotateConflicts(
+  occurrences: ReadonlyArray<Omit<CalendarOccurrence, "conflict"> & { branchId: number | null; roomId: number | null }>,
+): Map<string, CalendarOccurrenceConflict> {
+  const occurrenceKey = (o: { source: string; scheduleId: number; occurrenceDate: string }) =>
+    `${o.source}|${o.scheduleId}|${o.occurrenceDate}`;
+
+  const byDate = new Map<string, typeof occurrences[number][]>();
+  for (const occurrence of occurrences) {
+    const list = byDate.get(occurrence.occurrenceDate) ?? [];
+    list.push(occurrence);
+    byDate.set(occurrence.occurrenceDate, list);
+  }
+
+  const toOccupancy = (o: typeof occurrences[number]): ScheduleOccupancy => ({
+    id: o.scheduleId,
+    source: o.source,
+    branchId: o.branchId,
+    roomId: o.roomId,
+    // Every occurrence here was already projected only from a
+    // status: "active" schedule row (see the query conditions below), so
+    // this is always the occupying status — no separate lookup needed.
+    status: "active",
+    startTime: o.startTime,
+    endTime: o.endTime,
+    recurrence: { type: "one_time", date: o.occurrenceDate },
+  });
+
+  const conflicts = new Map<string, CalendarOccurrenceConflict>();
+  for (const dayOccurrences of byDate.values()) {
+    if (dayOccurrences.length < 2) continue;
+    const dayOccupancies = dayOccurrences.map(toOccupancy);
+    dayOccurrences.forEach((occurrence, index) => {
+      const found = findScheduleConflict(dayOccupancies[index], dayOccupancies);
+      if (!found) return;
+      const matchingOccurrence = dayOccurrences.find((candidate) => candidate.scheduleId === found.id && candidate.source === found.source);
+      if (!matchingOccurrence) return;
+      conflicts.set(occurrenceKey(occurrence), {
+        scheduleId: matchingOccurrence.scheduleId,
+        source: matchingOccurrence.source,
+        classTitle: matchingOccurrence.classTitle,
+        startTime: matchingOccurrence.startTime,
+        endTime: matchingOccurrence.endTime,
+        branchName: matchingOccurrence.branchName,
+        roomName: matchingOccurrence.roomName,
+      });
+    });
+  }
+  return conflicts;
+}
 
 router.get(
   "/admin/calendar",
@@ -186,7 +261,7 @@ router.get(
       if (row.balletScheduleId != null) balletCountById.set(row.balletScheduleId, Number(row.n));
     }
 
-    const occurrences: CalendarOccurrence[] = [];
+    const occurrences: Array<Omit<CalendarOccurrence, "conflict"> & { branchId: number | null; roomId: number | null }> = [];
 
     for (const row of regularRows) {
       const schedule = {
@@ -207,6 +282,8 @@ router.get(
           endTime: row.endTime,
           classTitle: row.classTitle,
           instructorName: row.instructorName,
+          branchId: row.branchId,
+          roomId: row.roomId,
           branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,
           roomName: row.roomId != null ? roomById.get(row.roomId)?.name ?? null : null,
           bookingCount: regularCountByKey.get(`${row.id}|${occurrenceDate}`) ?? 0,
@@ -227,6 +304,8 @@ router.get(
           endTime: row.endTime,
           classTitle: row.classTitle,
           instructorName: row.instructorName,
+          branchId: row.branchId,
+          roomId: row.roomId,
           branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,
           roomName: row.roomId != null ? roomById.get(row.roomId)?.name ?? null : null,
           bookingCount: balletCountById.get(row.id) ?? 0,
@@ -234,13 +313,19 @@ router.get(
       }
     }
 
-    occurrences.sort((a, b) =>
+    const conflictByKey = annotateConflicts(occurrences);
+    const withConflicts: CalendarOccurrence[] = occurrences.map((occurrence) => ({
+      ...occurrence,
+      conflict: conflictByKey.get(`${occurrence.source}|${occurrence.scheduleId}|${occurrence.occurrenceDate}`) ?? null,
+    }));
+
+    withConflicts.sort((a, b) =>
       a.occurrenceDate === b.occurrenceDate
         ? a.startTime.localeCompare(b.startTime)
         : a.occurrenceDate.localeCompare(b.occurrenceDate),
     );
 
-    res.json(ListAdminCalendarResponse.parse(occurrences));
+    res.json(ListAdminCalendarResponse.parse(withConflicts));
   },
 );
 

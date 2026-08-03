@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { addDays, format, startOfWeek } from "date-fns";
-import { ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import {
   useListAdminCalendar,
   useListScheduleLocationBranches,
@@ -62,6 +62,11 @@ function packDayColumns(dayOccurrences: CalendarOccurrence[]): PositionedOccurre
   return placed.map((occurrence) => ({ ...occurrence, totalCols }));
 }
 
+function formatConflictSummary(conflict: NonNullable<PositionedOccurrence["conflict"]>): string {
+  const location = [conflict.branchName, conflict.roomName].filter(Boolean).join(" · ") || "No location set";
+  return `${conflict.classTitle} · ${conflict.startTime}–${conflict.endTime} · ${location}`;
+}
+
 function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
   const startMin = toMinutes(occurrence.startTime);
   const endMin = Math.max(toMinutes(occurrence.endTime), startMin + 15);
@@ -70,14 +75,26 @@ function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
   const widthPct = 100 / occurrence.totalCols;
   const isBallet = occurrence.source === "ballet";
   const location = [occurrence.branchName, occurrence.roomName].filter(Boolean).join(" · ") || "No location set";
+  const conflict = occurrence.conflict;
+
+  // Category identity (class/ballet) always stays in the background wash;
+  // only the border switches to the destructive/warning color when
+  // conflicted, so a card never loses its category at a glance while still
+  // making the conflict unmistakable. Server-computed only — see
+  // GET /admin/calendar's `conflict` field (lib/scheduleConflict.ts);
+  // nothing here re-derives whether an overlap exists.
+  const categoryBg = isBallet ? "bg-[#8A5CFF26]" : "bg-emerald-500/15";
+  const categoryBorder = isBallet ? "border-[#8A5CFF66]" : "border-emerald-400/40";
+  const tooltip = conflict
+    ? `${occurrence.classTitle} · ${occurrence.startTime}–${occurrence.endTime}\nConflicts with: ${formatConflictSummary(conflict)}`
+    : `${occurrence.classTitle} · ${occurrence.startTime}–${occurrence.endTime}`;
 
   return (
     <div
       className={
         "absolute overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm text-foreground " +
-        (isBallet
-          ? "border-[#8A5CFF66] bg-[#8A5CFF26]"
-          : "border-emerald-400/40 bg-emerald-500/15")
+        categoryBg + " " +
+        (conflict ? "border-2 border-destructive" : categoryBorder)
       }
       style={{
         top,
@@ -86,9 +103,17 @@ function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
         width: `calc(${widthPct}% - 4px)`,
       }}
       data-testid={`calendar-card-${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
-      title={`${occurrence.classTitle} · ${occurrence.startTime}–${occurrence.endTime}`}
+      title={tooltip}
     >
-      <div className="truncate text-xs font-semibold leading-tight">{occurrence.classTitle}</div>
+      {conflict && (
+        <div
+          className="absolute right-0.5 top-0.5 rounded-sm bg-destructive p-0.5 text-destructive-foreground"
+          data-testid={`calendar-conflict-badge-${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
+        >
+          <AlertTriangle className="h-2.5 w-2.5" aria-label="Scheduling conflict" />
+        </div>
+      )}
+      <div className="truncate text-xs font-semibold leading-tight pr-4">{occurrence.classTitle}</div>
       {height > 32 && (
         <div className="truncate text-[11px] leading-tight opacity-90">
           {occurrence.instructorName ?? "No instructor"}
@@ -99,6 +124,12 @@ function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
         <div className="mt-0.5 flex items-center gap-1 text-[11px] leading-tight opacity-90">
           <Users className="h-3 w-3" />
           {occurrence.bookingCount}
+        </div>
+      )}
+      {conflict && height > 75 && (
+        <div className="mt-0.5 flex items-start gap-1 truncate text-[10px] font-medium leading-tight text-destructive">
+          <AlertTriangle className="mt-px h-2.5 w-2.5 shrink-0" />
+          <span className="truncate">Conflicts with {formatConflictSummary(conflict)}</span>
         </div>
       )}
     </div>
@@ -235,6 +266,7 @@ export default function CalendarPage() {
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500/40 border border-emerald-400/50" />Studio class</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#8A5CFF40", borderColor: "#8A5CFF66", borderWidth: 1 }} />Ballet</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border-2 border-destructive" />Conflict</span>
       </div>
 
       {calendarQuery.isLoading ? (

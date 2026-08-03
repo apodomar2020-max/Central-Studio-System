@@ -668,6 +668,22 @@ export const ListAdminCalendarResponseItem = zod.object({
     .describe(
       "Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model).",
     ),
+  conflict: zod
+    .union([
+      zod.null(),
+      zod.object({
+        scheduleId: zod.number(),
+        source: zod.enum(["class", "ballet"]),
+        classTitle: zod.string(),
+        startTime: zod.string(),
+        endTime: zod.string(),
+        branchName: zod.string().nullable(),
+        roomName: zod.string().nullable(),
+      }),
+    ])
+    .describe(
+      "Present when this occurrence overlaps another active occurrence in the same branch+room on this date (regular-vs-regular, ballet-vs-ballet, or regular-vs-ballet), computed server-side by the Phase 2 schedule conflict engine — null when there is no conflict. The frontend must not recompute this.",
+    ),
 });
 export const ListAdminCalendarResponse = zod.array(
   ListAdminCalendarResponseItem,
