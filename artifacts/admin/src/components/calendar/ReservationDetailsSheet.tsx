@@ -27,6 +27,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -41,6 +51,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { getCalendarCategoryTokens } from "./calendarTokens";
 
 export interface ReservationDetailsSheetProps {
   reservationId: number | null;
@@ -70,6 +81,7 @@ export function ReservationDetailsSheet({
 
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   const reservationQuery = useGetRoomReservation(reservationId ?? 0, {
     query: {
@@ -128,9 +140,9 @@ export function ReservationDetailsSheet({
     });
   };
 
-  const handleCancelReservation = () => {
+  const handleConfirmCancelReservation = () => {
     if (!reservationId) return;
-    if (!confirm("Are you sure you want to cancel this room reservation?")) return;
+    setConfirmCancelOpen(false);
     updateMutation.mutate({
       id: reservationId,
       data: {
@@ -138,6 +150,8 @@ export function ReservationDetailsSheet({
       },
     });
   };
+
+  const resTokens = getCalendarCategoryTokens("reservation");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -150,7 +164,7 @@ export function ReservationDetailsSheet({
             {reservation && (
               <Badge
                 variant={reservation.status === "active" ? "default" : "destructive"}
-                className={reservation.status === "active" ? "bg-amber-500 hover:bg-amber-600" : ""}
+                className={reservation.status === "active" ? `${resTokens.badgeBg} ${resTokens.badgeText} ${resTokens.badgeBorder}` : ""}
                 data-testid="badge-reservation-status"
               >
                 {reservation.status.toUpperCase()}
@@ -241,13 +255,13 @@ export function ReservationDetailsSheet({
             <div className="flex items-center gap-2">
               <Tag className="h-4 w-4 text-amber-500" />
               <span className="font-medium text-muted-foreground">Type:</span>
-              <Badge variant="outline" className="bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300">
+              <Badge variant="outline" className={`${resTokens.badgeBg} ${resTokens.badgeBorder} ${resTokens.badgeText}`}>
                 {TYPE_LABELS[reservation.reservationType] || reservation.reservationType}
               </Badge>
             </div>
 
             {/* Date & Time */}
-            <div className="space-y-2 rounded-lg border bg-card p-3">
+            <div className="space-y-2 rounded-lg border bg-card p-3 shadow-sm">
               <div className="flex items-center gap-2 text-foreground">
                 <Calendar className="h-4 w-4 text-primary" />
                 <span className="font-semibold">{reservation.date}</span>
@@ -259,7 +273,7 @@ export function ReservationDetailsSheet({
             </div>
 
             {/* Location */}
-            <div className="space-y-2 rounded-lg border bg-card p-3">
+            <div className="space-y-2 rounded-lg border bg-card p-3 shadow-sm">
               <div className="flex items-center gap-2 text-foreground">
                 <Building className="h-4 w-4 text-primary" />
                 <span>{reservation.branchName ?? `Branch #${reservation.branchId}`}</span>
@@ -303,7 +317,7 @@ export function ReservationDetailsSheet({
 
             {/* Action buttons */}
             {reservation.status === "active" && (canEdit || canCancel) && (
-              <div className="flex flex-col gap-2 pt-4">
+              <div className="flex flex-col gap-2 pt-4 border-t">
                 {canEdit && (
                   <Button variant="outline" className="gap-2" onClick={startEdit} data-testid="button-edit-reservation">
                     <Edit2 className="h-4 w-4" />
@@ -311,7 +325,13 @@ export function ReservationDetailsSheet({
                   </Button>
                 )}
                 {canCancel && (
-                  <Button variant="destructive" className="gap-2" onClick={handleCancelReservation} disabled={updateMutation.isPending} data-testid="button-cancel-reservation">
+                  <Button
+                    variant="destructive"
+                    className="gap-2"
+                    onClick={() => setConfirmCancelOpen(true)}
+                    disabled={updateMutation.isPending}
+                    data-testid="button-cancel-reservation"
+                  >
                     <XCircle className="h-4 w-4" />
                     Cancel Reservation
                   </Button>
@@ -320,6 +340,27 @@ export function ReservationDetailsSheet({
             )}
           </div>
         )}
+
+        <AlertDialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
+          <AlertDialogContent data-testid="dialog-cancel-reservation-confirm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancel private event?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. The reservation will become unavailable for this room.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={handleConfirmCancelReservation}
+                data-testid="button-confirm-cancel-reservation"
+              >
+                Confirm Cancellation
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   );

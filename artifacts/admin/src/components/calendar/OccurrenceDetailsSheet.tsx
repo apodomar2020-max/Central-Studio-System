@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { buildBalletScheduleListPath, buildScheduleEditPath } from "@/lib/scheduleCalendarNavigation";
+import { getCalendarCategoryTokens } from "./calendarTokens";
 
 function bookingStatusVariant(status: string): "default" | "secondary" | "destructive" {
   if (status === "cancelled" || status === "rejected") return "destructive";
@@ -80,6 +81,7 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
   }
 
   const isBallet = occurrence.source === "ballet";
+  const tokens = getCalendarCategoryTokens(occurrence.source as any);
   const location = [occurrence.branchName, occurrence.roomName].filter(Boolean).join(" · ") || "No location set";
   const dateLabel = format(parseISO(occurrence.occurrenceDate), "EEEE, MMM d, yyyy");
   const bookingCount = occurrence.bookingCount ?? 0;
@@ -93,9 +95,11 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
     <Sheet open={occurrence != null} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
         <SheetHeader className="border-b px-5 py-4 text-left">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pr-6">
             <SheetTitle>{occurrence.classTitle}</SheetTitle>
-            <Badge variant={isBallet ? "secondary" : "outline"}>{isBallet ? "Ballet" : "Studio Class"}</Badge>
+            <Badge variant="outline" className={`${tokens.badgeBg} ${tokens.badgeBorder} ${tokens.badgeText}`}>
+              {isBallet ? "Ballet" : "Studio Class"}
+            </Badge>
           </div>
           <SheetDescription>
             {dateLabel} · {occurrence.startTime}–{occurrence.endTime}
@@ -104,17 +108,17 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
 
         <div className="space-y-5 px-5 py-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
+            <div className="rounded-lg border p-3 bg-card shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</p>
               <p className="mt-1 text-sm font-medium text-foreground">{location}</p>
             </div>
-            <div>
+            <div className="rounded-lg border p-3 bg-card shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Instructor</p>
               <p className="mt-1 text-sm font-medium text-foreground">{occurrence.instructorName ?? "No instructor"}</p>
             </div>
           </div>
 
-          <div>
+          <div className="rounded-lg border p-3 bg-card shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Capacity</p>
             {occurrence.capacity == null ? (
               <p className="mt-1 text-sm text-foreground">No capacity limit</p>
@@ -133,25 +137,25 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Operational Overview</p>
               <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                <div className="rounded-md bg-muted/50 p-2.5">
+                <div className="rounded-md bg-muted/50 p-2.5 border shadow-sm">
                   <p className="text-muted-foreground">Checked In</p>
                   <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-checked-in">
                     {rosterQuery.data.summary.checkedInCount}
                   </p>
                 </div>
-                <div className="rounded-md bg-muted/50 p-2.5">
+                <div className="rounded-md bg-muted/50 p-2.5 border shadow-sm">
                   <p className="text-muted-foreground">Pending Check-in</p>
                   <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-pending">
                     {rosterQuery.data.summary.pendingCheckInCount}
                   </p>
                 </div>
-                <div className="rounded-md bg-muted/50 p-2.5">
+                <div className="rounded-md bg-muted/50 p-2.5 border shadow-sm">
                   <p className="text-muted-foreground">Absent</p>
                   <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-absent">
                     {rosterQuery.data.summary.absentCount}
                   </p>
                 </div>
-                <div className="rounded-md bg-muted/50 p-2.5">
+                <div className="rounded-md bg-muted/50 p-2.5 border shadow-sm">
                   <p className="text-muted-foreground">Unpaid</p>
                   <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-unpaid">
                     {rosterQuery.data.summary.unpaidCount}
@@ -174,7 +178,7 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
             ) : (
               <div className="space-y-2">
                 {rosterQuery.data.roster.map((booking) => (
-                  <div key={booking.bookingId} className="rounded-md border px-3 py-2">
+                  <div key={booking.bookingId} className="rounded-md border px-3 py-2 bg-card shadow-sm">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{booking.participantName}</p>

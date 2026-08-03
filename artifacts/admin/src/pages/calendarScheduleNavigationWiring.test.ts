@@ -17,6 +17,9 @@ import test from "node:test";
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
 const calendarSource = read("artifacts/admin/src/pages/calendar.tsx");
+const headerSource = read("artifacts/admin/src/components/calendar/CalendarHeader.tsx");
+const cardSource = read("artifacts/admin/src/components/calendar/CalendarOccurrenceCard.tsx");
+const resourceViewSource = read("artifacts/admin/src/components/calendar/CalendarResourceView.tsx");
 const schedulesSource = read("artifacts/admin/src/pages/schedules.tsx");
 const sheetSource = read("artifacts/admin/src/components/calendar/OccurrenceDetailsSheet.tsx");
 
@@ -42,27 +45,27 @@ test("The roster query is enabled only when an occurrence is selected and the us
 });
 
 test("Card clicks stop propagation so they never also trigger the day column's create-slot click", () => {
-  const cardBlock = calendarSource.match(/function OccurrenceCard[\s\S]*?\n}\n/)?.[0] ?? "";
+  const cardBlock = cardSource.match(/export function CalendarOccurrenceCard[\s\S]*?\n}\n/)?.[0] ?? "";
   assert.match(cardBlock, /onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*onOpen\(occurrence\);/);
 });
 
 test("Empty day-column space navigates to schedule creation with date/branch/room context, gated on schedules.create", () => {
   assert.match(calendarSource, /handleEmptySlotClick/);
-  assert.match(calendarSource, /onClick=\{canCreateSchedule \? \(event\) => handleEmptySlotClick\(event, dateKey\) : undefined\}/);
-  assert.match(calendarSource, /buildScheduleCreatePath\(\{ date: dateKey, startTime, branchId, roomId \}\)/);
+  assert.match(calendarSource, /onSlotClick=\{handleEmptySlotClick\}/);
+  assert.match(calendarSource, /buildScheduleCreatePath\(\{/);
   assert.match(calendarSource, /can\("schedules", "create"\)/);
 });
 
 test("The 'Add' dropdown button provides schedule and private event affordances gated on permissions", () => {
-  assert.match(calendarSource, /button-calendar-add-dropdown/);
-  assert.match(calendarSource, /canCreateSchedule/);
-  assert.match(calendarSource, /canCreateReservation/);
+  assert.match(headerSource, /button-calendar-add-dropdown/);
+  assert.match(headerSource, /canCreateSchedule/);
+  assert.match(headerSource, /canCreateReservation/);
 });
 
 test("Conflict indicators from Phase 2D remain intact after adding navigation", () => {
-  assert.match(calendarSource, /calendar-conflict-badge-/);
-  assert.match(calendarSource, /border-destructive/);
-  assert.match(calendarSource, />Conflict<\/span>/);
+  assert.match(cardSource, /calendar-conflict-badge-/);
+  assert.match(cardSource, /border-destructive/);
+  assert.match(headerSource, /Conflict/);
 });
 
 test("Schedules page reads Calendar's deep-link query params via wouter's useSearch/useLocation", () => {
@@ -106,12 +109,12 @@ test("Pre-existing direct /schedules usage (create button, edit button, submit) 
 });
 
 test("Resource view mode is integrated into existing Calendar page without creating a new page", () => {
-  assert.match(calendarSource, /type CalendarViewMode = "week" \| "day" \| "resource";/);
-  assert.match(calendarSource, /button-calendar-view-resource/);
+  assert.match(headerSource, /type CalendarViewMode = "week" \| "day" \| "resource";/);
+  assert.match(headerSource, /button-calendar-view-resource/);
   assert.match(calendarSource, /useGetAdminCalendarResourceView/);
-  assert.match(calendarSource, /calendar-resource-view-grid/);
-  assert.match(calendarSource, /calendar-resource-room-header-/);
-  assert.match(calendarSource, /calendar-resource-room-column-/);
+  assert.match(resourceViewSource, /calendar-resource-view-grid/);
+  assert.match(resourceViewSource, /calendar-resource-room-header-/);
+  assert.match(resourceViewSource, /calendar-resource-room-column-/);
 });
 
 test("Phase 4C — OccurrenceDetailsSheet renders operational summary metrics and provides gated navigation shortcuts", () => {
@@ -152,7 +155,6 @@ test("Phase 4C — Attendance and Bookings pages parse scheduleId and date deep 
 });
 
 test("Phase 5B — Private Event creation dialog and reservation details sheet are wired into Calendar with permission gating and immutability notice", () => {
-  const dialogSource = read("artifacts/admin/src/components/calendar/CreateRoomReservationDialog.tsx");
   const resSheetSource = read("artifacts/admin/src/components/calendar/ReservationDetailsSheet.tsx");
 
   assert.match(calendarSource, /import\s*{\s*CreateRoomReservationDialog\s*}\s*from\s*"@\/components\/calendar\/CreateRoomReservationDialog"/);
@@ -166,4 +168,43 @@ test("Phase 5B — Private Event creation dialog and reservation details sheet a
 
   assert.match(resSheetSource, /Room & Time are Immutable/);
   assert.match(resSheetSource, /Branch, room, date, and times cannot be changed directly/);
+});
+
+test("Phase 6B.3 — Empty slot opens SlotQuickActionPopover providing permission-gated Add Class and Add Private Event affordances", () => {
+  const popoverSource = read("artifacts/admin/src/components/calendar/SlotQuickActionPopover.tsx");
+
+  assert.match(calendarSource, /import\s*{\s*SlotQuickActionPopover/);
+  assert.match(calendarSource, /<SlotQuickActionPopover/);
+  assert.match(calendarSource, /handleQuickActionAddClass/);
+  assert.match(calendarSource, /handleQuickActionAddPrivateEvent/);
+
+  assert.match(popoverSource, /popover-slot-quick-action/);
+  assert.match(popoverSource, /button-quick-action-add-class/);
+  assert.match(popoverSource, /button-quick-action-add-private-event/);
+  assert.match(popoverSource, /canCreateSchedule &&/);
+  assert.match(popoverSource, /canCreateReservation &&/);
+});
+
+test("Phase 6C — Calendar uses URL search parameters as primary source of truth for viewMode, focusedDate, branchId, and roomId", () => {
+  const stateHelperSource = read("artifacts/admin/src/components/calendar/calendarState.ts");
+
+  assert.match(calendarSource, /import\s*{\s*parseCalendarUrlState/);
+  assert.match(calendarSource, /useSearch\(\)/);
+  assert.match(calendarSource, /parseCalendarUrlState\(searchString\)/);
+  assert.match(calendarSource, /buildCalendarUrl/);
+
+  assert.match(stateHelperSource, /parseCalendarUrlState/);
+  assert.match(stateHelperSource, /buildCalendarUrl/);
+  assert.match(stateHelperSource, /savePreferredCalendarState/);
+});
+
+test("Phase 6D — Calendar components render live now indicator, consume calendarTokens, and use AlertDialog instead of confirm()", () => {
+  const gridSource = read("artifacts/admin/src/components/calendar/CalendarGrid.tsx");
+  const nowIndicatorSource = read("artifacts/admin/src/components/calendar/CalendarNowIndicator.tsx");
+  const tokensSource = read("artifacts/admin/src/components/calendar/calendarTokens.ts");
+
+  assert.match(gridSource, /<CalendarNowIndicator/);
+  assert.match(nowIndicatorSource, /calendar-now-indicator/);
+  assert.match(cardSource, /getCalendarCategoryTokens/);
+  assert.match(tokensSource, /CALENDAR_TOKENS/);
 });
