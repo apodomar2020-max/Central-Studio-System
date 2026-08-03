@@ -71,10 +71,10 @@ function OccurrenceCard({ occurrence, gridStartMin }: { occurrence: PositionedOc
   return (
     <div
       className={
-        "absolute overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm " +
+        "absolute overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm text-foreground " +
         (isBallet
-          ? "border-[#8A5CFF66] bg-[#8A5CFF26] text-[#e4dbff]"
-          : "border-emerald-400/40 bg-emerald-500/15 text-emerald-100")
+          ? "border-[#8A5CFF66] bg-[#8A5CFF26]"
+          : "border-emerald-400/40 bg-emerald-500/15")
       }
       style={{
         top,
