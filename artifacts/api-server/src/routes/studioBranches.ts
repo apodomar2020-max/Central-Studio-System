@@ -35,7 +35,7 @@ const ROOM_FIELDS = ["name", "isActive"] as const;
 // gate rather than introducing a new permission module.
 export function requireScheduleLocationLookup(req: AdminRequest, res: Response, next: NextFunction): void {
   const admin = req.adminUser;
-  const allowed = admin?.isSuperAdmin || ["schedules", "ballet.schedules"].some((module) =>
+  const allowed = admin?.isSuperAdmin || ["schedules", "ballet.schedules", "room_reservations"].some((module) =>
     ["view", "create", "edit"].some((action) => hasRolePermission(admin?.permissions ?? {}, module, action)),
   );
   if (!admin) { res.status(401).json({ error: "Admin authentication required" }); return; }

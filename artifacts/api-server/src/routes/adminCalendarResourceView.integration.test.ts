@@ -214,3 +214,62 @@ test("GET /admin/calendar/resource-view — permissions enforcement", async () =
   const deniedRes = await getAs(deniedUser, "/api/admin/calendar/resource-view?date=2026-08-03");
   assert.equal(deniedRes.status, 403);
 });
+
+test("GET /admin/calendar/resource-view — includes studio room reservations alongside classes and ballet", async () => {
+  const run = `r-res-${Date.now()}`;
+  const branchRes = await db.execute(sql`INSERT INTO studio_branches (name) VALUES (${`Branch Reservation ${run}`}) RETURNING id`);
+  const branchId = branchRes.rows[0].id as number;
+
+  const roomRes = await db.execute(sql`INSERT INTO studio_rooms (branch_id, name) VALUES (${branchId}, ${`Res Room ${run}`}) RETURNING id`);
+  const roomId = roomRes.rows[0].id as number;
+
+  // Insert active room reservation
+  await db.execute(
+    sql`INSERT INTO studio_room_reservations (title, reservation_type, branch_id, room_id, date, start_time, end_time, status)
+        VALUES ('Private Training Event', 'private_training', ${branchId}, ${roomId}, '2026-08-03', '10:00', '12:00', 'active')`,
+  );
+
+  // Insert cancelled room reservation (must be excluded)
+  await db.execute(
+    sql`INSERT INTO studio_room_reservations (title, reservation_type, branch_id, room_id, date, start_time, end_time, status)
+        VALUES ('Cancelled Event', 'room_rental', ${branchId}, ${roomId}, '2026-08-03', '12:00', '14:00', 'cancelled')`,
+  );
+
+  const res = await getAsSuperAdmin(`/api/admin/calendar/resource-view?date=2026-08-03&branchId=${branchId}`);
+  assert.equal(res.status, 200);
+
+  const data = (await jsonBody(res)) as any;
+  assert.equal(Array.isArray(data.rooms), true);
+  const targetRoom = data.rooms.find((r: any) => r.roomId === roomId);
+  assert.notEqual(targetRoom, undefined);
+  assert.equal(targetRoom.occurrences.some((o: any) => o.source === "reservation" && o.title === "Private Training Event"), true);
+  assert.equal(targetRoom.occurrences.some((o: any) => o.source === "reservation" && o.title === "Cancelled Event"), false);
+});
+
+test("GET /admin/calendar — returns mixed payload of class, ballet, and reservation sources", async () => {
+  const branchName = `Mix Branch ${Date.now()}`;
+  const branchRes = await db.execute(sql`INSERT INTO studio_branches (name) VALUES (${branchName}) RETURNING id`);
+  const branchId = branchRes.rows[0].id as number;
+  const roomRes = await db.execute(sql`INSERT INTO studio_rooms (branch_id, name) VALUES (${branchId}, 'Room 1') RETURNING id`);
+  const roomId = roomRes.rows[0].id as number;
+
+  await db.execute(
+    sql`INSERT INTO studio_room_reservations (title, reservation_type, branch_id, room_id, date, start_time, end_time, status)
+        VALUES ('Private Workshop', 'workshop', ${branchId}, ${roomId}, '2026-08-04', '14:00', '16:00', 'active')`,
+  );
+
+  const res = await getAsSuperAdmin(`/api/admin/calendar?from=2026-08-04&to=2026-08-04&branchId=${branchId}`);
+  assert.equal(res.status, 200);
+  const items = (await res.json()) as any[];
+  assert.equal(Array.isArray(items), true);
+  const reservationItem = items.find((i: any) => i.source === "reservation");
+  assert.notEqual(reservationItem, undefined);
+  assert.equal(reservationItem.title, "Private Workshop");
+  assert.equal(reservationItem.reservationType, "workshop");
+});
+
+test("GET /admin/calendar — allows access for user with room_reservations.view permission", async () => {
+  const userId = await insertRoleAndUser(`mix-${Date.now()}`, "rrview", { room_reservations: { view: true } });
+  const res = await getAs(userId, "/api/admin/calendar?from=2026-08-04&to=2026-08-04");
+  assert.equal(res.status, 200);
+});

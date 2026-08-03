@@ -260,10 +260,6 @@ router.post(
       throw err;
     }
 
-    const startMins = parseTimeMinutes(body.startTime);
-    const endMins = parseTimeMinutes(body.endTime);
-    const durationMins = Math.max(15, endMins - startMins);
-
     const [inserted] = await db
       .insert(studioRoomReservationsTable)
       .values({
@@ -274,7 +270,6 @@ router.post(
         date: body.date,
         startTime: body.startTime,
         endTime: body.endTime,
-        durationMins,
         description: body.description ?? null,
         organizerName: body.organizerName ?? null,
         organizerContact: body.organizerContact ?? null,

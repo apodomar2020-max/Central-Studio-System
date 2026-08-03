@@ -93,7 +93,7 @@ before(async () => {
 
   const adminRes = await db.execute(
     sql`INSERT INTO system_users (username, email, password_hash, full_name, is_super_admin)
-     VALUES (${`res-super-${Date.now()}`}, ${`res-super-${Date.now()}@example.com`}, 'x', 'Reservation Super Admin', true) RETURNING id`,
+     VALUES (${`res-super-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}, ${`res-super-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`}, 'x', 'Reservation Super Admin', true) RETURNING id`,
   );
   superAdminId = adminRes.rows[0].id as number;
 

@@ -20,17 +20,13 @@ const calendarSource = read("artifacts/admin/src/pages/calendar.tsx");
 const schedulesSource = read("artifacts/admin/src/pages/schedules.tsx");
 const sheetSource = read("artifacts/admin/src/components/calendar/OccurrenceDetailsSheet.tsx");
 
-test("Calendar cards open the OccurrenceDetailsSheet rather than navigating directly or opening any Calendar-owned dialog", () => {
+test("Calendar cards open details sheet rather than navigating directly or opening any schedule create/edit forms", () => {
   assert.match(calendarSource, /import\s*{\s*OccurrenceDetailsSheet\s*}\s*from\s*"@\/components\/calendar\/OccurrenceDetailsSheet"/);
-  assert.match(calendarSource, /openOccurrenceInScheduleManager/);
+  assert.match(calendarSource, /handleOccurrenceCardClick/);
   assert.match(calendarSource, /setSelectedOccurrence\(occurrence\)/);
   assert.match(calendarSource, /<OccurrenceDetailsSheet/);
-  // No Calendar-owned Dialog/Form for schedules exists — the only Dialog
-  // usage anywhere in this file would be a regression of "no Calendar
-  // create dialogs / edit forms".
-  assert.doesNotMatch(calendarSource, /<Dialog/);
+  // No schedule edit form in calendar.tsx
   assert.doesNotMatch(calendarSource, /useForm/);
-  assert.doesNotMatch(calendarSource, /useMutation/);
 });
 
 test("The Sheet's Edit Schedule button reuses the existing navigation helpers — no duplicated navigation logic", () => {
@@ -41,7 +37,7 @@ test("The Sheet's Edit Schedule button reuses the existing navigation helpers �
 
 test("The roster query is enabled only when an occurrence is selected and the user has both bookings.view and attendance.view", () => {
   assert.match(sheetSource, /can\("bookings", "view"\)\s*&&\s*can\("attendance", "view"\)/);
-  assert.match(sheetSource, /enabled: occurrence != null && canViewRoster/);
+  assert.match(sheetSource, /enabled: occurrence != null && isClassOrBallet && canViewRoster/);
   assert.match(sheetSource, /You do not have permission to view booking details\./);
 });
 
@@ -57,10 +53,10 @@ test("Empty day-column space navigates to schedule creation with date/branch/roo
   assert.match(calendarSource, /can\("schedules", "create"\)/);
 });
 
-test("The 'Add Schedule' button is Calendar's only creation affordance and is gated on schedules.create", () => {
-  assert.match(calendarSource, /button-calendar-add-schedule/);
-  assert.match(calendarSource, /canCreateSchedule && \(/);
-  assert.match(calendarSource, /handleAddScheduleClick/);
+test("The 'Add' dropdown button provides schedule and private event affordances gated on permissions", () => {
+  assert.match(calendarSource, /button-calendar-add-dropdown/);
+  assert.match(calendarSource, /canCreateSchedule/);
+  assert.match(calendarSource, /canCreateReservation/);
 });
 
 test("Conflict indicators from Phase 2D remain intact after adding navigation", () => {
@@ -153,4 +149,21 @@ test("Phase 4C — Attendance and Bookings pages parse scheduleId and date deep 
   assert.match(attendanceSource, /params\.get\("date"\)/);
   assert.match(bookingsSource, /params\.get\("scheduleId"\)/);
   assert.match(bookingsSource, /params\.get\("date"\)/);
+});
+
+test("Phase 5B — Private Event creation dialog and reservation details sheet are wired into Calendar with permission gating and immutability notice", () => {
+  const dialogSource = read("artifacts/admin/src/components/calendar/CreateRoomReservationDialog.tsx");
+  const resSheetSource = read("artifacts/admin/src/components/calendar/ReservationDetailsSheet.tsx");
+
+  assert.match(calendarSource, /import\s*{\s*CreateRoomReservationDialog\s*}\s*from\s*"@\/components\/calendar\/CreateRoomReservationDialog"/);
+  assert.match(calendarSource, /import\s*{\s*ReservationDetailsSheet\s*}\s*from\s*"@\/components\/calendar\/ReservationDetailsSheet"/);
+  assert.match(calendarSource, /<CreateRoomReservationDialog/);
+  assert.match(calendarSource, /<ReservationDetailsSheet/);
+
+  assert.match(calendarSource, /can\("room_reservations", "create"\)/);
+  assert.match(resSheetSource, /can\("room_reservations", "edit"\)/);
+  assert.match(resSheetSource, /can\("room_reservations", "cancel"\)/);
+
+  assert.match(resSheetSource, /Room & Time are Immutable/);
+  assert.match(resSheetSource, /Branch, room, date, and times cannot be changed directly/);
 });

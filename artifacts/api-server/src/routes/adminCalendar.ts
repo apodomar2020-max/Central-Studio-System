@@ -28,7 +28,7 @@
  *     permissions already grant read access to.
  */
 import { Router, type IRouter } from "express";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   bookingsTable,
@@ -40,6 +40,7 @@ import {
   balletSchedulesTable,
   balletClassesTable,
   balletInstructorsTable,
+  studioRoomReservationsTable,
 } from "@workspace/db";
 import {
   ListAdminCalendarQueryParams,
@@ -58,8 +59,8 @@ const router: IRouter = Router();
 
 type CalendarOccurrenceConflict = {
   scheduleId: number;
-  source: "class" | "ballet";
-  classTitle: string;
+  source: "class" | "ballet" | "reservation";
+  classTitle: string | null;
   startTime: string;
   endTime: string;
   branchName: string | null;
@@ -68,22 +69,24 @@ type CalendarOccurrenceConflict = {
 
 type CalendarOccurrence = {
   scheduleId: number;
-  source: "class" | "ballet";
+  source: "class" | "ballet" | "reservation";
   scheduleType: "weekly" | "one_time";
   occurrenceDate: string;
   startTime: string;
   endTime: string;
-  classId: number;
-  classTitle: string;
+  classId: number | null;
+  classTitle: string | null;
+  title?: string | null;
   instructorId: number | null;
   instructorName: string | null;
   branchName: string | null;
   roomName: string | null;
-  // Regular: classes.capacity (per-class). Ballet: ballet_schedules.capacity
-  // (per-schedule) — resolved per-source below rather than left for callers
-  // to reconcile the two systems' differing capacity models themselves.
   capacity: number | null;
-  bookingCount: number;
+  bookingCount: number | null;
+  reservationType?: string | null;
+  description?: string | null;
+  organizerName?: string | null;
+  organizerContact?: string | null;
   conflict: CalendarOccurrenceConflict | null;
 };
 
@@ -182,7 +185,15 @@ router.get(
     if (branchId != null) balletConditions.push(eq(balletSchedulesTable.branchId, branchId));
     if (roomId != null) balletConditions.push(eq(balletSchedulesTable.roomId, roomId));
 
-    const [regularRows, balletRows] = await Promise.all([
+    const reservationConditions = [
+      eq(studioRoomReservationsTable.status, "active"),
+      gte(studioRoomReservationsTable.date, from),
+      lte(studioRoomReservationsTable.date, to),
+    ];
+    if (branchId != null) reservationConditions.push(eq(studioRoomReservationsTable.branchId, branchId));
+    if (roomId != null) reservationConditions.push(eq(studioRoomReservationsTable.roomId, roomId));
+
+    const [regularRows, balletRows, reservationRows] = await Promise.all([
       db
         .select({
           id: schedulesTable.id,
@@ -223,11 +234,15 @@ router.get(
         .innerJoin(balletClassesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
         .leftJoin(balletInstructorsTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
         .where(and(...balletConditions)),
+      db
+        .select()
+        .from(studioRoomReservationsTable)
+        .where(and(...reservationConditions)),
     ]);
 
     const branchIds = new Set<number>();
     const roomIds = new Set<number>();
-    for (const row of [...regularRows, ...balletRows]) {
+    for (const row of [...regularRows, ...balletRows, ...reservationRows]) {
       if (row.branchId != null) branchIds.add(row.branchId);
       if (row.roomId != null) roomIds.add(row.roomId);
     }
@@ -299,6 +314,7 @@ router.get(
           endTime: row.endTime,
           classId: row.classId,
           classTitle: row.classTitle,
+          title: row.classTitle,
           instructorId: row.instructorId,
           instructorName: row.instructorName,
           capacity: row.classCapacity,
@@ -324,6 +340,7 @@ router.get(
           endTime: row.endTime,
           classId: row.classId,
           classTitle: row.classTitle,
+          title: row.classTitle,
           instructorId: row.instructorId,
           instructorName: row.instructorName,
           capacity: row.capacity,
@@ -334,6 +351,32 @@ router.get(
           bookingCount: balletCountById.get(row.id) ?? 0,
         });
       }
+    }
+
+    for (const row of reservationRows) {
+      occurrences.push({
+        scheduleId: row.id,
+        source: "reservation",
+        scheduleType: "one_time",
+        occurrenceDate: row.date,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        classId: null,
+        classTitle: row.title,
+        title: row.title,
+        instructorId: null,
+        instructorName: null,
+        capacity: null,
+        branchId: row.branchId,
+        roomId: row.roomId,
+        branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,
+        roomName: row.roomId != null ? roomById.get(row.roomId)?.name ?? null : null,
+        bookingCount: 0,
+        reservationType: row.reservationType,
+        description: row.description ?? null,
+        organizerName: row.organizerName ?? null,
+        organizerContact: row.organizerContact ?? null,
+      });
     }
 
     const conflictByKey = annotateConflicts(occurrences);
@@ -381,7 +424,16 @@ router.get(
     if (branchId != null) balletConditions.push(eq(balletSchedulesTable.branchId, branchId));
     if (roomId != null) balletConditions.push(eq(balletSchedulesTable.roomId, roomId));
 
-    const [regularRows, balletRows] = await Promise.all([
+    const reservationConditions = [
+      eq(studioRoomReservationsTable.status, "active"),
+      eq(studioRoomReservationsTable.date, date),
+      isNotNull(studioRoomReservationsTable.branchId),
+      isNotNull(studioRoomReservationsTable.roomId),
+    ];
+    if (branchId != null) reservationConditions.push(eq(studioRoomReservationsTable.branchId, branchId));
+    if (roomId != null) reservationConditions.push(eq(studioRoomReservationsTable.roomId, roomId));
+
+    const [regularRows, balletRows, reservationRows] = await Promise.all([
       db
         .select({
           id: schedulesTable.id,
@@ -422,6 +474,10 @@ router.get(
         .innerJoin(balletClassesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
         .leftJoin(balletInstructorsTable, eq(balletClassesTable.instructorId, balletInstructorsTable.id))
         .where(and(...balletConditions)),
+      db
+        .select()
+        .from(studioRoomReservationsTable)
+        .where(and(...reservationConditions)),
     ]);
 
     const roomConditions = [eq(studioRoomsTable.isActive, true)];
@@ -441,7 +497,7 @@ router.get(
 
     const branchIds = new Set<number>();
     for (const r of activeRooms) branchIds.add(r.branchId);
-    for (const row of [...regularRows, ...balletRows]) {
+    for (const row of [...regularRows, ...balletRows, ...reservationRows]) {
       if (row.branchId != null) branchIds.add(row.branchId);
     }
     const branches = branchIds.size
@@ -511,6 +567,7 @@ router.get(
           endTime: row.endTime,
           classId: row.classId,
           classTitle: row.classTitle,
+          title: row.classTitle,
           instructorId: row.instructorId,
           instructorName: row.instructorName,
           capacity: row.classCapacity,
@@ -535,6 +592,7 @@ router.get(
           endTime: row.endTime,
           classId: row.classId,
           classTitle: row.classTitle,
+          title: row.classTitle,
           instructorId: row.instructorId,
           instructorName: row.instructorName,
           capacity: row.capacity,
@@ -545,6 +603,32 @@ router.get(
           bookingCount: balletCountById.get(row.id) ?? 0,
         });
       }
+    }
+
+    for (const row of reservationRows) {
+      occurrences.push({
+        scheduleId: row.id,
+        source: "reservation",
+        scheduleType: "one_time",
+        occurrenceDate: date,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        classId: null,
+        classTitle: row.title,
+        title: row.title,
+        instructorId: null,
+        instructorName: null,
+        capacity: null,
+        branchId: row.branchId,
+        roomId: row.roomId,
+        branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,
+        roomName: row.roomId != null ? roomById.get(row.roomId)?.name ?? null : null,
+        bookingCount: 0,
+        reservationType: row.reservationType,
+        description: row.description ?? null,
+        organizerName: row.organizerName ?? null,
+        organizerContact: row.organizerContact ?? null,
+      });
     }
 
     const conflictByKey = annotateConflicts(occurrences);
@@ -562,17 +646,31 @@ router.get(
         occurrenceDate: occurrence.occurrenceDate,
         startTime: occurrence.startTime,
         endTime: occurrence.endTime,
-        classId: occurrence.classId,
-        classTitle: occurrence.classTitle,
-        title: occurrence.classTitle,
-        instructorId: occurrence.instructorId,
-        instructorName: occurrence.instructorName,
-        branchId: occurrence.branchId!,
-        roomId: occurrence.roomId!,
-        roomName: occurrence.roomName ?? `Room ${occurrence.roomId}`,
-        capacity: occurrence.capacity,
-        bookingCount: occurrence.bookingCount,
-        conflict,
+        classId: occurrence.classId ?? null,
+        classTitle: occurrence.classTitle ?? occurrence.title ?? null,
+        title: occurrence.title ?? occurrence.classTitle ?? null,
+        instructorId: occurrence.instructorId ?? null,
+        instructorName: occurrence.instructorName ?? null,
+        branchId: occurrence.branchId,
+        roomId: occurrence.roomId,
+        roomName: occurrence.roomName ?? "",
+        capacity: occurrence.capacity ?? null,
+        bookingCount: occurrence.bookingCount ?? 0,
+        reservationType: occurrence.reservationType ?? null,
+        description: occurrence.description ?? null,
+        organizerName: occurrence.organizerName ?? null,
+        organizerContact: occurrence.organizerContact ?? null,
+        conflict: conflict
+          ? {
+              scheduleId: conflict.scheduleId,
+              source: conflict.source,
+              classTitle: conflict.classTitle,
+              startTime: conflict.startTime,
+              endTime: conflict.endTime,
+              branchName: conflict.branchName,
+              roomName: conflict.roomName,
+            }
+          : null,
       });
       occurrencesByRoom.set(occurrence.roomId, roomOccs);
     }

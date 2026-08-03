@@ -61,14 +61,16 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
   const { can } = useAdminAuth();
   const canViewRoster = can("bookings", "view") && can("attendance", "view");
 
+  const isClassOrBallet = occurrence?.source === "class" || occurrence?.source === "ballet";
+  const rosterSource = occurrence?.source === "ballet" ? "ballet" : "class";
   const rosterParams = {
-    source: occurrence?.source ?? "class",
+    source: rosterSource,
     scheduleId: occurrence?.scheduleId ?? 0,
     occurrenceDate: occurrence?.occurrenceDate ?? "",
   } as const;
   const rosterQuery = useGetAdminCalendarOccurrenceRoster(rosterParams, {
     query: {
-      enabled: occurrence != null && canViewRoster,
+      enabled: occurrence != null && isClassOrBallet && canViewRoster,
       queryKey: getGetAdminCalendarOccurrenceRosterQueryKey(rosterParams),
     },
   });
@@ -80,7 +82,8 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
   const isBallet = occurrence.source === "ballet";
   const location = [occurrence.branchName, occurrence.roomName].filter(Boolean).join(" · ") || "No location set";
   const dateLabel = format(parseISO(occurrence.occurrenceDate), "EEEE, MMM d, yyyy");
-  const capacityPct = occurrence.capacity ? Math.min(100, Math.round((occurrence.bookingCount / occurrence.capacity) * 100)) : 0;
+  const bookingCount = occurrence.bookingCount ?? 0;
+  const capacityPct = occurrence.capacity ? Math.min(100, Math.round((bookingCount / occurrence.capacity) * 100)) : 0;
 
   const handleEditClick = () => {
     navigate(isBallet ? buildBalletScheduleListPath() : buildScheduleEditPath(occurrence.scheduleId));

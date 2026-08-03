@@ -2053,34 +2053,39 @@ components:
 
     CalendarOccurrence:
       type: object
-      required: [scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, classId, classTitle, instructorId, instructorName, branchName, roomName, capacity, bookingCount, conflict]
+      required: [scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, branchName, roomName, conflict]
       properties:
         scheduleId: { type: integer }
-        source: { type: string, enum: [class, ballet], description: "Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules." }
-        scheduleType: { type: string, enum: [weekly, one_time], description: "Ballet schedules are always weekly." }
+        source: { type: string, enum: [class, ballet, reservation], description: "Which system this occurrence came from — generic Studio schedules, Ballet schedules, or Room Reservations." }
+        scheduleType: { type: string, enum: [weekly, one_time] }
         occurrenceDate: { type: string, description: "YYYY-MM-DD, the concrete calendar date this projected occurrence falls on." }
         startTime: { type: string }
         endTime: { type: string }
-        classId: { type: integer, description: "Regular: schedules.classId. Ballet: balletClasses.id." }
-        classTitle: { type: string }
+        classId: { type: ["integer", "null"] }
+        classTitle: { type: ["string", "null"] }
+        title: { type: ["string", "null"] }
         instructorId: { type: ["integer", "null"] }
         instructorName: { type: ["string", "null"] }
         branchName: { type: ["string", "null"] }
         roomName: { type: ["string", "null"] }
-        capacity: { type: ["integer", "null"], description: "Regular: classes.capacity (per-class). Ballet: ballet_schedules.capacity (per-schedule) — the two systems size capacity differently, so this is resolved per-source server-side rather than left for the client to reconcile." }
-        bookingCount: { type: integer, description: "Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model)." }
+        capacity: { type: ["integer", "null"] }
+        bookingCount: { type: ["integer", "null"] }
+        reservationType: { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        organizerName: { type: ["string", "null"] }
+        organizerContact: { type: ["string", "null"] }
         conflict:
-          description: "Present when this occurrence overlaps another active occurrence in the same branch+room on this date (regular-vs-regular, ballet-vs-ballet, or regular-vs-ballet), computed server-side by the Phase 2 schedule conflict engine — null when there is no conflict. The frontend must not recompute this."
+          description: "Present when this occurrence overlaps another active occurrence in the same branch+room on this date, computed server-side."
           oneOf:
             - { type: "null" }
             - $ref: "#/components/schemas/CalendarOccurrenceConflict"
     CalendarOccurrenceConflict:
       type: object
-      required: [scheduleId, source, classTitle, startTime, endTime, branchName, roomName]
+      required: [scheduleId, source, startTime, endTime, branchName, roomName]
       properties:
         scheduleId: { type: integer }
-        source: { type: string, enum: [class, ballet] }
-        classTitle: { type: string }
+        source: { type: string, enum: [class, ballet, reservation] }
+        classTitle: { type: ["string", "null"] }
         startTime: { type: string }
         endTime: { type: string }
         branchName: { type: ["string", "null"] }
@@ -2132,25 +2137,29 @@ components:
 
     CalendarResourceOccurrence:
       type: object
-      required: [id, scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, classId, classTitle, title, instructorId, instructorName, branchId, roomId, roomName, capacity, bookingCount, conflict]
+      required: [id, scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, branchId, roomId, roomName, conflict]
       properties:
         id: { type: integer }
         scheduleId: { type: integer }
-        source: { type: string, enum: [class, ballet], description: "Source type. Compatible with future sources like private_event, block." }
+        source: { type: string, enum: [class, ballet, reservation] }
         scheduleType: { type: string, enum: [weekly, one_time] }
         occurrenceDate: { type: string }
         startTime: { type: string }
         endTime: { type: string }
-        classId: { type: integer }
-        classTitle: { type: string }
-        title: { type: string }
+        classId: { type: ["integer", "null"] }
+        classTitle: { type: ["string", "null"] }
+        title: { type: ["string", "null"] }
         instructorId: { type: ["integer", "null"] }
         instructorName: { type: ["string", "null"] }
         branchId: { type: integer }
         roomId: { type: integer }
         roomName: { type: string }
         capacity: { type: ["integer", "null"] }
-        bookingCount: { type: integer }
+        bookingCount: { type: ["integer", "null"] }
+        reservationType: { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        organizerName: { type: ["string", "null"] }
+        organizerContact: { type: ["string", "null"] }
         conflict:
           oneOf:
             - { type: "null" }

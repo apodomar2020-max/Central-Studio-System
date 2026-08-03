@@ -645,13 +645,11 @@ export const ListAdminCalendarQueryParams = zod.object({
 export const ListAdminCalendarResponseItem = zod.object({
   scheduleId: zod.number(),
   source: zod
-    .enum(["class", "ballet"])
+    .enum(["class", "ballet", "reservation"])
     .describe(
-      "Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules.",
+      "Which system this occurrence came from — generic Studio schedules, Ballet schedules, or Room Reservations.",
     ),
-  scheduleType: zod
-    .enum(["weekly", "one_time"])
-    .describe("Ballet schedules are always weekly."),
+  scheduleType: zod.enum(["weekly", "one_time"]),
   occurrenceDate: zod
     .string()
     .describe(
@@ -659,32 +657,26 @@ export const ListAdminCalendarResponseItem = zod.object({
     ),
   startTime: zod.string(),
   endTime: zod.string(),
-  classId: zod
-    .number()
-    .describe("Regular: schedules.classId. Ballet: balletClasses.id."),
-  classTitle: zod.string(),
-  instructorId: zod.number().nullable(),
-  instructorName: zod.string().nullable(),
+  classId: zod.number().nullish(),
+  classTitle: zod.string().nullish(),
+  title: zod.string().nullish(),
+  instructorId: zod.number().nullish(),
+  instructorName: zod.string().nullish(),
   branchName: zod.string().nullable(),
   roomName: zod.string().nullable(),
-  capacity: zod
-    .number()
-    .nullable()
-    .describe(
-      "Regular: classes.capacity (per-class). Ballet: ballet_schedules.capacity (per-schedule) — the two systems size capacity differently, so this is resolved per-source server-side rather than left for the client to reconcile.",
-    ),
-  bookingCount: zod
-    .number()
-    .describe(
-      "Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model).",
-    ),
+  capacity: zod.number().nullish(),
+  bookingCount: zod.number().nullish(),
+  reservationType: zod.string().nullish(),
+  description: zod.string().nullish(),
+  organizerName: zod.string().nullish(),
+  organizerContact: zod.string().nullish(),
   conflict: zod
     .union([
       zod.null(),
       zod.object({
         scheduleId: zod.number(),
-        source: zod.enum(["class", "ballet"]),
-        classTitle: zod.string(),
+        source: zod.enum(["class", "ballet", "reservation"]),
+        classTitle: zod.string().nullish(),
         startTime: zod.string(),
         endTime: zod.string(),
         branchName: zod.string().nullable(),
@@ -692,7 +684,7 @@ export const ListAdminCalendarResponseItem = zod.object({
       }),
     ])
     .describe(
-      "Present when this occurrence overlaps another active occurrence in the same branch+room on this date (regular-vs-regular, ballet-vs-ballet, or regular-vs-ballet), computed server-side by the Phase 2 schedule conflict engine — null when there is no conflict. The frontend must not recompute this.",
+      "Present when this occurrence overlaps another active occurrence in the same branch+room on this date, computed server-side.",
     ),
 });
 export const ListAdminCalendarResponse = zod.array(
@@ -802,31 +794,31 @@ export const GetAdminCalendarResourceViewResponse = zod.object({
         zod.object({
           id: zod.number(),
           scheduleId: zod.number(),
-          source: zod
-            .enum(["class", "ballet"])
-            .describe(
-              "Source type. Compatible with future sources like private_event, block.",
-            ),
+          source: zod.enum(["class", "ballet", "reservation"]),
           scheduleType: zod.enum(["weekly", "one_time"]),
           occurrenceDate: zod.string(),
           startTime: zod.string(),
           endTime: zod.string(),
-          classId: zod.number(),
-          classTitle: zod.string(),
-          title: zod.string(),
-          instructorId: zod.number().nullable(),
-          instructorName: zod.string().nullable(),
+          classId: zod.number().nullish(),
+          classTitle: zod.string().nullish(),
+          title: zod.string().nullish(),
+          instructorId: zod.number().nullish(),
+          instructorName: zod.string().nullish(),
           branchId: zod.number(),
           roomId: zod.number(),
           roomName: zod.string(),
-          capacity: zod.number().nullable(),
-          bookingCount: zod.number(),
+          capacity: zod.number().nullish(),
+          bookingCount: zod.number().nullish(),
+          reservationType: zod.string().nullish(),
+          description: zod.string().nullish(),
+          organizerName: zod.string().nullish(),
+          organizerContact: zod.string().nullish(),
           conflict: zod.union([
             zod.null(),
             zod.object({
               scheduleId: zod.number(),
-              source: zod.enum(["class", "ballet"]),
-              classTitle: zod.string(),
+              source: zod.enum(["class", "ballet", "reservation"]),
+              classTitle: zod.string().nullish(),
               startTime: zod.string(),
               endTime: zod.string(),
               branchName: zod.string().nullable(),

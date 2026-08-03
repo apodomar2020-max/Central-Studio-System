@@ -492,7 +492,7 @@ export interface UpdateScheduleBody {
 }
 
 /**
- * Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules.
+ * Which system this occurrence came from — generic Studio schedules, Ballet schedules, or Room Reservations.
  */
 export type CalendarOccurrenceSource =
   (typeof CalendarOccurrenceSource)[keyof typeof CalendarOccurrenceSource];
@@ -500,11 +500,9 @@ export type CalendarOccurrenceSource =
 export const CalendarOccurrenceSource = {
   class: "class",
   ballet: "ballet",
+  reservation: "reservation",
 } as const;
 
-/**
- * Ballet schedules are always weekly.
- */
 export type CalendarOccurrenceScheduleType =
   (typeof CalendarOccurrenceScheduleType)[keyof typeof CalendarOccurrenceScheduleType];
 
@@ -519,12 +517,14 @@ export type CalendarOccurrenceConflictSource =
 export const CalendarOccurrenceConflictSource = {
   class: "class",
   ballet: "ballet",
+  reservation: "reservation",
 } as const;
 
 export interface CalendarOccurrenceConflict {
   scheduleId: number;
   source: CalendarOccurrenceConflictSource;
-  classTitle: string;
+  /** @nullable */
+  classTitle?: string | null;
   startTime: string;
   endTime: string;
   /** @nullable */
@@ -535,33 +535,40 @@ export interface CalendarOccurrenceConflict {
 
 export interface CalendarOccurrence {
   scheduleId: number;
-  /** Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules. */
+  /** Which system this occurrence came from — generic Studio schedules, Ballet schedules, or Room Reservations. */
   source: CalendarOccurrenceSource;
-  /** Ballet schedules are always weekly. */
   scheduleType: CalendarOccurrenceScheduleType;
   /** YYYY-MM-DD, the concrete calendar date this projected occurrence falls on. */
   occurrenceDate: string;
   startTime: string;
   endTime: string;
-  /** Regular: schedules.classId. Ballet: balletClasses.id. */
-  classId: number;
-  classTitle: string;
   /** @nullable */
-  instructorId: number | null;
+  classId?: number | null;
   /** @nullable */
-  instructorName: string | null;
+  classTitle?: string | null;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  instructorId?: number | null;
+  /** @nullable */
+  instructorName?: string | null;
   /** @nullable */
   branchName: string | null;
   /** @nullable */
   roomName: string | null;
-  /**
-   * Regular: classes.capacity (per-class). Ballet: ballet_schedules.capacity (per-schedule) — the two systems size capacity differently, so this is resolved per-source server-side rather than left for the client to reconcile.
-   * @nullable
-   */
-  capacity: number | null;
-  /** Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model). */
-  bookingCount: number;
-  /** Present when this occurrence overlaps another active occurrence in the same branch+room on this date (regular-vs-regular, ballet-vs-ballet, or regular-vs-ballet), computed server-side by the Phase 2 schedule conflict engine — null when there is no conflict. The frontend must not recompute this. */
+  /** @nullable */
+  capacity?: number | null;
+  /** @nullable */
+  bookingCount?: number | null;
+  /** @nullable */
+  reservationType?: string | null;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  organizerName?: string | null;
+  /** @nullable */
+  organizerContact?: string | null;
+  /** Present when this occurrence overlaps another active occurrence in the same branch+room on this date, computed server-side. */
   conflict: null | CalendarOccurrenceConflict;
 }
 
@@ -648,15 +655,13 @@ export interface CalendarOccurrenceRosterResponse {
   roster: CalendarOccurrenceRosterItem[];
 }
 
-/**
- * Source type. Compatible with future sources like private_event, block.
- */
 export type CalendarResourceOccurrenceSource =
   (typeof CalendarResourceOccurrenceSource)[keyof typeof CalendarResourceOccurrenceSource];
 
 export const CalendarResourceOccurrenceSource = {
   class: "class",
   ballet: "ballet",
+  reservation: "reservation",
 } as const;
 
 export type CalendarResourceOccurrenceScheduleType =
@@ -670,25 +675,36 @@ export const CalendarResourceOccurrenceScheduleType = {
 export interface CalendarResourceOccurrence {
   id: number;
   scheduleId: number;
-  /** Source type. Compatible with future sources like private_event, block. */
   source: CalendarResourceOccurrenceSource;
   scheduleType: CalendarResourceOccurrenceScheduleType;
   occurrenceDate: string;
   startTime: string;
   endTime: string;
-  classId: number;
-  classTitle: string;
-  title: string;
   /** @nullable */
-  instructorId: number | null;
+  classId?: number | null;
   /** @nullable */
-  instructorName: string | null;
+  classTitle?: string | null;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  instructorId?: number | null;
+  /** @nullable */
+  instructorName?: string | null;
   branchId: number;
   roomId: number;
   roomName: string;
   /** @nullable */
-  capacity: number | null;
-  bookingCount: number;
+  capacity?: number | null;
+  /** @nullable */
+  bookingCount?: number | null;
+  /** @nullable */
+  reservationType?: string | null;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  organizerName?: string | null;
+  /** @nullable */
+  organizerContact?: string | null;
   conflict: null | CalendarOccurrenceConflict;
 }
 

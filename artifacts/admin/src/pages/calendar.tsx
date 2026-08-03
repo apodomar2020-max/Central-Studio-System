@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { addDays, format, startOfWeek } from "date-fns";
-import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Users } from "lucide-react";
+import { AlertTriangle, Calendar as CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, Plus, Users } from "lucide-react";
 import {
   useListAdminCalendar,
   useGetAdminCalendarResourceView,
@@ -14,8 +14,16 @@ import {
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { OccurrenceDetailsSheet } from "@/components/calendar/OccurrenceDetailsSheet";
+import { CreateRoomReservationDialog } from "@/components/calendar/CreateRoomReservationDialog";
+import { ReservationDetailsSheet } from "@/components/calendar/ReservationDetailsSheet";
 import {
   buildScheduleCreatePath,
   pixelOffsetToTimeString,
@@ -25,9 +33,6 @@ const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type CalendarViewMode = "week" | "day" | "resource";
 
-// Fixed studio operating-hours window — 12:00 PM through 12:00 AM. Deliberately
-// NOT data-driven (earlier morning hours are hidden even if a stray occurrence
-// exists before noon; its card is simply clipped by the grid's overflow-hidden).
 const GRID_START_MIN = 12 * 60;
 const GRID_END_MIN = 24 * 60;
 const PX_PER_MIN = 1;
@@ -47,9 +52,6 @@ function formatHourLabel(minutes: number): string {
 
 type PositionedOccurrence = CalendarOccurrence & { col: number; totalCols: number };
 
-/** Greedy interval-column packing so overlapping same-day cards sit side by
- *  side instead of stacking illegibly. Packs per-day only — simple and
- *  sufficient for both the week and day views. */
 function packDayColumns(dayOccurrences: CalendarOccurrence[]): PositionedOccurrence[] {
   const sorted = [...dayOccurrences].sort((a, b) =>
     toMinutes(a.startTime) - toMinutes(b.startTime) || toMinutes(a.endTime) - toMinutes(b.endTime),
@@ -73,7 +75,8 @@ function packDayColumns(dayOccurrences: CalendarOccurrence[]): PositionedOccurre
 
 function formatConflictSummary(conflict: NonNullable<PositionedOccurrence["conflict"]>): string {
   const location = [conflict.branchName, conflict.roomName].filter(Boolean).join(" · ") || "No location set";
-  return `${conflict.classTitle} · ${conflict.startTime}–${conflict.endTime} · ${location}`;
+  const title = conflict.classTitle || "Occupied";
+  return `${title} · ${conflict.startTime}–${conflict.endTime} · ${location}`;
 }
 
 function OccurrenceCard({ occurrence, onOpen }: { occurrence: PositionedOccurrence; onOpen: (occurrence: PositionedOccurrence) => void }) {
@@ -83,20 +86,24 @@ function OccurrenceCard({ occurrence, onOpen }: { occurrence: PositionedOccurren
   const height = Math.max(24, (endMin - startMin) * PX_PER_MIN);
   const widthPct = 100 / occurrence.totalCols;
   const isBallet = occurrence.source === "ballet";
+  const isReservation = occurrence.source === "reservation";
+  const displayTitle = occurrence.title || occurrence.classTitle || "Untitled Event";
   const location = [occurrence.branchName, occurrence.roomName].filter(Boolean).join(" · ") || "No location set";
   const conflict = occurrence.conflict;
 
-  // Category identity (class/ballet) always stays in the background wash;
-  // only the border switches to the destructive/warning color when
-  // conflicted, so a card never loses its category at a glance while still
-  // making the conflict unmistakable. Server-computed only — see
-  // GET /admin/calendar's `conflict` field (lib/scheduleConflict.ts);
-  // nothing here re-derives whether an overlap exists.
-  const categoryBg = isBallet ? "bg-[#8A5CFF26]" : "bg-emerald-500/15";
-  const categoryBorder = isBallet ? "border-[#8A5CFF66]" : "border-emerald-400/40";
+  let categoryBg = "bg-emerald-500/15";
+  let categoryBorder = "border-emerald-400/40";
+  if (isBallet) {
+    categoryBg = "bg-[#8A5CFF26]";
+    categoryBorder = "border-[#8A5CFF66]";
+  } else if (isReservation) {
+    categoryBg = "bg-amber-500/15";
+    categoryBorder = "border-amber-500/40 text-amber-950 dark:text-amber-100";
+  }
+
   const tooltip = conflict
-    ? `${occurrence.classTitle} · ${occurrence.startTime}–${occurrence.endTime}\nConflicts with: ${formatConflictSummary(conflict)}`
-    : `${occurrence.classTitle} · ${occurrence.startTime}–${occurrence.endTime}`;
+    ? `${displayTitle} · ${occurrence.startTime}–${occurrence.endTime}\nConflicts with: ${formatConflictSummary(conflict)}`
+    : `${displayTitle} · ${occurrence.startTime}–${occurrence.endTime}`;
 
   return (
     <div
@@ -135,14 +142,16 @@ function OccurrenceCard({ occurrence, onOpen }: { occurrence: PositionedOccurren
           <AlertTriangle className="h-2.5 w-2.5" aria-label="Scheduling conflict" />
         </div>
       )}
-      <div className="truncate text-xs font-semibold leading-tight pr-4">{occurrence.classTitle}</div>
+      <div className="truncate text-xs font-semibold leading-tight pr-4">{displayTitle}</div>
       {height > 32 && (
         <div className="truncate text-[11px] leading-tight opacity-90">
-          {occurrence.instructorName ?? "No instructor"}
+          {isReservation
+            ? (occurrence.organizerName || (occurrence.reservationType ? occurrence.reservationType.replace("_", " ") : "Private Event"))
+            : (occurrence.instructorName ?? "No instructor")}
         </div>
       )}
       {height > 46 && <div className="truncate text-[11px] leading-tight opacity-75">{location}</div>}
-      {height > 60 && (
+      {!isReservation && height > 60 && (
         <div className="mt-0.5 flex items-center gap-1 text-[11px] leading-tight opacity-90">
           <Users className="h-3 w-3" />
           {occurrence.bookingCount}
@@ -162,11 +171,15 @@ export default function CalendarPage() {
   const [, navigate] = useLocation();
   const { can } = useAdminAuth();
   const canCreateSchedule = can("schedules", "create");
+  const canCreateReservation = can("room_reservations", "create");
+
   const [viewMode, setViewMode] = useState<CalendarViewMode>("week");
   const [focusedDate, setFocusedDate] = useState(() => new Date());
   const [branchId, setBranchId] = useState<number | null>(null);
   const [roomId, setRoomId] = useState<number | null>(null);
   const [selectedOccurrence, setSelectedOccurrence] = useState<CalendarOccurrence | null>(null);
+  const [selectedReservationId, setSelectedReservationId] = useState<number | null>(null);
+  const [createReservationOpen, setCreateReservationOpen] = useState(false);
 
   const weekStart = useMemo(() => startOfWeek(focusedDate, { weekStartsOn: 0 }), [focusedDate]);
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
@@ -234,24 +247,16 @@ export default function CalendarPage() {
 
   const gridColsClass = viewMode === "week" ? "grid-cols-[64px_repeat(7,1fr)]" : "grid-cols-[64px_1fr]";
 
-  // Opens the read-only details Sheet — Calendar itself never navigates to
-  // edit on card click anymore. The Sheet's own "Edit Schedule" button is the
-  // only place that still calls the buildSchedule*/buildBallet* navigation
-  // helpers (see OccurrenceDetailsSheet).
-  const openOccurrenceInScheduleManager = (occurrence: CalendarOccurrence) => {
-    setSelectedOccurrence(occurrence);
+  const handleOccurrenceCardClick = (occurrence: CalendarOccurrence) => {
+    if (occurrence.source === "reservation") {
+      setSelectedReservationId(occurrence.scheduleId);
+    } else {
+      setSelectedOccurrence(occurrence);
+    }
   };
 
   const openCreateForDate = (dateKey: string, startTime?: string) => {
     navigate(buildScheduleCreatePath({ date: dateKey, startTime, branchId, roomId }));
-  };
-
-  const handleAddScheduleClick = () => {
-    navigate(buildScheduleCreatePath({
-      date: viewMode === "day" || viewMode === "resource" ? format(focusedDate, "yyyy-MM-dd") : null,
-      branchId,
-      roomId,
-    }));
   };
 
   const handleEmptySlotClick = (event: React.MouseEvent<HTMLDivElement>, dateKey: string) => {
@@ -305,11 +310,45 @@ export default function CalendarPage() {
             <ChevronRight className="h-4 w-4" />
           </Button>
           <span className="ml-2 text-sm font-medium text-foreground">{rangeLabel}</span>
-          {canCreateSchedule && (
-            <Button size="sm" className="gap-1.5" data-testid="button-calendar-add-schedule" onClick={handleAddScheduleClick}>
-              <Plus className="h-4 w-4" />
-              Add Schedule
-            </Button>
+
+          {(canCreateSchedule || canCreateReservation) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" className="gap-1.5 ml-2" data-testid="button-calendar-add-dropdown">
+                  <Plus className="h-4 w-4" />
+                  Add
+                  <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[180px]">
+                {canCreateSchedule && (
+                  <DropdownMenuItem
+                    data-testid="dropdown-item-add-class"
+                    onClick={() =>
+                      navigate(
+                        buildScheduleCreatePath({
+                          date: viewMode === "day" || viewMode === "resource" ? format(focusedDate, "yyyy-MM-dd") : null,
+                          branchId,
+                          roomId,
+                        })
+                      )
+                    }
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4 text-emerald-500" />
+                    Add Class
+                  </DropdownMenuItem>
+                )}
+                {canCreateReservation && (
+                  <DropdownMenuItem
+                    data-testid="dropdown-item-add-private-event"
+                    onClick={() => setCreateReservationOpen(true)}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4 text-amber-500" />
+                    Add Private Event
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
 
@@ -352,6 +391,7 @@ export default function CalendarPage() {
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500/40 border border-emerald-400/50" />Studio class</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#8A5CFF40", borderColor: "#8A5CFF66", borderWidth: 1 }} />Ballet</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500/40 border border-amber-400/50" />Private event</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border-2 border-destructive" />Conflict</span>
       </div>
 
@@ -406,7 +446,7 @@ export default function CalendarPage() {
                         <OccurrenceCard
                           key={`${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
                           occurrence={occurrence}
-                          onOpen={openOccurrenceInScheduleManager}
+                          onOpen={handleOccurrenceCardClick}
                         />
                       ))}
                     </div>
@@ -463,7 +503,7 @@ export default function CalendarPage() {
                       <OccurrenceCard
                         key={`${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
                         occurrence={occurrence}
-                        onOpen={openOccurrenceInScheduleManager}
+                        onOpen={handleOccurrenceCardClick}
                       />
                     ))}
                   </div>
@@ -474,10 +514,31 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {/* Class / Ballet Occurrence Sheet */}
       <OccurrenceDetailsSheet
         occurrence={selectedOccurrence}
         onOpenChange={(open) => {
           if (!open) setSelectedOccurrence(null);
+        }}
+      />
+
+      {/* Private Room Reservation Details Sheet */}
+      <ReservationDetailsSheet
+        reservationId={selectedReservationId}
+        open={selectedReservationId != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedReservationId(null);
+        }}
+      />
+
+      {/* Add Private Event Dialog */}
+      <CreateRoomReservationDialog
+        open={createReservationOpen}
+        onOpenChange={setCreateReservationOpen}
+        defaultValues={{
+          branchId,
+          roomId,
+          date: viewMode === "day" || viewMode === "resource" ? format(focusedDate, "yyyy-MM-dd") : null,
         }}
       />
     </div>
