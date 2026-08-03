@@ -13,10 +13,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { OccurrenceDetailsSheet } from "@/components/calendar/OccurrenceDetailsSheet";
 import {
-  buildBalletScheduleListPath,
   buildScheduleCreatePath,
-  buildScheduleEditPath,
   pixelOffsetToTimeString,
 } from "@/lib/scheduleCalendarNavigation";
 
@@ -165,6 +164,7 @@ export default function CalendarPage() {
   const [focusedDate, setFocusedDate] = useState(() => new Date());
   const [branchId, setBranchId] = useState<number | null>(null);
   const [roomId, setRoomId] = useState<number | null>(null);
+  const [selectedOccurrence, setSelectedOccurrence] = useState<CalendarOccurrence | null>(null);
 
   const weekStart = useMemo(() => startOfWeek(focusedDate, { weekStartsOn: 0 }), [focusedDate]);
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
@@ -213,14 +213,12 @@ export default function CalendarPage() {
 
   const gridColsClass = viewMode === "week" ? "grid-cols-[64px_repeat(7,1fr)]" : "grid-cols-[64px_1fr]";
 
-  // Navigation only — see the buildSchedule*/buildBallet* helpers' own doc
-  // comments. Neither of these ever creates, edits, or validates anything.
+  // Opens the read-only details Sheet — Calendar itself never navigates to
+  // edit on card click anymore. The Sheet's own "Edit Schedule" button is the
+  // only place that still calls the buildSchedule*/buildBallet* navigation
+  // helpers (see OccurrenceDetailsSheet).
   const openOccurrenceInScheduleManager = (occurrence: CalendarOccurrence) => {
-    navigate(
-      occurrence.source === "ballet"
-        ? buildBalletScheduleListPath()
-        : buildScheduleEditPath(occurrence.scheduleId),
-    );
+    setSelectedOccurrence(occurrence);
   };
 
   const openCreateForDate = (dateKey: string, startTime?: string) => {
@@ -384,6 +382,13 @@ export default function CalendarPage() {
           </div>
         </div>
       )}
+
+      <OccurrenceDetailsSheet
+        occurrence={selectedOccurrence}
+        onOpenChange={(open) => {
+          if (!open) setSelectedOccurrence(null);
+        }}
+      />
     </div>
   );
 }

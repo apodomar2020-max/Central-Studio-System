@@ -18,16 +18,31 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8"
 
 const calendarSource = read("artifacts/admin/src/pages/calendar.tsx");
 const schedulesSource = read("artifacts/admin/src/pages/schedules.tsx");
+const sheetSource = read("artifacts/admin/src/components/calendar/OccurrenceDetailsSheet.tsx");
 
-test("Calendar cards navigate to the existing Schedules page rather than opening any Calendar-owned dialog", () => {
-  assert.match(calendarSource, /import\s*{[^}]*buildScheduleEditPath[^}]*}\s*from\s*"@\/lib\/scheduleCalendarNavigation"/);
+test("Calendar cards open the OccurrenceDetailsSheet rather than navigating directly or opening any Calendar-owned dialog", () => {
+  assert.match(calendarSource, /import\s*{\s*OccurrenceDetailsSheet\s*}\s*from\s*"@\/components\/calendar\/OccurrenceDetailsSheet"/);
   assert.match(calendarSource, /openOccurrenceInScheduleManager/);
-  assert.match(calendarSource, /occurrence\.source === "ballet"\s*\?\s*buildBalletScheduleListPath\(\)\s*:\s*buildScheduleEditPath\(occurrence\.scheduleId\)/);
+  assert.match(calendarSource, /setSelectedOccurrence\(occurrence\)/);
+  assert.match(calendarSource, /<OccurrenceDetailsSheet/);
   // No Calendar-owned Dialog/Form for schedules exists — the only Dialog
   // usage anywhere in this file would be a regression of "no Calendar
   // create dialogs / edit forms".
   assert.doesNotMatch(calendarSource, /<Dialog/);
   assert.doesNotMatch(calendarSource, /useForm/);
+  assert.doesNotMatch(calendarSource, /useMutation/);
+});
+
+test("The Sheet's Edit Schedule button reuses the existing navigation helpers — no duplicated navigation logic", () => {
+  assert.match(sheetSource, /import\s*{\s*buildBalletScheduleListPath,\s*buildScheduleEditPath\s*}\s*from\s*"@\/lib\/scheduleCalendarNavigation"/);
+  assert.match(sheetSource, /isBallet\s*\?\s*buildBalletScheduleListPath\(\)\s*:\s*buildScheduleEditPath\(occurrence\.scheduleId\)/);
+  assert.match(sheetSource, />\s*Edit Schedule\s*</);
+});
+
+test("The roster query is enabled only when an occurrence is selected and the user has both bookings.view and attendance.view", () => {
+  assert.match(sheetSource, /can\("bookings", "view"\)\s*&&\s*can\("attendance", "view"\)/);
+  assert.match(sheetSource, /enabled: occurrence != null && canViewRoster/);
+  assert.match(sheetSource, /You do not have permission to view booking details\./);
 });
 
 test("Card clicks stop propagation so they never also trigger the day column's create-slot click", () => {
