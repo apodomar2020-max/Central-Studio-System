@@ -48,6 +48,7 @@ import type {
   CreatePackageOrderBody,
   CreatePricePackageBody,
   CreateRoomBody,
+  CreateRoomReservationBody,
   CreateScheduleBody,
   CreateStudentBody,
   DanceType,
@@ -71,6 +72,7 @@ import type {
   ListCreditTransactionsParams,
   ListCreditTransactionsResponse,
   ListPackageOrdersParams,
+  ListRoomReservationsParams,
   ListSchedulesParams,
   ListStudentsParams,
   ListStudentsResponse,
@@ -88,6 +90,7 @@ import type {
   PricePackage,
   Room,
   RoomListResponse,
+  RoomReservation,
   Schedule,
   ScheduleBranch,
   ScheduleRoom,
@@ -107,6 +110,7 @@ import type {
   UpdatePackageOrderBody,
   UpdatePricePackageBody,
   UpdateRoomBody,
+  UpdateRoomReservationBody,
   UpdateScheduleBody,
   UpdateStudentBody,
   UploadDanceTypeIconBody,
@@ -2379,6 +2383,355 @@ export function useGetAdminCalendarResourceView<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getListRoomReservationsUrl = (
+  params?: ListRoomReservationsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/room-reservations?${stringifiedParams}`
+    : `/api/admin/room-reservations`;
+};
+
+/**
+ * @summary List studio room reservations
+ */
+export const listRoomReservations = async (
+  params?: ListRoomReservationsParams,
+  options?: RequestInit,
+): Promise<RoomReservation[]> => {
+  return customFetch<RoomReservation[]>(getListRoomReservationsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListRoomReservationsQueryKey = (
+  params?: ListRoomReservationsParams,
+) => {
+  return [`/api/admin/room-reservations`, ...(params ? [params] : [])] as const;
+};
+
+export const getListRoomReservationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listRoomReservations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListRoomReservationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRoomReservations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListRoomReservationsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listRoomReservations>>
+  > = ({ signal }) =>
+    listRoomReservations(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listRoomReservations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListRoomReservationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listRoomReservations>>
+>;
+export type ListRoomReservationsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List studio room reservations
+ */
+
+export function useListRoomReservations<
+  TData = Awaited<ReturnType<typeof listRoomReservations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListRoomReservationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRoomReservations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListRoomReservationsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateRoomReservationUrl = () => {
+  return `/api/admin/room-reservations`;
+};
+
+/**
+ * @summary Create a studio room reservation
+ */
+export const createRoomReservation = async (
+  createRoomReservationBody: CreateRoomReservationBody,
+  options?: RequestInit,
+): Promise<RoomReservation> => {
+  return customFetch<RoomReservation>(getCreateRoomReservationUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createRoomReservationBody),
+  });
+};
+
+export const getCreateRoomReservationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRoomReservation>>,
+    TError,
+    { data: BodyType<CreateRoomReservationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createRoomReservation>>,
+  TError,
+  { data: BodyType<CreateRoomReservationBody> },
+  TContext
+> => {
+  const mutationKey = ["createRoomReservation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createRoomReservation>>,
+    { data: BodyType<CreateRoomReservationBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createRoomReservation(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateRoomReservationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createRoomReservation>>
+>;
+export type CreateRoomReservationMutationBody =
+  BodyType<CreateRoomReservationBody>;
+export type CreateRoomReservationMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a studio room reservation
+ */
+export const useCreateRoomReservation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRoomReservation>>,
+    TError,
+    { data: BodyType<CreateRoomReservationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createRoomReservation>>,
+  TError,
+  { data: BodyType<CreateRoomReservationBody> },
+  TContext
+> => {
+  return useMutation(getCreateRoomReservationMutationOptions(options));
+};
+
+export const getGetRoomReservationUrl = (id: number) => {
+  return `/api/admin/room-reservations/${id}`;
+};
+
+export const getRoomReservation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<RoomReservation> => {
+  return customFetch<RoomReservation>(getGetRoomReservationUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRoomReservationQueryKey = (id: number) => {
+  return [`/api/admin/room-reservations/${id}`] as const;
+};
+
+export const getGetRoomReservationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRoomReservation>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRoomReservation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetRoomReservationQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getRoomReservation>>
+  > = ({ signal }) => getRoomReservation(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRoomReservation>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRoomReservationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRoomReservation>>
+>;
+export type GetRoomReservationQueryError = ErrorType<ErrorResponse>;
+
+export function useGetRoomReservation<
+  TData = Awaited<ReturnType<typeof getRoomReservation>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRoomReservation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRoomReservationQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateRoomReservationUrl = (id: number) => {
+  return `/api/admin/room-reservations/${id}`;
+};
+
+export const updateRoomReservation = async (
+  id: number,
+  updateRoomReservationBody: UpdateRoomReservationBody,
+  options?: RequestInit,
+): Promise<RoomReservation> => {
+  return customFetch<RoomReservation>(getUpdateRoomReservationUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateRoomReservationBody),
+  });
+};
+
+export const getUpdateRoomReservationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRoomReservation>>,
+    TError,
+    { id: number; data: BodyType<UpdateRoomReservationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateRoomReservation>>,
+  TError,
+  { id: number; data: BodyType<UpdateRoomReservationBody> },
+  TContext
+> => {
+  const mutationKey = ["updateRoomReservation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateRoomReservation>>,
+    { id: number; data: BodyType<UpdateRoomReservationBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateRoomReservation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateRoomReservationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateRoomReservation>>
+>;
+export type UpdateRoomReservationMutationBody =
+  BodyType<UpdateRoomReservationBody>;
+export type UpdateRoomReservationMutationError = ErrorType<ErrorResponse>;
+
+export const useUpdateRoomReservation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRoomReservation>>,
+    TError,
+    { id: number; data: BodyType<UpdateRoomReservationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateRoomReservation>>,
+  TError,
+  { id: number; data: BodyType<UpdateRoomReservationBody> },
+  TContext
+> => {
+  return useMutation(getUpdateRoomReservationMutationOptions(options));
+};
 
 export const getListSchedulesUrl = (params?: ListSchedulesParams) => {
   const normalizedParams = new URLSearchParams();

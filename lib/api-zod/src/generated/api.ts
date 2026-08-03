@@ -839,6 +839,141 @@ export const GetAdminCalendarResourceViewResponse = zod.object({
   ),
 });
 
+/**
+ * @summary List studio room reservations
+ */
+export const listRoomReservationsQueryDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const ListRoomReservationsQueryParams = zod.object({
+  branchId: zod.coerce.number().optional(),
+  roomId: zod.coerce.number().optional(),
+  date: zod.coerce
+    .string()
+    .regex(listRoomReservationsQueryDateRegExp)
+    .optional(),
+  status: zod.coerce.string().optional(),
+});
+
+export const ListRoomReservationsResponseItem = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  reservationType: zod.string(),
+  branchId: zod.number(),
+  branchName: zod.string().nullable(),
+  roomId: zod.number(),
+  roomName: zod.string().nullable(),
+  date: zod.string(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  description: zod.string().nullish(),
+  organizerName: zod.string().nullish(),
+  organizerContact: zod.string().nullish(),
+  status: zod.enum(["active", "cancelled"]),
+  createdByUserId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListRoomReservationsResponse = zod.array(
+  ListRoomReservationsResponseItem,
+);
+
+/**
+ * @summary Create a studio room reservation
+ */
+export const createRoomReservationBodyDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const CreateRoomReservationBody = zod.object({
+  title: zod.string(),
+  reservationType: zod.string(),
+  branchId: zod.number(),
+  roomId: zod.number(),
+  date: zod.string().regex(createRoomReservationBodyDateRegExp),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  description: zod.string().optional(),
+  organizerName: zod.string().optional(),
+  organizerContact: zod.string().optional(),
+});
+
+export const CreateRoomReservationResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  reservationType: zod.string(),
+  branchId: zod.number(),
+  branchName: zod.string().nullable(),
+  roomId: zod.number(),
+  roomName: zod.string().nullable(),
+  date: zod.string(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  description: zod.string().nullish(),
+  organizerName: zod.string().nullish(),
+  organizerContact: zod.string().nullish(),
+  status: zod.enum(["active", "cancelled"]),
+  createdByUserId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const GetRoomReservationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetRoomReservationResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  reservationType: zod.string(),
+  branchId: zod.number(),
+  branchName: zod.string().nullable(),
+  roomId: zod.number(),
+  roomName: zod.string().nullable(),
+  date: zod.string(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  description: zod.string().nullish(),
+  organizerName: zod.string().nullish(),
+  organizerContact: zod.string().nullish(),
+  status: zod.enum(["active", "cancelled"]),
+  createdByUserId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const UpdateRoomReservationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateRoomReservationBody = zod.object({
+  title: zod.string().optional(),
+  reservationType: zod.string().optional(),
+  description: zod.string().optional(),
+  status: zod.enum(["active", "cancelled"]).optional(),
+});
+
+export const UpdateRoomReservationResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  reservationType: zod.string(),
+  branchId: zod.number(),
+  branchName: zod.string().nullable(),
+  roomId: zod.number(),
+  roomName: zod.string().nullable(),
+  date: zod.string(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  description: zod.string().nullish(),
+  organizerName: zod.string().nullish(),
+  organizerContact: zod.string().nullish(),
+  status: zod.enum(["active", "cancelled"]),
+  createdByUserId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
 export const ListSchedulesQueryParams = zod.object({
   classId: zod.coerce.number().optional(),
 });

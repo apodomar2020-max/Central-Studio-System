@@ -33,7 +33,7 @@
  */
 import { isoDateDayOfWeek } from "./occurrence";
 
-export type ScheduleSource = "class" | "ballet";
+export type ScheduleSource = "class" | "ballet" | "reservation";
 
 export type ScheduleRecurrence =
   | { type: "weekly"; dayOfWeek: number; effectiveFrom: string | null; effectiveUntil: string | null }

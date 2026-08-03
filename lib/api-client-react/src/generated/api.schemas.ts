@@ -705,6 +705,69 @@ export interface CalendarResourceViewResponse {
   rooms: CalendarResourceRoom[];
 }
 
+export type RoomReservationStatus =
+  (typeof RoomReservationStatus)[keyof typeof RoomReservationStatus];
+
+export const RoomReservationStatus = {
+  active: "active",
+  cancelled: "cancelled",
+} as const;
+
+export interface RoomReservation {
+  id: number;
+  title: string;
+  reservationType: string;
+  branchId: number;
+  /** @nullable */
+  branchName: string | null;
+  roomId: number;
+  /** @nullable */
+  roomName: string | null;
+  date: string;
+  startTime: string;
+  endTime: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  organizerName?: string | null;
+  /** @nullable */
+  organizerContact?: string | null;
+  status: RoomReservationStatus;
+  /** @nullable */
+  createdByUserId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRoomReservationBody {
+  title: string;
+  reservationType: string;
+  branchId: number;
+  roomId: number;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  startTime: string;
+  endTime: string;
+  description?: string;
+  organizerName?: string;
+  organizerContact?: string;
+}
+
+export type UpdateRoomReservationBodyStatus =
+  (typeof UpdateRoomReservationBodyStatus)[keyof typeof UpdateRoomReservationBodyStatus];
+
+export const UpdateRoomReservationBodyStatus = {
+  active: "active",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdateRoomReservationBody {
+  title?: string;
+  reservationType?: string;
+  description?: string;
+  status?: UpdateRoomReservationBodyStatus;
+}
+
 export type BalletScheduleStatus =
   (typeof BalletScheduleStatus)[keyof typeof BalletScheduleStatus];
 
@@ -2145,6 +2208,16 @@ export type GetAdminCalendarResourceViewParams = {
   date: string;
   branchId?: number;
   roomId?: number;
+};
+
+export type ListRoomReservationsParams = {
+  branchId?: number;
+  roomId?: number;
+  /**
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  date?: string;
+  status?: string;
 };
 
 export type ListSchedulesParams = {

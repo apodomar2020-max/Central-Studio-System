@@ -75,3 +75,5 @@ export * from "./paymentRecords";
 export * from "./paymentRefunds";
 // Finance Phase 2A DB foundation — dark append-only payment_events ledger (migration 0080)
 export * from "./paymentEvents";
+// Phase 5A.1 — Studio Room Reservations
+export * from "./roomReservations";
