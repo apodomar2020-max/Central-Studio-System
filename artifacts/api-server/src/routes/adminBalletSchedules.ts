@@ -30,12 +30,15 @@ import {
   BALLET_SCHEDULE_STATUSES,
   studioBranchesTable,
   studioRoomsTable,
+  schedulesTable,
+  classesTable,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
 import type { DbClient } from "../lib/dbTypes";
 import { ScheduleLocationError, validateScheduleLocation, validateScheduleLocationChangeAllowed } from "../lib/scheduleLocation";
+import { assertNoScheduleConflict, ScheduleConflictError, type ScheduleOccupancy } from "../lib/scheduleConflict";
 
 const router: IRouter = Router();
 const BALLET_SCHEDULE_ACTIVITY_FIELDS = ["classId", "branchId", "roomId", "dayOfWeek", "startTime", "endTime", "status", "durationMins"] as const;
@@ -154,6 +157,120 @@ async function assertScheduleSlotAvailable(
   if (overlapId) throw new Error("BALLET_SCHEDULE_TIME_CONFLICT");
 }
 
+/**
+ * Phase 2C — wires the Phase 2A conflict engine (lib/scheduleConflict.ts,
+ * DB-free by design) into Ballet schedule creation/update. Additive to the
+ * per-class assertScheduleSlotAvailable check above, which stays untouched:
+ * that check is about one Class's own slots never colliding with each
+ * other; this one is about the physical room, so it checks BOTH existing
+ * Ballet schedules AND existing regular Studio schedules sharing the same
+ * branch+room — a Ballet class and a Studio class can no longer be
+ * double-booked into the same room. Runs unconditionally, not only when
+ * branchId/roomId is part of the request (see routes/schedules.ts's
+ * identical Phase 2B reasoning: a timing-only edit can create a room
+ * conflict too), and is a no-op when the resolved candidate has no
+ * branchId/roomId.
+ */
+async function assertRoomTimeSlotAvailable(
+  tx: DbClient,
+  candidate: {
+    branchId: number | null;
+    roomId: number | null;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    status: string;
+  },
+  excludeId?: number,
+): Promise<void> {
+  const { branchId, roomId } = candidate;
+  if (branchId == null || roomId == null) return;
+
+  await tx.execute(sql`select id from studio_rooms where id = ${roomId} for update`);
+
+  const balletConditions = [
+    eq(balletSchedulesTable.branchId, branchId),
+    eq(balletSchedulesTable.roomId, roomId),
+    eq(balletSchedulesTable.status, "active"),
+  ];
+  if (excludeId != null) balletConditions.push(ne(balletSchedulesTable.id, excludeId));
+
+  const [balletRows, regularRows] = await Promise.all([
+    tx
+      .select({
+        id: balletSchedulesTable.id,
+        dayOfWeek: balletSchedulesTable.dayOfWeek,
+        startTime: balletSchedulesTable.startTime,
+        endTime: balletSchedulesTable.endTime,
+        status: balletSchedulesTable.status,
+        classTitle: balletClassesTable.title,
+      })
+      .from(balletSchedulesTable)
+      .leftJoin(balletClassesTable, eq(balletSchedulesTable.classId, balletClassesTable.id))
+      .where(and(...balletConditions)),
+    tx
+      .select({
+        id: schedulesTable.id,
+        type: schedulesTable.type,
+        dayOfWeek: schedulesTable.dayOfWeek,
+        date: schedulesTable.date,
+        startTime: schedulesTable.startTime,
+        endTime: schedulesTable.endTime,
+        effectiveFrom: schedulesTable.effectiveFrom,
+        effectiveUntil: schedulesTable.effectiveUntil,
+        status: schedulesTable.status,
+        classTitle: classesTable.title,
+      })
+      .from(schedulesTable)
+      .leftJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
+      .where(and(
+        eq(schedulesTable.branchId, branchId),
+        eq(schedulesTable.roomId, roomId),
+        eq(schedulesTable.status, "active"),
+      )),
+  ]);
+
+  const existing: ScheduleOccupancy[] = [
+    ...balletRows.map((row): ScheduleOccupancy => ({
+      id: row.id,
+      source: "ballet",
+      branchId,
+      roomId,
+      status: row.status,
+      startTime: row.startTime,
+      endTime: row.endTime,
+      recurrence: { type: "weekly", dayOfWeek: row.dayOfWeek, effectiveFrom: null, effectiveUntil: null },
+      classTitle: row.classTitle,
+    })),
+    ...regularRows.map((row): ScheduleOccupancy => ({
+      id: row.id,
+      source: "class",
+      branchId,
+      roomId,
+      status: row.status,
+      startTime: row.startTime,
+      endTime: row.endTime,
+      recurrence: row.type === "weekly"
+        ? { type: "weekly", dayOfWeek: row.dayOfWeek as number, effectiveFrom: row.effectiveFrom, effectiveUntil: row.effectiveUntil }
+        : { type: "one_time", date: row.date as string },
+      classTitle: row.classTitle,
+    })),
+  ];
+
+  const candidateOccupancy: ScheduleOccupancy = {
+    id: excludeId ?? null,
+    source: "ballet",
+    branchId,
+    roomId,
+    status: candidate.status,
+    startTime: candidate.startTime,
+    endTime: candidate.endTime,
+    recurrence: { type: "weekly", dayOfWeek: candidate.dayOfWeek, effectiveFrom: null, effectiveUntil: null },
+  };
+
+  assertNoScheduleConflict(candidateOccupancy, existing);
+}
+
 async function validateScheduleClass(client: DbClient, classId: number): Promise<string | null> {
   const [row] = await client
     .select({
@@ -260,6 +377,14 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
         parsed.data.endTime,
         parsed.data.status,
       );
+      await assertRoomTimeSlotAvailable(tx, {
+        branchId: parsed.data.branchId,
+        roomId: parsed.data.roomId,
+        dayOfWeek: parsed.data.dayOfWeek,
+        startTime: parsed.data.startTime,
+        endTime: parsed.data.endTime,
+        status: parsed.data.status,
+      });
 
       const [created] = await tx.insert(balletSchedulesTable).values({
         classId: parsed.data.classId,
@@ -286,6 +411,7 @@ router.post("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission(
     res.status(201).json({ schedule: (await attachLocations([schedule]))[0] });
   } catch (err) {
     if (err instanceof ScheduleLocationError) { res.status(err.status).json({ error: err.message, code: err.code }); return; }
+    if (err instanceof ScheduleConflictError) { res.status(err.status).json({ error: err.message, code: err.code, conflict: err.conflict }); return; }
     if (err instanceof Error) {
       if (err.message === "INVALID_BALLET_SCHEDULE_TIME_RANGE") {
         res.status(422).json({ error: "End time must be later than start time.", code: "INVALID_BALLET_SCHEDULE_TIME_RANGE" });
@@ -349,22 +475,33 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
       const endTime = (parsed.data.endTime ?? existing.endTime).trim();
       const status = parsed.data.status ?? existing.status;
       const durationMins = deriveBalletScheduleDuration(startTime, endTime);
+      const resolvedBranchId = parsed.data.branchId === undefined ? existing.branchId : parsed.data.branchId;
+      const resolvedRoomId = parsed.data.roomId === undefined ? existing.roomId : parsed.data.roomId;
 
       const locationProvided = Object.prototype.hasOwnProperty.call(parsed.data, "branchId") || Object.prototype.hasOwnProperty.call(parsed.data, "roomId");
       if (locationProvided) {
-        const branchId = parsed.data.branchId === undefined ? existing.branchId : parsed.data.branchId;
-        const roomId = parsed.data.roomId === undefined ? existing.roomId : parsed.data.roomId;
-        await validateScheduleLocation(tx, branchId, roomId, { branchId: existing.branchId, roomId: existing.roomId });
+        await validateScheduleLocation(tx, resolvedBranchId, resolvedRoomId, { branchId: existing.branchId, roomId: existing.roomId });
         await validateScheduleLocationChangeAllowed(
           tx,
           "ballet",
           existing.id,
           { branchId: existing.branchId, roomId: existing.roomId },
-          { branchId, roomId },
+          { branchId: resolvedBranchId, roomId: resolvedRoomId },
         );
       }
 
       await assertScheduleSlotAvailable(tx, existing.classId, dayOfWeek, startTime, endTime, status, id);
+      // Runs on every update, not only when locationProvided — see the
+      // identical reasoning on assertRoomTimeSlotAvailable's doc comment
+      // and routes/schedules.ts's Phase 2B implementation.
+      await assertRoomTimeSlotAvailable(tx, {
+        branchId: resolvedBranchId,
+        roomId: resolvedRoomId,
+        dayOfWeek,
+        startTime,
+        endTime,
+        status,
+      }, id);
 
       const now = new Date().toISOString();
       const [schedule] = await tx
@@ -398,6 +535,7 @@ router.patch("/admin/ballet/schedules/:id", requireAdminAuth, requireAdminPermis
     res.json({ schedule: (await attachLocations([schedule]))[0] });
   } catch (err) {
     if (err instanceof ScheduleLocationError) { res.status(err.status).json({ error: err.message, code: err.code }); return; }
+    if (err instanceof ScheduleConflictError) { res.status(err.status).json({ error: err.message, code: err.code, conflict: err.conflict }); return; }
     if (err instanceof Error && err.message === "INVALID_BALLET_SCHEDULE_TIME_RANGE") {
       res.status(422).json({ error: "End time must be later than start time.", code: "INVALID_BALLET_SCHEDULE_TIME_RANGE" });
       return;
