@@ -68,10 +68,16 @@ type CalendarOccurrence = {
   occurrenceDate: string;
   startTime: string;
   endTime: string;
+  classId: number;
   classTitle: string;
+  instructorId: number | null;
   instructorName: string | null;
   branchName: string | null;
   roomName: string | null;
+  // Regular: classes.capacity (per-class). Ballet: ballet_schedules.capacity
+  // (per-schedule) — resolved per-source below rather than left for callers
+  // to reconcile the two systems' differing capacity models themselves.
+  capacity: number | null;
   bookingCount: number;
   conflict: CalendarOccurrenceConflict | null;
 };
@@ -184,7 +190,10 @@ router.get(
           endTime: schedulesTable.endTime,
           effectiveFrom: schedulesTable.effectiveFrom,
           effectiveUntil: schedulesTable.effectiveUntil,
+          classId: classesTable.id,
           classTitle: classesTable.title,
+          classCapacity: classesTable.capacity,
+          instructorId: instructorsTable.id,
           instructorName: instructorsTable.name,
         })
         .from(schedulesTable)
@@ -199,7 +208,10 @@ router.get(
           dayOfWeek: balletSchedulesTable.dayOfWeek,
           startTime: balletSchedulesTable.startTime,
           endTime: balletSchedulesTable.endTime,
+          capacity: balletSchedulesTable.capacity,
+          classId: balletClassesTable.id,
           classTitle: balletClassesTable.title,
+          instructorId: balletInstructorsTable.id,
           instructorName: balletInstructorsTable.name,
         })
         .from(balletSchedulesTable)
@@ -280,8 +292,11 @@ router.get(
           occurrenceDate,
           startTime: row.startTime,
           endTime: row.endTime,
+          classId: row.classId,
           classTitle: row.classTitle,
+          instructorId: row.instructorId,
           instructorName: row.instructorName,
+          capacity: row.classCapacity,
           branchId: row.branchId,
           roomId: row.roomId,
           branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,
@@ -302,8 +317,11 @@ router.get(
           occurrenceDate,
           startTime: row.startTime,
           endTime: row.endTime,
+          classId: row.classId,
           classTitle: row.classTitle,
+          instructorId: row.instructorId,
           instructorName: row.instructorName,
+          capacity: row.capacity,
           branchId: row.branchId,
           roomId: row.roomId,
           branchName: row.branchId != null ? branchById.get(row.branchId)?.name ?? null : null,

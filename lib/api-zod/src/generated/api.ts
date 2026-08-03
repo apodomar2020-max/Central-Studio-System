@@ -659,10 +659,20 @@ export const ListAdminCalendarResponseItem = zod.object({
     ),
   startTime: zod.string(),
   endTime: zod.string(),
+  classId: zod
+    .number()
+    .describe("Regular: schedules.classId. Ballet: balletClasses.id."),
   classTitle: zod.string(),
+  instructorId: zod.number().nullable(),
   instructorName: zod.string().nullable(),
   branchName: zod.string().nullable(),
   roomName: zod.string().nullable(),
+  capacity: zod
+    .number()
+    .nullable()
+    .describe(
+      "Regular: classes.capacity (per-class). Ballet: ballet_schedules.capacity (per-schedule) — the two systems size capacity differently, so this is resolved per-source server-side rather than left for the client to reconcile.",
+    ),
   bookingCount: zod
     .number()
     .describe(
@@ -688,6 +698,74 @@ export const ListAdminCalendarResponseItem = zod.object({
 export const ListAdminCalendarResponse = zod.array(
   ListAdminCalendarResponseItem,
 );
+
+/**
+ * Read-only. Composes the schedule summary plus the exact bookings (and their attendance, if any) for a single occurrence — for the future Calendar operational Sheet (Phase 4A.2). Regular schedules are filtered by (scheduleId, occurrenceDate); Ballet has no per-occurrence booking model, so its roster is the schedule's total reserved bookings, matching GET /admin/calendar's own bookingCount semantics.
+ * @summary Booking/attendance roster for one calendar occurrence
+ */
+
+export const getAdminCalendarOccurrenceRosterQueryOccurrenceDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
+export const GetAdminCalendarOccurrenceRosterQueryParams = zod.object({
+  source: zod.enum(["class", "ballet"]),
+  scheduleId: zod.coerce.number().min(1),
+  occurrenceDate: zod.coerce
+    .string()
+    .regex(getAdminCalendarOccurrenceRosterQueryOccurrenceDateRegExp)
+    .describe(
+      "YYYY-MM-DD. Required for the query shape's consistency with GET \/admin\/calendar even though Ballet does not filter by it.",
+    ),
+});
+
+export const GetAdminCalendarOccurrenceRosterResponse = zod.object({
+  scheduleId: zod.number(),
+  source: zod.enum(["class", "ballet"]),
+  classTitle: zod.string(),
+  instructorName: zod.string().nullable(),
+  branchName: zod.string().nullable(),
+  roomName: zod.string().nullable(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  capacity: zod.number().nullable(),
+  bookingCount: zod.number(),
+  roster: zod.array(
+    zod.object({
+      bookingId: zod.number(),
+      studentName: zod
+        .string()
+        .describe(
+          "Account-owner identity — the linked student's name, falling back to the name captured on the booking itself for legacy\/unlinked rows. Never null.",
+        ),
+      participantName: zod
+        .string()
+        .describe(
+          "Who actually attends — the child's name for a child booking, otherwise the same as studentName.",
+        ),
+      bookingStatus: zod.enum([
+        "pending",
+        "confirmed",
+        "rejected",
+        "cancelled",
+        "attended",
+        "completed",
+        "attendance_reversed",
+      ]),
+      paymentStatus: zod.string(),
+      attendanceStatus: zod
+        .union([
+          zod.literal("checked_in"),
+          zod.literal("late"),
+          zod.literal("absent"),
+          zod.literal("cancelled"),
+          zod.literal(null),
+        ])
+        .nullable()
+        .describe("Null when this booking has no attendance record yet."),
+      checkedInAt: zod.string().nullable(),
+    }),
+  ),
+});
 
 export const ListSchedulesQueryParams = zod.object({
   classId: zod.coerce.number().optional(),

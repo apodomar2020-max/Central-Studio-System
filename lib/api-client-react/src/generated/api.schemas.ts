@@ -543,13 +543,22 @@ export interface CalendarOccurrence {
   occurrenceDate: string;
   startTime: string;
   endTime: string;
+  /** Regular: schedules.classId. Ballet: balletClasses.id. */
+  classId: number;
   classTitle: string;
+  /** @nullable */
+  instructorId: number | null;
   /** @nullable */
   instructorName: string | null;
   /** @nullable */
   branchName: string | null;
   /** @nullable */
   roomName: string | null;
+  /**
+   * Regular: classes.capacity (per-class). Ballet: ballet_schedules.capacity (per-schedule) — the two systems size capacity differently, so this is resolved per-source server-side rather than left for the client to reconcile.
+   * @nullable
+   */
+  capacity: number | null;
   /** Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model). */
   bookingCount: number;
   /** Present when this occurrence overlaps another active occurrence in the same branch+room on this date (regular-vs-regular, ballet-vs-ballet, or regular-vs-ballet), computed server-side by the Phase 2 schedule conflict engine — null when there is no conflict. The frontend must not recompute this. */
@@ -557,6 +566,77 @@ export interface CalendarOccurrence {
 }
 
 export type CalendarOccurrenceListResponse = CalendarOccurrence[];
+
+export type CalendarOccurrenceRosterItemBookingStatus =
+  (typeof CalendarOccurrenceRosterItemBookingStatus)[keyof typeof CalendarOccurrenceRosterItemBookingStatus];
+
+export const CalendarOccurrenceRosterItemBookingStatus = {
+  pending: "pending",
+  confirmed: "confirmed",
+  rejected: "rejected",
+  cancelled: "cancelled",
+  attended: "attended",
+  completed: "completed",
+  attendance_reversed: "attendance_reversed",
+} as const;
+
+/**
+ * Null when this booking has no attendance record yet.
+ * @nullable
+ */
+export type CalendarOccurrenceRosterItemAttendanceStatus =
+  | (typeof CalendarOccurrenceRosterItemAttendanceStatus)[keyof typeof CalendarOccurrenceRosterItemAttendanceStatus]
+  | null;
+
+export const CalendarOccurrenceRosterItemAttendanceStatus = {
+  checked_in: "checked_in",
+  late: "late",
+  absent: "absent",
+  cancelled: "cancelled",
+} as const;
+
+export interface CalendarOccurrenceRosterItem {
+  bookingId: number;
+  /** Account-owner identity — the linked student's name, falling back to the name captured on the booking itself for legacy/unlinked rows. Never null. */
+  studentName: string;
+  /** Who actually attends — the child's name for a child booking, otherwise the same as studentName. */
+  participantName: string;
+  bookingStatus: CalendarOccurrenceRosterItemBookingStatus;
+  paymentStatus: string;
+  /**
+   * Null when this booking has no attendance record yet.
+   * @nullable
+   */
+  attendanceStatus: CalendarOccurrenceRosterItemAttendanceStatus;
+  /** @nullable */
+  checkedInAt: string | null;
+}
+
+export type CalendarOccurrenceRosterResponseSource =
+  (typeof CalendarOccurrenceRosterResponseSource)[keyof typeof CalendarOccurrenceRosterResponseSource];
+
+export const CalendarOccurrenceRosterResponseSource = {
+  class: "class",
+  ballet: "ballet",
+} as const;
+
+export interface CalendarOccurrenceRosterResponse {
+  scheduleId: number;
+  source: CalendarOccurrenceRosterResponseSource;
+  classTitle: string;
+  /** @nullable */
+  instructorName: string | null;
+  /** @nullable */
+  branchName: string | null;
+  /** @nullable */
+  roomName: string | null;
+  startTime: string;
+  endTime: string;
+  /** @nullable */
+  capacity: number | null;
+  bookingCount: number;
+  roster: CalendarOccurrenceRosterItem[];
+}
 
 export type BalletScheduleStatus =
   (typeof BalletScheduleStatus)[keyof typeof BalletScheduleStatus];
@@ -1968,6 +2048,27 @@ export type ListAdminCalendarParams = {
   branchId?: number;
   roomId?: number;
 };
+
+export type GetAdminCalendarOccurrenceRosterParams = {
+  source: GetAdminCalendarOccurrenceRosterSource;
+  /**
+   * @minimum 1
+   */
+  scheduleId: number;
+  /**
+   * YYYY-MM-DD. Required for the query shape's consistency with GET /admin/calendar even though Ballet does not filter by it.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  occurrenceDate: string;
+};
+
+export type GetAdminCalendarOccurrenceRosterSource =
+  (typeof GetAdminCalendarOccurrenceRosterSource)[keyof typeof GetAdminCalendarOccurrenceRosterSource];
+
+export const GetAdminCalendarOccurrenceRosterSource = {
+  class: "class",
+  ballet: "ballet",
+} as const;
 
 export type ListSchedulesParams = {
   classId?: number;

@@ -28,6 +28,7 @@ import type {
   Branch,
   BranchListResponse,
   CalendarOccurrenceListResponse,
+  CalendarOccurrenceRosterResponse,
   Campaign,
   CheckInBody,
   CheckInQrBody,
@@ -52,6 +53,7 @@ import type {
   DashboardAnalytics,
   DashboardSummary,
   ErrorResponse,
+  GetAdminCalendarOccurrenceRosterParams,
   GetAttendanceStatsParams,
   GetBookingParticipantCandidatesParams,
   GetMyAttendanceParams,
@@ -2146,6 +2148,118 @@ export function useListAdminCalendar<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListAdminCalendarQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetAdminCalendarOccurrenceRosterUrl = (
+  params: GetAdminCalendarOccurrenceRosterParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/calendar/occurrence-roster?${stringifiedParams}`
+    : `/api/admin/calendar/occurrence-roster`;
+};
+
+/**
+ * Read-only. Composes the schedule summary plus the exact bookings (and their attendance, if any) for a single occurrence — for the future Calendar operational Sheet (Phase 4A.2). Regular schedules are filtered by (scheduleId, occurrenceDate); Ballet has no per-occurrence booking model, so its roster is the schedule's total reserved bookings, matching GET /admin/calendar's own bookingCount semantics.
+ * @summary Booking/attendance roster for one calendar occurrence
+ */
+export const getAdminCalendarOccurrenceRoster = async (
+  params: GetAdminCalendarOccurrenceRosterParams,
+  options?: RequestInit,
+): Promise<CalendarOccurrenceRosterResponse> => {
+  return customFetch<CalendarOccurrenceRosterResponse>(
+    getGetAdminCalendarOccurrenceRosterUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetAdminCalendarOccurrenceRosterQueryKey = (
+  params?: GetAdminCalendarOccurrenceRosterParams,
+) => {
+  return [
+    `/api/admin/calendar/occurrence-roster`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetAdminCalendarOccurrenceRosterQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminCalendarOccurrenceRoster>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetAdminCalendarOccurrenceRosterParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminCalendarOccurrenceRoster>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetAdminCalendarOccurrenceRosterQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAdminCalendarOccurrenceRoster>>
+  > = ({ signal }) =>
+    getAdminCalendarOccurrenceRoster(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminCalendarOccurrenceRoster>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminCalendarOccurrenceRosterQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminCalendarOccurrenceRoster>>
+>;
+export type GetAdminCalendarOccurrenceRosterQueryError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Booking/attendance roster for one calendar occurrence
+ */
+
+export function useGetAdminCalendarOccurrenceRoster<
+  TData = Awaited<ReturnType<typeof getAdminCalendarOccurrenceRoster>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetAdminCalendarOccurrenceRosterParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminCalendarOccurrenceRoster>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminCalendarOccurrenceRosterQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
