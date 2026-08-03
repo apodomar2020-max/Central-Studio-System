@@ -1,7 +1,7 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { Router, type IRouter, type Response } from "express";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { db, bookingsTable, schedulesTable, classesTable, instructorsTable, studioBranchesTable, studioRoomsTable, attendanceTable, packageCreditAllocationsTable } from "@workspace/db";
 import { currentOccurrenceDate } from "../lib/occurrence";
 import { RESERVED_SEAT_STATUSES } from "../lib/bookingStatus";
@@ -11,6 +11,7 @@ import { DbClient } from "../lib/dbTypes";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { getCairoBusinessDate } from "../lib/eligibility/dateOnly";
 import { ScheduleLocationError, validateScheduleLocation, validateScheduleLocationChangeAllowed } from "../lib/scheduleLocation";
+import { assertNoScheduleConflict, ScheduleConflictError, type ScheduleOccupancy } from "../lib/scheduleConflict";
 import {
   ageRangeMetadata,
   evaluateScheduleCatalogueEligibility,
@@ -213,6 +214,101 @@ function respondWithLocationError(res: Response, error: unknown): boolean {
   if (!(error instanceof ScheduleLocationError)) return false;
   res.status(error.status).json({ error: error.message, code: error.code });
   return true;
+}
+
+function respondWithConflictError(res: Response, error: unknown): boolean {
+  if (!(error instanceof ScheduleConflictError)) return false;
+  res.status(error.status).json({ error: error.message, code: error.code, conflict: error.conflict });
+  return true;
+}
+
+/**
+ * Phase 2B — wires the Phase 2A conflict engine (lib/scheduleConflict.ts,
+ * DB-free by design) into the regular Studio schedule create/update flow.
+ * Regular ("class") schedules only — Ballet is unaffected until Phase 2C.
+ *
+ * Runs unconditionally on every create/update (not just when branchId/roomId
+ * is present in the request): an update that only changes startTime/endTime/
+ * dayOfWeek/date can create a conflict just as easily as a location change
+ * can, so this always takes its own room-row lock rather than relying on
+ * validateScheduleLocation's lock, which is only acquired when location
+ * fields are actually part of the request. A no-op when the resolved
+ * candidate has no branchId/roomId — there is no physical resource to
+ * double-book.
+ */
+async function assertScheduleTimeSlotAvailable(
+  tx: DbClient,
+  candidate: {
+    branchId: number | null;
+    roomId: number | null;
+    type: ScheduleType;
+    dayOfWeek: number | null;
+    date: string | null;
+    startTime: string;
+    endTime: string;
+    effectiveFrom: string | null;
+    effectiveUntil: string | null;
+    status: ScheduleStatus;
+  },
+  excludeId?: number,
+): Promise<void> {
+  const { branchId, roomId } = candidate;
+  if (branchId == null || roomId == null) return;
+
+  await tx.execute(sql`select id from studio_rooms where id = ${roomId} for update`);
+
+  const conditions = [
+    eq(schedulesTable.branchId, branchId),
+    eq(schedulesTable.roomId, roomId),
+    eq(schedulesTable.status, "active"),
+  ];
+  if (excludeId != null) conditions.push(ne(schedulesTable.id, excludeId));
+
+  const existingRows = await tx
+    .select({
+      id: schedulesTable.id,
+      type: schedulesTable.type,
+      dayOfWeek: schedulesTable.dayOfWeek,
+      date: schedulesTable.date,
+      startTime: schedulesTable.startTime,
+      endTime: schedulesTable.endTime,
+      effectiveFrom: schedulesTable.effectiveFrom,
+      effectiveUntil: schedulesTable.effectiveUntil,
+      status: schedulesTable.status,
+      classTitle: classesTable.title,
+    })
+    .from(schedulesTable)
+    .leftJoin(classesTable, eq(schedulesTable.classId, classesTable.id))
+    .where(and(...conditions));
+
+  const existing: ScheduleOccupancy[] = existingRows.map((row) => ({
+    id: row.id,
+    source: "class",
+    branchId,
+    roomId,
+    status: row.status,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    recurrence: row.type === "weekly"
+      ? { type: "weekly", dayOfWeek: row.dayOfWeek as number, effectiveFrom: row.effectiveFrom, effectiveUntil: row.effectiveUntil }
+      : { type: "one_time", date: row.date as string },
+    classTitle: row.classTitle,
+  }));
+
+  const candidateOccupancy: ScheduleOccupancy = {
+    id: excludeId ?? null,
+    source: "class",
+    branchId,
+    roomId,
+    status: candidate.status,
+    startTime: candidate.startTime,
+    endTime: candidate.endTime,
+    recurrence: candidate.type === "weekly"
+      ? { type: "weekly", dayOfWeek: candidate.dayOfWeek as number, effectiveFrom: candidate.effectiveFrom, effectiveUntil: candidate.effectiveUntil }
+      : { type: "one_time", date: candidate.date as string },
+  };
+
+  assertNoScheduleConflict(candidateOccupancy, existing);
 }
 
 function didScheduleChange(
@@ -424,11 +520,24 @@ router.post("/schedules", blockStudentJwt, requireAdminAuth, requireAdminPermiss
   try {
     row = await db.transaction(async (tx) => {
       await validateScheduleLocation(tx, normalized.branchId ?? null, normalized.roomId ?? null);
+      await assertScheduleTimeSlotAvailable(tx, {
+        branchId: normalized.branchId ?? null,
+        roomId: normalized.roomId ?? null,
+        type: normalized.type as ScheduleType,
+        dayOfWeek: normalized.dayOfWeek ?? null,
+        date: normalized.date ?? null,
+        startTime: normalized.startTime as string,
+        endTime: normalized.endTime as string,
+        effectiveFrom: normalized.effectiveFrom ?? null,
+        effectiveUntil: normalized.effectiveUntil ?? null,
+        status: normalized.status ?? "active",
+      });
       const [created] = await tx.insert(schedulesTable).values(normalized as typeof schedulesTable.$inferInsert).returning();
       return created;
     });
   } catch (error) {
     if (respondWithLocationError(res, error)) return;
+    if (respondWithConflictError(res, error)) return;
     throw error;
   }
   await logActivity(req, {
@@ -508,6 +617,22 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
         { branchId, roomId },
       );
     }
+    // Runs on every update, not only when locationProvided — a timing-only
+    // change (dayOfWeek/date/startTime/endTime) can create a conflict just
+    // as easily as a location change can, and this call takes its own room
+    // lock regardless of whether validateScheduleLocation ran above.
+    await assertScheduleTimeSlotAvailable(tx, {
+      branchId: candidate.branchId ?? null,
+      roomId: candidate.roomId ?? null,
+      type: candidate.type as ScheduleType,
+      dayOfWeek: candidate.dayOfWeek ?? null,
+      date: candidate.date ?? null,
+      startTime: candidate.startTime as string,
+      endTime: candidate.endTime as string,
+      effectiveFrom: candidate.effectiveFrom ?? null,
+      effectiveUntil: candidate.effectiveUntil ?? null,
+      status: candidate.status ?? "active",
+    }, existing.id);
     const [updated] = await tx.update(schedulesTable).set(normalized).where(eq(schedulesTable.id, params.data.id)).returning();
     if (!updated) return null;
 
@@ -531,6 +656,7 @@ router.patch("/schedules/:id", blockStudentJwt, requireAdminAuth, requireAdminPe
     });
   } catch (error) {
     if (respondWithLocationError(res, error)) return;
+    if (respondWithConflictError(res, error)) return;
     throw error;
   }
   if (!row) {
