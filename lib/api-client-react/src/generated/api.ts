@@ -27,6 +27,7 @@ import type {
   BookingParticipantCandidatesResponse,
   Branch,
   BranchListResponse,
+  CalendarOccurrenceListResponse,
   Campaign,
   CheckInBody,
   CheckInQrBody,
@@ -59,6 +60,7 @@ import type {
   HeroItem,
   Instructor,
   ListAdminBalletSchedulesParams,
+  ListAdminCalendarParams,
   ListAttendanceParams,
   ListBookingsParams,
   ListBookingsResponse,
@@ -2050,6 +2052,107 @@ export const useDeleteClass = <
 > => {
   return useMutation(getDeleteClassMutationOptions(options));
 };
+
+export const getListAdminCalendarUrl = (params: ListAdminCalendarParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/calendar?${stringifiedParams}`
+    : `/api/admin/calendar`;
+};
+
+/**
+ * Read-only. Projects existing `schedules` and `ballet_schedules` rows into concrete occurrence instances between `from` and `to` (inclusive), reusing the same day-of-week/effective-date logic already used elsewhere — no new recurrence system.
+ * @summary Projected calendar occurrences for class and ballet schedules over a date range
+ */
+export const listAdminCalendar = async (
+  params: ListAdminCalendarParams,
+  options?: RequestInit,
+): Promise<CalendarOccurrenceListResponse> => {
+  return customFetch<CalendarOccurrenceListResponse>(
+    getListAdminCalendarUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAdminCalendarQueryKey = (
+  params?: ListAdminCalendarParams,
+) => {
+  return [`/api/admin/calendar`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAdminCalendarQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminCalendar>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: ListAdminCalendarParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAdminCalendar>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAdminCalendarQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminCalendar>>
+  > = ({ signal }) => listAdminCalendar(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminCalendar>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminCalendarQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminCalendar>>
+>;
+export type ListAdminCalendarQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Projected calendar occurrences for class and ballet schedules over a date range
+ */
+
+export function useListAdminCalendar<
+  TData = Awaited<ReturnType<typeof listAdminCalendar>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: ListAdminCalendarParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAdminCalendar>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminCalendarQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListSchedulesUrl = (params?: ListSchedulesParams) => {
   const normalizedParams = new URLSearchParams();

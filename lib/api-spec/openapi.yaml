@@ -391,6 +391,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /admin/calendar:
+    get:
+      operationId: listAdminCalendar
+      tags: [schedules]
+      summary: Projected calendar occurrences for class and ballet schedules over a date range
+      description: >
+        Read-only. Projects existing `schedules` and `ballet_schedules` rows into concrete
+        occurrence instances between `from` and `to` (inclusive), reusing the same
+        day-of-week/effective-date logic already used elsewhere — no new recurrence system.
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "Range start (inclusive), YYYY-MM-DD" }
+        - { name: to, in: query, required: true, schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "Range end (inclusive), YYYY-MM-DD" }
+        - { name: branchId, in: query, required: false, schema: { type: integer } }
+        - { name: roomId, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: Projected calendar occurrences, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarOccurrenceListResponse" } } } }
+        "400": { description: Invalid date range, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "401": { description: Admin authentication required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Permission denied, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /schedules:
     get:
       operationId: listSchedules
@@ -1889,6 +1909,26 @@ components:
         name: { type: string }
         code: { type: string }
         isActive: { type: boolean }
+
+    CalendarOccurrence:
+      type: object
+      required: [scheduleId, source, scheduleType, occurrenceDate, startTime, endTime, classTitle, instructorName, branchName, roomName, bookingCount]
+      properties:
+        scheduleId: { type: integer }
+        source: { type: string, enum: [class, ballet], description: "Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules." }
+        scheduleType: { type: string, enum: [weekly, one_time], description: "Ballet schedules are always weekly." }
+        occurrenceDate: { type: string, description: "YYYY-MM-DD, the concrete calendar date this projected occurrence falls on." }
+        startTime: { type: string }
+        endTime: { type: string }
+        classTitle: { type: string }
+        instructorName: { type: ["string", "null"] }
+        branchName: { type: ["string", "null"] }
+        roomName: { type: ["string", "null"] }
+        bookingCount: { type: integer, description: "Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model)." }
+    CalendarOccurrenceListResponse:
+      type: array
+      items: { $ref: "#/components/schemas/CalendarOccurrence" }
+
     BalletSchedule:
       type: object
       required: [id, classId, dayOfWeek, startTime, endTime, status, branchId, roomId, branch, room, createdAt, updatedAt]

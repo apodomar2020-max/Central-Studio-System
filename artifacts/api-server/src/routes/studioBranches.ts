@@ -29,7 +29,11 @@ const protect = [blockStudentJwt, requireAdminAuth] as const;
 const BRANCH_FIELDS = ["name", "address", "googleMapsLink", "isActive"] as const;
 const ROOM_FIELDS = ["name", "isActive"] as const;
 
-function requireScheduleLocationLookup(req: AdminRequest, res: Response, next: NextFunction): void {
+// Exported for reuse by routes/adminCalendar.ts — the calendar surfaces the
+// same schedule location data as the schedule-location lookups below, so it
+// reuses this exact "any of schedules/ballet.schedules view|create|edit"
+// gate rather than introducing a new permission module.
+export function requireScheduleLocationLookup(req: AdminRequest, res: Response, next: NextFunction): void {
   const admin = req.adminUser;
   const allowed = admin?.isSuperAdmin || ["schedules", "ballet.schedules"].some((module) =>
     ["view", "create", "edit"].some((action) => hasRolePermission(admin?.permissions ?? {}, module, action)),

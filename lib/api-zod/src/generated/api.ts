@@ -618,6 +618,61 @@ export const DeleteClassParams = zod.object({
 
 export const DeleteClassResponse = zod.void();
 
+/**
+ * Read-only. Projects existing `schedules` and `ballet_schedules` rows into concrete occurrence instances between `from` and `to` (inclusive), reusing the same day-of-week/effective-date logic already used elsewhere — no new recurrence system.
+ * @summary Projected calendar occurrences for class and ballet schedules over a date range
+ */
+export const listAdminCalendarQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const listAdminCalendarQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const ListAdminCalendarQueryParams = zod.object({
+  from: zod.coerce
+    .string()
+    .regex(listAdminCalendarQueryFromRegExp)
+    .describe("Range start (inclusive), YYYY-MM-DD"),
+  to: zod.coerce
+    .string()
+    .regex(listAdminCalendarQueryToRegExp)
+    .describe("Range end (inclusive), YYYY-MM-DD"),
+  branchId: zod.coerce.number().optional(),
+  roomId: zod.coerce.number().optional(),
+});
+
+export const ListAdminCalendarResponseItem = zod.object({
+  scheduleId: zod.number(),
+  source: zod
+    .enum(["class", "ballet"])
+    .describe(
+      "Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules.",
+    ),
+  scheduleType: zod
+    .enum(["weekly", "one_time"])
+    .describe("Ballet schedules are always weekly."),
+  occurrenceDate: zod
+    .string()
+    .describe(
+      "YYYY-MM-DD, the concrete calendar date this projected occurrence falls on.",
+    ),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  classTitle: zod.string(),
+  instructorName: zod.string().nullable(),
+  branchName: zod.string().nullable(),
+  roomName: zod.string().nullable(),
+  bookingCount: zod
+    .number()
+    .describe(
+      "Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model).",
+    ),
+});
+export const ListAdminCalendarResponse = zod.array(
+  ListAdminCalendarResponseItem,
+);
+
 export const ListSchedulesQueryParams = zod.object({
   classId: zod.coerce.number().optional(),
 });

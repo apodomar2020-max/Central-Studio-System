@@ -20,6 +20,7 @@ import {
   ScanLine,
   Warehouse,
   Users,
+  Calendar,
   CalendarDays,
   CalendarRange,
   CreditCard,
@@ -113,6 +114,7 @@ export const NAV_TREE: NavNode[] = [
   link("Attendance", "/attendance", [["attendance", "view"]], ScanLine),
 
   group("Studio", Warehouse, [
+    link("Calendar", "/calendar", [["schedules", "view"], ["ballet.schedules", "view"]], Calendar),
     link("Branches", "/branches", [["branches", "view"]], Building2),
     link("Instructors", "/instructors", [["instructors", "view"]], Users),
     link("Classes", "/classes", [["classes", "view"]], CalendarDays),

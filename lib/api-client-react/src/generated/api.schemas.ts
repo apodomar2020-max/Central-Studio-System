@@ -491,6 +491,51 @@ export interface UpdateScheduleBody {
   effectiveUntil?: string | null;
 }
 
+/**
+ * Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules.
+ */
+export type CalendarOccurrenceSource =
+  (typeof CalendarOccurrenceSource)[keyof typeof CalendarOccurrenceSource];
+
+export const CalendarOccurrenceSource = {
+  class: "class",
+  ballet: "ballet",
+} as const;
+
+/**
+ * Ballet schedules are always weekly.
+ */
+export type CalendarOccurrenceScheduleType =
+  (typeof CalendarOccurrenceScheduleType)[keyof typeof CalendarOccurrenceScheduleType];
+
+export const CalendarOccurrenceScheduleType = {
+  weekly: "weekly",
+  one_time: "one_time",
+} as const;
+
+export interface CalendarOccurrence {
+  scheduleId: number;
+  /** Which system this occurrence came from — the generic Studio schedules or the separate Ballet schedules. */
+  source: CalendarOccurrenceSource;
+  /** Ballet schedules are always weekly. */
+  scheduleType: CalendarOccurrenceScheduleType;
+  /** YYYY-MM-DD, the concrete calendar date this projected occurrence falls on. */
+  occurrenceDate: string;
+  startTime: string;
+  endTime: string;
+  classTitle: string;
+  /** @nullable */
+  instructorName: string | null;
+  /** @nullable */
+  branchName: string | null;
+  /** @nullable */
+  roomName: string | null;
+  /** Regular schedules: reserved bookings for this exact occurrence date. Ballet schedules: total reserved bookings for the weekly slot (ballet has no per-occurrence booking model). */
+  bookingCount: number;
+}
+
+export type CalendarOccurrenceListResponse = CalendarOccurrence[];
+
 export type BalletScheduleStatus =
   (typeof BalletScheduleStatus)[keyof typeof BalletScheduleStatus];
 
@@ -1885,6 +1930,21 @@ export type UpdateAdminClassCapacitySettings409 = {
   error: string;
   message: string;
   overCapacityOccurrences: OverCapacityOccurrence[];
+};
+
+export type ListAdminCalendarParams = {
+  /**
+   * Range start (inclusive), YYYY-MM-DD
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from: string;
+  /**
+   * Range end (inclusive), YYYY-MM-DD
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to: string;
+  branchId?: number;
+  roomId?: number;
 };
 
 export type ListSchedulesParams = {

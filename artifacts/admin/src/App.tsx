@@ -14,6 +14,7 @@ import { RouteGuard, type PermRequirement, type PermRequirementMode } from "@/li
 
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
+import CalendarPage from "@/pages/calendar";
 import Branches from "@/pages/branches";
 import Instructors from "@/pages/instructors";
 import Classes from "@/pages/classes";
@@ -112,6 +113,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 /** Route → permission requirement (any one of the pairs grants access). */
 const ROUTE_PERMS = {
   dashboard: [["dashboard", "view"]],
+  calendar: [["schedules", "view"], ["ballet.schedules", "view"]],
   branches: [["branches", "view"]],
   instructors: [["instructors", "view"]],
   classes: [["classes", "view"]],
@@ -183,6 +185,7 @@ function ProtectedRouter() {
           <Redirect to="/" />
         </Route>
         <Route path="/">{guarded(ROUTE_PERMS.dashboard, <Dashboard />)}</Route>
+        <Route path="/calendar">{guarded(ROUTE_PERMS.calendar, <CalendarPage />)}</Route>
         <Route path="/branches">{guarded(ROUTE_PERMS.branches, <Branches />)}</Route>
         <Route path="/instructors">{guarded(ROUTE_PERMS.instructors, <Instructors />)}</Route>
         <Route path="/classes">{guarded(ROUTE_PERMS.classes, <Classes />)}</Route>
