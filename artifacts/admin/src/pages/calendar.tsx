@@ -14,10 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// Default visible window; expanded to fit whatever occurrences actually load
-// so an early-morning or late-evening class is never clipped off-grid.
-const DEFAULT_START_MIN = 8 * 60;
-const DEFAULT_END_MIN = 21 * 60;
+type CalendarViewMode = "week" | "day";
+
+// Fixed studio operating-hours window — 12:00 PM through 12:00 AM. Deliberately
+// NOT data-driven (earlier morning hours are hidden even if a stray occurrence
+// exists before noon; its card is simply clipped by the grid's overflow-hidden).
+const GRID_START_MIN = 12 * 60;
+const GRID_END_MIN = 24 * 60;
 const PX_PER_MIN = 1;
 
 function toMinutes(time: string): number {
@@ -37,7 +40,7 @@ type PositionedOccurrence = CalendarOccurrence & { col: number; totalCols: numbe
 
 /** Greedy interval-column packing so overlapping same-day cards sit side by
  *  side instead of stacking illegibly. Packs per-day only — simple and
- *  sufficient for a week view. */
+ *  sufficient for both the week and day views. */
 function packDayColumns(dayOccurrences: CalendarOccurrence[]): PositionedOccurrence[] {
   const sorted = [...dayOccurrences].sort((a, b) =>
     toMinutes(a.startTime) - toMinutes(b.startTime) || toMinutes(a.endTime) - toMinutes(b.endTime),
@@ -59,10 +62,10 @@ function packDayColumns(dayOccurrences: CalendarOccurrence[]): PositionedOccurre
   return placed.map((occurrence) => ({ ...occurrence, totalCols }));
 }
 
-function OccurrenceCard({ occurrence, gridStartMin }: { occurrence: PositionedOccurrence; gridStartMin: number }) {
+function OccurrenceCard({ occurrence }: { occurrence: PositionedOccurrence }) {
   const startMin = toMinutes(occurrence.startTime);
   const endMin = Math.max(toMinutes(occurrence.endTime), startMin + 15);
-  const top = (startMin - gridStartMin) * PX_PER_MIN;
+  const top = (startMin - GRID_START_MIN) * PX_PER_MIN;
   const height = Math.max(24, (endMin - startMin) * PX_PER_MIN);
   const widthPct = 100 / occurrence.totalCols;
   const isBallet = occurrence.source === "ballet";
@@ -103,13 +106,17 @@ function OccurrenceCard({ occurrence, gridStartMin }: { occurrence: PositionedOc
 }
 
 export default function CalendarPage() {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
+  const [viewMode, setViewMode] = useState<CalendarViewMode>("week");
+  const [focusedDate, setFocusedDate] = useState(() => new Date());
   const [branchId, setBranchId] = useState<number | null>(null);
   const [roomId, setRoomId] = useState<number | null>(null);
 
+  const weekStart = useMemo(() => startOfWeek(focusedDate, { weekStartsOn: 0 }), [focusedDate]);
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
-  const from = format(weekDates[0], "yyyy-MM-dd");
-  const to = format(weekDates[6], "yyyy-MM-dd");
+  const datesToShow = viewMode === "week" ? weekDates : [focusedDate];
+
+  const from = format(datesToShow[0], "yyyy-MM-dd");
+  const to = format(datesToShow[datesToShow.length - 1], "yyyy-MM-dd");
 
   const branchesQuery = useListScheduleLocationBranches();
   const roomsQuery = useListScheduleLocationRooms(branchId ?? 0, {
@@ -124,20 +131,12 @@ export default function CalendarPage() {
   });
   const occurrences = calendarQuery.data ?? [];
 
-  const [gridStartMin, gridEndMin] = useMemo(() => {
-    if (occurrences.length === 0) return [DEFAULT_START_MIN, DEFAULT_END_MIN];
-    const times = occurrences.flatMap((o) => [toMinutes(o.startTime), toMinutes(o.endTime)]);
-    const min = Math.min(DEFAULT_START_MIN, Math.floor(Math.min(...times) / 60) * 60);
-    const max = Math.max(DEFAULT_END_MIN, Math.ceil(Math.max(...times) / 60) * 60);
-    return [min, max];
-  }, [occurrences]);
-
   const hourMarks = useMemo(() => {
     const marks: number[] = [];
-    for (let m = gridStartMin; m <= gridEndMin; m += 60) marks.push(m);
+    for (let m = GRID_START_MIN; m <= GRID_END_MIN; m += 60) marks.push(m);
     return marks;
-  }, [gridStartMin, gridEndMin]);
-  const gridHeight = (gridEndMin - gridStartMin) * PX_PER_MIN;
+  }, []);
+  const gridHeight = (GRID_END_MIN - GRID_START_MIN) * PX_PER_MIN;
 
   const occurrencesByDate = useMemo(() => {
     const map = new Map<string, CalendarOccurrence[]>();
@@ -149,24 +148,52 @@ export default function CalendarPage() {
     return map;
   }, [occurrences]);
 
+  const goPrev = () => setFocusedDate((d) => addDays(d, viewMode === "week" ? -7 : -1));
+  const goNext = () => setFocusedDate((d) => addDays(d, viewMode === "week" ? 7 : 1));
+  const goToday = () => setFocusedDate(new Date());
+
+  const rangeLabel = viewMode === "week"
+    ? `${format(weekDates[0], "MMM d")} – ${format(weekDates[6], "MMM d, yyyy")}`
+    : format(focusedDate, "EEEE, MMM d, yyyy");
+
+  const gridColsClass = viewMode === "week" ? "grid-cols-[64px_repeat(7,1fr)]" : "grid-cols-[64px_1fr]";
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Calendar" description="Studio schedule at a glance — week view" mode="studio" />
+      <PageHeader title="Calendar" description="Studio schedule at a glance" mode="studio" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" data-testid="button-calendar-prev-week" onClick={() => setWeekStart((d) => addDays(d, -7))}>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-md border p-0.5">
+            <Button
+              variant={viewMode === "week" ? "default" : "ghost"}
+              size="sm"
+              className="h-7 px-3"
+              data-testid="button-calendar-view-week"
+              onClick={() => setViewMode("week")}
+            >
+              Week
+            </Button>
+            <Button
+              variant={viewMode === "day" ? "default" : "ghost"}
+              size="sm"
+              className="h-7 px-3"
+              data-testid="button-calendar-view-day"
+              onClick={() => setViewMode("day")}
+            >
+              Day
+            </Button>
+          </div>
+          <Button variant="outline" size="icon" data-testid="button-calendar-prev" onClick={goPrev}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" data-testid="button-calendar-today" onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 0 }))}>
+          <Button variant="outline" data-testid="button-calendar-today" onClick={goToday}>
             Today
           </Button>
-          <Button variant="outline" size="icon" data-testid="button-calendar-next-week" onClick={() => setWeekStart((d) => addDays(d, 7))}>
+          <Button variant="outline" size="icon" data-testid="button-calendar-next" onClick={goNext}>
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <span className="ml-2 text-sm font-medium text-foreground">
-            {format(weekDates[0], "MMM d")} – {format(weekDates[6], "MMM d, yyyy")}
-          </span>
+          <span className="ml-2 text-sm font-medium text-foreground">{rangeLabel}</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -216,41 +243,40 @@ export default function CalendarPage() {
         <div className="rounded-md border py-16 text-center text-sm text-destructive">Could not load the calendar. Please try again.</div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
-          <div className="min-w-[880px]">
-            <div className="grid grid-cols-[64px_repeat(7,1fr)] border-b bg-muted/40">
+          <div className={viewMode === "week" ? "min-w-[880px]" : "min-w-[420px]"}>
+            <div className={`grid ${gridColsClass} border-b bg-muted/40`}>
               <div />
-              {weekDates.map((date) => (
+              {datesToShow.map((date) => (
                 <div key={date.toISOString()} className="border-l px-2 py-2 text-center">
                   <div className="text-xs font-medium text-muted-foreground">{DAY_SHORT[date.getDay()]}</div>
                   <div className="text-sm font-semibold text-foreground">{format(date, "d")}</div>
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-[64px_repeat(7,1fr)]">
-              <div className="relative" style={{ height: gridHeight }}>
+            <div className={`grid ${gridColsClass}`}>
+              <div className="relative overflow-hidden" style={{ height: gridHeight }}>
                 {hourMarks.map((minute) => (
                   <div
                     key={minute}
                     className="absolute right-2 -translate-y-1/2 text-[11px] text-muted-foreground"
-                    style={{ top: (minute - gridStartMin) * PX_PER_MIN }}
+                    style={{ top: (minute - GRID_START_MIN) * PX_PER_MIN }}
                   >
                     {formatHourLabel(minute)}
                   </div>
                 ))}
               </div>
-              {weekDates.map((date) => {
+              {datesToShow.map((date) => {
                 const dateKey = format(date, "yyyy-MM-dd");
                 const dayOccurrences = packDayColumns(occurrencesByDate.get(dateKey) ?? []);
                 return (
-                  <div key={dateKey} className="relative border-l" style={{ height: gridHeight }} data-testid={`calendar-day-column-${dateKey}`}>
+                  <div key={dateKey} className="relative overflow-hidden border-l" style={{ height: gridHeight }} data-testid={`calendar-day-column-${dateKey}`}>
                     {hourMarks.map((minute) => (
-                      <div key={minute} className="absolute left-0 right-0 border-t border-border/60" style={{ top: (minute - gridStartMin) * PX_PER_MIN }} />
+                      <div key={minute} className="absolute left-0 right-0 border-t border-border/60" style={{ top: (minute - GRID_START_MIN) * PX_PER_MIN }} />
                     ))}
                     {dayOccurrences.map((occurrence) => (
                       <OccurrenceCard
                         key={`${occurrence.source}-${occurrence.scheduleId}-${occurrence.occurrenceDate}`}
                         occurrence={occurrence}
-                        gridStartMin={gridStartMin}
                       />
                     ))}
                   </div>
