@@ -117,3 +117,40 @@ test("Resource view mode is integrated into existing Calendar page without creat
   assert.match(calendarSource, /calendar-resource-room-header-/);
   assert.match(calendarSource, /calendar-resource-room-column-/);
 });
+
+test("Phase 4C — OccurrenceDetailsSheet renders operational summary metrics and provides gated navigation shortcuts", () => {
+  assert.match(sheetSource, /Operational Overview/);
+  assert.match(sheetSource, /summary-metric-checked-in/);
+  assert.match(sheetSource, /summary-metric-pending/);
+  assert.match(sheetSource, /summary-metric-absent/);
+  assert.match(sheetSource, /summary-metric-unpaid/);
+
+  // Open Attendance button gated on attendance.view
+  assert.match(sheetSource, /button-occurrence-sheet-open-attendance/);
+  assert.match(sheetSource, /\/attendance\?scheduleId=\$\{occurrence\.scheduleId\}&date=\$\{occurrence\.occurrenceDate\}/);
+
+  // View Bookings button gated on bookings.view
+  assert.match(sheetSource, /button-occurrence-sheet-view-bookings/);
+  assert.match(sheetSource, /\/bookings\?scheduleId=\$\{occurrence\.scheduleId\}&date=\$\{occurrence\.occurrenceDate\}/);
+
+  // Gating checks
+  assert.match(sheetSource, /can\("attendance", "view"\)/);
+  assert.match(sheetSource, /can\("bookings", "view"\)/);
+});
+
+test("Phase 4C — Calendar files contain ZERO mutations for attendance, bookings, payments, or cancellations", () => {
+  assert.doesNotMatch(sheetSource, /useMutation/);
+  assert.doesNotMatch(sheetSource, /\/attendance\/check-in/);
+  assert.doesNotMatch(sheetSource, /cancelSchedule/i);
+  assert.doesNotMatch(calendarSource, /useMutation/);
+});
+
+test("Phase 4C — Attendance and Bookings pages parse scheduleId and date deep links", () => {
+  const attendanceSource = read("artifacts/admin/src/pages/attendance.tsx");
+  const bookingsSource = read("artifacts/admin/src/pages/bookings.tsx");
+
+  assert.match(attendanceSource, /params\.get\("scheduleId"\)/);
+  assert.match(attendanceSource, /params\.get\("date"\)/);
+  assert.match(bookingsSource, /params\.get\("scheduleId"\)/);
+  assert.match(bookingsSource, /params\.get\("date"\)/);
+});

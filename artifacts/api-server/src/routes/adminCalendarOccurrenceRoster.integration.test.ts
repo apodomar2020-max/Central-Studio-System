@@ -203,6 +203,13 @@ test("regular occurrence returns the schedule summary and a correct roster", asy
   assert.equal(body.startTime, "10:00");
   assert.equal(body.endTime, "11:00");
   assert.equal(body.bookingCount, 1);
+  assert.deepEqual(body.summary, {
+    checkedInCount: 0,
+    absentCount: 0,
+    pendingCheckInCount: 1,
+    remainingCapacity: 19,
+    unpaidCount: 0,
+  });
   const roster = body.roster as Array<Record<string, unknown>>;
   assert.equal(roster.length, 1);
   assert.equal(roster[0].studentName, "Sara Ahmed");

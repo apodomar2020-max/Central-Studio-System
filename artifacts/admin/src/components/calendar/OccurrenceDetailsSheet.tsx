@@ -126,6 +126,38 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
             )}
           </div>
 
+          {rosterQuery.data?.summary && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Operational Overview</p>
+              <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-muted-foreground">Checked In</p>
+                  <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-checked-in">
+                    {rosterQuery.data.summary.checkedInCount}
+                  </p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-muted-foreground">Pending Check-in</p>
+                  <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-pending">
+                    {rosterQuery.data.summary.pendingCheckInCount}
+                  </p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-muted-foreground">Absent</p>
+                  <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-absent">
+                    {rosterQuery.data.summary.absentCount}
+                  </p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-muted-foreground">Unpaid</p>
+                  <p className="mt-0.5 text-base font-semibold text-foreground" data-testid="summary-metric-unpaid">
+                    {rosterQuery.data.summary.unpaidCount}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Bookings</p>
             {!canViewRoster ? (
@@ -173,7 +205,27 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
           </div>
         </div>
 
-        <SheetFooter className="mt-auto border-t px-5 py-4">
+        <SheetFooter className="mt-auto flex flex-col gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end">
+          {can("attendance", "view") && (
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              data-testid="button-occurrence-sheet-open-attendance"
+              onClick={() => navigate(`/attendance?scheduleId=${occurrence.scheduleId}&date=${occurrence.occurrenceDate}`)}
+            >
+              Open Attendance
+            </Button>
+          )}
+          {can("bookings", "view") && (
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              data-testid="button-occurrence-sheet-view-bookings"
+              onClick={() => navigate(`/bookings?scheduleId=${occurrence.scheduleId}&date=${occurrence.occurrenceDate}`)}
+            >
+              View Bookings
+            </Button>
+          )}
           <Button className="w-full sm:w-auto" data-testid="button-occurrence-sheet-edit" onClick={handleEditClick}>
             Edit Schedule
           </Button>

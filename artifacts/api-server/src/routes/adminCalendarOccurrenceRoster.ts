@@ -175,6 +175,12 @@ router.get(
       };
     });
 
+    const checkedInCount = roster.filter((item) => item.attendanceStatus === "checked_in" || item.attendanceStatus === "late").length;
+    const absentCount = roster.filter((item) => item.attendanceStatus === "absent").length;
+    const pendingCheckInCount = roster.filter((item) => reservedSeatStatuses.includes(item.bookingStatus) && item.attendanceStatus == null).length;
+    const unpaidCount = roster.filter((item) => reservedSeatStatuses.includes(item.bookingStatus) && (item.paymentStatus === "pending_payment" || item.paymentStatus === "failed")).length;
+    const remainingCapacity = summary.capacity != null ? Math.max(0, summary.capacity - bookingCount) : null;
+
     res.json(GetAdminCalendarOccurrenceRosterResponse.parse({
       scheduleId,
       source,
@@ -186,6 +192,13 @@ router.get(
       endTime: summary.endTime,
       capacity: summary.capacity,
       bookingCount,
+      summary: {
+        checkedInCount,
+        absentCount,
+        pendingCheckInCount,
+        remainingCapacity,
+        unpaidCount,
+      },
       roster,
     }));
   },

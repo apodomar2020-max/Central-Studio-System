@@ -729,6 +729,13 @@ export const GetAdminCalendarOccurrenceRosterResponse = zod.object({
   endTime: zod.string(),
   capacity: zod.number().nullable(),
   bookingCount: zod.number(),
+  summary: zod.object({
+    checkedInCount: zod.number(),
+    absentCount: zod.number(),
+    pendingCheckInCount: zod.number(),
+    remainingCapacity: zod.number().nullable(),
+    unpaidCount: zod.number(),
+  }),
   roster: zod.array(
     zod.object({
       bookingId: zod.number(),
@@ -1603,6 +1610,8 @@ export const DeletePricePackageParams = zod.object({
 
 export const DeletePricePackageResponse = zod.void();
 
+export const listBookingsQueryDateRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
 export const listBookingsQueryPageSizeMax = 100;
 
 export const ListBookingsQueryParams = zod.object({
@@ -1611,6 +1620,8 @@ export const ListBookingsQueryParams = zod.object({
   paymentStatus: zod.coerce.string().optional(),
   studentEmail: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
+  scheduleId: zod.coerce.number().optional(),
+  date: zod.coerce.string().regex(listBookingsQueryDateRegExp).optional(),
   scope: zod.enum(["self", "child"]).optional(),
   page: zod.coerce.number().min(1).optional(),
   pageSize: zod.coerce
@@ -2581,8 +2592,20 @@ export const DeletePackageOrderResponse = zod.void();
 /**
  * @summary List attendance records
  */
+
+export const listAttendanceQueryPageSizeMax = 100;
+
 export const ListAttendanceQueryParams = zod.object({
   studentEmail: zod.coerce.string().optional(),
+  scheduleId: zod.coerce.number().optional(),
+  date: zod.coerce.string().optional(),
+  status: zod.coerce.string().optional(),
+  page: zod.coerce.number().min(1).optional(),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(listAttendanceQueryPageSizeMax)
+    .optional(),
 });
 
 export const ListAttendanceResponseItem = zod.object({

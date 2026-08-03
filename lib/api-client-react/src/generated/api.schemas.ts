@@ -612,6 +612,15 @@ export interface CalendarOccurrenceRosterItem {
   checkedInAt: string | null;
 }
 
+export interface CalendarOccurrenceRosterSummary {
+  checkedInCount: number;
+  absentCount: number;
+  pendingCheckInCount: number;
+  /** @nullable */
+  remainingCapacity: number | null;
+  unpaidCount: number;
+}
+
 export type CalendarOccurrenceRosterResponseSource =
   (typeof CalendarOccurrenceRosterResponseSource)[keyof typeof CalendarOccurrenceRosterResponseSource];
 
@@ -635,6 +644,7 @@ export interface CalendarOccurrenceRosterResponse {
   /** @nullable */
   capacity: number | null;
   bookingCount: number;
+  summary: CalendarOccurrenceRosterSummary;
   roster: CalendarOccurrenceRosterItem[];
 }
 
@@ -2152,6 +2162,11 @@ export type ListBookingsParams = {
   paymentStatus?: string;
   studentEmail?: string;
   search?: string;
+  scheduleId?: number;
+  /**
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  date?: string;
   scope?: ListBookingsScope;
   /**
    * @minimum 1
@@ -2208,6 +2223,18 @@ export type ListPackageOrdersParams = {
 
 export type ListAttendanceParams = {
   studentEmail?: string;
+  scheduleId?: number;
+  date?: string;
+  status?: string;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
 };
 
 export type GetAttendanceStatsParams = {

@@ -168,9 +168,19 @@ export default function Bookings() {
   // Deep-link support: /bookings?studentEmail=x@y.com pre-filters to one
   // student (used by the "View all bookings" link on the admin 360 profile page).
   const [studentEmailFilter, setStudentEmailFilter] = useState<string | null>(null);
+  const [scheduleIdFilter, setScheduleIdFilter] = useState<number | null>(null);
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
+
   useEffect(() => {
-    const email = new URLSearchParams(urlSearch).get("studentEmail");
+    const params = new URLSearchParams(urlSearch);
+    const email = params.get("studentEmail");
     if (email) setStudentEmailFilter(email);
+
+    const schedId = params.get("scheduleId");
+    if (schedId && /^\d+$/.test(schedId)) setScheduleIdFilter(Number(schedId));
+
+    const dt = params.get("date");
+    if (dt && /^\d{4}-\d{2}-\d{2}$/.test(dt)) setDateFilter(dt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const listParams = {
@@ -180,6 +190,8 @@ export default function Bookings() {
     ...(scopeFilter !== "all" ? { scope: scopeFilter } : {}),
     ...(search.trim() ? { search: search.trim() } : {}),
     ...(studentEmailFilter ? { studentEmail: studentEmailFilter } : {}),
+    ...(scheduleIdFilter != null ? { scheduleId: scheduleIdFilter } : {}),
+    ...(dateFilter ? { date: dateFilter } : {}),
   };
   const { data: bookingsResponse, isLoading } = useListBookings(listParams);
   const bookings = (bookingsResponse?.bookings ?? []) as Booking[];

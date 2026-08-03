@@ -103,14 +103,22 @@ export default function AttendancePage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const urlSearch = useSearch();
 
-  // Deep-link support: /attendance?studentEmail=x@y.com pre-fills the search
-  // (used by the "View Attendance History" link on the admin 360 profile page).
+  const [scheduleIdFilter, setScheduleIdFilter] = useState<number | null>(null);
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
+
+  // Deep-link support: /attendance?studentEmail=x@y.com or /attendance?scheduleId=X&date=YYYY-MM-DD
   useEffect(() => {
-    const email = new URLSearchParams(urlSearch).get("studentEmail");
+    const params = new URLSearchParams(urlSearch);
+    const email = params.get("studentEmail");
     if (email) {
       setEmailInput(email);
       setSearchEmail(email.trim().toLowerCase());
     }
+    const schedId = params.get("scheduleId");
+    if (schedId && /^\d+$/.test(schedId)) setScheduleIdFilter(Number(schedId));
+
+    const dt = params.get("date");
+    if (dt && /^\d{4}-\d{2}-\d{2}$/.test(dt)) setDateFilter(dt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -126,12 +134,12 @@ export default function AttendancePage() {
   // Any filter that affects the list resets pagination to page 1.
   useEffect(() => {
     setAttendancePage(1);
-  }, [searchEmail, statusFilter]);
+  }, [searchEmail, statusFilter, scheduleIdFilter, dateFilter]);
 
   const attendanceQuery = useQuery({
     queryKey: [
       ...getListAttendanceQueryKey(),
-      { searchEmail, statusFilter, page: attendancePage, pageSize: ATTENDANCE_PAGE_SIZE, paginated: true },
+      { searchEmail, statusFilter, scheduleIdFilter, dateFilter, page: attendancePage, pageSize: ATTENDANCE_PAGE_SIZE, paginated: true },
     ],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -139,6 +147,8 @@ export default function AttendancePage() {
         pageSize: String(ATTENDANCE_PAGE_SIZE),
         ...(searchEmail ? { studentEmail: searchEmail } : {}),
         ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+        ...(scheduleIdFilter != null ? { scheduleId: String(scheduleIdFilter) } : {}),
+        ...(dateFilter ? { date: dateFilter } : {}),
       });
       const res = await fetch(`${API_BASE}/api/attendance?${params}`, {
         headers: makeHeaders(token),

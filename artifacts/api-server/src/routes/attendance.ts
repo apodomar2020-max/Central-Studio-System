@@ -69,6 +69,12 @@ router.get("/attendance", requireAdminAuth, requireAdminPermission("attendance",
   if (query.data.status) {
     conditions.push(eq(attendanceTable.status, query.data.status));
   }
+  if (query.data.scheduleId != null) {
+    conditions.push(eq(attendanceTable.scheduleId, query.data.scheduleId));
+  }
+  if (query.data.date) {
+    conditions.push(sql`(${attendanceTable.checkedInAt} AT TIME ZONE 'Africa/Cairo')::date = ${query.data.date}::date`);
+  }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 

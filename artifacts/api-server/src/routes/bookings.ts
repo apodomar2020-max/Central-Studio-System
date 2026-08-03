@@ -643,6 +643,8 @@ router.get("/bookings", requireBookingReadAccess, async (req: AdminRequest, res)
   if (query.data.status) conditions.push(eq(bookingsTable.status, query.data.status));
   if (query.data.bookingStatus) conditions.push(eq(bookingsTable.bookingStatus, query.data.bookingStatus));
   if (query.data.paymentStatus) conditions.push(eq(bookingsTable.paymentStatus, query.data.paymentStatus));
+  if (query.data.scheduleId != null) conditions.push(eq(bookingsTable.scheduleId, query.data.scheduleId));
+  if (query.data.date) conditions.push(eq(bookingsTable.occurrenceDate, query.data.date));
   if (query.data.scope === "child") {
     conditions.push(sql`(${bookingsTable.bookingScope} = 'child' OR ${bookingsTable.participantChildId} IS NOT NULL)`);
   } else if (query.data.scope === "self") {
