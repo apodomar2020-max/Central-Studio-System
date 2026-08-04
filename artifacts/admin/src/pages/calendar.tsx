@@ -97,7 +97,9 @@ export default function CalendarPage() {
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
     [weekStart],
   );
-  const datesToShow = viewMode === "week" ? weekDates : [focusedDate];
+  // Board mode (like Week) always shows the full week — it has no separate
+  // single-day sub-view of its own.
+  const datesToShow = viewMode === "day" ? [focusedDate] : weekDates;
 
   const from = format(datesToShow[0], "yyyy-MM-dd");
   const to = format(datesToShow[datesToShow.length - 1], "yyyy-MM-dd");
@@ -141,14 +143,14 @@ export default function CalendarPage() {
     return map;
   }, [occurrences]);
 
-  const goPrev = () => setFocusedDate(addDays(focusedDate, viewMode === "week" ? -7 : -1));
-  const goNext = () => setFocusedDate(addDays(focusedDate, viewMode === "week" ? 7 : 1));
+  const isWeekRangeView = viewMode === "week";
+  const goPrev = () => setFocusedDate(addDays(focusedDate, isWeekRangeView ? -7 : -1));
+  const goNext = () => setFocusedDate(addDays(focusedDate, isWeekRangeView ? 7 : 1));
   const goToday = () => setFocusedDate(new Date());
 
-  const rangeLabel =
-    viewMode === "week"
-      ? `${format(weekDates[0], "MMM d")} – ${format(weekDates[6], "MMM d, yyyy")}`
-      : format(focusedDate, "EEEE, MMM d, yyyy");
+  const rangeLabel = isWeekRangeView
+    ? `${format(weekDates[0], "MMM d")} – ${format(weekDates[6], "MMM d, yyyy")}`
+    : format(focusedDate, "EEEE, MMM d, yyyy");
 
   const handleOccurrenceCardClick = (occurrence: CalendarOccurrence) => {
     if (occurrence.source === "reservation") {

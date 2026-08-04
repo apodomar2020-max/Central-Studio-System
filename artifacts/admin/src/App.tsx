@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter, setAdminTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
@@ -81,10 +81,22 @@ setAdminTokenGetter(() => localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY));
 
 const queryClient = new QueryClient();
 
+// Phase 6H — operational pages (Calendar, Attendance, schedule management)
+// need the full available width; every other page keeps the original
+// centered, max-width layout. Matched by exact path or path prefix (e.g.
+// "/ballet/schedules" counts as schedule management).
+const WIDE_OPERATIONAL_PATHS = ["/calendar", "/attendance", "/schedules", "/ballet/schedules"];
+
+function isWideOperationalPath(pathname: string): boolean {
+  return WIDE_OPERATIONAL_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
   // Phase 5A: mobile nav drawer state. Below lg the desktop sidebar is hidden
   // and the TopBar hamburger opens the same navigation inside a Sheet.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [location] = useLocation();
+  const isWide = isWideOperationalPath(location);
 
   return (
     <div className="admin-shell flex h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-200">
@@ -97,7 +109,14 @@ function Layout({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main className="relative flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(circle_at_24%_0%,rgba(0,182,215,.08),transparent_44%),radial-gradient(circle_at_82%_10%,rgba(138,92,255,.06),transparent_38%)] bg-no-repeat">
-          <div className="relative mx-auto max-w-[1540px] p-4 sm:p-8 lg:p-10">
+          <div
+            className={
+              "relative " +
+              (isWide
+                ? "w-full max-w-none px-6 py-4 sm:px-8 sm:py-8 lg:py-10"
+                : "mx-auto max-w-[1540px] p-4 sm:p-8 lg:p-10")
+            }
+          >
             {children}
           </div>
         </main>

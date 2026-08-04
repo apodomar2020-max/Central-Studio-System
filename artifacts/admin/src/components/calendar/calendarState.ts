@@ -19,7 +19,6 @@ export function parseCalendarUrlState(search: string): CalendarUrlState {
   const searchStr = search.startsWith("?") ? search.slice(1) : search;
   const params = new URLSearchParams(searchStr);
 
-  // 1. View Mode
   const rawView = params.get("view");
   let view: CalendarViewMode = "week";
   if (rawView === "day" || rawView === "resource" || rawView === "week") {

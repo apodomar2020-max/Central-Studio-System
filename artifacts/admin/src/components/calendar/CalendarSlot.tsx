@@ -56,17 +56,17 @@ export function CalendarSlot({
       }
       title={isClickable ? "Click empty slot to add class or private event" : undefined}
     >
-      {/* Whole hour solid grid lines */}
+      {/* Whole-hour grid lines — subtle, no labels here (labels live in the gutter column) */}
       {hourMarks.map((minute) => (
         <React.Fragment key={minute}>
           <div
-            className="absolute left-0 right-0 border-t border-border/60 pointer-events-none"
+            className="absolute left-0 right-0 border-t border-border/45 pointer-events-none"
             style={{ top: (minute - gridStartMin) * PX_PER_MIN }}
           />
-          {/* Half-hour dashed grid lines */}
+          {/* Half-hour guide lines — lighter than the hour lines, unlabeled */}
           {minute + 30 <= gridEndMin && (
             <div
-              className="absolute left-0 right-0 border-t border-dashed border-border/30 pointer-events-none"
+              className="absolute left-0 right-0 border-t border-dashed border-border/20 pointer-events-none"
               style={{ top: (minute + 30 - gridStartMin) * PX_PER_MIN }}
             />
           )}

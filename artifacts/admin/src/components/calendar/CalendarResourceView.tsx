@@ -3,9 +3,11 @@ import type { CalendarOccurrence } from "@workspace/api-client-react";
 import {
   PX_PER_MIN,
   formatHourLabel,
+  hourLabelTranslateClass,
   packDayColumns,
   calculateCalendarTimeRange,
   CalendarOccurrenceCard,
+  TIME_GUTTER_WIDTH_PX,
 } from "./CalendarOccurrenceCard";
 import { CalendarNowIndicator } from "./CalendarNowIndicator";
 
@@ -70,10 +72,10 @@ export function CalendarResourceView({
 
   return (
     <div className="overflow-x-auto rounded-md border bg-card shadow-sm" data-testid="calendar-resource-view-grid">
-      <div style={{ minWidth: `${Math.max(420, 64 + roomCount * 180)}px` }}>
+      <div style={{ minWidth: `${Math.max(420, TIME_GUTTER_WIDTH_PX + roomCount * 180)}px` }}>
         <div
           className="sticky top-0 z-10 grid border-b bg-muted/90 backdrop-blur-sm"
-          style={{ gridTemplateColumns: `64px repeat(${roomCount}, 1fr)` }}
+          style={{ gridTemplateColumns: `${TIME_GUTTER_WIDTH_PX}px repeat(${roomCount}, 1fr)` }}
         >
           <div />
           {rooms.map((room) => (
@@ -91,13 +93,16 @@ export function CalendarResourceView({
         </div>
         <div
           className="grid"
-          style={{ gridTemplateColumns: `64px repeat(${roomCount}, 1fr)` }}
+          style={{ gridTemplateColumns: `${TIME_GUTTER_WIDTH_PX}px repeat(${roomCount}, 1fr)` }}
         >
           <div className="relative overflow-hidden" style={{ height: gridHeight }}>
-            {hourMarks.map((minute) => (
+            {hourMarks.map((minute, index) => (
               <div
                 key={minute}
-                className="absolute right-2 -translate-y-1/2 text-[11px] font-medium text-muted-foreground"
+                className={
+                  "absolute right-2 whitespace-nowrap text-[11px] font-medium text-muted-foreground " +
+                  hourLabelTranslateClass(index, hourMarks.length)
+                }
                 style={{ top: (minute - startMinute) * PX_PER_MIN }}
               >
                 {formatHourLabel(minute)}
@@ -122,7 +127,7 @@ export function CalendarResourceView({
                 {hourMarks.map((minute) => (
                   <div
                     key={minute}
-                    className="absolute left-0 right-0 border-t border-border/60"
+                    className="absolute left-0 right-0 border-t border-border/45"
                     style={{ top: (minute - startMinute) * PX_PER_MIN }}
                   />
                 ))}
