@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   calculateCalendarTimeRange,
   formatHourLabel,
+  getCardSizeTier,
   GRID_START_MIN,
   GRID_END_MIN,
 } from "./CalendarOccurrenceCard";
@@ -98,14 +99,66 @@ test("formatHourLabel — formats both whole hours and half hours correctly", ()
   assert.equal(formatHourLabel(1440), "12 AM");
 });
 
-test("CalendarOccurrenceCard — includes height-aware threshold logic for smart event card rendering", () => {
+// Phase 6F — minimal scanning cards. getCardSizeTier is the single source of
+// truth for how much secondary text a card shows; test the pure function
+// directly rather than the JSX (no React rendering harness in this app).
+test("getCardSizeTier — small tier below 40px shows title only", () => {
+  assert.equal(getCardSizeTier(24), "small");
+  assert.equal(getCardSizeTier(39), "small");
+});
+
+test("getCardSizeTier — medium tier is 40px through 70px inclusive", () => {
+  assert.equal(getCardSizeTier(40), "medium");
+  assert.equal(getCardSizeTier(55), "medium");
+  assert.equal(getCardSizeTier(70), "medium");
+});
+
+test("getCardSizeTier — large tier is above 70px", () => {
+  assert.equal(getCardSizeTier(71), "large");
+  assert.equal(getCardSizeTier(200), "large");
+});
+
+test("CalendarOccurrenceCard source — renders title unconditionally, and secondary text is gated on size tier only", () => {
   const cardSource = readFileSync(
     resolve(process.cwd(), "artifacts/admin/src/components/calendar/CalendarOccurrenceCard.tsx"),
     "utf8",
   );
-  assert.match(cardSource, /isVeryShort = height < 30/);
-  assert.match(cardSource, /height >= 30/);
-  assert.match(cardSource, /height >= 46/);
-  assert.match(cardSource, /height >= 60/);
-  assert.match(cardSource, /height >= 75/);
+  // Title has no conditional guard around it.
+  assert.match(cardSource, /\{displayTitle\}/);
+  // Medium shows the time range only; large shows instructor/organizer only.
+  assert.match(cardSource, /size === "medium"[\s\S]{0,200}occurrence\.startTime\}–\{occurrence\.endTime\}/);
+  assert.match(cardSource, /size === "large"[\s\S]{0,200}organizerOrInstructor/);
+});
+
+test("CalendarOccurrenceCard source — never renders location or booking count on-card (moved to detail sheets)", () => {
+  const cardSource = readFileSync(
+    resolve(process.cwd(), "artifacts/admin/src/components/calendar/CalendarOccurrenceCard.tsx"),
+    "utf8",
+  );
+  // occurrence.branchName/roomName/bookingCount must not drive any visible
+  // card content. conflict.branchName/roomName still appear inside
+  // formatConflictSummary — that only feeds the native `title` tooltip
+  // attribute, not on-card JSX, so it's excluded from this check.
+  assert.doesNotMatch(cardSource, /occurrence\.branchName/);
+  assert.doesNotMatch(cardSource, /occurrence\.roomName/);
+  assert.doesNotMatch(cardSource, /occurrence\.bookingCount/);
+  assert.doesNotMatch(cardSource, />\s*\{occurrence\.bookingCount\}|booked</);
+});
+
+test("CalendarOccurrenceCard source — keeps conflict indicator and category color tokens", () => {
+  const cardSource = readFileSync(
+    resolve(process.cwd(), "artifacts/admin/src/components/calendar/CalendarOccurrenceCard.tsx"),
+    "utf8",
+  );
+  assert.match(cardSource, /calendar-conflict-badge-/);
+  assert.match(cardSource, /getCalendarCategoryTokens/);
+  assert.match(cardSource, /border-destructive/);
+});
+
+test("CalendarOccurrenceCard source — title uses the category text token, not opacity, for contrast", () => {
+  const cardSource = readFileSync(
+    resolve(process.cwd(), "artifacts/admin/src/components/calendar/CalendarOccurrenceCard.tsx"),
+    "utf8",
+  );
+  assert.match(cardSource, /text-xs font-semibold leading-tight pr-4 " \+ tokens\.text/);
 });

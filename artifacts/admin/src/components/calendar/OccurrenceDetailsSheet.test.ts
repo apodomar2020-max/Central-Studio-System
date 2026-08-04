@@ -23,12 +23,27 @@ test("OccurrenceDetailsSheet component exists and uses Sheet, not Dialog", () =>
 
 test("Calendar opens the Sheet on card click instead of navigating directly to edit", () => {
   assert.match(calendarSource, /<OccurrenceDetailsSheet/);
-  assert.match(calendarSource, /const openOccurrenceInScheduleManager = \(occurrence: CalendarOccurrence\) => {\s*setSelectedOccurrence\(occurrence\);/);
+  // Class/ballet occurrences route to setSelectedOccurrence (this Sheet);
+  // reservation occurrences route to setSelectedReservationId
+  // (ReservationDetailsSheet) instead — both are opened from the same
+  // click handler, neither navigates directly.
+  assert.match(calendarSource, /const handleOccurrenceCardClick = \(occurrence: CalendarOccurrence\) => {/);
+  assert.match(calendarSource, /if \(occurrence\.source === "reservation"\) {\s*setSelectedReservationId\(occurrence\.scheduleId\);\s*} else {\s*setSelectedOccurrence\(occurrence\);\s*}/);
 });
 
-test("The roster query is enabled only when the Sheet is open (an occurrence is selected)", () => {
+test("The roster query is enabled only when the Sheet is open, for class/ballet occurrences, and only with roster permission", () => {
   assert.match(sheetSource, /useGetAdminCalendarOccurrenceRoster/);
-  assert.match(sheetSource, /enabled: occurrence != null && canViewRoster/);
+  // isClassOrBallet excludes "reservation" — reservations have no
+  // scheduleId/occurrenceDate roster of their own (ReservationDetailsSheet
+  // owns that data instead), so the roster endpoint must never be called
+  // for them even if permissions allow it.
+  assert.match(sheetSource, /const isClassOrBallet = occurrence\?\.source === "class" \|\| occurrence\?\.source === "ballet";/);
+  assert.match(sheetSource, /enabled: occurrence != null && isClassOrBallet && canViewRoster/);
+});
+
+test("The roster query's source param is derived from the occurrence's source (ballet vs class), not hardcoded", () => {
+  assert.match(sheetSource, /const rosterSource = occurrence\?\.source === "ballet" \? "ballet" : "class";/);
+  assert.match(sheetSource, /rosterParams = {\s*source: rosterSource,/);
 });
 
 test("Permission checks gate the roster section on bookings.view AND attendance.view", () => {

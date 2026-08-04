@@ -1,4 +1,4 @@
-import { AlertTriangle, Users } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import type { CalendarOccurrence } from "@workspace/api-client-react";
 import { getCalendarCategoryTokens } from "./calendarTokens";
 
@@ -93,6 +93,21 @@ export function formatConflictSummary(conflict: NonNullable<PositionedOccurrence
   return `${title} · ${conflict.startTime}–${conflict.endTime} · ${location}`;
 }
 
+/**
+ * Phase 6F — Calendar cards are minimal scanning cards (Google Calendar /
+ * Outlook style), not operational detail panels. Card height (in px) alone
+ * decides how much secondary text is shown; everything else (location,
+ * booking count, roster, etc.) lives in OccurrenceDetailsSheet /
+ * ReservationDetailsSheet, opened via the existing onOpen click handler.
+ */
+export type CardSizeTier = "small" | "medium" | "large";
+
+export function getCardSizeTier(heightPx: number): CardSizeTier {
+  if (heightPx < 40) return "small";
+  if (heightPx <= 70) return "medium";
+  return "large";
+}
+
 export interface CalendarOccurrenceCardProps {
   occurrence: PositionedOccurrence;
   onOpen: (occurrence: CalendarOccurrence) => void;
@@ -112,7 +127,6 @@ export function CalendarOccurrenceCard({
 
   const isReservation = occurrence.source === "reservation";
   const displayTitle = occurrence.title || occurrence.classTitle || "Untitled Event";
-  const location = [occurrence.branchName, occurrence.roomName].filter(Boolean).join(" · ") || "No location set";
   const conflict = occurrence.conflict;
 
   const tokens = getCalendarCategoryTokens(occurrence.source as any);
@@ -121,8 +135,11 @@ export function CalendarOccurrenceCard({
     ? `${displayTitle} · ${occurrence.startTime}–${occurrence.endTime}\nConflicts with: ${formatConflictSummary(conflict)}`
     : `${displayTitle} · ${occurrence.startTime}–${occurrence.endTime}`;
 
-  const isVeryShort = height < 30;
-  const paddingClass = isVeryShort ? "px-2 py-0.5" : "px-2.5 py-1.5";
+  const size = getCardSizeTier(height);
+  const paddingClass = size === "small" ? "px-2 py-0.5" : "px-2.5 py-1.5";
+  const organizerOrInstructor = isReservation
+    ? occurrence.organizerName || (occurrence.reservationType ? occurrence.reservationType.replace("_", " ") : "Private Event")
+    : (occurrence.instructorName ?? "No instructor");
 
   return (
     <div
@@ -163,32 +180,17 @@ export function CalendarOccurrenceCard({
           <AlertTriangle className="h-3 w-3" aria-label="Scheduling conflict" />
         </div>
       )}
-      <div className="truncate text-xs font-semibold leading-tight pr-4">
+      <div className={"truncate text-xs font-semibold leading-tight pr-4 " + tokens.text}>
         {displayTitle}
-        {isVeryShort && occurrence.startTime && (
-          <span className="ml-1.5 text-[10px] font-normal opacity-80">
-            {occurrence.startTime}–{occurrence.endTime}
-          </span>
-        )}
       </div>
-      {height >= 30 && (
+      {size === "medium" && (
         <div className="truncate text-[11px] font-medium leading-tight opacity-90 mt-0.5">
-          {isReservation
-            ? (occurrence.organizerName || (occurrence.reservationType ? occurrence.reservationType.replace("_", " ") : "Private Event"))
-            : (occurrence.instructorName ?? "No instructor")}
+          {occurrence.startTime}–{occurrence.endTime}
         </div>
       )}
-      {height >= 46 && <div className="truncate text-[11px] leading-tight opacity-75 mt-0.5">{location}</div>}
-      {!isReservation && height >= 60 && (
-        <div className="mt-1 flex items-center gap-1 text-[11px] font-medium leading-tight opacity-90">
-          <Users className="h-3 w-3 shrink-0" />
-          {occurrence.bookingCount} booked
-        </div>
-      )}
-      {conflict && height >= 75 && (
-        <div className="mt-1 flex items-start gap-1 truncate text-[10px] font-semibold leading-tight text-destructive">
-          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-          <span className="truncate">Conflicts with {formatConflictSummary(conflict)}</span>
+      {size === "large" && (
+        <div className="truncate text-[11px] font-medium leading-tight opacity-90 mt-0.5">
+          {organizerOrInstructor}
         </div>
       )}
     </div>
