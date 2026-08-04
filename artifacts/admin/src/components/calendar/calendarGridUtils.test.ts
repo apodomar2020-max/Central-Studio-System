@@ -278,15 +278,10 @@ test("Phase 6G — Resource View (CalendarResourceView) is untouched — still u
   assert.doesNotMatch(resourceViewSource, /packDayRowsStacked/);
 });
 
-test("Phase 6H — Admin content wrapper is wide (no max-width) only for Calendar/Attendance/schedule-management pages; regular pages keep the centered max-width layout", () => {
+test("Admin content wrapper is globally full-width (w-full max-w-none)", () => {
   const appSource = readFileSync(resolve(process.cwd(), "artifacts/admin/src/App.tsx"), "utf8");
-  // The constrained, centered layout must still exist for regular pages —
-  // Phase 6G's global removal of max-w-[1540px] was a mistake corrected here.
-  assert.match(appSource, /mx-auto max-w-\[1540px\] p-4 sm:p-8 lg:p-10/);
-  // The wide variant (no max-width, 24-32px horizontal padding) exists and is
-  // gated on the operational path allowlist, not applied unconditionally.
   assert.match(appSource, /w-full max-w-none px-6 py-4 sm:px-8 sm:py-8 lg:py-10/);
-  assert.match(appSource, /WIDE_OPERATIONAL_PATHS = \[.*"\/calendar".*"\/attendance".*"\/schedules".*\]/);
+  assert.doesNotMatch(appSource, /mx-auto max-w-\[1540px\]/);
 });
 
 test("Phase 6H — packDayRowsStacked source still exists and Resource View is still untouched", () => {
