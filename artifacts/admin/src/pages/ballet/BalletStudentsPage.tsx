@@ -121,7 +121,7 @@ export default function BalletStudentsPage() {
             ) : isError ? (
               <TableRow><TableCell colSpan={13} className="py-10 text-center text-destructive text-sm">Failed to load students.</TableCell></TableRow>
             ) : data?.data.length === 0 ? (
-              <TableRow><TableCell colSpan={13} className="py-10 text-center text-muted-foreground text-sm">No ballet level assignments yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="py-10 text-center text-muted-foreground text-sm">No active ballet students yet.</TableCell></TableRow>
             ) : (
               data?.data.map((s) => (
                 <TableRow key={s.assignmentId} className="cursor-pointer hover:bg-muted/40" onClick={() => navigate(`/ballet/students/${s.assignmentId}`)}>

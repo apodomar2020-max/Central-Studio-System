@@ -1348,6 +1348,8 @@ const currentBalletStudentsCte = sql`
     inner join ballet_applications on ballet_applications.id = ballet_level_assignments.application_id
     left join ballet_levels on ballet_levels.id = ballet_level_assignments.level_id
     left join ballet_groups on ballet_groups.id = ballet_level_assignments.group_id
+    where ballet_applications.status = 'active'
+      and ballet_level_assignments.status = 'active'
   )
 `;
 
@@ -1446,7 +1448,11 @@ router.get("/admin/ballet/students/:assignmentId", requireAdminAuth, requireAdmi
     .innerJoin(balletApplicationsTable, eq(balletApplicationsTable.id, balletLevelAssignmentsTable.applicationId))
     .leftJoin(balletLevelsTable, eq(balletLevelsTable.id, balletLevelAssignmentsTable.levelId))
     .leftJoin(balletGroupsTable, eq(balletGroupsTable.id, balletLevelAssignmentsTable.groupId))
-    .where(eq(balletLevelAssignmentsTable.id, assignmentId))
+    .where(and(
+      eq(balletLevelAssignmentsTable.id, assignmentId),
+      eq(balletApplicationsTable.status, "active"),
+      eq(balletLevelAssignmentsTable.status, "active"),
+    ))
     .limit(1);
 
   if (!row) { res.status(404).json({ error: "Ballet student not found" }); return; }
