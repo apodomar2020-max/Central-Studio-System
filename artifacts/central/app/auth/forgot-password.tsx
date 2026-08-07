@@ -14,9 +14,11 @@ import {
   View,
 } from "react-native";
 
+import { customFetch } from "@workspace/api-client-react";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { forgotPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
@@ -26,6 +28,7 @@ export default function ForgotPasswordScreen() {
   const [sent, setSent] = useState(false);
 
   async function handleSend() {
+    if (loading) return; // prevent duplicate submissions
     if (!email.trim()) {
       setError("Please enter your email address.");
       return;
@@ -35,40 +38,27 @@ export default function ForgotPasswordScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-      const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
-      const response = await fetch(`${apiUrl}/api/auth/forgot-password`, {
+      // Response body is intentionally never read here — the backend always
+      // returns the same generic 2xx response whether or not an account
+      // exists for this email (account-enumeration protection). Any
+      // successful request continues to the same next step; see
+      // forgotPasswordOutcome()'s doc comment.
+      await customFetch("/api/auth/forgot-password", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
         body: JSON.stringify({ email: email.trim() }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error ?? "Something went wrong. Please try again.");
-        setLoading(false);
-        return;
-      }
-
+      forgotPasswordOutcome();
       setLoading(false);
-
-      if (data.studentId) {
-        // Account found — go to reset screen
-        router.push({
-          pathname: "/auth/reset-password",
-          params: { studentId: String(data.studentId), email: email.trim() },
-        });
-      } else {
-        // No account with that email — show neutral message (don't leak)
-        setSent(true);
-      }
-    } catch {
-      setError("Network error. Please check your connection.");
+      setSent(true);
+    } catch (err: unknown) {
       setLoading(false);
+      const apiError = toApiErrorLike(err);
+      const data = apiError?.data;
+      const message = data && typeof data === "object" && "error" in data
+        ? String((data as { error?: unknown }).error ?? "")
+        : "";
+      setError(message || "Something went wrong. Please try again.");
     }
   }
 
@@ -87,6 +77,12 @@ export default function ForgotPasswordScreen() {
           <Text style={styles.msgBody}>
             If an account exists for {email.trim()}, we've sent a 6-digit code. Check your inbox (and spam folder).
           </Text>
+          <AppButton
+            title="Enter Code"
+            onPress={() => router.push({ pathname: "/auth/reset-password", params: { email: email.trim() } })}
+            fullWidth
+            size="lg"
+          />
           <TouchableOpacity onPress={() => router.replace("/auth/login")} style={styles.backToLogin}>
             <Text style={[styles.backToLoginText, { color: colors.studio.primary }]}>Back to Sign In</Text>
           </TouchableOpacity>

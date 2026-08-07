@@ -13,11 +13,14 @@ import {
   View,
 } from "react-native";
 
+import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { passwordPolicyError } from "@/utils/passwordPolicy";
+import { buildChangePasswordPayload, changePasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
 
 export default function ChangePasswordScreen() {
   const { user } = useAppContext();
@@ -33,14 +36,32 @@ export default function ChangePasswordScreen() {
   const [success, setSuccess] = useState(false);
 
   async function handleSubmit() {
+    if (loading) return; // prevent duplicate submissions
     if (!current.trim()) { alert.show({ tone: "warning", title: "Required", message: "Please enter your current password." }); return; }
-    if (next.length < 8) { alert.show({ tone: "warning", title: "Too short", message: "New password must be at least 8 characters." }); return; }
+    const policyError = passwordPolicyError(next);
+    if (policyError) { alert.show({ tone: "warning", title: "Too weak", message: policyError }); return; }
     if (next !== confirm) { alert.show({ tone: "warning", title: "Mismatch", message: "New passwords don't match." }); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1400));
-    setLoading(false);
-    setSuccess(true);
+
+    try {
+      await customFetch("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify(buildChangePasswordPayload(current, next)),
+      });
+      setLoading(false);
+      setSuccess(true);
+    } catch (err: unknown) {
+      setLoading(false);
+      const apiError = toApiErrorLike(err);
+      if (!apiError) {
+        alert.show({ tone: "error", title: "Network Error", message: "Please check your connection and try again." });
+        return;
+      }
+      const outcome = changePasswordOutcome(apiError);
+      const message = outcome.kind === "success" ? "" : outcome.message;
+      alert.show({ tone: "error", title: "Couldn't Update Password", message });
+    }
   }
 
   if (success) {

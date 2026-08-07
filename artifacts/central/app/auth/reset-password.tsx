@@ -14,13 +14,16 @@ import {
   View,
 } from "react-native";
 
+import { customFetch } from "@workspace/api-client-react";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { passwordPolicyError } from "@/utils/passwordPolicy";
+import { buildResetPasswordPayload, resetPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
 
 export default function ResetPasswordScreen() {
   const insets = useSafeAreaInsets();
-  const { studentId, email } = useLocalSearchParams<{ studentId: string; email: string }>();
+  const { email } = useLocalSearchParams<{ email: string }>();
 
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -35,16 +38,14 @@ export default function ResetPasswordScreen() {
   const confirmPwRef = useRef<TextInput>(null);
 
   async function handleReset() {
+    if (loading) return; // prevent duplicate submissions
     if (!code.trim() || code.length !== 6) {
       setError("Please enter the 6-digit code from your email.");
       return;
     }
-    if (!newPassword) {
-      setError("Please enter a new password.");
-      return;
-    }
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters.");
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError) {
+      setError(policyError);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -57,35 +58,23 @@ export default function ResetPasswordScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-      const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
-      const response = await fetch(`${apiUrl}/api/auth/reset-password`, {
+      await customFetch("/api/auth/reset-password", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          studentId: Number(studentId),
-          code: code.trim(),
-          newPassword,
-        }),
+        body: JSON.stringify(buildResetPasswordPayload(email ?? "", code, newPassword)),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error ?? "Reset failed. Please try again.");
-        setLoading(false);
-        return;
-      }
 
       setLoading(false);
       setSuccess(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      setError("Network error. Please check your connection.");
+    } catch (err: unknown) {
       setLoading(false);
+      const apiError = toApiErrorLike(err);
+      if (!apiError) {
+        setError("Network error. Please check your connection.");
+        return;
+      }
+      const outcome = resetPasswordOutcome(apiError);
+      setError(outcome.kind === "success" ? "" : outcome.message);
     }
   }
 
