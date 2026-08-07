@@ -20,7 +20,13 @@ import AppButton from "@/components/AppButton";
 import { iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { passwordPolicyError } from "@/utils/passwordPolicy";
-import { buildChangePasswordPayload, changePasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
+import {
+  buildChangePasswordPayload,
+  changePasswordOutcome,
+  forgotPasswordOutcome,
+  maskEmail,
+  toApiErrorLike,
+} from "@/services/passwordRecoveryFlow";
 
 export default function ChangePasswordScreen() {
   const { user } = useAppContext();
@@ -34,6 +40,42 @@ export default function ChangePasswordScreen() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [view, setView] = useState<"form" | "recovery">("form");
+  const [sendingCode, setSendingCode] = useState(false);
+
+  async function handleSendCode() {
+    if (sendingCode) return; // prevent duplicate submissions
+    const email = user?.email?.trim();
+    if (!email) {
+      // Defensive: authenticated state exists but the email is missing/empty
+      // — never call the endpoint or navigate without a usable target.
+      alert.show({ tone: "error", title: "Something Went Wrong", message: "We couldn't verify your account. Please try again later." });
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSendingCode(true);
+    try {
+      await customFetch("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      forgotPasswordOutcome();
+      setSendingCode(false);
+      router.push({ pathname: "/auth/reset-password", params: { email } });
+    } catch (err: unknown) {
+      setSendingCode(false);
+      const apiError = toApiErrorLike(err);
+      if (!apiError) {
+        alert.show({ tone: "error", title: "Network Error", message: "Please check your connection and try again." });
+        return;
+      }
+      const data = apiError.data;
+      const message = data && typeof data === "object" && "error" in data
+        ? String((data as { error?: unknown }).error ?? "")
+        : "";
+      alert.show({ tone: "error", title: "Couldn't Send Code", message: message || "Something went wrong. Please try again." });
+    }
+  }
 
   async function handleSubmit() {
     if (loading) return; // prevent duplicate submissions
@@ -62,6 +104,37 @@ export default function ChangePasswordScreen() {
       const message = outcome.kind === "success" ? "" : outcome.message;
       alert.show({ tone: "error", title: "Couldn't Update Password", message });
     }
+  }
+
+  if (view === "recovery") {
+    return (
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+        <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+            <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
+            <Text style={styles.headerButtonText}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Verify Identity</Text>
+          <View style={styles.headerButtonPlaceholder} />
+        </View>
+        <View style={styles.successWrap}>
+          <View style={[styles.successIcon, { backgroundColor: "rgba(0,182,215,0.15)" }]}>
+            <Ionicons name="shield-checkmark-outline" size={48} color={colors.studio.primary} />
+          </View>
+          <Text style={styles.successTitle}>Verify your identity</Text>
+          <Text style={styles.successDesc}>
+            We'll send a verification code to{"\n"}
+            <Text style={{ fontFamily: "Archivo_700Bold", color: "#FFFFFF" }}>{maskEmail(user?.email ?? "")}</Text>
+          </Text>
+          <View style={{ marginTop: 8, width: "100%", gap: 12 }}>
+            <AppButton title="Send Code" onPress={handleSendCode} loading={sendingCode} fullWidth />
+            <TouchableOpacity onPress={() => setView("form")} style={styles.cancelRecoveryBtn}>
+              <Text style={styles.cancelRecoveryText}>Use my current password instead</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
   }
 
   if (success) {
@@ -130,6 +203,9 @@ export default function ChangePasswordScreen() {
                 <Ionicons name={showCurrent ? "eye-off-outline" : "eye-outline"} size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
+            <TouchableOpacity onPress={() => setView("recovery")} style={styles.forgotCurrentBtn}>
+              <Text style={styles.forgotCurrentText}>Forgot your current password?</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.divider} />
@@ -235,6 +311,10 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.10)", paddingHorizontal: 14, height: 50,
   },
   input: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 15, ...iosTextInputStyle(15, 18) },
+  forgotCurrentBtn: { alignSelf: "flex-start", paddingTop: 6, paddingVertical: 4 },
+  forgotCurrentText: { fontSize: 12.5, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary },
+  cancelRecoveryBtn: { paddingVertical: 10, alignItems: "center" },
+  cancelRecoveryText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
   divider: { height: 1, backgroundColor: "rgba(255,255,255,0.06)", marginVertical: 4 },
   strengthRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   strengthBar: { flex: 1, height: 4, borderRadius: 2 },

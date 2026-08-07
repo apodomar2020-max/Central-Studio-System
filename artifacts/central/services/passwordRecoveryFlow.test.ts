@@ -6,6 +6,7 @@ import {
   changePasswordOutcome,
   buildResetPasswordPayload,
   buildChangePasswordPayload,
+  maskEmail,
 } from "./passwordRecoveryFlow";
 
 // ─── Forgot Password: no account-existence branching ────────────────────────
@@ -81,4 +82,44 @@ test("changePasswordOutcome: any error object, however malformed, never maps to 
     const outcome = changePasswordOutcome(errorLike);
     assert.notEqual(outcome.kind, "success");
   }
+});
+
+// ─── maskEmail: display-only masking for the authenticated recovery UI ──────
+
+test("maskEmail: normal email masks correctly", () => {
+  assert.equal(maskEmail("user@example.com"), "u***@example.com");
+});
+
+test("maskEmail: one-character local part", () => {
+  assert.equal(maskEmail("a@example.com"), "a***@example.com");
+});
+
+test("maskEmail: short local part", () => {
+  assert.equal(maskEmail("ab@example.com"), "a***@example.com");
+});
+
+test("maskEmail: longer local part — mask length never reveals real length", () => {
+  const masked = maskEmail("alexander.hamilton@example.com");
+  assert.equal(masked, "a***@example.com");
+  // Same fixed-length mask regardless of the real local part being 2 vs 18
+  // characters — proves no length leakage.
+  assert.equal(masked.split("@")[0]!.length, maskEmail("ab@example.com").split("@")[0]!.length);
+});
+
+test("maskEmail: empty input is handled safely, never throws", () => {
+  assert.doesNotThrow(() => maskEmail(""));
+  assert.equal(maskEmail(""), "your email");
+});
+
+test("maskEmail: malformed input is handled safely, never throws", () => {
+  for (const malformed of ["not-an-email", "@example.com", "user@", "   ", "@"]) {
+    assert.doesNotThrow(() => maskEmail(malformed));
+    assert.equal(maskEmail(malformed), "your email");
+  }
+});
+
+test("maskEmail: domain remains intact and identifiable while the local part stays masked", () => {
+  const masked = maskEmail("test@centralstudioco.com");
+  assert.ok(masked.endsWith("@centralstudioco.com"));
+  assert.ok(!masked.startsWith("test"), "the real local part must not appear in the masked output");
 });

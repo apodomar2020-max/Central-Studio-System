@@ -96,3 +96,24 @@ export function buildChangePasswordPayload(currentPassword: string, newPassword:
 } {
   return { currentPassword, newPassword };
 }
+
+/**
+ * Masks an email address for display-only UI copy (e.g. "We'll send a code
+ * to u***@example.com" on the authenticated Change Password recovery
+ * state) — never used for anything except display. Keeps only the first
+ * character of the local part; everything else becomes a FIXED "***"
+ * regardless of the real local part's length, so the masked output never
+ * leaks how long the real address is (a variable-length mask on a short
+ * local part like "ab" could nearly reveal the whole thing).
+ *
+ * Malformed or empty input (no "@", empty local part, empty domain) returns
+ * a fixed, safe placeholder instead of echoing back unparseable input.
+ */
+export function maskEmail(email: string): string {
+  const trimmed = email.trim();
+  const atIndex = trimmed.indexOf("@");
+  if (atIndex <= 0 || atIndex === trimmed.length - 1) return "your email";
+  const domain = trimmed.slice(atIndex + 1);
+  const firstChar = trimmed[0];
+  return `${firstChar}***@${domain}`;
+}

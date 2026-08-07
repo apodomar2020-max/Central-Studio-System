@@ -20,10 +20,18 @@ import AppButton from "@/components/AppButton";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { passwordPolicyError } from "@/utils/passwordPolicy";
 import { buildResetPasswordPayload, resetPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
+import { useAppContext } from "@/contexts/AppContext";
+import { enterApp } from "@/services/authProfile";
 
 export default function ResetPasswordScreen() {
   const insets = useSafeAreaInsets();
   const { email } = useLocalSearchParams<{ email: string }>();
+  // Navigation-only distinction (Phase 6/7): whether the user is already
+  // authenticated when they land here — read from actual AppContext state,
+  // never a client-settable route param. This never affects whether the
+  // reset itself succeeds (that's entirely gated server-side by OTP
+  // verification, below) — it only decides where "success" sends them.
+  const { user } = useAppContext();
 
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -91,11 +99,13 @@ export default function ResetPasswordScreen() {
         </LinearGradient>
         <Text style={styles.successTitle}>Password Updated!</Text>
         <Text style={styles.successBody}>
-          Your password has been reset successfully. Sign in with your new password.
+          {user
+            ? "Your password has been reset successfully. You're all set."
+            : "Your password has been reset successfully. Sign in with your new password."}
         </Text>
         <AppButton
-          title="Sign In"
-          onPress={() => router.replace("/auth/login")}
+          title={user ? "Continue" : "Sign In"}
+          onPress={() => (user ? void enterApp() : router.replace("/auth/login"))}
           fullWidth
           size="lg"
         />
