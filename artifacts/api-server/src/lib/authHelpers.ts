@@ -217,6 +217,30 @@ export class OtpRateLimitError extends Error {
   }
 }
 
+/**
+ * Convert a timestamp string read back from the `email_otps` table to epoch
+ * milliseconds for comparison.
+ *
+ * Required because Postgres/Drizzle can return these `mode: "string"`
+ * timestamptz columns in a different serialized form than the
+ * `new Date().toISOString()` strings this file generates for "now" — e.g.
+ * "2026-08-07 12:16:36.570+00" (Postgres/Drizzle, space + numeric offset,
+ * produced when the driver hands Drizzle a Date and it re-serializes it)
+ * vs. "2026-08-07T12:16:36.570Z" (Node). Comparing those two forms directly
+ * with JS string operators (`<=`, `>=`) is a lexicographic comparison, not a
+ * temporal one, and silently misclassifies still-valid values as expired (or
+ * still-recent rows as outside the rate-limit window). Always compare the
+ * parsed epoch-millisecond values instead — never the raw strings.
+ *
+ * Returns `NaN` for an unparseable value; callers must check
+ * `Number.isFinite(...)` and fail closed rather than trust a NaN comparison,
+ * since every JS relational comparison involving NaN is `false` (which would
+ * silently treat a malformed timestamp as "not expired" / "not recent").
+ */
+export function toEpochMs(value: string): number {
+  return new Date(value).getTime();
+}
+
 export async function invalidateOtpCodes(email: string, purpose: OtpPurpose): Promise<void> {
   const now = new Date().toISOString();
   await db
@@ -269,7 +293,15 @@ export async function issueOtp(
       }
     }
 
-    const issuedThisHour = issuedToday.filter((row) => row.createdAt >= hourAgo);
+    // toEpochMs, not raw string comparison — see its doc comment: `row.createdAt`
+    // (Postgres/Drizzle format) and `hourAgo` (Node ISO format) are not
+    // lexicographically comparable. An unparseable row.createdAt fails closed
+    // (counted toward the hourly limit) rather than silently excluded from it.
+    const hourAgoMs = toEpochMs(hourAgo);
+    const issuedThisHour = issuedToday.filter((row) => {
+      const createdAtMs = toEpochMs(row.createdAt);
+      return !Number.isFinite(createdAtMs) || createdAtMs >= hourAgoMs;
+    });
     if (issuedThisHour.length >= OTP_MAX_SENDS_PER_HOUR) {
       const retryAt = new Date(issuedThisHour[0]!.createdAt).getTime() + 60 * 60 * 1000;
       throw new OtpRateLimitError(
@@ -349,7 +381,13 @@ async function verifyOtpInTransaction(
     .limit(1)
     .for("update");
 
-  if (!otp || otp.expiresAt <= now) return { status: "expired" };
+  // toEpochMs, not raw string comparison — see its doc comment: otp.expiresAt
+  // (Postgres/Drizzle format) and `now` (Node ISO format) are not
+  // lexicographically comparable. An unparseable otp.expiresAt fails closed
+  // (treated as expired) rather than silently accepted as still valid.
+  if (!otp) return { status: "expired" };
+  const expiresAtMs = toEpochMs(otp.expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= toEpochMs(now)) return { status: "expired" };
   if (otp.attempts >= OTP_MAX_ATTEMPTS) return { status: "locked" };
 
   if (otp.code !== code) {
