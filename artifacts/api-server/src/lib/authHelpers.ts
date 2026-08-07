@@ -85,7 +85,7 @@ type EmailPayload = {
 };
 
 function getEmailConfig(): { apiKey: string; from: string; replyTo?: string } | null {
-  const apiKey = process.env["RESEND_API_KEY"]?.trim();
+  const apiKey = process.env["BREVO_API_KEY"]?.trim();
   const from = process.env["EMAIL_FROM"]?.trim() || process.env["MAIL_FROM"]?.trim();
   const replyTo = process.env["EMAIL_REPLY_TO"]?.trim();
   if (!apiKey || !from) return null;
@@ -94,6 +94,21 @@ function getEmailConfig(): { apiKey: string; from: string; replyTo?: string } | 
 
 export function isEmailProviderConfigured(): boolean {
   return getEmailConfig() !== null;
+}
+
+/**
+ * Parse an EMAIL_FROM value into Brevo's `sender` shape.
+ *
+ * Accepts both forms the existing EMAIL_FROM contract supports:
+ *   "Central Studio <no-reply@centralstudioco.com>" → { name: "Central Studio", email: "no-reply@centralstudioco.com" }
+ *   "no-reply@centralstudioco.com"                  → { email: "no-reply@centralstudioco.com" }
+ */
+function parseSenderAddress(raw: string): { name?: string; email: string } {
+  const match = raw.trim().match(/^(.*)<([^<>]+)>\s*$/);
+  if (!match) return { email: raw.trim() };
+  const email = match[2]!.trim();
+  const name = match[1]!.trim().replace(/^"(.*)"$/, "$1").trim();
+  return name ? { name, email } : { email };
 }
 
 function escapeHtml(value: string): string {
@@ -150,28 +165,32 @@ async function sendEmail(payload: EmailPayload): Promise<void> {
       logger.info({ to: payload.to, subject: payload.subject }, "DEV MODE — email not sent; provider not configured");
       return;
     }
-    throw new EmailProviderConfigurationError("Email provider not configured. Set RESEND_API_KEY and EMAIL_FROM.");
+    throw new EmailProviderConfigurationError("Email provider not configured. Set BREVO_API_KEY and EMAIL_FROM.");
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${config.apiKey}`,
+      "api-key": config.apiKey,
+      Accept: "application/json",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: config.from,
-      to: [payload.to],
+      sender: parseSenderAddress(config.from),
+      to: [{ email: payload.to }],
       subject: payload.subject,
-      text: payload.text,
-      html: payload.html,
-      ...(config.replyTo ? { reply_to: config.replyTo } : {}),
+      textContent: payload.text,
+      htmlContent: payload.html,
+      ...(config.replyTo ? { replyTo: { email: config.replyTo } } : {}),
     }),
   });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    logger.error({ status: response.status, body }, "Resend email delivery failed");
+    // Do not log the response body: Brevo error payloads can echo request
+    // content (recipient address, etc.) and, in some failure modes, may
+    // include values that should never reach logs. Status code is enough to
+    // diagnose delivery failures from the dashboard/provider side.
+    logger.error({ status: response.status }, "Brevo email delivery failed");
     throw new EmailDeliveryError("Email provider rejected the message.");
   }
 }
