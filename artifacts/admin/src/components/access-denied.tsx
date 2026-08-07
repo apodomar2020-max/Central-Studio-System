@@ -17,8 +17,11 @@ const SAFE_DESTINATIONS = [
 
 /**
  * Access Denied — shown when an authenticated admin opens a page (or area) their
- * role has no permission for. This is UI-only enforcement; the backend is not
- * guarded yet. Authenticated users are never redirected to login from here.
+ * role has no permission for. This screen is UI-only presentation: the backend
+ * independently enforces the same permission on every route/endpoint via
+ * requireAdminPermission (see routes/adminAuth.ts) — hiding a page here never
+ * substitutes for that guard, it only avoids rendering it. Authenticated users
+ * are never redirected to login from here.
  */
 export function AccessDenied({ message }: { message?: string }) {
   const { can } = useAdminAuth();
