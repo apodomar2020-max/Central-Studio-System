@@ -1,7 +1,21 @@
 /**
- * System Users & Roles page — Super Admin only.
+ * System Users & Roles page.
  * Tab 1 — Users: create/edit admin accounts, assign roles.
  * Tab 2 — Roles: visual permission matrix builder per module.
+ *
+ * Access is delegated, not Super-Admin-only: the route (App.tsx ROUTE_PERMS.systemUsers)
+ * and the sidebar (nav-config.ts) already require adminUsers.view or roles.view (any one),
+ * matching every other page's pattern. This page mirrors that:
+ *  - The Users tab renders for adminUsers.view (or Super Admin).
+ *  - The Roles tab renders for roles.view (or Super Admin).
+ *  - Every mutation control (New User, Edit fields, role assignment, active toggle,
+ *    New Role, Edit Role details, permission matrix editing) is additionally scoped
+ *    to its own exact backend-enforced permission — see the per-control checks below.
+ *  - GET /api/admin/roles itself requires roles.view on the backend, so the roles
+ *    list is only ever fetched when the current admin can actually read it; an
+ *    adminUsers.view-only admin gets a working Users tab without role names.
+ *  - This is presentation-only, same as every other page (see lib/permissions.tsx):
+ *    the backend still independently enforces every one of these permissions.
  */
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +52,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Pencil, ShieldCheck, AlertTriangle, Plus, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AccessDenied } from "@/components/access-denied";
 import {
   PERMISSION_CATALOG,
   PERMISSION_GROUPS,
@@ -142,9 +157,12 @@ function useRoles(enabled = true) {
 function PermissionMatrix({
   permissions,
   onChange,
+  disabled = false,
 }: {
   permissions: PermissionMap;
   onChange: (p: PermissionMap) => void;
+  /** Read-only mode — the current admin holds roles.view but not roles.assignPermissions. */
+  disabled?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
@@ -203,7 +221,7 @@ function PermissionMatrix({
                       <div className="mt-2 flex gap-3 text-[11px]">
                         <button
                           type="button"
-                          disabled={module.reserved || allEnabled}
+                          disabled={disabled || module.reserved || allEnabled}
                           onClick={() => onChange(toggleModule(permissions, module, true))}
                           className="text-primary disabled:cursor-not-allowed disabled:opacity-40"
                         >
@@ -211,7 +229,7 @@ function PermissionMatrix({
                         </button>
                         <button
                           type="button"
-                          disabled={module.reserved || enabledActions === 0}
+                          disabled={disabled || module.reserved || enabledActions === 0}
                           onClick={() => onChange(toggleModule(permissions, module, false))}
                           className="text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
                         >
@@ -227,12 +245,12 @@ function PermissionMatrix({
                           <label
                             key={action.key}
                             className={`flex min-h-9 items-center gap-2 rounded-md border px-3 py-2 text-xs ${
-                              module.reserved ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/40"
+                              disabled || module.reserved ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/40"
                             }`}
                           >
                             <Checkbox
                               checked={checked}
-                              disabled={module.reserved}
+                              disabled={disabled || module.reserved}
                               onCheckedChange={(value) =>
                                 onChange(setPermission(permissions, module.key, action.key, !!value))
                               }
@@ -269,10 +287,16 @@ function RoleDialog({
   open,
   onClose,
   existing,
+  canEditDetails,
+  canAssignPermissions,
 }: {
   open: boolean;
   onClose: () => void;
   existing?: Role;
+  /** roles.edit (create mode is always editable — roles.create already gated opening this dialog). */
+  canEditDetails: boolean;
+  /** roles.assignPermissions — governs the permission matrix, not name/description. */
+  canAssignPermissions: boolean;
 }) {
   const { token } = useAdminAuth();
   const qc = useQueryClient();
@@ -292,10 +316,20 @@ function RoleDialog({
       const url = isEdit
         ? `${API_BASE}/api/admin/roles/${existing.id}`
         : `${API_BASE}/api/admin/roles`;
+      const body: Record<string, unknown> = {};
+      if (canEditDetails) {
+        body["name"] = name.trim();
+        body["description"] = description.trim() || null;
+      }
+      // Omit the "permissions" key entirely when the admin can't assign
+      // permissions — PATCH/POST /admin/roles requires roles.assignPermissions
+      // as soon as the body contains a "permissions" key at all, regardless
+      // of whether the value actually changed.
+      if (canAssignPermissions) body["permissions"] = permissions;
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
         headers: makeHeaders(token),
-        body: JSON.stringify({ name: name.trim(), description: description.trim() || null, permissions }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string };
@@ -310,6 +344,8 @@ function RoleDialog({
     onError: (err: Error) => setError(err.message),
   });
 
+  const nothingEditable = !canEditDetails && !canAssignPermissions;
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -323,6 +359,7 @@ function RoleDialog({
               <Label>Role Name</Label>
               <Input
                 value={name}
+                disabled={!canEditDetails}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Receptionist"
               />
@@ -331,6 +368,7 @@ function RoleDialog({
               <Label>Description <span className="text-muted-foreground text-xs">(optional)</span></Label>
               <Input
                 value={description}
+                disabled={!canEditDetails}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Brief description of this role"
               />
@@ -344,7 +382,13 @@ function RoleDialog({
                 — {countCatalogPermissions(permissions)} actions enabled
               </span>
             </p>
-            <PermissionMatrix permissions={permissions} onChange={setPermissions} />
+            {!canAssignPermissions && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1 mb-2">
+                <AlertTriangle className="h-3 w-3" />
+                You have view-only access to this role&apos;s permissions.
+              </p>
+            )}
+            <PermissionMatrix permissions={permissions} onChange={setPermissions} disabled={!canAssignPermissions} />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -354,7 +398,7 @@ function RoleDialog({
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => { setError(null); mutation.mutate(); }}
-            disabled={mutation.isPending || !name.trim()}
+            disabled={mutation.isPending || !name.trim() || nothingEditable}
           >
             {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
             {isEdit ? "Save Changes" : "Create Role"}
@@ -367,7 +411,18 @@ function RoleDialog({
 
 // ── User Dialogs ──────────────────────────────────────────────────────────────
 
-function CreateUserDialog({ open, onClose, roles }: { open: boolean; onClose: () => void; roles: Role[] }) {
+function CreateUserDialog({
+  open,
+  onClose,
+  roles,
+  canAssignRole,
+}: {
+  open: boolean;
+  onClose: () => void;
+  roles: Role[];
+  /** adminUsers.assignRole (and roles.view, so the picker has data to show). */
+  canAssignRole: boolean;
+}) {
   const { token } = useAdminAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -381,7 +436,9 @@ function CreateUserDialog({ open, onClose, roles }: { open: boolean; onClose: ()
         email: form.email.trim(),
         fullName: form.fullName.trim(),
         password: form.password,
-        ...(form.roleId ? { roleId: parseInt(form.roleId) } : {}),
+        // Only ever sent when the picker was actually usable — POST /admin/users
+        // requires adminUsers.assignRole whenever roleId is present in the body.
+        ...(canAssignRole && form.roleId ? { roleId: parseInt(form.roleId) } : {}),
       };
       const res = await fetch(`${API_BASE}/api/admin/users`, {
         method: "POST", headers: makeHeaders(token), body: JSON.stringify(body),
@@ -423,19 +480,26 @@ function CreateUserDialog({ open, onClose, roles }: { open: boolean; onClose: ()
             <Label>Password</Label>
             <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min. 8 characters" />
           </div>
-          <div className="space-y-1.5">
-            <Label>Role</Label>
-            <Select value={form.roleId} onValueChange={(v) => setForm({ ...form, roleId: v })}>
-              <SelectTrigger><SelectValue placeholder="No role (no permissions)" /></SelectTrigger>
-              <SelectContent>
-                {roles.map((r) => (
-                  <SelectItem key={r.id} value={String(r.id)}>
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {canAssignRole ? (
+            <div className="space-y-1.5">
+              <Label>Role</Label>
+              <Select value={form.roleId} onValueChange={(v) => setForm({ ...form, roleId: v })}>
+                <SelectTrigger><SelectValue placeholder="No role (no permissions)" /></SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              You don&apos;t have permission to assign a role — this user will be created with no role.
+            </p>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
@@ -450,17 +514,53 @@ function CreateUserDialog({ open, onClose, roles }: { open: boolean; onClose: ()
   );
 }
 
-function EditUserDialog({ user, open, onClose, roles }: { user: SystemUserRow; open: boolean; onClose: () => void; roles: Role[] }) {
+function EditUserDialog({
+  user,
+  open,
+  onClose,
+  roles,
+  canEditFields,
+  canAssignRole,
+  canDisable,
+}: {
+  user: SystemUserRow;
+  open: boolean;
+  onClose: () => void;
+  roles: Role[];
+  /** adminUsers.edit — full name, email, password. */
+  canEditFields: boolean;
+  /** adminUsers.assignRole (and roles.view, so the picker has data to show). */
+  canAssignRole: boolean;
+  /** adminUsers.disable — the active/inactive toggle. */
+  canDisable: boolean;
+}) {
   const { token, user: currentUser } = useAdminAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({ fullName: user.fullName, email: user.email, roleId: user.roleId ? String(user.roleId) : "", isActive: user.isActive, password: "" });
   const [error, setError] = useState<string | null>(null);
 
+  const isSelf = currentUser?.id === user.id;
+  const isSuperAdmin = currentUser?.isSuperAdmin === true;
+  // Only a Super Admin may touch another Super Admin's account at all
+  // (backend: "Super Admin accounts can only be modified by another Super Admin").
+  const canModifyTarget = isSuperAdmin || !user.isSuperAdmin;
+  const fieldsEditable = canModifyTarget && (isSuperAdmin || canEditFields);
+  // `canAssignRole` (passed down from UsersTab) already folds in roles.view —
+  // there'd be nothing to pick from otherwise.
+  const roleEditable = canModifyTarget && !user.isSuperAdmin && (isSuperAdmin || canAssignRole);
+  const activeToggleable = canModifyTarget && !isSelf && !user.isSuperAdmin && (isSuperAdmin || canDisable);
+
   const mutation = useMutation({
     mutationFn: async () => {
-      const body: Record<string, unknown> = { fullName: form.fullName.trim(), email: form.email.trim(), roleId: form.roleId ? parseInt(form.roleId) : null, isActive: form.isActive };
-      if (form.password.trim()) body["password"] = form.password;
+      const body: Record<string, unknown> = {};
+      if (fieldsEditable) {
+        body["fullName"] = form.fullName.trim();
+        body["email"] = form.email.trim();
+        if (form.password.trim()) body["password"] = form.password;
+      }
+      if (roleEditable) body["roleId"] = form.roleId ? parseInt(form.roleId) : null;
+      if (activeToggleable) body["isActive"] = form.isActive;
       const res = await fetch(`${API_BASE}/api/admin/users/${user.id}`, { method: "PATCH", headers: makeHeaders(token), body: JSON.stringify(body) });
       if (!res.ok) { const data = await res.json().catch(() => ({})) as { error?: string }; throw new Error(data.error ?? "Failed to update user"); }
     },
@@ -468,16 +568,16 @@ function EditUserDialog({ user, open, onClose, roles }: { user: SystemUserRow; o
     onError: (err: Error) => setError(err.message),
   });
 
-  const isSelf = currentUser?.id === user.id;
+  const nothingEditable = !fieldsEditable && !roleEditable && !activeToggleable;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent>
         <DialogHeader><DialogTitle>Edit User — {user.username}</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-1.5"><Label>Full Name</Label><Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div>
-          <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-          {!user.isSuperAdmin && (
+          <div className="space-y-1.5"><Label>Full Name</Label><Input value={form.fullName} disabled={!fieldsEditable} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={form.email} disabled={!fieldsEditable} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          {roleEditable && (
             <div className="space-y-1.5">
               <Label>Role</Label>
               <Select value={form.roleId} onValueChange={(v) => setForm({ ...form, roleId: v })}>
@@ -488,19 +588,23 @@ function EditUserDialog({ user, open, onClose, roles }: { user: SystemUserRow; o
               </Select>
             </div>
           )}
-          <div className="space-y-1.5"><Label>New Password <span className="text-xs text-muted-foreground">(leave blank to keep)</span></Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" /></div>
-          {!isSelf && !user.isSuperAdmin && (
+          <div className="space-y-1.5"><Label>New Password <span className="text-xs text-muted-foreground">(leave blank to keep)</span></Label><Input type="password" value={form.password} disabled={!fieldsEditable} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" /></div>
+          {activeToggleable && (
             <div className="flex items-center gap-3">
               <Switch checked={form.isActive} onCheckedChange={(v) => setForm({ ...form, isActive: v })} />
               <Label>{form.isActive ? "Account active" : "Account deactivated"}</Label>
             </div>
           )}
-          {isSelf && <p className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" />You cannot deactivate your own account.</p>}
+          {isSelf && <p className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" />You cannot deactivate or re-role your own account.</p>}
+          {!canModifyTarget && <p className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" />Only another Super Admin can modify a Super Admin account.</p>}
+          {nothingEditable && !isSelf && canModifyTarget && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" />You have view-only access to admin users.</p>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => { setError(null); mutation.mutate(); }} disabled={mutation.isPending}>
+          <Button onClick={() => { setError(null); mutation.mutate(); }} disabled={mutation.isPending || nothingEditable}>
             {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}Save
           </Button>
         </DialogFooter>
@@ -511,18 +615,30 @@ function EditUserDialog({ user, open, onClose, roles }: { user: SystemUserRow; o
 
 // ── Users Tab ─────────────────────────────────────────────────────────────────
 
-function UsersTab({ roles }: { roles: Role[] }) {
+function UsersTab({ roles, canViewRoles }: { roles: Role[]; canViewRoles: boolean }) {
+  const { can, user: currentUser } = useAdminAuth();
+  const isSuperAdmin = currentUser?.isSuperAdmin === true;
+  const canCreate = isSuperAdmin || can("adminUsers", "create");
+  const canEditFields = isSuperAdmin || can("adminUsers", "edit");
+  const canAssignRole = (isSuperAdmin || can("adminUsers", "assignRole")) && canViewRoles;
+  const canDisable = isSuperAdmin || can("adminUsers", "disable");
+  // A row's Edit button is only worth showing if at least one mutation is
+  // possible for it — a pure view-only admin sees the table with no actions.
+  const canEditAnything = canEditFields || canAssignRole || canDisable;
+
   const usersQuery = useSystemUsers();
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<SystemUserRow | null>(null);
 
   return (
     <>
-      <div className="flex justify-end mb-4">
-        <Button onClick={() => setShowCreate(true)} style={{ background: "#8A5CFF", color: "#fff" }}>
-          <Plus className="h-4 w-4 mr-1" /> New User
-        </Button>
-      </div>
+      {canCreate && (
+        <div className="flex justify-end mb-4">
+          <Button onClick={() => setShowCreate(true)} style={{ background: "#8A5CFF", color: "#fff" }}>
+            <Plus className="h-4 w-4 mr-1" /> New User
+          </Button>
+        </div>
+      )}
 
       {usersQuery.isLoading && <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}
       {usersQuery.isError && <p className="text-destructive text-sm">Failed to load users.</p>}
@@ -537,7 +653,7 @@ function UsersTab({ roles }: { roles: Role[] }) {
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-10" />
+                {canEditAnything && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -552,16 +668,24 @@ function UsersTab({ roles }: { roles: Role[] }) {
                     <TableCell>{u.fullName}</TableCell>
                     <TableCell>{u.email}</TableCell>
                     <TableCell>
-                      {role
-                        ? <Badge variant="outline">{role.name}</Badge>
-                        : <span className="text-muted-foreground text-xs">No role</span>}
+                      {role ? (
+                        <Badge variant="outline">{role.name}</Badge>
+                      ) : u.roleId != null && !canViewRoles ? (
+                        // Backend GET /admin/roles requires roles.view — this admin
+                        // can see that a role is assigned without seeing its name.
+                        <span className="text-muted-foreground text-xs">Role assigned</span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">No role</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={u.isActive ? "default" : "outline"}>{u.isActive ? "Active" : "Inactive"}</Badge>
                     </TableCell>
-                    <TableCell>
-                      <Button size="icon" variant="ghost" onClick={() => setEditTarget(u)}><Pencil className="h-4 w-4" /></Button>
-                    </TableCell>
+                    {canEditAnything && (
+                      <TableCell>
+                        <Button size="icon" variant="ghost" onClick={() => setEditTarget(u)}><Pencil className="h-4 w-4" /></Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
@@ -570,8 +694,18 @@ function UsersTab({ roles }: { roles: Role[] }) {
         </div>
       )}
 
-      <CreateUserDialog open={showCreate} onClose={() => setShowCreate(false)} roles={roles} />
-      {editTarget && <EditUserDialog user={editTarget} open={true} onClose={() => setEditTarget(null)} roles={roles} />}
+      {canCreate && <CreateUserDialog open={showCreate} onClose={() => setShowCreate(false)} roles={roles} canAssignRole={canAssignRole} />}
+      {editTarget && canEditAnything && (
+        <EditUserDialog
+          user={editTarget}
+          open={true}
+          onClose={() => setEditTarget(null)}
+          roles={roles}
+          canEditFields={canEditFields}
+          canAssignRole={canAssignRole}
+          canDisable={canDisable}
+        />
+      )}
     </>
   );
 }
@@ -579,6 +713,15 @@ function UsersTab({ roles }: { roles: Role[] }) {
 // ── Roles Tab ─────────────────────────────────────────────────────────────────
 
 function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
+  const { can, user: currentUser } = useAdminAuth();
+  const isSuperAdmin = currentUser?.isSuperAdmin === true;
+  const canCreate = isSuperAdmin || can("roles", "create");
+  const canEditDetails = isSuperAdmin || can("roles", "edit");
+  const canAssignPermissions = isSuperAdmin || can("roles", "assignPermissions");
+  // A role's Edit button is only worth showing if at least one mutation is
+  // possible for it — a pure roles.view admin sees the list with no actions.
+  const canEditAnyRole = canEditDetails || canAssignPermissions;
+
   const [showCreate, setShowCreate] = useState(false);
   const [editRole, setEditRole] = useState<Role | null>(null);
 
@@ -586,11 +729,13 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
 
   return (
     <>
-      <div className="flex justify-end mb-4">
-        <Button onClick={() => setShowCreate(true)} style={{ background: "#8A5CFF", color: "#fff" }}>
-          <Plus className="h-4 w-4 mr-1" /> New Role
-        </Button>
-      </div>
+      {canCreate && (
+        <div className="flex justify-end mb-4">
+          <Button onClick={() => setShowCreate(true)} style={{ background: "#8A5CFF", color: "#fff" }}>
+            <Plus className="h-4 w-4 mr-1" /> New Role
+          </Button>
+        </div>
+      )}
 
       {roles.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
@@ -625,17 +770,34 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
                     )}
                   </div>
                 </div>
-                <Button size="sm" variant="outline" className="self-start shrink-0 sm:self-auto" onClick={() => setEditRole(role)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
-                </Button>
+                {canEditAnyRole && (
+                  <Button size="sm" variant="outline" className="self-start shrink-0 sm:self-auto" onClick={() => setEditRole(role)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                  </Button>
+                )}
               </div>
             );
           })}
         </div>
       )}
 
-      <RoleDialog open={showCreate} onClose={() => setShowCreate(false)} />
-      {editRole && <RoleDialog open={true} onClose={() => setEditRole(null)} existing={editRole} />}
+      {canCreate && (
+        <RoleDialog
+          open={showCreate}
+          onClose={() => setShowCreate(false)}
+          canEditDetails
+          canAssignPermissions={canAssignPermissions}
+        />
+      )}
+      {editRole && canEditAnyRole && (
+        <RoleDialog
+          open={true}
+          onClose={() => setEditRole(null)}
+          existing={editRole}
+          canEditDetails={canEditDetails}
+          canAssignPermissions={canAssignPermissions}
+        />
+      )}
     </>
   );
 }
@@ -643,23 +805,28 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SystemUsersPage() {
-  const { user: currentUser } = useAdminAuth();
-  const rolesQuery = useRoles(currentUser?.isSuperAdmin === true);
+  const { user: currentUser, can } = useAdminAuth();
+  const isSuperAdmin = currentUser?.isSuperAdmin === true;
+  const canViewUsers = isSuperAdmin || can("adminUsers", "view");
+  const canViewRoles = isSuperAdmin || can("roles", "view");
+
+  // GET /api/admin/roles requires roles.view on the backend (or Super Admin) —
+  // fetch it only when the current admin can actually read it. An
+  // adminUsers.view-only admin gets a fully working Users tab without ever
+  // calling an endpoint that would 403 for them.
+  const rolesQuery = useRoles(canViewRoles);
   const roles = rolesQuery.data ?? [];
 
-  if (!currentUser?.isSuperAdmin) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <div className="text-center space-y-2">
-          <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="font-medium">Management remains Super Admin-only</p>
-          <p className="mx-auto max-w-md text-sm text-muted-foreground">
-            Your role can view this area, but admin user and role management will be enabled for delegated permissions in Phase 3.
-          </p>
-        </div>
-      </div>
-    );
+  // Defensive fallback only: App.tsx's RouteGuard (ROUTE_PERMS.systemUsers)
+  // already requires adminUsers.view or roles.view before this component is
+  // ever mounted, so this branch should be unreachable in practice. Kept
+  // consistent with every other page's Access Denied treatment rather than
+  // a bespoke message.
+  if (!canViewUsers && !canViewRoles) {
+    return <AccessDenied message="You do not have permission to manage System Users or Roles." />;
   }
+
+  const defaultTab = canViewUsers ? "users" : "roles";
 
   return (
     <>
@@ -669,19 +836,23 @@ export default function SystemUsersPage() {
         mode="stage"
       />
 
-      <Tabs defaultValue="users" className="mt-6">
+      <Tabs defaultValue={defaultTab} className="mt-6">
         <TabsList className="mb-6">
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="roles">Roles</TabsTrigger>
+          {canViewUsers && <TabsTrigger value="users">Users</TabsTrigger>}
+          {canViewRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="users">
-          <UsersTab roles={roles} />
-        </TabsContent>
+        {canViewUsers && (
+          <TabsContent value="users">
+            <UsersTab roles={roles} canViewRoles={canViewRoles} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="roles">
-          <RolesTab roles={roles} isLoading={rolesQuery.isLoading} />
-        </TabsContent>
+        {canViewRoles && (
+          <TabsContent value="roles">
+            <RolesTab roles={roles} isLoading={rolesQuery.isLoading} />
+          </TabsContent>
+        )}
       </Tabs>
     </>
   );
