@@ -40,7 +40,12 @@ import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import BalletStudentsPage from "@/pages/ballet/BalletStudentsPage";
 import BalletStudentDetailPage from "@/pages/ballet/BalletStudentDetailPage";
-import BalletSettingsPage from "@/pages/ballet/BalletSettingsPage";
+import BalletSettingsOverviewPage from "@/pages/ballet/settings/BalletSettingsOverviewPage";
+import BalletHomeCardPage from "@/pages/ballet/settings/BalletHomeCardPage";
+import BalletContactPage from "@/pages/ballet/settings/BalletContactPage";
+import BalletRequirementsPage from "@/pages/ballet/settings/BalletRequirementsPage";
+import BalletRequirementsSectionPage from "@/pages/ballet/settings/BalletRequirementsSectionPage";
+import BalletFaqSettingsPage from "@/pages/ballet/settings/BalletFaqPage";
 import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
 import BalletInstructorsPage from "@/pages/ballet/BalletInstructorsPage";
 import BalletClassesPage from "@/pages/ballet/BalletClassesPage";
@@ -212,7 +217,12 @@ function ProtectedRouter() {
         <Route path="/ballet/applications">{guarded(ROUTE_PERMS.balletApplications, <ApplicationsPage />)}</Route>
         <Route path="/ballet/students/:assignmentId">{guarded(ROUTE_PERMS.balletStudents, <BalletStudentDetailPage />)}</Route>
         <Route path="/ballet/students">{guarded(ROUTE_PERMS.balletStudents, <BalletStudentsPage />)}</Route>
-        <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsPage />)}</Route>
+        <Route path="/ballet/settings/requirements/:sectionId">{guarded(ROUTE_PERMS.balletSettings, <BalletRequirementsSectionPage />)}</Route>
+        <Route path="/ballet/settings/requirements">{guarded(ROUTE_PERMS.balletSettings, <BalletRequirementsPage />)}</Route>
+        <Route path="/ballet/settings/home-card">{guarded(ROUTE_PERMS.balletSettings, <BalletHomeCardPage />)}</Route>
+        <Route path="/ballet/settings/contact">{guarded(ROUTE_PERMS.balletSettings, <BalletContactPage />)}</Route>
+        <Route path="/ballet/settings/faq">{guarded(ROUTE_PERMS.balletSettings, <BalletFaqSettingsPage />)}</Route>
+        <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsOverviewPage />)}</Route>
         <Route path="/ballet/levels">{guarded(ROUTE_PERMS.balletLevels, <BalletLevelsPage />)}</Route>
         <Route path="/ballet/instructors">{guarded(ROUTE_PERMS.balletInstructors, <BalletInstructorsPage />)}</Route>
         <Route path="/ballet/classes">{guarded(ROUTE_PERMS.balletClasses, <BalletClassesPage />)}</Route>
