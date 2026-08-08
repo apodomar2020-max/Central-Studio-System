@@ -4,7 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Platform,
   StyleSheet,
@@ -19,9 +19,11 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { passwordPolicyError } from "@/utils/passwordPolicy";
-import { buildResetPasswordPayload, resetPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
+import { buildResetPasswordPayload, resetPasswordOutcome, toApiErrorLike, forgotPasswordOutcome } from "@/services/passwordRecoveryFlow";
 import { useAppContext } from "@/contexts/AppContext";
 import { enterApp } from "@/services/authProfile";
+
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function ResetPasswordScreen() {
   const insets = useSafeAreaInsets();
@@ -41,9 +43,64 @@ export default function ResetPasswordScreen() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  // Resend: a code was already sent by the previous screen (Forgot Password
+  // or Change Password's "Send Code") moments before this screen was
+  // reached, so the countdown starts already running — not at 0 — to
+  // accurately reflect that a real server-side cooldown is already in
+  // effect. This is UX guidance only; the server remains the sole
+  // authority on cooldown/hourly/daily limits regardless of what this
+  // timer shows.
+  const [resendCountdown, setResendCountdown] = useState(RESEND_COOLDOWN_SECONDS);
+  const [resendPending, setResendPending] = useState(false);
+  const [resendMessage, setResendMessage] = useState("");
+
   const codeRef = useRef<TextInput>(null);
   const newPwRef = useRef<TextInput>(null);
   const confirmPwRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const t = setInterval(() => setResendCountdown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [resendCountdown]);
+
+  async function handleResend() {
+    if (resendCountdown > 0 || resendPending) return; // prevent duplicate/early taps
+    const targetEmail = email?.trim();
+    if (!targetEmail) {
+      setResendMessage("");
+      setError("Something went wrong. Please start over from Forgot Password.");
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setResendPending(true);
+    setError("");
+    setResendMessage("");
+    try {
+      await customFetch("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: targetEmail }),
+      });
+      forgotPasswordOutcome();
+      setResendPending(false);
+      setResendCountdown(RESEND_COOLDOWN_SECONDS);
+      // Deliberately neutral: this endpoint returns the same generic 2xx
+      // response whether or not a new OTP was actually issued (it may have
+      // been silently throttled by cooldown/hourly/daily limits) — never
+      // claim a new code was definitely sent, and never claim an earlier
+      // code stopped working, since neither is something the client
+      // actually knows here.
+      setResendMessage("Check your inbox for the most recent code.");
+    } catch (err: unknown) {
+      setResendPending(false);
+      const apiError = toApiErrorLike(err);
+      if (!apiError) {
+        setError("Network error. Please check your connection.");
+        return;
+      }
+      setError("Something went wrong. Please try again.");
+    }
+  }
 
   async function handleReset() {
     if (loading) return; // prevent duplicate submissions
@@ -246,10 +303,21 @@ export default function ResetPasswordScreen() {
         {/* Resend */}
         <View style={styles.resendRow}>
           <Text style={styles.resendNote}>Didn't get the code?</Text>
-          <TouchableOpacity onPress={() => router.replace("/auth/forgot-password")}>
-            <Text style={[styles.resendLink, { color: colors.studio.primary }]}> Resend</Text>
+          <TouchableOpacity onPress={handleResend} disabled={resendCountdown > 0 || resendPending}>
+            {resendCountdown > 0 ? (
+              <Text style={styles.resendLink}>
+                {" "}Resend in <Text style={{ color: colors.studio.primary }}>{resendCountdown}s</Text>
+              </Text>
+            ) : (
+              <Text style={[styles.resendLink, { color: colors.studio.primary }]}>
+                {" "}{resendPending ? "Sending..." : "Resend"}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
+        {resendMessage !== "" && (
+          <Text style={styles.resendMessage}>{resendMessage}</Text>
+        )}
       </KeyboardAwareScrollView>
     </View>
   );
@@ -355,5 +423,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   resendNote: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
-  resendLink: { fontSize: 14, fontFamily: "Archivo_800ExtraBold" },
+  resendLink: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: "rgba(255,255,255,0.42)" },
+  resendMessage: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 6, textAlign: "center" },
 });
