@@ -47,6 +47,9 @@ export * from "./classPricingSettings";
 export * from "./classCapacitySettings";
 export * from "./backgroundMusicSettings";
 export * from "./appContentPages";
+// App Content → FAQ Categories — independently managed CMS entity referenced
+// by app_faq_items.category_id (migration 0100)
+export * from "./appFaqCategories";
 export * from "./appFaqItems";
 export * from "./appContactLinks";
 // Credit Ledger — immutable audit trail for credit changes (migration 0013)

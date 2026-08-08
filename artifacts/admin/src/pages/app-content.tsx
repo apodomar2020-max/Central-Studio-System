@@ -66,12 +66,25 @@ interface AppContentPage {
   updatedAt: string;
 }
 
+interface FaqCategory {
+  id: number;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface FaqItem {
   id: number;
   question: string;
   answer: string;
   sortOrder: number;
   isActive: boolean;
+  // The FAQ's true category assignment, regardless of the category's own
+  // active state (admin sees this even when the category is deactivated —
+  // only the public Help & Support response nulls it out in that case).
+  category: FaqCategory | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -110,6 +123,13 @@ type FaqFormState = {
   answer: string;
   sortOrder: number;
   isActive: boolean;
+  categoryId: number | null;
+};
+
+type FaqCategoryFormState = {
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
 };
 
 type ContactFormState = {
@@ -143,7 +163,19 @@ const EMPTY_FAQ: FaqFormState = {
   answer: "",
   sortOrder: 0,
   isActive: true,
+  categoryId: null,
 };
+
+const EMPTY_FAQ_CATEGORY: FaqCategoryFormState = {
+  name: "",
+  sortOrder: 0,
+  isActive: true,
+};
+
+// Radix Select does not accept an empty-string item value, so "no category"
+// is represented by this sentinel in the <Select> and mapped to/from `null`
+// at the form-state boundary.
+const NO_CATEGORY_VALUE = "__none__";
 
 const EMPTY_CONTACT: ContactFormState = {
   type: "whatsapp",
@@ -176,6 +208,9 @@ export default function AppContentPage() {
   const [faqDialogOpen, setFaqDialogOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FaqItem | null>(null);
   const [faqForm, setFaqForm] = useState<FaqFormState>(EMPTY_FAQ);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<FaqCategory | null>(null);
+  const [categoryForm, setCategoryForm] = useState<FaqCategoryFormState>(EMPTY_FAQ_CATEGORY);
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ContactLink | null>(null);
   const [contactForm, setContactForm] = useState<ContactFormState>(EMPTY_CONTACT);
@@ -192,6 +227,12 @@ export default function AppContentPage() {
       adminFetch<FaqItem[]>(`${API}/api/admin/content/faqs`, { method: "GET" }, token),
   });
 
+  const categoriesQuery = useQuery<FaqCategory[]>({
+    queryKey: ["admin-app-content-faq-categories", token],
+    queryFn: () =>
+      adminFetch<FaqCategory[]>(`${API}/api/admin/content/faq-categories`, { method: "GET" }, token),
+  });
+
   const contactsQuery = useQuery<ContactLink[]>({
     queryKey: ["admin-app-content-contact-links", token],
     queryFn: () =>
@@ -200,6 +241,7 @@ export default function AppContentPage() {
 
   const pages = pagesQuery.data ?? [];
   const faqs = faqsQuery.data ?? [];
+  const categories = categoriesQuery.data ?? [];
   const contacts = contactsQuery.data ?? [];
   const selectedPage = pages.find((page) => page.slug === selectedSlug) ?? pages[0] ?? null;
 
@@ -223,6 +265,8 @@ export default function AppContentPage() {
     queryClient.invalidateQueries({ queryKey: ["admin-app-content-pages", token] });
   const invalidateFaqs = () =>
     queryClient.invalidateQueries({ queryKey: ["admin-app-content-faqs", token] });
+  const invalidateCategories = () =>
+    queryClient.invalidateQueries({ queryKey: ["admin-app-content-faq-categories", token] });
   const invalidateContacts = () =>
     queryClient.invalidateQueries({ queryKey: ["admin-app-content-contact-links", token] });
 
@@ -294,6 +338,52 @@ export default function AppContentPage() {
     },
   });
 
+  const saveCategoryMutation = useMutation({
+    mutationFn: (data: FaqCategoryFormState) =>
+      adminFetch<FaqCategory>(
+        editingCategory
+          ? `${API}/api/admin/content/faq-categories/${editingCategory.id}`
+          : `${API}/api/admin/content/faq-categories`,
+        {
+          method: editingCategory ? "PATCH" : "POST",
+          body: JSON.stringify(data),
+        },
+        token,
+      ),
+    onSuccess: () => {
+      invalidateCategories();
+      // A rename or activate/deactivate must be reflected in the FAQ table's
+      // Category column immediately — the two lists are not independent
+      // once a FAQ references a category, so the FAQ query is invalidated
+      // alongside the category query (new cross-invalidation; the other
+      // tabs in this file don't need this because they don't reference
+      // each other's data).
+      invalidateFaqs();
+      setCategoryDialogOpen(false);
+      toast({ title: editingCategory ? "Category updated" : "Category created" });
+    },
+    onError: (e: { error?: string; message?: string }) =>
+      toast({
+        title: "Could not save category",
+        description: e?.message ?? e?.error ?? "Please check the category and try again.",
+        variant: "destructive",
+      }),
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: (id: number) =>
+      adminFetch<{ success: boolean }>(
+        `${API}/api/admin/content/faq-categories/${id}`,
+        { method: "DELETE" },
+        token,
+      ),
+    onSuccess: () => {
+      invalidateCategories();
+      invalidateFaqs();
+      toast({ title: "Category deactivated" });
+    },
+  });
+
   const saveContactMutation = useMutation({
     mutationFn: (data: ContactFormState) =>
       adminFetch<ContactLink>(
@@ -348,8 +438,25 @@ export default function AppContentPage() {
       answer: item.answer,
       sortOrder: item.sortOrder,
       isActive: item.isActive,
+      categoryId: item.category?.id ?? null,
     });
     setFaqDialogOpen(true);
+  }
+
+  function openNewCategory() {
+    setEditingCategory(null);
+    setCategoryForm({ ...EMPTY_FAQ_CATEGORY, sortOrder: (categories.length + 1) * 10 });
+    setCategoryDialogOpen(true);
+  }
+
+  function openEditCategory(item: FaqCategory) {
+    setEditingCategory(item);
+    setCategoryForm({
+      name: item.name,
+      sortOrder: item.sortOrder,
+      isActive: item.isActive,
+    });
+    setCategoryDialogOpen(true);
   }
 
   function openNewContact() {
@@ -372,7 +479,10 @@ export default function AppContentPage() {
   }
 
   const canSavePage = pageForm.title.trim().length > 0 && pageForm.content.trim().length > 0;
+  // Category assignment is optional — an uncategorized FAQ remains fully
+  // valid and editable (see NO_CATEGORY_VALUE / the "No category" option).
   const canSaveFaq = faqForm.question.trim().length > 0 && faqForm.answer.trim().length > 0;
+  const canSaveCategory = categoryForm.name.trim().length > 0;
   const canSaveContact = contactForm.label.trim().length > 0 && contactForm.value.trim().length > 0;
 
   return (
@@ -387,6 +497,7 @@ export default function AppContentPage() {
         <TabsList>
           <TabsTrigger value="pages">Pages</TabsTrigger>
           <TabsTrigger value="faq">FAQ</TabsTrigger>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="contacts">Contact Links</TabsTrigger>
         </TabsList>
 
@@ -537,6 +648,7 @@ export default function AppContentPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Question</TableHead>
+                  <TableHead>Category</TableHead>
                   <TableHead>Order</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -544,13 +656,25 @@ export default function AppContentPage() {
               </TableHeader>
               <TableBody>
                 {faqsQuery.isLoading ? (
-                  <TableRow><TableCell colSpan={4} className="py-8 text-center">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="py-8 text-center">Loading...</TableCell></TableRow>
                 ) : faqs.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">No FAQs yet.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">No FAQs yet.</TableCell></TableRow>
                 ) : (
                   faqs.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">{item.question}</TableCell>
+                      <TableCell>
+                        {item.category ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            {item.category.name}
+                            {!item.category.isActive && (
+                              <Badge variant="outline" className="text-xs">Category inactive</Badge>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>{item.sortOrder}</TableCell>
                       <TableCell><StatusBadge active={item.isActive} /></TableCell>
                       <TableCell className="text-right">
@@ -561,6 +685,60 @@ export default function AppContentPage() {
                         )}
                         {canDelete && (
                           <Button variant="ghost" size="icon" onClick={() => deleteFaqMutation.mutate(item.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="categories">
+          <section className="space-y-3 rounded-md border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">FAQ Categories</h2>
+                <p className="text-sm text-muted-foreground">Group FAQs shown on mobile Help & Support.</p>
+              </div>
+              {canCreate && (
+                <Button onClick={openNewCategory} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Category
+                </Button>
+              )}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Order</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {categoriesQuery.isLoading ? (
+                  <TableRow><TableCell colSpan={4} className="py-8 text-center">Loading...</TableCell></TableRow>
+                ) : categories.length === 0 ? (
+                  <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">No categories yet.</TableCell></TableRow>
+                ) : (
+                  categories.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell>{item.sortOrder}</TableCell>
+                      <TableCell><StatusBadge active={item.isActive} /></TableCell>
+                      <TableCell className="text-right">
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" onClick={() => openEditCategory(item)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" onClick={() => deleteCategoryMutation.mutate(item.id)}>
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         )}
@@ -655,6 +833,32 @@ export default function AppContentPage() {
                 className="min-h-32"
               />
             </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select
+                value={faqForm.categoryId != null ? String(faqForm.categoryId) : NO_CATEGORY_VALUE}
+                onValueChange={(value) =>
+                  setFaqForm((prev) => ({
+                    ...prev,
+                    categoryId: value === NO_CATEGORY_VALUE ? null : Number(value),
+                  }))
+                }
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CATEGORY_VALUE}>No category</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={String(category.id)}>
+                      {category.name}
+                      {!category.isActive ? " (inactive)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Optional. Manage categories from the Categories tab.
+              </p>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="faq-order">Sort Order</Label>
@@ -682,6 +886,52 @@ export default function AppContentPage() {
               disabled={!canSaveFaq || saveFaqMutation.isPending}
             >
               {saveFaqMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={(canCreate || canEdit) && categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingCategory ? "Edit Category" : "Add Category"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="category-name">Name</Label>
+              <Input
+                id="category-name"
+                value={categoryForm.name}
+                onChange={(e) => setCategoryForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="category-order">Sort Order</Label>
+                <Input
+                  id="category-order"
+                  type="number"
+                  value={categoryForm.sortOrder}
+                  onChange={(e) => setCategoryForm((prev) => ({ ...prev, sortOrder: Number(e.target.value) }))}
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <Switch
+                  id="category-active"
+                  checked={categoryForm.isActive}
+                  onCheckedChange={(isActive) => setCategoryForm((prev) => ({ ...prev, isActive }))}
+                />
+                <Label htmlFor="category-active" className="pb-0.5">Active</Label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCategoryDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => saveCategoryMutation.mutate(categoryForm)}
+              disabled={!canSaveCategory || saveCategoryMutation.isPending}
+            >
+              {saveCategoryMutation.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

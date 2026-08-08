@@ -43,7 +43,11 @@ export const freshLaunchConfigurationManifest: readonly TransferGroup[] = [
   transfer("promotionCodes", "promotion_codes", 40, "general_studio", ["promotions"]),
   transfer("heroItems", "hero_items", 10, "shared"),
   transfer("appContentPages", "app_content_pages", 10, "shared", [], ["updated_by"]),
-  transfer("appFaqItems", "app_faq_items", 10, "shared"),
+  // Order 5, strictly before appFaqItems' order 10 — categories must transfer
+  // first so app_faq_items.category_id resolves against an already-imported
+  // parent row (literal-ID preservation, same model as dance_types).
+  transfer("appFaqCategories", "app_faq_categories", 5, "shared"),
+  transfer("appFaqItems", "app_faq_items", 10, "shared", ["appFaqCategories"]),
   transfer("balletLevels", "ballet_levels", 10, "ballet"),
   transfer("balletInstructors", "ballet_instructors", 10, "ballet"),
   transfer("balletGroups", "ballet_groups", 20, "ballet", ["balletLevels"]),

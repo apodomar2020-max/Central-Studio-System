@@ -40,12 +40,24 @@ type ContentPage = {
   isActive?: boolean;
 };
 
+type FaqCategory = {
+  id: number;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 type FaqItem = {
   id: number;
   question: string;
   answer: string;
   sortOrder: number;
   isActive: boolean;
+  // Additive field — old cached responses / a stale server simply omit it,
+  // which the grouping logic below treats identically to null (uncategorized).
+  // Server nulls this out for FAQs whose category is inactive too (see
+  // appContent.ts), so no separate "inactive category" branch is needed here.
+  category?: FaqCategory | null;
 };
 
 type ContactLink = {
@@ -62,7 +74,56 @@ type HelpSupportResponse = {
   page: ContentPage;
   faqs: FaqItem[];
   contacts: ContactLink[];
+  // Additive, optional — absent on responses from a server that predates
+  // FAQ categories. Always read via `data.faqCategories ?? []`.
+  faqCategories?: FaqCategory[];
 };
+
+// UI-only fallback bucket for FAQs with no active category — never a
+// persisted DB category (see APP_FAQ_CATEGORIES_IMPLEMENTATION_PLAN.md §4/§7.2).
+const OTHER_QUESTIONS_LABEL = "Other Questions";
+
+type FaqGroup = {
+  key: string;
+  title: string;
+  items: FaqItem[];
+};
+
+/**
+ * Group the flat, server-sorted `faqs` array by category, in a single pass
+ * that preserves each item's existing relative order (no client-side
+ * re-sort — the server's sortOrder,id order is trusted, exactly as before).
+ * Categories are ordered per `faqCategories` (already sortOrder,id from the
+ * server); "Other Questions" — uncategorized, or pointing at an inactive
+ * category (server already nulls that out) — always renders last.
+ */
+function groupFaqsByCategory(faqs: FaqItem[], faqCategories: FaqCategory[]): FaqGroup[] {
+  const byCategoryId = new Map<number, FaqItem[]>();
+  const uncategorized: FaqItem[] = [];
+
+  for (const item of faqs) {
+    if (item.category != null) {
+      const bucket = byCategoryId.get(item.category.id);
+      if (bucket) bucket.push(item);
+      else byCategoryId.set(item.category.id, [item]);
+    } else {
+      uncategorized.push(item);
+    }
+  }
+
+  const groups: FaqGroup[] = [];
+  for (const category of faqCategories) {
+    const items = byCategoryId.get(category.id);
+    // Categories with zero matching FAQs render no section at all.
+    if (items && items.length > 0) {
+      groups.push({ key: `category-${category.id}`, title: category.name, items });
+    }
+  }
+  if (uncategorized.length > 0) {
+    groups.push({ key: "other-questions", title: OTHER_QUESTIONS_LABEL, items: uncategorized });
+  }
+  return groups;
+}
 
 const CONTACT_ICON: Record<ContactType, keyof typeof Ionicons.glyphMap> = {
   whatsapp: "logo-whatsapp",
@@ -150,6 +211,7 @@ export default function HelpSupportScreen() {
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState<ContentPage>(FALLBACK_PAGE);
   const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [faqCategories, setFaqCategories] = useState<FaqCategory[]>([]);
   const [contacts, setContacts] = useState<ContactLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
@@ -161,6 +223,7 @@ export default function HelpSupportScreen() {
         if (!active) return;
         setPage(data.page);
         setFaqs(data.faqs);
+        setFaqCategories(data.faqCategories ?? []);
         setContacts(data.contacts);
         setUnavailable(false);
       })
@@ -181,6 +244,7 @@ export default function HelpSupportScreen() {
           setPage(FALLBACK_PAGE);
         }
         setFaqs([]);
+        setFaqCategories([]);
         setContacts([]);
       })
       .finally(() => {
@@ -191,6 +255,8 @@ export default function HelpSupportScreen() {
       active = false;
     };
   }, []);
+
+  const faqGroups = groupFaqsByCategory(faqs, faqCategories);
 
   async function openContact(link: ContactLink) {
     const url = buildContactUrl(link);
@@ -278,8 +344,15 @@ export default function HelpSupportScreen() {
             {faqs.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
-                <View style={styles.faqList}>
-                  {faqs.map((item) => <FaqRow key={item.id} item={item} />)}
+                <View style={styles.faqGroups}>
+                  {faqGroups.map((group) => (
+                    <View key={group.key} style={styles.faqGroup}>
+                      <Text style={styles.faqGroupTitle}>{group.title}</Text>
+                      <View style={styles.faqList}>
+                        {group.items.map((item) => <FaqRow key={item.id} item={item} />)}
+                      </View>
+                    </View>
+                  ))}
                 </View>
               </View>
             )}
@@ -337,6 +410,9 @@ const styles = StyleSheet.create({
   },
   contactIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   contactLabel: { fontSize: 12, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF", textAlign: "center" },
+  faqGroups: { gap: 18 },
+  faqGroup: { gap: 10 },
+  faqGroupTitle: { fontSize: 13, fontFamily: "Archivo_700Bold", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.4 },
   faqList: { gap: 8 },
   faqItem: {
     borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",

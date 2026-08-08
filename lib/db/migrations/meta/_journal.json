@@ -701,6 +701,13 @@
       "when": 1786377600000,
       "tag": "0099_studio_room_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1786464000000,
+      "tag": "0100_app_faq_categories",
+      "breakpoints": true
     }
   ]
 }
