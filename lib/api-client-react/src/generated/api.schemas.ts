@@ -1199,6 +1199,8 @@ export interface GetStudentChildItem {
   id: number;
   fullName: string;
   /** @nullable */
+  dateOfBirth?: string | null;
+  /** @nullable */
   birthday?: string | null;
   /** @nullable */
   age?: number | null;

@@ -2138,6 +2138,7 @@ export const ListStudentsResponse = zod.object({
           zod.object({
             id: zod.number(),
             fullName: zod.string(),
+            dateOfBirth: zod.string().nullish(),
             birthday: zod.string().nullish(),
             age: zod.number().nullish(),
             gender: zod.string(),
@@ -2179,6 +2180,7 @@ export const CreateStudentResponse = zod.object({
       zod.object({
         id: zod.number(),
         fullName: zod.string(),
+        dateOfBirth: zod.string().nullish(),
         birthday: zod.string().nullish(),
         age: zod.number().nullish(),
         gender: zod.string(),
@@ -2211,6 +2213,7 @@ export const GetStudentResponse = zod.object({
       zod.object({
         id: zod.number(),
         fullName: zod.string(),
+        dateOfBirth: zod.string().nullish(),
         birthday: zod.string().nullish(),
         age: zod.number().nullish(),
         gender: zod.string(),
@@ -2251,6 +2254,7 @@ export const UpdateStudentResponse = zod.object({
       zod.object({
         id: zod.number(),
         fullName: zod.string(),
+        dateOfBirth: zod.string().nullish(),
         birthday: zod.string().nullish(),
         age: zod.number().nullish(),
         gender: zod.string(),

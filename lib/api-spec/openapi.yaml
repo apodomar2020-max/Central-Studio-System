@@ -2541,6 +2541,7 @@ components:
       properties:
         id: { type: integer }
         fullName: { type: string }
+        dateOfBirth: { type: ["string", "null"] }
         birthday: { type: ["string", "null"] }
         age: { type: ["integer", "null"] }
         gender: { type: string }

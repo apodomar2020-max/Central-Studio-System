@@ -35,9 +35,30 @@ import { buildProfileCompletion } from "../lib/studentProfileResponse";
 import { computeProfileCompletion } from "../lib/profileCompletion";
 import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./studentProfilePdf";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { computeAgeAsOf } from "../lib/balletAgeEligibility";
 import * as zod from "zod";
 
 const router: IRouter = Router();
+
+/**
+ * Admin child-card display age (DOB / Age display fix). `children.dateOfBirth`
+ * is the canonical source (see lib/db/src/schema/children.ts's own doc
+ * comment); `children.age` is a legacy stored snapshot — kept readable for
+ * records that predate canonical DOB, or that came from a flow (e.g. Mobile)
+ * that also populates it, but never preferred over a valid canonical
+ * computation. Falls back to the legacy value whenever DOB is absent OR
+ * present-but-invalid (computeAgeAsOf returns null for either case) — never
+ * throws, never produces NaN. Reuses the existing, already-proven
+ * computeAgeAsOf() from ballet eligibility rather than duplicating date math.
+ */
+function deriveChildDisplayAge(dateOfBirth: string | null, legacyAge: number | null): number | null {
+  if (dateOfBirth) {
+    const today = new Date().toISOString().slice(0, 10);
+    const computed = computeAgeAsOf(dateOfBirth, today);
+    if (computed !== null) return computed;
+  }
+  return legacyAge ?? null;
+}
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -387,8 +408,9 @@ router.get("/students/:id", requireAdminAuth, async (req: AdminRequest, res): Pr
       children: children.map(c => ({
         id: c.id,
         fullName: c.fullName,
+        dateOfBirth: c.dateOfBirth ?? null,
         birthday: c.birthday ?? null,
-        age: c.age ?? null,
+        age: deriveChildDisplayAge(c.dateOfBirth ?? null, c.age ?? null),
         gender: c.gender,
         medicalNotes: c.medicalNotes ?? null,
         emergencyName: c.emergencyName ?? null,
@@ -977,8 +999,9 @@ async function buildStudentOverviewData(
       ? children.map((c) => ({
           id: c.id,
           fullName: c.fullName,
+          dateOfBirth: c.dateOfBirth ?? null,
           birthday: c.birthday ?? null,
-          age: c.age ?? null,
+          age: deriveChildDisplayAge(c.dateOfBirth ?? null, c.age ?? null),
           gender: c.gender,
           medicalNotes: c.medicalNotes ?? null,
           emergencyName: c.emergencyName ?? null,

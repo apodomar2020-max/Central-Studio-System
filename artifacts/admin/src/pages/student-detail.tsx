@@ -96,6 +96,7 @@ interface OverviewStats {
 interface OverviewChild {
   id: number;
   fullName: string;
+  dateOfBirth: string | null;
   birthday: string | null;
   age: number | null;
   gender: string;
