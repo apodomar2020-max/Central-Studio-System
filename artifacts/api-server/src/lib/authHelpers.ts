@@ -255,8 +255,10 @@ export async function invalidateOtpCodes(email: string, purpose: OtpPurpose): Pr
 
 /**
  * Issue (and send) a fresh OTP for an email. Issuance is serialized per
- * email+purpose with a transaction-scoped advisory lock so concurrent requests
- * cannot bypass the cooldown or rolling hourly/daily limits.
+ * email (across every OTP purpose) with a transaction-scoped advisory lock,
+ * so concurrent requests — including a verify send racing a reset send for
+ * the same email — cannot both observe a pre-limit count and together
+ * exceed the shared hourly/daily budget.
  */
 export async function issueOtp(
   email: string,
@@ -272,10 +274,17 @@ export async function issueOtp(
   const expiresAt = new Date(nowMs + OTP_TTL_SECONDS * 1000).toISOString();
 
   const otpId = await db.transaction(async (tx) => {
-    // Stable, transaction-scoped lock key; no external lock service required.
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${normalizedEmail}:${purpose}`}))`);
+    // Lock keyed on email only (not email+purpose) so verify and reset
+    // issuance for the same email fully serialize — required for the shared
+    // hourly/daily budget below to be enforced atomically across purposes.
+    // Different emails still lock independently.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedEmail}))`);
 
-    const issuedToday = await tx
+    // Purpose-scoped history — cooldown intentionally stays per email+purpose:
+    // a verify send moments ago must not itself trigger the reset-purpose
+    // cooldown (and vice versa). Only the shared hourly/daily budget below is
+    // unified across purposes.
+    const issuedThisPurposeToday = await tx
       .select({ createdAt: emailOtpsTable.createdAt })
       .from(emailOtpsTable)
       .where(and(
@@ -285,13 +294,25 @@ export async function issueOtp(
       ))
       .orderBy(emailOtpsTable.createdAt);
 
-    const latest = issuedToday.at(-1);
+    const latest = issuedThisPurposeToday.at(-1);
     if (latest) {
       const ageSeconds = (nowMs - new Date(latest.createdAt).getTime()) / 1000;
       if (ageSeconds < OTP_RESEND_COOLDOWN_SECONDS) {
         throw new OtpRateLimitError(Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - ageSeconds));
       }
     }
+
+    // All-purpose history — hourly/daily send limits are ONE shared budget
+    // per email across every OTP purpose (verify + reset), per the approved
+    // unified send-limit policy. Deliberately no purpose predicate here.
+    const issuedToday = await tx
+      .select({ createdAt: emailOtpsTable.createdAt })
+      .from(emailOtpsTable)
+      .where(and(
+        eq(emailOtpsTable.email, normalizedEmail),
+        gte(emailOtpsTable.createdAt, dayAgo),
+      ))
+      .orderBy(emailOtpsTable.createdAt);
 
     // toEpochMs, not raw string comparison — see its doc comment: `row.createdAt`
     // (Postgres/Drizzle format) and `hourAgo` (Node ISO format) are not
