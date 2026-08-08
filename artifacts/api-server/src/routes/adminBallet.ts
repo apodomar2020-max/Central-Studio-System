@@ -34,6 +34,7 @@ import {
   balletProgramRequirementSectionsTable,
   balletProgramRequirementItemsTable,
   balletFaqsTable,
+  balletFaqCategoriesTable,
   attendanceTable,
   systemUsersTable,
   notificationsTable,
@@ -67,7 +68,8 @@ const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive", "descript
 const BALLET_SETTINGS_ACTIVITY_FIELDS = ["homeCardImageUrl", "whatsappNumber", "phoneNumber", "email", "studioLocationUrl"] as const;
 const BALLET_REQUIREMENT_SECTION_ACTIVITY_FIELDS = ["title", "description", "sortOrder", "isActive"] as const;
 const BALLET_REQUIREMENT_ITEM_ACTIVITY_FIELDS = ["sectionId", "text", "sortOrder", "isActive"] as const;
-const BALLET_FAQ_ACTIVITY_FIELDS = ["question", "answer", "sortOrder", "isActive"] as const;
+const BALLET_FAQ_ACTIVITY_FIELDS = ["question", "answer", "sortOrder", "isActive", "categoryId"] as const;
+const BALLET_FAQ_CATEGORY_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive"] as const;
 const GOOGLE_DRIVE_IMAGE_HOSTS = new Set(["drive.google.com", "www.drive.google.com", "docs.google.com"]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2198,13 +2200,81 @@ router.patch("/admin/ballet/program-requirement-items/:id", requireAdminAuth, re
 
 // ─── Ballet FAQs ──────────────────────────────────────────────────────────────
 
+/**
+ * Shape a joined Ballet FAQ row (item columns + aliased `category*` columns
+ * from a LEFT JOIN against ballet_faq_categories) into the response shape,
+ * nesting the category into a `category` object — or `null` when there is
+ * no matching category row. Used only by admin routes, which join the TRUE
+ * category assignment regardless of the category's active state (unlike
+ * the public endpoint's active-only join in ballet.ts).
+ */
+function shapeBalletFaqCategory<T extends {
+  categoryId: number | null;
+  categoryName: string | null;
+  categorySortOrder: number | null;
+  categoryIsActive: boolean | null;
+}>({ categoryId, categoryName, categorySortOrder, categoryIsActive, ...rest }: T) {
+  return {
+    ...rest,
+    category: categoryId != null
+      ? { id: categoryId, name: categoryName, sortOrder: categorySortOrder, isActive: categoryIsActive }
+      : null,
+  };
+}
+
+/** Existence check for a provided categoryId — does not require the category to be active (admin may assign ahead of activation). */
+async function balletFaqCategoryExists(categoryId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: balletFaqCategoriesTable.id })
+    .from(balletFaqCategoriesTable)
+    .where(eq(balletFaqCategoriesTable.id, categoryId))
+    .limit(1);
+  return !!row;
+}
+
+/** Re-select a Ballet FAQ joined to its true category assignment (regardless of the category's active state) for admin responses. */
+async function selectAdminBalletFaq(id: number) {
+  const [row] = await db
+    .select({
+      id: balletFaqsTable.id,
+      question: balletFaqsTable.question,
+      answer: balletFaqsTable.answer,
+      sortOrder: balletFaqsTable.sortOrder,
+      isActive: balletFaqsTable.isActive,
+      categoryId: balletFaqCategoriesTable.id,
+      categoryName: balletFaqCategoriesTable.name,
+      categorySortOrder: balletFaqCategoriesTable.sortOrder,
+      categoryIsActive: balletFaqCategoriesTable.isActive,
+    })
+    .from(balletFaqsTable)
+    .leftJoin(balletFaqCategoriesTable, eq(balletFaqCategoriesTable.id, balletFaqsTable.categoryId))
+    .where(eq(balletFaqsTable.id, id))
+    .limit(1);
+  return row ? shapeBalletFaqCategory(row) : null;
+}
+
 router.get("/admin/ballet/faqs", requireAdminAuth, requireAdminPermission("ballet.settings", "view"), async (_req, res): Promise<void> => {
   try {
+    // Admin sees the true category assignment regardless of the category's
+    // active state (unlike the public endpoint's active-only join), so
+    // admins can see and fix (or knowingly leave) a FAQ pointing at an
+    // inactive category.
     const faqs = await db
-      .select()
+      .select({
+        id: balletFaqsTable.id,
+        question: balletFaqsTable.question,
+        answer: balletFaqsTable.answer,
+        sortOrder: balletFaqsTable.sortOrder,
+        isActive: balletFaqsTable.isActive,
+        categoryId: balletFaqCategoriesTable.id,
+        categoryName: balletFaqCategoriesTable.name,
+        categorySortOrder: balletFaqCategoriesTable.sortOrder,
+        categoryIsActive: balletFaqCategoriesTable.isActive,
+      })
       .from(balletFaqsTable)
+      .leftJoin(balletFaqCategoriesTable, eq(balletFaqCategoriesTable.id, balletFaqsTable.categoryId))
       .orderBy(asc(balletFaqsTable.sortOrder), asc(balletFaqsTable.id));
-    res.json({ faqs });
+    res.json({ faqs: faqs.map(shapeBalletFaqCategory) });
   } catch (err) {
     logger.error({ err }, "GET /admin/ballet/faqs failed");
     res.status(500).json({ error: "Failed to load Ballet FAQs" });
@@ -2216,6 +2286,10 @@ const CreateFaqBody = z.object({
   answer:    z.string().min(1, "Answer is required"),
   sortOrder: z.number().int().optional(),
   isActive:  z.boolean().optional(),
+  // Nullable/optional — existing FAQs preserve category-less state by
+  // default; not required to reference an *active* category (admins may
+  // assign a FAQ to a category ahead of the category's own activation).
+  categoryId: z.number().int().positive().nullish(),
 });
 
 router.post("/admin/ballet/faqs", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -2225,12 +2299,18 @@ router.post("/admin/ballet/faqs", requireAdminAuth, requireAdminPermission("ball
     return;
   }
 
+  if (parsed.data.categoryId != null && !(await balletFaqCategoryExists(parsed.data.categoryId))) {
+    res.status(404).json({ error: "Ballet FAQ category not found" });
+    return;
+  }
+
   try {
     const [faq] = await db.insert(balletFaqsTable).values({
       question: parsed.data.question.trim(),
       answer: parsed.data.answer.trim(),
       sortOrder: parsed.data.sortOrder ?? 0,
       isActive: parsed.data.isActive ?? true,
+      categoryId: parsed.data.categoryId ?? null,
     }).returning();
 
     await logActivity(req, {
@@ -2243,7 +2323,7 @@ router.post("/admin/ballet/faqs", requireAdminAuth, requireAdminPermission("ball
       summary: `Created Ballet FAQ ${faq.question}`,
     });
 
-    res.status(201).json({ faq });
+    res.status(201).json({ faq: await selectAdminBalletFaq(faq.id) });
   } catch (err) {
     logger.error({ err }, "POST /admin/ballet/faqs failed");
     res.status(500).json({ error: "Failed to create Ballet FAQ" });
@@ -2262,11 +2342,17 @@ router.patch("/admin/ballet/faqs/:id", requireAdminAuth, requireAdminPermission(
     return;
   }
 
+  if (parsed.data.categoryId != null && !(await balletFaqCategoryExists(parsed.data.categoryId))) {
+    res.status(404).json({ error: "Ballet FAQ category not found" });
+    return;
+  }
+
   const updates: Record<string, unknown> = {};
   if (parsed.data.question !== undefined) updates["question"] = parsed.data.question.trim();
   if (parsed.data.answer !== undefined) updates["answer"] = parsed.data.answer.trim();
   if (parsed.data.sortOrder !== undefined) updates["sortOrder"] = parsed.data.sortOrder;
   if (parsed.data.isActive !== undefined) updates["isActive"] = parsed.data.isActive;
+  if (parsed.data.categoryId !== undefined) updates["categoryId"] = parsed.data.categoryId;
   if (Object.keys(updates).length === 0) {
     res.json({ success: true, message: "No changes" });
     return;
@@ -2303,10 +2389,155 @@ router.patch("/admin/ballet/faqs/:id", requireAdminAuth, requireAdminPermission(
       });
     }
 
-    res.json({ faq });
+    res.json({ faq: await selectAdminBalletFaq(faq.id) });
   } catch (err) {
     logger.error({ err }, "PATCH /admin/ballet/faqs/:id failed");
     res.status(500).json({ error: "Failed to update Ballet FAQ" });
+  }
+});
+
+// ─── Ballet FAQ Categories ──────────────────────────────────────────────────
+// Ballet-domain-only CMS entity referenced by ballet_faqs.category_id. Same
+// ballet.settings permission module/actions and same soft-deactivate
+// (isActive=false) convention as every sibling entity in this file; never
+// hard-deleted (see balletFaqs.ts categoryId comment).
+
+/**
+ * drizzle-orm's node-postgres driver wraps the underlying pg error in a
+ * DrizzleQueryError — the real pg error (with `.code`/`.constraint`) lives
+ * on `.cause`, not on the wrapper itself. Checking both `error.code`/
+ * `error.constraint` AND `error.cause?.code`/`error.cause?.constraint`
+ * mirrors the existing, verified-safe pattern already used in this
+ * codebase for the identical class of problem (see
+ * `isOccurrenceDuplicateViolation` in bookings.ts). Deliberately narrow:
+ * only THIS exact constraint name maps to a duplicate-category-name 409.
+ */
+function isBalletFaqCategoryNameDuplicate(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+  const value = error as { code?: string; constraint?: string; cause?: { code?: string; constraint?: string } };
+  const code = value.code ?? value.cause?.code;
+  const constraint = value.constraint ?? value.cause?.constraint;
+  return code === "23505" && constraint === "ballet_faq_categories_name_unique_ci";
+}
+
+router.get("/admin/ballet/faq-categories", requireAdminAuth, requireAdminPermission("ballet.settings", "view"), async (_req, res): Promise<void> => {
+  try {
+    const categories = await db
+      .select()
+      .from(balletFaqCategoriesTable)
+      .orderBy(asc(balletFaqCategoriesTable.sortOrder), asc(balletFaqCategoriesTable.id));
+    res.json({ categories });
+  } catch (err) {
+    logger.error({ err }, "GET /admin/ballet/faq-categories failed");
+    res.status(500).json({ error: "Failed to load Ballet FAQ categories" });
+  }
+});
+
+const CreateFaqCategoryBody = z.object({
+  name:      z.string().min(1, "Name is required"),
+  sortOrder: z.number().int().optional(),
+  isActive:  z.boolean().optional(),
+});
+
+router.post("/admin/ballet/faq-categories", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const parsed = CreateFaqCategoryBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  try {
+    const [category] = await db.insert(balletFaqCategoriesTable).values({
+      name: parsed.data.name.trim(),
+      sortOrder: parsed.data.sortOrder ?? 0,
+      isActive: parsed.data.isActive ?? true,
+    }).returning();
+
+    await logActivity(req, {
+      action: "create",
+      module: "ballet.settings",
+      entityType: "ballet_faq_category",
+      entityId: category.id,
+      entityLabel: category.name,
+      after: Object.fromEntries(BALLET_FAQ_CATEGORY_ACTIVITY_FIELDS.map((key) => [key, category[key]])),
+      summary: `Created Ballet FAQ category ${category.name}`,
+    });
+
+    res.status(201).json({ category });
+  } catch (err) {
+    if (isBalletFaqCategoryNameDuplicate(err)) {
+      res.status(409).json({ error: `Category name "${parsed.data.name.trim()}" is already in use` });
+      return;
+    }
+    logger.error({ err }, "POST /admin/ballet/faq-categories failed");
+    res.status(500).json({ error: "Failed to create Ballet FAQ category" });
+  }
+});
+
+const UpdateFaqCategoryBody = CreateFaqCategoryBody.partial();
+
+router.patch("/admin/ballet/faq-categories/:id", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid category ID" }); return; }
+
+  const parsed = UpdateFaqCategoryBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.name !== undefined) updates["name"] = parsed.data.name.trim();
+  if (parsed.data.sortOrder !== undefined) updates["sortOrder"] = parsed.data.sortOrder;
+  if (parsed.data.isActive !== undefined) updates["isActive"] = parsed.data.isActive;
+  if (Object.keys(updates).length === 0) {
+    res.json({ success: true, message: "No changes" });
+    return;
+  }
+  updates["updatedAt"] = new Date().toISOString();
+
+  try {
+    const [existing] = await db.select().from(balletFaqCategoriesTable).where(eq(balletFaqCategoriesTable.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Ballet FAQ category not found" }); return; }
+    const [category] = await db
+      .update(balletFaqCategoriesTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(balletFaqCategoriesTable.id, id))
+      .returning();
+    if (!category) { res.status(404).json({ error: "Ballet FAQ category not found" }); return; }
+
+    const { before, after } = diffFields(
+      Object.fromEntries(BALLET_FAQ_CATEGORY_ACTIVITY_FIELDS.map((key) => [key, existing[key]])),
+      Object.fromEntries(BALLET_FAQ_CATEGORY_ACTIVITY_FIELDS.map((key) => [key, category[key]])),
+      BALLET_FAQ_CATEGORY_ACTIVITY_FIELDS,
+    );
+    const changedKeys = Object.keys(after);
+    if (changedKeys.length > 0) {
+      // Ballet's existing PATCH convention: `action` stays "update" always
+      // — it does not auto-switch to "activate"/"deactivate" on an
+      // isActive flip (unlike appContent.ts's FAQ/category handlers).
+      // Matching this file's own established convention, not App Content's.
+      await logActivity(req, {
+        action: "update",
+        module: "ballet.settings",
+        entityType: "ballet_faq_category",
+        entityId: category.id,
+        entityLabel: category.name,
+        before,
+        after,
+        summary: `Updated Ballet FAQ category ${category.name}: ${changedKeys.join(", ")}`,
+      });
+    }
+
+    res.json({ category });
+  } catch (err) {
+    if (isBalletFaqCategoryNameDuplicate(err)) {
+      res.status(409).json({ error: `Category name "${parsed.data.name?.trim()}" is already in use` });
+      return;
+    }
+    logger.error({ err }, "PATCH /admin/ballet/faq-categories/:id failed");
+    res.status(500).json({ error: "Failed to update Ballet FAQ category" });
   }
 });
 

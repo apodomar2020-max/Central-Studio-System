@@ -3,17 +3,24 @@
  *
  * Focused, isolated FAQ management extracted from the former single stacked
  * BalletSettingsPage.tsx: list existing entries, create, edit, activate/
- * deactivate, and edit display order.
+ * deactivate, edit display order, and assign a Ballet FAQ Category.
  */
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ChevronLeft, Loader2, Plus, ToggleLeft, ToggleRight } from "lucide-react";
+import { AlertCircle, ChevronLeft, FolderCog, Loader2, Plus, ToggleLeft, ToggleRight } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -21,12 +28,20 @@ import {
   adminFetch,
   balletApiUrl,
   BALLET_FAQS_QUERY_KEY,
+  BALLET_FAQ_CATEGORIES_QUERY_KEY,
   parseSortOrder,
   type BalletFaq,
+  type BalletFaqCategory,
 } from "./balletSettingsApi";
 
-type FaqDraft = { question: string; answer: string; sortOrder: string };
-const EMPTY_FAQ_DRAFT: FaqDraft = { question: "", answer: "", sortOrder: "0" };
+type FaqDraft = { question: string; answer: string; sortOrder: string; categoryId: number | null };
+const EMPTY_FAQ_DRAFT: FaqDraft = { question: "", answer: "", sortOrder: "0", categoryId: null };
+
+// Radix Select does not accept an empty-string item value, so "no category"
+// is represented by this sentinel in the <Select> and mapped to/from `null`
+// at the form-state boundary — same convention as App Content's FAQ
+// category selector.
+const NO_CATEGORY_VALUE = "__none__";
 
 export default function BalletFaqPage() {
   const qc = useQueryClient();
@@ -44,12 +59,24 @@ export default function BalletFaqPage() {
     refetchOnWindowFocus: false,
   });
 
+  const categoriesQuery = useQuery({
+    queryKey: [BALLET_FAQ_CATEGORIES_QUERY_KEY, token],
+    queryFn: () => adminFetch<{ categories: BalletFaqCategory[] }>(balletApiUrl("/faq-categories"), {}, token),
+    refetchOnWindowFocus: false,
+  });
+
   const faqs = data?.faqs ?? [];
+  const categories = categoriesQuery.data?.categories ?? [];
 
   useEffect(() => {
     const nextFaqDrafts: Record<number, FaqDraft> = {};
     for (const faq of faqs) {
-      nextFaqDrafts[faq.id] = { question: faq.question, answer: faq.answer, sortOrder: String(faq.sortOrder) };
+      nextFaqDrafts[faq.id] = {
+        question: faq.question,
+        answer: faq.answer,
+        sortOrder: String(faq.sortOrder),
+        categoryId: faq.category?.id ?? null,
+      };
     }
     setFaqDrafts(nextFaqDrafts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,7 +112,13 @@ export default function BalletFaqPage() {
       toast({ title: "Question and answer are required", variant: "destructive" });
       return;
     }
-    createFaqMutation.mutate({ question, answer, sortOrder: parseSortOrder(newFaq.sortOrder), isActive: true });
+    createFaqMutation.mutate({
+      question,
+      answer,
+      sortOrder: parseSortOrder(newFaq.sortOrder),
+      isActive: true,
+      categoryId: newFaq.categoryId,
+    });
   }
 
   function saveFaq(faq: BalletFaq) {
@@ -96,7 +129,12 @@ export default function BalletFaqPage() {
     }
     updateFaqMutation.mutate({
       id: faq.id,
-      body: { question: draft.question.trim(), answer: draft.answer.trim(), sortOrder: parseSortOrder(draft.sortOrder) },
+      body: {
+        question: draft.question.trim(),
+        answer: draft.answer.trim(),
+        sortOrder: parseSortOrder(draft.sortOrder),
+        categoryId: draft.categoryId,
+      },
     });
   }
 
@@ -112,7 +150,14 @@ export default function BalletFaqPage() {
         title="Ballet FAQ"
         description="Manage the ordered FAQ questions shown on the mobile Ballet FAQ page."
         mode="stage"
-      />
+      >
+        <Button asChild variant="outline" size="sm" className="gap-2">
+          <Link href="/ballet/settings/faq/categories">
+            <FolderCog className="h-4 w-4" />
+            Manage Categories
+          </Link>
+        </Button>
+      </PageHeader>
 
       {isLoading && (
         <div className="flex items-center justify-center py-20">
@@ -162,6 +207,27 @@ export default function BalletFaqPage() {
                   className="bg-background text-foreground"
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide">Category</Label>
+                <Select
+                  value={newFaq.categoryId != null ? String(newFaq.categoryId) : NO_CATEGORY_VALUE}
+                  onValueChange={(value) =>
+                    setNewFaq((prev) => ({ ...prev, categoryId: value === NO_CATEGORY_VALUE ? null : Number(value) }))
+                  }
+                >
+                  <SelectTrigger className="bg-background text-foreground"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_CATEGORY_VALUE}>No category</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={String(category.id)}>
+                        {category.name}
+                        {!category.isActive ? " (inactive)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Optional. Manage categories from the link above.</p>
+              </div>
               <div className="flex justify-end">
                 <Button
                   type="button"
@@ -183,12 +249,27 @@ export default function BalletFaqPage() {
           ) : (
             <div className="space-y-3">
               {faqs.map((faq) => {
-                const draft = faqDrafts[faq.id] ?? { question: faq.question, answer: faq.answer, sortOrder: String(faq.sortOrder) };
+                const draft = faqDrafts[faq.id] ?? {
+                  question: faq.question,
+                  answer: faq.answer,
+                  sortOrder: String(faq.sortOrder),
+                  categoryId: faq.category?.id ?? null,
+                };
                 return (
                   <div key={faq.id} className="rounded-lg border border-border bg-card p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={faq.isActive ? "default" : "secondary"}>{faq.isActive ? "Active" : "Inactive"}</Badge>
+                        {faq.category ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                            {faq.category.name}
+                            {!faq.category.isActive && (
+                              <Badge variant="outline" className="text-xs">Category inactive</Badge>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No category</span>
+                        )}
                         <span className="text-xs text-muted-foreground">FAQ ID {faq.id}</span>
                       </div>
                       {canEdit && (
@@ -232,6 +313,29 @@ export default function BalletFaqPage() {
                           onChange={(e) => setFaqDrafts((prev) => ({ ...prev, [faq.id]: { ...draft, answer: e.target.value } }))}
                           className="bg-background text-foreground"
                         />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-muted-foreground text-xs uppercase tracking-wide">Category</Label>
+                        <Select
+                          value={draft.categoryId != null ? String(draft.categoryId) : NO_CATEGORY_VALUE}
+                          onValueChange={(value) =>
+                            setFaqDrafts((prev) => ({
+                              ...prev,
+                              [faq.id]: { ...draft, categoryId: value === NO_CATEGORY_VALUE ? null : Number(value) },
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="bg-background text-foreground"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NO_CATEGORY_VALUE}>No category</SelectItem>
+                            {categories.map((category) => (
+                              <SelectItem key={category.id} value={String(category.id)}>
+                                {category.name}
+                                {!category.isActive ? " (inactive)" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       {canEdit && (
                         <div className="flex justify-end">

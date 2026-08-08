@@ -66,12 +66,25 @@ export interface RequirementSection {
   items: RequirementItem[];
 }
 
+export interface BalletFaqCategory {
+  id: number;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BalletFaq {
   id: number;
   question: string;
   answer: string;
   sortOrder: number;
   isActive: boolean;
+  // The FAQ's true category assignment, regardless of the category's own
+  // active state (admin sees this even when the category is deactivated —
+  // only the public Ballet FAQ response nulls it out in that case).
+  category: BalletFaqCategory | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,6 +92,7 @@ export interface BalletFaq {
 export const BALLET_SETTINGS_QUERY_KEY = "admin-ballet-settings";
 export const BALLET_REQUIREMENTS_QUERY_KEY = "admin-ballet-program-requirements";
 export const BALLET_FAQS_QUERY_KEY = "admin-ballet-faqs";
+export const BALLET_FAQ_CATEGORIES_QUERY_KEY = "admin-ballet-faq-categories";
 
 export function normalizeHomeCardImageUrlInput(value: string): string | null {
   const trimmed = value.trim();

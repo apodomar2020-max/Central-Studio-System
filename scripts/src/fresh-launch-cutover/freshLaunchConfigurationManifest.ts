@@ -58,7 +58,12 @@ export const freshLaunchConfigurationManifest: readonly TransferGroup[] = [
   transfer("balletGroupSchedules", "ballet_group_schedules", 50, "ballet", ["balletGroups", "balletSchedules"]),
   transfer("balletPackages", "ballet_packages", 20, "ballet"),
   transfer("balletPackageLevels", "ballet_package_levels", 30, "ballet", ["balletPackages", "balletLevels"]),
-  transfer("balletFaqs", "ballet_faqs", 10, "ballet"),
+  // Order 5, strictly before balletFaqs' order 10 — categories must
+  // transfer first so ballet_faqs.category_id resolves against an
+  // already-imported parent row (literal-ID preservation, same model as
+  // balletProgramRequirementSections/appFaqCategories).
+  transfer("balletFaqCategories", "ballet_faq_categories", 5, "ballet"),
+  transfer("balletFaqs", "ballet_faqs", 10, "ballet", ["balletFaqCategories"]),
   transfer("balletProgramRequirementSections", "ballet_program_requirement_sections", 10, "ballet"),
   transfer("balletProgramRequirementItems", "ballet_program_requirement_items", 20, "ballet", ["balletProgramRequirementSections"]),
   transfer("balletPerformanceOpportunities", "ballet_performance_opportunities", 10, "ballet"),

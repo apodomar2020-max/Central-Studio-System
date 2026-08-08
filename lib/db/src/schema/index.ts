@@ -31,6 +31,9 @@ export * from "./balletGroups";
 export * from "./balletPackages";
 export * from "./balletPerformanceOpportunities";
 export * from "./balletProgramRequirements";
+// Ballet FAQ Categories — Ballet-domain-only CMS entity referenced by
+// ballet_faqs.category_id (migration 0101)
+export * from "./balletFaqCategories";
 export * from "./balletFaqs";
 export * from "./balletPayments";
 export * from "./balletEnrollmentCancellations";

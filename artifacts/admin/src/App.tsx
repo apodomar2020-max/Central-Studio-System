@@ -46,6 +46,7 @@ import BalletContactPage from "@/pages/ballet/settings/BalletContactPage";
 import BalletRequirementsPage from "@/pages/ballet/settings/BalletRequirementsPage";
 import BalletRequirementsSectionPage from "@/pages/ballet/settings/BalletRequirementsSectionPage";
 import BalletFaqSettingsPage from "@/pages/ballet/settings/BalletFaqPage";
+import BalletFaqCategoriesPage from "@/pages/ballet/settings/BalletFaqCategoriesPage";
 import BalletLevelsPage from "@/pages/ballet/BalletLevelsPage";
 import BalletInstructorsPage from "@/pages/ballet/BalletInstructorsPage";
 import BalletClassesPage from "@/pages/ballet/BalletClassesPage";
@@ -221,6 +222,7 @@ function ProtectedRouter() {
         <Route path="/ballet/settings/requirements">{guarded(ROUTE_PERMS.balletSettings, <BalletRequirementsPage />)}</Route>
         <Route path="/ballet/settings/home-card">{guarded(ROUTE_PERMS.balletSettings, <BalletHomeCardPage />)}</Route>
         <Route path="/ballet/settings/contact">{guarded(ROUTE_PERMS.balletSettings, <BalletContactPage />)}</Route>
+        <Route path="/ballet/settings/faq/categories">{guarded(ROUTE_PERMS.balletSettings, <BalletFaqCategoriesPage />)}</Route>
         <Route path="/ballet/settings/faq">{guarded(ROUTE_PERMS.balletSettings, <BalletFaqSettingsPage />)}</Route>
         <Route path="/ballet/settings">{guarded(ROUTE_PERMS.balletSettings, <BalletSettingsOverviewPage />)}</Route>
         <Route path="/ballet/levels">{guarded(ROUTE_PERMS.balletLevels, <BalletLevelsPage />)}</Route>

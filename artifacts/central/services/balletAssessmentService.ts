@@ -103,11 +103,23 @@ export interface BalletProgramRequirementSection {
   items: BalletProgramRequirementItem[];
 }
 
+export interface BalletFaqCategory {
+  id: number;
+  name: string;
+  sortOrder: number;
+}
+
 export interface BalletFaq {
   id: number;
   question: string;
   answer: string;
   sortOrder: number;
+  // Additive field — old cached responses / a stale server simply omit it,
+  // which grouping logic treats identically to null (uncategorized).
+  // Server nulls this out for FAQs whose category is inactive too (see
+  // adminBallet.ts / ballet.ts), so no separate "inactive category" branch
+  // is needed on the client.
+  category?: BalletFaqCategory | null;
 }
 
 /**
@@ -174,13 +186,17 @@ export async function fetchBalletProgramRequirements(signal?: AbortSignal): Prom
   return res.sections;
 }
 
-export async function fetchBalletFaqs(signal?: AbortSignal): Promise<BalletFaq[]> {
+export async function fetchBalletFaqs(
+  signal?: AbortSignal
+): Promise<{ faqs: BalletFaq[]; faqCategories: BalletFaqCategory[] }> {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-  const res = await customFetch<{ faqs: BalletFaq[] }>(
+  const res = await customFetch<{ faqs: BalletFaq[]; faqCategories?: BalletFaqCategory[] }>(
     `${apiUrl}/api/ballet/faqs`,
     { method: "GET", signal }
   );
-  return res.faqs;
+  // faqCategories is additive — a server response that predates this field
+  // simply omits it; default to an empty list defensively.
+  return { faqs: res.faqs, faqCategories: res.faqCategories ?? [] };
 }
 
 /**

@@ -59,6 +59,7 @@ import {
   balletProgramRequirementSectionsTable,
   balletProgramRequirementItemsTable,
   balletFaqsTable,
+  balletFaqCategoriesTable,
   balletGroupsTable,
   balletPackagesTable,
   balletPackageLevelsTable,
@@ -512,18 +513,49 @@ router.get("/ballet/program-requirements", async (_req, res): Promise<void> => {
 
 router.get("/ballet/faqs", async (_req, res): Promise<void> => {
   try {
-    const faqs = await db
-      .select({
-        id:        balletFaqsTable.id,
-        question:  balletFaqsTable.question,
-        answer:    balletFaqsTable.answer,
-        sortOrder: balletFaqsTable.sortOrder,
-      })
-      .from(balletFaqsTable)
-      .where(eq(balletFaqsTable.isActive, true))
-      .orderBy(asc(balletFaqsTable.sortOrder), asc(balletFaqsTable.id));
+    // faqs stays flat, sorted exactly as today (sortOrder, id) — no reshape
+    // into grouped/nested data. Category is a per-item join, additive only;
+    // isActive is deliberately not selected on the FAQ item, matching the
+    // existing (pre-category) public shape exactly.
+    // Only an *active* category is attached here — a FAQ pointing at a
+    // deactivated category serializes identically to a genuinely
+    // uncategorized one on this public endpoint. The FAQ itself stays
+    // visible regardless (existing is_active filter below is unchanged).
+    const [faqRows, faqCategories] = await Promise.all([
+      db
+        .select({
+          id:        balletFaqsTable.id,
+          question:  balletFaqsTable.question,
+          answer:    balletFaqsTable.answer,
+          sortOrder: balletFaqsTable.sortOrder,
+          categoryId: balletFaqCategoriesTable.id,
+          categoryName: balletFaqCategoriesTable.name,
+          categorySortOrder: balletFaqCategoriesTable.sortOrder,
+        })
+        .from(balletFaqsTable)
+        .leftJoin(
+          balletFaqCategoriesTable,
+          and(eq(balletFaqCategoriesTable.id, balletFaqsTable.categoryId), eq(balletFaqCategoriesTable.isActive, true)),
+        )
+        .where(eq(balletFaqsTable.isActive, true))
+        .orderBy(asc(balletFaqsTable.sortOrder), asc(balletFaqsTable.id)),
+      db
+        .select({
+          id: balletFaqCategoriesTable.id,
+          name: balletFaqCategoriesTable.name,
+          sortOrder: balletFaqCategoriesTable.sortOrder,
+        })
+        .from(balletFaqCategoriesTable)
+        .where(eq(balletFaqCategoriesTable.isActive, true))
+        .orderBy(asc(balletFaqCategoriesTable.sortOrder), asc(balletFaqCategoriesTable.id)),
+    ]);
 
-    res.json({ faqs });
+    const faqs = faqRows.map(({ categoryId, categoryName, categorySortOrder, ...faq }) => ({
+      ...faq,
+      category: categoryId != null ? { id: categoryId, name: categoryName, sortOrder: categorySortOrder } : null,
+    }));
+
+    res.json({ faqs, faqCategories });
   } catch (err) {
     logger.error({ err }, "GET /ballet/faqs failed");
     res.status(500).json({ error: "Failed to load Ballet FAQs" });

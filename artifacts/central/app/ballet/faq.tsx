@@ -26,8 +26,51 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { fetchBalletFaqs, type BalletFaq } from "@/services/balletAssessmentService";
+import { fetchBalletFaqs, type BalletFaq, type BalletFaqCategory } from "@/services/balletAssessmentService";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
+
+// UI-only fallback bucket for FAQs with no active category — never a
+// persisted DB category (locked decision: client-only, never persisted).
+const OTHER_QUESTIONS_LABEL = "Other Questions";
+
+type FaqGroup = { key: string; title: string; items: BalletFaq[] };
+
+/**
+ * Group the flat, server-sorted `faqs` array by category, in a single pass
+ * that preserves each item's existing relative order (no client-side
+ * re-sort — the server's sortOrder,id order is trusted, exactly as
+ * before). Categories are ordered per `faqCategories` (already
+ * sortOrder,id from the server); "Other Questions" — uncategorized, or
+ * pointing at an inactive category (server already nulls that out) —
+ * always renders last.
+ */
+function groupFaqsByCategory(faqs: BalletFaq[], faqCategories: BalletFaqCategory[]): FaqGroup[] {
+  const byCategoryId = new Map<number, BalletFaq[]>();
+  const uncategorized: BalletFaq[] = [];
+
+  for (const item of faqs) {
+    if (item.category != null) {
+      const bucket = byCategoryId.get(item.category.id);
+      if (bucket) bucket.push(item);
+      else byCategoryId.set(item.category.id, [item]);
+    } else {
+      uncategorized.push(item);
+    }
+  }
+
+  const groups: FaqGroup[] = [];
+  for (const category of faqCategories) {
+    const items = byCategoryId.get(category.id);
+    // Categories with zero matching FAQs render no section at all.
+    if (items && items.length > 0) {
+      groups.push({ key: `category-${category.id}`, title: category.name, items });
+    }
+  }
+  if (uncategorized.length > 0) {
+    groups.push({ key: "other-questions", title: OTHER_QUESTIONS_LABEL, items: uncategorized });
+  }
+  return groups;
+}
 
 if (
   Platform.OS === "android" &&
@@ -78,6 +121,7 @@ export default function BalletFaqScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [faqs, setFaqs] = useState<BalletFaq[]>([]);
+  const [faqCategories, setFaqCategories] = useState<BalletFaqCategory[]>([]);
   const [open, setOpen] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -88,10 +132,12 @@ export default function BalletFaqScreen() {
     try {
       const data = await fetchBalletFaqs(signal);
       if (signal?.aborted) return;
-      setFaqs(data);
+      setFaqs(data.faqs);
+      setFaqCategories(data.faqCategories);
     } catch (err) {
       if ((err as any)?.name === "AbortError") return;
       setFaqs([]);
+      setFaqCategories([]);
       setErrorMessage("Unable to load Ballet FAQs right now.");
     } finally {
       if (!signal?.aborted) setIsLoading(false);
@@ -109,6 +155,8 @@ export default function BalletFaqScreen() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setOpen((cur) => (cur === id ? null : id));
   }
+
+  const faqGroups = groupFaqsByCategory(faqs, faqCategories);
 
   return (
     <View style={s.screen}>
@@ -206,15 +254,28 @@ export default function BalletFaqScreen() {
             </View>
           ) : (
             <>
-              <View style={s.accordion}>
-                {faqs.map((faq, i) => (
-                  <FaqRow
-                    key={faq.id}
-                    item={faq}
-                    open={open === faq.id}
-                    onToggle={() => toggle(faq.id)}
-                    isLast={i === faqs.length - 1}
-                  />
+              <View style={s.groupList}>
+                {faqGroups.map((group) => (
+                  <View key={group.key} style={s.group}>
+                    {/* Only shown when there's more than one group — a
+                        single group (e.g. no categories configured yet)
+                        renders exactly as the flat list did before this
+                        change. */}
+                    {faqGroups.length > 1 && (
+                      <Text style={s.groupTitle}>{group.title}</Text>
+                    )}
+                    <View style={s.accordion}>
+                      {group.items.map((faq, i) => (
+                        <FaqRow
+                          key={faq.id}
+                          item={faq}
+                          open={open === faq.id}
+                          onToggle={() => toggle(faq.id)}
+                          isLast={i === group.items.length - 1}
+                        />
+                      ))}
+                    </View>
+                  </View>
                 ))}
               </View>
 
@@ -318,6 +379,16 @@ const s = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 16,
     gap: 12,
+  },
+  groupList: { gap: 20 },
+  group: { gap: 8 },
+  groupTitle: {
+    fontSize: 12,
+    fontFamily: "Archivo_700Bold",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: INK_300,
+    paddingHorizontal: 2,
   },
   accordion: {
     backgroundColor: "#15171B",
