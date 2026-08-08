@@ -255,19 +255,10 @@ export default function AttendancePage() {
       {/* ── Page Header ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: STUDIO_CYAN }} />
-            <span
-              className="text-[10px] font-semibold tracking-widest uppercase"
-              style={{ color: `${STUDIO_CYAN}AA` }}
-            >
-              STUDIO & BALLET
-            </span>
-          </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Attendance & Check-In
           </h1>
-          <p className="mt-0.5 text-sm" style={{ color: MUTED }}>
+          <p className="mt-1 text-sm text-muted-foreground">
             Check in Studio or Ballet students by QR scan, parent phone, or child name.
           </p>
         </div>
@@ -298,85 +289,14 @@ export default function AttendancePage() {
         />
       )}
 
-      {/* ── Attendance Stats / Overview Summary Cards ── */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div
-          className="rounded-xl p-4 space-y-1.5 border bg-card/90 shadow-sm"
-          style={{ borderColor: BORDER_SUBTLE }}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Total Check-Ins
-            </span>
-            <div
-              className="flex h-7 w-7 items-center justify-center rounded-lg"
-              style={{ background: `${STUDIO_CYAN}18` }}
-            >
-              <TrendingUp className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-foreground">
-            {stats?.total ?? attendanceTotal}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {period === "daily" ? "Last 7 days" : period === "monthly" ? "Last 6 months" : "Last 3 years"}
-          </p>
-        </div>
-
-        <div
-          className="rounded-xl p-4 space-y-1.5 border bg-card/90 shadow-sm"
-          style={{ borderColor: BORDER_SUBTLE }}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Stats Window
-            </span>
-            <div
-              className="flex h-7 w-7 items-center justify-center rounded-lg"
-              style={{ background: `${STUDIO_CYAN}18` }}
-            >
-              <CalendarDays className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-foreground">
-            {period === "daily" ? "7 Days" : period === "monthly" ? "6 Months" : "3 Years"}
-          </div>
-          <p className="text-xs text-muted-foreground">Active period selector</p>
-        </div>
-
-        <div
-          className="rounded-xl p-4 space-y-1.5 border bg-card/90 shadow-sm"
-          style={{ borderColor: BORDER_SUBTLE }}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Total Logged Records
-            </span>
-            <div
-              className="flex h-7 w-7 items-center justify-center rounded-lg"
-              style={{ background: `${STUDIO_CYAN}18` }}
-            >
-              <Users className="h-3.5 w-3.5" style={{ color: STUDIO_CYAN }} />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-foreground">
-            {attendanceTotal}
-          </div>
-          <p className="text-xs text-muted-foreground">All-time database records</p>
-        </div>
-      </div>
-
-      {/* ── Main Two-Column Layout ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* ── Left Column: Check-in Panel & Chart ── */}
-        <div className="space-y-6">
-          {/* Manual Student Check-in panel */}
+      {/* ── Main Two-Column Workspace ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* ── Left Column (~42% width, col-span-5) ── */}
+        <div className="col-span-12 lg:col-span-5 space-y-6">
+          {/* Card 1: Student Check-In */}
           {canManualCheckIn && (
-            <div
-              className="rounded-xl p-5 space-y-4 border bg-card/90 shadow-sm"
-              style={{ borderColor: BORDER }}
-            >
-              <div className="flex items-center justify-between">
+            <div className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm space-y-5">
+              <div className="space-y-1">
                 <div className="flex items-center gap-2.5">
                   <div
                     className="flex h-8 w-8 items-center justify-center rounded-lg"
@@ -384,14 +304,16 @@ export default function AttendancePage() {
                   >
                     <Users className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
                   </div>
-                  <h2 className="text-sm font-semibold text-foreground">Manual Student Check-In</h2>
+                  <h2 className="text-base font-semibold text-foreground">Student Check-In</h2>
                 </div>
-                <span className="text-xs text-muted-foreground">Email Lookup</span>
+                <p className="text-xs text-muted-foreground pl-10">
+                  Search by student email to check in manually.
+                </p>
               </div>
 
               {successMsg && (
                 <div
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium"
+                  className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium"
                   style={{ background: `${GREEN}15`, color: GREEN, border: `1px solid ${GREEN}30` }}
                 >
                   <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
@@ -399,6 +321,7 @@ export default function AttendancePage() {
                 </div>
               )}
 
+              {/* Search Bar Input Row */}
               <div className="flex gap-2">
                 <input
                   type="email"
@@ -406,22 +329,49 @@ export default function AttendancePage() {
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="flex-1 rounded-xl px-3.5 py-2.5 text-sm text-foreground"
-                  style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
+                  className="flex-1 rounded-xl px-3.5 py-2.5 text-sm text-foreground bg-muted/40 border border-border outline-none focus:border-cyan-500 transition-all"
                 />
                 <button
                   onClick={handleSearch}
-                  className="px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-opacity hover:opacity-90"
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-opacity hover:opacity-90 shrink-0"
                   style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
                   title="Look up student"
                 >
                   <Search className="h-4 w-4" />
-                  Search
                 </button>
               </div>
 
+              {/* Visual OR Divider */}
+              <div className="relative my-3 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border/60" />
+                </div>
+                <div className="relative bg-card px-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  OR
+                </div>
+              </div>
+
+              {/* Informational QR Helper Box */}
+              <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-4 flex items-center gap-3.5">
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                  style={{ background: `${STUDIO_CYAN}18`, border: `1px solid ${STUDIO_CYAN}30` }}
+                >
+                  <QrCode className="h-5 w-5" style={{ color: STUDIO_CYAN }} />
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                  <div className="text-sm font-semibold text-foreground">
+                    Click Scan QR to check in quickly
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Use the Scan QR button in the top right
+                  </div>
+                </div>
+              </div>
+
+              {/* Active Search Email Form Details */}
               {searchEmail && (
-                <div className="space-y-4 pt-1">
+                <div className="space-y-4 pt-2 border-t border-border/60">
                   {/* Status selector */}
                   <div>
                     <p
@@ -514,8 +464,7 @@ export default function AttendancePage() {
                       placeholder="e.g. Hip Hop Adults"
                       value={classTitle}
                       onChange={(e) => setClassTitle(e.target.value)}
-                      className="w-full rounded-xl px-3.5 py-2.5 text-sm text-foreground"
-                      style={{ background: BG_ROW, border: `1px solid ${BORDER}`, outline: "none" }}
+                      className="w-full rounded-xl px-3.5 py-2.5 text-sm text-foreground bg-muted/40 border border-border outline-none"
                     />
                   </div>
 
@@ -634,11 +583,8 @@ export default function AttendancePage() {
             </div>
           )}
 
-          {/* Period Distribution Stats Panel */}
-          <div
-            className="rounded-xl p-5 space-y-4 border bg-card/90 shadow-sm"
-            style={{ borderColor: BORDER }}
-          >
+          {/* Card 2: Attendance Overview */}
+          <div className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div
@@ -647,7 +593,7 @@ export default function AttendancePage() {
                 >
                   <BarChart3 className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
                 </div>
-                <h2 className="text-sm font-semibold text-foreground">Attendance Distribution</h2>
+                <h2 className="text-base font-semibold text-foreground">Attendance Overview</h2>
               </div>
               <div className="flex gap-1">
                 {(["daily", "monthly", "yearly"] as const).map((p) => (
@@ -667,203 +613,281 @@ export default function AttendancePage() {
               </div>
             </div>
 
-            {stats && (
-              <>
-                <div className="flex items-baseline justify-between pt-1">
-                  <div className="text-2xl font-bold" style={{ color: STUDIO_CYAN }}>
-                    {stats.total}
-                    <span className="text-xs font-normal text-muted-foreground ml-2">
-                      total check-ins in period
-                    </span>
-                  </div>
+            {/* Main Overview Chart Area */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end pt-2">
+              {/* Left Side: Large Metric */}
+              <div className="sm:col-span-4 space-y-1">
+                <div className="text-4xl font-extrabold tracking-tight" style={{ color: STUDIO_CYAN }}>
+                  {stats?.total ?? 0}
                 </div>
-                <div className="space-y-2.5 pt-2">
-                  {stats.data.map((d) => {
-                    const max = Math.max(...stats.data.map((x) => x.count), 1);
-                    return (
-                      <div key={d.label} className="flex items-center gap-3">
-                        <span className="text-xs w-16 flex-shrink-0 text-muted-foreground">
-                          {d.label}
-                        </span>
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Total Check-Ins
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {period === "daily"
+                    ? "Last 7 days"
+                    : period === "monthly"
+                      ? "Last 6 months"
+                      : "Last 3 years"}
+                </div>
+              </div>
+
+              {/* Right Side: Vertical Bar Chart */}
+              <div className="sm:col-span-8 flex items-end justify-between gap-1.5 h-36 pt-4 border-b border-border/40 pb-2">
+                {stats?.data && stats.data.length > 0 ? (
+                  (() => {
+                    const maxCount = Math.max(...stats.data.map((d) => d.count), 1);
+                    return stats.data.map((d) => {
+                      const pct = (d.count / maxCount) * 100;
+                      return (
                         <div
-                          className="flex-1 h-2.5 rounded-full overflow-hidden"
-                          style={{ background: BORDER_SUBTLE }}
+                          key={d.label}
+                          className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group relative"
                         >
+                          {/* Tooltip */}
+                          <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-popover text-popover-foreground text-[10px] font-semibold px-2 py-0.5 rounded shadow border border-border whitespace-nowrap pointer-events-none z-10">
+                            {d.label}: {d.count}
+                          </div>
+                          {/* Bar */}
                           <div
-                            className="h-full rounded-full transition-all duration-500"
+                            className="w-full rounded-t-sm transition-all duration-500 hover:brightness-110"
                             style={{
-                              width: `${(d.count / max) * 100}%`,
+                              height: `${Math.max(pct, 6)}%`,
                               background: STUDIO_CYAN,
+                              opacity: d.count > 0 ? 1 : 0.25,
                             }}
                           />
+                          {/* Label */}
+                          <span className="text-[10px] text-muted-foreground truncate w-full text-center">
+                            {d.label}
+                          </span>
                         </div>
-                        <span className="text-xs font-semibold w-7 text-right text-foreground">
-                          {d.count}
-                        </span>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()
+                ) : (
+                  <div className="w-full text-center text-xs text-muted-foreground py-8">
+                    No attendance distribution data available
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Sub-Cards Row (Four 100% Truthful Cards) */}
+            {(() => {
+              const peakBucket = stats?.data?.length
+                ? stats.data.reduce((max, b) => (b.count > max.count ? b : max), stats.data[0])
+                : null;
+
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                  {/* Card 1: Total Check-Ins */}
+                  <div className="rounded-xl p-3.5 border border-border/60 bg-muted/20 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Users className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
+                    </div>
+                    <div className="text-lg font-bold text-foreground">{stats?.total ?? 0}</div>
+                    <div className="text-[11px] font-medium text-muted-foreground">Total Check-Ins</div>
+                    <div className="text-[10px] text-muted-foreground/80">In active period</div>
+                  </div>
+
+                  {/* Card 2: Total Logged Records */}
+                  <div className="rounded-xl p-3.5 border border-border/60 bg-muted/20 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <CheckCircle2 className="h-4 w-4" style={{ color: GREEN }} />
+                    </div>
+                    <div className="text-lg font-bold text-foreground">{attendanceTotal}</div>
+                    <div className="text-[11px] font-medium text-muted-foreground">Total Logged</div>
+                    <div className="text-[10px] text-muted-foreground/80">All-time records</div>
+                  </div>
+
+                  {/* Card 3: Peak Activity */}
+                  <div className="rounded-xl p-3.5 border border-border/60 bg-muted/20 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <TrendingUp className="h-4 w-4" style={{ color: AMBER }} />
+                    </div>
+                    <div className="text-lg font-bold text-foreground">
+                      {peakBucket ? peakBucket.count : 0}
+                    </div>
+                    <div className="text-[11px] font-medium text-muted-foreground">Peak Activity</div>
+                    <div className="text-[10px] text-muted-foreground/80 truncate">
+                      {peakBucket && peakBucket.count > 0 ? peakBucket.label : "No peak data"}
+                    </div>
+                  </div>
+
+                  {/* Card 4: Active Period */}
+                  <div className="rounded-xl p-3.5 border border-border/60 bg-muted/20 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <CalendarDays className="h-4 w-4" style={{ color: STUDIO_CYAN }} />
+                    </div>
+                    <div className="text-lg font-bold text-foreground">
+                      {period === "daily" ? "7 Days" : period === "monthly" ? "6 Months" : "3 Years"}
+                    </div>
+                    <div className="text-[11px] font-medium text-muted-foreground">Active Period</div>
+                    <div className="text-[10px] text-muted-foreground/80">Selected window</div>
+                  </div>
                 </div>
-              </>
-            )}
+              );
+            })()}
           </div>
         </div>
 
-        {/* ── Right Column: Recent Attendance Table ── */}
-        <div
-          className="rounded-xl overflow-hidden border bg-card/90 shadow-sm flex flex-col justify-between"
-          style={{ borderColor: BORDER }}
-        >
-          <div>
-            <div
-              className="px-4 py-3.5 flex flex-wrap items-center justify-between gap-2 border-b"
-              style={{ background: BG_CARD, borderColor: BORDER_SUBTLE }}
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <User2 className="h-4 w-4 shrink-0" style={{ color: STUDIO_CYAN }} />
-                <h2 className="truncate text-sm font-semibold text-foreground">
-                  {searchEmail ? `Attendance — ${searchEmail}` : "Recent Check-Ins"}
-                </h2>
+        {/* ── Right Column (~58% width, col-span-7) ── */}
+        <div className="col-span-12 lg:col-span-7 flex flex-col">
+          <div
+            className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm flex flex-col justify-between h-full min-h-[720px]"
+          >
+            <div>
+              <div
+                className="pb-4 flex flex-wrap items-center justify-between gap-2 border-b"
+                style={{ borderColor: BORDER_SUBTLE }}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <User2 className="h-4 w-4 shrink-0" style={{ color: STUDIO_CYAN }} />
+                  <h2 className="truncate text-base font-semibold text-foreground">
+                    {searchEmail ? `Attendance — ${searchEmail}` : "Recent Check-Ins"}
+                  </h2>
+                </div>
+                {/* Status filter chips */}
+                <div className="flex flex-wrap gap-1">
+                  {["all", "checked_in", "late", "absent"].map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setStatusFilter(f)}
+                      className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
+                      style={
+                        statusFilter === f
+                          ? { background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }
+                          : { background: BG_ROW, color: MUTED }
+                      }
+                    >
+                      {f === "all" ? "All" : STATUS_CONFIG[f]?.label ?? f}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {/* Status filter chips */}
-              <div className="flex flex-wrap gap-1">
-                {["all", "checked_in", "late", "absent"].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setStatusFilter(f)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                    style={
-                      statusFilter === f
-                        ? { background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }
-                        : { background: BG_ROW, color: MUTED }
-                    }
-                  >
-                    {f === "all" ? "All" : STATUS_CONFIG[f]?.label ?? f}
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            <div className="overflow-auto max-h-[560px]">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10" style={{ background: BG_ROW }}>
-                  <tr>
-                    {["Payer", "Participant", "Class", "Source", "Status", "Date"].map((h) => (
-                      <th
-                        key={h}
-                        className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider"
-                        style={{ color: MUTED_DARK }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {attendanceLoading ? (
-                    Array.from({ length: 6 }).map((_, i) => (
-                      <tr key={i} style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}>
-                        {Array.from({ length: 6 }).map((_, j) => (
-                          <td key={j} className="px-4 py-3">
-                            <Skeleton className="h-3.5 w-full" />
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  ) : filteredAttendance.length === 0 ? (
+              <div className="overflow-auto max-h-[580px] pt-2">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 z-10" style={{ background: BG_ROW }}>
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                        No attendance records found
-                      </td>
+                      {["Payer", "Participant", "Class", "Source", "Status", "Date"].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider"
+                          style={{ color: MUTED_DARK }}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ) : (
-                    filteredAttendance.map((record) => (
-                      <tr
-                        key={record.id}
-                        className="transition-colors hover:bg-muted/40"
-                        style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}
-                      >
-                        <td className="px-4 py-2.5">
-                          <div className="font-medium text-foreground text-xs">
-                            {record.payerName ?? record.studentName}
-                          </div>
-                          <div className="text-xs" style={{ color: MUTED_DARK }}>
-                            {record.studentEmail}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="font-medium text-foreground text-xs">
-                            {record.participantName ?? "Legacy"}
-                          </div>
-                          <div
-                            className="text-[10px] uppercase tracking-wide"
-                            style={{
-                              color:
-                                record.participantType === "child" ? STUDIO_CYAN : MUTED_DARK,
-                            }}
-                          >
-                            {record.participantType === "child"
-                              ? "Child"
-                              : record.participantType === "self"
-                                ? "Myself"
-                                : "Unassigned"}
-                          </div>
-                        </td>
-                        <td
-                          className="px-4 py-2.5 text-xs max-w-[120px] truncate"
-                          style={{ color: "#9CA3AF" }}
-                        >
-                          {record.classTitle ?? "—"}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs whitespace-nowrap" style={{ color: MUTED }}>
-                          <div>
-                            {record.attendanceSource === "walk_in"
-                              ? "Walk-in"
-                              : record.attendanceSource === "booking"
-                                ? "Booking"
-                                : "Legacy"}
-                          </div>
-                          <div className="text-[10px]" style={{ color: MUTED_DARK }}>
-                            {record.paymentSource?.replaceAll("_", " ") ??
-                              (record.creditDeducted ? "package credit" : "—")}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <StatusBadge status={record.status} />
-                        </td>
-                        <td
-                          className="px-4 py-2.5 text-xs whitespace-nowrap"
-                          style={{ color: MUTED }}
-                        >
-                          {new Date(record.checkedInAt).toLocaleString("en-GB", {
-                            day: "numeric",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                  </thead>
+                  <tbody>
+                    {attendanceLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={i} style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}>
+                          {Array.from({ length: 6 }).map((_, j) => (
+                            <td key={j} className="px-4 py-3">
+                              <Skeleton className="h-3.5 w-full" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : filteredAttendance.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                          No attendance records found
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredAttendance.map((record) => (
+                        <tr
+                          key={record.id}
+                          className="transition-colors hover:bg-muted/40"
+                          style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-foreground text-xs">
+                              {record.payerName ?? record.studentName}
+                            </div>
+                            <div className="text-xs" style={{ color: MUTED_DARK }}>
+                              {record.studentEmail}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-foreground text-xs">
+                              {record.participantName ?? "Legacy"}
+                            </div>
+                            <div
+                              className="text-[10px] uppercase tracking-wide"
+                              style={{
+                                color:
+                                  record.participantType === "child" ? STUDIO_CYAN : MUTED_DARK,
+                              }}
+                            >
+                              {record.participantType === "child"
+                                ? "Child"
+                                : record.participantType === "self"
+                                  ? "Myself"
+                                  : "Unassigned"}
+                            </div>
+                          </td>
+                          <td
+                            className="px-4 py-3 text-xs max-w-[120px] truncate"
+                            style={{ color: "#9CA3AF" }}
+                          >
+                            {record.classTitle ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: MUTED }}>
+                            <div>
+                              {record.attendanceSource === "walk_in"
+                                ? "Walk-in"
+                                : record.attendanceSource === "booking"
+                                  ? "Booking"
+                                  : "Legacy"}
+                            </div>
+                            <div className="text-[10px]" style={{ color: MUTED_DARK }}>
+                              {record.paymentSource?.replaceAll("_", " ") ??
+                                (record.creditDeducted ? "package credit" : "—")}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge status={record.status} />
+                          </td>
+                          <td
+                            className="px-4 py-3 text-xs whitespace-nowrap"
+                            style={{ color: MUTED }}
+                          >
+                            {new Date(record.checkedInAt).toLocaleString("en-GB", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
 
-          {/* Pagination */}
-          {attendanceTotal > 0 && (
-            <div className="p-3 border-t bg-card" style={{ borderColor: BORDER_SUBTLE }}>
-              <TablePagination
-                page={attendancePage}
-                totalPages={attendanceTotalPages}
-                total={attendanceTotal}
-                pageSize={ATTENDANCE_PAGE_SIZE}
-                isLoading={attendanceLoading}
-                itemLabel="check-ins"
-                onPageChange={setAttendancePage}
-              />
-            </div>
-          )}
+            {/* Pagination Footer */}
+            {attendanceTotal > 0 && (
+              <div className="pt-3 border-t flex flex-wrap items-center justify-between gap-2" style={{ borderColor: BORDER_SUBTLE }}>
+                <TablePagination
+                  page={attendancePage}
+                  totalPages={attendanceTotalPages}
+                  total={attendanceTotal}
+                  pageSize={ATTENDANCE_PAGE_SIZE}
+                  isLoading={attendanceLoading}
+                  itemLabel="check-ins"
+                  onPageChange={setAttendancePage}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
