@@ -953,7 +953,10 @@ test("payment method normalization is total and never invents a trusted method",
   const { normalizePaymentMethod } = await load();
 
   assert.equal(normalizePaymentMethod("inPerson"), "in_person");
+  assert.equal(normalizePaymentMethod("cash"), "cash");
+  assert.equal(normalizePaymentMethod("card"), "card");
   assert.equal(normalizePaymentMethod("kashier"), "kashier");
+  assert.equal(normalizePaymentMethod("bank_transfer"), "bank_transfer");
   assert.equal(normalizePaymentMethod("bankTransfer"), "bank_transfer");
   assert.equal(normalizePaymentMethod("pay_at_studio"), "pay_at_studio");
   assert.equal(normalizePaymentMethod("online_payment"), "online_payment");

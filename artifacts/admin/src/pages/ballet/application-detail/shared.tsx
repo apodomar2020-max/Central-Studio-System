@@ -24,8 +24,11 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   bankTransfer: "Legacy Bank Transfer",
-  kashier: "Online Payment",
-  inPerson: "Pay at Studio",
+  kashier: "Kashier",
+  inPerson: "Pay at Studio / Method unspecified",
+  cash: "Cash",
+  card: "Card",
+  bank_transfer: "Bank Transfer",
 };
 
 const PAYMENT_STATUS_CONFIG: Record<string, { label: string; className: string }> = {

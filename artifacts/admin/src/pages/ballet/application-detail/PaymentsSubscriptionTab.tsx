@@ -15,7 +15,7 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Field label="Assessment Fee Status" value={<AssessmentFeeStatusBadge status={assessmentFee?.status} />} />
       <Field label="Configured Amount" value={assessmentFee?.amountEgp != null ? `${assessmentFee.amountEgp} EGP` : "Free / No Fee"} />
-      <Field label="Payment Method" value={assessmentFee?.paymentMethod === "inPerson" ? "Pay at Studio (In-Person)" : (assessmentFee?.paymentMethod ?? "—")} />
+      <Field label="Payment Method" value={formatPaymentMethod(assessmentFee?.paymentMethod) ?? "—"} />
       <Field label="Recorded Date" value={formatDateTime(assessmentFee?.paidAt)} />
     </div>
     {openRecordAssessmentFeeDialog && !isApplicationTerminal && (

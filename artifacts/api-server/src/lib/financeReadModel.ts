@@ -116,7 +116,10 @@ export function normalizePaymentMethod(
   if (value == null) return null;
   switch (value) {
     case "inPerson": return "in_person";
+    case "cash": return "cash";
+    case "card": return "card";
     case "kashier": return "kashier";
+    case "bank_transfer": return "bank_transfer";
     case "bankTransfer": return "bank_transfer";
     case "pay_at_studio": return "pay_at_studio";
     case "online_payment": return "online_payment";

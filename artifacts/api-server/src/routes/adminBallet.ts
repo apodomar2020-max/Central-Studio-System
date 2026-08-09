@@ -616,16 +616,23 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
 
 // ─── POST /api/admin/ballet/applications/:id/record-assessment-fee ─────────────
 //
-// Body: { status: "paid" | "waived" | "unpaid", note?: string }
-// Phase 1 paymentMethod is strictly 'inPerson' (Pay at Studio).
+// Paid captures require a positive evidenced amount and canonical tender.
 // Updates assessment fee fields on ballet_applications.
 // Strictly isolated from ballet_payments, activation, and attendance entitlement.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RecordAssessmentFeeBody = z.object({
-  status: z.enum(["paid", "waived", "unpaid"], { required_error: "status is required" }),
-  note:   z.string().optional(),
-});
+const ASSESSMENT_FEE_PAYMENT_METHODS = ["cash", "card", "kashier", "bank_transfer"] as const;
+const RecordAssessmentFeeBody = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("paid"),
+    amountEgp: z.number().int().positive().optional(),
+    paymentMethod: z.enum(ASSESSMENT_FEE_PAYMENT_METHODS),
+    paidAt: z.string().datetime({ offset: true }).optional(),
+    note: z.string().optional(),
+  }).strict(),
+  z.object({ status: z.literal("waived"), note: z.string().optional() }).strict(),
+  z.object({ status: z.literal("unpaid"), note: z.string().optional() }).strict(),
+]);
 
 router.post(
   "/admin/ballet/applications/:id/record-assessment-fee",
@@ -649,6 +656,9 @@ router.post(
         id: balletApplicationsTable.id,
         status: balletApplicationsTable.status,
         assessmentFeeStatus: balletApplicationsTable.assessmentFeeStatus,
+        assessmentFeeAmountEgp: balletApplicationsTable.assessmentFeeAmountEgp,
+        assessmentFeePaymentMethod: balletApplicationsTable.assessmentFeePaymentMethod,
+        assessmentFeePaidAt: balletApplicationsTable.assessmentFeePaidAt,
       })
       .from(balletApplicationsTable)
       .where(eq(balletApplicationsTable.id, id))
@@ -658,14 +668,24 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const isSettled = targetStatus === "paid";
+    const resolvedAmountEgp = isSettled
+      ? (parsed.data.amountEgp ?? app.assessmentFeeAmountEgp)
+      : app.assessmentFeeAmountEgp;
+    if (isSettled && (resolvedAmountEgp == null || resolvedAmountEgp <= 0)) {
+      res.status(400).json({ error: "A positive evidenced assessment fee amount is required to mark the fee as paid." });
+      return;
+    }
+    const paymentMethod = isSettled ? parsed.data.paymentMethod : null;
+    const paidAt = isSettled ? (parsed.data.paidAt ?? nowIso) : null;
 
     await db.transaction(async (tx) => {
       await tx
         .update(balletApplicationsTable)
         .set({
           assessmentFeeStatus:        targetStatus,
-          assessmentFeePaidAt:        isSettled ? nowIso : null,
-          assessmentFeePaymentMethod: isSettled ? "inPerson" : null,
+          assessmentFeeAmountEgp:     resolvedAmountEgp,
+          assessmentFeePaidAt:        paidAt,
+          assessmentFeePaymentMethod: paymentMethod,
           assessmentFeeRecordedById:  adminId,
           updatedAt:                  nowIso,
         })
@@ -688,8 +708,13 @@ router.post(
       entityType: "ballet_application",
       entityId: id,
       entityLabel: `Application #${id}`,
-      before: { assessmentFeeStatus: app.assessmentFeeStatus },
-      after: { assessmentFeeStatus: targetStatus },
+      before: {
+        assessmentFeeStatus: app.assessmentFeeStatus,
+        assessmentFeeAmountEgp: app.assessmentFeeAmountEgp,
+        assessmentFeePaymentMethod: app.assessmentFeePaymentMethod,
+        assessmentFeePaidAt: app.assessmentFeePaidAt,
+      },
+      after: { assessmentFeeStatus: targetStatus, assessmentFeeAmountEgp: resolvedAmountEgp, assessmentFeePaymentMethod: paymentMethod, assessmentFeePaidAt: paidAt },
       summary: `Marked assessment fee as ${targetStatus} for application #${id}`,
     });
 

@@ -418,13 +418,15 @@ export default function ApplicationDetailPage() {
 
   const [recordFeeOpen, setRecordFeeOpen] = useState(false);
   const [feeStatusSelect, setFeeStatusSelect] = useState<"paid" | "waived" | "unpaid">("paid");
+  const [feePaymentMethod, setFeePaymentMethod] = useState<"cash" | "card" | "kashier" | "bank_transfer" | "">("");
+  const [feeAmountInput, setFeeAmountInput] = useState("");
 
   const recordFeeMutation = useMutation({
-    mutationFn: async (vars: { status: "paid" | "waived" | "unpaid" }) => {
+    mutationFn: async (vars: { status: "paid" | "waived" | "unpaid"; paymentMethod?: "cash" | "card" | "kashier" | "bank_transfer"; amountEgp?: number }) => {
       const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/record-assessment-fee`, {
         method: "POST",
         headers: makeHeaders(token),
-        body: JSON.stringify({ status: vars.status, paymentMethod: "inPerson" }),
+        body: JSON.stringify(vars),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -498,7 +500,11 @@ export default function ApplicationDetailPage() {
     if (status === "paid" || status === "waived" || status === "unpaid") {
       setFeeStatusSelect(status);
     }
-  }, [data?.assessmentFee?.status]);
+    const method = data?.assessmentFee?.paymentMethod;
+    setFeePaymentMethod(method === "cash" || method === "card" || method === "kashier" || method === "bank_transfer" ? method : "");
+    const amount = data?.assessmentFee?.amountEgp;
+    setFeeAmountInput(amount != null && amount > 0 ? String(amount) : "");
+  }, [data?.assessmentFee?.status, data?.assessmentFee?.amountEgp, data?.assessmentFee?.paymentMethod]);
 
   // ── Fetch available levels ──────────────────────────────────────────────────
 
@@ -1262,7 +1268,7 @@ export default function ApplicationDetailPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Update the intake assessment fee status for this application. Payment method is set to Pay at Studio (inPerson). This fee is tracked separately from package/subscription payments.
+              Update the intake assessment fee status. Paid fees require an evidenced amount and actual payment method, and remain separate from package/subscription payments.
             </p>
             {data?.assessmentFee?.amountEgp != null && (
               <div className="rounded-lg border border-border p-3 bg-muted/40 text-sm">
@@ -1279,19 +1285,45 @@ export default function ApplicationDetailPage() {
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="paid">Mark as Paid (Pay at Studio)</SelectItem>
+                  <SelectItem value="paid">Mark as Paid</SelectItem>
                   <SelectItem value="waived">Mark as Waived</SelectItem>
                   <SelectItem value="unpaid">Mark as Unpaid</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {feeStatusSelect === "paid" && (
+              <>
+                {(data?.assessmentFee?.amountEgp == null || data.assessmentFee.amountEgp <= 0) && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Evidenced Paid Amount (EGP)</label>
+                    <Input type="number" min={1} step={1} value={feeAmountInput} onChange={(event) => setFeeAmountInput(event.target.value)} />
+                    <p className="text-xs text-muted-foreground">Required because this application has no positive historical fee snapshot.</p>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Payment Method</label>
+                  <Select value={feePaymentMethod} onValueChange={(value: "cash" | "card" | "kashier" | "bank_transfer") => setFeePaymentMethod(value)}>
+                    <SelectTrigger><SelectValue placeholder="Select actual method" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="kashier">Kashier</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+            {feeStatusSelect === "waived" && <p className="text-sm text-muted-foreground">Waived records are non-cash and are not counted as revenue.</p>}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setRecordFeeOpen(false)}>
                 Cancel
               </Button>
               <Button
-                disabled={recordFeeMutation.isPending}
-                onClick={() => recordFeeMutation.mutate({ status: feeStatusSelect })}
+                disabled={recordFeeMutation.isPending || (feeStatusSelect === "paid" && (!feePaymentMethod || !Number.isInteger(Number(feeAmountInput)) || Number(feeAmountInput) <= 0))}
+                onClick={() => recordFeeMutation.mutate(feeStatusSelect === "paid"
+                  ? { status: "paid", paymentMethod: feePaymentMethod || undefined, ...(data?.assessmentFee?.amountEgp == null || data.assessmentFee.amountEgp <= 0 ? { amountEgp: Number(feeAmountInput) } : {}) }
+                  : { status: feeStatusSelect })}
               >
                 {recordFeeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Save Fee Status
