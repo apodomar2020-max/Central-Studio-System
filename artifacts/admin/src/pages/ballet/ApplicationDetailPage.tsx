@@ -8,7 +8,7 @@
  *  - Level assignment panel (select active level + optional note + assign)
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -246,6 +246,13 @@ interface AttendanceHistoryResponse {
 
 interface DetailResponse {
   application: Application;
+  assessmentFee?: {
+    amountEgp: number | null;
+    status: "unpaid" | "paid" | "waived";
+    paidAt: string | null;
+    paymentMethod: string | null;
+    recordedById: number | null;
+  } | null;
   assessmentSchedule: AssessmentSchedule | null;
   level: Level | null;
   group: Group | null;
@@ -406,19 +413,11 @@ export default function ApplicationDetailPage() {
   const [attScheduleId, setAttScheduleId] = useState("");
   const [attDate, setAttDate]             = useState("");
   const [attStatus, setAttStatus]         = useState("checked_in");
+  const [attNote, setAttNote]             = useState("");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const [recordFeeOpen, setRecordFeeOpen] = useState(false);
   const [feeStatusSelect, setFeeStatusSelect] = useState<"paid" | "waived" | "unpaid">("paid");
-
-  useEffect(() => {
-    if (recordFeeOpen && data?.assessmentFee?.status) {
-      const s = data.assessmentFee.status;
-      if (s === "paid" || s === "waived" || s === "unpaid") {
-        setFeeStatusSelect(s);
-      }
-    }
-  }, [recordFeeOpen, data?.assessmentFee?.status]);
 
   const recordFeeMutation = useMutation({
     mutationFn: async (vars: { status: "paid" | "waived" | "unpaid" }) => {
@@ -493,6 +492,13 @@ export default function ApplicationDetailPage() {
     },
     enabled: !isNaN(appId),
   });
+
+  useEffect(() => {
+    const status = data?.assessmentFee?.status;
+    if (status === "paid" || status === "waived" || status === "unpaid") {
+      setFeeStatusSelect(status);
+    }
+  }, [data?.assessmentFee?.status]);
 
   // ── Fetch available levels ──────────────────────────────────────────────────
 
