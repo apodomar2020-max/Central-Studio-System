@@ -24,7 +24,6 @@ import {
   CalendarDays,
   CalendarRange,
   CreditCard,
-  Music2,
   ClipboardList,
   GraduationCap,
   Settings2,
@@ -56,6 +55,7 @@ import {
   FileDown,
   Building2,
 } from "lucide-react";
+import { BallerinaIcon } from "@/components/icons/ballerina-icon";
 import type { PermRequirement } from "@/lib/permissions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ export const NAV_TREE: NavNode[] = [
     link("Classes", "/classes", [["classes", "view"]], CalendarDays),
     link("Schedules", "/schedules", [["schedules", "view"]], CalendarRange),
     link("Packages", "/packages", [["packages", "view"]], CreditCard),
-    group("Ballet", Music2, [
+    group("Ballet", BallerinaIcon, [
       link("Applications", "/ballet/applications", [["ballet.applications", "view"]], ClipboardList, {
         pageTitle: "Ballet Applications",
       }),
@@ -175,7 +175,7 @@ export const NAV_TREE: NavNode[] = [
     link("Class & Walk-in", "/finance/class-payments", [["finance", "view"]], Ticket, {
       pageTitle: "Finance Class & Walk-in",
     }),
-    link("Ballet Finance", "/finance/ballet", [["finance", "view"]], Music2, {
+    link("Ballet Finance", "/finance/ballet", [["finance", "view"]], BallerinaIcon, {
       pageTitle: "Ballet Finance",
     }),
     link("Refunds & Cancellations", "/finance/refunds", [["finance", "view"]], Receipt, {
