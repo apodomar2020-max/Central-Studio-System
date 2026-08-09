@@ -39,8 +39,11 @@ export function formatPaymentMethod(method?: string | null) {
   return method ? PAYMENT_METHOD_LABELS[method] ?? method : null;
 }
 
-export function formatDateTime(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : "—";
+export function formatDateTime(value?: string | Date | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return typeof value === "string" ? value : "—";
+  return d.toLocaleString();
 }
 
 export function PaymentStatusBadge({ status }: { status?: string | null }) {
@@ -63,6 +66,7 @@ const ASSESSMENT_FEE_STATUS_CONFIG: Record<string, { label: string; className: s
   unpaid: { label: "Unpaid", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
   paid: { label: "Paid", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
   waived: { label: "Waived", className: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
+  refunded: { label: "Refunded", className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
 };
 
 export function AssessmentFeeStatusBadge({ status }: { status?: string | null }) {
@@ -135,7 +139,7 @@ export function ReadinessItem({ label, state, detail, action }: { label: string;
     missing: { text: "Missing", className: "bg-red-500/15 text-red-400 border-red-500/30" },
     expired: { text: "Expired", className: "bg-red-500/15 text-red-400 border-red-500/30" },
     warning: { text: "Review", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
-  }[state];
+  }[state] ?? { text: String(state ?? "—"), className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-muted/10 px-3 py-2.5">
       <div className="flex items-start justify-between gap-3">

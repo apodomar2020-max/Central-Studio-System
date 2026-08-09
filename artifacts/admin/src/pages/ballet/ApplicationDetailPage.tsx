@@ -411,6 +411,15 @@ export default function ApplicationDetailPage() {
   const [recordFeeOpen, setRecordFeeOpen] = useState(false);
   const [feeStatusSelect, setFeeStatusSelect] = useState<"paid" | "waived" | "unpaid">("paid");
 
+  useEffect(() => {
+    if (recordFeeOpen && data?.assessmentFee?.status) {
+      const s = data.assessmentFee.status;
+      if (s === "paid" || s === "waived" || s === "unpaid") {
+        setFeeStatusSelect(s);
+      }
+    }
+  }, [recordFeeOpen, data?.assessmentFee?.status]);
+
   const recordFeeMutation = useMutation({
     mutationFn: async (vars: { status: "paid" | "waived" | "unpaid" }) => {
       const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/record-assessment-fee`, {
