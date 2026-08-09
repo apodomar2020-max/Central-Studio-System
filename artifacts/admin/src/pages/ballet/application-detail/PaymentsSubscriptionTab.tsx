@@ -6,6 +6,8 @@ import { AssessmentFeeStatusBadge, Field, formatDateTime, formatPaymentMethod, G
 
 export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) {
   const { app, currentPayment, currentSubscription, pendingInitialPayment, initialPayments, paymentDataWarning, subscriptionExpiredWarning, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, isApplicationTerminal, assessmentFee, openRecordAssessmentFeeDialog } = props;
+  const safeInitialPayments = initialPayments ?? [];
+  const safePayments = payments ?? [];
   return (
 <TabsContent value="payments" className="space-y-4">
   {/* Assessment Fee Section — completely distinct from Package / Subscription payments */}
@@ -64,7 +66,7 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
           {subscriptionExpiredWarning}
         </p>
       )}
-      {initialPayments.some((payment: any) => payment.status === "refunded") && (
+      {safeInitialPayments.some((payment: any) => payment.status === "refunded") && (
         <p className="text-xs text-muted-foreground">
           The initial payment on this application is refunded. This refactor does not introduce a replacement-payment workflow.
         </p>
@@ -93,7 +95,7 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
         <Field label="Current expiry" value={currentSubscription?.subscriptionExpiresAt} />
         <Field label="Days remaining" value={currentSubscription?.daysRemaining != null ? `${currentSubscription.daysRemaining}` : null} />
         <Field label="Renewal" value={currentSubscription?.isRenewal ? `Renewed from #${currentSubscription.renewedFromId}` : "Initial subscription"} />
-        <Field label="Last update" value={currentPayment?.updatedAt ? new Date(currentPayment.updatedAt).toLocaleString() : null} />
+        <Field label="Last update" value={currentPayment?.updatedAt ? formatDateTime(currentPayment.updatedAt) : null} />
       </div>
       {currentSubscription?.subscriptionStatus === "expired" && (
         <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
@@ -151,11 +153,11 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
   {/* Payment Cycle History — full width; a record list benefits from the
       extra horizontal room for side-by-side comparison. */}
   <Section title="Payment Cycle History" icon={<History />}>
-    {payments.length === 0 ? (
+    {safePayments.length === 0 ? (
       <p className="text-sm text-muted-foreground italic">No payment cycles recorded.</p>
     ) : (
       <div className="space-y-2">
-        {payments.map((payment: any) => (
+        {safePayments.map((payment: any) => (
           <div key={payment.id} className="rounded-md border p-3 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">{payment.isRenewal ? "Renewal" : "Initial"} payment #{payment.id}</span>
@@ -163,7 +165,7 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
             </div>
             <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
               <span>{payment.packageName ?? (payment.packageId ? `Package #${payment.packageId}` : "No package")}</span>
-              <span>{payment.amountEgp == null ? "Restricted" : `${payment.amountEgp.toLocaleString()} EGP`}</span>
+              <span>{payment.amountEgp == null ? "Restricted" : `${typeof payment.amountEgp === 'number' ? payment.amountEgp.toLocaleString() : payment.amountEgp} EGP`}</span>
               <span>{formatPaymentMethod(payment.paymentMethod) ?? "No method"}</span>
               <span>{payment.subscriptionDisplayStatus}</span>
               <span>Paid: {formatDateTime(payment.paidAt)}</span>

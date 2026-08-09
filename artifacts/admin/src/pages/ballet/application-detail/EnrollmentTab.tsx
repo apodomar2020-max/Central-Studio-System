@@ -10,12 +10,17 @@ import { ATTENDANCE_STATUSES, DAY_NAMES, Field, GridRow, Section } from "./share
 export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
   const { app, level, group, canActivateApplication, statusMutation, statusNote, setStatusNote, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, levelAssigned, groupAssigned, isApplicationTerminal, canAssignLevel, canAssignGroup } = props;
 
+  const safeLevels = levels ?? [];
+  const safeGroups = groups ?? [];
+  const safeSchedules = activeSchedules ?? [];
+  const safeHistory = attendanceHistoryData?.history ?? [];
+
   const hasAssignedLevelSection = Boolean(level || app.assignedLevelId);
   const hasAttendanceSummarySection = app.assignedLevelId != null;
-  const hasLevelSection = canApprove && !isApplicationTerminal && levels.length > 0;
+  const hasLevelSection = canApprove && !isApplicationTerminal && safeLevels.length > 0;
   const hasGroupSection = canApprove && !isApplicationTerminal;
-  const hasMarkAttendanceSection = canCheckIn && data.assignmentId != null && activeSchedules.length > 0;
-  const hasAttendanceHistorySection = canCheckIn && data.assignmentId != null;
+  const hasMarkAttendanceSection = canCheckIn && data?.assignmentId != null && safeSchedules.length > 0;
+  const hasAttendanceHistorySection = canCheckIn && data?.assignmentId != null;
 
   return (
 <TabsContent value="enrollment" className="space-y-4">
@@ -106,7 +111,7 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
                   <SelectValue placeholder="Select level…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {levels.map((l: any) => (
+                  {safeLevels.map((l: any) => (
                     <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -140,14 +145,14 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
           <Section title="Assign to Group" icon={<Users2 />}>
             <p className="text-sm text-muted-foreground">Assign a level first.</p>
           </Section>
-        ) : groups.length > 0 ? (
+        ) : safeGroups.length > 0 ? (
           <Section title={groupAssigned ? "Change Group" : "Assign to Group"} icon={<Users2 />}>
             <Select value={newGroupId} onValueChange={setNewGroupId}>
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue placeholder="Select group…" />
               </SelectTrigger>
               <SelectContent>
-                {groups.map((g: any) => (
+                {safeGroups.map((g: any) => (
                   <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -190,7 +195,7 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
               <SelectValue placeholder="Select class schedule…" />
             </SelectTrigger>
             <SelectContent>
-              {activeSchedules.map((s: any) => (
+              {safeSchedules.map((s: any) => (
                 <SelectItem key={s.id} value={String(s.id)}>
                   {DAY_NAMES[s.dayOfWeek] ?? "?"} {s.startTime}–{s.endTime}
                 </SelectItem>
@@ -235,11 +240,11 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
 
       {hasAttendanceHistorySection && (
         <Section title="Attendance History" icon={<History />}>
-          {!attendanceHistoryData || attendanceHistoryData.history.length === 0 ? (
+          {safeHistory.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">No attendance recorded yet.</p>
           ) : (
             <div className="space-y-2">
-              {attendanceHistoryData.history.map((row: any) => (
+              {safeHistory.map((row: any) => (
                 <div key={row.id} className="rounded-md border p-3 text-sm space-y-2">
                   {editingAttendanceId === row.id ? (
                     <>

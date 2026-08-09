@@ -11,6 +11,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { ADMIN_TOKEN_STORAGE_KEY, AdminAuthProvider, useAdminAuth } from "@/contexts/AdminAuthContext";
 import { AdminThemeProvider } from "@/contexts/AdminThemeContext";
 import { RouteGuard, type PermRequirement, type PermRequirementMode } from "@/lib/permissions";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -287,18 +288,20 @@ function AppShell() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AdminThemeProvider>
-          <AdminAuthProvider>
-            <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
-              <AppShell />
-            </WouterRouter>
-          </AdminAuthProvider>
-        </AdminThemeProvider>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AdminThemeProvider>
+            <AdminAuthProvider>
+              <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
+                <AppShell />
+              </WouterRouter>
+            </AdminAuthProvider>
+          </AdminThemeProvider>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

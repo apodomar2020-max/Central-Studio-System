@@ -9,15 +9,17 @@ import { formatDateTime, Section, StatusBadge } from "./shared";
 // consistency (section icons) was added here.
 export function ActivityTab(props: ApplicationDetailTabPanelsProps) {
   const { events, payments } = props;
+  const safeEvents = events ?? [];
+  const safePayments = payments ?? [];
   return (
 <TabsContent value="activity" className="space-y-4">
   <Section title="Event History" icon={<History />}>
-    {events.length === 0 ? (
+    {safeEvents.length === 0 ? (
       <p className="text-sm text-muted-foreground italic">No events yet.</p>
     ) : (
       <div className="relative space-y-4">
         <div className="absolute left-3 top-2 bottom-2 w-px bg-border" aria-hidden />
-        {events.map((ev: any) => (
+        {safeEvents.map((ev: any) => (
           <div key={ev.id} className="flex gap-3 pl-7 relative">
             <div
               className="absolute left-1.5 top-1.5 h-3 w-3 rounded-full border-2 border-background"
@@ -38,7 +40,7 @@ export function ActivityTab(props: ApplicationDetailTabPanelsProps) {
               )}
               <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground/60">
                 <Clock className="h-2.5 w-2.5" />
-                {new Date(ev.createdAt).toLocaleString()}
+                {ev.createdAt ? formatDateTime(ev.createdAt) : "—"}
                 {ev.changedByFullName && (
                   <>
                     <User className="h-2.5 w-2.5" />
@@ -54,11 +56,11 @@ export function ActivityTab(props: ApplicationDetailTabPanelsProps) {
   </Section>
 
   <Section title="Payment / Subscription Activity" icon={<Wallet />}>
-    {payments.length === 0 ? (
+    {safePayments.length === 0 ? (
       <p className="text-sm text-muted-foreground italic">No payment lifecycle events returned by this detail API.</p>
     ) : (
       <div className="space-y-2">
-        {payments.map((payment: any) => (
+        {safePayments.map((payment: any) => (
           <div key={`activity-payment-${payment.id}`} className="rounded-md border p-3 text-sm">
             <div className="font-medium">{payment.isRenewal ? "Renewal" : "Initial"} payment #{payment.id}</div>
             <p className="mt-1 text-xs text-muted-foreground">

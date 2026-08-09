@@ -931,7 +931,15 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  const { application: app, assessmentSchedule, level, group, events, groupSchedules, attendanceSummary, currentPayment, payments } = data;
+  const app = data.application;
+  const assessmentSchedule = data.assessmentSchedule;
+  const level = data.level;
+  const group = data.group;
+  const events = data.events ?? [];
+  const groupSchedules = data.groupSchedules ?? [];
+  const attendanceSummary = data.attendanceSummary;
+  const currentPayment = data.currentPayment;
+  const payments = data.payments ?? [];
   const cancellationRequests = data.cancellationRequests ?? [];
   const refunds = data.refunds ?? [];
   const eligibleRefund = data.eligibleRefund;

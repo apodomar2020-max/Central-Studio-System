@@ -12,6 +12,8 @@ import { GridRow, Section } from "./shared";
 
 export function CancellationRefundsTab(props: ApplicationDetailTabPanelsProps) {
   const { app, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, navigate } = props;
+  const safeRequests = cancellationRequests ?? [];
+  const safeRefunds = refunds ?? [];
   return (
 <TabsContent value="cancellation" className="space-y-4">
   {/* Danger Zone stays visually distinct from the informational grid below
@@ -78,11 +80,11 @@ export function CancellationRefundsTab(props: ApplicationDetailTabPanelsProps) {
       list. No data is duplicated — each record still appears exactly once. */}
   <GridRow>
     <Section title="Cancellation Requests" icon={<XCircle />}>
-      {cancellationRequests.length === 0 ? (
+      {safeRequests.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No cancellation requests.</p>
       ) : (
         <div className="space-y-3">
-          {cancellationRequests.map((request: any) => (
+          {safeRequests.map((request: any) => (
             <div key={`cancel-${request.id}`} className="rounded-md border p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-medium">Cancellation #{request.id}</span>
@@ -107,11 +109,11 @@ export function CancellationRefundsTab(props: ApplicationDetailTabPanelsProps) {
     </Section>
 
     <Section title="Refunds" icon={<Banknote />}>
-      {refunds.length === 0 ? (
+      {safeRefunds.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No refund records.</p>
       ) : (
         <div className="space-y-3">
-          {refunds.map((refund: any) => (
+          {safeRefunds.map((refund: any) => (
             <div key={`refund-${refund.id}`} className="rounded-md border p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-medium">Refund #{refund.id} · Payment #{refund.paymentId}</span>
