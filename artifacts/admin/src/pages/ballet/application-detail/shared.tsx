@@ -64,15 +64,31 @@ export function StatusBadge({ status }: { status: string }) {
   return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+// `icon` is purely decorative (Phase 2.2 grid pass) — a small contextual
+// lucide icon next to the section title, matching the approved reference's
+// card headers. `className` lets a caller span/adjust the card within a
+// grid (e.g. "lg:col-span-2") without touching Card internals.
+export function Section({ title, icon, children, className }: { title: string; icon?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          {icon && <span className="text-muted-foreground [&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span>}
+          {title}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">{children}</CardContent>
     </Card>
   );
+}
+
+// Two-up (desktop) / one-up (mobile) responsive row for pairing two related
+// Section cards — the standard grid unit used across the Application Detail
+// tabs. Cards keep their own natural height; if only one child renders
+// (a conditional section), the other grid cell is simply empty rather than
+// duplicating data to fill it.
+export function GridRow({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={`grid gap-4 lg:grid-cols-2 ${className ?? ""}`}>{children}</div>;
 }
 
 export function Field({ label, value }: { label: string; value: ReactNode }) {

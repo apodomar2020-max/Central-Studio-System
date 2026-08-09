@@ -85,17 +85,23 @@ test("ApplicationDetailPage: canAssignLevel/canAssignGroup require !isApplicatio
 });
 
 test("EnrollmentTab: Assign Level card is hidden for terminal applications", () => {
+  // Phase 2.2 grid pass moved the visibility check into a named
+  // `hasLevelSection` boolean (rendered inside the shared Change
+  // Level/Change Group GridRow) — same guard, same condition, just no
+  // longer inlined directly on the JSX block.
   assert.match(
     enrollmentTabSource,
-    /\{canApprove && !isApplicationTerminal && levels\.length > 0 && \(/,
+    /const hasLevelSection = canApprove && !isApplicationTerminal && levels\.length > 0;/,
   );
+  assert.match(enrollmentTabSource, /\{hasLevelSection && \(/);
   // The action button itself only renders when canAssignLevel (which already
   // encodes !isApplicationTerminal) is true.
   assert.match(enrollmentTabSource, /\{canAssignLevel \? \(/);
 });
 
 test("EnrollmentTab: Assign Group card is hidden for terminal applications", () => {
-  assert.match(enrollmentTabSource, /\{canApprove && !isApplicationTerminal && \(/);
+  assert.match(enrollmentTabSource, /const hasGroupSection = canApprove && !isApplicationTerminal;/);
+  assert.match(enrollmentTabSource, /\{hasGroupSection && \(/);
   assert.match(enrollmentTabSource, /canAssignGroup/);
 });
 

@@ -2,94 +2,96 @@ import { Button } from "@/components/ui/button";
 import { TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, AlertTriangle, Clock, Loader2, User } from "lucide-react";
-import {
-  BALLET_CANCELLATION_INITIATOR_LABELS,
-  type BalletCancellationInitiatorType,
-} from "@workspace/api-zod";
+import { ArrowRight, Loader2, Users, Baby, Sparkles, ClipboardList, CreditCard, Info, HeartPulse, MessageSquare } from "lucide-react";
 import type { ApplicationDetailTabPanelsProps } from "./types";
-import { ATTENDANCE_STATUSES, DAY_NAMES, Field, formatDateTime, formatPaymentMethod, PaymentStatusBadge, Section, StatusBadge, SubscriptionBadge } from "./shared";
+import { DAY_NAMES, Field, formatPaymentMethod, GridRow, Section, StatusBadge } from "./shared";
 
 export function ApplicationTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, initialPayments, subscriptionReadinessState, paymentDataWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, setStatusNote, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, events } = props;
+  const { app, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, statusNote, setStatusNote, statusMutation } = props;
   return (
 <TabsContent value="application" className="space-y-4">
 
-  {/* Parent info */}
-  <Section title="Parent / Guardian">
-    <Field label="Name"  value={app.parentName} />
-    <Field label="Phone" value={app.parentPhone} />
-    <Field label="Email" value={app.parentEmail} />
-    {app.parentStudentId && (
-      <Field label="Student ID" value={`#${app.parentStudentId}`} />
-    )}
-  </Section>
-
-  {/* Emergency contact */}
-  {(app.emergencyContactName || app.emergencyContactPhone) && (
-    <Section title="Emergency Contact">
-      <Field label="Name"  value={app.emergencyContactName} />
-      <Field label="Phone" value={app.emergencyContactPhone} />
+  {/* Parent + Child — the two identity sections, side by side on desktop. */}
+  <GridRow>
+    <Section title="Parent / Guardian" icon={<Users />}>
+      <Field label="Name"  value={app.parentName} />
+      <Field label="Phone" value={app.parentPhone} />
+      <Field label="Email" value={app.parentEmail} />
+      {app.parentStudentId && (
+        <Field label="Student ID" value={`#${app.parentStudentId}`} />
+      )}
     </Section>
+
+    <Section title="Child Information" icon={<Baby />}>
+      <Field label="Name"     value={app.childName} />
+      <Field label="Birthday" value={app.childBirthday} />
+      <Field label="Age"      value={app.childAge !== null ? `${app.childAge} years` : null} />
+      <Field label="Gender"   value={app.childGender} />
+      {app.childId !== null && (
+        <Field label="Linked Child Profile" value={`#${app.childId}`} />
+      )}
+    </Section>
+  </GridRow>
+
+  {/* Emergency Contact + Medical Notes — both conditional; the grid simply
+      leaves the other cell empty when only one is present, rather than
+      duplicating data to balance it. */}
+  {(app.emergencyContactName || app.emergencyContactPhone || app.medicalNotes) && (
+    <GridRow>
+      {(app.emergencyContactName || app.emergencyContactPhone) && (
+        <Section title="Emergency Contact" icon={<HeartPulse />}>
+          <Field label="Name"  value={app.emergencyContactName} />
+          <Field label="Phone" value={app.emergencyContactPhone} />
+        </Section>
+      )}
+      {app.medicalNotes && (
+        <Section title="Medical Notes" icon={<Info />}>
+          <p className="text-sm text-foreground whitespace-pre-wrap">{app.medicalNotes}</p>
+        </Section>
+      )}
+    </GridRow>
   )}
 
-  {/* Child info */}
-  <Section title="Child Information">
-    <Field label="Name"     value={app.childName} />
-    <Field label="Birthday" value={app.childBirthday} />
-    <Field label="Age"      value={app.childAge !== null ? `${app.childAge} years` : null} />
-    <Field label="Gender"   value={app.childGender} />
-    {app.childId !== null && (
-      <Field label="Linked Child Profile" value={`#${app.childId}`} />
-    )}
-  </Section>
-
-  {/* Experience */}
-  <Section title="Dance Experience">
-    <Field
-      label="Previous experience"
-      value={app.previousExperience ? "Yes" : "No"}
-    />
-    {app.experienceDetails && (
-      <Field label="Details" value={app.experienceDetails} />
-    )}
-  </Section>
-
-  {/* Medical */}
-  {app.medicalNotes && (
-    <Section title="Medical Notes">
-      <p className="text-sm text-foreground whitespace-pre-wrap">{app.medicalNotes}</p>
-    </Section>
-  )}
-
-  {/* Notes from parent */}
+  {/* Free-text parent notes — full width for readability. */}
   {app.notes && (
-    <Section title="Additional Notes (from parent)">
+    <Section title="Additional Notes (from parent)" icon={<MessageSquare />}>
       <p className="text-sm text-foreground whitespace-pre-wrap">{app.notes}</p>
     </Section>
   )}
 
-  {/* Assessment */}
-  <Section title="Assessment">
-    {assessmentSchedule ? (
-      <>
-        <Field label="Class" value={assessmentSchedule.classTitle} />
-        <Field label="Level" value={assessmentSchedule.levelName} />
-        <Field label="Schedule" value={`${DAY_NAMES[assessmentSchedule.dayOfWeek] ?? assessmentSchedule.dayOfWeek} ${assessmentSchedule.startTime} – ${assessmentSchedule.endTime}`} />
-        <Field label="Selected date" value={app.assessmentDate} />
-        {assessmentSchedule.instructorName && (
-          <Field label="Instructor" value={assessmentSchedule.instructorName} />
-        )}
-      </>
-    ) : (
-      <p className="text-sm text-muted-foreground italic">
-        No assessment schedule selected
-      </p>
-    )}
-  </Section>
+  {/* Dance Experience + Assessment — side by side. */}
+  <GridRow>
+    <Section title="Dance Experience" icon={<Sparkles />}>
+      <Field
+        label="Previous experience"
+        value={app.previousExperience ? "Yes" : "No"}
+      />
+      {app.experienceDetails && (
+        <Field label="Details" value={app.experienceDetails} />
+      )}
+    </Section>
+
+    <Section title="Assessment" icon={<ClipboardList />}>
+      {assessmentSchedule ? (
+        <>
+          <Field label="Class" value={assessmentSchedule.classTitle} />
+          <Field label="Level" value={assessmentSchedule.levelName} />
+          <Field label="Schedule" value={`${DAY_NAMES[assessmentSchedule.dayOfWeek] ?? assessmentSchedule.dayOfWeek} ${assessmentSchedule.startTime} – ${assessmentSchedule.endTime}`} />
+          <Field label="Selected date" value={app.assessmentDate} />
+          {assessmentSchedule.instructorName && (
+            <Field label="Instructor" value={assessmentSchedule.instructorName} />
+          )}
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground italic">
+          No assessment schedule selected
+        </p>
+      )}
+    </Section>
+  </GridRow>
 
   {reviewStatuses.length > 0 && (
-    <Section title="Application Status Update">
+    <Section title="Application Status Update" icon={<ArrowRight />}>
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <StatusBadge status={app.status} />
@@ -126,8 +128,9 @@ export function ApplicationTab(props: ApplicationDetailTabPanelsProps) {
     </Section>
   )}
 
-  <Section title="Preferred Payment Intake">
-    <div className="grid gap-3 sm:grid-cols-2">
+  {/* Preferred Payment Intake + Metadata — side by side. */}
+  <GridRow>
+    <Section title="Preferred Payment Intake" icon={<CreditCard />}>
       <Field
         label="Preferred package"
         value={
@@ -137,14 +140,14 @@ export function ApplicationTab(props: ApplicationDetailTabPanelsProps) {
         }
       />
       <Field label="Preferred payment method" value={formatPaymentMethod(app.preferredPaymentMethod)} />
-    </div>
-  </Section>
+    </Section>
 
-  <Section title="Metadata">
-    <Field label="Application ID" value={`#${app.id}`} />
-    <Field label="Submitted" value={new Date(app.createdAt).toLocaleString()} />
-    <Field label="Last updated" value={new Date(app.updatedAt).toLocaleString()} />
-  </Section>
+    <Section title="Metadata" icon={<Info />}>
+      <Field label="Application ID" value={`#${app.id}`} />
+      <Field label="Submitted" value={new Date(app.createdAt).toLocaleString()} />
+      <Field label="Last updated" value={new Date(app.updatedAt).toLocaleString()} />
+    </Section>
+  </GridRow>
 </TabsContent>
   );
 }

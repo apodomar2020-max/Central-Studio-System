@@ -2,20 +2,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, AlertTriangle, Clock, Loader2, User } from "lucide-react";
+import { AlertTriangle, XCircle, Banknote } from "lucide-react";
 import {
   BALLET_CANCELLATION_INITIATOR_LABELS,
   type BalletCancellationInitiatorType,
 } from "@workspace/api-zod";
 import type { ApplicationDetailTabPanelsProps } from "./types";
-import { ATTENDANCE_STATUSES, DAY_NAMES, Field, formatDateTime, formatPaymentMethod, PaymentStatusBadge, Section, StatusBadge, SubscriptionBadge } from "./shared";
+import { GridRow, Section } from "./shared";
 
 export function CancellationRefundsTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, initialPayments, subscriptionReadinessState, paymentDataWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, setStatusNote, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, events } = props;
+  const { app, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, navigate } = props;
   return (
 <TabsContent value="cancellation" className="space-y-4">
+  {/* Danger Zone stays visually distinct from the informational grid below
+      — destructive/permission-aware actions must never blend in with
+      read-only summary cards. Unchanged workflow, unchanged styling. */}
   {canCancel && (
     <Card className="border-red-500/40">
       <CardHeader className="pb-3">
@@ -71,49 +72,64 @@ export function CancellationRefundsTab(props: ApplicationDetailTabPanelsProps) {
     </Card>
   )}
 
-  <Section title="Cancellation & Refunds">
-    {cancellationRequests.length === 0 && refunds.length === 0 ? (
-      <p className="text-sm text-muted-foreground italic">No cancellation or refund workflow records.</p>
-    ) : (
-      <div className="space-y-3">
-        {cancellationRequests.map((request: any) => (
-          <div key={`cancel-${request.id}`} className="rounded-md border p-3 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">Cancellation #{request.id}</span>
-              <Badge variant="outline">{request.status}</Badge>
+  {/* Cancellation Requests + Refunds — the two workflow record types are
+      already separate arrays (cancellationRequests, refunds); split them
+      into complementary side-by-side summaries instead of one interleaved
+      list. No data is duplicated — each record still appears exactly once. */}
+  <GridRow>
+    <Section title="Cancellation Requests" icon={<XCircle />}>
+      {cancellationRequests.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">No cancellation requests.</p>
+      ) : (
+        <div className="space-y-3">
+          {cancellationRequests.map((request: any) => (
+            <div key={`cancel-${request.id}`} className="rounded-md border p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">Cancellation #{request.id}</span>
+                <Badge variant="outline">{request.status}</Badge>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Requested {request.requestedTiming}
+                {request.approvedTiming ? ` · approved ${request.approvedTiming}` : ""}
+                {request.approvedEffectiveDate ? ` · effective ${request.approvedEffectiveDate}` : ""}
+                {request.requestRefund ? " · refund requested" : ""}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Initiated by: {request.initiatedByType === "admin"
+                  ? (request.initiatedByAdminName ?? "Admin")
+                  : (BALLET_CANCELLATION_INITIATOR_LABELS[(request.initiatedByType as BalletCancellationInitiatorType) ?? "parent"] ?? "Parent")}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">{request.reason}</p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Requested {request.requestedTiming}
-              {request.approvedTiming ? ` · approved ${request.approvedTiming}` : ""}
-              {request.approvedEffectiveDate ? ` · effective ${request.approvedEffectiveDate}` : ""}
-              {request.requestRefund ? " · refund requested" : ""}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Initiated by: {request.initiatedByType === "admin"
-                ? (request.initiatedByAdminName ?? "Admin")
-                : (BALLET_CANCELLATION_INITIATOR_LABELS[(request.initiatedByType as BalletCancellationInitiatorType) ?? "parent"] ?? "Parent")}
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">{request.reason}</p>
-          </div>
-        ))}
-        {refunds.map((refund: any) => (
-          <div key={`refund-${refund.id}`} className="rounded-md border p-3 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">Refund #{refund.id} · Payment #{refund.paymentId}</span>
-              <Badge variant="outline">{refund.status}</Badge>
+          ))}
+        </div>
+      )}
+    </Section>
+
+    <Section title="Refunds" icon={<Banknote />}>
+      {refunds.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">No refund records.</p>
+      ) : (
+        <div className="space-y-3">
+          {refunds.map((refund: any) => (
+            <div key={`refund-${refund.id}`} className="rounded-md border p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">Refund #{refund.id} · Payment #{refund.paymentId}</span>
+                <Badge variant="outline">{refund.status}</Badge>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {refund.refundMethod === "cash" ? "Cash refund" : refund.refundMethod}
+                {refund.approvedAmountEgp ? ` · approved ${refund.approvedAmountEgp} EGP` : ""}
+                {refund.refundedAmountEgp ? ` · refunded ${refund.refundedAmountEgp} EGP` : ""}
+                {refund.transactionReference ? ` · ref ${refund.transactionReference}` : ""}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">{refund.requestedReason}</p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {refund.refundMethod === "cash" ? "Cash refund" : refund.refundMethod}
-              {refund.approvedAmountEgp ? ` · approved ${refund.approvedAmountEgp} EGP` : ""}
-              {refund.refundedAmountEgp ? ` · refunded ${refund.refundedAmountEgp} EGP` : ""}
-              {refund.transactionReference ? ` · ref ${refund.transactionReference}` : ""}
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">{refund.requestedReason}</p>
-          </div>
-        ))}
-      </div>
-    )}
-  </Section>
+          ))}
+        </div>
+      )}
+    </Section>
+  </GridRow>
 </TabsContent>
   );
 }

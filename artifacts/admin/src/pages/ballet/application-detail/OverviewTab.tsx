@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { TabsContent } from "@/components/ui/tabs";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, LayoutGrid, ListChecks, ArrowRightCircle } from "lucide-react";
 import type { ApplicationDetailTabPanelsProps } from "./types";
 import { Field, formatDateTime, PaymentStatusBadge, ReadinessItem, Section, StatusBadge, SubscriptionBadge, SummaryCard } from "./shared";
 
@@ -46,7 +46,7 @@ export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
     <SummaryCard label="Subscription" value={<SubscriptionBadge payment={currentSubscription} />} sub={currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "No active period"} />
   </div>
 
-  <Section title="Operational Snapshot">
+  <Section title="Operational Snapshot" icon={<LayoutGrid />}>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <Field label="Assessment date" value={app.assessmentDate} />
       <Field label="Assigned level" value={level?.name ?? (app.assignedLevelId ? `#${app.assignedLevelId}` : null)} />
@@ -64,7 +64,7 @@ export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
       ApplicationDetailPage — no second implementation, no second audit
       path. Terminal applications get no action content at all (the banner
       above already explains why). */}
-  <Section title="Operational Actions">
+  <Section title="Operational Actions" icon={<ListChecks />}>
     <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
       <ReadinessItem
         label="Application Status"
@@ -155,7 +155,7 @@ export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
     </div>
   </Section>
 
-  <Section title="Next Required Action">
+  <Section title="Next Required Action" icon={<ArrowRightCircle />}>
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div className="text-base font-semibold text-foreground">{nextRequiredAction}</div>

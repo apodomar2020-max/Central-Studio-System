@@ -1,20 +1,17 @@
-import { Button } from "@/components/ui/button";
+import { ArrowRight, Clock, User, History, Wallet } from "lucide-react";
 import { TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, AlertTriangle, Clock, Loader2, User } from "lucide-react";
-import {
-  BALLET_CANCELLATION_INITIATOR_LABELS,
-  type BalletCancellationInitiatorType,
-} from "@workspace/api-zod";
 import type { ApplicationDetailTabPanelsProps } from "./types";
-import { ATTENDANCE_STATUSES, DAY_NAMES, Field, formatDateTime, formatPaymentMethod, PaymentStatusBadge, Section, StatusBadge, SubscriptionBadge } from "./shared";
+import { formatDateTime, Section, StatusBadge } from "./shared";
 
+// Activity is deliberately NOT gridded — event history is chronological and
+// reads best as a single full-width timeline (per Phase 2.2 direction: "do
+// not force Activity into arbitrary small cards"). Only cosmetic
+// consistency (section icons) was added here.
 export function ActivityTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, initialPayments, subscriptionReadinessState, paymentDataWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, setStatusNote, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, events } = props;
+  const { events, payments } = props;
   return (
 <TabsContent value="activity" className="space-y-4">
-  <Section title="Event History">
+  <Section title="Event History" icon={<History />}>
     {events.length === 0 ? (
       <p className="text-sm text-muted-foreground italic">No events yet.</p>
     ) : (
@@ -56,7 +53,7 @@ export function ActivityTab(props: ApplicationDetailTabPanelsProps) {
     )}
   </Section>
 
-  <Section title="Payment / Subscription Activity">
+  <Section title="Payment / Subscription Activity" icon={<Wallet />}>
     {payments.length === 0 ? (
       <p className="text-sm text-muted-foreground italic">No payment lifecycle events returned by this detail API.</p>
     ) : (
