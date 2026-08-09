@@ -12,7 +12,7 @@ import type { ApplicationDetailTabPanelsProps } from "./types";
 import { ATTENDANCE_STATUSES, DAY_NAMES, Field, formatDateTime, formatPaymentMethod, PaymentStatusBadge, Section, StatusBadge, SubscriptionBadge } from "./shared";
 
 export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, initialPayments, subscriptionReadinessState, paymentDataWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, setStatusNote, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, events } = props;
+  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, initialPayments, subscriptionReadinessState, paymentDataWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, assessmentSchedule, reviewStatuses, newStatus, setNewStatus, setStatusNote, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, data, activeSchedules, canCheckIn, attendanceSummary, attendanceHistoryData, editingAttendanceId, setEditingAttendanceId, editStatus, setEditStatus, editNote, setEditNote, patchAttendanceMutation, startEditAttendance, attScheduleId, setAttScheduleId, attDate, setAttDate, attStatus, setAttStatus, attNote, setAttNote, attendanceMutation, canApprove, levels, newLevelId, setNewLevelId, levelNote, setLevelNote, levelMutation, groups, newGroupId, setNewGroupId, groupNote, setGroupNote, groupMutation, canCancel, dangerAction, openCancellationRequest, setDangerDialog, setCancelTiming, cancellationRequests, refunds, events, isApplicationTerminal, canAssignLevel, canAssignGroup } = props;
   return (
 <TabsContent value="enrollment" className="space-y-4">
 
@@ -52,7 +52,7 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
     </Section>
   )}
 
-  {canActivateApplication && (
+  {!isApplicationTerminal && canActivateApplication && (
     <Section title="Activation">
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
@@ -78,82 +78,102 @@ export function EnrollmentTab(props: ApplicationDetailTabPanelsProps) {
     </Section>
   )}
 
-  {/* Level assignment */}
-  {canApprove && levels.length > 0 && (
+  {/* Level assignment — hidden entirely once the application is terminal
+      (rejected/cancelled/withdrawn); when non-terminal but not yet eligible
+      by lifecycle (e.g. still "pending"), show the prerequisite reason
+      instead of a button that would return 422. canAssignLevel mirrors the
+      backend's own allowlist (accepted/assignedToLevel), computed once in
+      the parent so this and Overview never disagree. */}
+  {canApprove && !isApplicationTerminal && levels.length > 0 && (
     <div className="rounded-lg border bg-card p-5 space-y-4">
       <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Assign to Level
+        {levelAssigned ? "Change Level" : "Assign to Level"}
       </h3>
-      <Select value={newLevelId} onValueChange={setNewLevelId}>
-        <SelectTrigger className="h-8 text-sm">
-          <SelectValue placeholder="Select level…" />
-        </SelectTrigger>
-        <SelectContent>
-          {levels.map((l: any) => (
-            <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Textarea
-        className="text-sm min-h-[64px] resize-none"
-        placeholder="Note (optional)"
-        value={levelNote}
-        onChange={(e) => setLevelNote(e.target.value)}
-      />
-      <Button
-        size="sm"
-        disabled={!newLevelId || levelMutation.isPending}
-        onClick={() => levelMutation.mutate()}
-        style={{ background: "#00B6D6", color: "#000" }}
-        className="w-full"
-      >
-        {levelMutation.isPending ? (
-          <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
-        ) : "Assign Level"}
-      </Button>
+      {canAssignLevel ? (
+        <>
+          <Select value={newLevelId} onValueChange={setNewLevelId}>
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Select level…" />
+            </SelectTrigger>
+            <SelectContent>
+              {levels.map((l: any) => (
+                <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Textarea
+            className="text-sm min-h-[64px] resize-none"
+            placeholder="Note (optional)"
+            value={levelNote}
+            onChange={(e) => setLevelNote(e.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={!newLevelId || levelMutation.isPending}
+            onClick={() => levelMutation.mutate()}
+            style={{ background: "#00B6D6", color: "#000" }}
+            className="w-full"
+          >
+            {levelMutation.isPending ? (
+              <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
+            ) : levelAssigned ? "Change Level" : "Assign Level"}
+          </Button>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">Accept the application before assigning a level.</p>
+      )}
     </div>
   )}
 
   {/* Group assignment — only once a level is assigned; supports
-      reassignment the same way the level section does. */}
-  {canApprove && app.assignedLevelId != null && groups.length > 0 && (
-    <div className="rounded-lg border bg-card p-5 space-y-4">
-      <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Assign to Group
-      </h3>
-      <Select value={newGroupId} onValueChange={setNewGroupId}>
-        <SelectTrigger className="h-8 text-sm">
-          <SelectValue placeholder="Select group…" />
-        </SelectTrigger>
-        <SelectContent>
-          {groups.map((g: any) => (
-            <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Textarea
-        className="text-sm min-h-[64px] resize-none"
-        placeholder="Note (optional)"
-        value={groupNote}
-        onChange={(e) => setGroupNote(e.target.value)}
-      />
-      <Button
-        size="sm"
-        disabled={!newGroupId || groupMutation.isPending}
-        onClick={() => groupMutation.mutate()}
-        style={{ background: "#00B6D6", color: "#000" }}
-        className="w-full"
-      >
-        {groupMutation.isPending ? (
-          <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
-        ) : "Assign Group"}
-      </Button>
-    </div>
-  )}
-  {canApprove && app.assignedLevelId != null && groups.length === 0 && (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-      No active group in this level currently has a valid Ballet Class. Create the Class and weekly Schedule before assigning a group.
-    </div>
+      reassignment the same way the level section does. Same terminal-state
+      hiding + prerequisite-reason pattern as Level assignment above. */}
+  {canApprove && !isApplicationTerminal && (
+    <>
+      {!levelAssigned ? (
+        <div className="rounded-lg border bg-card p-5 space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Assign to Group</h3>
+          <p className="text-sm text-muted-foreground">Assign a level first.</p>
+        </div>
+      ) : groups.length > 0 ? (
+        <div className="rounded-lg border bg-card p-5 space-y-4">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {groupAssigned ? "Change Group" : "Assign to Group"}
+          </h3>
+          <Select value={newGroupId} onValueChange={setNewGroupId}>
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Select group…" />
+            </SelectTrigger>
+            <SelectContent>
+              {groups.map((g: any) => (
+                <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Textarea
+            className="text-sm min-h-[64px] resize-none"
+            placeholder="Note (optional)"
+            value={groupNote}
+            onChange={(e) => setGroupNote(e.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={!newGroupId || groupMutation.isPending || !canAssignGroup}
+            onClick={() => groupMutation.mutate()}
+            style={{ background: "#00B6D6", color: "#000" }}
+            className="w-full"
+          >
+            {groupMutation.isPending ? (
+              <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</>
+            ) : groupAssigned ? "Change Group" : "Assign Group"}
+          </Button>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+          No active group in this level currently has a valid Ballet Class. Create the Class and weekly Schedule before assigning a group.
+        </div>
+      )}
+    </>
   )}
 
   {/* Mark attendance (C3) — minimal admin-recorded path. Shown only when

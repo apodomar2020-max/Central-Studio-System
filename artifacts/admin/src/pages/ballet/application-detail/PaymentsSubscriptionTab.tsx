@@ -11,7 +11,7 @@ import type { ApplicationDetailTabPanelsProps } from "./types";
 import { ATTENDANCE_STATUSES, DAY_NAMES, Field, formatDateTime, formatPaymentMethod, PaymentStatusBadge, Section, StatusBadge, SubscriptionBadge } from "./shared";
 
 export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, currentPayment, currentSubscription, pendingInitialPayment, initialPayments, paymentDataWarning, subscriptionExpiredWarning, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId } = props;
+  const { app, currentPayment, currentSubscription, pendingInitialPayment, initialPayments, paymentDataWarning, subscriptionExpiredWarning, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, isApplicationTerminal } = props;
   return (
 <TabsContent value="payments" className="space-y-4">
   <Section title="Payment Actions">
@@ -105,7 +105,10 @@ export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) 
       />
     </div>
     <div className="flex flex-wrap gap-2 pt-1">
-      {canEditPayments && (
+      {/* Hidden (not merely disabled) once terminal — matches the Payment
+          Actions section above. Still disabled-with-reason for the
+          non-terminal "no adjustable cycle" case below. */}
+      {!isApplicationTerminal && canEditPayments && (
         <Button
           variant="outline"
           size="sm"

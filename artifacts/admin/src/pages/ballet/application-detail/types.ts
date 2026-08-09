@@ -78,4 +78,11 @@ export interface ApplicationDetailTabPanelsProps {
   cancellationRequests: any;
   refunds: any;
   events: any;
+  isApplicationTerminal: any;
+  applicationStatus: any;
+  canAssignLevel: any;
+  canAssignGroup: any;
+  openAssignLevelDialog: any;
+  openAssignGroupDialog: any;
+  openStatusDecisionDialog: any;
 }

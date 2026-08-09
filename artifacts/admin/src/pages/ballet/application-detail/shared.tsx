@@ -96,7 +96,11 @@ export function SummaryCard({ label, value, sub }: { label: string; value: React
   );
 }
 
-function ReadinessItem({ label, state, detail }: { label: string; state: "complete" | "pending" | "missing" | "expired" | "warning"; detail?: ReactNode }) {
+// Exported (Phase 2) so Overview can render each of the six readiness areas
+// as an actionable card — same visual language as the original read-only
+// version, plus an optional action slot (a Button when the action is
+// currently valid, or explanatory text when a prerequisite is missing).
+export function ReadinessItem({ label, state, detail, action }: { label: string; state: "complete" | "pending" | "missing" | "expired" | "warning"; detail?: ReactNode; action?: ReactNode }) {
   const cfg = {
     complete: { text: "Complete", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
     pending: { text: "Pending", className: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
@@ -105,39 +109,15 @@ function ReadinessItem({ label, state, detail }: { label: string; state: "comple
     warning: { text: "Review", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
   }[state];
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md border bg-muted/10 px-3 py-2">
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-foreground">{label}</div>
-        {detail && <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>}
+    <div className="flex flex-col gap-2 rounded-md border bg-muted/10 px-3 py-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{label}</div>
+          {detail && <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>}
+        </div>
+        <Badge variant="outline" className={cfg.className}>{cfg.text}</Badge>
       </div>
-      <Badge variant="outline" className={cfg.className}>{cfg.text}</Badge>
-    </div>
-  );
-}
-
-export function ActivationReadiness({
-  applicationStatus,
-  appAcceptedOrAssigned,
-  levelAssigned,
-  levelName,
-  groupAssigned,
-  groupName,
-  initialPaymentRecorded,
-  pendingInitialPayment,
-  paidInitialPayment,
-  subscriptionReadinessState,
-  currentSubscription,
-  paymentDataWarning,
-  subscriptionExpiredWarning,
-}: any) {
-  return (
-    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-      <ReadinessItem label="Application accepted/assigned" state={appAcceptedOrAssigned ? "complete" : "missing"} detail={<StatusBadge status={applicationStatus} />} />
-      <ReadinessItem label="Level assigned" state={levelAssigned ? "complete" : "missing"} detail={levelName ?? "Assign a level before activation."} />
-      <ReadinessItem label="Group assigned" state={groupAssigned ? "complete" : "missing"} detail={groupName ?? "Assign a group before activation."} />
-      <ReadinessItem label="Initial payment recorded" state={initialPaymentRecorded ? "complete" : "missing"} detail={pendingInitialPayment ? `Pending payment #${pendingInitialPayment.id}` : paidInitialPayment ? `Paid payment #${paidInitialPayment.id}` : "Create the first pending payment cycle."} />
-      <ReadinessItem label="Payment confirmed" state={paidInitialPayment ? "complete" : pendingInitialPayment ? "pending" : "missing"} detail={paidInitialPayment?.paidAt ? `Paid ${new Date(paidInitialPayment.paidAt).toLocaleString()}` : pendingInitialPayment ? "Confirm after Pay at Studio collection." : "No paid initial payment yet."} />
-      <ReadinessItem label="Subscription period active" state={subscriptionReadinessState} detail={paymentDataWarning ?? subscriptionExpiredWarning ?? (currentSubscription?.subscriptionExpiresAt ? `Expires ${currentSubscription.subscriptionExpiresAt}` : "Confirm payment to establish dates.")} />
+      {action && <div className="pt-1">{action}</div>}
     </div>
   );
 }

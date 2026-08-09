@@ -43,6 +43,7 @@ import {
   BALLET_PAYMENT_METHODS,
 } from "@workspace/db";
 import type { BalletPaymentStatus } from "@workspace/db";
+import { BALLET_TERMINAL_APPLICATION_STATUSES } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { adminActivityActor, diffFields, logActivity, logActivityWithActor } from "../lib/activityLog";
@@ -427,6 +428,21 @@ async function updatePaymentStatus(
         .where(eq(balletApplicationsTable.id, lockedPayment.applicationId))
         .limit(1);
 
+      // Terminal-state hardening: a payment can only be confirmed while its
+      // parent application is still progressing. Without this, a payment
+      // that was already pending when the application later became
+      // rejected/cancelled/withdrawn could still be confirmed as paid —
+      // establishing a subscription period for a closed application. Checked
+      // inside the same locked transaction so a stale client request (the
+      // application was terminated by someone else after this dialog opened)
+      // is rejected authoritatively, not just by UI gating.
+      if (application && (BALLET_TERMINAL_APPLICATION_STATUSES as readonly string[]).includes(application.status)) {
+        throw Object.assign(
+          new Error(`Cannot confirm payment: application status "${application.status}" is terminal.`),
+          { status: 422, code: "BALLET_APPLICATION_TERMINAL" },
+        );
+      }
+
       payment = lockedPayment;
       app = application;
 
@@ -587,6 +603,19 @@ router.patch(
           .limit(1);
         if (!application) throw Object.assign(new Error("Application not found"), { status: 404 });
         app = application;
+
+        // Terminal-state hardening: mirrors the same check on payment
+        // confirmation above — a subscription cycle must not be extended
+        // once its parent application has stopped progressing, and this is
+        // the authoritative backend check (not just UI gating), so a stale
+        // client request against an application terminated by someone else
+        // after the dialog opened is rejected here too.
+        if ((BALLET_TERMINAL_APPLICATION_STATUSES as readonly string[]).includes(application.status)) {
+          throw Object.assign(
+            new Error(`Cannot adjust subscription expiry: application status "${application.status}" is terminal.`),
+            { status: 422, code: "BALLET_APPLICATION_TERMINAL" },
+          );
+        }
 
         const [lockedPayment] = await tx
           .select()

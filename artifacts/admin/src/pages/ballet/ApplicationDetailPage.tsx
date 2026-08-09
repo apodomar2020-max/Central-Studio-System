@@ -24,11 +24,12 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ChevronLeft, Download } from "lucide-react";
+import { Loader2, ChevronLeft, Download, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   isTransitionAllowed,
   resolveBalletDangerAction,
+  BALLET_TERMINAL_APPLICATION_STATUSES,
   type BalletApplicationStatus,
 } from "@workspace/api-zod";
 import {
@@ -322,7 +323,10 @@ type NextRequiredAction =
   | "No action required";
 
 const REVIEW_ACTION_STATUSES = new Set<BalletApplicationStatus>(["pending", "needsFollowUp"]);
-const TERMINAL_ACTION_STATUSES = new Set<BalletApplicationStatus>(["rejected", "cancelled", "withdrawn"]);
+// Derived from the canonical constant (not a hand-typed duplicate list) so
+// this can never drift from the shared source of truth used by the backend
+// and by resolveBalletDangerAction.
+const TERMINAL_ACTION_STATUSES = new Set<BalletApplicationStatus>(BALLET_TERMINAL_APPLICATION_STATUSES);
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -366,7 +370,18 @@ export default function ApplicationDetailPage() {
   const canApprove = can("ballet.applications", "approve");
   const canReject = can("ballet.applications", "reject");
   const canCancel = can("ballet.applications", "cancel");
-  const canViewPayments = can("ballet.payments", "view");
+  // Gates the "Open Payment History"/"Open Full Payment History" deep links to
+  // /ballet/payments below (OverviewTab, PaymentsSubscriptionTab) — that page
+  // is itself gated by finance.view (nav-config.ts, App.tsx ROUTE_PERMS), so
+  // this must match it, not the unrelated ballet.payments.view permission.
+  // The payment records/fields shown directly on this page are unconditional;
+  // their amount fields are independently redacted server-side based on
+  // finance.view (adminBallet.ts's canViewFinanceAmounts/redactFinancialFields)
+  // regardless of this flag, so no raw amount is exposed by this change.
+  const canViewPayments = can("finance", "view");
+  // ballet.payments.create/edit remain unchanged — those mutation actions
+  // (Create Initial Payment, Confirm Payment, Adjust Expiry) are genuinely
+  // enforced by the backend under ballet.payments.create/edit, not finance.*.
   const canCreatePayments = can("ballet.payments", "create");
   const canEditPayments = can("ballet.payments", "edit");
   const canCheckIn = can("attendance", "checkIn");
@@ -379,6 +394,15 @@ export default function ApplicationDetailPage() {
   const [levelNote, setLevelNote]       = useState("");
   const [newGroupId, setNewGroupId]     = useState("");
   const [groupNote, setGroupNote]       = useState("");
+  // Overview-triggered dialogs for the same Assign Level / Assign Group
+  // action Enrollment already has inline — same state, same mutation, just a
+  // second entry point so Overview never has to send the admin to another
+  // tab for these two actions.
+  const [assignLevelDialogOpen, setAssignLevelDialogOpen] = useState(false);
+  const [assignGroupDialogOpen, setAssignGroupDialogOpen] = useState(false);
+  // Same principle for the application review/status decision (Accept /
+  // Needs Follow-up / Reject) already on the Application tab.
+  const [statusDecisionDialogOpen, setStatusDecisionDialogOpen] = useState(false);
   const [attScheduleId, setAttScheduleId] = useState("");
   const [attDate, setAttDate]             = useState("");
   const [attStatus, setAttStatus]         = useState("checked_in");
@@ -497,6 +521,7 @@ export default function ApplicationDetailPage() {
       toast({ title: "Status updated" });
       setNewStatus("");
       setStatusNote("");
+      setStatusDecisionDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
@@ -523,6 +548,7 @@ export default function ApplicationDetailPage() {
       toast({ title: `Assigned to ${result.levelName}` });
       setNewLevelId("");
       setLevelNote("");
+      setAssignLevelDialogOpen(false);
       // Changing Level supersedes the assignment's group (adminBallet.ts
       // clears it server-side too) — the picker must not keep offering a
       // stale Group selection from the previous Level.
@@ -553,6 +579,7 @@ export default function ApplicationDetailPage() {
       toast({ title: `Assigned to ${result.groupName}` });
       setNewGroupId("");
       setGroupNote("");
+      setAssignGroupDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
       queryClient.invalidateQueries({ queryKey: ["ballet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["ballet-students"] });
@@ -887,7 +914,13 @@ export default function ApplicationDetailPage() {
     reapplyAllowed: false,
   });
   const currentSubscription = data.currentSubscription ?? currentPayment;
-  const canAdjustExpiry = Boolean(canEditPayments && currentSubscription?.status === "paid" && currentSubscription.hasActiveSubscription && currentSubscription.subscriptionExpiresAt);
+  // Computed once here (not per-tab) and threaded through every progression
+  // gate below + passed to all tabs — the single source of truth for
+  // "is this application closed", derived from the canonical terminal-status
+  // set (BALLET_TERMINAL_APPLICATION_STATUSES), never a second literal list.
+  const applicationStatus = app.status as BalletApplicationStatus;
+  const isApplicationTerminal = TERMINAL_ACTION_STATUSES.has(applicationStatus);
+  const canAdjustExpiry = Boolean(!isApplicationTerminal && canEditPayments && currentSubscription?.status === "paid" && currentSubscription.hasActiveSubscription && currentSubscription.subscriptionExpiresAt);
   const expiryAdditionalDaysNumber = Number(expiryAdditionalDays);
   const isExpiryFormValid = expiryReason !== "other" || expiryOtherReason.trim().length >= 3;
   const canSubmitExpiryAdjustment = isExpiryFormValid && (
@@ -903,14 +936,21 @@ export default function ApplicationDetailPage() {
   const paidInitialPayment = initialPayments.find((payment) => payment.status === "paid") ?? null;
   const hasBlockingInitialPayment = initialPayments.some((payment) => ["pending", "paid", "refunded"].includes(payment.status));
   const canCreateInitialPayment = Boolean(
-    canCreatePayments
+    !isApplicationTerminal
+      && canCreatePayments
       && ["accepted", "assignedToLevel"].includes(app.status)
       && !hasBlockingInitialPayment,
   );
-  const canConfirmInitialPayment = Boolean(canEditPayments && pendingInitialPayment);
+  const canConfirmInitialPayment = Boolean(!isApplicationTerminal && canEditPayments && pendingInitialPayment);
   const appAcceptedOrAssigned = ["accepted", "assignedToLevel", "active"].includes(app.status);
   const levelAssigned = app.assignedLevelId != null;
   const groupAssigned = group != null;
+  // Mirrors the backend allowlists exactly (assign-level:
+  // accepted/assignedToLevel; assign-group: assignedToLevel/active + an
+  // existing level) so Overview/Enrollment never render a button the
+  // endpoint would reject with 422.
+  const canAssignLevel = Boolean(canApprove && !isApplicationTerminal && ["accepted", "assignedToLevel"].includes(app.status));
+  const canAssignGroup = Boolean(canApprove && !isApplicationTerminal && levelAssigned && ["assignedToLevel", "active"].includes(app.status));
   const initialPaymentRecorded = initialPayments.length > 0;
   const paymentConfirmed = paidInitialPayment != null;
   const paidInitialStartDate = parseSubscriptionDate(paidInitialPayment?.subscriptionStartDate);
@@ -958,7 +998,6 @@ export default function ApplicationDetailPage() {
   );
   const reviewStatuses = permittedStatuses.filter((status) => status.value !== "active");
   const canActivateApplication = permittedStatuses.some((status) => status.value === "active");
-  const applicationStatus = app.status as BalletApplicationStatus;
   const nextRequiredAction: NextRequiredAction =
     REVIEW_ACTION_STATUSES.has(applicationStatus) ? "Review Application"
     : TERMINAL_ACTION_STATUSES.has(applicationStatus) ? "Application closed"
@@ -997,6 +1036,36 @@ export default function ApplicationDetailPage() {
         variant: "destructive",
       }))
       .finally(() => setConfirmingPaymentAmountLoading(false));
+  };
+  const openStatusDecisionDialog = () => {
+    setNewStatus("");
+    setStatusNote("");
+    setStatusDecisionDialogOpen(true);
+  };
+  const closeStatusDecisionDialog = () => {
+    setStatusDecisionDialogOpen(false);
+    setNewStatus("");
+    setStatusNote("");
+  };
+  const openAssignLevelDialog = () => {
+    setNewLevelId(app.assignedLevelId != null ? String(app.assignedLevelId) : "");
+    setLevelNote("");
+    setAssignLevelDialogOpen(true);
+  };
+  const closeAssignLevelDialog = () => {
+    setAssignLevelDialogOpen(false);
+    setNewLevelId("");
+    setLevelNote("");
+  };
+  const openAssignGroupDialog = () => {
+    setNewGroupId(group?.id != null ? String(group.id) : "");
+    setGroupNote("");
+    setAssignGroupDialogOpen(true);
+  };
+  const closeAssignGroupDialog = () => {
+    setAssignGroupDialogOpen(false);
+    setNewGroupId("");
+    setGroupNote("");
   };
 
   return (
@@ -1129,8 +1198,138 @@ export default function ApplicationDetailPage() {
           cancellationRequests={cancellationRequests}
           refunds={refunds}
           events={events}
+          isApplicationTerminal={isApplicationTerminal}
+          applicationStatus={applicationStatus}
+          canAssignLevel={canAssignLevel}
+          canAssignGroup={canAssignGroup}
+          openAssignLevelDialog={openAssignLevelDialog}
+          openAssignGroupDialog={openAssignGroupDialog}
+          openStatusDecisionDialog={openStatusDecisionDialog}
         />
       </Tabs>
+      <Dialog open={statusDecisionDialogOpen} onOpenChange={(open) => (open ? openStatusDecisionDialog() : closeStatusDecisionDialog())}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Application Decision</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={app.status} />
+              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">new status</span>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Decision</div>
+              <Select value={newStatus} onValueChange={setNewStatus}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select review status…" /></SelectTrigger>
+                <SelectContent>
+                  {reviewStatuses.filter((s: any) => s.value !== app.status).map((s: any) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal note</div>
+              <Textarea
+                className="text-sm min-h-[64px] resize-none"
+                value={statusNote}
+                onChange={(event) => setStatusNote(event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={closeStatusDecisionDialog} disabled={statusMutation.isPending}>Cancel</Button>
+              <Button size="sm" onClick={() => statusMutation.mutate(undefined)} disabled={!newStatus || statusMutation.isPending}>
+                {statusMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Saving…</> : "Save Decision"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignLevelDialogOpen} onOpenChange={(open) => (open ? openAssignLevelDialog() : closeAssignLevelDialog())}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{levelAssigned ? "Change Level" : "Assign Level"}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {levelAssigned && (
+              <p className="text-sm text-muted-foreground">
+                Currently assigned to <span className="text-foreground font-medium">{level?.name ?? `#${app.assignedLevelId}`}</span>. Changing the level clears the current group assignment.
+              </p>
+            )}
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Level</div>
+              <Select value={newLevelId} onValueChange={setNewLevelId}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select level…" /></SelectTrigger>
+                <SelectContent>
+                  {levels.map((l: any) => (
+                    <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal note</div>
+              <Textarea
+                className="text-sm min-h-[64px] resize-none"
+                value={levelNote}
+                onChange={(event) => setLevelNote(event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={closeAssignLevelDialog} disabled={levelMutation.isPending}>Cancel</Button>
+              <Button size="sm" onClick={() => levelMutation.mutate()} disabled={!newLevelId || levelMutation.isPending}>
+                {levelMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</> : levelAssigned ? "Change Level" : "Assign Level"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignGroupDialogOpen} onOpenChange={(open) => (open ? openAssignGroupDialog() : closeAssignGroupDialog())}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{groupAssigned ? "Change Group" : "Assign Group"}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {groupAssigned && (
+              <p className="text-sm text-muted-foreground">
+                Currently assigned to <span className="text-foreground font-medium">{group?.name}</span>.
+              </p>
+            )}
+            {groups.length === 0 ? (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                No active group in this level currently has a valid Ballet Class. Create the Class and weekly Schedule before assigning a group.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Group</div>
+                <Select value={newGroupId} onValueChange={setNewGroupId}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select group…" /></SelectTrigger>
+                  <SelectContent>
+                    {groups.map((g: any) => (
+                      <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal note</div>
+              <Textarea
+                className="text-sm min-h-[64px] resize-none"
+                value={groupNote}
+                onChange={(event) => setGroupNote(event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={closeAssignGroupDialog} disabled={groupMutation.isPending}>Cancel</Button>
+              <Button size="sm" onClick={() => groupMutation.mutate()} disabled={!newGroupId || groupMutation.isPending || groups.length === 0}>
+                {groupMutation.isPending ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Assigning…</> : groupAssigned ? "Change Group" : "Assign Group"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createInitialPaymentOpen} onOpenChange={(open) => (open ? setCreateInitialPaymentOpen(true) : closeCreateInitialPaymentDialog())}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Create Initial Payment</DialogTitle></DialogHeader>
