@@ -1,24 +1,23 @@
-/**
- * Ballet → General Settings — Overview (/ballet/settings)
- *
- * Entry point for Ballet General Settings. Replaces the former single long
- * stacked form (all four content areas in one page) with a management
- * dashboard: four distinct cards, one per content area, each showing a
- * status/summary and a "Manage" action into its own focused page.
- */
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   HelpCircle,
   Image as ImageIcon,
   ListChecks,
   Phone,
+  Banknote,
+  Save,
+  Loader2,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   adminFetch,
@@ -82,7 +81,13 @@ function SettingsCard({
 }
 
 export default function BalletSettingsOverviewPage() {
-  const { token } = useAdminAuth();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { token, can } = useAdminAuth();
+  const canEdit = can("ballet.settings", "edit");
+
+  const [assessmentFee, setAssessmentFee] = useState<string>("");
+  const [feeDirty, setFeeDirty] = useState(false);
 
   const settingsQuery = useQuery({
     queryKey: [BALLET_SETTINGS_QUERY_KEY, token],
@@ -106,6 +111,55 @@ export default function BalletSettingsOverviewPage() {
   const sections = requirementsQuery.data?.sections ?? [];
   const faqs = faqsQuery.data?.faqs ?? [];
 
+  useEffect(() => {
+    if (settings) {
+      setAssessmentFee(settings.assessmentFeeEgp != null ? String(settings.assessmentFeeEgp) : "");
+      setFeeDirty(false);
+    }
+  }, [settings]);
+
+  const saveFeeMutation = useMutation({
+    mutationFn: (feeValue: number | null) =>
+      adminFetch<{ settings: BalletSettings }>(
+        balletApiUrl("/settings"),
+        {
+          method: "PATCH",
+          body: JSON.stringify({ assessmentFeeEgp: feeValue }),
+        },
+        token,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [BALLET_SETTINGS_QUERY_KEY] });
+      toast({ title: "Assessment fee saved successfully" });
+      setFeeDirty(false);
+    },
+    onError: (err: { data?: { error?: string } }) => {
+      toast({
+        title: "Failed to save assessment fee",
+        description: err?.data?.error ?? "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveFee = () => {
+    const trimmed = assessmentFee.trim();
+    if (!trimmed) {
+      saveFeeMutation.mutate(null);
+      return;
+    }
+    const parsed = parseInt(trimmed, 10);
+    if (isNaN(parsed) || parsed < 0) {
+      toast({
+        title: "Invalid fee amount",
+        description: "Assessment fee must be 0 or a positive whole number.",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveFeeMutation.mutate(parsed);
+  };
+
   const hasImage = !!settings?.homeCardImageUrl;
   const contactFieldsFilled = settings
     ? [settings.whatsappNumber, settings.phoneNumber, settings.email, settings.studioLocationUrl].filter(Boolean).length
@@ -118,9 +172,64 @@ export default function BalletSettingsOverviewPage() {
     <div className="space-y-6">
       <PageHeader
         title="Ballet General Settings"
-        description="Manage the Ballet Home card image, contact information, program requirements, and FAQ shown in the mobile app."
+        description="Manage the Ballet Home card image, contact information, program requirements, FAQ, and assessment fee."
         mode="stage"
       />
+
+      {/* Assessment Fee Card */}
+      <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#00B6D7]/25 bg-[#00B6D7]/10">
+              <Banknote className="h-5 w-5 text-[#00B6D7]" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Ballet Assessment Fee (EGP)</h2>
+              <p className="text-sm text-muted-foreground">
+                Configurable intake assessment price displayed to parents during appointment booking.
+              </p>
+            </div>
+          </div>
+          {settings?.assessmentFeeEgp != null ? (
+            <Badge variant="default">{settings.assessmentFeeEgp} EGP</Badge>
+          ) : (
+            <Badge variant="outline">Not Set / Free</Badge>
+          )}
+        </div>
+
+        <div className="flex items-end gap-3 max-w-md">
+          <div className="flex-1 space-y-1.5">
+            <Label htmlFor="assessmentFee">Assessment Fee Amount (EGP)</Label>
+            <Input
+              id="assessmentFee"
+              type="number"
+              min={0}
+              placeholder="e.g. 300 (leave blank for free)"
+              value={assessmentFee}
+              disabled={!canEdit || settingsQuery.isLoading || saveFeeMutation.isPending}
+              onChange={(e) => {
+                setAssessmentFee(e.target.value);
+                setFeeDirty(true);
+              }}
+            />
+          </div>
+          {canEdit && (
+            <Button
+              type="button"
+              disabled={!feeDirty || saveFeeMutation.isPending}
+              onClick={handleSaveFee}
+              className="gap-2"
+            >
+              {saveFeeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save Fee
+            </Button>
+          )}
+        </div>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <SettingsCard

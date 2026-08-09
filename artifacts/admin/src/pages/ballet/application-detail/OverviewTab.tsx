@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { TabsContent } from "@/components/ui/tabs";
 import { AlertTriangle, Loader2, LayoutGrid, ListChecks, ArrowRightCircle } from "lucide-react";
 import type { ApplicationDetailTabPanelsProps } from "./types";
-import { Field, formatDateTime, PaymentStatusBadge, ReadinessItem, Section, StatusBadge, SubscriptionBadge, SummaryCard } from "./shared";
+import { AssessmentFeeStatusBadge, Field, formatDateTime, PaymentStatusBadge, ReadinessItem, Section, StatusBadge, SubscriptionBadge, SummaryCard } from "./shared";
 
 // Terminal-status banner copy (Phase 2). Kept local to Overview — the
 // Danger Zone (CancellationRefundsTab) already has its own minimal terminal
@@ -23,7 +23,7 @@ const TERMINAL_STATUS_COPY: Record<string, { title: string; body: string }> = {
 };
 
 export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, subscriptionReadinessState, paymentDataWarning, subscriptionExpiredWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, canViewPayments, navigate, appId, isApplicationTerminal, applicationStatus, canAssignLevel, canAssignGroup, openAssignLevelDialog, openAssignGroupDialog, openStatusDecisionDialog, canAdjustExpiry, setAdjustExpiryOpen, reviewStatuses } = props;
+  const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, subscriptionReadinessState, paymentDataWarning, subscriptionExpiredWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, canViewPayments, navigate, appId, isApplicationTerminal, applicationStatus, canAssignLevel, canAssignGroup, openAssignLevelDialog, openAssignGroupDialog, openStatusDecisionDialog, canAdjustExpiry, setAdjustExpiryOpen, reviewStatuses, assessmentFee, openRecordAssessmentFeeDialog } = props;
   const terminalCopy = TERMINAL_STATUS_COPY[app.status as string];
   return (
 <TabsContent value="overview" className="space-y-4">
@@ -49,6 +49,7 @@ export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
   <Section title="Operational Snapshot" icon={<LayoutGrid />}>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <Field label="Assessment date" value={app.assessmentDate} />
+      <Field label="Assessment Fee" value={<AssessmentFeeStatusBadge status={assessmentFee?.status} />} />
       <Field label="Assigned level" value={level?.name ?? (app.assignedLevelId ? `#${app.assignedLevelId}` : null)} />
       <Field label="Assigned group" value={group?.name} />
       <Field label="Current package" value={currentSubscription?.packageName ?? currentPayment?.packageName ?? app.preferredPackageName} />

@@ -59,6 +59,18 @@ export function SubscriptionBadge({ payment }: { payment?: any | null }) {
   return <Badge variant="outline" className={className}>{payment.subscriptionDisplayStatus}</Badge>;
 }
 
+const ASSESSMENT_FEE_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  unpaid: { label: "Unpaid", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
+  paid: { label: "Paid", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  waived: { label: "Waived", className: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
+};
+
+export function AssessmentFeeStatusBadge({ status }: { status?: string | null }) {
+  if (!status) return <Badge variant="outline" className="bg-slate-500/15 text-slate-400 border-slate-500/30">Not Set</Badge>;
+  const cfg = ASSESSMENT_FEE_STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
+  return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;
+}
+
 export function StatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
   return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;

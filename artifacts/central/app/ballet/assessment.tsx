@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   Animated,
@@ -57,6 +58,7 @@ import {
   fetchBalletApplicationDetail,
   fetchAvailableAssessmentSchedules,
   fetchBalletPackages,
+  fetchBalletSettings,
   fetchMyApplications,
   isOfflineError,
   submitBalletApplication,
@@ -223,6 +225,13 @@ export default function BalletAssessmentScreen() {
       : trimmedCancelReason.length > 500
         ? "Reason must be at most 500 characters."
         : null;
+
+  const settingsQuery = useQuery({
+    queryKey: ["ballet-settings"],
+    queryFn: fetchBalletSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const assessmentFeeEgp = settingsQuery.data?.assessmentFeeEgp ?? null;
 
   const stepIndex = STEP_ORDER.indexOf(step);
   const profileComplete = user?.profileCompletion?.isComplete ?? user?.profileCompleted ?? false;
@@ -838,6 +847,14 @@ export default function BalletAssessmentScreen() {
               <Ionicons name="information-circle-outline" size={18} color={BA.cyan400} />
               <Text style={styles.infoText}>This appointment is for your Ballet Assessment, not your weekly Ballet class.</Text>
             </View>
+            {assessmentFeeEgp != null && assessmentFeeEgp > 0 ? (
+              <View style={styles.infoBanner}>
+                <Ionicons name="cash-outline" size={18} color={BA.cyan400} />
+                <Text style={styles.infoText}>
+                  Ballet Assessment Fee: {assessmentFeeEgp.toLocaleString("en-US")} EGP (Payable at studio during appointment)
+                </Text>
+              </View>
+            ) : null}
             {appointmentsState === "loading" ? <LoadingCards /> : null}
             {appointmentsState === "offline" ? <OfflineState variant="compact" onRetry={() => loadAppointments(selectedChild)} /> : null}
             {appointmentsState === "error" ? <ErrorState variant="compact" message="Couldn't load assessment appointments." onRetry={() => loadAppointments(selectedChild)} /> : null}
@@ -865,7 +882,16 @@ export default function BalletAssessmentScreen() {
 
         {step === "package" && (
           <View style={styles.section}>
-            <ScreenTitle title="Select Package" subtitle="Choose the Ballet package you prefer for this application." />
+            <ScreenTitle
+              title="Select Preferred Package"
+              subtitle="Package preference only. You are not paying for this package today. Package payment will be arranged after assessment approval."
+            />
+            <View style={styles.infoBanner}>
+              <Ionicons name="information-circle-outline" size={18} color={BA.cyan400} />
+              <Text style={styles.infoText}>
+                This selection indicates your preferred subscription plan. No package payment is collected during assessment submission.
+              </Text>
+            </View>
             {packagesState === "loading" ? <LoadingCards /> : null}
             {packagesState === "offline" ? <OfflineState variant="compact" onRetry={() => loadPackages()} /> : null}
             {packagesState === "error" ? <ErrorState variant="compact" message="Couldn't load Ballet packages." onRetry={() => loadPackages()} /> : null}
@@ -897,6 +923,7 @@ export default function BalletAssessmentScreen() {
               appointment={selectedAppointment}
               pkg={selectedPackage}
               paymentLabel={CANONICAL_PAYMENT_LABEL}
+              assessmentFeeEgp={assessmentFeeEgp}
               onEdit={(section) => {
                 const target: Step = section === "child" ? "child" : section === "appointment" ? "appointment" : "package";
                 setStep(target);

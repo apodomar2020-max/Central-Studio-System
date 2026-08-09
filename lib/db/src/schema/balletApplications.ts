@@ -7,6 +7,7 @@ import { balletLevelsTable } from "./balletLevels";
 import { balletSchedulesTable } from "./balletSchedules";
 import { childrenTable } from "./children";
 import { balletPackagesTable } from "./balletPackages";
+import { systemUsersTable } from "./systemUsers";
 
 // Canonical source of truth moved to @workspace/api-zod (Phase A / P0-2b) so
 // frontend packages can import the same literals instead of retyping them.
@@ -63,6 +64,18 @@ export const balletApplicationsTable = pgTable("ballet_applications", {
   assignedLevelId:       integer("assigned_level_id").references(() => balletLevelsTable.id, { onDelete: "set null" }),
   assignedAt:            timestamp("assigned_at", { withTimezone: true, mode: "string" }),
   childId:               integer("child_id").references(() => childrenTable.id, { onDelete: "set null" }),
+
+  // ─── Assessment Fee Tracking (Phase 2 Additive Columns) ───────────────────
+  // Server-side snapshot of the configured fee from ballet_settings.assessment_fee_egp
+  // at application creation time. Null if no fee was configured or free.
+  assessmentFeeAmountEgp:     integer("assessment_fee_amount_egp"),
+  // Status of the assessment fee payment: unpaid | paid | waived | refunded
+  assessmentFeeStatus:        text("assessment_fee_status").notNull().default("unpaid"),
+  assessmentFeePaidAt:        timestamp("assessment_fee_paid_at", { withTimezone: true, mode: "string" }),
+  // In-person settlement channel (Phase 1 strictly 'inPerson')
+  assessmentFeePaymentMethod: text("assessment_fee_payment_method"),
+  assessmentFeeRecordedById:  integer("assessment_fee_recorded_by_id").references(() => systemUsersTable.id, { onDelete: "set null" }),
+
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 }, (table) => ([

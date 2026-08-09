@@ -85,4 +85,12 @@ export interface ApplicationDetailTabPanelsProps {
   openAssignLevelDialog: any;
   openAssignGroupDialog: any;
   openStatusDecisionDialog: any;
+  assessmentFee?: {
+    amountEgp: number | null;
+    status: "unpaid" | "paid" | "waived";
+    paidAt: string | null;
+    paymentMethod: string | null;
+    recordedById: number | null;
+  } | null;
+  openRecordAssessmentFeeDialog?: () => void;
 }

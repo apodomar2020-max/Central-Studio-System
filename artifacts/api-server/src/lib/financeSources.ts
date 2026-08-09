@@ -63,6 +63,7 @@ import {
   CREDIT_ADJUSTMENT_TYPES,
   CREDIT_CONSUMPTION_TYPES,
   CREDIT_ISSUANCE_TYPES,
+  mapBalletAssessmentFee,
   mapBalletPayment,
   mapBalletRefund,
   mapBookingPayment,
@@ -644,6 +645,65 @@ const balletPayments: FinanceFamilyDescriptor = {
   },
 };
 
+const balletAssessmentFees: FinanceFamilyDescriptor = {
+  family: "ballet_payments",
+  eventTypes: ["ballet_assessment_fee"],
+  plan(filters) {
+    if (
+      excludedBy(filters.eventTypes, this.eventTypes) ||
+      filters.refundStatuses.length > 0 ||
+      excludedBy(filters.paymentMethods, ["in_person", "unknown"]) ||
+      excludedBy(filters.amountAvailabilities, ["exact", "unknown"]) ||
+      excludedBy(filters.reliabilityBadges, ["recorded_collection", "unverified_admin_tag"])
+    ) {
+      return { where: null };
+    }
+
+    const conditions: Array<SQL | undefined> = [
+      eq(balletApplicationsTable.assessmentFeeStatus, "paid"),
+      dateRange(sql`coalesce(${balletApplicationsTable.assessmentFeePaidAt}, ${balletApplicationsTable.createdAt})`, filters),
+    ];
+
+    if (filters.paymentStatuses.length > 0 && !filters.paymentStatuses.includes("paid")) {
+      return { where: null };
+    }
+
+    const combined = conditions.length === 1 ? conditions[0] : and(...conditions);
+    return { where: combined ?? null };
+  },
+  async count(where) {
+    const query = db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(balletApplicationsTable);
+    if (where) query.where(where);
+    const [row] = await query;
+    return row?.count ?? 0;
+  },
+  async fetch(where, limit) {
+    const query = db
+      .select({
+        id: balletApplicationsTable.id,
+        parentStudentId: balletApplicationsTable.parentStudentId,
+        parentName: balletApplicationsTable.parentName,
+        parentEmail: balletApplicationsTable.parentEmail,
+        parentPhone: balletApplicationsTable.parentPhone,
+        childId: balletApplicationsTable.childId,
+        childName: balletApplicationsTable.childName,
+        assessmentFeeAmountEgp: balletApplicationsTable.assessmentFeeAmountEgp,
+        assessmentFeeStatus: balletApplicationsTable.assessmentFeeStatus,
+        assessmentFeePaidAt: balletApplicationsTable.assessmentFeePaidAt,
+        assessmentFeePaymentMethod: balletApplicationsTable.assessmentFeePaymentMethod,
+        createdAt: balletApplicationsTable.createdAt,
+      })
+      .from(balletApplicationsTable);
+    if (where) query.where(where);
+    query.orderBy(sql`coalesce(${balletApplicationsTable.assessmentFeePaidAt}, ${balletApplicationsTable.createdAt}) desc`, sql`${balletApplicationsTable.id} desc`);
+    query.limit(limit);
+    const rows = await query;
+    return rows.map(mapBalletAssessmentFee);
+  },
+};
+
 // ─── Family: ballet refunds (ballet_refunds) ──────────────────────────────────
 
 const reviewer = alias(systemUsersTable, "finance_refund_reviewer");
@@ -1126,6 +1186,7 @@ export const FINANCE_FAMILY_DESCRIPTORS: readonly FinanceFamilyDescriptor[] = [
   bookingFamily("class_payments"),
   bookingFamily("walkin_payments"),
   balletPayments,
+  balletAssessmentFees,
   balletRefunds,
   packageRefunds,
   discounts,

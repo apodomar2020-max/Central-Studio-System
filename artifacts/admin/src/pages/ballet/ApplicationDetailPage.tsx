@@ -406,8 +406,31 @@ export default function ApplicationDetailPage() {
   const [attScheduleId, setAttScheduleId] = useState("");
   const [attDate, setAttDate]             = useState("");
   const [attStatus, setAttStatus]         = useState("checked_in");
-  const [attNote, setAttNote]             = useState("");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const [recordFeeOpen, setRecordFeeOpen] = useState(false);
+  const [feeStatusSelect, setFeeStatusSelect] = useState<"paid" | "waived" | "unpaid">("paid");
+
+  const recordFeeMutation = useMutation({
+    mutationFn: async (vars: { status: "paid" | "waived" | "unpaid" }) => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/applications/${appId}/record-assessment-fee`, {
+        method: "POST",
+        headers: makeHeaders(token),
+        body: JSON.stringify({ status: vars.status, paymentMethod: "inPerson" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to record assessment fee");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Assessment fee status updated" });
+      setRecordFeeOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["ballet-application", appId] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
   // Danger Zone (cancellation initiation) state.
   const [dangerDialog, setDangerDialog] = useState<"cancelApplication" | "cancelProgram" | null>(null);
@@ -1205,8 +1228,55 @@ export default function ApplicationDetailPage() {
           openAssignLevelDialog={openAssignLevelDialog}
           openAssignGroupDialog={openAssignGroupDialog}
           openStatusDecisionDialog={openStatusDecisionDialog}
+          assessmentFee={data?.assessmentFee}
+          openRecordAssessmentFeeDialog={() => setRecordFeeOpen(true)}
         />
       </Tabs>
+      <Dialog open={recordFeeOpen} onOpenChange={setRecordFeeOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record Assessment Fee Payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Update the intake assessment fee status for this application. Payment method is set to Pay at Studio (inPerson). This fee is tracked separately from package/subscription payments.
+            </p>
+            {data?.assessmentFee?.amountEgp != null && (
+              <div className="rounded-lg border border-border p-3 bg-muted/40 text-sm">
+                <strong>Configured Assessment Fee:</strong> {data.assessmentFee.amountEgp} EGP
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Select Status</label>
+              <Select
+                value={feeStatusSelect}
+                onValueChange={(val: "paid" | "waived" | "unpaid") => setFeeStatusSelect(val)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="paid">Mark as Paid (Pay at Studio)</SelectItem>
+                  <SelectItem value="waived">Mark as Waived</SelectItem>
+                  <SelectItem value="unpaid">Mark as Unpaid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setRecordFeeOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={recordFeeMutation.isPending}
+                onClick={() => recordFeeMutation.mutate({ status: feeStatusSelect })}
+              >
+                {recordFeeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Fee Status
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={statusDecisionDialogOpen} onOpenChange={(open) => (open ? openStatusDecisionDialog() : closeStatusDecisionDialog())}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Application Decision</DialogTitle></DialogHeader>

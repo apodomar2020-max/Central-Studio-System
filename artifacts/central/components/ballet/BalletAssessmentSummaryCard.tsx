@@ -49,14 +49,18 @@ export default function BalletAssessmentSummaryCard({
   appointment,
   pkg,
   paymentLabel,
+  assessmentFeeEgp,
   onEdit,
 }: {
   child: ChildProfile;
   appointment: AssessmentScheduleOption;
   pkg: BalletPackageOption;
   paymentLabel: string;
+  assessmentFeeEgp?: number | null;
   onEdit: (section: SectionKey) => void;
 }) {
+  const hasFee = assessmentFeeEgp != null && assessmentFeeEgp > 0;
+
   return (
     <View style={styles.card}>
       <Section title="Child" icon="happy-outline" onEdit={() => onEdit("child")}>
@@ -68,9 +72,17 @@ export default function BalletAssessmentSummaryCard({
         <Text style={styles.secondary}>{formatDate(appointment.date)}</Text>
         <Text style={styles.secondary}>{appointment.time}</Text>
       </Section>
-      <Section title="Package" icon="pricetag-outline" onEdit={() => onEdit("package")}>
-        <Text style={styles.primary}>{pkg.name}</Text>
-        <Text style={styles.secondary}>{pkg.priceEgp.toLocaleString("en-US")} EGP</Text>
+      <Section title="Preferred Package" icon="pricetag-outline" onEdit={() => onEdit("package")}>
+        <Text style={styles.primary}>{pkg.name} ({pkg.priceEgp.toLocaleString("en-US")} EGP/mo)</Text>
+        <Text style={styles.disclaimerText}>Preference only — Payment arranged after assessment approval.</Text>
+      </Section>
+      <Section title="Assessment Fee" icon="cash-outline">
+        <Text style={styles.primary}>
+          {hasFee ? `${assessmentFeeEgp?.toLocaleString("en-US")} EGP` : "Free / No Fee"}
+        </Text>
+        <Text style={styles.secondary}>
+          {hasFee ? "Payable at studio during assessment appointment" : "No assessment fee required"}
+        </Text>
       </Section>
       <Section title="Payment Method" icon="card-outline">
         <Text style={styles.primary}>{paymentLabel}</Text>
@@ -123,5 +135,12 @@ const styles = StyleSheet.create({
     fontFamily: "Archivo_400Regular",
     fontSize: 13,
     lineHeight: 18,
+  },
+  disclaimerText: {
+    color: BA.cyan400,
+    fontFamily: "Archivo_400Regular",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
   },
 });

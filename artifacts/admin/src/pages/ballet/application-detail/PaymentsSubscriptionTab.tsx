@@ -1,19 +1,30 @@
 import { Button } from "@/components/ui/button";
 import { TabsContent } from "@/components/ui/tabs";
-import { Wallet, CreditCard, RefreshCw, History } from "lucide-react";
+import { Wallet, CreditCard, RefreshCw, History, Receipt } from "lucide-react";
 import type { ApplicationDetailTabPanelsProps } from "./types";
-import { Field, formatDateTime, formatPaymentMethod, GridRow, PaymentStatusBadge, Section, SubscriptionBadge } from "./shared";
+import { AssessmentFeeStatusBadge, Field, formatDateTime, formatPaymentMethod, GridRow, PaymentStatusBadge, Section, SubscriptionBadge } from "./shared";
 
 export function PaymentsSubscriptionTab(props: ApplicationDetailTabPanelsProps) {
-  const { app, currentPayment, currentSubscription, pendingInitialPayment, initialPayments, paymentDataWarning, subscriptionExpiredWarning, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, isApplicationTerminal } = props;
+  const { app, currentPayment, currentSubscription, pendingInitialPayment, initialPayments, paymentDataWarning, subscriptionExpiredWarning, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, payments, canAdjustExpiry, canEditPayments, setAdjustExpiryOpen, canViewPayments, navigate, appId, isApplicationTerminal, assessmentFee, openRecordAssessmentFeeDialog } = props;
   return (
 <TabsContent value="payments" className="space-y-4">
-  {/* Payment Actions + Payment (detail fields) — the action panel and its
-      corresponding read data, side by side. Subscription Management below
-      already carries the subscription-specific fields/actions — nothing
-      here is duplicated to fill space; the pre-existing field overlap
-      between "Payment" and "Subscription Management" (both show a
-      Subscription/Payment-state badge) is untouched, presentation-only. */}
+  {/* Assessment Fee Section — completely distinct from Package / Subscription payments */}
+  <Section title="Ballet Assessment Fee (Intake Fee)" icon={<Receipt />}>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Field label="Assessment Fee Status" value={<AssessmentFeeStatusBadge status={assessmentFee?.status} />} />
+      <Field label="Configured Amount" value={assessmentFee?.amountEgp != null ? `${assessmentFee.amountEgp} EGP` : "Free / No Fee"} />
+      <Field label="Payment Method" value={assessmentFee?.paymentMethod === "inPerson" ? "Pay at Studio (In-Person)" : (assessmentFee?.paymentMethod ?? "—")} />
+      <Field label="Recorded Date" value={formatDateTime(assessmentFee?.paidAt)} />
+    </div>
+    {openRecordAssessmentFeeDialog && !isApplicationTerminal && (
+      <div className="pt-2">
+        <Button variant="outline" size="sm" onClick={openRecordAssessmentFeeDialog}>
+          Record / Update Assessment Fee
+        </Button>
+      </div>
+    )}
+  </Section>
+
   <GridRow>
     <Section title="Payment Actions" icon={<Wallet />}>
       <div className="flex flex-wrap gap-2">

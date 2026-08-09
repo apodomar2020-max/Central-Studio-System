@@ -42,6 +42,7 @@ export interface BalletSettings {
   phoneNumber: string | null;
   email: string | null;
   studioLocationUrl: string | null;
+  assessmentFeeEgp: number | null;
   updatedAt: string;
 }
 

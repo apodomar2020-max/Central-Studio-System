@@ -456,6 +456,7 @@ router.get("/ballet/settings", async (_req, res): Promise<void> => {
       phoneNumber: row.phoneNumber ?? null,
       email: row.email ?? null,
       studioLocationUrl: row.studioLocationUrl ?? null,
+      assessmentFeeEgp: row.assessmentFeeEgp ?? null,
     });
   } catch (err) {
     logger.error({ err }, "GET /ballet/settings failed");
@@ -1696,6 +1697,15 @@ router.post(
           }
         }
 
+        // ── Snapshot server-side configured assessment fee ────────────────────
+        const [balletSettingsRow] = await tx
+          .select({ assessmentFeeEgp: balletSettingsTable.assessmentFeeEgp })
+          .from(balletSettingsTable)
+          .where(eq(balletSettingsTable.id, 1))
+          .limit(1);
+
+        const currentAssessmentFeeEgp = balletSettingsRow?.assessmentFeeEgp ?? null;
+
         // ── Insert application ────────────────────────────────────────────────
         const [application] = await tx
           .insert(balletApplicationsTable)
@@ -1725,6 +1735,8 @@ router.post(
             // no ballet_payments row is created at submission time.
             preferredPaymentMethod,
             preferredPackageId: preferredPackageId ?? null,
+            assessmentFeeAmountEgp: currentAssessmentFeeEgp,
+            assessmentFeeStatus:    "unpaid",
             status: "pending",
           })
           .returning({ id: balletApplicationsTable.id, status: balletApplicationsTable.status });

@@ -15,6 +15,7 @@ export const balletSettingsTable = pgTable("ballet_settings", {
   phoneNumber:      text("phone_number"),
   email:            text("email"),
   studioLocationUrl: text("studio_location_url"),
+  assessmentFeeEgp: integer("assessment_fee_egp"),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 });
 
@@ -24,6 +25,7 @@ export const updateBalletSettingsSchema = z.object({
   phoneNumber:      z.string().nullable().optional(),
   email:            z.string().email().nullable().optional(),
   studioLocationUrl: z.string().url().nullable().optional(),
+  assessmentFeeEgp:  z.number().int().min(0).nullable().optional(),
 });
 
 export type BalletSettings = typeof balletSettingsTable.$inferSelect;

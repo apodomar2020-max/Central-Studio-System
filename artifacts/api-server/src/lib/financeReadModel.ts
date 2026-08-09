@@ -42,6 +42,7 @@ export const FINANCE_ID_PREFIXES = {
   package_orders: "po",
   bookings: "bk",
   ballet_payments: "bp",
+  ballet_assessment_fees: "baf",
   ballet_refunds: "br",
   payment_refunds: "pf",
   promotion_redemptions: "pr",
@@ -836,6 +837,85 @@ export function mapBalletPayment(row: BalletPaymentSourceRow): UnifiedFinanceTra
         ? reliability("unknown_amount")
         : reliability(balletPaymentReliabilityBadge(row.paymentMethod)),
     sourceDeepLink: `/ballet/payments?applicationId=${row.applicationId}`,
+  };
+}
+
+export interface BalletAssessmentFeeSourceRow {
+  id: number;
+  parentStudentId: number | null;
+  parentName: string | null;
+  parentEmail: string | null;
+  parentPhone: string | null;
+  childId: number | null;
+  childName: string | null;
+  assessmentFeeAmountEgp: number | null;
+  assessmentFeeStatus: string | null;
+  assessmentFeePaidAt: Date | string | null;
+  assessmentFeePaymentMethod: string | null;
+  createdAt: Date | string;
+}
+
+export function mapBalletAssessmentFee(row: BalletAssessmentFeeSourceRow): UnifiedFinanceTransaction {
+  const stored = egpOrNull(row.assessmentFeeAmountEgp);
+  const amounts = emptyAmounts();
+  if (stored != null) {
+    amounts.amountEgp = stored;
+    amounts.grossAmountEgp = stored;
+    amounts.netAmountEgp = stored;
+  }
+
+  const occurredAt = row.assessmentFeePaidAt
+    ? (row.assessmentFeePaidAt instanceof Date ? row.assessmentFeePaidAt.toISOString() : String(row.assessmentFeePaidAt))
+    : (row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt));
+
+  const paidAt = row.assessmentFeePaidAt
+    ? (row.assessmentFeePaidAt instanceof Date ? row.assessmentFeePaidAt.toISOString() : String(row.assessmentFeePaidAt))
+    : null;
+
+  return {
+    id: financeEventId(FINANCE_ID_PREFIXES.ballet_assessment_fees, row.id),
+    eventType: "ballet_assessment_fee",
+    eventNature: "cash_inflow",
+    sourceTable: "ballet_applications",
+    sourceId: row.id,
+    amounts,
+    amountAvailability: stored != null ? "exact" : "unknown",
+    amountSource: stored != null ? "ballet_payment_snapshot" : "unavailable",
+    credit: emptyCredit(),
+    paymentStatus: row.assessmentFeeStatus === "paid" ? "paid" : "pending",
+    refundStatus: null,
+    rawSourceStatus: row.assessmentFeeStatus ?? "unpaid",
+    rawPaymentMethod: row.assessmentFeePaymentMethod ?? "inPerson",
+    normalizedPaymentMethod: normalizePaymentMethod(row.assessmentFeePaymentMethod ?? "inPerson"),
+    occurredAt,
+    paidAt,
+    refundedAt: null,
+    customer: {
+      studentId: row.parentStudentId,
+      name: textOrNull(row.parentName),
+      email: textOrNull(row.parentEmail),
+      phone: textOrNull(row.parentPhone),
+      participantScope: "child",
+      childId: row.childId,
+      childName: textOrNull(row.childName),
+    },
+    references: {
+      bookingId: null,
+      attendanceId: null,
+      packageOrderId: null,
+      packageId: null,
+      packageName: null,
+      balletApplicationId: row.id,
+      balletPaymentId: null,
+      balletRefundId: null,
+      promotionRedemptionId: null,
+      creditTransactionId: null,
+    },
+    scheduleContext: null,
+    actor: null,
+    providerReference: null,
+    reliability: reliability("recorded_collection"),
+    sourceDeepLink: `/ballet/applications/${row.id}`,
   };
 }
 

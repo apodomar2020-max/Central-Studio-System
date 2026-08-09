@@ -65,7 +65,7 @@ import {
 
 const router: IRouter = Router();
 const BALLET_LEVEL_ACTIVITY_FIELDS = ["name", "sortOrder", "isActive", "description", "requirements", "ageMin", "ageMax", "imageUrl"] as const;
-const BALLET_SETTINGS_ACTIVITY_FIELDS = ["homeCardImageUrl", "whatsappNumber", "phoneNumber", "email", "studioLocationUrl"] as const;
+const BALLET_SETTINGS_ACTIVITY_FIELDS = ["homeCardImageUrl", "whatsappNumber", "phoneNumber", "email", "studioLocationUrl", "assessmentFeeEgp"] as const;
 const BALLET_REQUIREMENT_SECTION_ACTIVITY_FIELDS = ["title", "description", "sortOrder", "isActive"] as const;
 const BALLET_REQUIREMENT_ITEM_ACTIVITY_FIELDS = ["sectionId", "text", "sortOrder", "isActive"] as const;
 const BALLET_FAQ_ACTIVITY_FIELDS = ["question", "answer", "sortOrder", "isActive", "categoryId"] as const;
@@ -604,8 +604,98 @@ router.get("/admin/ballet/applications/:id", requireAdminAuth, requireAdminPermi
     cancellationRequests: cancellationRequestsWithInitiator,
     refunds: visibleRefunds,
     eligibleRefund: visibleEligibility,
+    assessmentFee: {
+      amountEgp: app.assessmentFeeAmountEgp ?? null,
+      status: app.assessmentFeeStatus ?? "unpaid",
+      paidAt: app.assessmentFeePaidAt ?? null,
+      paymentMethod: app.assessmentFeePaymentMethod ?? null,
+      recordedById: app.assessmentFeeRecordedById ?? null,
+    },
   });
 });
+
+// ─── POST /api/admin/ballet/applications/:id/record-assessment-fee ─────────────
+//
+// Body: { status: "paid" | "waived" | "unpaid", note?: string }
+// Phase 1 paymentMethod is strictly 'inPerson' (Pay at Studio).
+// Updates assessment fee fields on ballet_applications.
+// Strictly isolated from ballet_payments, activation, and attendance entitlement.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RecordAssessmentFeeBody = z.object({
+  status: z.enum(["paid", "waived", "unpaid"], { required_error: "status is required" }),
+  note:   z.string().optional(),
+});
+
+router.post(
+  "/admin/ballet/applications/:id/record-assessment-fee",
+  requireAdminAuth,
+  requireAdminPermission("ballet.applications", "edit"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const id = parseInt(String(req.params["id"] ?? ""), 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid application ID" }); return; }
+
+    const parsed = RecordAssessmentFeeBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+      return;
+    }
+
+    const { status: targetStatus, note } = parsed.data;
+    const adminId = req.adminUser?.sub ?? null;
+
+    const [app] = await db
+      .select({
+        id: balletApplicationsTable.id,
+        status: balletApplicationsTable.status,
+        assessmentFeeStatus: balletApplicationsTable.assessmentFeeStatus,
+      })
+      .from(balletApplicationsTable)
+      .where(eq(balletApplicationsTable.id, id))
+      .limit(1);
+
+    if (!app) { res.status(404).json({ error: "Application not found" }); return; }
+
+    const nowIso = new Date().toISOString();
+    const isSettled = targetStatus === "paid";
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(balletApplicationsTable)
+        .set({
+          assessmentFeeStatus:        targetStatus,
+          assessmentFeePaidAt:        isSettled ? nowIso : null,
+          assessmentFeePaymentMethod: isSettled ? "inPerson" : null,
+          assessmentFeeRecordedById:  adminId,
+          updatedAt:                  nowIso,
+        })
+        .where(eq(balletApplicationsTable.id, id));
+
+      await tx.insert(balletApplicationEventsTable).values({
+        applicationId: id,
+        fromStatus:    app.status,
+        toStatus:      app.status,
+        changedById:   adminId,
+        note:          note
+          ? `Assessment fee marked ${targetStatus} (${note})`
+          : `Assessment fee marked ${targetStatus}`,
+      });
+    });
+
+    await logActivity(req, {
+      action: "update",
+      module: "ballet.applications",
+      entityType: "ballet_application",
+      entityId: id,
+      entityLabel: `Application #${id}`,
+      before: { assessmentFeeStatus: app.assessmentFeeStatus },
+      after: { assessmentFeeStatus: targetStatus },
+      summary: `Marked assessment fee as ${targetStatus} for application #${id}`,
+    });
+
+    res.json({ success: true, status: targetStatus });
+  },
+);
 
 
 // ─── GET /api/admin/ballet/applications/:id/export.pdf ───────────────────────
@@ -2562,6 +2652,7 @@ const UpdateSettingsBody = z.object({
   phoneNumber:      z.string().nullable().optional(),
   email:            z.string().nullable().optional(),
   studioLocationUrl: z.string().nullable().optional(),
+  assessmentFeeEgp:  z.number().int().min(0).nullable().optional(),
 });
 
 router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission("ballet.settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -2611,6 +2702,9 @@ router.patch("/admin/ballet/settings", requireAdminAuth, requireAdminPermission(
       res.status(400).json({ error: err instanceof Error ? err.message : "Invalid studio location link" });
       return;
     }
+  }
+  if (parsed.data.assessmentFeeEgp !== undefined) {
+    updates["assessmentFeeEgp"] = parsed.data.assessmentFeeEgp;
   }
   updates["updatedAt"] = new Date().toISOString();
 

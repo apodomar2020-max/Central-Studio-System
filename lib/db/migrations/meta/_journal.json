@@ -715,6 +715,13 @@
       "when": 1786550400000,
       "tag": "0101_ballet_faq_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1786636800000,
+      "tag": "0102_ballet_assessment_fee",
+      "breakpoints": true
     }
   ]
 }
