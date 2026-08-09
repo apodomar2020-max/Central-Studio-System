@@ -256,22 +256,111 @@ export function isNavLinkActive(item: NavLink, location: string): boolean {
  * (e.g. /design-lab → "Design Lab"), and "Central Studio" as last resort.
  */
 export function resolvePageTitle(location: string): string {
-  const path = location.split("?")[0] ?? "/";
-  if (path === "/" || path === "") return "Dashboard";
+  return resolvePageMeta(location).title;
+}
 
-  let best: NavRouteEntry | null = null;
-  for (const entry of NAV_ROUTES) {
-    if (entry.href === "/") continue;
-    if (path === entry.href || path.startsWith(entry.href + "/")) {
-      if (!best || entry.href.length > best.href.length) best = entry;
+export interface PageMeta {
+  title: string;
+  icon?: ElementType;
+  breadcrumbs: string[];
+}
+
+/**
+ * Resolve full page metadata (title, icon, breadcrumb chain) for wouter location.
+ * Walks NAV_TREE for longest prefix match and inherits group icon / breadcrumb ancestry.
+ */
+export function resolvePageMeta(location: string): PageMeta {
+  const path = location.split("?")[0] ?? "/";
+  if (path === "/" || path === "") {
+    return {
+      title: "Dashboard",
+      icon: LayoutDashboard,
+      breadcrumbs: ["Dashboard"],
+    };
+  }
+
+  let bestMatch: {
+    title: string;
+    href: string;
+    icon?: ElementType;
+    ancestors: string[];
+  } | null = null;
+  let maxLen = -1;
+
+  function walk(nodes: NavNode[], parents: string[], groupIcon?: ElementType) {
+    for (const node of nodes) {
+      if (node.kind === "group") {
+        walk(node.children, [...parents, node.title], node.icon ?? groupIcon);
+      } else {
+        if (!node.comingSoon && (path === node.href || path.startsWith(node.href + "/"))) {
+          if (node.href.length > maxLen) {
+            maxLen = node.href.length;
+            bestMatch = {
+              title: node.pageTitle ?? node.title,
+              href: node.href,
+              icon: node.icon ?? groupIcon,
+              ancestors: [...parents, node.title],
+            };
+          }
+        }
+      }
     }
   }
-  if (best) return best.title;
 
-  const segment = path.split("/").filter(Boolean)[0];
-  if (!segment) return "Central Studio";
-  return segment
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  walk(NAV_TREE, []);
+
+  const match = bestMatch as {
+    title: string;
+    href: string;
+    icon?: ElementType;
+    ancestors: string[];
+  } | null;
+
+  if (match) {
+    const { title, href, icon, ancestors } = match;
+    const extraPath = path.slice(href.length).replace(/^\/+/, "");
+    const breadcrumbs: string[] = [...ancestors];
+
+    if (extraPath) {
+      const parts = extraPath.split("/");
+      parts.forEach((p) => {
+        if (/^\d+$/.test(p)) {
+          breadcrumbs.push(`#${p}`);
+        } else {
+          breadcrumbs.push(
+            p
+              .split("-")
+              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(" ")
+          );
+        }
+      });
+    }
+
+    return {
+      title,
+      icon,
+      breadcrumbs,
+    };
+  }
+
+  const segments = path.split("/").filter(Boolean);
+  const title = segments[0]
+    ? segments[0]
+        .split("-")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ")
+    : "Central Studio";
+
+  return {
+    title,
+    icon: LayoutDashboard,
+    breadcrumbs: segments.map((s) =>
+      s
+        .split("-")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ")
+    ),
+  };
 }
+
