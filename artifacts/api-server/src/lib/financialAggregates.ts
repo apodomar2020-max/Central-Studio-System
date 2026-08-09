@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
+  balletApplicationsTable,
   balletPaymentsTable,
   balletRefundsTable,
   bookingsTable,
@@ -20,10 +21,14 @@ export {
   type FinancialAggregateInput,
   type LegacyRevenueTrackingLimitation,
 } from "./financialAggregateMath";
-import { buildFinancialAggregates, money } from "./financialAggregateMath";
+import {
+  buildFinancialAggregates,
+  money,
+  type FinancialAggregates,
+} from "./financialAggregateMath";
 
 export async function getFinancialAggregates(): Promise<FinancialAggregates> {
-  const [[classPricing], [bookingAgg], [packageAgg], [balletAgg], [ledgerRefundAgg], [legacyRefundAgg]] = await Promise.all([
+  const [[classPricing], [bookingAgg], [packageAgg], [balletAgg], [assessmentFeeAgg], [ledgerRefundAgg], [legacyRefundAgg]] = await Promise.all([
     db
       .select({ singleClassPriceEgp: classPricingSettingsTable.singleClassPriceEgp })
       .from(classPricingSettingsTable)
@@ -155,6 +160,27 @@ export async function getFinancialAggregates(): Promise<FinancialAggregates> {
       .from(balletPaymentsTable),
     db
       .select({
+        recordedRevenue: sql<number>`
+          coalesce(sum(${balletApplicationsTable.assessmentFeeAmountEgp}) filter (
+            where ${balletApplicationsTable.assessmentFeeStatus} = 'paid'
+              and ${balletApplicationsTable.assessmentFeePaidAt} is not null
+              and ${balletApplicationsTable.assessmentFeeAmountEgp} > 0
+          ), 0)::int
+        `,
+        invalidItems: sql<number>`
+          count(*) filter (
+            where ${balletApplicationsTable.assessmentFeeStatus} = 'paid'
+              and (
+                ${balletApplicationsTable.assessmentFeePaidAt} is null
+                or ${balletApplicationsTable.assessmentFeeAmountEgp} is null
+                or ${balletApplicationsTable.assessmentFeeAmountEgp} <= 0
+              )
+          )::int
+        `,
+      })
+      .from(balletApplicationsTable),
+    db
+      .select({
         completedRefunds: sql<number>`
           coalesce(sum(${balletRefundsTable.refundedAmountEgp}) filter (
             where ${balletRefundsTable.status} = 'refunded'
@@ -195,6 +221,7 @@ export async function getFinancialAggregates(): Promise<FinancialAggregates> {
     grossGenericBookingRevenueEgp: money(bookingAgg?.grossRevenue),
     grossGenericPackageRevenueEgp: money(packageAgg?.grossRevenue),
     grossBalletRevenueEgp: money(balletAgg?.grossRevenue),
+    balletAssessmentFeesRecordedEgp: money(assessmentFeeAgg?.recordedRevenue),
     completedLedgerRefundsEgp: money(ledgerRefundAgg?.completedRefunds),
     pendingLedgerRefundExposureEgp: money(ledgerRefundAgg?.pendingExposure),
     legacyBalletRefundedPaymentsEgp: money(legacyRefundAgg?.legacyRefundedPayments),
@@ -203,6 +230,7 @@ export async function getFinancialAggregates(): Promise<FinancialAggregates> {
     balletLegacyBankTransferRevenueEgp: money(balletAgg?.legacyBankTransferRevenue),
     unknownGenericRevenueItems: money(bookingAgg?.unknownItems) + money(packageAgg?.unknownItems) + (classPricing ? 0 : 0),
     invalidBalletPaidPaymentItems: money(balletAgg?.invalidItems),
+    invalidBalletAssessmentFeeItems: money(assessmentFeeAgg?.invalidItems),
     invalidBalletRefundedPaymentItems: money(balletAgg?.invalidRefundedItems),
     refundedBalletPaymentsMissingPaidAt: money(balletAgg?.refundedMissingPaidAt),
   });

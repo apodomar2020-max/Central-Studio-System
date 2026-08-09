@@ -654,7 +654,7 @@ const balletAssessmentFees: FinanceFamilyDescriptor = {
       filters.refundStatuses.length > 0 ||
       excludedBy(filters.paymentMethods, ["in_person", "unknown"]) ||
       excludedBy(filters.amountAvailabilities, ["exact", "unknown"]) ||
-      excludedBy(filters.reliabilityBadges, ["recorded_collection", "unverified_admin_tag"])
+      excludedBy(filters.reliabilityBadges, ["recorded_collection", "unknown_amount", "unverified_admin_tag"])
     ) {
       return { where: null };
     }

@@ -111,6 +111,12 @@ test("a null amount renders as Unknown and never as a zero currency value", () =
   }
 });
 
+test("Finance Overview shows Ballet assessment fees as a distinct recorded category", () => {
+  assert.match(overviewPage, /overview\.recorded\.balletAssessmentFeesRecordedEgp/);
+  assert.match(overviewPage, /Recorded Ballet Assessment Fees/);
+  assert.match(overviewPage, /card-ballet-assessment-fees/);
+});
+
 test("the amount cell branches on availability before rendering money", () => {
   // Order matters: credits first, then unknown, then a real amount — so a credit
   // event can never reach the currency formatter.

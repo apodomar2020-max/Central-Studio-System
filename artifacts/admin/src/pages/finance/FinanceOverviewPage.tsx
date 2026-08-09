@@ -176,8 +176,16 @@ export default function FinanceOverviewPage() {
                 value={formatEgp(overview.recorded.balletGrossRecordedEgp)}
                 icon={CircleDollarSign}
                 accent={GREEN}
-                note="Sum of stored Ballet payment amounts with a payment timestamp."
+                note="Stored Ballet package payments and assessment fees with payment timestamps."
                 testId="card-ballet-gross"
+              />
+              <FinanceStatCard
+                title="Recorded Ballet Assessment Fees"
+                value={formatEgp(overview.recorded.balletAssessmentFeesRecordedEgp)}
+                icon={Receipt}
+                accent={GREEN}
+                note="Paid assessment fees with a positive amount snapshotted on the application."
+                testId="card-ballet-assessment-fees"
               />
               <FinanceStatCard
                 title="Recorded Ballet Net Amount"

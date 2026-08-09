@@ -84,6 +84,24 @@ function balletPaymentRow(overrides: Record<string, unknown> = {}) {
   } as Parameters<Awaited<ReturnType<typeof load>>["mapBalletPayment"]>[0];
 }
 
+function balletAssessmentFeeRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 24,
+    parentStudentId: 70,
+    parentName: "Mona Adel",
+    parentEmail: "mona@example.com",
+    parentPhone: "+20 111 111 1111",
+    childId: 12,
+    childName: "Layla Adel",
+    assessmentFeeAmountEgp: 500,
+    assessmentFeeStatus: "paid",
+    assessmentFeePaidAt: "2026-06-02T12:00:00.000Z",
+    assessmentFeePaymentMethod: "inPerson",
+    createdAt: "2026-06-01T12:00:00.000Z",
+    ...overrides,
+  } as Parameters<Awaited<ReturnType<typeof load>>["mapBalletAssessmentFee"]>[0];
+}
+
 function balletRefundRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 5,
@@ -547,6 +565,31 @@ test("Ballet payment with no recorded method is an unverified tag, not a collect
   const event = mapBalletPayment(balletPaymentRow({ paymentMethod: null }));
   assert.equal(event.reliability.badge, "unverified_admin_tag");
   assert.equal(event.normalizedPaymentMethod, null);
+});
+
+test("Ballet assessment fee with a positive snapshot is an exact recorded collection", async () => {
+  const { mapBalletAssessmentFee } = await load();
+  const event = mapBalletAssessmentFee(balletAssessmentFeeRow());
+
+  assert.equal(event.id, "baf:24");
+  assert.equal(event.eventType, "ballet_assessment_fee");
+  assert.equal(event.sourceTable, "ballet_applications");
+  assert.equal(event.amounts.amountEgp, 500);
+  assert.equal(event.amountAvailability, "exact");
+  assert.equal(event.reliability.badge, "recorded_collection");
+});
+
+test("Ballet assessment fee with a missing or non-positive snapshot stays unknown", async () => {
+  const { mapBalletAssessmentFee } = await load();
+
+  for (const assessmentFeeAmountEgp of [null, 0, -1, Number.NaN]) {
+    const event = mapBalletAssessmentFee(balletAssessmentFeeRow({ assessmentFeeAmountEgp }));
+    assert.equal(event.amounts.amountEgp, null);
+    assert.equal(event.amounts.grossAmountEgp, null);
+    assert.equal(event.amountAvailability, "unknown");
+    assert.equal(event.amountSource, "unavailable");
+    assert.equal(event.reliability.badge, "unknown_amount");
+  }
 });
 
 // ─── 9. Ballet refunds ────────────────────────────────────────────────────────

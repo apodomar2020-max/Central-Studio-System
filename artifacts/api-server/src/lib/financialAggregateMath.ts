@@ -7,6 +7,7 @@ export interface FinancialAggregates {
   grossGenericBookingRevenueEgp: number;
   grossGenericPackageRevenueEgp: number;
   grossBalletRevenueEgp: number;
+  balletAssessmentFeesRecordedEgp: number;
   balletCompletedRefundsEgp: number;
   legacyBalletRefundedPaymentsEgp: number;
   balletPendingRefundExposureEgp: number;
@@ -23,7 +24,9 @@ export interface FinancialAggregates {
 export interface FinancialAggregateInput {
   grossGenericBookingRevenueEgp: number;
   grossGenericPackageRevenueEgp: number;
+  /** Ballet package/subscription receipts, before assessment fees are added. */
   grossBalletRevenueEgp: number;
+  balletAssessmentFeesRecordedEgp?: number;
   legacyBalletRefundedPaymentsEgp: number;
   completedLedgerRefundsEgp: number;
   pendingLedgerRefundExposureEgp: number;
@@ -32,6 +35,7 @@ export interface FinancialAggregateInput {
   balletLegacyBankTransferRevenueEgp: number;
   unknownGenericRevenueItems: number;
   invalidBalletPaidPaymentItems: number;
+  invalidBalletAssessmentFeeItems?: number;
   invalidBalletRefundedPaymentItems?: number;
   refundedBalletPaymentsMissingPaidAt?: number;
 }
@@ -66,7 +70,8 @@ export function shouldExcludePackageOrderLinkedToBalletPayment(_paymentStatus: s
 export function buildFinancialAggregates(input: FinancialAggregateInput): FinancialAggregates {
   const grossGenericBookingRevenueEgp = money(input.grossGenericBookingRevenueEgp);
   const grossGenericPackageRevenueEgp = money(input.grossGenericPackageRevenueEgp);
-  const grossBalletRevenueEgp = money(input.grossBalletRevenueEgp);
+  const balletAssessmentFeesRecordedEgp = money(input.balletAssessmentFeesRecordedEgp);
+  const grossBalletRevenueEgp = money(input.grossBalletRevenueEgp) + balletAssessmentFeesRecordedEgp;
   const completedLedgerRefundsEgp = money(input.completedLedgerRefundsEgp);
   const legacyBalletRefundedPaymentsEgp = money(input.legacyBalletRefundedPaymentsEgp);
 
@@ -104,6 +109,13 @@ export function buildFinancialAggregates(input: FinancialAggregateInput): Financ
     });
   }
 
+  if ((input.invalidBalletAssessmentFeeItems ?? 0) > 0) {
+    legacyRevenueTrackingLimitations.push({
+      code: "BALLET_ASSESSMENT_FEE_AMOUNT_OR_DATE_INVALID",
+      message: `${input.invalidBalletAssessmentFeeItems} paid Ballet assessment fee(s) are missing a positive stored amount or paidAt timestamp and were excluded.`,
+    });
+  }
+
   if ((input.invalidBalletRefundedPaymentItems ?? 0) > 0) {
     legacyRevenueTrackingLimitations.push({
       code: "BALLET_REFUNDED_PAYMENT_AMOUNT_INVALID",
@@ -129,6 +141,7 @@ export function buildFinancialAggregates(input: FinancialAggregateInput): Financ
     grossGenericBookingRevenueEgp,
     grossGenericPackageRevenueEgp,
     grossBalletRevenueEgp,
+    balletAssessmentFeesRecordedEgp,
     balletCompletedRefundsEgp,
     legacyBalletRefundedPaymentsEgp,
     balletPendingRefundExposureEgp,

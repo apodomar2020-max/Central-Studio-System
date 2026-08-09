@@ -27,6 +27,58 @@ test("paid Ballet payment is included once and linked package order is excluded 
   assert.equal(result.totalNetRevenueEgp, 2500);
 });
 
+test("recorded Ballet assessment fees are distinct and included exactly once in Ballet and total revenue", async () => {
+  const { buildFinancialAggregates } = await import("./financialAggregateMath.ts");
+  const result = buildFinancialAggregates({
+    grossGenericBookingRevenueEgp: 500,
+    grossGenericPackageRevenueEgp: 1000,
+    grossBalletRevenueEgp: 2500,
+    balletAssessmentFeesRecordedEgp: 375,
+    completedLedgerRefundsEgp: 0,
+    pendingLedgerRefundExposureEgp: 0,
+    legacyBalletRefundedPaymentsEgp: 0,
+    balletPayAtStudioRevenueEgp: 2500,
+    balletOnlineRevenueEgp: 0,
+    balletLegacyBankTransferRevenueEgp: 0,
+    unknownGenericRevenueItems: 0,
+    invalidBalletPaidPaymentItems: 0,
+  });
+
+  assert.equal(result.balletAssessmentFeesRecordedEgp, 375);
+  assert.equal(result.grossBalletRevenueEgp, 2875);
+  assert.equal(result.balletNetRevenueEgp, 2875);
+  assert.equal(result.totalGrossRevenueEgp, 4375);
+  assert.equal(result.totalNetRevenueEgp, 4375);
+});
+
+test("invalid paid Ballet assessment fees add a data-quality warning without adding revenue", async () => {
+  const { buildFinancialAggregates } = await import("./financialAggregateMath.ts");
+  const result = buildFinancialAggregates({
+    grossGenericBookingRevenueEgp: 0,
+    grossGenericPackageRevenueEgp: 0,
+    grossBalletRevenueEgp: 0,
+    balletAssessmentFeesRecordedEgp: 0,
+    completedLedgerRefundsEgp: 0,
+    pendingLedgerRefundExposureEgp: 0,
+    legacyBalletRefundedPaymentsEgp: 0,
+    balletPayAtStudioRevenueEgp: 0,
+    balletOnlineRevenueEgp: 0,
+    balletLegacyBankTransferRevenueEgp: 0,
+    unknownGenericRevenueItems: 0,
+    invalidBalletPaidPaymentItems: 0,
+    invalidBalletAssessmentFeeItems: 2,
+  });
+
+  assert.equal(result.balletAssessmentFeesRecordedEgp, 0);
+  assert.equal(result.grossBalletRevenueEgp, 0);
+  assert.equal(
+    result.legacyRevenueTrackingLimitations.some(
+      (item) => item.code === "BALLET_ASSESSMENT_FEE_AMOUNT_OR_DATE_INVALID",
+    ),
+    true,
+  );
+});
+
 test("refunded Ballet payment with paidAt remains in gross receipts and nets to zero", async () => {
   const { buildFinancialAggregates } = await import("./financialAggregateMath.ts");
   const result = buildFinancialAggregates({

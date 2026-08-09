@@ -857,11 +857,12 @@ export interface BalletAssessmentFeeSourceRow {
 
 export function mapBalletAssessmentFee(row: BalletAssessmentFeeSourceRow): UnifiedFinanceTransaction {
   const stored = egpOrNull(row.assessmentFeeAmountEgp);
+  const validStored = stored != null && stored > 0 ? stored : null;
   const amounts = emptyAmounts();
-  if (stored != null) {
-    amounts.amountEgp = stored;
-    amounts.grossAmountEgp = stored;
-    amounts.netAmountEgp = stored;
+  if (validStored != null) {
+    amounts.amountEgp = validStored;
+    amounts.grossAmountEgp = validStored;
+    amounts.netAmountEgp = validStored;
   }
 
   const occurredAt = row.assessmentFeePaidAt
@@ -879,8 +880,8 @@ export function mapBalletAssessmentFee(row: BalletAssessmentFeeSourceRow): Unifi
     sourceTable: "ballet_applications",
     sourceId: row.id,
     amounts,
-    amountAvailability: stored != null ? "exact" : "unknown",
-    amountSource: stored != null ? "ballet_payment_snapshot" : "unavailable",
+    amountAvailability: validStored != null ? "exact" : "unknown",
+    amountSource: validStored != null ? "ballet_payment_snapshot" : "unavailable",
     credit: emptyCredit(),
     paymentStatus: row.assessmentFeeStatus === "paid" ? "paid" : "pending",
     refundStatus: null,
@@ -914,7 +915,7 @@ export function mapBalletAssessmentFee(row: BalletAssessmentFeeSourceRow): Unifi
     scheduleContext: null,
     actor: null,
     providerReference: null,
-    reliability: reliability("recorded_collection"),
+    reliability: reliability(validStored != null ? "recorded_collection" : "unknown_amount"),
     sourceDeepLink: `/ballet/applications/${row.id}`,
   };
 }
@@ -1423,6 +1424,7 @@ export function familyForEventType(eventType: FinanceEventType): FinanceSourceFa
     case "single_class_payment": return "class_payments";
     case "studio_walkin_payment": return "walkin_payments";
     case "ballet_payment": return "ballet_payments";
+    case "ballet_assessment_fee": return "ballet_payments";
     case "ballet_refund": return "ballet_refunds";
     case "package_refund": return "package_refunds";
     case "promotion_discount": return "discounts";

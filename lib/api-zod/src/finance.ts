@@ -130,6 +130,7 @@ export type FinanceReliabilityBadge = (typeof FINANCE_RELIABILITY_BADGES)[number
 export const FINANCE_SOURCE_TABLES = [
   "package_orders",
   "bookings",
+  "ballet_applications",
   "ballet_payments",
   "ballet_refunds",
   "payment_refunds",
@@ -395,6 +396,8 @@ export interface FinanceOverviewResponse {
 
   recorded: {
     balletGrossRecordedEgp: number;
+    /** Paid Ballet assessment fees with a positive stored application snapshot. */
+    balletAssessmentFeesRecordedEgp: number;
     balletCompletedRefundsEgp: number;
     balletNetRecordedEgp: number;
     balletInPersonRecordedEgp: number;
@@ -463,6 +466,7 @@ export const FINANCE_EVENT_TYPE_LABELS: Readonly<Record<FinanceEventType, string
   single_class_payment: "Single Class Payment",
   studio_walkin_payment: "Studio Walk-in Payment",
   ballet_payment: "Ballet Payment",
+  ballet_assessment_fee: "Ballet Assessment Fee",
   ballet_refund: "Ballet Refund",
   package_refund: "Package Refund",
   promotion_discount: "Promotion Discount",

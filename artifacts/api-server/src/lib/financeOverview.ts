@@ -71,6 +71,7 @@ export async function buildFinanceOverview(
 
     recorded: {
       balletGrossRecordedEgp: aggregates.grossBalletRevenueEgp,
+      balletAssessmentFeesRecordedEgp: aggregates.balletAssessmentFeesRecordedEgp,
       balletCompletedRefundsEgp: aggregates.balletCompletedRefundsEgp,
       balletNetRecordedEgp: aggregates.balletNetRevenueEgp,
       balletInPersonRecordedEgp: aggregates.balletPayAtStudioRevenueEgp,

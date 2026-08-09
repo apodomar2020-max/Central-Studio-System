@@ -74,6 +74,7 @@ export const FINANCE_NATURE_BY_EVENT_TYPE: Readonly<Record<FinanceEventType, Fin
   single_class_payment: "operational_estimate",
   studio_walkin_payment: "operational_estimate",
   ballet_payment: "cash_inflow",
+  ballet_assessment_fee: "cash_inflow",
   ballet_refund: "cash_outflow",
   package_refund: "cash_outflow",
   promotion_discount: "discount",
@@ -89,6 +90,7 @@ export const FINANCE_FAMILIES_BY_SOURCE_TABLE: Readonly<
   package_orders: ["package_purchases"],
   // One table, two families — a walk-in is a booking with audit-log evidence.
   bookings: ["class_payments", "walkin_payments"],
+  ballet_applications: ["ballet_payments"],
   ballet_payments: ["ballet_payments"],
   ballet_refunds: ["ballet_refunds"],
   payment_refunds: ["package_refunds"],

@@ -38,9 +38,11 @@ function noFilters(overrides: Record<string, unknown> = {}) {
 /** Families whose plan survives the given filters. */
 async function plannedFamilies(filters: unknown): Promise<string[]> {
   const { FINANCE_FAMILY_DESCRIPTORS } = await loadSources();
-  return FINANCE_FAMILY_DESCRIPTORS
-    .filter((descriptor) => descriptor.plan(filters as never).where !== null)
-    .map((descriptor) => descriptor.family);
+  return [...new Set(
+    FINANCE_FAMILY_DESCRIPTORS
+      .filter((descriptor) => descriptor.plan(filters as never).where !== null)
+      .map((descriptor) => descriptor.family),
+  )];
 }
 
 // ─── Search parsing ───────────────────────────────────────────────────────────
@@ -208,7 +210,7 @@ test("the two booking families are separated by walk-in evidence, not by filters
 test("no filters plans every family", async () => {
   const { FINANCE_FAMILY_DESCRIPTORS } = await loadSources();
   const families = await plannedFamilies(noFilters());
-  assert.equal(families.length, FINANCE_FAMILY_DESCRIPTORS.length);
+  assert.equal(families.length, new Set(FINANCE_FAMILY_DESCRIPTORS.map((descriptor) => descriptor.family)).size);
 });
 
 // ─── Date range ───────────────────────────────────────────────────────────────
@@ -220,7 +222,7 @@ test("a date range constrains every family without excluding any", async () => {
     noFilters({ fromIso: "2026-06-01T00:00:00.000Z", toIso: "2026-06-30T23:59:59.999Z" }),
   );
   const { FINANCE_FAMILY_DESCRIPTORS } = await loadSources();
-  assert.equal(families.length, FINANCE_FAMILY_DESCRIPTORS.length);
+  assert.equal(families.length, new Set(FINANCE_FAMILY_DESCRIPTORS.map((descriptor) => descriptor.family)).size);
 });
 
 // ─── Ordering ─────────────────────────────────────────────────────────────────
