@@ -213,6 +213,19 @@ export default function BookingFlowScreen() {
   const hasEligibleChildren = eligibleChildren.length > 0;
   const isLoadingCandidates = participantCandidatesQuery.isLoading;
 
+  // Step 1 eligibility gate. Reuses the SAME signals already driving each
+  // participant card's own disabled state (selfDisabled / per-child
+  // eligible+alreadyBooked) — not a parallel eligibility model. Also covers
+  // the "no such child" case (selectedChild undefined) so a stale/removed
+  // selectedChildId can never read as a valid selection.
+  const isSelfSelectionValid = participantType === "self" && !selfDisabled;
+  const isChildSelectionValid =
+    participantType === "child" &&
+    Boolean(selectedChild) &&
+    Boolean(childCandidate(selectedChildId ?? "")?.eligible) &&
+    !childAlreadyBooked(selectedChild!);
+  const hasEligibleSelectedParticipant = isSelfSelectionValid || isChildSelectionValid;
+
   useEffect(() => {
     if (!participantCandidatesQuery.data) return;
     if (participantType === "self" && !selfCandidate?.eligible && hasEligibleChildren) {
@@ -224,7 +237,10 @@ export default function BookingFlowScreen() {
     } else if (participantType === "child" && selectedChildId) {
       const currentCandidate = childCandidate(selectedChildId);
       const currentSelectedChild = children.find((c) => c.id === selectedChildId);
-      const isStillEligible = currentCandidate?.eligible && (currentSelectedChild ? !childAlreadyBooked(currentSelectedChild) : true);
+      // A selected child that has disappeared from `children` (removed /
+      // refreshed away) must never read as "still eligible" just because a
+      // stale server candidate record for that id happens to say eligible.
+      const isStillEligible = Boolean(currentSelectedChild) && Boolean(currentCandidate?.eligible) && !childAlreadyBooked(currentSelectedChild!);
       if (!isStillEligible) {
         const nextEligible = eligibleChildren[0];
         if (nextEligible) {
@@ -309,6 +325,17 @@ export default function BookingFlowScreen() {
         )}
       </View>
     );
+  }
+
+  // ── Step advancement — defensive guard so progression is impossible even
+  // if the CTA's disabled state is ever accidentally bypassed. Step 1 may
+  // only advance with a currently selected, eligible participant; other
+  // steps are unaffected (their own guards are unchanged).
+  function handleContinue() {
+    if (!canBookSchedule) return;
+    if (step === 1 && !hasEligibleSelectedParticipant) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setStep(step + 1);
   }
 
   // ── Confirm booking — POST to API then update local state ──
@@ -913,8 +940,8 @@ export default function BookingFlowScreen() {
         {step < 3 ? (
           <AppButton
             title={!hasSchedule ? "Schedule Not Set" : canBookSchedule ? "Continue" : cls?.scheduleStatus === "cancelled" ? "Class Cancelled" : "Class Unavailable"}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep(step + 1); }}
-            disabled={!canBookSchedule}
+            onPress={handleContinue}
+            disabled={!canBookSchedule || (step === 1 && !hasEligibleSelectedParticipant)}
             fullWidth
             size="lg"
           />
