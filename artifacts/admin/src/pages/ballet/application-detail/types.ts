@@ -87,7 +87,7 @@ export interface ApplicationDetailTabPanelsProps {
   openStatusDecisionDialog: any;
   assessmentFee?: {
     amountEgp: number | null;
-    status: "unpaid" | "paid" | "waived";
+    status: "unpaid" | "paid" | "waived" | "refunded";
     paidAt: string | null;
     paymentMethod: string | null;
     recordedById: number | null;

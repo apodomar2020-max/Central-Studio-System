@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { TabsContent } from "@/components/ui/tabs";
-import { AlertTriangle, Loader2, LayoutGrid, ListChecks, ArrowRightCircle } from "lucide-react";
+import { AlertTriangle, Loader2, LayoutGrid, ListChecks, ArrowRightCircle, Receipt } from "lucide-react";
 import type { ApplicationDetailTabPanelsProps } from "./types";
-import { AssessmentFeeStatusBadge, Field, formatDateTime, PaymentStatusBadge, ReadinessItem, Section, StatusBadge, SubscriptionBadge, SummaryCard } from "./shared";
+import { AssessmentFeeStatusBadge, Field, formatDateTime, formatPaymentMethod, PaymentStatusBadge, ReadinessItem, Section, StatusBadge, SubscriptionBadge, SummaryCard } from "./shared";
 
 // Terminal-status banner copy (Phase 2). Kept local to Overview — the
 // Danger Zone (CancellationRefundsTab) already has its own minimal terminal
@@ -25,6 +25,11 @@ const TERMINAL_STATUS_COPY: Record<string, { title: string; body: string }> = {
 export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
   const { app, level, group, currentPayment, currentSubscription, appAcceptedOrAssigned, levelAssigned, groupAssigned, initialPaymentRecorded, pendingInitialPayment, paidInitialPayment, subscriptionReadinessState, paymentDataWarning, subscriptionExpiredWarning, nextRequiredAction, setActiveTab, canCreateInitialPayment, openInitialPaymentDialog, canConfirmInitialPayment, openConfirmPaymentDialog, canActivateApplication, statusMutation, statusNote, canViewPayments, navigate, appId, isApplicationTerminal, applicationStatus, canAssignLevel, canAssignGroup, openAssignLevelDialog, openAssignGroupDialog, openStatusDecisionDialog, canAdjustExpiry, setAdjustExpiryOpen, reviewStatuses, assessmentFee, openRecordAssessmentFeeDialog } = props;
   const terminalCopy = TERMINAL_STATUS_COPY[app.status as string];
+  const assessmentFeeAmount = assessmentFee?.status === "waived"
+    ? "Waived / No charge"
+    : assessmentFee?.amountEgp != null && assessmentFee.amountEgp > 0
+      ? `${assessmentFee.amountEgp.toLocaleString()} EGP`
+      : "Amount not recorded";
   return (
 <TabsContent value="overview" className="space-y-4">
   {isApplicationTerminal && (
@@ -56,6 +61,26 @@ export function OverviewTab(props: ApplicationDetailTabPanelsProps) {
       <Field label="Submitted" value={formatDateTime(app.createdAt)} />
       <Field label="Last update" value={formatDateTime(app.updatedAt)} />
     </div>
+  </Section>
+
+  <Section title="Assessment Fee" icon={<Receipt />}>
+    <div>
+      <p className="text-sm font-medium text-foreground">One-time Ballet assessment intake fee</p>
+      <p className="text-xs text-muted-foreground">Tracked separately from package and subscription payments.</p>
+    </div>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Field label="Fee Status" value={<AssessmentFeeStatusBadge status={assessmentFee?.status} />} />
+      <Field label="Amount" value={assessmentFeeAmount} />
+      <Field label="Payment Method" value={formatPaymentMethod(assessmentFee?.paymentMethod) ?? "Not recorded"} />
+      <Field label="Recorded Date" value={formatDateTime(assessmentFee?.paidAt)} />
+    </div>
+    {openRecordAssessmentFeeDialog && !isApplicationTerminal && (
+      <div className="pt-1">
+        <Button variant="outline" size="sm" onClick={openRecordAssessmentFeeDialog}>
+          Record / Update Assessment Fee
+        </Button>
+      </div>
+    )}
   </Section>
 
   {/* Six operational areas (Phase 2) — same readiness data the old
