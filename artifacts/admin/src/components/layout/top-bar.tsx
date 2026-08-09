@@ -1,10 +1,10 @@
 /**
- * TopBar — unified single global header for the admin shell.
+ * TopBar — single authoritative unified global header for Central Studio Admin.
  *
- * Spans the full width of the main content area with:
- *  - Left-aligned page identity block (icon in glowing container, page title, and breadcrumb path)
- *  - Right-aligned authentic controls cluster (Refresh pill button, premium Theme toggle switch,
- *    Settings link if permitted, and User Profile dropdown pill)
+ * Visual Parity & Architecture:
+ *  - Single global header spanning the main content area (height: ~76px)
+ *  - Left: Glowing section/page icon, Page Title, Breadcrumbs, and Page Subtitle/Description
+ *  - Right: Contained Refresh pill, premium Theme toggle switch, Settings link, and User Profile surface card
  */
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -73,9 +73,9 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-border/70 bg-background/95 px-4 backdrop-blur transition-colors duration-200 sm:px-6">
-      {/* Left section: Mobile drawer trigger + Page Identity Block */}
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="sticky top-0 z-30 flex h-[76px] shrink-0 items-center justify-between border-b border-border/70 bg-background/95 px-6 backdrop-blur-md shadow-sm transition-colors duration-200 sm:px-8">
+      {/* Left section: Mobile drawer trigger + Primary Page Identity Block */}
+      <div className="flex min-w-0 items-center gap-3.5">
         {onOpenMobileNav && (
           <Button
             variant="ghost"
@@ -84,15 +84,15 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
             title="Open navigation menu"
             aria-label="Open navigation menu"
             data-testid="topbar-mobile-menu"
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground lg:hidden"
+            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground lg:hidden"
           >
             <Menu className="h-5 w-5" />
           </Button>
         )}
 
         {/* Primary Page Identity Block */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#00B6D7]/25 bg-[#00B6D7]/10 text-[#00B6D7] shadow-sm">
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#00B6D7]/30 bg-[#00B6D7]/12 text-[#00B6D7] shadow-sm">
             {IconComponent ? (
               <IconComponent className="h-5 w-5" />
             ) : (
@@ -102,19 +102,19 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
 
           <div className="flex flex-col min-w-0 justify-center">
             <h1
-              className="truncate text-sm font-bold tracking-tight text-foreground sm:text-base leading-tight"
+              className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg leading-tight"
               data-testid="topbar-title"
             >
               {meta.title}
             </h1>
-            <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground truncate leading-tight mt-0.5">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground/80 truncate leading-tight mt-0.5">
               {meta.breadcrumbs.map((crumb, idx) => (
                 <span key={idx} className="flex items-center gap-1 shrink-0">
                   {idx > 0 && <span className="text-muted-foreground/40">/</span>}
                   <span
                     className={
                       idx === meta.breadcrumbs.length - 1
-                        ? "text-muted-foreground"
+                        ? "text-muted-foreground font-medium"
                         : "text-muted-foreground/70"
                     }
                   >
@@ -122,14 +122,20 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
                   </span>
                 </span>
               ))}
+              {meta.description && (
+                <>
+                  <span className="text-muted-foreground/40 shrink-0">•</span>
+                  <span className="truncate text-muted-foreground/70">{meta.description}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
       </div>
 
       {/* Right section: Header Controls Cluster */}
-      <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-        {/* Refresh Action */}
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        {/* Contained Refresh Action */}
         {canRefresh && (
           <Button
             variant="outline"
@@ -139,11 +145,11 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
             title="Refresh current page data"
             aria-label="Refresh current page data"
             data-testid="topbar-refresh"
-            className="h-8 gap-1.5 rounded-lg border-border/60 bg-muted/30 px-3 text-xs font-medium text-foreground hover:bg-accent hover:text-foreground transition-all"
+            className="h-9 gap-2 rounded-xl border border-border/80 bg-muted/30 px-3.5 text-xs font-semibold text-foreground shadow-sm hover:border-[#00B6D7]/40 hover:bg-accent hover:text-foreground transition-all"
           >
             <RefreshCw
               className={cn(
-                "h-3.5 w-3.5 text-muted-foreground",
+                "h-4 w-4 text-muted-foreground",
                 isRefreshing && "animate-spin text-[#00B6D7]"
               )}
             />
@@ -153,8 +159,10 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
 
         {/* Premium Theme Switcher */}
         {canThemeToggle && (
-          <div className="flex items-center gap-2 px-1 text-xs font-medium text-muted-foreground">
-            <span className="hidden sm:inline text-xs">Theme</span>
+          <div className="flex items-center gap-2.5 px-1.5 text-xs font-semibold text-muted-foreground">
+            <span className="hidden sm:inline text-xs font-medium text-muted-foreground/90">
+              Theme
+            </span>
             <button
               onClick={toggleTheme}
               type="button"
@@ -162,23 +170,27 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
               title={isDark ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
               className={cn(
-                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-[#00B6D7]",
-                isDark ? "bg-[#00B6D7]/20 border-[#00B6D7]/40" : "bg-slate-300"
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border border-border/60 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-[#00B6D7]",
+                isDark ? "bg-[#00B6D7]/20 border-[#00B6D7]/40" : "bg-slate-300 border-slate-400/50"
               )}
             >
               <span
                 className={cn(
-                  "pointer-events-none inline-flex h-4 w-4 transform items-center justify-center rounded-full bg-[#00B6D7] text-black shadow-md ring-0 transition duration-200 ease-in-out",
-                  isDark ? "translate-x-4" : "translate-x-0 bg-amber-400"
+                  "pointer-events-none inline-flex h-5 w-5 transform items-center justify-center rounded-full text-black shadow-md ring-0 transition duration-200 ease-in-out",
+                  isDark ? "translate-x-5 bg-[#00B6D7]" : "translate-x-0 bg-amber-400"
                 )}
               >
-                {isDark ? <Sun className="h-2.5 w-2.5" /> : <Moon className="h-2.5 w-2.5" />}
+                {isDark ? (
+                  <Sun className="h-3 w-3 text-slate-950 font-bold" />
+                ) : (
+                  <Moon className="h-3 w-3 text-slate-950 font-bold" />
+                )}
               </span>
             </button>
           </div>
         )}
 
-        {/* Settings Shortcut Link */}
+        {/* Settings Link if Permitted */}
         {canSettings && (
           <Link href="/settings">
             <Button
@@ -187,34 +199,36 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
               title="Settings"
               aria-label="Settings"
               data-testid="topbar-settings"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              className="h-9 w-9 text-muted-foreground hover:text-foreground"
             >
-              <Settings2 className="h-4 w-4" />
+              <Settings2 className="h-4.5 w-4.5" />
             </Button>
           </Link>
         )}
 
-        {/* User Profile Pill Dropdown */}
+        <div className="hidden h-5 w-px bg-border/60 sm:block" aria-hidden="true" />
+
+        {/* User Profile Surface Card */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1 text-left transition-colors hover:bg-accent focus:outline-none"
+              className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-1.5 text-left shadow-sm transition-all hover:border-border hover:bg-accent/60 focus:outline-none"
               data-testid="topbar-user-menu"
             >
-              <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-[#00B6D7]/20 text-[#00B6D7] text-[11px] font-bold">
+              <Avatar className="h-8 w-8 shrink-0">
+                <AvatarFallback className="bg-[#00B6D7]/20 text-[#00B6D7] text-xs font-bold border border-[#00B6D7]/30">
                   {initials(user?.fullName)}
                 </AvatarFallback>
               </Avatar>
-              <div className="hidden flex-col sm:flex min-w-0 max-w-[120px]">
-                <span className="truncate text-xs font-semibold text-foreground leading-none">
+              <div className="hidden flex-col sm:flex min-w-0 max-w-[140px]">
+                <span className="truncate text-xs font-bold text-foreground leading-tight">
                   {user?.fullName ?? "Super Admin"}
                 </span>
-                <span className="truncate text-[10px] text-muted-foreground leading-tight mt-0.5">
+                <span className="truncate text-[11px] font-normal text-muted-foreground leading-tight mt-0.5">
                   {user?.role?.name ?? (user?.isSuperAdmin ? "Administrator" : "User")}
                 </span>
               </div>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0 ml-0.5" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

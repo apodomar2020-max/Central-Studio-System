@@ -1,5 +1,4 @@
 import { Calendar as CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -51,8 +50,6 @@ export function CalendarHeader({
 }: CalendarHeaderProps) {
   return (
     <div className="space-y-4">
-      <PageHeader title="Calendar" description="Studio schedule at a glance" mode="studio" />
-
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border bg-card p-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           {/* View Switcher Segmented Control */}

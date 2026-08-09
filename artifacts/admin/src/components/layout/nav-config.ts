@@ -72,6 +72,7 @@ export interface NavLink {
    * (e.g. sidebar "Roles" → page title "System Users").
    */
   pageTitle?: string;
+  description?: string;
   /** Route/page does not exist yet — rendered disabled, never a real link. */
   comingSoon?: boolean;
   /**
@@ -97,7 +98,7 @@ const link = (
   href: string,
   perm: PermRequirement,
   icon?: ElementType,
-  extra?: Partial<Pick<NavLink, "pageTitle" | "comingSoon" | "exact">>,
+  extra?: Partial<Pick<NavLink, "pageTitle" | "description" | "comingSoon" | "exact">>,
 ): NavLink => ({ kind: "link", title, href, perm, icon, ...extra });
 
 const group = (title: string, icon: ElementType, children: NavNode[]): NavGroup => ({
@@ -110,108 +111,178 @@ const group = (title: string, icon: ElementType, children: NavNode[]): NavGroup 
 // ─── Navigation tree (Phase 2 structure) ─────────────────────────────────────
 
 export const NAV_TREE: NavNode[] = [
-  link("Dashboard", "/", [["dashboard", "view"]], LayoutDashboard),
-  link("Attendance", "/attendance", [["attendance", "view"]], ScanLine),
+  link("Dashboard", "/", [["dashboard", "view"]], LayoutDashboard, {
+    description: "System overview, active metrics, and quick operational status",
+  }),
+  link("Attendance", "/attendance", [["attendance", "view"]], ScanLine, {
+    description: "Class check-in, attendance verification, and daily rosters",
+  }),
 
   group("Studio", Warehouse, [
-    link("Calendar", "/calendar", [["schedules", "view"], ["ballet.schedules", "view"]], Calendar),
-    link("Branches", "/branches", [["branches", "view"]], Building2),
-    link("Instructors", "/instructors", [["instructors", "view"]], Users),
-    link("Classes", "/classes", [["classes", "view"]], CalendarDays),
-    link("Schedules", "/schedules", [["schedules", "view"]], CalendarRange),
-    link("Packages", "/packages", [["packages", "view"]], CreditCard),
+    link("Calendar", "/calendar", [["schedules", "view"], ["ballet.schedules", "view"]], Calendar, {
+      description: "Studio schedule at a glance",
+    }),
+    link("Branches", "/branches", [["branches", "view"]], Building2, {
+      description: "Studio location branches and facility management",
+    }),
+    link("Instructors", "/instructors", [["instructors", "view"]], Users, {
+      description: "Teaching staff and instructor profiles",
+    }),
+    link("Classes", "/classes", [["classes", "view"]], CalendarDays, {
+      description: "Class definitions and program requirements",
+    }),
+    link("Schedules", "/schedules", [["schedules", "view"]], CalendarRange, {
+      description: "Weekly timetable and schedule management",
+    }),
+    link("Packages", "/packages", [["packages", "view"]], CreditCard, {
+      description: "Class passes and subscription packages",
+    }),
     group("Ballet", BallerinaIcon, [
       link("Applications", "/ballet/applications", [["ballet.applications", "view"]], ClipboardList, {
         pageTitle: "Ballet Applications",
+        description: "Review and manage assessment applications",
       }),
       link("Students", "/ballet/students", [["ballet.applications", "view"]], GraduationCap, {
         pageTitle: "Ballet Students",
+        description: "Ballet student files created from level assignments",
       }),
-      link("Levels", "/ballet/levels", [["ballet.levels", "view"]], Trophy, { pageTitle: "Ballet Levels" }),
+      link("Levels", "/ballet/levels", [["ballet.levels", "view"]], Trophy, {
+        pageTitle: "Ballet Levels",
+        description: "Ballet program curriculum levels and requirements",
+      }),
       link("Instructors", "/ballet/instructors", [["ballet.instructors", "view"]], Users, {
         pageTitle: "Ballet Instructors",
+        description: "Teaching staff for the Ballet program",
       }),
-      link("Classes", "/ballet/classes", [["ballet.classes", "view"]], Layers, { pageTitle: "Ballet Classes" }),
+      link("Classes", "/ballet/classes", [["ballet.classes", "view"]], Layers, {
+        pageTitle: "Ballet Classes",
+        description: "Create Class details and assign weekly schedule slots",
+      }),
       link("Schedules", "/ballet/schedules", [["ballet.schedules", "view"]], CalendarClock, {
         pageTitle: "Ballet Schedules",
+        description: "Weekly timetable for Ballet classes",
       }),
-      link("Groups", "/ballet/groups", [["ballet.groups", "view"]], UsersRound, { pageTitle: "Ballet Groups" }),
-      link("Packages", "/ballet/packages", [["ballet.packages", "view"]], Wallet, { pageTitle: "Ballet Packages" }),
-      link("Payments", "/ballet/payments", [["finance", "view"]], Receipt, { pageTitle: "Ballet Payments" }),
+      link("Groups", "/ballet/groups", [["ballet.groups", "view"]], UsersRound, {
+        pageTitle: "Ballet Groups",
+        description: "Cohorts of children within a level",
+      }),
+      link("Packages", "/ballet/packages", [["ballet.packages", "view"]], Wallet, {
+        pageTitle: "Ballet Packages",
+        description: "Ballet subscription packages and pricing",
+      }),
+      link("Payments", "/ballet/payments", [["finance", "view"]], Receipt, {
+        pageTitle: "Ballet Payments",
+        description: "Payment-cycle history and pending renewal management",
+      }),
       link("Cancellation Requests", "/ballet/cancellation-requests", [["ballet.applications", "view"]], FileClock, {
         pageTitle: "Ballet Cancellation Requests",
+        description: "Review and finalize active cancellation requests",
       }),
-      link("Refunds", "/ballet/refunds", [["finance", "view"]], Receipt, { pageTitle: "Ballet Refunds" }),
+      link("Refunds", "/ballet/refunds", [["finance", "view"]], Receipt, {
+        pageTitle: "Ballet Refunds",
+        description: "Cash refund review and processing",
+      }),
       link("Performances", "/ballet/performances", [["ballet.performances", "view"]], Sparkles, {
         pageTitle: "Ballet Performance Opportunities",
+        description: "Recitals, galas, and competitions students can perform at",
       }),
-      link("General Settings", "/ballet/settings", [["ballet.settings", "view"]], Settings2),
+      link("General Settings", "/ballet/settings", [["ballet.settings", "view"]], Settings2, {
+        description: "Ballet program configuration, requirements, and policies",
+      }),
     ]),
   ]),
 
   group("Marketing", Megaphone, [
-    link("Promotions", "/promotions", [["promotions", "view"]], Tag),
-    link("Notifications", "/notifications", [["notifications", "view"]], Bell),
-    link("WhatsApp Campaigns", "/marketing", [["marketing", "view"]], Send),
-    link("Feedback", "/feedback", [["feedback", "view"]], MessageSquareText),
+    link("Promotions", "/promotions", [["promotions", "view"]], Tag, {
+      description: "Promotional codes and discount offer campaigns",
+    }),
+    link("Notifications", "/notifications", [["notifications", "view"]], Bell, {
+      description: "Broadcast mobile push notifications to members",
+    }),
+    link("WhatsApp Campaigns", "/marketing", [["marketing", "view"]], Send, {
+      description: "Automated WhatsApp marketing messages and campaigns",
+    }),
+    link("Feedback", "/feedback", [["feedback", "view"]], MessageSquareText, {
+      description: "Parent and student feedback submissions",
+    }),
   ]),
 
-  // Finance Department — gated on the single finance.view permission (Finance
-  // Roles & Permissions integration). Every Finance page requires finance.view;
-  // this group never widens access, and the backend enforces the same
-  // permission independently on every read endpoint regardless of what the
-  // sidebar shows (hiding a menu item alone is not security).
   group("Finance", Landmark, [
     link("Overview", "/finance", [["finance", "view"]], PiggyBank, {
       pageTitle: "Finance Overview",
-      // "/finance" prefixes every sibling route, so exact matching keeps
-      // Overview from highlighting while a child page is open.
+      description: "Studio revenue summary and financial health metrics",
       exact: true,
     }),
-    link("Transactions", "/finance/transactions", [["finance", "view"]], ArrowLeftRight, { pageTitle: "Finance Transactions" }),
+    link("Transactions", "/finance/transactions", [["finance", "view"]], ArrowLeftRight, {
+      pageTitle: "Finance Transactions",
+      description: "Income and expenditure transaction ledger",
+    }),
     link("Package Payments", "/finance/packages", [["finance", "view"]], ShoppingBag, {
       pageTitle: "Finance Package Payments",
+      description: "Package order payments and revenue streams",
     }),
     link("Class & Walk-in", "/finance/class-payments", [["finance", "view"]], Ticket, {
       pageTitle: "Finance Class & Walk-in",
+      description: "Individual class booking payments",
     }),
     link("Ballet Finance", "/finance/ballet", [["finance", "view"]], BallerinaIcon, {
       pageTitle: "Ballet Finance",
+      description: "Ballet program financial reconciliation and statements",
     }),
     link("Refunds & Cancellations", "/finance/refunds", [["finance", "view"]], Receipt, {
       pageTitle: "Finance Refunds & Cancellations",
+      description: "Processed refunds and canceled subscriptions",
     }),
     link("Discounts", "/finance/discounts", [["finance", "view"]], BadgePercent, {
       pageTitle: "Finance Discounts",
+      description: "Applied discounts and promotional adjustments",
     }),
     link("Reports & Exports", "/finance/exports", [["finance", "view"]], FileDown, {
       pageTitle: "Finance Reports & Exports",
+      description: "Financial statements and downloadable CSV reports",
     }),
   ]),
 
   group("System", ShieldCheck, [
-    link("Bookings", "/bookings", [["bookings", "view"]], Ticket),
+    link("Bookings", "/bookings", [["bookings", "view"]], Ticket, {
+      description: "Class booking records and attendance status",
+    }),
     group("Users", UserSquare2, [
-      link("Students", "/students", [["students", "view"]]),
-      link("Parents", "/parents", [["parents", "view"]]),
+      link("Students", "/students", [["students", "view"]], undefined, {
+        description: "Student profiles and enrollment directory",
+      }),
+      link("Parents", "/parents", [["parents", "view"]], undefined, {
+        description: "Parent account profiles and family contacts",
+      }),
     ]),
     link("Package Order", "/package-orders", [["packageOrders", "view"]], ShoppingBag, {
       pageTitle: "Package Orders",
+      description: "Customer package purchases and order history",
     }),
-    link("Reports", "/reports", [["reports", "view"]], BarChart3),
+    link("Reports", "/reports", [["reports", "view"]], BarChart3, {
+      description: "Studio operational and analytics reports",
+    }),
     link("Roles", "/system-users", [["adminUsers", "view"], ["roles", "view"]], ShieldCheck, {
       pageTitle: "System Users",
+      description: "Manage admin accounts, roles, and permissions",
     }),
-    // Phase 7B: Admin Activity Logs — live route, gated by auditLogs.view.
-    link("Logs", "/logs", [["auditLogs", "view"]], FileClock),
+    link("Logs", "/logs", [["auditLogs", "view"]], FileClock, {
+      description: "System audit logs and admin activity tracking",
+    }),
   ]),
 
   group("App", Smartphone, [
-    link("Hero Slides", "/hero-items", [["heroSlides", "view"]], ImagePlay),
-    link("App Content", "/app-content", [["appContent", "view"]], FileText),
+    link("Hero Slides", "/hero-items", [["heroSlides", "view"]], ImagePlay, {
+      description: "Mobile app hero banner slides and promotions",
+    }),
+    link("App Content", "/app-content", [["appContent", "view"]], FileText, {
+      description: "Mobile app CMS content blocks and dynamic copy",
+    }),
   ]),
 
-  link("Settings", "/settings", [["settings", "view"]], Settings2),
+  link("Settings", "/settings", [["settings", "view"]], Settings2, {
+    description: "Studio system settings and global configuration",
+  }),
 ];
 
 // ─── Flat route list (TopBar title lookup) ────────────────────────────────────
@@ -261,12 +332,13 @@ export function resolvePageTitle(location: string): string {
 
 export interface PageMeta {
   title: string;
+  description?: string;
   icon?: ElementType;
   breadcrumbs: string[];
 }
 
 /**
- * Resolve full page metadata (title, icon, breadcrumb chain) for wouter location.
+ * Resolve full page metadata (title, description, icon, breadcrumb chain) for wouter location.
  * Walks NAV_TREE for longest prefix match and inherits group icon / breadcrumb ancestry.
  */
 export function resolvePageMeta(location: string): PageMeta {
@@ -274,6 +346,7 @@ export function resolvePageMeta(location: string): PageMeta {
   if (path === "/" || path === "") {
     return {
       title: "Dashboard",
+      description: "System overview, active metrics, and quick operational status",
       icon: LayoutDashboard,
       breadcrumbs: ["Dashboard"],
     };
@@ -281,6 +354,7 @@ export function resolvePageMeta(location: string): PageMeta {
 
   let bestMatch: {
     title: string;
+    description?: string;
     href: string;
     icon?: ElementType;
     ancestors: string[];
@@ -297,6 +371,7 @@ export function resolvePageMeta(location: string): PageMeta {
             maxLen = node.href.length;
             bestMatch = {
               title: node.pageTitle ?? node.title,
+              description: node.description,
               href: node.href,
               icon: node.icon ?? groupIcon,
               ancestors: [...parents, node.title],
@@ -311,13 +386,14 @@ export function resolvePageMeta(location: string): PageMeta {
 
   const match = bestMatch as {
     title: string;
+    description?: string;
     href: string;
     icon?: ElementType;
     ancestors: string[];
   } | null;
 
   if (match) {
-    const { title, href, icon, ancestors } = match;
+    const { title, description, href, icon, ancestors } = match;
     const extraPath = path.slice(href.length).replace(/^\/+/, "");
     const breadcrumbs: string[] = [...ancestors];
 
@@ -339,6 +415,7 @@ export function resolvePageMeta(location: string): PageMeta {
 
     return {
       title,
+      description,
       icon,
       breadcrumbs,
     };
