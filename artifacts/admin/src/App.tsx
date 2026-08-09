@@ -103,7 +103,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main className="relative flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(circle_at_24%_0%,rgba(0,182,215,.08),transparent_44%),radial-gradient(circle_at_82%_10%,rgba(138,92,255,.06),transparent_38%)] bg-no-repeat">
-          <div className="relative w-full max-w-none px-6 py-4 sm:px-8 sm:py-8 lg:py-10">
+          <div className="relative w-full max-w-none px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
             {children}
           </div>
         </main>
