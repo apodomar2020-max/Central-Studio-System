@@ -91,7 +91,7 @@ test("EnrollmentTab: Assign Level card is hidden for terminal applications", () 
   // longer inlined directly on the JSX block.
   assert.match(
     enrollmentTabSource,
-    /const hasLevelSection = canApprove && !isApplicationTerminal && levels\.length > 0;/,
+    /const hasLevelSection = canApprove && !isApplicationTerminal && safeLevels\.length > 0;/,
   );
   assert.match(enrollmentTabSource, /\{hasLevelSection && \(/);
   // The action button itself only renders when canAssignLevel (which already
