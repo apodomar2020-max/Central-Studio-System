@@ -221,6 +221,20 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
     </div>
 
     <div className="admin2-pagebar">
+      {/* Premium branding watermark: the official logo, oversized and
+          rotated, sitting behind the page icon/title as a faint decorative
+          layer. Purely visual — aria-hidden, pointer-events:none, negative
+          z-index (admin2-shell.css) so it never intercepts clicks or
+          competes with the title for attention. .admin2-pagebar itself
+          gets position:relative + overflow:hidden so the oversized image
+          crops naturally at the header's own edges without changing the
+          header's height or touching the page content below it. */}
+      <img
+        src={`${import.meta.env.BASE_URL}${isDark ? "logo-central-white.png" : "logo-central-studio.png"}`}
+        alt=""
+        aria-hidden="true"
+        className="admin2-pagebar-watermark"
+      />
       <span className="admin2-page-icon"><PageIcon /></span>
       <div className="admin2-page-copy">
         <h1 data-testid="topbar-title">{location === "/" ? "Operations Dashboard" : meta.title}</h1>
