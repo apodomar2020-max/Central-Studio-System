@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import "./admin2-operations.css";
 
 export default function ChildDetailPage() {
   const { parentId: pId, childId: cId } = useParams<{ parentId: string; childId: string }>();
@@ -35,7 +36,7 @@ export default function ChildDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-detail-page admin2-child-detail">
       <div className="flex items-center gap-2">
         <Link href={`/parents/${parentId}`}>
           <Button variant="ghost" size="sm" className="gap-1">

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { AdminChartTooltip } from "@/components/admin/admin-chart-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -41,6 +42,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import "./admin2-operations.css";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const CYAN  = "#00B6D7";
@@ -54,14 +56,6 @@ const CARD_BORDER = "hsl(var(--border))";
 const MUTED_TEXT  = "hsl(var(--muted-foreground))";
 const SUBTLE_TEXT = "hsl(var(--muted-foreground) / 0.68)";
 const CHART_CURSOR = "hsl(var(--accent) / 0.55)";
-
-const TOOLTIP_STYLE = {
-  background: "hsl(var(--popover))",
-  border: `1px solid ${CARD_BORDER}`,
-  borderRadius: "8px",
-  color: "hsl(var(--popover-foreground))",
-  fontSize: "12px",
-};
 
 // ─── API base / headers (admin reports endpoints) ──────────────────────────────
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
@@ -195,7 +189,7 @@ function StatCard({
   title, value, sub, icon: Icon, accent,
 }: { title: string; value: string | number; sub?: string; icon: React.ElementType; accent: string }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border p-5 flex flex-col gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+    <div className="admin2-report-stat relative overflow-hidden rounded-xl border p-5 flex flex-col gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium" style={{ color: MUTED_TEXT }}>{title}</p>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${accent}18` }}>
@@ -213,7 +207,7 @@ function StatCard({
 }
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border p-5" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+    <div className="admin2-report-chart rounded-xl border p-5" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
       <p className="text-sm font-semibold text-foreground mb-4">{title}</p>
       {children}
     </div>
@@ -415,9 +409,9 @@ export default function ReportsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-reports">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="admin2-ops-local-summary flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Reports</h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
@@ -430,7 +424,7 @@ export default function ReportsPage() {
       </div>
 
       {/* ── Shared date-range filter ── */}
-      <div className="rounded-xl border p-4 flex flex-wrap items-center gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+      <div className="admin2-report-command flex flex-wrap items-center gap-3" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
         <div className="flex items-center gap-2">
           <CalendarRange className="h-4 w-4" style={{ color: CYAN }} />
           <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>Date Range</span>
@@ -440,6 +434,7 @@ export default function ReportsPage() {
             <button
               key={p.value}
               onClick={() => setPreset(p.value)}
+              aria-pressed={preset === p.value}
               className="px-3 py-1 rounded-md text-xs font-medium transition-all"
               style={
                 preset === p.value
@@ -461,7 +456,7 @@ export default function ReportsPage() {
       </div>
 
       {/* ── Segmented control ── */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "overview" | "export")} className="space-y-6">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "overview" | "export")} className="admin2-report-tabs space-y-6">
         <TabsList>
           {canAnalytics && <TabsTrigger value="overview">Overview / Analytics</TabsTrigger>}
           <TabsTrigger value="export">Export Center</TabsTrigger>
@@ -543,7 +538,7 @@ export default function ReportsPage() {
                   </ChartCard>
                 </div>
 
-                <div className="rounded-xl border overflow-hidden" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+                <div className="admin2-report-table" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -588,7 +583,7 @@ export default function ReportsPage() {
                         <BarChart data={analytics.attendance.trend} barCategoryGap="30%">
                           <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
                           <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
+                          <Tooltip content={<AdminChartTooltip />} cursor={{ fill: CHART_CURSOR }} />
                           <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -603,7 +598,7 @@ export default function ReportsPage() {
                         <BarChart data={attendanceBreakdownData} barCategoryGap="40%">
                           <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
                           <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
+                          <Tooltip content={<AdminChartTooltip />} cursor={{ fill: CHART_CURSOR }} />
                           <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                             {attendanceBreakdownData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
                           </Bar>
@@ -625,7 +620,7 @@ export default function ReportsPage() {
                         <BarChart data={analytics.bookings.trend} barCategoryGap="30%">
                           <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
                           <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
+                          <Tooltip content={<AdminChartTooltip />} cursor={{ fill: CHART_CURSOR }} />
                           <Bar dataKey="count" fill={AMBER} radius={[4, 4, 0, 0]} opacity={0.85} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -641,7 +636,7 @@ export default function ReportsPage() {
                           <Pie data={bookingStatusData.filter((d) => d.count > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={82} paddingAngle={3} dataKey="count">
                             {bookingStatusData.filter((d) => d.count > 0).map((entry, idx) => <Cell key={idx} fill={entry.fill} opacity={0.9} />)}
                           </Pie>
-                          <Tooltip contentStyle={TOOLTIP_STYLE} />
+                          <Tooltip content={<AdminChartTooltip />} />
                           <Legend formatter={(value) => <span style={{ color: "hsl(var(--muted-foreground))", fontSize: "11px" }}>{value}</span>} />
                         </PieChart>
                       </ResponsiveContainer>
@@ -665,7 +660,7 @@ export default function ReportsPage() {
                       <BarChart data={analytics.growth.trend} barCategoryGap="30%">
                         <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
                         <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
+                        <Tooltip content={<AdminChartTooltip />} cursor={{ fill: CHART_CURSOR }} />
                         <Bar dataKey="count" fill={GREEN} radius={[4, 4, 0, 0]} opacity={0.85} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -690,7 +685,7 @@ export default function ReportsPage() {
                       <BarChart data={analytics.packages.trend} barCategoryGap="30%">
                         <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={{ stroke: CARD_BORDER }} tickLine={false} />
                         <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART_CURSOR }} />
+                        <Tooltip content={<AdminChartTooltip />} cursor={{ fill: CHART_CURSOR }} />
                         <Bar dataKey="count" fill={CYAN} radius={[4, 4, 0, 0]} opacity={0.85} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -717,7 +712,7 @@ export default function ReportsPage() {
         {/* ───────────── EXPORT CENTER ───────────── */}
         <TabsContent value="export" className="space-y-4">
           {/* Controls */}
-          <div className="rounded-xl border p-4 flex flex-wrap items-end gap-4" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+          <div className="admin2-report-command flex flex-wrap items-end gap-4" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
             <div className="space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>Report</label>
               <Select value={entity} onValueChange={handleEntityChange}>
@@ -795,7 +790,7 @@ export default function ReportsPage() {
           )}
 
           {/* Preview table (backend columns + rows) */}
-          <div className="rounded-xl border overflow-hidden" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
+          <div className="admin2-report-table" style={{ background: CARD_BG, borderColor: CARD_BORDER }}>
             <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: CARD_BORDER }}>
               <span className="text-sm font-semibold text-foreground">Preview</span>
               <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>

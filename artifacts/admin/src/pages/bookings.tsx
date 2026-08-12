@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,9 +32,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, CalendarDays, Check, Clock3, CreditCard, Edit, PersonStanding, UserRound, X } from "lucide-react";
+import { CalendarDays, Check, Clock3, Edit, PersonStanding, Plus, Search, UserRound, X } from "lucide-react";
 import { Link } from "wouter";
-import { PageHeader } from "@/components/layout/page-header";
+import "./admin2-operations.css";
 
 const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed"];
 const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"];
@@ -193,7 +193,7 @@ export default function Bookings() {
     ...(scheduleIdFilter != null ? { scheduleId: scheduleIdFilter } : {}),
     ...(dateFilter ? { date: dateFilter } : {}),
   };
-  const { data: bookingsResponse, isLoading } = useListBookings(listParams);
+  const { data: bookingsResponse, isLoading, isError } = useListBookings(listParams);
   const bookings = (bookingsResponse?.bookings ?? []) as Booking[];
   const total = bookingsResponse?.total ?? 0;
   const totalPages = bookingsResponse?.totalPages ?? 0;
@@ -348,54 +348,43 @@ export default function Bookings() {
   })();
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Bookings" description="Manage class bookings" mode="studio" addLabel="Add Booking" addTestId="button-add-booking" onAdd={canCreate ? openCreate : undefined} />
-
-      {studentEmailFilter && (
-        <div className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm">
-          <span className="text-muted-foreground">Filtered to</span>
-          <Badge variant="secondary">{studentEmailFilter}</Badge>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setStudentEmailFilter(null)}>Clear</Button>
+    <div className="admin2-ops-page admin2-bookings">
+      <div className="admin2-command-bar admin2-bookings-command">
+        <label className="admin2-bookings-search">
+          <span className="sr-only">Search bookings</span>
+          <Search aria-hidden="true" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search participant, account owner, email, or class"
+            data-testid="input-booking-search"
+          />
+        </label>
+        <div className="admin2-bookings-filter-group" aria-label="Booking status filters">
+          <span>Status</span>
+          <div className="admin2-filter-pills">
+            {FILTERS.map((filter) => (
+              <Button key={filter} type="button" variant={activeFilter === filter ? "default" : "outline"} size="compact" aria-pressed={activeFilter === filter} onClick={() => setActiveFilter(filter)}>
+                {filter === "all" ? "All" : bookingStatusLabel(filter)}
+              </Button>
+            ))}
+          </div>
         </div>
-      )}
-
-      <div className="space-y-3">
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search participant, account owner, email, or class"
-          className="max-w-md"
-          data-testid="input-booking-search"
-        />
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map((filter) => (
-            <Button
-              key={filter}
-              type="button"
-              variant={activeFilter === filter ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveFilter(filter)}
-            >
-              {filter === "all" ? "All Statuses" : bookingStatusLabel(filter)}
-            </Button>
-          ))}
+        <div className="admin2-bookings-filter-group" aria-label="Participant scope filters">
+          <span>Scope</span>
+          <div className="admin2-filter-pills">
+            {SCOPE_FILTERS.map((filter) => (
+              <Button key={filter} type="button" variant={scopeFilter === filter ? "default" : "outline"} size="compact" aria-pressed={scopeFilter === filter} onClick={() => setScopeFilter(filter)}>
+                {filter === "all" ? "All" : filter === "child" ? "Child" : "Self"}
+              </Button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {SCOPE_FILTERS.map((filter) => (
-            <Button
-              key={filter}
-              type="button"
-              variant={scopeFilter === filter ? "default" : "outline"}
-              size="sm"
-              onClick={() => setScopeFilter(filter)}
-            >
-              {filter === "all" ? "All Scopes" : filter === "child" ? "Child Bookings" : "Self Bookings"}
-            </Button>
-          ))}
-        </div>
+        {studentEmailFilter && <div className="admin2-bookings-deep-filter"><Badge variant="secondary">{studentEmailFilter}</Badge><Button type="button" variant="ghost" size="compact" onClick={() => setStudentEmailFilter(null)}>Clear</Button></div>}
+        {canCreate && <Button type="button" onClick={openCreate} data-testid="button-add-booking" className="admin2-bookings-add"><Plus />Add Booking</Button>}
       </div>
 
-      <div className="overflow-hidden rounded-lg border bg-card">
+      <div className="admin2-queue-surface">
         <Table>
           <TableHeader>
             <TableRow className="border-border bg-muted/30 hover:bg-muted/30">
@@ -413,6 +402,8 @@ export default function Bookings() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={9} className="text-center py-8">Loading...</TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-destructive">Bookings could not be loaded. Try again in a moment.</TableCell></TableRow>
             ) : bookings.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No bookings yet.</TableCell></TableRow>
             ) : (
@@ -420,15 +411,13 @@ export default function Bookings() {
                 const canShowBookingActions = canEdit && (booking.bookingStatus ?? booking.status) === "pending";
                 const canShowCancelAction = canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status);
                 const canShowPaymentActions = canEdit && canConfirmPayments && booking.paymentStatus === "pending_payment";
-                const hasAnyActions = canShowBookingActions || canShowCancelAction || canShowPaymentActions;
                 const bookingStatus = booking.bookingStatus ?? booking.status;
                 const paymentStatus = booking.paymentStatus ?? "not_required";
                 const BookingStatusIcon = bookingStatus === "pending" ? Clock3 : bookingStatus === "confirmed" || bookingStatus === "attended" || bookingStatus === "completed" ? Check : X;
                 const PaymentStatusIcon = paymentStatus === "pending_payment" ? Clock3 : paymentStatus === "paid" || paymentStatus === "not_required" ? Check : X;
 
                 return (
-                  <Fragment key={booking.id}>
-                    <TableRow key={`${booking.id}-summary`} data-testid={`row-booking-${booking.id}`} className="border-b-0 bg-card hover:bg-muted/20">
+                    <TableRow key={booking.id} data-testid={`row-booking-${booking.id}`} className="bg-card hover:bg-muted/20">
                       <TableCell className="py-3">
                         <div className="flex items-center gap-2 border-r border-border/70 pr-3">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-violet-300/40 bg-gradient-to-br from-violet-500/80 to-slate-700 text-xs font-semibold text-white shadow-[0_0_24px_rgba(139,92,246,0.18)]">
@@ -520,116 +509,20 @@ export default function Bookings() {
                         </div>
                       </TableCell>
                       <TableCell className="py-3 text-right">
-                        {canEdit && (
-                          <Button variant="outline" size="icon" className="h-8 w-8 text-muted-foreground" data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)} title="Edit booking">
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
+                        <div className="admin2-booking-row-actions">
+                          {canEdit && <Button variant="ghost" size="iconSm" aria-label={`Edit booking ${booking.id}`} data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)} title="Edit booking"><Edit /></Button>}
+                          {canShowBookingActions && <>
+                            <Button variant="secondary" size="compact" data-testid={`button-approve-booking-${booking.id}`} onClick={() => setStatusConfirm({ booking, status: "confirmed" })} title="Confirm booking"><Check />Confirm</Button>
+                            <Button variant="destructive" size="compact" data-testid={`button-reject-booking-${booking.id}`} onClick={() => setStatusConfirm({ booking, status: "rejected" })} title="Reject booking"><X />Reject</Button>
+                          </>}
+                          {canShowCancelAction && <Button variant="destructive" size="compact" data-testid={`button-cancel-booking-${booking.id}`} onClick={() => setBookingStatus(booking, "cancelled")} title="Cancel booking"><X />Cancel</Button>}
+                          {canShowPaymentActions && <>
+                            <Button variant="export" size="compact" data-testid={`button-confirm-payment-booking-${booking.id}`} onClick={() => setPaymentConfirm({ booking, status: "paid" })} title="Confirm payment"><Check />Paid</Button>
+                            <Button variant="ghost" size="compact" data-testid={`button-reject-payment-booking-${booking.id}`} onClick={() => setPaymentConfirm({ booking, status: "failed" })} title="Reject payment"><X />Payment failed</Button>
+                          </>}
+                        </div>
                       </TableCell>
                     </TableRow>
-                    {hasAnyActions && (
-                      <TableRow key={`${booking.id}-actions`} className="border-b bg-card hover:bg-muted/20">
-                        <TableCell colSpan={9} className="px-2 pb-3 pt-0">
-                          <div className="rounded-md border bg-background/50 p-2.5">
-                            <div className={canShowBookingActions || canShowCancelAction ? canShowPaymentActions ? "grid gap-2 lg:grid-cols-2" : "grid gap-2" : "grid gap-2"}>
-                              {(canShowBookingActions || canShowCancelAction) && (
-                                <div className={`flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between ${canShowPaymentActions ? "lg:border-r lg:border-border/70 lg:pr-3" : ""}`}>
-                              <div className="flex items-center gap-2">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
-                                  <CalendarCheck className="h-3.5 w-3.5" />
-                                </div>
-                                <div>
-                                  <div className="text-xs font-semibold text-foreground">Booking Actions</div>
-                                  <div className="text-[11px] text-muted-foreground">Review and manage this booking request</div>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap gap-2 lg:justify-end">
-                                {canShowBookingActions && (
-                                  <>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-8 min-w-[126px] border-emerald-500/60 bg-emerald-500/5 px-2.5 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-                                      data-testid={`button-approve-booking-${booking.id}`}
-                                      onClick={() => setStatusConfirm({ booking, status: "confirmed" })}
-                                      title="Approve booking"
-                                    >
-                                      <Check className="mr-1 h-3.5 w-3.5" />
-                                      Confirm Booking
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-8 min-w-[118px] border-red-500/70 bg-red-500/5 px-2.5 text-[11px] font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                                      data-testid={`button-reject-booking-${booking.id}`}
-                                      onClick={() => setStatusConfirm({ booking, status: "rejected" })}
-                                      title="Reject booking"
-                                    >
-                                      <X className="mr-1 h-3.5 w-3.5" />
-                                      Reject Booking
-                                    </Button>
-                                  </>
-                                )}
-                                {canShowCancelAction && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-9 min-w-[112px] border-orange-500/60 bg-orange-500/5 px-2.5 text-[11px] font-semibold text-orange-400 hover:bg-orange-500/10 hover:text-orange-300"
-                                    data-testid={`button-cancel-booking-${booking.id}`}
-                                    onClick={() => setBookingStatus(booking, "cancelled")}
-                                    title="Cancel booking"
-                                  >
-                                    <X className="mr-1 h-3.5 w-3.5" />
-                                    Cancel Booking
-                                  </Button>
-                                )}
-                              </div>
-                                </div>
-                              )}
-
-                              {canShowPaymentActions && (
-                                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:pl-1">
-                              <div className="flex items-center gap-2">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-blue-500/25 bg-blue-500/10 text-blue-400">
-                                  <CreditCard className="h-3.5 w-3.5" />
-                                </div>
-                                <div>
-                                  <div className="text-xs font-semibold text-foreground">Payment Actions</div>
-                                  <div className="text-[11px] text-muted-foreground">Review and manage payment status</div>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap gap-2 lg:justify-end">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 min-w-[126px] border-blue-500/60 bg-blue-500/5 px-2.5 text-[11px] font-semibold text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
-                                  data-testid={`button-confirm-payment-booking-${booking.id}`}
-                                  onClick={() => setPaymentConfirm({ booking, status: "paid" })}
-                                  title="Confirm payment"
-                                >
-                                  <Check className="mr-1 h-3.5 w-3.5" />
-                                  Confirm Payment
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 min-w-[118px] border-red-500/70 bg-red-500/5 px-2.5 text-[11px] font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                                  data-testid={`button-reject-payment-booking-${booking.id}`}
-                                  onClick={() => setPaymentConfirm({ booking, status: "failed" })}
-                                  title="Reject payment"
-                                >
-                                  <X className="mr-1 h-3.5 w-3.5" />
-                                  Reject Payment
-                                </Button>
-                              </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </Fragment>
                 );
               })
             )}
@@ -637,7 +530,7 @@ export default function Bookings() {
         </Table>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-md border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="admin2-queue-pagination flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-[11px] text-muted-foreground">
           Showing {startItem}–{endItem} of {total.toLocaleString()} bookings
         </div>
@@ -686,7 +579,7 @@ export default function Bookings() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="admin2-ops-dialog max-w-xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Booking" : "New Booking"}</DialogTitle>
           </DialogHeader>
@@ -779,7 +672,7 @@ export default function Bookings() {
       </Dialog>
 
       <Dialog open={statusConfirm != null} onOpenChange={(next) => !next && setStatusConfirm(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="admin2-ops-dialog max-w-md">
           <DialogHeader>
             <DialogTitle>
               {statusConfirm?.status === "confirmed" ? "Confirm Booking" : "Reject Booking"}
@@ -826,7 +719,7 @@ export default function Bookings() {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="admin2-ops-dialog max-w-md">
           <DialogHeader>
             <DialogTitle>
               {paymentConfirm?.status === "paid" ? "Confirm Payment" : "Reject Payment"}

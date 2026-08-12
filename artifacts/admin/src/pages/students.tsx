@@ -26,6 +26,7 @@ import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import "./admin2-operations.css";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -95,7 +96,7 @@ export default function Students() {
     pageSize,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
-  const { data: studentsResponse, isLoading } = useListStudents(listParams);
+  const { data: studentsResponse, isLoading, isError } = useListStudents(listParams);
   const students = (studentsResponse?.students ?? []) as StudentRow[];
   const total = studentsResponse?.total ?? 0;
   const currentPage = studentsResponse?.page ?? page;
@@ -142,10 +143,10 @@ export default function Students() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ops-page admin2-students">
       <PageHeader title="Students" description="Manage your community" mode="studio" addLabel="Add Student" addTestId="button-add-student" onAdd={canCreate ? openCreate : undefined} />
 
-      <div className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="admin2-command-bar sm:justify-between">
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -168,7 +169,7 @@ export default function Students() {
         </div>
       </div>
 
-      <div className="border rounded-md">
+      <div className="admin2-people-registry">
         <Table>
           <TableHeader>
             <TableRow>
@@ -185,6 +186,8 @@ export default function Students() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-destructive">Students could not be loaded. Try again in a moment.</TableCell></TableRow>
             ) : students.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No students yet.</TableCell></TableRow>
             ) : (
@@ -192,7 +195,7 @@ export default function Students() {
                 <TableRow key={student.id} data-testid={`row-student-${student.id}`}>
                   <TableCell className="font-medium">
                     <Link href={`/students/${student.id}`} className="hover:underline flex items-center gap-2">
-                      <Avatar className="h-7 w-7">
+                      <Avatar className="h-9 w-9">
                         {student.avatarUrl ? <AvatarImage src={student.avatarUrl} alt={student.name} /> : null}
                         <AvatarFallback>{student.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
@@ -237,7 +240,7 @@ export default function Students() {
                   <TableCell>{new Date(student.joinedAt).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right">
                     {canEdit && (
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-student-${student.id}`} onClick={() => openEdit(student)}>
+                      <Button variant="ghost" size="icon" aria-label={`Edit ${student.name}`} title="Edit student" data-testid={`button-edit-student-${student.id}`} onClick={() => openEdit(student)}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
@@ -249,7 +252,7 @@ export default function Students() {
         </Table>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-md border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="admin2-registry-pagination flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-muted-foreground">
           Showing {startItem}–{endItem} of {total.toLocaleString()} students
         </div>
@@ -298,7 +301,7 @@ export default function Students() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="admin2-ops-dialog">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Student" : "Add Student"}</DialogTitle>
           </DialogHeader>

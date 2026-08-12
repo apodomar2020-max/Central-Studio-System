@@ -22,6 +22,7 @@ import {
 import { BadgeCheck, Edit } from "lucide-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
+import "./admin2-operations.css";
 
 /**
  * Parent edit (Phase 3) — Parents live in the same table/endpoints as
@@ -94,7 +95,7 @@ export default function ParentsPage() {
     pageSize,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
-  const { data: parentsResponse, isLoading } = useListStudents(listParams);
+  const { data: parentsResponse, isLoading, isError } = useListStudents(listParams);
 
   const parents = (parentsResponse?.students ?? []) as ParentRow[];
   const total = parentsResponse?.total ?? 0;
@@ -148,10 +149,10 @@ export default function ParentsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ops-page admin2-parents">
       <PageHeader title="Parents" description="Manage parent accounts and children profiles" mode="studio" />
 
-      <div className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="admin2-command-bar sm:justify-between">
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -174,7 +175,7 @@ export default function ParentsPage() {
         </div>
       </div>
 
-      <div className="border rounded-md">
+      <div className="admin2-people-registry">
         <Table>
           <TableHeader>
             <TableRow>
@@ -190,6 +191,8 @@ export default function ParentsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={canEdit ? 7 : 6} className="text-center py-8">Loading...</TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-destructive">Parents could not be loaded. Try again in a moment.</TableCell></TableRow>
             ) : parents.length === 0 ? (
               <TableRow><TableCell colSpan={canEdit ? 7 : 6} className="text-center py-8 text-muted-foreground">No parent accounts found.</TableCell></TableRow>
             ) : (
@@ -197,7 +200,7 @@ export default function ParentsPage() {
                 <TableRow key={parent.id} data-testid={`row-parent-${parent.id}`}>
                   <TableCell className="font-medium">
                     <Link href={`/parents/${parent.id}`} className="hover:underline flex items-center gap-2">
-                      <Avatar className="h-7 w-7">
+                      <Avatar className="h-9 w-9">
                         {parent.avatarUrl ? <AvatarImage src={parent.avatarUrl} alt={parent.name} /> : null}
                         <AvatarFallback>{parent.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
@@ -235,6 +238,8 @@ export default function ParentsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Edit ${parent.name}`}
+                        title="Edit parent"
                         data-testid={`button-edit-parent-${parent.id}`}
                         onClick={() => openEdit(parent)}
                       >
@@ -249,7 +254,7 @@ export default function ParentsPage() {
         </Table>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-md border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="admin2-registry-pagination flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-muted-foreground">
           Showing {startItem}–{endItem} of {total.toLocaleString()} parents
         </div>
@@ -299,7 +304,7 @@ export default function ParentsPage() {
 
       {/* Parent edit dialog — same fields/pattern as the Students edit dialog */}
       <Dialog open={editing != null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
-        <DialogContent>
+        <DialogContent className="admin2-ops-dialog">
           <DialogHeader>
             <DialogTitle>Edit Parent</DialogTitle>
           </DialogHeader>

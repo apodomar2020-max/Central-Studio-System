@@ -12,6 +12,7 @@ import { TablePagination } from "@/components/shared/table-pagination";
 import type { AdjustCreditsBody, UpdatePackageOrderBody } from "@workspace/api-client-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
+import "./admin2-operations.css";
 import {
   CheckCircle2, Clock, XCircle, Trash2, Edit2, CreditCard,
   User2, BookOpen, Plus, Minus, ChevronDown, ChevronUp, Coins,
@@ -667,6 +668,7 @@ export default function PackageOrders() {
   const total = listQuery.data?.total ?? 0;
   const totalPages = listQuery.data?.totalPages ?? 0;
   const isLoading = listQuery.isLoading;
+  const isError = listQuery.isError;
 
   // Global pending count for the header badge (header-only query — the badge
   // previously counted the fully loaded list, which pagination would break).
@@ -771,8 +773,8 @@ export default function PackageOrders() {
   const statusFilters = ["all", "pendingPayment", "active", "fullyUsed", "cancelled"];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
+    <div className="admin2-ops-page admin2-package-orders">
+      <div className="admin2-ops-local-summary flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Package Orders</h1>
           <p className="mt-1 text-sm" style={{ color: MUTED }}>Manage student package requests and activations</p>
@@ -783,12 +785,13 @@ export default function PackageOrders() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="admin2-command-bar admin2-filter-pills">
         {statusFilters.map((f) => (
           <button
             key={f}
             onClick={() => setStatusFilter(f)}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+            aria-pressed={statusFilter === f}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${statusFilter === f ? "is-selected" : ""}`}
             style={statusFilter === f ? { backgroundColor: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" } : { backgroundColor: BG_ROW, color: MUTED }}
           >
             {f === "all" ? "All" : STATUS_CONFIG[f]?.label ?? f}
@@ -798,7 +801,7 @@ export default function PackageOrders() {
 
       {/* Table — overflow-x-auto (Phase 5B) so the 7-column table scrolls
           horizontally on mobile instead of breaking the viewport. */}
-      <div className="rounded-xl overflow-x-auto" style={{ border: `1px solid ${BORDER}` }}>
+      <div className="admin2-queue-surface">
         <table className="w-full text-sm">
           <thead style={{ background: BG_ROW }}>
             <tr>
@@ -818,7 +821,13 @@ export default function PackageOrders() {
                     ))}
                   </tr>
                 ))
-              : (orders as PackageOrder[]).length === 0 ? (
+              : isError ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-destructive">
+                    Package orders could not be loaded. Try again in a moment.
+                  </td>
+                </tr>
+              ) : (orders as PackageOrder[]).length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-sm" style={{ color: MUTED_DARK }}>
                     No package orders found
@@ -829,7 +838,7 @@ export default function PackageOrders() {
                   const rows = [
                     <tr
                       key={`order-${order.id}`}
-                      className="transition-colors hover:bg-muted/40"
+                      className="admin2-transaction-row"
                       style={{ borderTop: `1px solid ${BORDER}` }}
                     >
                       <td className="px-4 py-3">
@@ -863,7 +872,7 @@ export default function PackageOrders() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium" style={{ color: STUDIO_CYAN }}>
+                        <div className="admin2-credit-value" style={{ color: STUDIO_CYAN }}>
                           {order.remainingCredits}
                           <span className="text-xs font-normal ml-1" style={{ color: MUTED_DARK }}>/ {order.totalCredits}</span>
                         </div>
@@ -920,6 +929,7 @@ export default function PackageOrders() {
                               onClick={() => handleEditOpen(order)}
                               className="p-1.5 rounded-lg"
                               style={{ color: MUTED }}
+                              aria-label={`Edit ${order.studentName} package order`}
                               title="Edit notes/expiry"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
@@ -930,6 +940,7 @@ export default function PackageOrders() {
                               onClick={() => handleCancel(order)}
                               className="p-1.5 rounded-lg"
                               style={{ color: AMBER }}
+                              aria-label={`Cancel ${order.studentName} package order`}
                               title="Cancel order"
                             >
                               <XCircle className="h-3.5 w-3.5" />
@@ -943,6 +954,7 @@ export default function PackageOrders() {
                               onClick={() => handleDelete(order.id)}
                               className="p-1.5 rounded-lg"
                               style={{ color: "#EF444480" }}
+                              aria-label={`Delete ${order.studentName} package order`}
                               title="Delete"
                             >
                               <Trash2 className="h-3.5 w-3.5" />

@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import "./admin2-operations.css";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
@@ -283,7 +284,7 @@ export default function StudentDetailPage() {
 
   if (query.isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="admin2-detail-page">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 w-full" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -332,7 +333,7 @@ export default function StudentDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-detail-page">
       <Link href={listBackHref}>
         <Button variant="ghost" size="sm" className="gap-1"><ArrowLeft className="h-4 w-4" /> Back to {isParent ? "Parents" : "Students"}</Button>
       </Link>
@@ -352,7 +353,7 @@ export default function StudentDetailPage() {
       {/* ---------------------------------------------------------------- */}
       {/* Header card                                                      */}
       {/* ---------------------------------------------------------------- */}
-      <Card>
+      <Card className="admin2-detail-identity">
         <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16">
@@ -391,7 +392,7 @@ export default function StudentDetailPage() {
       {/* ---------------------------------------------------------------- */}
       {/* KPI cards                                                        */}
       {/* ---------------------------------------------------------------- */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="admin2-detail-kpis grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Total Bookings" value={d.permissions.canViewBookings ? d.stats.totalBookings : "—"} />
         <KpiCard label="Total Attendance" value={d.permissions.canViewAttendance ? d.stats.totalAttendance : "—"} />
         <KpiCard label="Attendance Rate" value={formatPercent(d.stats.attendanceRate)} sub="attendance ÷ bookings" />
@@ -413,7 +414,7 @@ export default function StudentDetailPage() {
       {/* ---------------------------------------------------------------- */}
       {/* Tabs                                                             */}
       {/* ---------------------------------------------------------------- */}
-      <Tabs defaultValue="profile" className="w-full">
+      <Tabs defaultValue="profile" className="admin2-detail-tabs w-full">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           {isParent && <TabsTrigger value="children">Children ({d.children.length})</TabsTrigger>}
