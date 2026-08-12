@@ -139,7 +139,7 @@ export default function FinanceOverviewPage() {
   const isLoading = overviewQuery.isLoading;
 
   return (
-    <div className="space-y-8">
+    <div className="admin2-finance-page admin2-finance-overview space-y-8">
       <PageHeader
         title="Finance Overview"
         description="Classified financial visibility across Studio, Ballet, credits, and discounts. Read-only."
@@ -404,7 +404,16 @@ export default function FinanceOverviewPage() {
               <Link href="/attendance">Attendance</Link>
             </Button>
           )}
-          {can("ballet.payments", "view") && (
+          {/* Destination pages (/ballet/payments, /ballet/refunds) are gated by
+              finance.view (nav-config.ts, App.tsx ROUTE_PERMS) — matching that
+              here, like every other shortcut in this list, instead of the
+              unrelated ballet.payments.view permission (which is the real,
+              separate per-family scoping permission for ballet rows in the
+              unified Finance Transactions/Export feed below, not a gate on
+              these standalone pages). Reaching this section already requires
+              finance.view, so this is always true here — kept explicit and
+              consistent with the pattern above rather than assumed. */}
+          {can("finance", "view") && (
             <>
               <Button asChild variant="outline" size="sm">
                 <Link href="/ballet/payments">Ballet Payments</Link>
@@ -424,3 +433,4 @@ export default function FinanceOverviewPage() {
     </div>
   );
 }
+import "./admin2-finance.css";

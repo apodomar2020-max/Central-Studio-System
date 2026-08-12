@@ -443,7 +443,7 @@ export function FinanceTransactionsView({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="admin2-finance-view space-y-4">
       {/* Filters — wrap-safe, matching the Logs page layout */}
       <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -683,6 +683,7 @@ export function FinanceTransactionsView({
                         className="h-8 px-2"
                         onClick={() => setSelected(transaction)}
                         title="View details"
+                        aria-label={`View details for financial event ${transaction.id}`}
                         data-testid={`button-finance-details-${transaction.id}`}
                       >
                         <Eye className="h-4 w-4" />
@@ -691,6 +692,7 @@ export function FinanceTransactionsView({
                         <Button asChild variant="ghost" size="sm" className="h-8 px-2" title="Open source record">
                           <Link
                             href={transaction.sourceDeepLink}
+                            aria-label={`Open source record for financial event ${transaction.id}`}
                             data-testid={`link-finance-source-${transaction.id}`}
                           >
                             <ExternalLink className="h-4 w-4" />
@@ -719,7 +721,7 @@ export function FinanceTransactionsView({
       )}
 
       <Sheet open={selected != null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
-        <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
+        <SheetContent side="right" className="admin2-finance-sheet flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
           <SheetHeader className="border-b px-5 py-4 text-left">
             <SheetTitle>{selected ? `Event ${selected.id}` : "Event"}</SheetTitle>
             <SheetDescription>
@@ -734,3 +736,4 @@ export function FinanceTransactionsView({
     </div>
   );
 }
+import "./admin2-finance.css";

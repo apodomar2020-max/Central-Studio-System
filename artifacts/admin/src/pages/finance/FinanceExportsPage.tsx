@@ -104,7 +104,7 @@ export default function FinanceExportsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="admin2-finance-page admin2-finance-exports space-y-5">
       <PageHeader
         title="Reports & Exports"
         description={`${FINANCE_EXPORT_TITLE} — normalized financial activity across every source you can view.`}
@@ -272,3 +272,4 @@ export default function FinanceExportsPage() {
     </div>
   );
 }
+import "./admin2-finance.css";

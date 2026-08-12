@@ -25,7 +25,7 @@ const MIXED_SOURCE_CAVEATS: readonly string[] = [
 
 export default function FinanceTransactionsPage() {
   return (
-    <div className="space-y-5">
+    <div className="admin2-finance-page admin2-finance-ledger space-y-5">
       <PageHeader
         title="Transactions"
         description="Monetary payments, receivables, refunds, and discounts across Studio and Ballet. Read-only."
@@ -48,3 +48,4 @@ export default function FinanceTransactionsPage() {
     </div>
   );
 }
+import "./admin2-finance.css";

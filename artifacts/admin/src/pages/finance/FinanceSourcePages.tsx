@@ -51,7 +51,7 @@ function FinanceScopedPage({
   emptyMessage?: string;
 }) {
   return (
-    <div className="space-y-5">
+    <div className="admin2-finance-page admin2-finance-ledger space-y-5">
       <PageHeader title={title} description={description} mode="general" />
       {caveats && caveats.length > 0 && (
         <FinanceLimitationsPanel warnings={caveats} title={caveatTitle ?? "What these figures mean"} />
@@ -223,3 +223,4 @@ export function FinanceDiscountsPage() {
     />
   );
 }
+import "./admin2-finance.css";
