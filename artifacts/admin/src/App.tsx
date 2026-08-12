@@ -59,7 +59,6 @@ import BalletPerformancesPage from "@/pages/ballet/BalletPerformancesPage";
 import BalletPaymentsPage from "@/pages/ballet/BalletPaymentsPage";
 import BalletCancellationRequestsPage from "@/pages/ballet/BalletCancellationRequestsPage";
 import BalletRefundsPage from "@/pages/ballet/BalletRefundsPage";
-import DesignLabPage from "@/pages/DesignLabPage";
 import SettingsPage from "@/pages/settings";
 import LogsPage from "@/pages/logs";
 // Finance Department (Phase 1) — read-only visibility layer. Every page here
@@ -258,8 +257,6 @@ function ProtectedRouter() {
         <Route path="/finance/discounts">{guarded(ROUTE_PERMS.financeDiscounts, <FinanceDiscountsPage />)}</Route>
         <Route path="/finance/exports">{guarded(ROUTE_PERMS.financeExports, <FinanceExportsPage />)}</Route>
         <Route path="/finance">{guarded(ROUTE_PERMS.financeOverview, <FinanceOverviewPage />)}</Route>
-        {/* DEV-ONLY: component preview — not in sidebar */}
-        <Route path="/design-lab" component={DesignLabPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -298,21 +295,99 @@ function AppShell() {
   return <ProtectedRouter />;
 }
 
+const DesignLabPage = import.meta.env.DEV
+  ? lazy(() => import("@/pages/DesignLabPage"))
+  : null;
+
+const ReferencePrototypePage = import.meta.env.DEV
+  ? lazy(() => import("@/pages/ReferencePrototypePage"))
+  : null;
+
+const SystemPrototypePage = import.meta.env.DEV
+  ? lazy(() => import("@/pages/SystemPrototypePage"))
+  : null;
+
+function ProductionApp() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <AdminThemeProvider>
+          <AdminAuthProvider>
+            <AppShell />
+          </AdminAuthProvider>
+        </AdminThemeProvider>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <AdminThemeProvider>
-            <AdminAuthProvider>
-              <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
-                <AppShell />
-              </WouterRouter>
-            </AdminAuthProvider>
-          </AdminThemeProvider>
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
+      <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
+        {import.meta.env.DEV && DesignLabPage && ReferencePrototypePage && SystemPrototypePage ? (
+          <Switch>
+            <Route path="/design-lab/system-hybrid">
+              <TooltipProvider>
+                <Suspense
+                  fallback={
+                    <div className="flex h-screen w-full items-center justify-center bg-[#05090c] text-white">
+                      <Loader2 className="h-7 w-7 animate-spin text-[#00B6D7]" aria-label="Loading hybrid system prototype" />
+                    </div>
+                  }
+                >
+                  <SystemPrototypePage navigationMode="hybrid" />
+                </Suspense>
+              </TooltipProvider>
+            </Route>
+            <Route path="/design-lab/system">
+              <TooltipProvider>
+                <Suspense
+                  fallback={
+                    <div className="flex h-screen w-full items-center justify-center bg-[#05090c] text-white">
+                      <Loader2 className="h-7 w-7 animate-spin text-[#00B6D7]" aria-label="Loading system prototype" />
+                    </div>
+                  }
+                >
+                  <SystemPrototypePage />
+                </Suspense>
+              </TooltipProvider>
+            </Route>
+            <Route path="/design-lab/reference">
+              <TooltipProvider>
+                <Suspense
+                  fallback={
+                    <div className="flex h-screen w-full items-center justify-center bg-[#05090c] text-white">
+                      <Loader2 className="h-7 w-7 animate-spin text-[#00B6D7]" aria-label="Loading reference prototype" />
+                    </div>
+                  }
+                >
+                  <ReferencePrototypePage />
+                </Suspense>
+              </TooltipProvider>
+            </Route>
+            <Route path="/design-lab">
+              <TooltipProvider>
+                <Suspense
+                  fallback={
+                    <div className="flex h-screen w-full items-center justify-center bg-[#05090c] text-white">
+                      <Loader2 className="h-7 w-7 animate-spin text-[#00B6D7]" aria-label="Loading Design Lab" />
+                    </div>
+                  }
+                >
+                  <DesignLabPage />
+                </Suspense>
+              </TooltipProvider>
+            </Route>
+            <Route>
+              <ProductionApp />
+            </Route>
+          </Switch>
+        ) : (
+          <ProductionApp />
+        )}
+      </WouterRouter>
     </ErrorBoundary>
   );
 }
