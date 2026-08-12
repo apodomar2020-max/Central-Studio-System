@@ -22,9 +22,10 @@
  */
 import { Link, useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { Activity, ChevronDown, LogOut, type LucideIcon } from "lucide-react";
+import { ChevronDown, LogOut, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { useAdminTheme } from "@/contexts/AdminThemeContext";
 import { allows } from "@/lib/permissions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
@@ -388,6 +389,8 @@ function findGroupByPath(nodes: NavNode[], path: string): NavGroup | null {
 export function Sidebar({ className }: { className?: string } = {}) {
   const [location, navigate] = useLocation();
   const { can } = useAdminAuth();
+  const { theme } = useAdminTheme();
+  const isDark = theme === "dark";
   const visibleTree = filterVisible(NAV_TREE, can);
   const railNodes = visibleTree.filter((node) => !(node.kind === "link" && node.href === "/attendance"));
 
@@ -401,7 +404,16 @@ export function Sidebar({ className }: { className?: string } = {}) {
       data-collapsed="true"
       aria-label="Central Studio modules"
     >
-      <Link href="/" className="admin2-rail-brand" aria-label="Central Studio Dashboard"><Activity /></Link>
+      {/* Official Central Studio logo, same asset/theme logic as the TopBar
+          brand slot — replaces the generic Activity icon here too, per
+          owner direction from a live Production inspection. */}
+      <Link href="/" className="admin2-rail-brand" aria-label="Central Studio Dashboard">
+        <img
+          src={`${import.meta.env.BASE_URL}${isDark ? "logo-central-white.png" : "logo-central-studio.png"}`}
+          alt="Central Studio"
+          className="admin2-rail-brand-logo"
+        />
+      </Link>
       <nav className="admin2-rail-nav" aria-label="Global modules">
         {railNodes.map((node) => {
           const Icon = (node.icon ?? ChevronDown) as LucideIcon;
