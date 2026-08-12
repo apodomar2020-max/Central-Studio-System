@@ -107,7 +107,7 @@ export default function BalletHomeCardPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="admin2-ballet-page admin2-ballet-settings space-y-6 max-w-2xl">
       <div>
         <Button variant="ghost" size="sm" onClick={() => navigate("/ballet/settings")} className="-ml-2 text-muted-foreground">
           <ChevronLeft className="mr-1 h-4 w-4" /> Back to General Settings
@@ -208,3 +208,4 @@ export default function BalletHomeCardPage() {
     </div>
   );
 }
+import "../admin2-ballet.css";

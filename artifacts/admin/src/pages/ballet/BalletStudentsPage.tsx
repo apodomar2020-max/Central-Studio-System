@@ -93,7 +93,7 @@ export default function BalletStudentsPage() {
   const dash = <span className="italic text-muted-foreground">—</span>;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-people space-y-6">
       <PageHeader title="Ballet Students" description="Ballet student files created from current level assignments" mode="stage" />
 
       <div className="border rounded-md">
@@ -124,7 +124,20 @@ export default function BalletStudentsPage() {
               <TableRow><TableCell colSpan={13} className="py-10 text-center text-muted-foreground text-sm">No active ballet students yet.</TableCell></TableRow>
             ) : (
               data?.data.map((s) => (
-                <TableRow key={s.assignmentId} className="cursor-pointer hover:bg-muted/40" onClick={() => navigate(`/ballet/students/${s.assignmentId}`)}>
+                <TableRow
+                  key={s.assignmentId}
+                  className="cursor-pointer hover:bg-muted/40"
+                  onClick={() => navigate(`/ballet/students/${s.assignmentId}`)}
+                  tabIndex={0}
+                  role="link"
+                  aria-label={`Open Ballet student file for ${s.studentName}`}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(`/ballet/students/${s.assignmentId}`);
+                    }
+                  }}
+                >
                   <TableCell className="font-medium">{s.studentName}</TableCell>
                   <TableCell>{s.parentName}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.parentPhone}</TableCell>
@@ -162,3 +175,4 @@ export default function BalletStudentsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

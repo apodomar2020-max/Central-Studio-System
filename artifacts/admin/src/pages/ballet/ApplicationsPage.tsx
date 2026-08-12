@@ -234,7 +234,7 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-queue space-y-6">
       <PageHeader
         title="Ballet Applications"
         description="Review and manage assessment applications"
@@ -249,6 +249,7 @@ export default function ApplicationsPage() {
             <button
               key={tab.value}
               onClick={() => handleTabChange(tab.value)}
+              aria-pressed={activeStatus === tab.value}
               className={[
                 "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                 activeStatus === tab.value
@@ -358,6 +359,15 @@ export default function ApplicationsPage() {
                   key={app.id}
                   className="cursor-pointer hover:bg-muted/40"
                   onClick={() => navigate(`/ballet/applications/${app.id}`)}
+                  tabIndex={0}
+                  role="link"
+                  aria-label={`Open application ${app.id} for ${app.childName}`}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(`/ballet/applications/${app.id}`);
+                    }
+                  }}
                 >
                   <TableCell className="text-muted-foreground text-xs">{app.id}</TableCell>
                   <TableCell className="font-medium">{app.childName}</TableCell>
@@ -443,3 +453,4 @@ export default function ApplicationsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

@@ -254,7 +254,7 @@ export default function BalletLevelsPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
@@ -544,3 +544,4 @@ export default function BalletLevelsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

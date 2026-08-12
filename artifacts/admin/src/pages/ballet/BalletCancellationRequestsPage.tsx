@@ -72,7 +72,7 @@ export default function BalletCancellationRequestsPage() {
 
   const rows = data?.data ?? [];
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-queue space-y-6">
       <PageHeader title="Ballet Cancellation Requests" description="Review and finalize active enrollment cancellation requests." mode="stage" />
       <Select value={status || "all"} onValueChange={(value) => setStatus(value === "all" ? "" : value)}>
         <SelectTrigger className="h-8 w-56 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
@@ -114,3 +114,4 @@ export default function BalletCancellationRequestsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

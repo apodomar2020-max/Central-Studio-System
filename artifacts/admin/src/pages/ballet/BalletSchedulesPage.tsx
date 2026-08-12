@@ -106,7 +106,7 @@ export default function BalletSchedulesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletSchedule | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ballet-schedules", token],
     queryFn: () => adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?limit=${CATALOG_LIMIT}`, {}, token, API_KEY),
     refetchOnWindowFocus: false,
@@ -238,7 +238,7 @@ export default function BalletSchedulesPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
       <PageHeader
         title="Ballet Schedules"
         description="Create and manage weekly Ballet class sessions"
@@ -267,6 +267,8 @@ export default function BalletSchedulesPage() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={10} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={10} className="text-center py-8 text-destructive">Ballet schedules could not be loaded.</TableCell></TableRow>
             ) : schedules.length === 0 ? (
               <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No ballet schedules yet.</TableCell></TableRow>
             ) : (
@@ -418,3 +420,4 @@ export default function BalletSchedulesPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

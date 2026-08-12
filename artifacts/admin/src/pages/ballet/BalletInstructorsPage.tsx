@@ -145,7 +145,7 @@ export default function BalletInstructorsPage() {
   const [editing, setEditing] = useState<BalletInstructor | null>(null);
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ballet-instructors", token],
     queryFn: () => adminFetch<ListResponse>(`${API_BASE}/api/admin/ballet/instructors?limit=${CATALOG_LIMIT}`, {}, token),
     refetchOnWindowFocus: false,
@@ -226,7 +226,7 @@ export default function BalletInstructorsPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
       <PageHeader title="Ballet Instructors" description="Teaching staff for the Ballet program" mode="stage" addLabel="Add Instructor" addTestId="button-add-ballet-instructor" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
@@ -245,6 +245,8 @@ export default function BalletInstructorsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-destructive">Ballet instructors could not be loaded.</TableCell></TableRow>
             ) : instructors.length === 0 ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No ballet instructors yet. Add one to get started.</TableCell></TableRow>
             ) : (
@@ -407,3 +409,4 @@ export default function BalletInstructorsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

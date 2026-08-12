@@ -76,7 +76,7 @@ export default function BalletRefundsPage() {
 
   const rows = data?.data ?? [];
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-ledger space-y-6">
       <PageHeader title="Ballet Refunds" description="Cash refund review and processing. Bank Transfer and Online refunds are not available." mode="stage" />
       <Select value={status || "all"} onValueChange={(value) => setStatus(value === "all" ? "" : value)}>
         <SelectTrigger className="h-8 w-56 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
@@ -126,3 +126,4 @@ export default function BalletRefundsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

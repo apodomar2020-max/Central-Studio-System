@@ -96,7 +96,7 @@ export default function BalletPackagesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletPackage | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ballet-packages", token],
     queryFn: () => adminFetch<ListResponse<BalletPackage>>(`${API_BASE}/api/admin/ballet/packages?limit=${CATALOG_LIMIT}`, {}, token),
     refetchOnWindowFocus: false,
@@ -158,7 +158,7 @@ export default function BalletPackagesPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
       <PageHeader
         title="Ballet Packages"
         description="Monthly Ballet tuition packages — distinct from the generic per-class/session credit packages"
@@ -184,6 +184,8 @@ export default function BalletPackagesPage() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-destructive">Ballet packages could not be loaded.</TableCell></TableRow>
             ) : packages.length === 0 ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No ballet packages yet.</TableCell></TableRow>
             ) : (
@@ -314,3 +316,4 @@ export default function BalletPackagesPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

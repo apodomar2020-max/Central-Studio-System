@@ -100,7 +100,7 @@ export default function BalletGroupsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletGroup | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-ballet-groups", token],
     queryFn: () => adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?limit=${CATALOG_LIMIT}`, {}, token),
     refetchOnWindowFocus: false,
@@ -160,7 +160,7 @@ export default function BalletGroupsPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
       <PageHeader title="Ballet Groups" description="Cohorts of children within a level" mode="stage" addLabel="Add Group" addTestId="button-add-ballet-group" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="border rounded-md">
@@ -178,6 +178,8 @@ export default function BalletGroupsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-destructive">Ballet groups could not be loaded.</TableCell></TableRow>
             ) : groups.length === 0 ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ballet groups yet.</TableCell></TableRow>
             ) : (
@@ -298,3 +300,4 @@ export default function BalletGroupsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

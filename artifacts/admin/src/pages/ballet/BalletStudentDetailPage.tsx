@@ -242,7 +242,7 @@ export default function BalletStudentDetailPage() {
     ? Math.round((data.attendanceSummary.attendedHours / data.attendanceSummary.consumedHours) * 100)
     : null;
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-detail space-y-6">
       <div className="flex items-start gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate("/ballet/students")} className="mt-1 -ml-2 text-muted-foreground"><ChevronLeft className="mr-1 h-4 w-4" /> Back</Button>
         <div className="flex-1">
@@ -525,3 +525,4 @@ export default function BalletStudentDetailPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

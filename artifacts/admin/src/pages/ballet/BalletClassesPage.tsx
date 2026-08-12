@@ -57,7 +57,7 @@ export default function BalletClassesPage() {
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES, mode: "onChange", reValidateMode: "onChange" });
   const selectedLevelId = form.watch("levelId");
 
-  const { data, isLoading } = useQuery({ queryKey: ["admin-ballet-classes", token], queryFn: () => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?limit=${CATALOG_LIMIT}`, {}, token), refetchOnWindowFocus: false });
+  const { data, isLoading, isError } = useQuery({ queryKey: ["admin-ballet-classes", token], queryFn: () => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?limit=${CATALOG_LIMIT}`, {}, token), refetchOnWindowFocus: false });
   const { data: instructorsData } = useQuery({ queryKey: ["admin-ballet-instructors-ref", token], queryFn: () => adminFetch<ListResponse<BalletInstructor>>(`${API_BASE}/api/admin/ballet/instructors?limit=${CATALOG_LIMIT}`, {}, token), refetchOnWindowFocus: false });
   const { data: groupsData } = useQuery({ queryKey: ["admin-ballet-groups-ref", token], queryFn: () => adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?limit=${CATALOG_LIMIT}`, {}, token), refetchOnWindowFocus: false });
   const { data: levelsData } = useQuery({ queryKey: ["admin-ballet-levels-ref", token], queryFn: () => adminFetch<{ levels: BalletLevel[] }>(`${API_BASE}/api/admin/ballet/levels`, {}, token), refetchOnWindowFocus: false });
@@ -103,10 +103,10 @@ export default function BalletClassesPage() {
     return <div className="space-y-1"><div>{schedules.length === 1 ? "1 schedule" : `${schedules.length} schedules`}</div>{activeCount !== schedules.length && <div className="text-xs text-muted-foreground">{activeCount} active</div>}</div>;
   };
 
-  return <div className="space-y-6">
+  return <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
     <PageHeader title="Ballet Classes" description="Create Class details here, then add weekly times from Schedules" mode="stage" addLabel="Add Class" addTestId="button-add-ballet-class" onAdd={can("ballet.classes", "create") ? openCreate : undefined} />
     <div className="border rounded-md"><Table><TableHeader><TableRow><TableHead>Title</TableHead><TableHead>Level / Group</TableHead><TableHead>Instructor</TableHead><TableHead>Schedules</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
-      {isLoading ? <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow> : classes.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ballet classes yet.</TableCell></TableRow> : classes.map((item) => <TableRow key={item.id} data-testid={`row-ballet-class-${item.id}`}>
+      {isLoading ? <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow> : isError ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-destructive">Ballet classes could not be loaded.</TableCell></TableRow> : classes.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ballet classes yet.</TableCell></TableRow> : classes.map((item) => <TableRow key={item.id} data-testid={`row-ballet-class-${item.id}`}>
         <TableCell className="font-medium">{item.title}{item.isLegacy && <div className="mt-1"><Badge variant="secondary" data-testid={`badge-legacy-class-${item.id}`}>Historical Class</Badge><p className="text-xs text-muted-foreground mt-1">This Class uses the retired Ballet Class model. Create a new Class to resume the program.</p></div>}</TableCell><TableCell>{item.levelId == null ? "—" : levels.find((x) => x.id === item.levelId)?.name ?? `#${item.levelId}`} · {item.groupId == null ? "—" : groups.find((x) => x.id === item.groupId)?.name ?? `#${item.groupId}`}</TableCell><TableCell>{item.instructorId == null ? "—" : instructors.find((x) => x.id === item.instructorId)?.name ?? `#${item.instructorId}`}</TableCell><TableCell>{renderScheduleSummary(item)}</TableCell><TableCell><Badge variant={item.isActive ? "default" : "outline"}>{item.isActive ? "Active" : "Inactive"}</Badge></TableCell><TableCell className="text-right">
           {!item.isLegacy && can("ballet.classes", "edit") && <Button variant="ghost" size="icon" onClick={() => openEdit(item)}><Edit className="h-4 w-4" /></Button>}
           {!item.isLegacy && can("ballet.classes", "delete") && <Button variant="ghost" size="icon" title={item.isActive ? "Deactivate" : "Activate"} onClick={() => updateMutation.mutate({ id: item.id, body: { isActive: !item.isActive } })}><Trash2 className="h-4 w-4 text-destructive" /></Button>}
@@ -123,3 +123,4 @@ export default function BalletClassesPage() {
     </form></Form></DialogContent></Dialog>
   </div>;
 }
+import "./admin2-ballet.css";

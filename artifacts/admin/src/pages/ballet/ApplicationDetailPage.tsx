@@ -1121,7 +1121,7 @@ export default function ApplicationDetailPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-detail space-y-6">
       {/* Back + Header */}
       <div className="flex items-start gap-4">
         <Button
@@ -1727,3 +1727,4 @@ export default function ApplicationDetailPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

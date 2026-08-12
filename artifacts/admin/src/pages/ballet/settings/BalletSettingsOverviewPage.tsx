@@ -169,7 +169,7 @@ export default function BalletSettingsOverviewPage() {
   const activeFaqs = faqs.filter((f) => f.isActive).length;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-settings space-y-6">
       <PageHeader
         title="Ballet General Settings"
         description="Manage the Ballet Home card image, contact information, program requirements, FAQ, and assessment fee."
@@ -285,3 +285,4 @@ export default function BalletSettingsOverviewPage() {
     </div>
   );
 }
+import "../admin2-ballet.css";

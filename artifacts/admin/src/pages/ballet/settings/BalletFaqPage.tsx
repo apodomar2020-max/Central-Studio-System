@@ -557,7 +557,7 @@ export default function BalletFaqPage() {
       {/* Side Sheet / Drawer for Create & Edit FAQ */}
       <Sheet open={drawerState.isOpen} onOpenChange={(open) => !open && closeDrawer()}>
         <SheetContent side="right" className="w-full sm:max-w-md bg-card border-border p-6 flex flex-col justify-between overflow-y-auto">
-          <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-settings space-y-6">
             <SheetHeader className="text-left space-y-1.5 border-b border-border pb-4">
               <SheetTitle className="text-xl font-bold text-foreground">
                 {drawerState.mode === "create" ? "Add New FAQ" : "Edit FAQ"}
@@ -811,3 +811,4 @@ function FaqRowCard({
     </div>
   );
 }
+import "../admin2-ballet.css";

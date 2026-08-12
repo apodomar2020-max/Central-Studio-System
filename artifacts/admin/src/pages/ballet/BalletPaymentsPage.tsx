@@ -234,7 +234,7 @@ export default function BalletPaymentsPage() {
   const dash = <span className="italic text-muted-foreground">-</span>;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-ballet-page admin2-ballet-ledger space-y-6">
       <PageHeader title="Ballet Payments" description="Payment-cycle history and pending renewal management for Ballet applications" mode="stage" />
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -409,3 +409,4 @@ export default function BalletPaymentsPage() {
     </div>
   );
 }
+import "./admin2-ballet.css";

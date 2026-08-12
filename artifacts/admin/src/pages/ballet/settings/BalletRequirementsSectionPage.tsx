@@ -142,7 +142,7 @@ export default function BalletRequirementsSectionPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="admin2-ballet-page admin2-ballet-settings space-y-6 max-w-3xl">
       <div>
         <Button variant="ghost" size="sm" onClick={() => navigate("/ballet/settings/requirements")} className="-ml-2 text-muted-foreground">
           <ChevronLeft className="mr-1 h-4 w-4" /> Back to Program Requirements
@@ -311,3 +311,4 @@ export default function BalletRequirementsSectionPage() {
     </div>
   );
 }
+import "../admin2-ballet.css";
