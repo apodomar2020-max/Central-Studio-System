@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type PointerEvent } from "react";
+import { useState } from "react";
 import {
   useGetDashboard,
   useGetAnalytics,
@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
+import { AdminChartTooltip } from "@/components/admin/admin-chart-tooltip";
 import {
   Users,
   Ticket,
@@ -37,6 +38,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import "./admin2-dashboard.css";
 
 type StatCardProps = {
   title: string;
@@ -44,12 +46,6 @@ type StatCardProps = {
   icon: React.ElementType;
   accent: string;
   note?: string;
-};
-
-type InteractiveStyle = CSSProperties & {
-  "--pointer-x"?: string;
-  "--pointer-y"?: string;
-  "--card-accent"?: string;
 };
 
 const CYAN = "#00B6D7";
@@ -70,18 +66,11 @@ const STATUS_COLORS: Record<string, string> = {
   no_show: "#F97316",
 };
 
-function updateCardLight(event: PointerEvent<HTMLElement>) {
-  const bounds = event.currentTarget.getBoundingClientRect();
-  event.currentTarget.style.setProperty("--pointer-x", `${event.clientX - bounds.left}px`);
-  event.currentTarget.style.setProperty("--pointer-y", `${event.clientY - bounds.top}px`);
-}
-
 function StatCard({ title, value, icon: Icon, accent, note }: StatCardProps) {
   return (
     <article
-      className="premium-card group relative min-h-36 overflow-hidden rounded-lg border p-5"
-      style={{ "--card-accent": accent } as InteractiveStyle}
-      onPointerMove={updateCardLight}
+      className="admin2-stat-card group relative overflow-hidden"
+      style={{ "--admin2-stat-accent": accent } as React.CSSProperties}
     >
       <div className="relative z-10 flex h-full flex-col justify-between gap-5">
         <div className="flex items-start justify-between gap-3">
@@ -94,7 +83,7 @@ function StatCard({ title, value, icon: Icon, accent, note }: StatCardProps) {
           </div>
         </div>
         <div>
-          <p className="text-3xl font-semibold text-foreground">
+          <p className="admin2-stat-value">
             {typeof value === "number" ? value.toLocaleString() : value}
           </p>
           {note && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{note}</p>}
@@ -106,7 +95,7 @@ function StatCard({ title, value, icon: Icon, accent, note }: StatCardProps) {
 
 function SkeletonCard() {
   return (
-    <div className="premium-card min-h-36 rounded-lg border p-5">
+    <div className="admin2-stat-card min-h-36 p-5">
       <div className="flex justify-between"><Skeleton className="h-4 w-24" /><Skeleton className="h-9 w-9 rounded-lg" /></div>
       <Skeleton className="mt-10 h-8 w-20" />
     </div>
@@ -115,7 +104,7 @@ function SkeletonCard() {
 
 function ChartCard({ title, eyebrow, children }: { title: string; eyebrow: string; children: React.ReactNode }) {
   return (
-    <article className="premium-panel rounded-lg border p-6 transition-transform duration-300 hover:-translate-y-0.5">
+    <article className="admin2-chart-card">
       <div className="mb-6">
         <p className="text-[10px] font-semibold uppercase text-primary">{eyebrow}</p>
         <h3 className="mt-1 text-base font-semibold text-foreground">{title}</h3>
@@ -208,20 +197,12 @@ export default function Dashboard() {
     { title: "Completed Partial Refunds", value: dashboard?.completedPartialRefunds ?? 0, icon: RotateCcw, accent: CYAN },
   ];
 
-  const tooltipStyle = {
-    background: "hsl(var(--popover))",
-    border: "1px solid hsl(var(--popover-border))",
-    borderRadius: "8px",
-    color: "hsl(var(--popover-foreground))",
-    boxShadow: "0 16px 40px rgba(0,0,0,.16)",
-    fontSize: "12px",
-  };
   const chartText = theme === "night" ? "#64748B" : MUTED;
   const chartGrid = theme === "night" ? "#E2E8F0" : "rgba(138,154,176,.12)";
 
   return (
-    <div className="dashboard-canvas space-y-8 pb-12 sm:space-y-12">
-      <header className="flex flex-col gap-5 border-b border-border/70 pb-7 sm:flex-row sm:items-start sm:justify-between">
+    <div className="dashboard-canvas admin2-dashboard">
+      <header className="admin2-dashboard-intro">
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold text-foreground sm:text-3xl">Operations Dashboard</h1>
@@ -237,7 +218,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <section className="space-y-5">
+      <section className="admin2-dashboard-section admin2-live-section">
         <SectionHeader title="Live Today" description="Cairo-day operational activity." />
         <div className="grid gap-4 sm:grid-cols-3">
             {isLoading ? [...Array(3)].map((_, index) => <SkeletonCard key={index} />) : [
@@ -248,28 +229,28 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section className="admin2-dashboard-section admin2-light-section">
         <SectionHeader title="Ballet Cancellation & Refunds" description="Enrollment lifecycle and refund-ledger workflow indicators." />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {isLoading ? [...Array(6)].map((_, index) => <SkeletonCard key={index} />) : balletLifecycleMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section className="admin2-dashboard-section admin2-light-section">
         <SectionHeader title="Studio Overview" description="The people and programming keeping the studio moving." />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {isLoading ? [...Array(5)].map((_, index) => <SkeletonCard key={index} />) : studioOverview.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section className="admin2-dashboard-section admin2-dark-section">
         <SectionHeader title="Booking Performance" description="Live lifecycle and payment workload, separate from date-ranged reporting." />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {isLoading ? [...Array(6)].map((_, index) => <SkeletonCard key={index} />) : bookingMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section className="admin2-dashboard-section admin2-pulse-section">
         <SectionHeader title="Operational Pulse" description="Booking mix and attendance movement at a glance." />
         <div className="grid gap-6 xl:grid-cols-[.85fr_1.45fr]">
           <ChartCard title="Bookings by Status" eyebrow="Lifecycle">
@@ -283,7 +264,7 @@ export default function Dashboard() {
                   <Pie data={bookingChartData} cx="50%" cy="45%" innerRadius={65} outerRadius={98} paddingAngle={4} dataKey="value" stroke="none">
                     {bookingChartData.map((entry, index) => <Cell key={index} fill={entry.fill} />)}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
+                  <Tooltip content={<AdminChartTooltip />} />
                   <Legend verticalAlign="bottom" iconType="circle" iconSize={8} formatter={(value) => <span style={{ color: chartText, fontSize: 11 }}>{value}</span>} />
                 </PieChart>
               </ResponsiveContainer>
@@ -310,7 +291,7 @@ export default function Dashboard() {
                   <CartesianGrid vertical={false} stroke={chartGrid} />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: chartText, fontSize: 11 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: chartText, fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: theme === "night" ? "rgba(15,23,42,.04)" : "rgba(255,255,255,.03)" }} />
+                  <Tooltip content={<AdminChartTooltip />} cursor={{ fill: theme === "night" ? "rgba(15,23,42,.04)" : "rgba(255,255,255,.03)" }} />
                   <Bar dataKey="count" radius={[7, 7, 2, 2]} fill={CYAN} />
                 </BarChart>
               </ResponsiveContainer>
@@ -319,7 +300,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section className="admin2-dashboard-section admin2-light-section">
         <SectionHeader title="Attendance & Packages" description="Current capacity, package activity, and operational exceptions." />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {isLoading ? [...Array(5)].map((_, index) => <SkeletonCard key={index} />) : operationsMetrics.map((metric) => <StatCard key={metric.title} {...metric} />)}

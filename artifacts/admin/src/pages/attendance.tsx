@@ -26,6 +26,8 @@ import {
 import { UnifiedAttendanceDialog } from "@/components/unified-attendance-dialog";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { TablePagination } from "@/components/shared/table-pagination";
+import { cn } from "@/lib/utils";
+import "./admin2-attendance.css";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
@@ -66,14 +68,14 @@ function StatusBadge({ status }: { status?: string | null }) {
   const Icon = cfg.icon;
   return (
     <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border"
+      className="admin2-status-badge inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border"
       style={{
         backgroundColor: `${cfg.color}15`,
         borderColor: `${cfg.color}30`,
         color: cfg.color,
       }}
     >
-      <Icon className="h-3 w-3" />
+      <Icon />
       {cfg.label}
     </span>
   );
@@ -251,9 +253,9 @@ export default function AttendancePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-attendance">
       {/* ── Page Header ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="admin2-attendance-intro flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Attendance & Check-In
@@ -268,7 +270,7 @@ export default function AttendancePage() {
           <button
             onClick={() => setGatewayOpen(true)}
             data-testid="button-scan-qr"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:opacity-90 active:scale-[0.99] shrink-0 self-start"
+            className="admin2-attendance-primary flex items-center gap-2 px-4 py-2.5 text-sm font-semibold shrink-0 self-start"
             style={{ background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }}
           >
             <QrCode className="h-4 w-4" />
@@ -290,12 +292,12 @@ export default function AttendancePage() {
       )}
 
       {/* ── Main Two-Column Workspace ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="admin2-attendance-workspace grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* ── Left Column (~42% width, col-span-5) ── */}
-        <div className="col-span-12 lg:col-span-5 space-y-6">
+        <div className="admin2-attendance-side col-span-12 lg:col-span-5 space-y-4">
           {/* Card 1: Student Check-In */}
           {canManualCheckIn && (
-            <div className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm space-y-5">
+            <div className="admin2-checkin-panel space-y-5">
               <div className="space-y-1">
                 <div className="flex items-center gap-2.5">
                   <div
@@ -387,7 +389,7 @@ export default function AttendancePage() {
                           <button
                             key={s}
                             onClick={() => setCheckInStatus(s)}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-xs font-semibold transition-all"
+                            className={cn("admin2-checkin-status flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-xs font-semibold transition-all", checkInStatus === s && "is-selected")}
                             style={
                               checkInStatus === s
                                 ? {
@@ -402,7 +404,7 @@ export default function AttendancePage() {
                                   }
                             }
                           >
-                            <cfg.icon className="h-3.5 w-3.5" />
+                            <cfg.icon />
                             {cfg.label}
                           </button>
                         );
@@ -584,7 +586,7 @@ export default function AttendancePage() {
           )}
 
           {/* Card 2: Attendance Overview */}
-          <div className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm space-y-6">
+          <div className="admin2-attendance-overview space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div
@@ -733,9 +735,9 @@ export default function AttendancePage() {
         </div>
 
         {/* ── Right Column (~58% width, col-span-7) ── */}
-        <div className="col-span-12 lg:col-span-7 flex flex-col">
+        <div className="admin2-attendance-ledger-column col-span-12 lg:col-span-7 flex flex-col">
           <div
-            className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm flex flex-col justify-between h-full min-h-[720px]"
+            className="admin2-attendance-ledger flex flex-col justify-between h-full min-h-[720px]"
           >
             <div>
               <div
@@ -754,7 +756,7 @@ export default function AttendancePage() {
                     <button
                       key={f}
                       onClick={() => setStatusFilter(f)}
-                      className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
+                      className={cn("admin2-attendance-filter px-3 py-1 rounded-lg text-xs font-medium transition-all", statusFilter === f && "is-selected")}
                       style={
                         statusFilter === f
                           ? { background: STUDIO_CYAN, color: "hsl(var(--primary-foreground))" }
@@ -803,7 +805,7 @@ export default function AttendancePage() {
                       filteredAttendance.map((record) => (
                         <tr
                           key={record.id}
-                          className="transition-colors hover:bg-muted/40"
+                          className="admin2-attendance-row"
                           style={{ borderTop: `1px solid ${BORDER_SUBTLE}` }}
                         >
                           <td className="px-4 py-3">
