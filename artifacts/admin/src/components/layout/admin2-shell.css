@@ -10,11 +10,14 @@
 :root.night{--admin2-canvas-deep:#e7edef;--admin2-canvas:#f3f6f7;--admin2-surface:#fff;--admin2-surface-elevated:#f7f9fa;--admin2-surface-raised:#e7edef;--admin2-surface-sunken:#dde5e7;--admin2-text:#122126;--admin2-text-secondary:#465a62;--admin2-text-muted:#718087;--admin2-border-subtle:rgba(16,38,46,.09);--admin2-border-strong:rgba(16,38,46,.16)}
 .admin-shell{background:var(--admin2-canvas-deep)!important}.admin2-main{background:radial-gradient(circle at 24% 0%,rgba(0,182,215,.075),transparent 35%),var(--admin2-canvas-deep)!important}.admin2-page-content{width:100%;padding:24px 28px 56px}@media(min-width:1440px){.admin2-page-content{padding-inline:36px}}
 .admin2-rail{position:relative;z-index:40;display:flex;width:64px;height:100%;flex:0 0 64px;flex-direction:column;align-items:center;border-right:1px solid var(--admin2-border-subtle);background:linear-gradient(180deg,var(--admin2-surface),var(--admin2-canvas-deep));box-shadow:12px 0 38px rgba(0,0,0,.12)}
-.admin2-rail-brand{display:grid;width:40px;height:40px;flex:0 0 40px;margin-top:16px;place-items:center;border:1px solid rgba(0,182,215,.3);border-radius:14px;color:#88dceb;background:rgba(0,182,215,.07);box-shadow:0 12px 28px rgba(0,0,0,.2)}.admin2-rail-brand svg{width:var(--admin2-icon-prominent);height:var(--admin2-icon-prominent)}
-/* Official logo in the rail's brand slot — width-capped (not height, since
-   the box is a fixed 40px square and the wordmark is wider than tall),
-   aspect ratio preserved, no stretching. */
-.admin2-rail-brand-logo{width:26px;height:auto;object-fit:contain}
+/* Production refinement: the logo now lives only here (removed from the
+   top header — see top-bar.tsx), so it needed more presence: no box/
+   border/background/card wrapper, sitting directly on the rail's own
+   background, sized up slightly (26px→34px) from when it shared visual
+   weight with the topbar copy. Width-capped, not height — the wordmark is
+   wider than tall — so aspect ratio is preserved, never stretched. */
+.admin2-rail-brand{display:flex;width:100%;flex:0 0 auto;justify-content:center;margin:20px 0 16px}
+.admin2-rail-brand-logo{width:34px;height:auto;object-fit:contain}
 .admin2-rail-nav{display:flex;flex:1;flex-direction:column;justify-content:center;gap:7px}.admin2-rail-button{position:relative;display:grid;width:40px;height:40px;place-items:center;border:1px solid transparent;border-radius:13px;color:var(--admin2-text-muted);background:transparent;cursor:pointer;transition:color var(--admin2-motion-normal) var(--admin2-ease),background var(--admin2-motion-normal) var(--admin2-ease),border-color var(--admin2-motion-normal) var(--admin2-ease),transform var(--admin2-motion-fast) var(--admin2-ease)}.admin2-rail-button svg{width:var(--admin2-icon-utility);height:var(--admin2-icon-utility)}.admin2-rail-button:hover{color:var(--admin2-text);border-color:var(--admin2-border-subtle);background:rgba(255,255,255,.04);transform:translateY(-1px)}.admin2-rail-button:active{transform:scale(.97)}.admin2-rail-button.is-active{color:#8cdeec;border-color:rgba(0,182,215,.2);background:rgba(0,182,215,.085)}.admin2-rail-indicator{position:absolute;top:10px;bottom:10px;left:-7px;width:2px;border-radius:999px;background:transparent;transition:background var(--admin2-motion-normal),box-shadow var(--admin2-motion-normal)}.admin2-rail-button.is-active .admin2-rail-indicator{background:var(--admin2-cyan);box-shadow:0 0 10px rgba(0,182,215,.3)}.admin2-rail-version{margin-bottom:15px;color:#405158;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em}
 .admin2-topbar{position:relative;z-index:30;flex:0 0 auto;border-bottom:1px solid var(--admin2-border-subtle);background:color-mix(in srgb,var(--admin2-canvas-deep) 94%,transparent);backdrop-filter:blur(18px)}.admin2-globalbar{display:grid;min-height:64px;grid-template-columns:max-content minmax(260px,1fr) max-content;align-items:center;gap:18px;padding:9px 24px}.admin2-global-brand{display:flex;min-width:175px;align-items:center;gap:10px}.admin2-global-brand>svg{width:var(--admin2-icon-operational);height:var(--admin2-icon-operational);color:#75d5e6}.admin2-global-brand>span{display:grid}.admin2-global-brand strong{color:var(--admin2-text);font-size:13px}.admin2-global-brand small{margin-top:1px;color:var(--admin2-text-muted);font-size:9px}
 .admin2-context-nav{display:flex;min-width:0;width:max-content;max-width:100%;justify-self:center;align-items:center;gap:3px;padding:4px;border:1px solid var(--admin2-border-subtle);border-radius:var(--admin2-radius-pill);background:color-mix(in srgb,var(--admin2-surface-elevated) 92%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.18)}.admin2-context-label{display:inline-flex;min-height:34px;flex:0 0 auto;align-items:center;gap:7px;padding:0 12px;border-radius:var(--admin2-radius-pill);color:var(--admin2-text-secondary);background:var(--admin2-surface-raised);font-size:11px;font-weight:750}.admin2-context-label svg{width:var(--admin2-icon-standard);height:var(--admin2-icon-standard);color:#82d9e8}.admin2-context-track{display:flex;min-width:0;max-width:min(760px,55vw);overflow-x:auto;scrollbar-width:none;scroll-behavior:smooth}.admin2-context-track::-webkit-scrollbar{display:none}.admin2-context-link{position:relative;display:inline-flex;min-height:34px;flex:0 0 auto;align-items:center;padding:0 12px;border-radius:var(--admin2-radius-pill);color:#809097;font-size:11px;font-weight:650;white-space:nowrap;transition:color var(--admin2-motion-normal),background var(--admin2-motion-normal),transform var(--admin2-motion-fast)}.admin2-context-link:hover{color:var(--admin2-text);background:rgba(255,255,255,.045);transform:translateY(-1px)}.admin2-context-link.is-active{color:#061014;background:var(--admin2-cyan);box-shadow:0 7px 18px rgba(0,182,215,.16)}
@@ -52,15 +55,14 @@
 .admin2-context-module:focus-visible{outline:2px solid var(--admin2-cyan);outline-offset:2px}
 @media(max-width:700px){.admin2-context-nav{width:fit-content;max-width:100%;justify-self:center}.admin2-context-track{max-width:calc(100vw - 102px)}}
 
-/* Production refinement: logo made more visible (28px→34px, still aspect-
-   preserved/height-only per the brand-size rule) and the breadcrumb — now
-   living beside the logo instead of above the Page Title — truncates with
-   an ellipsis so a deep route (Ballet / Applications / Application Detail)
-   can never push into the contextual nav's flexible center column. Same
-   selector shape (.admin2-global-brand .x) and same source position as the
-   `>span{display:grid}` rule above, so this reliably wins the cascade
-   regardless of admin2-operations.css's load order relative to this file. */
-.admin2-brand-logo{height:34px}
+/* Production refinement: the breadcrumb — living in the top header's brand
+   area (the logo now lives only in the sidebar rail, see .admin2-rail-
+   brand below) — truncates with an ellipsis so a deep route (Ballet /
+   Applications / Application Detail) can never push into the contextual
+   nav's flexible center column. Same selector shape (.admin2-global-brand
+   .x) and same source position as the `>span{display:grid}` rule above,
+   so this reliably wins the cascade regardless of admin2-operations.css's
+   load order relative to this file. */
 .admin2-global-brand .admin2-brand-breadcrumb{display:block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--admin2-text-secondary);font-size:11px;font-weight:650;letter-spacing:.02em}
 @media(max-width:1440px){.admin2-global-brand .admin2-brand-breadcrumb{max-width:140px}}
 /* .admin2-brand-breadcrumb's own specificity (2 classes) outranks the
@@ -68,10 +70,3 @@
    width, so it needs its own same-specificity override to actually hide
    below 1180px instead of silently winning every media query. */
 @media(max-width:1180px){.admin2-global-brand .admin2-brand-breadcrumb{display:none}}
-
-/* Production polish hotfix: official Central Studio wordmark in the primary
-   shell brand slot, replacing the generic Wave/Pulse icon. Compact and
-   aspect-ratio-preserving — constrained height only, no stretching, no
-   material increase to the topbar's existing row height. No motion. */
-.admin2-brand-logo{display:block;height:28px;width:auto;max-width:130px;object-fit:contain}
-@media(max-width:700px){.admin2-brand-logo{height:24px}}

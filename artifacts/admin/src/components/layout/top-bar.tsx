@@ -167,18 +167,14 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
     <div className="admin2-globalbar">
       <div className="admin2-global-brand">
         {onOpenMobileNav && <Button variant="ghost" size="icon" onClick={onOpenMobileNav} aria-label="Open navigation menu" data-testid="topbar-mobile-menu" className="admin2-utility-button lg:hidden"><Menu /></Button>}
-        {/* Production refinement: official Central Studio wordmark replaces
-            the generic Wave/Pulse icon (no "Admin 2.0" text beside it — the
-            logo is the identity now). The page breadcrumb moves in beside
-            the logo, reusing the exact same meta.breadcrumbs the page title
-            used to render above itself — same canonical nav-config
-            resolution (resolvePageMeta), not a second breadcrumb source —
-            so it no longer repeats above the title. */}
-        <img
-          src={`${import.meta.env.BASE_URL}${isDark ? "logo-central-white.png" : "logo-central-studio.png"}`}
-          alt="Central Studio"
-          className="admin2-brand-logo"
-        />
+        {/* Production refinement: the official logo now lives only in the
+            sidebar rail — having it here too duplicated the brand mark on
+            screen. The breadcrumb stays (still the only functional brand-
+            area element in the top header), reusing the exact same
+            meta.breadcrumbs the page title used to render above itself —
+            same canonical nav-config resolution (resolvePageMeta), not a
+            second breadcrumb source — so it still doesn't repeat above the
+            title. */}
         <span className="admin2-brand-breadcrumb" title={meta.breadcrumbs.join(" / ")}>{meta.breadcrumbs.join(" / ")}</span>
       </div>
 
