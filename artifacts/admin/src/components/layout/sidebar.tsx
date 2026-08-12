@@ -22,7 +22,7 @@
  */
 import { Link, useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronsLeft, ChevronsRight, LogOut, type LucideIcon } from "lucide-react";
+import { Activity, ChevronDown, LogOut, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { allows } from "@/lib/permissions";
@@ -31,14 +31,15 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import {
   NAV_TREE,
+  filterVisibleNavTree,
+  firstVisibleNavLink,
   isNavLinkActive,
+  navNodeContainsLocation,
   type NavGroup,
   type NavLink,
   type NavNode,
 } from "@/components/layout/nav-config";
-
-const COLLAPSED_STORAGE_KEY = "central-admin-sidebar-collapsed";
-const ACCENT = "#00B6D7";
+import "./admin2-shell.css";
 
 // ─── Tree helpers ─────────────────────────────────────────────────────────────
 
@@ -46,20 +47,12 @@ type Can = (module: string, action: string) => boolean;
 
 /** Permission filter: hide forbidden links; drop groups left with no children. */
 function filterVisible(nodes: NavNode[], can: Can): NavNode[] {
-  return nodes.flatMap<NavNode>((node) => {
-    if (node.kind === "link") return allows(can, node.perm) ? [node] : [];
-    const children = filterVisible(node.children, can);
-    return children.length > 0 ? [{ ...node, children }] : [];
-  });
+  return filterVisibleNavTree(nodes, can, allows);
 }
 
 /** True if any (non coming-soon) descendant link matches the location. */
 function containsActive(group: NavGroup, location: string): boolean {
-  return group.children.some((child) =>
-    child.kind === "group"
-      ? containsActive(child, location)
-      : !child.comingSoon && isNavLinkActive(child, location),
-  );
+  return navNodeContainsLocation(group, location);
 }
 
 // ─── Leaf link ────────────────────────────────────────────────────────────────
@@ -393,110 +386,48 @@ function findGroupByPath(nodes: NavNode[], path: string): NavGroup | null {
 // ─── Sidebar shell ────────────────────────────────────────────────────────────
 
 export function Sidebar({ className }: { className?: string } = {}) {
-  const [location] = useLocation();
-  const { user, logout, can } = useAdminAuth();
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(COLLAPSED_STORAGE_KEY) === "1",
-  );
-  // Group to force-open when expanding out of collapsed mode via a group icon.
-  const [pendingGroup, setPendingGroup] = useState<string | null>(null);
-
-  useEffect(() => {
-    localStorage.setItem(COLLAPSED_STORAGE_KEY, collapsed ? "1" : "0");
-  }, [collapsed]);
-
+  const [location, navigate] = useLocation();
+  const { can } = useAdminAuth();
   const visibleTree = filterVisible(NAV_TREE, can);
+  const railNodes = visibleTree.filter((node) => !(node.kind === "link" && node.href === "/attendance"));
 
   return (
-    <div
+    <aside
       className={cn(
-        "flex h-full flex-col border-r border-sidebar-border bg-sidebar shadow-[8px_0_28px_rgba(0,0,0,.06)] transition-[width] duration-200",
-        collapsed ? "w-16" : "w-60",
+        "admin2-rail",
         className,
       )}
       data-testid="sidebar"
-      data-collapsed={collapsed ? "true" : "false"}
+      data-collapsed="true"
+      aria-label="Central Studio modules"
     >
-      {/* Logo */}
-      <div
-        className={cn(
-          "flex h-20 items-center border-b border-sidebar-border",
-          collapsed ? "justify-center px-2" : "px-4",
-        )}
-      >
-        <img
-          src={`${import.meta.env.BASE_URL}logo-central-white.png`}
-          alt="Central Studio"
-          className={cn(
-            "w-auto rounded-md bg-[#071014]",
-            collapsed ? "h-9 px-1" : "h-14 px-2",
-          )}
-        />
-      </div>
-
-      {/* Nav */}
-      <div className="flex-1 overflow-y-auto py-3">
-        {collapsed ? (
-          <CollapsedNav
-            nodes={visibleTree}
-            location={location}
-            onExpandGroup={(groupTitle) => {
-              setPendingGroup(groupTitle);
-              setCollapsed(false);
-            }}
-          />
-        ) : (
-          <SidebarNav
-            forceOpenGroup={pendingGroup}
-            onForceOpenHandled={() => setPendingGroup(null)}
-          />
-        )}
-      </div>
-
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed((c) => !c)}
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        data-testid="sidebar-collapse-toggle"
-        className={cn(
-          "flex items-center gap-2 border-t border-sidebar-border py-2.5 text-[11px] text-muted-foreground/60 transition-colors hover:text-muted-foreground",
-          collapsed ? "justify-center" : "px-4",
-        )}
-      >
-        {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-        {!collapsed && "Collapse"}
-      </button>
-
-      {/* Footer — unchanged identity block (sign out also lives in TopBar menu) */}
-      <div className={cn("border-t border-sidebar-border py-3", collapsed ? "px-0" : "px-4")}>
-        {collapsed ? (
-          <Tooltip delayDuration={0}>
+      <Link href="/" className="admin2-rail-brand" aria-label="Central Studio Dashboard"><Activity /></Link>
+      <nav className="admin2-rail-nav" aria-label="Global modules">
+        {railNodes.map((node) => {
+          const Icon = (node.icon ?? ChevronDown) as LucideIcon;
+          const active = navNodeContainsLocation(node, location);
+          const target = firstVisibleNavLink(node);
+          const label = node.title;
+          return <Tooltip key={node.kind === "link" ? node.href : node.title} delayDuration={100}>
             <TooltipTrigger asChild>
               <button
-                onClick={logout}
-                aria-label="Sign out"
-                className="mx-auto flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground"
+                type="button"
+                className={cn("admin2-rail-button", active && "is-active")}
+                onClick={() => target && navigate(target.href)}
+                aria-label={label}
+                aria-current={active ? "page" : undefined}
+                disabled={!target}
               >
-                <LogOut className="h-4 w-4" />
+                <span className="admin2-rail-indicator" aria-hidden="true" />
+                <Icon />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Sign out</TooltipContent>
-          </Tooltip>
-        ) : (
-          <>
-            <p className="truncate text-[11px] text-muted-foreground">{user?.fullName ?? "Admin"}</p>
-            <p className="truncate text-[10px] text-muted-foreground/60">{user?.username}</p>
-            <button
-              onClick={logout}
-              className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-            >
-              <LogOut className="h-3 w-3" />
-              Sign out
-            </button>
-          </>
-        )}
-      </div>
-    </div>
+            <TooltipContent side="right">{label}</TooltipContent>
+          </Tooltip>;
+        })}
+      </nav>
+      <span className="admin2-rail-version">2.0</span>
+    </aside>
   );
 }
 
@@ -560,4 +491,3 @@ export function MobileSidebarDrawer({
     </Sheet>
   );
 }
-

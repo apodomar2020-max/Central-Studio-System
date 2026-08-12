@@ -92,6 +92,7 @@ export interface NavGroup {
 }
 
 export type NavNode = NavLink | NavGroup;
+export type NavPermissionChecker = (module: string, action: string) => boolean;
 
 const link = (
   title: string,
@@ -137,7 +138,9 @@ export const NAV_TREE: NavNode[] = [
     link("Packages", "/packages", [["packages", "view"]], CreditCard, {
       description: "Class passes and subscription packages",
     }),
-    group("Ballet", BallerinaIcon, [
+  ]),
+
+  group("Ballet", BallerinaIcon, [
       link("Applications", "/ballet/applications", [["ballet.applications", "view"]], ClipboardList, {
         pageTitle: "Ballet Applications",
         description: "Review and manage assessment applications",
@@ -189,7 +192,6 @@ export const NAV_TREE: NavNode[] = [
       link("General Settings", "/ballet/settings", [["ballet.settings", "view"]], Settings2, {
         description: "Ballet program configuration, requirements, and policies",
       }),
-    ]),
   ]),
 
   group("Marketing", Megaphone, [
@@ -304,6 +306,55 @@ function flattenLinks(nodes: NavNode[]): NavRouteEntry[] {
 }
 
 export const NAV_ROUTES: NavRouteEntry[] = flattenLinks(NAV_TREE);
+
+/** Permission-safe tree used by every production navigation surface. */
+export function filterVisibleNavTree(
+  nodes: NavNode[],
+  can: NavPermissionChecker,
+  allowsRequirement: (can: NavPermissionChecker, requirement: PermRequirement) => boolean,
+): NavNode[] {
+  return nodes.flatMap<NavNode>((node) => {
+    if (node.kind === "link") return allowsRequirement(can, node.perm) ? [node] : [];
+    const children = filterVisibleNavTree(node.children, can, allowsRequirement);
+    return children.length ? [{ ...node, children }] : [];
+  });
+}
+
+export function navNodeContainsLocation(node: NavNode, location: string): boolean {
+  return node.kind === "link"
+    ? !node.comingSoon && isNavLinkActive(node, location)
+    : node.children.some((child) => navNodeContainsLocation(child, location));
+}
+
+export function firstVisibleNavLink(node: NavNode): NavLink | null {
+  if (node.kind === "link") return node.comingSoon ? null : node;
+  for (const child of node.children) {
+    const link = firstVisibleNavLink(child);
+    if (link) return link;
+  }
+  return null;
+}
+
+/** Active root and nearest contextual group for the hybrid shell. */
+export function resolveNavigationContext(nodes: NavNode[], location: string): {
+  root: NavNode | null;
+  context: NavGroup | null;
+} {
+  function visit(currentNodes: NavNode[], groups: NavGroup[]): { root: NavNode; context: NavGroup | null } | null {
+    for (const node of currentNodes) {
+      if (!navNodeContainsLocation(node, location)) continue;
+      if (node.kind === "link") return { root: node, context: groups.at(-1) ?? null };
+      const nested = visit(node.children, [...groups, node]);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  const match = visit(nodes, []);
+  if (!match) return { root: null, context: null };
+  const root = nodes.find((node) => navNodeContainsLocation(node, location)) ?? match.root;
+  return { root, context: match.context };
+}
 
 // ─── Title + active-route helpers ─────────────────────────────────────────────
 
@@ -440,4 +491,3 @@ export function resolvePageMeta(location: string): PageMeta {
     ),
   };
 }
-

@@ -31,7 +31,9 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out",
+  // Motion System (§19): context-tier duration, premium ease, no bounce —
+  // was 300ms/500ms (asymmetric, past the context ceiling on open).
+  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-[cubic-bezier(.22,1,.36,1)] data-[state=closed]:duration-200 data-[state=open]:duration-250 data-[state=open]:animate-in data-[state=closed]:animate-out",
   {
     variants: {
       side: {
@@ -60,6 +62,7 @@ const SheetContent = React.forwardRef<
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
+      data-admin2-overlay="sheet"
       ref={ref}
       className={cn(sheetVariants({ side }), className)}
       {...props}
@@ -93,6 +96,7 @@ const SheetFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
+    data-admin2-dialog-footer
     className={cn(
       "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
       className

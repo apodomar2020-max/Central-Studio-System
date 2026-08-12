@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { lazy, Suspense, useState } from "react";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter, setAdminTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
@@ -12,6 +12,7 @@ import { ADMIN_TOKEN_STORAGE_KEY, AdminAuthProvider, useAdminAuth } from "@/cont
 import { AdminThemeProvider } from "@/contexts/AdminThemeContext";
 import { RouteGuard, type PermRequirement, type PermRequirementMode } from "@/lib/permissions";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { AdminConfirmProvider } from "@/components/admin/admin-confirm";
 
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -74,6 +75,7 @@ import {
   FinancePackagesPage,
   FinanceRefundsPage,
 } from "@/pages/finance/FinanceSourcePages";
+import "@/components/admin/admin2-system.css";
 
 // Wire the API client to the backend.
 if (import.meta.env.VITE_API_URL) {
@@ -92,8 +94,15 @@ function Layout({ children }: { children: React.ReactNode }) {
   // Phase 5A: mobile nav drawer state. Below lg the desktop sidebar is hidden
   // and the TopBar hamburger opens the same navigation inside a Sheet.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Motion System Foundation (page entrance, §10): the shell — sidebar,
+  // top-bar — must stay put across navigation; only the route content
+  // re-animates. Keying this inner wrapper by location remounts just the
+  // content on every navigation, replaying the .admin2-route-enter CSS
+  // animation without ever unmounting Layout/Sidebar/TopBar themselves.
+  const [location] = useLocation();
 
   return (
+    <AdminConfirmProvider>
     <div className="admin-shell flex h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-200">
       {/* Desktop sidebar — unchanged at lg+; hidden on mobile/tablet */}
       <Sidebar className="hidden lg:flex" />
@@ -103,13 +112,16 @@ function Layout({ children }: { children: React.ReactNode }) {
           is part of the flex flow (not fixed), so it can never overlap content. */}
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onOpenMobileNav={() => setMobileNavOpen(true)} />
-        <main className="relative flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(circle_at_24%_0%,rgba(0,182,215,.08),transparent_44%),radial-gradient(circle_at_82%_10%,rgba(138,92,255,.06),transparent_38%)] bg-no-repeat">
-          <div className="relative w-full max-w-none px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
-            {children}
+        <main className="admin2-main relative flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="admin2-page-content relative max-w-none">
+            <div key={location} className="admin2-route-enter">
+              {children}
+            </div>
           </div>
         </main>
       </div>
     </div>
+    </AdminConfirmProvider>
   );
 }
 

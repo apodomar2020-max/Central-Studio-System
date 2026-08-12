@@ -1,4 +1,3 @@
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 
@@ -35,16 +34,8 @@ export function PageHeader({
         <Button
           data-testid={addTestId}
           onClick={onAdd}
-          className={cn("gap-2 shrink-0")}
-          style={
-            mode === "stage"
-              ? {
-                  background: "#8A5CFF",
-                  color: "#fff",
-                  borderColor: "#8A5CFF44",
-                }
-              : undefined
-          }
+          className="gap-2 shrink-0"
+          data-program-accent={mode === "stage" ? "ballet" : undefined}
         >
           <Plus className="h-4 w-4" />
           {addLabel}

@@ -1,23 +1,19 @@
-/**
- * TopBar — single authoritative unified global header for Central Studio Admin.
- *
- * Visual Parity & Architecture:
- *  - Single global header spanning the main content area (height: ~76px)
- *  - Left: Glowing section/page icon, Page Title, Breadcrumbs, and Page Subtitle/Description
- *  - Right: Contained Refresh pill, premium Theme toggle switch, Settings link, and User Profile surface card
- */
-import { useState } from "react";
+import { useEffect, useRef, useState, type ElementType } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
+  ChevronLeft,
+  ChevronDown,
+  ChevronRight,
+  LayoutDashboard,
+  LogOut,
   Menu,
   Moon,
   RefreshCw,
+  ScanLine,
   Settings2,
   Sun,
-  LogOut,
-  ChevronDown,
-  LayoutDashboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,20 +26,54 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
-import { resolvePageMeta } from "@/components/layout/nav-config";
+import { allows } from "@/lib/permissions";
+import {
+  NAV_TREE,
+  filterVisibleNavTree,
+  firstVisibleNavLink,
+  navNodeContainsLocation,
+  resolveNavigationContext,
+  resolvePageMeta,
+  type NavNode,
+} from "@/components/layout/nav-config";
 
 function initials(name: string | undefined): string {
   if (!name) return "SA";
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part.charAt(0).toUpperCase())
-      .join("") || "SA"
-  );
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join("") || "SA";
+}
+
+function ContextualDestination({ node, location, activeRef }: { node: NavNode; location: string; activeRef: React.RefObject<HTMLAnchorElement | null> }) {
+  const link = firstVisibleNavLink(node);
+  if (!link) return null;
+  const selected = navNodeContainsLocation(node, location);
+  const DestinationIcon = node.icon ?? link.icon ?? LayoutDashboard;
+  return <Link
+    ref={selected ? activeRef : undefined}
+    href={link.href}
+    className={cn("admin2-context-link", selected && "is-active")}
+    aria-current={selected ? "page" : undefined}
+  >
+    <DestinationIcon aria-hidden="true" />
+    <span>{node.title}</span>
+  </Link>;
+}
+
+function ContextIcon({ icon: Icon }: { icon?: ElementType }) {
+  const Resolved = Icon ?? LayoutDashboard;
+  return <Resolved aria-hidden="true" />;
+}
+
+function ContextModuleIdentity({ label, icon, href }: { label: string; icon?: ElementType; href?: string }) {
+  const identity = <span className="admin2-context-label" aria-label={`${label} module`} role="img"><ContextIcon icon={icon} /></span>;
+  return <Tooltip delayDuration={100}>
+    <TooltipTrigger asChild>
+      {href ? <Link href={href} className="admin2-context-module" aria-label={`${label} module`}>{identity}</Link> : identity}
+    </TooltipTrigger>
+    <TooltipContent>{label}</TooltipContent>
+  </Tooltip>;
 }
 
 export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {}) {
@@ -52,15 +82,77 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
   const { theme, toggleTheme } = useAdminTheme();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const activeContextRef = useRef<HTMLAnchorElement>(null);
+  const contextTrackRef = useRef<HTMLDivElement>(null);
+  const [contextOverflow, setContextOverflow] = useState({ start: false, end: false });
 
   const meta = resolvePageMeta(location);
-  const IconComponent = meta.icon;
+  const PageIcon = meta.icon ?? LayoutDashboard;
+  const visibleTree = filterVisibleNavTree(NAV_TREE, can, allows);
+  const navigationContext = resolveNavigationContext(visibleTree, location);
+  const rootContext = navigationContext.root?.kind === "group" ? navigationContext.root : navigationContext.context;
+  const contextNodes = rootContext?.children ?? [];
+  const contextLabel = navigationContext.root?.title ?? rootContext?.title ?? meta.breadcrumbs[0] ?? "Dashboard";
+  const contextIcon = navigationContext.root?.icon ?? rootContext?.icon;
+  const contextHome = navigationContext.root ? firstVisibleNavLink(navigationContext.root)?.href : undefined;
 
   const canRefresh = can("dashboard", "refresh");
   const canThemeToggle = can("dashboard", "themeToggle");
   const canSettings = can("settings", "view");
-
+  const canAttendance = can("attendance", "view");
   const isDark = theme === "dark";
+
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    activeContextRef.current?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
+  }, [location]);
+
+  useEffect(() => {
+    const track = contextTrackRef.current;
+    if (!track) return;
+    const ensureActiveVisible = () => {
+      const active = activeContextRef.current;
+      if (!active) return;
+      const trackRect = track.getBoundingClientRect();
+      const activeRect = active.getBoundingClientRect();
+      if (activeRect.left < trackRect.left) {
+        track.scrollBy({ left: activeRect.left - trackRect.left - 8, behavior: "auto" });
+      } else if (activeRect.right > trackRect.right) {
+        track.scrollBy({ left: activeRect.right - trackRect.right + 8, behavior: "auto" });
+      }
+    };
+    const updateOverflow = () => {
+      ensureActiveVisible();
+      const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+      setContextOverflow({
+        start: track.scrollLeft > 2,
+        end: track.scrollLeft < maxScroll - 2,
+      });
+    };
+    const frame = requestAnimationFrame(updateOverflow);
+    track.addEventListener("scroll", updateOverflow, { passive: true });
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(track);
+    return () => {
+      track.removeEventListener("scroll", updateOverflow);
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [contextLabel, contextNodes.length, location]);
+
+  const scrollContext = (direction: -1 | 1) => {
+    const track = contextTrackRef.current;
+    if (!track) return;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    track.scrollBy({
+      left: direction * Math.max(180, Math.round(track.clientWidth * 0.72)),
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
+  };
 
   async function handleRefresh() {
     if (isRefreshing) return;
@@ -72,190 +164,63 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
     }
   }
 
-  return (
-    <header className="sticky top-0 z-30 flex h-[76px] shrink-0 items-center justify-between border-b border-border/70 bg-background/95 px-6 backdrop-blur-md shadow-sm transition-colors duration-200 sm:px-8">
-      {/* Left section: Mobile drawer trigger + Primary Page Identity Block */}
-      <div className="flex min-w-0 items-center gap-3.5">
-        {onOpenMobileNav && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onOpenMobileNav}
-            title="Open navigation menu"
-            aria-label="Open navigation menu"
-            data-testid="topbar-mobile-menu"
-            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground lg:hidden"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-        )}
-
-        {/* Primary Page Identity Block */}
-        <div className="flex items-center gap-3.5 min-w-0">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#00B6D7]/30 bg-[#00B6D7]/12 text-[#00B6D7] shadow-sm">
-            {IconComponent ? (
-              <IconComponent className="h-5 w-5" />
-            ) : (
-              <LayoutDashboard className="h-5 w-5" />
-            )}
-          </div>
-
-          <div className="flex flex-col min-w-0 justify-center">
-            <h1
-              className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg leading-tight"
-              data-testid="topbar-title"
-            >
-              {meta.title}
-            </h1>
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground/80 truncate leading-tight mt-0.5">
-              {meta.breadcrumbs.map((crumb, idx) => (
-                <span key={idx} className="flex items-center gap-1 shrink-0">
-                  {idx > 0 && <span className="text-muted-foreground/40">/</span>}
-                  <span
-                    className={
-                      idx === meta.breadcrumbs.length - 1
-                        ? "text-muted-foreground font-medium"
-                        : "text-muted-foreground/70"
-                    }
-                  >
-                    {crumb}
-                  </span>
-                </span>
-              ))}
-              {meta.description && (
-                <>
-                  <span className="text-muted-foreground/40 shrink-0">•</span>
-                  <span className="truncate text-muted-foreground/70">{meta.description}</span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+  return <header className="admin2-topbar">
+    <div className="admin2-globalbar">
+      <div className="admin2-global-brand">
+        {onOpenMobileNav && <Button variant="ghost" size="icon" onClick={onOpenMobileNav} aria-label="Open navigation menu" data-testid="topbar-mobile-menu" className="admin2-utility-button lg:hidden"><Menu /></Button>}
+        <Activity aria-hidden="true" />
+        <span><strong>Central Studio</strong><small>Admin 2.0</small></span>
       </div>
 
-      {/* Right section: Header Controls Cluster */}
-      <div className="ml-auto flex shrink-0 items-center gap-3">
-        {/* Contained Refresh Action */}
-        {canRefresh && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            title="Refresh current page data"
-            aria-label="Refresh current page data"
-            data-testid="topbar-refresh"
-            className="h-9 gap-2 rounded-xl border border-border/80 bg-muted/30 px-3.5 text-xs font-semibold text-foreground shadow-sm hover:border-[#00B6D7]/40 hover:bg-accent hover:text-foreground transition-all"
-          >
-            <RefreshCw
-              className={cn(
-                "h-4 w-4 text-muted-foreground",
-                isRefreshing && "animate-spin text-[#00B6D7]"
-              )}
-            />
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
-        )}
+      <nav key={contextLabel} className="admin2-context-nav" aria-label={`${contextLabel} navigation`}>
+        <ContextModuleIdentity label={contextLabel} icon={contextIcon} href={contextHome} />
+        <button
+          type="button"
+          className="admin2-context-scroll"
+          onClick={() => scrollContext(-1)}
+          aria-label={`Scroll ${contextLabel} navigation backward`}
+          disabled={!contextOverflow.start}
+          data-edge="start"
+        ><ChevronLeft /></button>
+        <div ref={contextTrackRef} className="admin2-context-track" tabIndex={0}>
+          {contextNodes.map((node) => <ContextualDestination key={node.kind === "link" ? node.href : node.title} node={node} location={location} activeRef={activeContextRef} />)}
+        </div>
+        <button
+          type="button"
+          className="admin2-context-scroll"
+          onClick={() => scrollContext(1)}
+          aria-label={`Scroll ${contextLabel} navigation forward`}
+          disabled={!contextOverflow.end}
+          data-edge="end"
+        ><ChevronRight /></button>
+      </nav>
 
-        {/* Premium Theme Switcher */}
-        {canThemeToggle && (
-          <div className="flex items-center gap-2.5 px-1.5 text-xs font-semibold text-muted-foreground">
-            <span className="hidden sm:inline text-xs font-medium text-muted-foreground/90">
-              Theme
-            </span>
-            <button
-              onClick={toggleTheme}
-              type="button"
-              data-testid="topbar-theme-toggle"
-              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border border-border/60 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-[#00B6D7]",
-                isDark ? "bg-[#00B6D7]/20 border-[#00B6D7]/40" : "bg-slate-300 border-slate-400/50"
-              )}
-            >
-              <span
-                className={cn(
-                  "pointer-events-none inline-flex h-5 w-5 transform items-center justify-center rounded-full text-black shadow-md ring-0 transition duration-200 ease-in-out",
-                  isDark ? "translate-x-5 bg-[#00B6D7]" : "translate-x-0 bg-amber-400"
-                )}
-              >
-                {isDark ? (
-                  <Sun className="h-3 w-3 text-slate-950 font-bold" />
-                ) : (
-                  <Moon className="h-3 w-3 text-slate-950 font-bold" />
-                )}
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* Settings Link if Permitted */}
-        {canSettings && (
-          <Link href="/settings">
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Settings"
-              aria-label="Settings"
-              data-testid="topbar-settings"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-            >
-              <Settings2 className="h-4.5 w-4.5" />
-            </Button>
-          </Link>
-        )}
-
-        <div className="hidden h-5 w-px bg-border/60 sm:block" aria-hidden="true" />
-
-        {/* User Profile Surface Card */}
+      <div className="admin2-utilities">
+        {canAttendance && <Link href="/attendance"><Button variant="ghost" size="icon" aria-label="Open Attendance" title="Attendance" className={cn("admin2-utility-button", location.startsWith("/attendance") && "is-active")}><ScanLine /></Button></Link>}
+        {canRefresh && <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={isRefreshing} aria-label="Refresh current page data" title="Refresh" data-testid="topbar-refresh" className="admin2-utility-button"><RefreshCw className={isRefreshing ? "animate-spin" : ""} /></Button>}
+        {canThemeToggle && <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"} title={isDark ? "Light theme" : "Dark theme"} data-testid="topbar-theme-toggle" className="admin2-utility-button">{isDark ? <Moon /> : <Sun />}</Button>}
+        {canSettings && <Link href="/settings"><Button variant="ghost" size="icon" aria-label="Settings" title="Settings" data-testid="topbar-settings" className={cn("admin2-utility-button", location.startsWith("/settings") && "is-active")}><Settings2 /></Button></Link>}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
-              className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-1.5 text-left shadow-sm transition-all hover:border-border hover:bg-accent/60 focus:outline-none"
-              data-testid="topbar-user-menu"
-            >
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarFallback className="bg-[#00B6D7]/20 text-[#00B6D7] text-xs font-bold border border-[#00B6D7]/30">
-                  {initials(user?.fullName)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="hidden flex-col sm:flex min-w-0 max-w-[140px]">
-                <span className="truncate text-xs font-bold text-foreground leading-tight">
-                  {user?.fullName ?? "Super Admin"}
-                </span>
-                <span className="truncate text-[11px] font-normal text-muted-foreground leading-tight mt-0.5">
-                  {user?.role?.name ?? (user?.isSuperAdmin ? "Administrator" : "User")}
-                </span>
-              </div>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0 ml-0.5" />
-            </button>
+            <button className="admin2-profile-button" aria-label="Open account menu" data-testid="topbar-user-menu"><Avatar><AvatarFallback>{initials(user?.fullName)}</AvatarFallback></Avatar><ChevronDown /></button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <p className="truncate text-sm font-medium">{user?.fullName ?? "Admin"}</p>
-              <p className="truncate text-xs font-normal text-muted-foreground">{user?.username}</p>
-            </DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-60">
+            <DropdownMenuLabel><p className="truncate text-sm font-medium">{user?.fullName ?? "Admin"}</p><p className="truncate text-xs font-normal text-muted-foreground">{user?.username}</p></DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {canSettings && (
-              <DropdownMenuItem asChild className="cursor-pointer">
-                <Link href="/settings">
-                  <Settings2 className="mr-2 h-4 w-4" />
-                  Settings
-                </Link>
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
-              onClick={logout}
-              data-testid="topbar-sign-out"
-              className="cursor-pointer text-destructive focus:text-destructive"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
+            {canSettings && <DropdownMenuItem asChild><Link href="/settings"><Settings2 className="mr-2 h-4 w-4" />Settings</Link></DropdownMenuItem>}
+            <DropdownMenuItem onClick={logout} data-testid="topbar-sign-out" className="text-destructive focus:text-destructive"><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </header>
-  );
+    </div>
+
+    <div className="admin2-pagebar">
+      <span className="admin2-page-icon"><PageIcon /></span>
+      <div className="admin2-page-copy">
+        <span>{meta.breadcrumbs.join(" / ")}</span>
+        <h1 data-testid="topbar-title">{location === "/" ? "Operations Dashboard" : meta.title}</h1>
+        {meta.description && <p>{meta.description}</p>}
+      </div>
+    </div>
+  </header>;
 }
