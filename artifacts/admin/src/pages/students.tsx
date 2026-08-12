@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   useListStudents,
-  useCreateStudent,
   useUpdateStudent,
   getListStudentsQueryKey,
 } from "@workspace/api-client-react";
@@ -21,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
-import { Edit, BadgeCheck, Plus } from "lucide-react";
+import { Edit, BadgeCheck } from "lucide-react";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -82,7 +81,6 @@ function paginationRange(currentPage: number, totalPages: number): number[] {
 
 export default function Students() {
   const { can } = useAdminAuth();
-  const canCreate = can("users", "create");
   const canEdit = can("students", "edit");
   // Student deletion removed from the admin UI (Phase 3). The backend
   // DELETE /students/:id endpoint is intentionally untouched.
@@ -105,7 +103,6 @@ export default function Students() {
   const startItem = total === 0 ? 0 : (currentPage - 1) * responsePageSize + 1;
   const endItem = total === 0 ? 0 : Math.min(currentPage * responsePageSize, total);
   const paginationPages = paginationRange(currentPage, totalPages);
-  const createStudent = useCreateStudent();
   const updateStudent = useUpdateStudent();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -120,26 +117,20 @@ export default function Students() {
     defaultValues: { name: "", email: "" },
   });
 
-  const openCreate = () => {
-    setEditing(null);
-    form.reset({ name: "", email: "", phone: "", notes: "" });
-    setOpen(true);
-  };
-
   const openEdit = (s: Student) => {
     setEditing(s);
     form.reset({ name: s.name, email: s.email, phone: s.phone ?? "", notes: s.notes ?? "" });
     setOpen(true);
   };
 
+  // Students are never created from the Admin UI (Phase: Add Student
+  // removed) — accounts originate from the mobile app signup flow. This
+  // dialog/form is Edit-only now, so `editing` is always set here.
   const onSubmit = (values: FormValues) => {
+    if (!editing) return;
     const parsed = formSchema.parse(values);
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey() }); setOpen(false); };
-    if (editing) {
-      updateStudent.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
-    } else {
-      createStudent.mutate({ data: parsed }, { onSuccess: invalidate });
-    }
+    updateStudent.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
   };
 
   return (
@@ -164,12 +155,9 @@ export default function Students() {
           className="admin2-users-search"
           data-testid="input-student-search"
         />
-        {canCreate && (
-          <Button onClick={openCreate} data-testid="button-add-student" className="gap-2 shrink-0">
-            <Plus className="h-4 w-4" />
-            Add Student
-          </Button>
-        )}
+        {/* Add Student intentionally removed (business rule): student
+            accounts originate from the mobile app signup flow, not manual
+            Admin creation. Not replaced with anything. */}
         <div className="admin2-users-rows">
           <span className="text-sm text-muted-foreground">Rows</span>
           <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value) as (typeof PAGE_SIZE_OPTIONS)[number])}>
@@ -319,7 +307,7 @@ export default function Students() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="admin2-ops-dialog">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Student" : "Add Student"}</DialogTitle>
+            <DialogTitle>Edit Student</DialogTitle>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -353,8 +341,8 @@ export default function Students() {
               )} />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button type="submit" data-testid="button-submit-student" disabled={createStudent.isPending || updateStudent.isPending}>
-                  {editing ? "Save Changes" : "Add Student"}
+                <Button type="submit" data-testid="button-submit-student" disabled={updateStudent.isPending}>
+                  Save Changes
                 </Button>
               </DialogFooter>
             </form>

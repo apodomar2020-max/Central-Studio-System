@@ -423,11 +423,17 @@ export default function Bookings() {
                   structured columns (badges, icons, actions) center-align for a
                   consistent visual rhythm — not mechanical, deliberate per
                   column type. */}
+              {/* Production refinement: Participant/Account Owner/Class/
+                  Schedule are readable content (names, titles, labels) —
+                  left-aligned. Scope/Booked/Booking Status/Payment
+                  Status/Actions are operational badges/buttons — centered.
+                  Not mechanical: the split follows what's actually in the
+                  cell, not "every other column". */}
               <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Participant</TableHead>
               <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Account Owner</TableHead>
               <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Scope</TableHead>
-              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Class</TableHead>
-              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Schedule</TableHead>
+              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Class</TableHead>
+              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Schedule</TableHead>
               <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Booked</TableHead>
               <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Booking Status</TableHead>
               <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Payment Status</TableHead>
@@ -497,8 +503,11 @@ export default function Bookings() {
                           fallback chain as the Dance Types admin table), tinted with
                           that dance type's own brand color when set — not a second,
                           Booking-specific icon system. */}
+                      {/* Production refinement: Class and Schedule are readable
+                          content (a title/label a person reads), not badges —
+                          left-aligned, matching Participant/Account Owner. */}
                       <TableCell className="py-3">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center gap-2">
                           <div
                             className={cn(
                               "flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border",
@@ -518,21 +527,25 @@ export default function Bookings() {
                               <span className="text-xs font-bold">{(classDanceType?.name ?? booking.classTitle ?? "?").charAt(0).toUpperCase()}</span>
                             )}
                           </div>
-                          <div className="min-w-0 text-center">
+                          <div className="min-w-0">
                             <div className="max-w-[140px] truncate font-semibold text-foreground" title={booking.classTitle ?? undefined}>{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
                             <div className="text-[11px] text-muted-foreground">Booking #{booking.id}</div>
                           </div>
                         </div>
                       </TableCell>
+                      {/* Schedule: label + recurrence badge sit on one line
+                          instead of stacking — the badge no longer forces a
+                          second row, so schedule rows stay the same height
+                          as every other row regardless of recurrence. */}
                       <TableCell className="py-3">
-                        <div className="flex items-start justify-center gap-2 text-foreground">
-                          <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0 text-center">
-                            <div className="max-w-[140px] truncate font-medium" title={booking.scheduleLabel ?? undefined}>{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
+                        <div className="flex min-w-0 items-center gap-2 text-foreground">
+                          <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <span className="max-w-[120px] truncate font-medium" title={booking.scheduleLabel ?? undefined}>{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</span>
                             {booking.scheduleType && (
-                              <div className="mt-1 inline-flex rounded-md bg-blue-500/15 px-2 py-1 text-xs font-medium text-blue-300">
+                              <span className="shrink-0 rounded-md bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
                                 {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
-                              </div>
+                              </span>
                             )}
                           </div>
                         </div>

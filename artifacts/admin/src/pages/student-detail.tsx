@@ -19,7 +19,6 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -334,20 +333,21 @@ export default function StudentDetailPage() {
 
   return (
     <div className="admin2-detail-page">
-      <Link href={listBackHref}>
-        <Button variant="ghost" size="sm" className="gap-1"><ArrowLeft className="h-4 w-4" /> Back to {isParent ? "Parents" : "Students"}</Button>
-      </Link>
-
-      <PageHeader
-        title={d.user.name}
-        description={isParent ? "Parent Profile · 360° View" : "Student Profile · 360° View"}
-        mode="studio"
-      >
+      {/* Production refinement: Back navigation and Export PDF used to be
+          two stacked rows (a bare Link above PageHeader's own right-
+          justified row) reading as two disconnected actions. PageHeader
+          never rendered title/description here anyway (TopBar's pagebar
+          already owns page identity) — so it added a wrapper for nothing.
+          One flex row, one intentional header area. */}
+      <div className="flex items-center justify-between gap-3">
+        <Link href={listBackHref}>
+          <Button variant="ghost" size="sm" className="gap-1"><ArrowLeft className="h-4 w-4" /> Back to {isParent ? "Parents" : "Students"}</Button>
+        </Link>
         <Button variant="outline" className="gap-2" onClick={handleExportPdf} disabled={isExportingPdf}>
           {isExportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           {isExportingPdf ? "Exporting..." : "Export PDF"}
         </Button>
-      </PageHeader>
+      </div>
       {exportPdfError && <div className="text-sm text-destructive">{exportPdfError}</div>}
 
       {/* ---------------------------------------------------------------- */}
