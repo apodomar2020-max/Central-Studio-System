@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ElementType } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   ChevronLeft,
   ChevronDown,
   ChevronRight,
@@ -168,8 +167,17 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
     <div className="admin2-globalbar">
       <div className="admin2-global-brand">
         {onOpenMobileNav && <Button variant="ghost" size="icon" onClick={onOpenMobileNav} aria-label="Open navigation menu" data-testid="topbar-mobile-menu" className="admin2-utility-button lg:hidden"><Menu /></Button>}
-        <Activity aria-hidden="true" />
-        <span><strong>Central Studio</strong><small>Admin 2.0</small></span>
+        {/* Production polish hotfix: official Central Studio wordmark replaces
+            the generic Wave/Pulse icon. The logo already renders "Central
+            Studio" as a wordmark, so the adjacent text is just "Admin 2.0" —
+            no duplicated brand text. Theme-aware: the white variant reads on
+            the dark shell, the black+cyan variant reads on the light shell. */}
+        <img
+          src={`${import.meta.env.BASE_URL}${isDark ? "logo-central-white.png" : "logo-central-studio.png"}`}
+          alt="Central Studio"
+          className="admin2-brand-logo"
+        />
+        <span><small>Admin 2.0</small></span>
       </div>
 
       <nav key={contextLabel} className="admin2-context-nav" aria-label={`${contextLabel} navigation`}>

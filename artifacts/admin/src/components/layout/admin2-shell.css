@@ -47,3 +47,10 @@
 .admin2-context-link{gap:7px}.admin2-context-link>svg{width:15px;height:15px;flex:0 0 15px;color:currentColor;opacity:.8}.admin2-context-link.is-active>svg{opacity:1}
 .admin2-context-module:focus-visible{outline:2px solid var(--admin2-cyan);outline-offset:2px}
 @media(max-width:700px){.admin2-context-nav{width:fit-content;max-width:100%;justify-self:center}.admin2-context-track{max-width:calc(100vw - 102px)}}
+
+/* Production polish hotfix: official Central Studio wordmark in the primary
+   shell brand slot, replacing the generic Wave/Pulse icon. Compact and
+   aspect-ratio-preserving — constrained height only, no stretching, no
+   material increase to the topbar's existing row height. No motion. */
+.admin2-brand-logo{display:block;height:28px;width:auto;max-width:130px;object-fit:contain}
+@media(max-width:700px){.admin2-brand-logo{height:24px}}
