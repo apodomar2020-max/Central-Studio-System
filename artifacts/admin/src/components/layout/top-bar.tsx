@@ -167,17 +167,19 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
     <div className="admin2-globalbar">
       <div className="admin2-global-brand">
         {onOpenMobileNav && <Button variant="ghost" size="icon" onClick={onOpenMobileNav} aria-label="Open navigation menu" data-testid="topbar-mobile-menu" className="admin2-utility-button lg:hidden"><Menu /></Button>}
-        {/* Production polish hotfix: official Central Studio wordmark replaces
-            the generic Wave/Pulse icon. The logo already renders "Central
-            Studio" as a wordmark, so the adjacent text is just "Admin 2.0" —
-            no duplicated brand text. Theme-aware: the white variant reads on
-            the dark shell, the black+cyan variant reads on the light shell. */}
+        {/* Production refinement: official Central Studio wordmark replaces
+            the generic Wave/Pulse icon (no "Admin 2.0" text beside it — the
+            logo is the identity now). The page breadcrumb moves in beside
+            the logo, reusing the exact same meta.breadcrumbs the page title
+            used to render above itself — same canonical nav-config
+            resolution (resolvePageMeta), not a second breadcrumb source —
+            so it no longer repeats above the title. */}
         <img
           src={`${import.meta.env.BASE_URL}${isDark ? "logo-central-white.png" : "logo-central-studio.png"}`}
           alt="Central Studio"
           className="admin2-brand-logo"
         />
-        <span><small>Admin 2.0</small></span>
+        <span className="admin2-brand-breadcrumb" title={meta.breadcrumbs.join(" / ")}>{meta.breadcrumbs.join(" / ")}</span>
       </div>
 
       <nav key={contextLabel} className="admin2-context-nav" aria-label={`${contextLabel} navigation`}>
@@ -225,7 +227,6 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav?: () => void } = {
     <div className="admin2-pagebar">
       <span className="admin2-page-icon"><PageIcon /></span>
       <div className="admin2-page-copy">
-        <span>{meta.breadcrumbs.join(" / ")}</span>
         <h1 data-testid="topbar-title">{location === "/" ? "Operations Dashboard" : meta.title}</h1>
         {meta.description && <p>{meta.description}</p>}
       </div>

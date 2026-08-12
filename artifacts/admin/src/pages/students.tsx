@@ -21,9 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
-import { Edit, BadgeCheck } from "lucide-react";
+import { Edit, BadgeCheck, Plus } from "lucide-react";
 import { Link } from "wouter";
-import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { UsersWorkspaceNav } from "@/components/admin/users-workspace-nav";
@@ -145,24 +144,33 @@ export default function Students() {
 
   return (
     <div className="admin2-ops-page admin2-students">
-      <PageHeader title="Students" description="Manage your community" mode="studio" addLabel="Add Student" addTestId="button-add-student" onAdd={canCreate ? openCreate : undefined} />
-
-      <UsersWorkspaceNav
-        items={[
-          ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
-          ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
-        ]}
-      />
-
-      <div className="admin2-command-bar sm:justify-between">
+      {/* Production refinement: Students/Parents switcher, search, Add
+          Student, and the Rows selector used to be three stacked sections
+          (PageHeader's own row, the pill nav's own row, then the command
+          bar). Composed into the one compact operational toolbar the owner
+          asked for, reusing the same .admin2-command-bar container Bookings
+          already uses for its multi-control row — no new architecture. */}
+      <div className="admin2-command-bar admin2-users-command">
+        <UsersWorkspaceNav
+          items={[
+            ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
+            ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
+          ]}
+        />
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search students by name, email, or phone"
-          className="max-w-md"
+          className="admin2-users-search"
           data-testid="input-student-search"
         />
-        <div className="flex items-center gap-2">
+        {canCreate && (
+          <Button onClick={openCreate} data-testid="button-add-student" className="gap-2 shrink-0">
+            <Plus className="h-4 w-4" />
+            Add Student
+          </Button>
+        )}
+        <div className="admin2-users-rows">
           <span className="text-sm text-muted-foreground">Rows</span>
           <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value) as (typeof PAGE_SIZE_OPTIONS)[number])}>
             <SelectTrigger className="w-24" data-testid="select-student-page-size">

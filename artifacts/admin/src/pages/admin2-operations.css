@@ -15,25 +15,22 @@
 .admin2-reports>.admin2-ops-local-summary{display:none}
 
 /* Bookings is one queue workspace: command surface, records, pagination. */
-.admin2-bookings{gap:12px}.admin2-bookings-command{display:grid;grid-template-columns:minmax(260px,1.25fr) auto auto auto;align-items:end;gap:10px;padding:12px}.admin2-bookings-search{position:relative;display:block;min-width:0}.admin2-bookings-search>svg{position:absolute;z-index:1;top:11px;left:12px;width:18px;height:18px;color:var(--admin2-text-muted);pointer-events:none}.admin2-bookings-search input{width:100%;max-width:none!important;padding-left:38px}.admin2-bookings-filter-group{display:grid;gap:5px}.admin2-bookings-filter-group>span{padding-left:4px;color:var(--admin2-text-muted);font-size:9px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.admin2-bookings-filter-group .admin2-filter-pills{flex-wrap:nowrap;gap:4px}.admin2-bookings-filter-group button{white-space:nowrap}.admin2-bookings-add{align-self:end}.admin2-bookings-deep-filter{grid-column:1/-1;display:flex;align-items:center;gap:6px;padding-top:2px}.admin2-bookings .admin2-queue-surface table{min-width:1420px}.admin2-bookings .admin2-queue-surface td{padding-block:10px!important}.admin2-booking-row-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;margin-left:auto}.admin2-booking-row-actions [data-size="compact"]{min-width:0}.admin2-booking-row-actions [data-variant="secondary"]{color:var(--admin2-success);border-color:color-mix(in srgb,var(--admin2-success) 35%,var(--admin2-border-subtle));background:color-mix(in srgb,var(--admin2-success) 8%,transparent)}.admin2-booking-row-actions [data-variant="destructive"]{box-shadow:none}.admin2-bookings .admin2-queue-pagination{margin-top:0}
+.admin2-bookings{gap:12px}.admin2-bookings-command{display:grid;grid-template-columns:minmax(260px,1.25fr) auto auto auto;align-items:end;gap:10px;padding:12px}.admin2-bookings-search{position:relative;display:block;min-width:0}.admin2-bookings-search>svg{position:absolute;z-index:1;top:11px;left:12px;width:18px;height:18px;color:var(--admin2-text-muted);pointer-events:none}.admin2-bookings-search input{width:100%;max-width:none!important;padding-left:38px}.admin2-bookings-filter-group{display:grid;gap:5px}.admin2-bookings-filter-group>span{padding-left:4px;color:var(--admin2-text-muted);font-size:9px;font-weight:760;letter-spacing:.08em;text-transform:uppercase}.admin2-bookings-filter-group .admin2-filter-pills{flex-wrap:nowrap;gap:4px}.admin2-bookings-filter-group button{white-space:nowrap}.admin2-bookings-add{align-self:end}.admin2-bookings-deep-filter{grid-column:1/-1;display:flex;align-items:center;gap:6px;padding-top:2px}.admin2-bookings .admin2-queue-surface td{padding-block:10px!important}.admin2-booking-row-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;margin:0 auto}.admin2-booking-row-actions [data-size="compact"]{min-width:0}.admin2-booking-row-actions [data-variant="secondary"]{color:var(--admin2-success);border-color:color-mix(in srgb,var(--admin2-success) 35%,var(--admin2-border-subtle));background:color-mix(in srgb,var(--admin2-success) 8%,transparent)}.admin2-booking-row-actions [data-variant="destructive"]{box-shadow:none}.admin2-bookings .admin2-queue-pagination{margin-top:0}
 @media(max-width:1180px){.admin2-bookings-command{grid-template-columns:minmax(0,1fr) auto}.admin2-bookings-search{grid-column:1}.admin2-bookings-add{grid-column:2;grid-row:1}.admin2-bookings-filter-group:first-of-type,.admin2-bookings-filter-group:last-of-type{grid-column:1/-1}.admin2-bookings-filter-group .admin2-filter-pills{overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.admin2-bookings-filter-group .admin2-filter-pills::-webkit-scrollbar{display:none}}
 @media(max-width:700px){.admin2-bookings-command{grid-template-columns:1fr}.admin2-bookings-search,.admin2-bookings-add,.admin2-bookings-filter-group:first-of-type,.admin2-bookings-filter-group:last-of-type{grid-column:1}.admin2-bookings-add{grid-row:auto;width:100%}}
-/* Production polish hotfix — root cause: table-layout:fixed with no explicit
-   `width` on the table (only `min-width`), so on any container wider than
-   the declared column-width sum, Chrome's fixed-layout algorithm stretches
-   EVERY column proportionally to fill it — including Actions, which was
-   still sized (210px) for the old 5-6-button layout. That inflated Actions
-   plus several content-sparse columns (Booked/Booking Status/Payment Status
-   badges) reading as one continuous dead zone before the now-compact
-   Actions controls. Fix: shrink Actions to its real content need (Edit +
-   Confirm + the "..." trigger, measured ~196px including cell padding —
-   200px keeps a small safety margin) and grow Participant/Account Owner/
-   Class/Schedule with the freed width, which also shrinks Actions' *share*
-   of the table (was 210/1348≈15.6%, now 200/1423≈14.1%) so it inflates
-   less at any width, not just at the one width it was tuned for. Booked/
-   Booking Status/Payment Status/Scope are untouched by design. */
-.admin2-bookings .admin2-queue-surface table{min-width:1423px;table-layout:fixed}.admin2-bookings .admin2-queue-surface th:nth-child(1){width:155px}.admin2-bookings .admin2-queue-surface th:nth-child(2){width:180px}.admin2-bookings .admin2-queue-surface th:nth-child(3){width:90px}.admin2-bookings .admin2-queue-surface th:nth-child(4){width:235px}.admin2-bookings .admin2-queue-surface th:nth-child(5){width:185px}.admin2-bookings .admin2-queue-surface th:nth-child(6){width:108px}.admin2-bookings .admin2-queue-surface th:nth-child(7){width:130px}.admin2-bookings .admin2-queue-surface th:nth-child(8){width:140px}.admin2-bookings .admin2-queue-surface th:nth-child(9){width:200px}.admin2-booking-row-actions{max-width:190px}
-@media(max-width:1300px){.admin2-bookings .admin2-queue-surface table{min-width:1200px}.admin2-bookings .admin2-queue-surface th:nth-child(1){width:140px}.admin2-bookings .admin2-queue-surface th:nth-child(2){width:155px}.admin2-bookings .admin2-queue-surface th:nth-child(3),.admin2-bookings .admin2-queue-surface td:nth-child(3){display:none}.admin2-bookings .admin2-queue-surface th:nth-child(4){width:210px}.admin2-bookings .admin2-queue-surface th:nth-child(5){width:160px}.admin2-bookings .admin2-queue-surface th:nth-child(6){width:95px}.admin2-bookings .admin2-queue-surface th:nth-child(7){width:115px}.admin2-bookings .admin2-queue-surface th:nth-child(8){width:125px}.admin2-bookings .admin2-queue-surface th:nth-child(9){width:200px}}
+/* Production refinement — the prior hotfix fixed the worst of the Actions
+   gap by re-tuning fixed per-column pixel widths, but that meant re-tuning
+   again every time row content changed (owner: "do not hardcode arbitrary
+   widths simply to match one screenshot"). Replaced with the browser's
+   automatic table layout: every column now sizes to its actual rendered
+   content. The identity columns (Participant/Account Owner/Class/Schedule)
+   are bounded by the truncation caps on their inner elements in
+   bookings.tsx (max-w-[...] + ellipsis), not a table-wide px budget — so a
+   short Actions cell (Edit + Confirm + "...") naturally stays exactly as
+   wide as its buttons, no oversized reservation left over from the old
+   multi-button layout. min-width is only a horizontal-scroll floor. */
+.admin2-bookings .admin2-queue-surface table{min-width:1180px}
+@media(max-width:1300px){.admin2-bookings .admin2-queue-surface th:nth-child(3),.admin2-bookings .admin2-queue-surface td:nth-child(3){display:none}.admin2-bookings .admin2-queue-surface table{min-width:1060px}}
 
 /* Users workspace local nav (Students/Parents) — same pill/cyan-active
  * language as .admin2-detail-tabs [role="tab"], but plain <Link>s (real
@@ -47,3 +44,13 @@
 .admin2-workspace-tab:focus-visible{outline:2px solid var(--admin2-cyan);outline-offset:2px}
 @media(max-width:1024px){.admin2-workspace-tabs{border-radius:18px}}
 @media(prefers-reduced-motion:reduce){.admin2-workspace-tab{transition-duration:.01ms!important;transform:none!important}.admin2-workspace-tab:hover{transform:none!important}}
+
+/* Production refinement: Students/Parents toolbar — switcher, search, Add,
+   Rows composed into one .admin2-command-bar row (same base container
+   Bookings already uses for its multi-control toolbar). Search grows to
+   fill the middle; Rows hugs the right edge. Base .admin2-command-bar
+   already collapses to a stacked column under 1024px. */
+.admin2-users-command .admin2-workspace-tabs{flex:0 0 auto}
+.admin2-users-search{flex:1 1 220px;min-width:180px;max-width:420px}
+.admin2-users-rows{display:flex;flex:0 0 auto;align-items:center;gap:8px;margin-left:auto}
+@media(max-width:1024px){.admin2-users-search{max-width:none}.admin2-users-rows{margin-left:0;justify-content:space-between}}

@@ -48,6 +48,23 @@
 .admin2-context-module:focus-visible{outline:2px solid var(--admin2-cyan);outline-offset:2px}
 @media(max-width:700px){.admin2-context-nav{width:fit-content;max-width:100%;justify-self:center}.admin2-context-track{max-width:calc(100vw - 102px)}}
 
+/* Production refinement: logo made more visible (28px→34px, still aspect-
+   preserved/height-only per the brand-size rule) and the breadcrumb — now
+   living beside the logo instead of above the Page Title — truncates with
+   an ellipsis so a deep route (Ballet / Applications / Application Detail)
+   can never push into the contextual nav's flexible center column. Same
+   selector shape (.admin2-global-brand .x) and same source position as the
+   `>span{display:grid}` rule above, so this reliably wins the cascade
+   regardless of admin2-operations.css's load order relative to this file. */
+.admin2-brand-logo{height:34px}
+.admin2-global-brand .admin2-brand-breadcrumb{display:block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--admin2-text-secondary);font-size:11px;font-weight:650;letter-spacing:.02em}
+@media(max-width:1440px){.admin2-global-brand .admin2-brand-breadcrumb{max-width:140px}}
+/* .admin2-brand-breadcrumb's own specificity (2 classes) outranks the
+   `.admin2-global-brand>span{display:none}` collapse rule above at any
+   width, so it needs its own same-specificity override to actually hide
+   below 1180px instead of silently winning every media query. */
+@media(max-width:1180px){.admin2-global-brand .admin2-brand-breadcrumb{display:none}}
+
 /* Production polish hotfix: official Central Studio wordmark in the primary
    shell brand slot, replacing the generic Wave/Pulse icon. Compact and
    aspect-ratio-preserving — constrained height only, no stretching, no

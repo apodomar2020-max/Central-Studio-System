@@ -6,7 +6,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useListStudents, useUpdateStudent, getListStudentsQueryKey } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { PageHeader } from "@/components/layout/page-header";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -151,24 +150,24 @@ export default function ParentsPage() {
 
   return (
     <div className="admin2-ops-page admin2-parents">
-      <PageHeader title="Parents" description="Manage parent accounts and children profiles" mode="studio" />
-
-      <UsersWorkspaceNav
-        items={[
-          ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
-          ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
-        ]}
-      />
-
-      <div className="admin2-command-bar sm:justify-between">
+      {/* Production refinement: same compact single-toolbar composition as
+          Students — see students.tsx for the full rationale. Parents has no
+          Add action, so the toolbar is switcher + search + rows. */}
+      <div className="admin2-command-bar admin2-users-command">
+        <UsersWorkspaceNav
+          items={[
+            ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
+            ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
+          ]}
+        />
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search parents by name, email, or phone"
-          className="max-w-md"
+          className="admin2-users-search"
           data-testid="input-parent-search"
         />
-        <div className="flex items-center gap-2">
+        <div className="admin2-users-rows">
           <span className="text-sm text-muted-foreground">Rows</span>
           <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value) as (typeof PAGE_SIZE_OPTIONS)[number])}>
             <SelectTrigger className="w-24" data-testid="select-parent-page-size">

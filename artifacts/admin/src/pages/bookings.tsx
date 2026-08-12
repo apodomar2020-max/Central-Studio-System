@@ -7,9 +7,15 @@ import {
   useListBookings,
   useCreateBooking,
   useUpdateBooking,
+  useListClasses,
   getListBookingsQueryKey,
 } from "@workspace/api-client-react";
 import type { UpdateBookingBody } from "@workspace/api-client-react";
+// Same canonical dance-type icon source Settings → Dance Types and Classes
+// already read from (GET /api/admin/settings/dance-types, shared query key
+// "admin-dance-types") — reused here to render the Class column's icon, not
+// a second mapping.
+import { API, adminFetch, type DanceType } from "./settings/types";
 
 // `confirmedPaymentMethod` is accepted by PATCH /bookings/:id on the server
 // (artifacts/api-server/src/routes/bookings.ts) but the generated
@@ -31,11 +37,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Check, Clock3, CreditCard, Edit, MoreHorizontal, PersonStanding, Plus, Search, UserRound, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarDays, Check, Clock3, CreditCard, Edit, MoreHorizontal, Plus, Search, UserRound, X } from "lucide-react";
 import { Link } from "wouter";
 import "./admin2-operations.css";
 
@@ -163,6 +171,25 @@ export default function Bookings() {
   // the Bookings page rather than Finance. Backend enforces the same
   // permission independently.
   const canConfirmPayments = can("finance", "paymentsConfirm");
+
+  // Class column icon: reuse the canonical dance-type icon (Settings →
+  // Dance Types, the same source Classes' own category picker reads from)
+  // instead of a generic/Booking-specific icon. Joined client-side —
+  // bookings only carry classId, not the dance type — so this is an
+  // Admin-frontend-only read, no API/DB change.
+  const { data: classesForIcons } = useListClasses();
+  const { data: danceTypesForIcons = [] } = useQuery<DanceType[]>({
+    queryKey: ["admin-dance-types"],
+    queryFn: () => adminFetch<DanceType[]>(`${API}/api/admin/settings/dance-types`, { method: "GET" }, token),
+  });
+  const classDanceTypeId = new Map((classesForIcons ?? []).map((c) => [c.id, c.danceTypeId ?? null]));
+  const danceTypeById = new Map(danceTypesForIcons.map((dt) => [dt.id, dt]));
+  const danceTypeForClass = (classId?: number | null): DanceType | undefined => {
+    if (classId == null) return undefined;
+    const danceTypeId = classDanceTypeId.get(classId);
+    return danceTypeId != null ? danceTypeById.get(danceTypeId) : undefined;
+  };
+
   const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("all");
   const [scopeFilter, setScopeFilter] = useState<(typeof SCOPE_FILTERS)[number]>("all");
   const [search, setSearch] = useState("");
@@ -391,15 +418,20 @@ export default function Bookings() {
         <Table>
           <TableHeader>
             <TableRow className="border-border bg-muted/30 hover:bg-muted/30">
+              {/* Production refinement: identity/content columns (Participant,
+                  Account Owner) stay left-aligned for readability; operational/
+                  structured columns (badges, icons, actions) center-align for a
+                  consistent visual rhythm — not mechanical, deliberate per
+                  column type. */}
               <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Participant</TableHead>
               <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Account Owner</TableHead>
-              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Scope</TableHead>
-              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Class</TableHead>
-              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Schedule</TableHead>
-              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Booked</TableHead>
-              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Booking Status</TableHead>
-              <TableHead className="h-10 text-xs font-semibold text-muted-foreground">Payment Status</TableHead>
-              <TableHead className="h-12 text-right text-xs font-semibold text-muted-foreground">Actions</TableHead>
+              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Scope</TableHead>
+              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Class</TableHead>
+              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Schedule</TableHead>
+              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Booked</TableHead>
+              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Booking Status</TableHead>
+              <TableHead className="h-10 text-center text-xs font-semibold text-muted-foreground">Payment Status</TableHead>
+              <TableHead className="h-12 text-center text-xs font-semibold text-muted-foreground">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -418,16 +450,22 @@ export default function Bookings() {
                 const paymentStatus = booking.paymentStatus ?? "not_required";
                 const BookingStatusIcon = bookingStatus === "pending" ? Clock3 : bookingStatus === "confirmed" || bookingStatus === "attended" || bookingStatus === "completed" ? Check : X;
                 const PaymentStatusIcon = paymentStatus === "pending_payment" ? Clock3 : paymentStatus === "paid" || paymentStatus === "not_required" ? Check : X;
+                const classDanceType = danceTypeForClass(booking.classId);
 
                 return (
                     <TableRow key={booking.id} data-testid={`row-booking-${booking.id}`} className="bg-card hover:bg-muted/20">
+                      {/* Production refinement: identity avatar uses the canonical
+                          Avatar/AvatarFallback pattern (same as Students) — no
+                          decorative gradient. Long values truncate with an
+                          ellipsis + native title tooltip instead of growing the
+                          row, per the owner's row-density direction. */}
                       <TableCell className="py-3">
-                        <div className="flex items-center gap-2 border-r border-border/70 pr-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-violet-300/40 bg-gradient-to-br from-violet-500/80 to-slate-700 text-xs font-semibold text-white shadow-[0_0_24px_rgba(139,92,246,0.18)]">
-                            {initialsFor(participantName(booking))}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-foreground">{participantName(booking)}</div>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8 shrink-0">
+                            <AvatarFallback className="text-xs font-semibold">{initialsFor(participantName(booking))}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <div className="max-w-[150px] truncate font-semibold text-foreground" title={participantName(booking)}>{participantName(booking)}</div>
                             <div className="text-[11px] text-muted-foreground">
                               {isChildBooking(booking) ? "Child attendee" : "Account holder"}
                             </div>
@@ -435,75 +473,96 @@ export default function Bookings() {
                         </div>
                       </TableCell>
                       <TableCell className="py-3">
-                        <div className="border-r border-border/70 pr-3">
+                        <div className="min-w-0">
                           {isChildBooking(booking) && booking.accountOwnerStudentId ? (
-                            <Link href={`/parents/${booking.accountOwnerStudentId}`} className="font-semibold text-foreground hover:text-[#00B6D7] hover:underline">
+                            <Link href={`/parents/${booking.accountOwnerStudentId}`} className="block max-w-[160px] truncate font-semibold text-foreground hover:text-[#00B6D7] hover:underline" title={accountOwnerName(booking)}>
                               {accountOwnerName(booking)}
                             </Link>
                           ) : (
-                            <div className="font-semibold text-foreground">{accountOwnerName(booking)}</div>
+                            <div className="max-w-[160px] truncate font-semibold text-foreground" title={accountOwnerName(booking)}>{accountOwnerName(booking)}</div>
                           )}
-                          <div className="max-w-[170px] break-words text-[11px] text-muted-foreground">{accountOwnerEmail(booking)}</div>
+                          <div className="max-w-[160px] truncate text-[11px] text-muted-foreground" title={accountOwnerEmail(booking)}>{accountOwnerEmail(booking)}</div>
                         </div>
                       </TableCell>
                       <TableCell className="py-3">
-                        <div className="flex border-r border-border/70 pr-3">
+                        <div className="flex justify-center">
                           <span className="inline-flex min-w-[72px] items-center justify-center gap-2 rounded-md border border-cyan-500/50 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold text-foreground">
                             <UserRound className="h-3.5 w-3.5 text-cyan-400" />
                             {scopeLabel(booking)}
                           </span>
                         </div>
                       </TableCell>
+                      {/* Class icon reuses the canonical dance-type icon (Settings →
+                          Dance Types: iconSvgUrl → iconUrl → first letter, same
+                          fallback chain as the Dance Types admin table), tinted with
+                          that dance type's own brand color when set — not a second,
+                          Booking-specific icon system. */}
                       <TableCell className="py-3">
-                        <div className="flex items-center gap-2 border-r border-border/70 pr-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/15 text-cyan-300 shadow-[0_0_24px_rgba(0,182,215,0.16)]">
-                            <PersonStanding className="h-4 w-4" />
+                        <div className="flex items-center justify-center gap-2">
+                          <div
+                            className={cn(
+                              "flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border",
+                              !classDanceType?.color && "border-cyan-400/30 bg-cyan-500/15 text-cyan-300",
+                            )}
+                            style={classDanceType?.color ? {
+                              borderColor: `${classDanceType.color}4D`,
+                              background: `${classDanceType.color}26`,
+                              color: classDanceType.color,
+                            } : undefined}
+                          >
+                            {classDanceType?.hasIconSvg && classDanceType.iconSvgUrl ? (
+                              <img src={classDanceType.iconSvgUrl} alt="" className="h-4 w-4" />
+                            ) : classDanceType?.iconUrl ? (
+                              <img src={classDanceType.iconUrl} alt="" className="h-4 w-4 object-contain" />
+                            ) : (
+                              <span className="text-xs font-bold">{(classDanceType?.name ?? booking.classTitle ?? "?").charAt(0).toUpperCase()}</span>
+                            )}
                           </div>
-                          <div>
-                            <div className="font-semibold text-foreground">{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
+                          <div className="min-w-0 text-center">
+                            <div className="max-w-[140px] truncate font-semibold text-foreground" title={booking.classTitle ?? undefined}>{booking.classTitle ?? `Class #${booking.classId ?? "—"}`}</div>
                             <div className="text-[11px] text-muted-foreground">Booking #{booking.id}</div>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="py-3">
-                        <div className="border-r border-border/70 pr-3">
-                          <div className="flex items-start gap-2 text-foreground">
-                            <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            <div>
-                              <div className="font-medium">{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
-                              {booking.scheduleType && (
-                                <div className="mt-1 inline-flex rounded-md bg-blue-500/15 px-2 py-1 text-xs font-medium text-blue-300">
-                                  {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
-                                </div>
-                              )}
-                            </div>
+                        <div className="flex items-start justify-center gap-2 text-foreground">
+                          <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 text-center">
+                            <div className="max-w-[140px] truncate font-medium" title={booking.scheduleLabel ?? undefined}>{booking.scheduleLabel ?? (booking.scheduleId ? `Schedule #${booking.scheduleId}` : "—")}</div>
+                            {booking.scheduleType && (
+                              <div className="mt-1 inline-flex rounded-md bg-blue-500/15 px-2 py-1 text-xs font-medium text-blue-300">
+                                {booking.scheduleType === "one_time" ? "One-time" : "Weekly"}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </TableCell>
+                      {/* Booked now matches Schedule's bare-icon language (same
+                          size, same text-muted-foreground color) instead of a
+                          boxed, decoratively-colored treatment — one icon
+                          language for the two date/time columns. */}
                       <TableCell className="py-3">
-                        <div className="flex items-center gap-2 border-r border-border/70 pr-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-600/60 bg-slate-700/40 text-blue-400">
-                            <CalendarDays className="h-3.5 w-3.5" />
-                          </div>
+                        <div className="flex items-center justify-center gap-2">
+                          <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           <span className="font-medium text-foreground">{new Date(booking.bookedAt).toLocaleDateString()}</span>
                         </div>
                       </TableCell>
+                      {/* Redundant "Booking"/"Payment" labels removed — the column
+                          header already says what the status represents. */}
                       <TableCell className="py-3">
-                        <div className="border-r border-border/70 pr-3 text-center">
+                        <div className="text-center">
                           <span className={`inline-flex min-w-[82px] items-center justify-center gap-2 rounded-md border px-2 py-1 text-[11px] font-semibold ${bookingStatusPillClass(bookingStatus)}`}>
                             <BookingStatusIcon className="h-3.5 w-3.5" />
                             {bookingStatusLabel(bookingStatus)}
                           </span>
-                          <div className="mt-0.5 text-[11px] text-muted-foreground">Booking</div>
                         </div>
                       </TableCell>
                       <TableCell className="py-3">
-                        <div className="border-r border-border/70 pr-3 text-center">
+                        <div className="text-center">
                           <span className={`inline-flex min-w-[112px] items-center justify-center gap-2 rounded-md border px-2 py-1 text-[11px] font-semibold ${paymentStatusPillClass(paymentStatus)}`}>
                             <PaymentStatusIcon className="h-3.5 w-3.5" />
                             {paymentStatusLabel(paymentStatus)}
                           </span>
-                          <div className="mt-0.5 text-[11px] text-muted-foreground">Payment</div>
                           {booking.packageOrderId != null && (
                             <div className="mt-1 text-[10px] text-muted-foreground">
                               Package order #{booking.packageOrderId}
@@ -511,7 +570,7 @@ export default function Bookings() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="py-3 text-right">
+                      <TableCell className="py-3 text-center">
                         {/* Production hotfix: a "pending" booking used to show up to
                             6 simultaneous buttons (Edit/Confirm/Reject/Cancel/Paid/
                             Payment failed). Only Edit + the single clearest next step
