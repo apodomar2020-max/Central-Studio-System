@@ -21,7 +21,7 @@ export function ClassPricingTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: classPricing, isLoading: isLoadingClassPricing } = useQuery<ClassPricingSettings>({
+  const { data: classPricing, isLoading: isLoadingClassPricing, isError } = useQuery<ClassPricingSettings>({
     queryKey: ["admin-class-pricing"],
     queryFn: () =>
       adminFetch<ClassPricingSettings>(
@@ -66,6 +66,8 @@ export function ClassPricingTab() {
           Global single-session price for regular studio classes. Package pricing remains managed separately.
         </p>
       </div>
+
+      {isError && <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">Class pricing could not be loaded.</div>}
 
       <div className="rounded-lg border bg-card p-6 shadow-sm">
         <Form {...classPricingForm}>

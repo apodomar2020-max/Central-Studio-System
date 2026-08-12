@@ -1,0 +1,352 @@
+.admin2-final-page {
+  display: grid;
+  gap: 17px;
+  padding-bottom: 44px;
+}
+
+.admin2-final-page > .mb-4 {
+  margin: 0 !important;
+}
+
+.admin2-final-page button {
+  transition: color var(--admin2-motion-normal), background-color var(--admin2-motion-normal), border-color var(--admin2-motion-normal), box-shadow var(--admin2-motion-normal), transform var(--admin2-motion-fast);
+}
+
+.admin2-final-page button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.admin2-final-page button:active:not(:disabled) {
+  transform: scale(.985);
+}
+
+.admin2-final-page button:focus-visible,
+.admin2-final-page input:focus-visible,
+.admin2-final-page textarea:focus-visible,
+.admin2-final-page [role="tab"]:focus-visible,
+.admin2-final-page [role="row"]:focus-visible,
+.admin2-audit-sheet button:focus-visible {
+  outline: 2px solid var(--admin2-cyan);
+  outline-offset: 2px;
+}
+
+.admin2-final-page button svg {
+  width: var(--admin2-icon-operational);
+  height: var(--admin2-icon-operational);
+}
+
+/* Marketing registries and feedback inbox */
+.admin2-marketing-registry > .grid > .rounded-md.border,
+.admin2-marketing-center > .grid > .rounded-xl,
+.admin2-feedback-queue > .rounded-xl.border.bg-card,
+.admin2-feedback-queue > .rounded-md.border.bg-card {
+  border-color: var(--admin2-border-subtle) !important;
+  border-radius: var(--admin2-radius-card) !important;
+  background: linear-gradient(145deg, var(--admin2-surface-raised), var(--admin2-surface-elevated)) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .14);
+}
+
+.admin2-marketing-registry > .grid [class*="text-2xl"],
+.admin2-marketing-center > .grid [class*="text-xl"] {
+  font-family: var(--font-mono);
+  font-size: clamp(28px, 2.7vw, 38px) !important;
+  letter-spacing: -.05em;
+}
+
+.admin2-marketing-registry > .border.rounded-md,
+.admin2-feedback-queue > .rounded-xl.border.bg-card:last-of-type,
+.admin2-feedback-queue > .rounded-md.border.bg-card:last-of-type,
+.admin2-cms-workspace > .border.rounded-md {
+  overflow: auto;
+  max-width: 100%;
+  border: 0 !important;
+  border-radius: var(--admin2-radius-workspace) !important;
+  color: var(--admin2-text-inverse);
+  background: var(--admin2-workspace);
+  box-shadow: 0 25px 64px rgba(0, 0, 0, .2);
+}
+
+.admin2-marketing-registry table,
+.admin2-feedback-queue table,
+.admin2-cms-workspace > .border.rounded-md table {
+  min-width: 1050px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin2-marketing-registry thead,
+.admin2-feedback-queue thead,
+.admin2-cms-workspace > .border.rounded-md thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--admin2-workspace-secondary);
+}
+
+.admin2-marketing-registry th,
+.admin2-feedback-queue th,
+.admin2-cms-workspace th,
+.admin2-audit-ledger th {
+  height: 46px;
+  color: #65777e !important;
+  font-size: 10px !important;
+  font-weight: 760 !important;
+  letter-spacing: .075em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin2-marketing-registry td,
+.admin2-feedback-queue td,
+.admin2-cms-workspace > .border.rounded-md td {
+  min-height: 64px;
+  padding: 14px 16px !important;
+  color: #34484f;
+  border-color: rgba(19, 45, 53, .075) !important;
+}
+
+.admin2-marketing-registry td .text-muted-foreground,
+.admin2-marketing-registry td.text-muted-foreground,
+.admin2-feedback-queue td .text-muted-foreground,
+.admin2-feedback-queue td.text-muted-foreground,
+.admin2-cms-workspace td .text-muted-foreground,
+.admin2-cms-workspace td.text-muted-foreground {
+  color: #687a81 !important;
+}
+
+/* Removed: a proven-conflicting rule used to force var(--admin2-text-inverse)
+ * (a dark, near-black color) on these three registries' bold/name cells.
+ * admin2-system.css's canonical `:is(...) td.font-medium { color: var(--admin2-text) !important }`
+ * already re-themes these same registries dark — but this file loads after
+ * it at runtime (page-level lazy chunk vs. app-level import), so its equal-
+ * specificity !important rule was winning the tie and leaving bold cell
+ * text invisible against the dark canvas. Confirmed via live browser QA on
+ * App Content's FAQ table; same selector list means Marketing and Feedback
+ * shared the identical defect. No replacement needed — admin2-system.css
+ * already owns this color correctly for all three. */
+
+.admin2-marketing-registry tbody tr,
+.admin2-feedback-queue tbody tr,
+.admin2-cms-workspace tbody tr {
+  transition: background-color var(--admin2-motion-normal), box-shadow var(--admin2-motion-normal), transform var(--admin2-motion-fast);
+}
+
+.admin2-marketing-registry tbody tr:hover,
+.admin2-feedback-queue tbody tr:hover,
+.admin2-cms-workspace tbody tr:hover {
+  background: #e3ecee !important;
+  box-shadow: inset 3px 0 var(--admin2-cyan);
+  transform: translateX(1px);
+}
+
+.admin2-marketing-registry td:nth-child(3),
+.admin2-marketing-registry td:nth-child(4),
+.admin2-marketing-registry td:nth-child(5) {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+/* WhatsApp operational center */
+.admin2-marketing-center > .flex.gap-2 {
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--admin2-border-subtle);
+  border-radius: var(--admin2-radius-pill);
+  background: var(--admin2-surface);
+}
+
+.admin2-marketing-center > .flex.gap-2 button {
+  min-height: 36px;
+  border-radius: var(--admin2-radius-pill);
+}
+
+.admin2-marketing-center > .space-y-3 > .rounded-xl,
+.admin2-marketing-center > .rounded-xl.border.bg-card {
+  border-color: var(--admin2-border-subtle) !important;
+  border-radius: var(--admin2-radius-panel) !important;
+  background: linear-gradient(145deg, var(--admin2-surface-elevated), var(--admin2-surface)) !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .15);
+}
+
+.admin2-marketing-center [class*="recipientCount"],
+.admin2-marketing-center [class*="sentCount"] {
+  font-family: var(--font-mono);
+}
+
+/* Feedback and other record review workspaces */
+.admin2-feedback-queue > .rounded-xl.border.bg-card:first-of-type,
+.admin2-feedback-queue > .rounded-md.border.bg-card:first-of-type {
+  padding: 2px;
+  background: linear-gradient(145deg, var(--admin2-surface-elevated), var(--admin2-surface)) !important;
+}
+
+.admin2-record-review > .grid,
+.admin2-record-review > .rounded-xl.border.bg-card,
+.admin2-record-review > .rounded-md.border.bg-card {
+  padding: 18px;
+  border: 1px solid var(--admin2-border-subtle) !important;
+  border-radius: var(--admin2-radius-panel) !important;
+  background: linear-gradient(145deg, var(--admin2-surface-elevated), var(--admin2-surface)) !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .15);
+}
+
+/* Secure users and role permission workspace */
+.admin2-system-access {
+  gap: 18px;
+}
+
+.admin2-system-access > [role="tablist"] {
+  width: fit-content;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--admin2-border-subtle);
+  border-radius: var(--admin2-radius-pill);
+  background: var(--admin2-surface);
+}
+
+.admin2-system-access [role="tab"] {
+  min-height: 36px;
+  border-radius: var(--admin2-radius-pill);
+  padding-inline: 16px;
+}
+
+.admin2-system-access [role="tab"][data-state="active"] {
+  color: #061014;
+  background: var(--admin2-cyan);
+}
+
+.admin2-system-access [role="tabpanel"] > .rounded-lg.border,
+.admin2-system-access [role="tabpanel"] > .space-y-3 > .rounded-lg.border {
+  border-color: var(--admin2-border-subtle) !important;
+  border-radius: var(--admin2-radius-card) !important;
+  background: linear-gradient(145deg, var(--admin2-surface-elevated), var(--admin2-surface));
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .13);
+}
+
+/* Audit ledger */
+.admin2-audit-ledger > .flex.flex-col.rounded-md.border {
+  padding: 15px 17px;
+  border-color: var(--admin2-border-subtle) !important;
+  border-radius: var(--admin2-radius-card) !important;
+  background: linear-gradient(145deg, var(--admin2-surface-elevated), var(--admin2-surface)) !important;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .13);
+}
+
+.admin2-audit-ledger > .rounded-md.border {
+  overflow: auto;
+  max-width: 100%;
+  border-color: var(--admin2-border-subtle) !important;
+  border-radius: var(--admin2-radius-workspace) !important;
+  background: linear-gradient(145deg, var(--admin2-surface-elevated), var(--admin2-surface));
+  box-shadow: 0 25px 64px rgba(0, 0, 0, .2);
+}
+
+.admin2-audit-ledger table {
+  min-width: 1120px;
+}
+
+.admin2-audit-ledger thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--admin2-surface-raised);
+}
+
+.admin2-audit-ledger td:first-child,
+.admin2-audit-ledger td:nth-child(4),
+.admin2-audit-ledger td:nth-child(5) {
+  font-family: var(--font-mono);
+}
+
+.admin2-audit-ledger tbody tr:hover {
+  background: rgba(255, 255, 255, .035) !important;
+  box-shadow: inset 3px 0 var(--admin2-cyan);
+}
+
+.admin2-audit-sheet {
+  border-left-color: var(--admin2-border-subtle) !important;
+  background: var(--admin2-surface-elevated) !important;
+  box-shadow: -28px 0 80px rgba(0, 0, 0, .38) !important;
+}
+
+/* Global App CMS */
+.admin2-cms-workspace img {
+  border-radius: 12px;
+}
+
+.admin2-app-content [role="tablist"],
+.admin2-global-settings [role="tablist"] {
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--admin2-border-subtle);
+  border-radius: var(--admin2-radius-pill) !important;
+  background: var(--admin2-surface) !important;
+}
+
+.admin2-app-content [role="tab"],
+.admin2-global-settings [role="tab"] {
+  min-height: 36px;
+  border-radius: var(--admin2-radius-pill) !important;
+  padding-inline: 15px;
+}
+
+.admin2-app-content [role="tab"][data-state="active"],
+.admin2-global-settings [role="tab"][data-state="active"] {
+  color: #061014 !important;
+  background: var(--admin2-cyan) !important;
+  box-shadow: 0 8px 18px rgba(0, 182, 215, .16);
+}
+
+.admin2-app-content [role="tabpanel"] section,
+.admin2-global-settings [role="tabpanel"] > div,
+.admin2-global-settings [role="tabpanel"] .rounded-xl.border,
+.admin2-global-settings [role="tabpanel"] .rounded-lg.border {
+  border-color: var(--admin2-border-subtle) !important;
+  border-radius: var(--admin2-radius-panel) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .14);
+}
+
+.admin2-global-settings input,
+.admin2-global-settings textarea,
+.admin2-global-settings button[role="combobox"],
+.admin2-app-content input,
+.admin2-app-content textarea,
+.admin2-app-content button[role="combobox"] {
+  min-height: 40px;
+  border-color: var(--admin2-border-strong);
+}
+
+.admin2-global-settings [role="tabpanel"] [class*="text-2xl"],
+.admin2-global-settings [role="tabpanel"] input[type="number"] {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 1180px) {
+  .admin2-app-content [role="tablist"],
+  .admin2-global-settings [role="tablist"] {
+    border-radius: 18px !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .admin2-marketing-registry > .border.rounded-md,
+  .admin2-feedback-queue > .rounded-xl.border.bg-card:last-of-type,
+  .admin2-audit-ledger > .rounded-md.border,
+  .admin2-cms-workspace > .border.rounded-md {
+    border-radius: 22px !important;
+  }
+
+  .admin2-audit-ledger > .flex.flex-col.rounded-md.border > div {
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin2-final-page button,
+  .admin2-final-page tbody tr,
+  .admin2-final-page [role="tab"] {
+    transition-duration: .01ms !important;
+    transform: none !important;
+  }
+}

@@ -17,7 +17,7 @@ export function ClassCapacityTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: classCapacity, isLoading: isLoadingClassCapacity } = useQuery<ClassCapacitySettings>({
+  const { data: classCapacity, isLoading: isLoadingClassCapacity, isError } = useQuery<ClassCapacitySettings>({
     queryKey: ["admin-class-capacity"],
     queryFn: () =>
       adminFetch<ClassCapacitySettings>(
@@ -68,6 +68,8 @@ export function ClassCapacityTab() {
           Controls whether regular class capacity is displayed and enforced. Stored capacity values and booking counts are preserved.
         </p>
       </div>
+
+      {isError && <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">Class capacity settings could not be loaded.</div>}
 
       <div className="rounded-lg border bg-card p-6 space-y-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

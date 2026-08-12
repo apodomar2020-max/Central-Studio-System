@@ -196,7 +196,7 @@ export default function LogsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-audit-ledger space-y-6">
       <PageHeader
         title="Logs"
         description="Admin activity history — who changed what, when, and from where."
@@ -326,6 +326,15 @@ export default function LogsPage() {
                   key={row.id}
                   className="cursor-pointer hover:bg-muted/40"
                   onClick={() => setSelected(row)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open log entry ${row.id}`}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelected(row);
+                    }
+                  }}
                   data-testid={`row-log-${row.id}`}
                 >
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
@@ -365,7 +374,7 @@ export default function LogsPage() {
 
       {/* Details drawer */}
       <Sheet open={selected != null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
-        <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
+        <SheetContent side="right" className="admin2-audit-sheet flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
           <SheetHeader className="border-b px-5 py-4 text-left">
             <SheetTitle>Log entry #{selected?.id}</SheetTitle>
             <SheetDescription>
@@ -414,3 +423,4 @@ export default function LogsPage() {
     </div>
   );
 }
+import "./admin2-final.css";

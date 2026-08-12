@@ -117,7 +117,7 @@ export default function FeedbackDetailPage() {
   if (query.isError || !detail) return <div className="py-10 text-center text-destructive">{query.error?.message ?? "Feedback not found"}</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-record-review space-y-6">
       <Link href="/feedback">
         <Button variant="ghost" size="sm" className="gap-1"><ArrowLeft className="h-4 w-4" /> Back to Feedback</Button>
       </Link>
@@ -205,3 +205,4 @@ export default function FeedbackDetailPage() {
     </div>
   );
 }
+import "./admin2-final.css";

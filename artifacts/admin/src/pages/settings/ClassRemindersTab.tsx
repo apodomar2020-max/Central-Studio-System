@@ -18,7 +18,7 @@ export function ClassRemindersTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: classReminderStatus, isLoading: isLoadingClassReminders } = useQuery<ClassReminderStatus>({
+  const { data: classReminderStatus, isLoading: isLoadingClassReminders, isError } = useQuery<ClassReminderStatus>({
     queryKey: ["admin-class-reminders-status"],
     queryFn: () =>
       adminFetch<ClassReminderStatus>(
@@ -66,8 +66,8 @@ export function ClassRemindersTab() {
       <div className="rounded-lg border bg-card p-6 space-y-6 shadow-sm">
         {isLoadingClassReminders ? (
           <p className="text-sm text-muted-foreground py-2">Loading…</p>
-        ) : !classReminderStatus ? (
-          <p className="text-sm text-muted-foreground py-2">Unable to load class reminder settings.</p>
+        ) : isError || !classReminderStatus ? (
+          <p className="text-sm text-destructive py-2">Unable to load class reminder settings.</p>
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-2">

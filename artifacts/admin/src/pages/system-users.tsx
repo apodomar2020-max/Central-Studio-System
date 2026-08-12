@@ -631,10 +631,10 @@ function UsersTab({ roles, canViewRoles }: { roles: Role[]; canViewRoles: boolea
   const [editTarget, setEditTarget] = useState<SystemUserRow | null>(null);
 
   return (
-    <>
+    <div className="admin2-final-page admin2-system-access">
       {canCreate && (
         <div className="flex justify-end mb-4">
-          <Button onClick={() => setShowCreate(true)} style={{ background: "#8A5CFF", color: "#fff" }}>
+          <Button onClick={() => setShowCreate(true)}>
             <Plus className="h-4 w-4 mr-1" /> New User
           </Button>
         </div>
@@ -706,7 +706,7 @@ function UsersTab({ roles, canViewRoles }: { roles: Role[]; canViewRoles: boolea
           canDisable={canDisable}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -731,7 +731,7 @@ function RolesTab({ roles, isLoading }: { roles: Role[]; isLoading: boolean }) {
     <>
       {canCreate && (
         <div className="flex justify-end mb-4">
-          <Button onClick={() => setShowCreate(true)} style={{ background: "#8A5CFF", color: "#fff" }}>
+          <Button onClick={() => setShowCreate(true)}>
             <Plus className="h-4 w-4 mr-1" /> New Role
           </Button>
         </div>
@@ -836,6 +836,12 @@ export default function SystemUsersPage() {
         mode="stage"
       />
 
+      {canViewRoles && rolesQuery.isError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          Roles could not be loaded. Permission editing remains unavailable until the data is restored.
+        </div>
+      )}
+
       <Tabs defaultValue={defaultTab} className="mt-6">
         <TabsList className="mb-6">
           {canViewUsers && <TabsTrigger value="users">Users</TabsTrigger>}
@@ -857,3 +863,4 @@ export default function SystemUsersPage() {
     </>
   );
 }
+import "./admin2-final.css";

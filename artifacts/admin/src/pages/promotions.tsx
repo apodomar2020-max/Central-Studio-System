@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { customFetch } from "@workspace/api-client-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { PageHeader } from "@/components/layout/page-header";
+import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -105,6 +106,7 @@ function promotionToForm(row: Promotion): FormState {
 }
 
 export default function PromotionsPage() {
+  const confirmAction = useAdminConfirm();
   const { can } = useAdminAuth();
   // Phase 6B: Promotions has its own permission module (legacy alias: offers).
   const canCreate = can("promotions", "create");
@@ -201,13 +203,13 @@ export default function PromotionsPage() {
   }
 
   async function deactivate(row: Promotion) {
-    if (!confirm(`Deactivate ${row.name}?`)) return;
+    if (!await confirmAction({ title: "Deactivate promotion?", description: `${row.name} will no longer be available for new redemptions.`, confirmLabel: "Deactivate" })) return;
     await customFetch(`/api/promotions/${row.id}`, { method: "DELETE" });
     await loadPromotions();
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-marketing-registry space-y-6">
       <PageHeader
         title="Promotion Center"
         description="Automatic promotions, promo codes, and checkout validation"
@@ -267,8 +269,8 @@ export default function PromotionsPage() {
                   <TableCell>{code ? `${code.currentUses}/${code.maxUses ?? "∞"}` : "Rule-based"}</TableCell>
                   <TableCell><Badge variant={row.isActive ? "default" : "secondary"}>{row.isActive ? "Active" : "Inactive"}</Badge></TableCell>
                   <TableCell className="text-right">
-                    {canEdit && <Button variant="ghost" size="icon" onClick={() => openEdit(row)}><Edit className="h-4 w-4" /></Button>}
-                    {canDelete && <Button variant="ghost" size="icon" onClick={() => deactivate(row)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}
+                    {canEdit && <Button variant="ghost" size="icon" aria-label={`Edit promotion ${row.name}`} onClick={() => openEdit(row)}><Edit className="h-4 w-4" /></Button>}
+                    {canDelete && <Button variant="ghost" size="icon" aria-label={`Deactivate promotion ${row.name}`} onClick={() => deactivate(row)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}
                   </TableCell>
                 </TableRow>
               );
@@ -370,3 +372,4 @@ export default function PromotionsPage() {
     </div>
   );
 }
+import "./admin2-final.css";

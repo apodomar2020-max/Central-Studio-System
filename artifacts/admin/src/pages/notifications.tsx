@@ -27,6 +27,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { Trash2, Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Badge } from "@/components/ui/badge";
 
 const TARGETS = ["all", "studio", "stage"];
@@ -60,11 +61,12 @@ type PushStatus = {
 };
 
 export default function Notifications() {
+  const confirmAction = useAdminConfirm();
   const { can } = useAdminAuth();
   const canCreate = can("notifications", "create");
   const canSend = can("notifications", "send");
   const canDelete = can("notifications", "delete");
-  const { data: notifications, isLoading } = useListNotifications();
+  const { data: notifications, isLoading, isError } = useListNotifications();
   const { data: pushStatus } = useQuery({
     queryKey: ["notifications", "push-status"],
     queryFn: () => customFetch<PushStatus>("/api/notifications/push/status"),
@@ -104,14 +106,14 @@ export default function Notifications() {
     }
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Delete this notification?")) {
+  const handleDelete = async (id: number) => {
+    if (await confirmAction({ title: "Delete notification?", description: "The notification record will be removed. This action cannot be undone.", confirmLabel: "Delete notification" })) {
       deleteNotification.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListNotificationsQueryKey() }) });
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-marketing-registry space-y-6">
       <PageHeader title="Notifications" description="Broadcast messages to your community" mode="general" addLabel="Create Notification" addTestId="button-add-notification" onAdd={canCreate ? openCreate : undefined} />
 
       <div className="rounded-md border bg-card p-4 text-sm text-card-foreground">
@@ -144,6 +146,8 @@ export default function Notifications() {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-destructive">Notifications could not be loaded.</TableCell></TableRow>
             ) : notifications?.length === 0 ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No notifications yet.</TableCell></TableRow>
             ) : (
@@ -170,12 +174,12 @@ export default function Notifications() {
                   <TableCell>{n.sentAt ? new Date(n.sentAt).toLocaleDateString() : "—"}</TableCell>
                   <TableCell className="text-right">
                     {canCreate && (n.isDraft || canSend) && (
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-notification-${n.id}`} onClick={() => openEdit(n)}>
+                      <Button variant="ghost" size="icon" aria-label={`Edit notification ${n.title}`} data-testid={`button-edit-notification-${n.id}`} onClick={() => openEdit(n)}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
                     {canDelete && (
-                      <Button variant="ghost" size="icon" data-testid={`button-delete-notification-${n.id}`} onClick={() => handleDelete(n.id)}>
+                      <Button variant="ghost" size="icon" aria-label={`Delete notification ${n.title}`} data-testid={`button-delete-notification-${n.id}`} onClick={() => handleDelete(n.id)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     )}
@@ -242,3 +246,4 @@ export default function Notifications() {
     </div>
   );
 }
+import "./admin2-final.css";

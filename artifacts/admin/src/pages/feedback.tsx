@@ -111,7 +111,7 @@ export default function FeedbackPage() {
   const totalPages = total === 0 ? 0 : Math.ceil(total / PAGE_SIZE);
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-feedback-queue space-y-6">
       <PageHeader
         title="Feedback"
         description="Internal class feedback for Central Studio quality review."
@@ -227,3 +227,4 @@ export default function FeedbackPage() {
     </div>
   );
 }
+import "./admin2-final.css";

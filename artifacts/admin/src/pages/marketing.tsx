@@ -768,7 +768,7 @@ export default function Marketing() {
     .filter(Boolean) as SearchStudent[];
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-marketing-center space-y-6">
       <PageHeader
         title="Marketing Center"
         description="Build WhatsApp-ready campaigns, preview recipients, and prepare sends."
@@ -803,7 +803,7 @@ export default function Marketing() {
           ["groups", "Class WhatsApp Groups"],
           ["whatsapp", "WhatsApp Test"],
         ].map(([value, label]) => (
-          <Button key={value} variant={activeTab === value ? "default" : "outline"} size="sm" onClick={() => setActiveTab(value as typeof activeTab)}>
+          <Button key={value} variant={activeTab === value ? "default" : "outline"} size="sm" aria-pressed={activeTab === value} onClick={() => setActiveTab(value as typeof activeTab)}>
             {label}
           </Button>
         ))}
@@ -1908,3 +1908,4 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     </div>
   );
 }
+import "./admin2-final.css";

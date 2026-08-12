@@ -486,12 +486,18 @@ export default function AppContentPage() {
   const canSaveContact = contactForm.label.trim().length > 0 && contactForm.value.trim().length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-cms-workspace admin2-app-content space-y-6">
       <PageHeader
         title="App Content"
         description="Manage mobile support, legal, FAQ, and contact content."
         mode="stage"
       />
+
+      {(pagesQuery.isError || faqsQuery.isError || categoriesQuery.isError || contactsQuery.isError) && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          Some App Content could not be loaded. Existing content has not been replaced with an empty state.
+        </div>
+      )}
 
       <Tabs defaultValue="pages" className="space-y-4">
         <TabsList>
@@ -1025,3 +1031,4 @@ export default function AppContentPage() {
     </div>
   );
 }
+import "./admin2-final.css";

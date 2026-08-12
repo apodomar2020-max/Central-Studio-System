@@ -18,6 +18,7 @@ import { ClassCapacityTab } from "./settings/ClassCapacityTab";
 import { ClassRemindersTab } from "./settings/ClassRemindersTab";
 import { BackgroundMusicTab } from "./settings/BackgroundMusicTab";
 import { DanceTypesTab } from "./settings/DanceTypesTab";
+import "./admin2-final.css";
 
 export default function SettingsPage() {
   const [, setLocation] = useLocation();
@@ -31,7 +32,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-global-settings space-y-6">
       {/* Main Settings Header — Clean, no global header action */}
       <PageHeader
         title="Settings"

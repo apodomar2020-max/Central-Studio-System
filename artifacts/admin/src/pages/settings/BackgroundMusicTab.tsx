@@ -42,7 +42,7 @@ export function BackgroundMusicTab() {
     };
   }, []);
 
-  const { data: backgroundMusic, isLoading: isLoadingBackgroundMusic } = useQuery<BackgroundMusicSettings>({
+  const { data: backgroundMusic, isLoading: isLoadingBackgroundMusic, isError } = useQuery<BackgroundMusicSettings>({
     queryKey: ["admin-background-music"],
     queryFn: () =>
       adminFetch<BackgroundMusicSettings>(
@@ -150,6 +150,8 @@ export function BackgroundMusicTab() {
           Remotely manage the low-volume soundtrack used by the Central Studio mobile app.
         </p>
       </div>
+
+      {isError && <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">Background music settings could not be loaded.</div>}
 
       <div className="rounded-lg border bg-card p-6 shadow-sm">
         <Form {...backgroundMusicForm}>

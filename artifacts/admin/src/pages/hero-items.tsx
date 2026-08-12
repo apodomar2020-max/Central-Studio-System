@@ -25,6 +25,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit, GripVertical, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { useAdminConfirm } from "@/components/admin/admin-confirm";
+import { useToast } from "@/hooks/use-toast";
 
 // Task 1.1: Hero is an image carousel only. The CMS collects just the image URL
 // and an optional tap path (where the app navigates when the slide is pressed).
@@ -40,11 +42,13 @@ const formSchema = z.object({
 type FormValues = z.input<typeof formSchema>;
 
 export default function HeroItems() {
+  const confirmAction = useAdminConfirm();
+  const { toast } = useToast();
   const { can } = useAdminAuth();
   const canCreate = can("heroSlides", "create");
   const canEdit = can("heroSlides", "edit");
   const canDelete = can("heroSlides", "delete");
-  const { data: items, isLoading } = useListHeroItems();
+  const { data: items, isLoading, isError } = useListHeroItems();
   const createItem = useCreateHeroItem();
   const updateItem = useUpdateHeroItem();
   const deleteItem = useDeleteHeroItem();
@@ -95,7 +99,7 @@ export default function HeroItems() {
     };
     const onError = (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`Failed to save: ${msg}`);
+      toast({ title: "Hero slide could not be saved", description: msg, variant: "destructive" });
     };
     if (editing) {
       updateItem.mutate({ id: editing.id, data }, { onSuccess: invalidate, onError });
@@ -104,14 +108,14 @@ export default function HeroItems() {
     }
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Delete this hero slide?")) {
+  const handleDelete = async (id: number) => {
+    if (await confirmAction({ title: "Delete hero slide?", description: "The slide will be removed from the mobile home carousel.", confirmLabel: "Delete slide" })) {
       deleteItem.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListHeroItemsQueryKey() }) });
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-final-page admin2-cms-workspace space-y-6">
       <PageHeader
         title="Hero Slides"
         description="Manage the home screen carousel"
@@ -137,6 +141,8 @@ export default function HeroItems() {
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-8">Loading...</TableCell>
               </TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={5} className="text-center py-8 text-destructive">Hero slides could not be loaded.</TableCell></TableRow>
             ) : items?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
@@ -181,6 +187,7 @@ export default function HeroItems() {
                     {canEdit && (
                       <Button
                         variant="ghost" size="icon"
+                        aria-label={`Edit hero slide ${item.id}`}
                         data-testid={`button-edit-hero-item-${item.id}`}
                         onClick={() => openEdit(item)}
                       >
@@ -190,6 +197,7 @@ export default function HeroItems() {
                     {canDelete && (
                       <Button
                         variant="ghost" size="icon"
+                        aria-label={`Delete hero slide ${item.id}`}
                         data-testid={`button-delete-hero-item-${item.id}`}
                         onClick={() => handleDelete(item.id)}
                       >
@@ -286,3 +294,4 @@ export default function HeroItems() {
     </div>
   );
 }
+import "./admin2-final.css";

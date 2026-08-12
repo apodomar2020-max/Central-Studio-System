@@ -40,7 +40,7 @@ export function DanceTypesTab() {
   const [iconCleared, setIconCleared] = useState(false);
   const [iconFileName, setIconFileName] = useState("");
 
-  const { data: danceTypes, isLoading } = useQuery<DanceType[]>({
+  const { data: danceTypes, isLoading, isError } = useQuery<DanceType[]>({
     queryKey: ["admin-dance-types"],
     queryFn: () =>
       adminFetch<DanceType[]>(
@@ -215,6 +215,8 @@ export function DanceTypesTab() {
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8">Loading…</TableCell>
               </TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-destructive">Dance types could not be loaded.</TableCell></TableRow>
             ) : !danceTypes?.length ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
