@@ -829,7 +829,7 @@ export default function SystemUsersPage() {
   const defaultTab = canViewUsers ? "users" : "roles";
 
   return (
-    <>
+    <div className="admin2-system-access">
       <PageHeader
         title="System Users & Roles"
         description="Manage admin accounts and define permission roles."
@@ -860,7 +860,7 @@ export default function SystemUsersPage() {
           </TabsContent>
         )}
       </Tabs>
-    </>
+    </div>
   );
 }
 import "./admin2-final.css";

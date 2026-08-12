@@ -264,7 +264,12 @@ export const NAV_TREE: NavNode[] = [
     link("Reports", "/reports", [["reports", "view"]], BarChart3, {
       description: "Studio operational and analytics reports",
     }),
-    link("Roles", "/system-users", [["adminUsers", "view"], ["roles", "view"]], ShieldCheck, {
+    // Was labeled "Roles" here, which read as a separate destination from
+    // the top nav — but it's the same /system-users workspace as "Users",
+    // just defaulting to a different tab. Renamed to match pageTitle/the
+    // page's own heading so there's exactly one clearly-named entry point,
+    // not an implied second one (§10 of the Production UI Hotfix).
+    link("System Users", "/system-users", [["adminUsers", "view"], ["roles", "view"]], ShieldCheck, {
       pageTitle: "System Users",
       description: "Manage admin accounts, roles, and permissions",
     }),

@@ -31,8 +31,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Check, Clock3, Edit, PersonStanding, Plus, Search, UserRound, X } from "lucide-react";
+import { CalendarDays, Check, Clock3, CreditCard, Edit, MoreHorizontal, PersonStanding, Plus, Search, UserRound, X } from "lucide-react";
 import { Link } from "wouter";
 import "./admin2-operations.css";
 
@@ -206,7 +209,7 @@ export default function Bookings() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
-  const [statusConfirm, setStatusConfirm] = useState<{ booking: Booking; status: "confirmed" | "rejected" } | null>(null);
+  const [statusConfirm, setStatusConfirm] = useState<{ booking: Booking; status: "confirmed" | "rejected" | "cancelled" } | null>(null);
   const [paymentConfirm, setPaymentConfirm] = useState<{ booking: Booking; status: "paid" | "failed" } | null>(null);
   const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState<ConfirmedPaymentMethod | "">("");
   const [paymentConfirmSubmitLock, setPaymentConfirmSubmitLock] = useState(false);
@@ -509,17 +512,58 @@ export default function Bookings() {
                         </div>
                       </TableCell>
                       <TableCell className="py-3 text-right">
+                        {/* Production hotfix: a "pending" booking used to show up to
+                            6 simultaneous buttons (Edit/Confirm/Reject/Cancel/Paid/
+                            Payment failed). Only Edit + the single clearest next step
+                            (Confirm) stay directly visible; everything else — the
+                            destructive and payment-outcome actions — moves into one
+                            canonical Admin 2.0 dropdown (design-lab reference pattern),
+                            same mutations/dialogs/confirmations, just consolidated. */}
                         <div className="admin2-booking-row-actions">
                           {canEdit && <Button variant="ghost" size="iconSm" aria-label={`Edit booking ${booking.id}`} data-testid={`button-edit-booking-${booking.id}`} onClick={() => openEdit(booking)} title="Edit booking"><Edit /></Button>}
-                          {canShowBookingActions && <>
+                          {canShowBookingActions && (
                             <Button variant="secondary" size="compact" data-testid={`button-approve-booking-${booking.id}`} onClick={() => setStatusConfirm({ booking, status: "confirmed" })} title="Confirm booking"><Check />Confirm</Button>
-                            <Button variant="destructive" size="compact" data-testid={`button-reject-booking-${booking.id}`} onClick={() => setStatusConfirm({ booking, status: "rejected" })} title="Reject booking"><X />Reject</Button>
-                          </>}
-                          {canShowCancelAction && <Button variant="destructive" size="compact" data-testid={`button-cancel-booking-${booking.id}`} onClick={() => setBookingStatus(booking, "cancelled")} title="Cancel booking"><X />Cancel</Button>}
-                          {canShowPaymentActions && <>
-                            <Button variant="export" size="compact" data-testid={`button-confirm-payment-booking-${booking.id}`} onClick={() => setPaymentConfirm({ booking, status: "paid" })} title="Confirm payment"><Check />Paid</Button>
-                            <Button variant="ghost" size="compact" data-testid={`button-reject-payment-booking-${booking.id}`} onClick={() => setPaymentConfirm({ booking, status: "failed" })} title="Reject payment"><X />Payment failed</Button>
-                          </>}
+                          )}
+                          {(canShowBookingActions || canShowCancelAction || canShowPaymentActions) && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="iconSm" aria-label={`More actions for booking ${booking.id}`} data-testid={`button-more-booking-${booking.id}`}>
+                                  <MoreHorizontal />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {canShowPaymentActions && (
+                                  <>
+                                    <DropdownMenuItem data-testid={`button-confirm-payment-booking-${booking.id}`} onClick={() => setPaymentConfirm({ booking, status: "paid" })}>
+                                      <CreditCard /> Mark Paid
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem data-testid={`button-reject-payment-booking-${booking.id}`} onClick={() => setPaymentConfirm({ booking, status: "failed" })}>
+                                      <X /> Payment Failed
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                                {(canShowBookingActions || canShowCancelAction) && (canShowPaymentActions) && <DropdownMenuSeparator />}
+                                {canShowBookingActions && (
+                                  <DropdownMenuItem
+                                    data-testid={`button-reject-booking-${booking.id}`}
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => setStatusConfirm({ booking, status: "rejected" })}
+                                  >
+                                    <X /> Reject
+                                  </DropdownMenuItem>
+                                )}
+                                {canShowCancelAction && (
+                                  <DropdownMenuItem
+                                    data-testid={`button-cancel-booking-${booking.id}`}
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => setStatusConfirm({ booking, status: "cancelled" })}
+                                  >
+                                    <X /> Cancel
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -675,7 +719,7 @@ export default function Bookings() {
         <DialogContent className="admin2-ops-dialog max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {statusConfirm?.status === "confirmed" ? "Confirm Booking" : "Reject Booking"}
+              {statusConfirm?.status === "confirmed" ? "Confirm Booking" : statusConfirm?.status === "rejected" ? "Reject Booking" : "Cancel Booking"}
             </DialogTitle>
           </DialogHeader>
           {statusConfirm && (
@@ -691,17 +735,17 @@ export default function Bookings() {
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Are you sure you want to {statusConfirm.status === "confirmed" ? "confirm" : "reject"} this booking?
+                Are you sure you want to {statusConfirm.status === "confirmed" ? "confirm" : statusConfirm.status === "rejected" ? "reject" : "cancel"} this booking?
               </p>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setStatusConfirm(null)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setStatusConfirm(null)}>Back</Button>
                 <Button
                   type="button"
-                  variant={statusConfirm.status === "rejected" ? "destructive" : "default"}
+                  variant={statusConfirm.status === "confirmed" ? "default" : "destructive"}
                   onClick={confirmStatusChange}
                   disabled={updateBooking.isPending}
                 >
-                  {statusConfirm.status === "confirmed" ? "Confirm Booking" : "Reject Booking"}
+                  {statusConfirm.status === "confirmed" ? "Confirm Booking" : statusConfirm.status === "rejected" ? "Reject Booking" : "Cancel Booking"}
                 </Button>
               </DialogFooter>
             </div>

@@ -12,10 +12,14 @@ import { TablePagination } from "@/components/shared/table-pagination";
 import type { AdjustCreditsBody, UpdatePackageOrderBody } from "@workspace/api-client-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import "./admin2-operations.css";
 import {
   CheckCircle2, Clock, XCircle, Trash2, Edit2, CreditCard,
-  User2, BookOpen, Plus, Minus, ChevronDown, ChevronUp, Coins,
+  User2, BookOpen, Plus, Minus, ChevronDown, ChevronUp, Coins, MoreHorizontal,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
@@ -887,78 +891,84 @@ export default function PackageOrders() {
                       <td className="px-4 py-3 text-xs" style={{ color: MUTED }}>
                         {new Date(order.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                       </td>
-                      {/* Ledger toggle */}
+                      {/* Ledger toggle — informational (expand/collapse), not a mutation */}
                       <td className="px-4 py-3">
                         {canViewCreditHistory && (
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="iconSm"
                             onClick={() => setExpandedLedger((prev) => (prev === order.id ? null : order.id))}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors"
-                            style={{ background: `${STUDIO_CYAN}15`, color: STUDIO_CYAN }}
+                            aria-label={`${expandedLedger === order.id ? "Collapse" : "Expand"} ledger for ${order.studentName}`}
+                            title="Credit ledger"
                           >
-                            <BookOpen className="h-3 w-3" />
-                            {expandedLedger === order.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                          </button>
+                            <BookOpen />
+                            {expandedLedger === order.id ? <ChevronUp /> : <ChevronDown />}
+                          </Button>
                         )}
                       </td>
-                      {/* Actions */}
+                      {/* Actions — production hotfix: this used to be up to 5
+                          simultaneous raw <button> elements with inline hex colors
+                          (mixed icon-only/text, several different visual systems).
+                          Only Edit + the clear primary (Activate, when applicable)
+                          stay directly visible now; Credits/Cancel/Refund/Delete
+                          move into one canonical Admin 2.0 dropdown menu. Every
+                          handler is unchanged — handleCancel/handleDelete already
+                          gate on window.confirm() before mutating, so destructive
+                          safety is preserved as-is, not newly added. */}
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          {canApprove && canConfirmPayments && order.status === "pendingPayment" && (
-                            <button
-                              onClick={() => handleActivateOpen(order)}
-                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold"
-                              style={{ backgroundColor: "#22C55E20", color: "#22C55E" }}
-                            >
-                              <CheckCircle2 className="h-3 w-3" />
-                              Activate
-                            </button>
-                          )}
-                          {canAdjustCredits && (order.status === "active" || order.status === "fullyUsed") && (
-                            <button
-                              onClick={() => setAdjustingOrder(order)}
-                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold"
-                              style={{ backgroundColor: `${STUDIO_CYAN}20`, color: STUDIO_CYAN }}
-                              title="Adjust credits"
-                            >
-                              <Coins className="h-3 w-3" />
-                              Credits
-                            </button>
-                          )}
+                        <div className="flex items-center justify-end gap-1">
                           {canApprove && (
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="iconSm"
                               onClick={() => handleEditOpen(order)}
-                              className="p-1.5 rounded-lg"
-                              style={{ color: MUTED }}
                               aria-label={`Edit ${order.studentName} package order`}
                               title="Edit notes/expiry"
                             >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </button>
+                              <Edit2 />
+                            </Button>
                           )}
-                          {canCancel && order.status !== "cancelled" && (
-                            <button
-                              onClick={() => handleCancel(order)}
-                              className="p-1.5 rounded-lg"
-                              style={{ color: AMBER }}
-                              aria-label={`Cancel ${order.studentName} package order`}
-                              title="Cancel order"
+                          {canApprove && canConfirmPayments && order.status === "pendingPayment" && (
+                            <Button
+                              variant="secondary"
+                              size="compact"
+                              onClick={() => handleActivateOpen(order)}
+                              title="Activate package"
                             >
-                              <XCircle className="h-3.5 w-3.5" />
-                            </button>
+                              <CheckCircle2 /> Activate
+                            </Button>
                           )}
-                          {canManageRefunds && (order.status === "active" || order.status === "fullyUsed") && (
-                            <button onClick={() => setRefundingOrder(order)} className="px-2 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "#F59E0B20", color: AMBER }}>Refund</button>
-                          )}
-                          {canDelete && (
-                            <button
-                              onClick={() => handleDelete(order.id)}
-                              className="p-1.5 rounded-lg"
-                              style={{ color: "#EF444480" }}
-                              aria-label={`Delete ${order.studentName} package order`}
-                              title="Delete"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                          {(canAdjustCredits || canCancel || canManageRefunds || canDelete) && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="iconSm" aria-label={`More actions for ${order.studentName} package order`}>
+                                  <MoreHorizontal />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {canAdjustCredits && (order.status === "active" || order.status === "fullyUsed") && (
+                                  <DropdownMenuItem onClick={() => setAdjustingOrder(order)}>
+                                    <Coins /> Adjust Credits
+                                  </DropdownMenuItem>
+                                )}
+                                {canManageRefunds && (order.status === "active" || order.status === "fullyUsed") && (
+                                  <DropdownMenuItem onClick={() => setRefundingOrder(order)}>
+                                    <CreditCard /> Refund
+                                  </DropdownMenuItem>
+                                )}
+                                {((canAdjustCredits && (order.status === "active" || order.status === "fullyUsed")) || (canManageRefunds && (order.status === "active" || order.status === "fullyUsed"))) && (canCancel || canDelete) && <DropdownMenuSeparator />}
+                                {canCancel && order.status !== "cancelled" && (
+                                  <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleCancel(order)}>
+                                    <XCircle /> Cancel Order
+                                  </DropdownMenuItem>
+                                )}
+                                {canDelete && (
+                                  <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDelete(order.id)}>
+                                    <Trash2 /> Delete
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                         </div>
                       </td>

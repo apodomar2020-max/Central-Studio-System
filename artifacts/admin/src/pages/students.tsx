@@ -26,6 +26,7 @@ import { Link } from "wouter";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { UsersWorkspaceNav } from "@/components/admin/users-workspace-nav";
 import "./admin2-operations.css";
 
 const formSchema = z.object({
@@ -145,6 +146,13 @@ export default function Students() {
   return (
     <div className="admin2-ops-page admin2-students">
       <PageHeader title="Students" description="Manage your community" mode="studio" addLabel="Add Student" addTestId="button-add-student" onAdd={canCreate ? openCreate : undefined} />
+
+      <UsersWorkspaceNav
+        items={[
+          ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
+          ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
+        ]}
+      />
 
       <div className="admin2-command-bar sm:justify-between">
         <Input

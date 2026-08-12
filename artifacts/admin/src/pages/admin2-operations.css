@@ -20,3 +20,16 @@
 @media(max-width:700px){.admin2-bookings-command{grid-template-columns:1fr}.admin2-bookings-search,.admin2-bookings-add,.admin2-bookings-filter-group:first-of-type,.admin2-bookings-filter-group:last-of-type{grid-column:1}.admin2-bookings-add{grid-row:auto;width:100%}}
 .admin2-bookings .admin2-queue-surface table{min-width:1240px;table-layout:fixed}.admin2-bookings .admin2-queue-surface th:nth-child(1){width:140px}.admin2-bookings .admin2-queue-surface th:nth-child(2){width:160px}.admin2-bookings .admin2-queue-surface th:nth-child(3){width:90px}.admin2-bookings .admin2-queue-surface th:nth-child(4){width:205px}.admin2-bookings .admin2-queue-surface th:nth-child(5){width:165px}.admin2-bookings .admin2-queue-surface th:nth-child(6){width:108px}.admin2-bookings .admin2-queue-surface th:nth-child(7){width:130px}.admin2-bookings .admin2-queue-surface th:nth-child(8){width:140px}.admin2-bookings .admin2-queue-surface th:nth-child(9){width:210px}.admin2-booking-row-actions{max-width:210px}
 @media(max-width:1300px){.admin2-bookings .admin2-queue-surface table{min-width:1110px}.admin2-bookings .admin2-queue-surface th:nth-child(1){width:125px}.admin2-bookings .admin2-queue-surface th:nth-child(2){width:135px}.admin2-bookings .admin2-queue-surface th:nth-child(3),.admin2-bookings .admin2-queue-surface td:nth-child(3){display:none}.admin2-bookings .admin2-queue-surface th:nth-child(4){width:180px}.admin2-bookings .admin2-queue-surface th:nth-child(5){width:140px}.admin2-bookings .admin2-queue-surface th:nth-child(6){width:95px}.admin2-bookings .admin2-queue-surface th:nth-child(7){width:115px}.admin2-bookings .admin2-queue-surface th:nth-child(8){width:125px}.admin2-bookings .admin2-queue-surface th:nth-child(9){width:195px}.admin2-booking-row-actions{max-width:195px}}
+
+/* Users workspace local nav (Students/Parents) — same pill/cyan-active
+ * language as .admin2-detail-tabs [role="tab"], but plain <Link>s (real
+ * routes, not Radix Tabs content-switching) so it uses class-based active
+ * state instead of [data-state="active"]. */
+.admin2-workspace-tabs{display:flex;width:fit-content;gap:4px;padding:5px;border:1px solid var(--admin2-border-subtle);border-radius:var(--admin2-radius-pill);background:var(--admin2-surface)}
+.admin2-workspace-tab{display:inline-flex;min-height:36px;align-items:center;padding-inline:16px;border-radius:var(--admin2-radius-pill);color:var(--admin2-text-secondary);font-size:13px;font-weight:650;white-space:nowrap;transition:color var(--admin2-motion-normal),background-color var(--admin2-motion-normal),transform var(--admin2-motion-fast)}
+.admin2-workspace-tab:hover{color:var(--admin2-text);background:rgba(255,255,255,.05);transform:translateY(-1px)}
+.admin2-workspace-tab.is-active{color:#061014;background:var(--admin2-cyan);box-shadow:0 8px 18px rgba(0,182,215,.16)}
+.admin2-workspace-tab.is-active:hover{transform:none}
+.admin2-workspace-tab:focus-visible{outline:2px solid var(--admin2-cyan);outline-offset:2px}
+@media(max-width:1024px){.admin2-workspace-tabs{border-radius:18px}}
+@media(prefers-reduced-motion:reduce){.admin2-workspace-tab{transition-duration:.01ms!important;transform:none!important}.admin2-workspace-tab:hover{transform:none!important}}

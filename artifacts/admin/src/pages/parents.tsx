@@ -22,6 +22,7 @@ import {
 import { BadgeCheck, Edit } from "lucide-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { UsersWorkspaceNav } from "@/components/admin/users-workspace-nav";
 import "./admin2-operations.css";
 
 /**
@@ -151,6 +152,13 @@ export default function ParentsPage() {
   return (
     <div className="admin2-ops-page admin2-parents">
       <PageHeader title="Parents" description="Manage parent accounts and children profiles" mode="studio" />
+
+      <UsersWorkspaceNav
+        items={[
+          ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
+          ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
+        ]}
+      />
 
       <div className="admin2-command-bar sm:justify-between">
         <Input
