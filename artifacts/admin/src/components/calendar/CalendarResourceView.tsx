@@ -50,7 +50,7 @@ export function CalendarResourceView({
 
   if (isLoading) {
     return (
-      <div className="rounded-md border bg-card p-6 shadow-sm space-y-4">
+      <div className="admin2-calendar-resource p-6 space-y-4">
         <div className="h-6 w-48 rounded bg-muted animate-pulse" />
         <div className="space-y-3 pt-4">
           <div className="h-10 w-full rounded bg-muted/60 animate-pulse" />
@@ -62,7 +62,7 @@ export function CalendarResourceView({
 
   if (isError) {
     return (
-      <div className="rounded-md border bg-card py-16 text-center text-sm text-destructive">
+      <div className="admin2-calendar-resource py-16 text-center text-sm text-destructive">
         Could not load resource view. Please try again.
       </div>
     );
@@ -71,7 +71,7 @@ export function CalendarResourceView({
   const roomCount = rooms.length > 0 ? rooms.length : 1;
 
   return (
-    <div className="overflow-x-auto rounded-md border bg-card shadow-sm" data-testid="calendar-resource-view-grid">
+    <div className="admin2-calendar-resource" data-testid="calendar-resource-view-grid">
       <div style={{ minWidth: `${Math.max(420, TIME_GUTTER_WIDTH_PX + roomCount * 180)}px` }}>
         <div
           className="sticky top-0 z-10 grid border-b bg-muted/90 backdrop-blur-sm"

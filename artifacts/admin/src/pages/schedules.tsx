@@ -27,9 +27,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useQueryClient } from "@tanstack/react-query";
 import { Edit, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Badge } from "@/components/ui/badge";
 import { BranchRoomFields } from "@/components/schedules/BranchRoomFields";
 import type { ScheduleBranch, ScheduleRoom } from "@workspace/api-client-react";
+import "./admin2-studio.css";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -94,10 +96,10 @@ function statusLabel(status: Schedule["status"]) {
 
 function statusBadgeClass(status: Schedule["status"]) {
   switch (status) {
-    case "active": return "bg-emerald-500/15 text-emerald-300 border-emerald-400/30";
-    case "completed": return "bg-cyan-500/15 text-cyan-300 border-cyan-400/30";
-    case "expired": return "bg-slate-500/15 text-slate-300 border-slate-400/30";
-    case "cancelled": return "bg-red-500/15 text-red-300 border-red-400/30";
+    case "active": return "bg-emerald-500/15 text-emerald-700 border-emerald-500/30";
+    case "completed": return "bg-cyan-500/15 text-cyan-700 border-cyan-500/30";
+    case "expired": return "bg-slate-500/15 text-slate-700 border-slate-500/30";
+    case "cancelled": return "bg-red-500/15 text-red-700 border-red-500/30";
   }
 }
 
@@ -119,6 +121,7 @@ function formatScheduleLocation(schedule: Schedule): string {
 }
 
 export default function Schedules() {
+  const confirmAction = useAdminConfirm();
   const { can } = useAdminAuth();
   const canCreate = can("schedules", "create");
   const canEdit = can("schedules", "edit");
@@ -134,8 +137,8 @@ export default function Schedules() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
 
-  const handleDeleteSchedule = (id: number) => {
-    if (confirm("Permanently delete this schedule? (Schedules with existing bookings or attendance cannot be deleted and should be cancelled instead.)")) {
+  const handleDeleteSchedule = async (id: number) => {
+    if (await confirmAction({ title: "Permanently delete schedule?", description: "Schedules with existing bookings, attendance, or credit records cannot be deleted and should be cancelled instead.", confirmLabel: "Delete schedule" })) {
       deleteSchedule.mutate(
         { id },
         {
@@ -314,10 +317,10 @@ export default function Schedules() {
   const getClassName = (id: number) => classes?.find((c) => c.id === id)?.title ?? `Class #${id}`;
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-studio-page admin2-studio-schedules">
       <PageHeader title="Schedules" description="Weekly classes and one-time workshops" mode="studio" addLabel="Add Schedule" addTestId="button-add-schedule" onAdd={canCreate ? openCreate : undefined} />
 
-      <div className="border rounded-md">
+      <div className="admin2-studio-registry">
         <Table>
           <TableHeader>
             <TableRow>
@@ -356,7 +359,7 @@ export default function Schedules() {
                       ? schedule.date ?? "Date not set"
                       : schedule.dayOfWeek != null ? DAY_SHORT[schedule.dayOfWeek] : "Day not set"}
                   </TableCell>
-                  <TableCell>{schedule.startTime} – {schedule.endTime}</TableCell>
+                  <TableCell><span className="admin2-studio-time">{schedule.startTime} – {schedule.endTime}</span></TableCell>
                   <TableCell>{schedule.priceEgp != null ? `EGP ${schedule.priceEgp}` : "Default"}</TableCell>
                   <TableCell>
                     <Badge variant={schedule.packageEligible ? "default" : "outline"}>
@@ -366,12 +369,12 @@ export default function Schedules() {
                   <TableCell>{formatScheduleLocation(schedule)}</TableCell>
                   <TableCell className="text-right space-x-1">
                     {canEdit && (
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
+                      <Button variant="ghost" size="icon" aria-label={`Edit ${getClassName(schedule.classId)} schedule`} title="Edit schedule" data-testid={`button-edit-schedule-${schedule.id}`} onClick={() => openEdit(schedule)}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
                     {canDelete && (
-                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" data-testid={`button-delete-schedule-${schedule.id}`} onClick={() => handleDeleteSchedule(schedule.id)}>
+                      <Button variant="ghost" size="icon" aria-label={`Delete ${getClassName(schedule.classId)} schedule`} title="Delete schedule" className="text-destructive hover:text-destructive" data-testid={`button-delete-schedule-${schedule.id}`} onClick={() => handleDeleteSchedule(schedule.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
@@ -384,7 +387,7 @@ export default function Schedules() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="admin2-studio-dialog max-w-xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Schedule" : "Add Schedule"}</DialogTitle>
           </DialogHeader>

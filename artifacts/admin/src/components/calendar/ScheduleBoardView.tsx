@@ -54,7 +54,7 @@ export function ScheduleBoardView({
 
   if (isLoading) {
     return (
-      <div className="rounded-md border bg-card p-6 shadow-sm space-y-4">
+      <div className="admin2-calendar-board p-6 space-y-4">
         <div className="h-6 w-48 rounded bg-muted animate-pulse" />
         <div className="space-y-3 pt-4">
           <div className="h-10 w-full rounded bg-muted/60 animate-pulse" />
@@ -66,7 +66,7 @@ export function ScheduleBoardView({
 
   if (isError) {
     return (
-      <div className="rounded-md border bg-card py-16 text-center text-sm text-destructive">
+      <div className="admin2-calendar-board py-16 text-center text-sm text-destructive">
         Could not load the schedule board. Please try again.
       </div>
     );
@@ -78,7 +78,7 @@ export function ScheduleBoardView({
 
   return (
     <div
-      className="w-full overflow-auto max-h-[calc(100vh-140px)] rounded-md border bg-card shadow-sm"
+      className="admin2-calendar-board w-full max-h-[calc(100vh-210px)]"
       data-testid="schedule-board-view"
     >
       <div className="w-full flex flex-col" style={{ minWidth: `${minTrackWidthPx}px` }}>

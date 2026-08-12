@@ -36,6 +36,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
+import { useAdminConfirm } from "@/components/admin/admin-confirm";
+import "./admin2-studio.css";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -108,6 +110,7 @@ function InstructorPhoto({ url, name, preview = false }: { url?: string | null; 
 }
 
 export default function Instructors() {
+  const confirmAction = useAdminConfirm();
   const { can } = useAdminAuth();
   const canCreate = can("instructors", "create");
   const canEdit = can("instructors", "edit");
@@ -193,8 +196,8 @@ export default function Instructors() {
     }
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Delete this instructor?")) {
+  const handleDelete = async (id: number) => {
+    if (await confirmAction({ title: "Delete instructor?", description: "This instructor will be removed. This action cannot be undone.", confirmLabel: "Delete instructor" })) {
       deleteInstructor.mutate({ id }, {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: getListInstructorsQueryKey() }),
       });
@@ -204,10 +207,10 @@ export default function Instructors() {
   const photoValue = form.watch("photoUrl");
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-studio-page admin2-studio-instructors">
       <PageHeader title="Instructors" description="Manage your teaching staff" mode="studio" addLabel="Add Instructor" addTestId="button-add-instructor" onAdd={canCreate ? openCreate : undefined} />
 
-      <div className="border rounded-md">
+      <div className="admin2-studio-registry">
         <Table>
           <TableHeader>
             <TableRow>
@@ -246,12 +249,12 @@ export default function Instructors() {
                   </TableCell>
                   <TableCell className="text-right">
                     {canEdit && (
-                    <Button variant="ghost" size="icon" data-testid={`button-edit-instructor-${instructor.id}`} onClick={() => openEdit(instructor as Instructor)}>
+                    <Button variant="ghost" size="icon" aria-label={`Edit ${instructor.name}`} title="Edit instructor" data-testid={`button-edit-instructor-${instructor.id}`} onClick={() => openEdit(instructor as Instructor)}>
                       <Edit className="h-4 w-4" />
                     </Button>
                     )}
                     {canDelete && (
-                    <Button variant="ghost" size="icon" data-testid={`button-delete-instructor-${instructor.id}`} onClick={() => handleDelete(instructor.id)}>
+                    <Button variant="ghost" size="icon" aria-label={`Delete ${instructor.name}`} title="Delete instructor" data-testid={`button-delete-instructor-${instructor.id}`} onClick={() => handleDelete(instructor.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                     )}
@@ -264,7 +267,7 @@ export default function Instructors() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="admin2-studio-dialog max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Instructor" : "Add Instructor"}</DialogTitle>
           </DialogHeader>

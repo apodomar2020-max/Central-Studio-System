@@ -180,7 +180,7 @@ export function CreateRoomReservationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]" data-testid="dialog-create-room-reservation">
+      <DialogContent className="admin2-studio-dialog sm:max-w-[540px]" data-testid="dialog-create-room-reservation">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl font-bold">
             <CalendarIcon className="h-5 w-5 text-amber-500" />

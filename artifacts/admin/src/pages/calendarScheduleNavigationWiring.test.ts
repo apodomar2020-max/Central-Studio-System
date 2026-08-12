@@ -199,11 +199,11 @@ test("Phase 6C — Calendar uses URL search parameters as primary source of trut
 });
 
 test("Phase 6D — Calendar components render live now indicator, consume calendarTokens, and use AlertDialog instead of confirm()", () => {
-  const gridSource = read("artifacts/admin/src/components/calendar/CalendarGrid.tsx");
+  const resourceViewSource = read("artifacts/admin/src/components/calendar/CalendarResourceView.tsx");
   const nowIndicatorSource = read("artifacts/admin/src/components/calendar/CalendarNowIndicator.tsx");
   const tokensSource = read("artifacts/admin/src/components/calendar/calendarTokens.ts");
 
-  assert.match(gridSource, /<CalendarNowIndicator/);
+  assert.match(resourceViewSource, /<CalendarNowIndicator/);
   assert.match(nowIndicatorSource, /calendar-now-indicator/);
   assert.match(cardSource, /getCalendarCategoryTokens/);
   assert.match(tokensSource, /CALENDAR_TOKENS/);

@@ -155,7 +155,7 @@ export function ReservationDetailsSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-[480px] overflow-y-auto" data-testid="sheet-reservation-details">
+      <SheetContent className="admin2-calendar-sheet sm:max-w-[500px] overflow-y-auto" data-testid="sheet-reservation-details">
         <SheetHeader>
           <div className="flex items-center justify-between gap-2 pr-6">
             <SheetTitle className="text-xl font-bold">

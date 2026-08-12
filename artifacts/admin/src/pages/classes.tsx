@@ -25,9 +25,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Trash2, Edit } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { deriveAgeRangeLabel } from "@workspace/api-zod";
+import "./admin2-studio.css";
 
 // ─── Dance types — loaded from Settings, replaces hardcoded CATEGORIES ────────
 
@@ -124,6 +126,7 @@ type Class = {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Classes() {
+  const confirmAction = useAdminConfirm();
   const { token, can } = useAdminAuth();
   const canCreate = can("classes", "create");
   const canEdit = can("classes", "edit");
@@ -261,8 +264,8 @@ export default function Classes() {
     form.setValue("maxAge", values.maxAge, { shouldValidate: true });
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Archive this class? It will be deactivated to preserve historical schedules, bookings, and reports.")) {
+  const handleDelete = async (id: number) => {
+    if (await confirmAction({ title: "Archive class?", description: "The class will be deactivated while historical schedules, bookings, and reports remain preserved.", confirmLabel: "Archive class" })) {
       deleteClass.mutate({ id }, {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: getListClassesQueryKey() }),
       });
@@ -274,7 +277,7 @@ export default function Classes() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
+    <div className="admin2-studio-page admin2-studio-classes">
       <PageHeader
         title="Classes"
         description="Manage your class catalog"
@@ -284,7 +287,7 @@ export default function Classes() {
         onAdd={canCreate ? openCreate : undefined}
       />
 
-      <div className="border rounded-md">
+      <div className="admin2-studio-registry">
         <Table>
           <TableHeader>
             <TableRow>
@@ -340,6 +343,8 @@ export default function Classes() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Edit ${cls.title}`}
+                        title="Edit class"
                         data-testid={`button-edit-class-${cls.id}`}
                         onClick={() => openEdit(cls)}
                       >
@@ -350,6 +355,8 @@ export default function Classes() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Archive ${cls.title}`}
+                        title="Archive class"
                         data-testid={`button-delete-class-${cls.id}`}
                         onClick={() => handleDelete(cls.id)}
                       >
@@ -365,7 +372,7 @@ export default function Classes() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="admin2-studio-dialog max-w-xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Class" : "Add Class"}</DialogTitle>
           </DialogHeader>

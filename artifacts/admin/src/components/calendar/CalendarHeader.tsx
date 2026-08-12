@@ -49,8 +49,8 @@ export function CalendarHeader({
   rooms = [],
 }: CalendarHeaderProps) {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border bg-card p-3 shadow-sm">
+    <div className="admin2-calendar-command">
+      <div className="admin2-calendar-commandbar flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4">
         <div className="flex flex-wrap items-center gap-2">
           {/* View Switcher Segmented Control */}
           <div className="inline-flex rounded-md border bg-muted/50 p-0.5 shadow-inner">
@@ -87,13 +87,13 @@ export function CalendarHeader({
 
           {/* Date Navigation Controls */}
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" data-testid="button-calendar-prev" onClick={onPrev}>
+            <Button variant="outline" size="icon" className="h-9 w-9" aria-label="Previous calendar period" title="Previous" data-testid="button-calendar-prev" onClick={onPrev}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs font-medium" data-testid="button-calendar-today" onClick={onToday}>
+            <Button variant="outline" size="sm" className="h-9 text-xs font-medium" data-testid="button-calendar-today" onClick={onToday}>
               Today
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" data-testid="button-calendar-next" onClick={onNext}>
+            <Button variant="outline" size="icon" className="h-9 w-9" aria-label="Next calendar period" title="Next" data-testid="button-calendar-next" onClick={onNext}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -173,7 +173,7 @@ export function CalendarHeader({
       </div>
 
       {/* Category Legend Bar */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground px-1">
+      <div className="admin2-calendar-legend flex items-center gap-4 text-xs text-muted-foreground px-1">
         <span className="flex items-center gap-1.5">
           <span className={`h-2.5 w-2.5 rounded-sm ${CALENDAR_TOKENS.class.dotColor}`} />
           Studio class

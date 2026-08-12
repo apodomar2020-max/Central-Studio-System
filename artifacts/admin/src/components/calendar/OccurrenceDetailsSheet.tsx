@@ -93,7 +93,7 @@ export function OccurrenceDetailsSheet({ occurrence, onOpenChange }: OccurrenceD
 
   return (
     <Sheet open={occurrence != null} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
+      <SheetContent side="right" className="admin2-calendar-sheet flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
         <SheetHeader className="border-b px-5 py-4 text-left">
           <div className="flex items-center gap-2 pr-6">
             <SheetTitle>{occurrence.classTitle}</SheetTitle>

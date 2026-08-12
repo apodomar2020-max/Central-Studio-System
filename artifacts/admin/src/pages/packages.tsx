@@ -26,8 +26,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2, Edit, Star } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Badge } from "@/components/ui/badge";
 import { deriveAgeRangeLabel } from "@workspace/api-zod";
+import "./admin2-studio.css";
 
 const TYPES = ["per_class", "monthly", "term"];
 const AGE_PRESETS = ["all", "kids", "teens", "adults", "custom"] as const;
@@ -111,6 +113,7 @@ interface DanceTypeItem {
 }
 
 export default function Packages() {
+  const confirmAction = useAdminConfirm();
   const { token, can } = useAdminAuth();
   const canCreate = can("packages", "create");
   const canEdit = can("packages", "edit");
@@ -208,17 +211,17 @@ export default function Packages() {
     form.setValue("maxAge", values.maxAge, { shouldValidate: true });
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Delete this package?")) {
+  const handleDelete = async (id: number) => {
+    if (await confirmAction({ title: "Delete package?", description: "This package will be removed. Existing historical records remain governed by the server.", confirmLabel: "Delete package" })) {
       deletePackage.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListPricePackagesQueryKey() }) });
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-studio-page admin2-studio-packages">
       <PageHeader title="Packages" description="Pricing plans and subscriptions" mode="studio" addLabel="Add Package" addTestId="button-add-package" onAdd={canCreate ? openCreate : undefined} />
 
-      <div className="border rounded-md">
+      <div className="admin2-studio-registry">
         <Table>
           <TableHeader>
             <TableRow>
@@ -242,7 +245,7 @@ export default function Packages() {
                 <TableRow key={pkg.id} data-testid={`row-package-${pkg.id}`}>
                   <TableCell className="font-medium">{pkg.name}</TableCell>
                   <TableCell className="capitalize">{pkg.type.replace("_", " ")}</TableCell>
-                  <TableCell>{pkg.priceEgp.toLocaleString()} EGP</TableCell>
+                  <TableCell><span className="admin2-studio-value">{pkg.priceEgp.toLocaleString()} EGP</span></TableCell>
                   <TableCell>{pkg.sessions ?? "Unlimited"}</TableCell>
                   <TableCell>
                     {pkg.ageRangeLabel}
@@ -254,12 +257,12 @@ export default function Packages() {
                   </TableCell>
                   <TableCell className="text-right">
                     {canEdit && (
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-package-${pkg.id}`} onClick={() => openEdit(pkg)}>
+                      <Button variant="ghost" size="icon" aria-label={`Edit ${pkg.name}`} title="Edit package" data-testid={`button-edit-package-${pkg.id}`} onClick={() => openEdit(pkg)}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
                     {canDelete && (
-                      <Button variant="ghost" size="icon" data-testid={`button-delete-package-${pkg.id}`} onClick={() => handleDelete(pkg.id)}>
+                      <Button variant="ghost" size="icon" aria-label={`Delete ${pkg.name}`} title="Delete package" data-testid={`button-delete-package-${pkg.id}`} onClick={() => handleDelete(pkg.id)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     )}
@@ -272,7 +275,7 @@ export default function Packages() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="admin2-studio-dialog max-w-xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Package" : "Add Package"}</DialogTitle>
           </DialogHeader>

@@ -278,9 +278,15 @@ test("Phase 6G — Resource View (CalendarResourceView) is untouched — still u
   assert.doesNotMatch(resourceViewSource, /packDayRowsStacked/);
 });
 
-test("Admin content wrapper is globally full-width (w-full max-w-none)", () => {
+test("Admin content wrapper is globally full-width with responsive shell-owned padding", () => {
   const appSource = readFileSync(resolve(process.cwd(), "artifacts/admin/src/App.tsx"), "utf8");
-  assert.match(appSource, /w-full max-w-none px-6 py-4 sm:px-8 sm:py-8 lg:py-10/);
+  const shellCssSource = readFileSync(
+    resolve(process.cwd(), "artifacts/admin/src/components/layout/admin2-shell.css"),
+    "utf8",
+  );
+  assert.match(appSource, /className="admin2-page-content relative max-w-none"/);
+  assert.match(shellCssSource, /\.admin2-page-content\{width:100%;padding:/);
+  assert.match(shellCssSource, /@media\(max-width:1023px\)\{[\s\S]*?\.admin2-page-content\{padding:/);
   assert.doesNotMatch(appSource, /mx-auto max-w-\[1540px\]/);
 });
 

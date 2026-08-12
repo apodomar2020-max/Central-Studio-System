@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
+import "./admin2-studio.css";
 
 const branchSchema = z.object({
   name: z.string().trim().min(1, "Branch name is required"),
@@ -117,9 +118,9 @@ export default function Branches() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-studio-page admin2-studio-branches">
       <PageHeader title="Branches" description="Manage studio locations and their rooms" mode="studio" addLabel="Add Branch" addTestId="button-add-branch" onAdd={canCreate ? openCreateBranch : undefined} />
-      <div className="rounded-md border">
+      <div className="admin2-studio-registry">
         <Table>
           <TableHeader><TableRow><TableHead>Branch Name</TableHead><TableHead>Branch Code</TableHead><TableHead>Address</TableHead><TableHead>Status</TableHead><TableHead>Room Count</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
           <TableBody>
@@ -127,7 +128,7 @@ export default function Branches() {
               : branchesQuery.isError ? <TableRow><TableCell colSpan={6} className="py-10 text-center text-destructive">{errorText(branchesQuery.error, "Could not load branches.")}</TableCell></TableRow>
               : branchesQuery.data?.length === 0 ? <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No branches yet. Add one to get started.</TableCell></TableRow>
               : branchesQuery.data?.map((branch) => <TableRow key={branch.id} data-testid={`row-branch-${branch.id}`}>
-                <TableCell className="font-medium">{branch.name}</TableCell><TableCell className="font-mono">{branch.code}</TableCell><TableCell>{branch.address || "—"}</TableCell>
+                <TableCell className="font-medium"><span className="admin2-studio-identity"><span className="admin2-studio-identity-icon"><Building2 /></span>{branch.name}</span></TableCell><TableCell className="font-mono">{branch.code}</TableCell><TableCell>{branch.address || "—"}</TableCell>
                 <TableCell><Badge variant={branch.isActive ? "default" : "outline"}>{branch.isActive ? "Active" : "Inactive"}</Badge></TableCell><TableCell>{branch.roomCount}</TableCell>
                 <TableCell className="text-right space-x-1">{canEdit && <Button variant="ghost" size="sm" onClick={() => openEditBranch(branch)}><Edit className="mr-2 h-4 w-4" />Edit</Button>}<Button variant="ghost" size="sm" onClick={() => setRoomsBranch(branch)}><DoorOpen className="mr-2 h-4 w-4" />Manage Rooms</Button></TableCell>
               </TableRow>)}
@@ -135,7 +136,7 @@ export default function Branches() {
         </Table>
       </div>
 
-      <Dialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editingBranch ? "Edit Branch" : "Add Branch"}</DialogTitle></DialogHeader><Form {...branchForm}><form onSubmit={branchForm.handleSubmit(submitBranch)} className="space-y-4">
+      <Dialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}><DialogContent className="admin2-studio-dialog"><DialogHeader><DialogTitle>{editingBranch ? "Edit Branch" : "Add Branch"}</DialogTitle></DialogHeader><Form {...branchForm}><form onSubmit={branchForm.handleSubmit(submitBranch)} className="space-y-4">
         {editingBranch && <FormItem><Label>Branch Code</Label><Input value={editingBranch.code} readOnly className="font-mono" /></FormItem>}
         <FormField control={branchForm.control} name="name" render={({ field }) => <FormItem><FormLabel>Branch Name *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
         <FormField control={branchForm.control} name="address" render={({ field }) => <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
@@ -144,10 +145,10 @@ export default function Branches() {
         <DialogFooter><Button type="button" variant="outline" onClick={() => setBranchDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={createBranch.isPending || updateBranch.isPending}>{editingBranch ? "Save Changes" : "Create Branch"}</Button></DialogFooter>
       </form></Form></DialogContent></Dialog>
 
-      <Dialog open={roomsBranch != null} onOpenChange={(open) => !open && setRoomsBranch(null)}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle className="flex items-center gap-2"><Building2 className="h-5 w-5" />Rooms at {roomsBranch?.name}</DialogTitle></DialogHeader>
+      <Dialog open={roomsBranch != null} onOpenChange={(open) => !open && setRoomsBranch(null)}><DialogContent className="admin2-studio-dialog max-w-3xl"><DialogHeader><DialogTitle className="flex items-center gap-2"><Building2 className="h-5 w-5" />Rooms at {roomsBranch?.name}</DialogTitle></DialogHeader>
         <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2 text-sm"><span>Branch: <strong>{roomsBranch?.name}</strong></span><span className="font-mono">{roomsBranch?.code}</span></div>
         {canCreate && <div className="flex justify-end"><Button onClick={openCreateRoom}>Add Room</Button></div>}
-        <div className="rounded-md border"><Table><TableHeader><TableRow><TableHead>Room Name</TableHead><TableHead>Room Code</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
+        <div className="admin2-studio-registry"><Table><TableHeader><TableRow><TableHead>Room Name</TableHead><TableHead>Room Code</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
           {roomsQuery.isLoading ? <TableRow><TableCell colSpan={4} className="py-8 text-center">Loading rooms…</TableCell></TableRow>
             : roomsQuery.isError ? <TableRow><TableCell colSpan={4} className="py-8 text-center text-destructive">{errorText(roomsQuery.error, "Could not load rooms.")}</TableCell></TableRow>
             : roomsQuery.data?.length === 0 ? <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">No rooms in this branch yet.</TableCell></TableRow>
@@ -155,7 +156,7 @@ export default function Branches() {
         </TableBody></Table></div>
       </DialogContent></Dialog>
 
-      <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editingRoom ? "Edit Room" : "Add Room"}</DialogTitle></DialogHeader><div className="rounded-md bg-muted px-3 py-2 text-sm">Branch: <strong>{roomsBranch?.name}</strong></div><Form {...roomForm}><form onSubmit={roomForm.handleSubmit(submitRoom)} className="space-y-4">
+      <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}><DialogContent className="admin2-studio-dialog"><DialogHeader><DialogTitle>{editingRoom ? "Edit Room" : "Add Room"}</DialogTitle></DialogHeader><div className="rounded-md bg-muted px-3 py-2 text-sm">Branch: <strong>{roomsBranch?.name}</strong></div><Form {...roomForm}><form onSubmit={roomForm.handleSubmit(submitRoom)} className="space-y-4">
         {editingRoom && <FormItem><Label>Room Code</Label><Input value={editingRoom.code} readOnly className="font-mono" /></FormItem>}
         <FormField control={roomForm.control} name="name" render={({ field }) => <FormItem><FormLabel>Room Name *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
         <FormField control={roomForm.control} name="isActive" render={({ field }) => <FormItem className="flex items-center gap-3"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel className="!mt-0">Active</FormLabel></FormItem>} />

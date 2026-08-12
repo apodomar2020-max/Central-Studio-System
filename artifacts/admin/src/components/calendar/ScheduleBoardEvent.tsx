@@ -50,6 +50,7 @@ export function ScheduleBoardEvent({ occurrence, onOpen }: ScheduleBoardEventPro
       role="button"
       tabIndex={0}
       className={
+        "admin2-calendar-event " +
         "absolute overflow-hidden rounded-md text-left shadow-sm flex flex-col justify-center px-2.5 py-1 " +
         "cursor-pointer transition-all hover:brightness-105 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
         tokens.bg + " " +

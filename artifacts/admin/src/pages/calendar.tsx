@@ -33,6 +33,7 @@ import {
   buildScheduleCreatePath,
   pixelOffsetToTimeString,
 } from "@/lib/scheduleCalendarNavigation";
+import "./admin2-studio.css";
 
 export default function CalendarPage() {
   const [, navigate] = useLocation();
@@ -216,7 +217,7 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin2-calendar-page">
       <CalendarHeader
         viewMode={viewMode}
         onViewModeChange={setViewMode}
