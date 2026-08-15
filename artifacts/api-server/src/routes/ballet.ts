@@ -963,6 +963,8 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
             branchId:     balletSchedulesTable.branchId,
             branchName:   studioBranchesTable.name,
             branchCode:   studioBranchesTable.code,
+            branchAddress: studioBranchesTable.address,
+            branchGoogleMapsLink: studioBranchesTable.googleMapsLink,
             roomId:       balletSchedulesTable.roomId,
             roomBranchId: studioRoomsTable.branchId,
             roomName:     studioRoomsTable.name,
@@ -975,13 +977,13 @@ router.get("/ballet/classes", async (_req, res): Promise<void> => {
           .orderBy(asc(balletSchedulesTable.dayOfWeek), asc(balletSchedulesTable.startTime), asc(balletSchedulesTable.id))
       : [];
 
-    type PublicSchedule = { id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null; branch: { id: number; name: string; code: string } | null; room: { id: number; branchId: number; name: string; code: string } | null };
+    type PublicSchedule = { id: number; dayOfWeek: number; startTime: string; endTime: string; durationMins: number | null; branch: { id: number; name: string; code: string; address: string | null; googleMapsLink: string | null } | null; room: { id: number; branchId: number; name: string; code: string } | null };
     const schedulesByClass = new Map<number, PublicSchedule[]>();
     for (const s of scheduleRows) {
       const schedules = schedulesByClass.get(s.classId) ?? [];
       schedules.push({
         id: s.id, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, durationMins: s.durationMins ?? null,
-        branch: s.branchId != null && s.branchName && s.branchCode ? { id: s.branchId, name: s.branchName, code: s.branchCode } : null,
+        branch: s.branchId != null && s.branchName && s.branchCode ? { id: s.branchId, name: s.branchName, code: s.branchCode, address: s.branchAddress, googleMapsLink: s.branchGoogleMapsLink } : null,
         room: s.roomId != null && s.roomBranchId != null && s.roomName && s.roomCode ? { id: s.roomId, branchId: s.roomBranchId, name: s.roomName, code: s.roomCode } : null,
       });
       schedulesByClass.set(s.classId, schedules);
