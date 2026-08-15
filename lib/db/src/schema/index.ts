@@ -83,3 +83,6 @@ export * from "./paymentRefunds";
 export * from "./paymentEvents";
 // Phase 5A.1 — Studio Room Reservations
 export * from "./roomReservations";
+// Notifications Wave 2 — Manual Push Campaign + frozen recipient snapshot
+// (migration 0104)
+export * from "./notificationCampaigns";

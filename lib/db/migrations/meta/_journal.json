@@ -729,6 +729,13 @@
       "when": 1786723200000,
       "tag": "0103_notification_source_classification",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1786809600000,
+      "tag": "0104_notification_campaigns",
+      "breakpoints": true
     }
   ]
 }
