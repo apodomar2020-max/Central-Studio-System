@@ -125,6 +125,17 @@ async function countReminderNotifications(bookingId: number, type: string): Prom
   return rows[0].n;
 }
 
+/** Wave 1: the notification's source/origin classification column. */
+async function notificationSourceFor(bookingId: number, type: string): Promise<string | null> {
+  const { rows } = await pool.query(
+    `SELECT source FROM notifications
+     WHERE related_entity_type = 'booking' AND related_entity_id = $1 AND type = $2
+     ORDER BY id DESC LIMIT 1`,
+    [bookingId, type],
+  );
+  return rows[0]?.source ?? null;
+}
+
 async function deliveryLogFor(notificationId: number): Promise<{ status: string; errorCode: string | null } | null> {
   const { rows } = await pool.query(
     `SELECT status, error_code AS "errorCode" FROM notification_delivery_logs WHERE notification_id = $1 ORDER BY id DESC LIMIT 1`,
@@ -426,4 +437,37 @@ test("Cairo wall-clock window math stays correct across a documented Egypt DST t
     [justBelow, pinnedNow],
   );
   assert.equal(excluded[0].matched, false);
+});
+
+// ─── Wave 1: notification source/origin classification ──────────────────────
+// These three rules are the "automation" test coverage required by the
+// Notifications Wave 1 task (class 24h / 1h / post-class rating reminders —
+// all scheduled-worker-created via insertReminderNotification, which now
+// always writes source="automation"; see notificationReminders.ts).
+
+test("class 24h reminder notification is classified as automation", async () => {
+  const student = await createStudent();
+  const schedule = await createSchedule({ minutesFromNow: 22 * 60 });
+  const bookingId = await createBooking(schedule, student);
+  await reminders.runClassReminder24h();
+  const source = await notificationSourceFor(bookingId, "class_reminder_24h");
+  assert.equal(source, "automation");
+});
+
+test("class 1h reminder notification is classified as automation", async () => {
+  const student = await createStudent();
+  const schedule = await createSchedule({ minutesFromNow: 30 });
+  const bookingId = await createBooking(schedule, student);
+  await reminders.runClassReminder1h();
+  const source = await notificationSourceFor(bookingId, "class_reminder_1h");
+  assert.equal(source, "automation");
+});
+
+test("post-class rating reminder notification is classified as automation", async () => {
+  const student = await createStudent();
+  const schedule = await createSchedule({ minutesFromNow: -4 * 60 });
+  const bookingId = await createBooking(schedule, student, { bookingStatus: "attended" });
+  await reminders.runPostClassRatingReminders();
+  const source = await notificationSourceFor(bookingId, "post_class_rating_3h");
+  assert.equal(source, "automation");
 });

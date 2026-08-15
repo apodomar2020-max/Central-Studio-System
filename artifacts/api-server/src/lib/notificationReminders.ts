@@ -340,6 +340,11 @@ export async function insertReminderNotification(
         relatedEntityId: input.relatedEntityId,
         metadata: input.metadata,
         reminderIdempotencyKey: input.idempotencyKey,
+        // Every caller of this helper is a scheduled/worker process keyed by
+        // a deterministic reminder-idempotency key (class/post-class
+        // reminders here, Ballet auto-absence in balletAutoAbsence.ts) —
+        // fixed, not a caller-supplied param, so it can't drift.
+        source: "automation",
         isDraft: false,
         sentAt: new Date().toISOString(),
       })
@@ -509,6 +514,11 @@ async function runPackageRule(rule: PackageReminderRule): Promise<AutomationSumm
       },
       dedupe: false,
       dispatchPush: false,
+      // createStudentNotification defaults to "system", but package expiry /
+      // low-credit reminders are scheduled-worker-created (see
+      // runPackageReminderAutomation / QUEUE_NAMES.notificationAutomation) —
+      // override explicitly rather than relying on the domain-event default.
+      source: "automation",
     });
     if (!notification) {
       summary.unresolvedTarget += 1;

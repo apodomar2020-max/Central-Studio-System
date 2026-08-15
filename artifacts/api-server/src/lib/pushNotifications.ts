@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import {
   db,
   notificationDeliveryLogsTable,
@@ -22,7 +22,14 @@ type SendBroadcastInput = {
   body: string;
   data?: PushData;
   notificationId?: number | null;
-  limit?: number;
+  /**
+   * Devices fetched per DB page while walking the complete eligible
+   * audience (Wave 1). Defaults to NOTIFICATION_PUSH_BROADCAST_LIMIT /
+   * getPushStatus().broadcastLimit — that env var and field name are kept
+   * for backward compatibility, but as of Wave 1 they control page size
+   * only, never a total-recipient ceiling. See sendBroadcastPushNotification.
+   */
+  batchSize?: number;
 };
 
 type PushDevice = {
@@ -33,6 +40,26 @@ type PushDevice = {
 
 const ANDROID_NOTIFICATION_CHANNEL_ID = "central-default-v1";
 
+// Expo's push API documents a maximum of 100 messages per request. Every
+// current caller of sendToDevices passes one student's devices at a time
+// (realistically 1-5), so this is a defensive ceiling rather than something
+// normal traffic approaches — see sendToDevices.
+const EXPO_PUSH_CHUNK_SIZE = 100;
+
+// Hard safety backstop on the broadcast device-paging loop (Wave 1). At the
+// default page size (25) this supports 250,000 devices; even at the
+// smallest sane page size (1) it still covers the stated 10,000-device
+// scale target many times over. Existing only to guarantee termination
+// under a pathological configuration — not expected to ever be hit, and
+// logged loudly (not silently) if it is, unlike the old LIMIT-25 defect.
+// Read fresh on every call (same pattern as getPushStatus()'s broadcastLimit)
+// rather than cached at module load, both for testability and because an
+// env-var safety knob should take effect without a process restart.
+function maxBroadcastBatches(): number {
+  const value = Number.parseInt(process.env["NOTIFICATION_PUSH_BROADCAST_MAX_BATCHES"] ?? "10000", 10);
+  return Number.isFinite(value) && value > 0 ? value : 10000;
+}
+
 function pushEnabled(): boolean {
   return process.env["PUSH_NOTIFICATIONS_ENABLED"] === "true";
 }
@@ -42,6 +69,9 @@ export function getPushStatus() {
   return {
     enabled: pushEnabled(),
     provider: "expo",
+    // Historically documented as a total-recipient ceiling; as of Wave 1 it
+    // is the device page/batch size sendBroadcastPushNotification pages
+    // through the full eligible audience with — see that function.
     broadcastLimit: Number.isFinite(limit) && limit > 0 ? limit : 25,
     accessTokenConfigured: Boolean(process.env["EXPO_ACCESS_TOKEN"]),
   };
@@ -72,7 +102,26 @@ function platformCounts(devices: PushDevice[]): Record<string, number> {
   }, {});
 }
 
+/**
+ * Sends to an arbitrary-length device list by splitting into
+ * EXPO_PUSH_CHUNK_SIZE-sized requests to Expo (Wave 1) and aggregating the
+ * results — a single failed chunk does not prevent the remaining chunks
+ * from being attempted.
+ */
 async function sendToDevices(args: SendPushInput, devices: PushDevice[]) {
+  if (devices.length === 0) return { sent: 0, failed: 0 };
+  let sent = 0;
+  let failed = 0;
+  for (let i = 0; i < devices.length; i += EXPO_PUSH_CHUNK_SIZE) {
+    const chunk = devices.slice(i, i + EXPO_PUSH_CHUNK_SIZE);
+    const result = await sendChunkToDevices(args, chunk);
+    sent += result.sent;
+    failed += result.failed;
+  }
+  return { sent, failed };
+}
+
+async function sendChunkToDevices(args: SendPushInput, devices: PushDevice[]) {
   if (devices.length === 0) return { sent: 0, failed: 0 };
 
   const messages = devices.map((device) => {
@@ -229,42 +278,157 @@ export async function sendPushNotification(input: SendPushInput): Promise<SendPu
   }
 }
 
-export async function sendBroadcastPushNotification(input: SendBroadcastInput): Promise<{ attemptedStudents: number }> {
+export type BroadcastPushResult = {
+  /** Distinct active-eligible devices seen across every page. */
+  matchedDevices: number;
+  /** Distinct students those devices belong to. */
+  matchedStudents: number;
+  /** Devices actually included in a send attempt (== matchedDevices today — every matched device is attempted; kept distinct from matchedDevices for Wave 2, where a persisted audience snapshot could matter/differ). */
+  attemptedDevices: number;
+  /** Alias of matchedStudents, named for parity with attemptedDevices. */
+  attemptedStudents: number;
+  sent: number;
+  failed: number;
+  /** Number of device pages fetched (for observability, not a correctness signal). */
+  batches: number;
+  /**
+   * True only when the MAX_BROADCAST_BATCHES safety backstop was hit before
+   * the eligible audience was exhausted — i.e. this result is INCOMPLETE:
+   * more eligible devices existed than were ever attempted. False in every
+   * other case, including "push disabled" and "no eligible devices" (both
+   * fully-processed states, not truncation). Callers must not treat a
+   * `truncated: true` result as a successful complete broadcast.
+   */
+  truncated: boolean;
+};
+
+const EMPTY_BROADCAST_RESULT: BroadcastPushResult = {
+  matchedDevices: 0,
+  matchedStudents: 0,
+  attemptedDevices: 0,
+  attemptedStudents: 0,
+  sent: 0,
+  failed: 0,
+  batches: 0,
+  truncated: false,
+};
+
+/**
+ * Processes the COMPLETE eligible active-device audience for a broadcast,
+ * in bounded pages (Wave 1 fix — previously a single `LIMIT` on the device
+ * query silently truncated any audience larger than
+ * NOTIFICATION_PUSH_BROADCAST_LIMIT, default 25; see pushNotifications.test.ts
+ * for the batching coverage this replaces that defect with).
+ *
+ * Pagination is keyset (id > cursor), not OFFSET: OFFSET pagination can
+ * skip or duplicate rows when the underlying table is mutated between page
+ * fetches (a device is registered/deactivated mid-broadcast); ascending-id
+ * keyset pagination cannot, because every page's lower bound is a specific
+ * already-seen row id, not a shifting position count. This also bounds
+ * memory to one page (batchSize rows) at a time regardless of audience size.
+ *
+ * NOTIFICATION_PUSH_BROADCAST_LIMIT / batchSize now controls page size only
+ * — it is never a total-recipient ceiling. The loop continues until a page
+ * returns fewer rows than the page size.
+ */
+export async function sendBroadcastPushNotification(input: SendBroadcastInput): Promise<BroadcastPushResult> {
   if (!pushEnabled()) {
     logger.info({ notificationId: input.notificationId ?? null }, "Broadcast push skipped: push disabled");
-    return { attemptedStudents: 0 };
+    return EMPTY_BROADCAST_RESULT;
   }
 
-  const limit = input.limit ?? getPushStatus().broadcastLimit;
-  const devices = await db
-    .select({
-      id: notificationDevicesTable.id,
-      studentId: notificationDevicesTable.studentId,
-      pushToken: notificationDevicesTable.pushToken,
-      platform: notificationDevicesTable.platform,
-      provider: notificationDevicesTable.provider,
-      isActive: notificationDevicesTable.isActive,
-    })
-    .from(notificationDevicesTable)
-    .where(and(
-      eq(notificationDevicesTable.provider, "expo"),
-      eq(notificationDevicesTable.isActive, true),
-    ))
-    .limit(limit);
+  const pageSize = input.batchSize ?? getPushStatus().broadcastLimit;
+  const maxBatches = maxBroadcastBatches();
+  const attemptedStudentIds = new Set<number>();
+  let matchedDevices = 0;
+  let sent = 0;
+  let failed = 0;
+  let batches = 0;
+  let cursor = 0;
+  let truncated = false;
 
-  const byStudent = new Map<number, PushDevice[]>();
-  for (const device of devices.filter(isPushDeviceEligible)) {
-    const list = byStudent.get(device.studentId) ?? [];
-    list.push({ id: device.id, pushToken: device.pushToken, platform: device.platform });
-    byStudent.set(device.studentId, list);
+  for (;;) {
+    if (batches >= maxBatches) {
+      // The safety backstop stopped the loop with eligible devices still
+      // unprocessed — this run must never be reported as a complete,
+      // successful broadcast. Every delivery log already written for the
+      // batches processed so far is untouched; only further pages are
+      // skipped.
+      truncated = true;
+      logger.error({
+        notificationId: input.notificationId ?? null,
+        batches,
+        maxBatches,
+        matchedDevices,
+        cursor,
+      }, "[PUSH_DIAG] Broadcast push INCOMPLETE: MAX_BROADCAST_BATCHES safety backstop reached before the eligible audience was exhausted");
+      break;
+    }
+
+    const page = await db
+      .select({
+        id: notificationDevicesTable.id,
+        studentId: notificationDevicesTable.studentId,
+        pushToken: notificationDevicesTable.pushToken,
+        platform: notificationDevicesTable.platform,
+        provider: notificationDevicesTable.provider,
+        isActive: notificationDevicesTable.isActive,
+      })
+      .from(notificationDevicesTable)
+      .where(and(
+        eq(notificationDevicesTable.provider, "expo"),
+        eq(notificationDevicesTable.isActive, true),
+        gt(notificationDevicesTable.id, cursor),
+      ))
+      .orderBy(asc(notificationDevicesTable.id))
+      .limit(pageSize);
+
+    if (page.length === 0) break;
+    batches += 1;
+    cursor = page[page.length - 1]!.id;
+
+    const eligible = page.filter(isPushDeviceEligible);
+    matchedDevices += eligible.length;
+
+    const byStudent = new Map<number, PushDevice[]>();
+    for (const device of eligible) {
+      const list = byStudent.get(device.studentId) ?? [];
+      list.push({ id: device.id, pushToken: device.pushToken, platform: device.platform });
+      byStudent.set(device.studentId, list);
+    }
+
+    for (const [studentId, studentDevices] of byStudent) {
+      attemptedStudentIds.add(studentId);
+      const result = await sendToDevices({ ...input, studentId }, studentDevices);
+      sent += result.sent;
+      failed += result.failed;
+    }
+
+    if (page.length < pageSize) break;
   }
-  if (byStudent.size === 0) {
+
+  if (matchedDevices === 0 && !truncated) {
     logger.info({ notificationId: input.notificationId ?? null }, "Broadcast push skipped: no active devices");
   }
 
-  for (const [studentId, studentDevices] of byStudent) {
-    await sendToDevices({ ...input, studentId }, studentDevices);
-  }
+  logger.info({
+    notificationId: input.notificationId ?? null,
+    batches,
+    matchedDevices,
+    matchedStudents: attemptedStudentIds.size,
+    sent,
+    failed,
+    truncated,
+  }, truncated ? "[PUSH_DIAG] Broadcast push completed INCOMPLETE (truncated)" : "[PUSH_DIAG] Broadcast push completed");
 
-  return { attemptedStudents: byStudent.size };
+  return {
+    matchedDevices,
+    matchedStudents: attemptedStudentIds.size,
+    attemptedDevices: matchedDevices,
+    attemptedStudents: attemptedStudentIds.size,
+    sent,
+    failed,
+    batches,
+    truncated,
+  };
 }

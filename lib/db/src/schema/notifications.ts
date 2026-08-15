@@ -2,7 +2,11 @@ import { sql } from "drizzle-orm";
 import { boolean, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { NOTIFICATION_SOURCES, type NotificationSource } from "@workspace/api-zod";
 import { studentsTable } from "./students";
+
+export { NOTIFICATION_SOURCES };
+export type { NotificationSource };
 
 export const notificationsTable = pgTable("notifications", {
   id: serial("id").primaryKey(),
@@ -23,6 +27,14 @@ export const notificationsTable = pgTable("notifications", {
   // "booking:{bookingId}:{reminderType}:{occurrenceDate}"; Ballet absence
   // "ballet_absence:{attendanceId}".
   reminderIdempotencyKey: text("reminder_idempotency_key"),
+  // Notification source/origin classification (Wave 1, migration 0103).
+  // One of NOTIFICATION_SOURCES ("manual_admin" | "system" | "automation"),
+  // enforced by a nullable CHECK constraint at the DB level — see that
+  // migration. NULL for every row created before this column existed
+  // (never backfilled) and for any future row a creator forgets to set;
+  // application code is responsible for always setting it going forward
+  // (see lib/notifications.ts and lib/notificationReminders.ts).
+  source: text("source"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 }, (table) => ([

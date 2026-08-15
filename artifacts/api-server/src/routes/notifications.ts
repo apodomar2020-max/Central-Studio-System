@@ -231,6 +231,11 @@ router.post("/notifications", blockStudentJwt, requireAdminAuth, requireAdminPer
     .values({
       ...parsed.data,
       sentAt: parsed.data.isDraft === false ? new Date().toISOString() : null,
+      // Fixed server-side, always last so no field of parsed.data (which has
+      // no "source" key in its zod schema in the first place) can ever
+      // override it — the Admin composer/API can never produce anything
+      // other than "manual_admin" for a row it creates.
+      source: "manual_admin",
     })
     .returning();
   dispatchPushForNotification(row);
@@ -395,11 +400,17 @@ router.get("/notifications/my", requireStudentAuth, requireVerifiedStudent, asyn
   res.setHeader("X-Total-Count", String(total));
   res.setHeader("X-Has-More", hasMore ? "true" : "false");
 
-  res.json(rows.slice(0, limit).map((row) => ({
-    ...row.notification,
-    isRead: Boolean(row.readAt),
-    readAt: row.readAt ?? null,
-  })));
+  res.json(rows.slice(0, limit).map((row) => {
+    // "source" is an internal Admin/operational classification (Wave 1) —
+    // strip it before it reaches Mobile rather than exposing it implicitly
+    // via this spread. Every other field's shape/behavior is unchanged.
+    const { source: _source, ...notification } = row.notification;
+    return {
+      ...notification,
+      isRead: Boolean(row.readAt),
+      readAt: row.readAt ?? null,
+    };
+  }));
 });
 
 router.post("/notifications/:id/read", requireStudentAuth, requireVerifiedStudent, async (req: any, res): Promise<void> => {

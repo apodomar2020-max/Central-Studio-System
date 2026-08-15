@@ -169,51 +169,80 @@ function normalizeHttpsUrl(input: string | null | undefined, label: string): str
   return url.toString();
 }
 
-/** Human-readable notification content for each ballet application status change. */
-function getStatusNotification(
+/**
+ * Human-readable notification content, and a stable notification `type`, for
+ * each ballet application status change (Wave 1: this path previously left
+ * `type` unset/NULL — see notifications.ts routes for the classification
+ * convention this now follows).
+ *
+ * "cancelled" intentionally reuses the exact `ballet_application_cancelled`
+ * type already used by the dedicated parent-cancellation flow in
+ * balletCancellationRefunds.ts — both represent the same real-world event
+ * (an application transitioning to `cancelled`), just reached through a
+ * different admin action, so they should classify identically rather than
+ * fork into two types for one event. Every other state here has no existing
+ * type elsewhere in the codebase, so a new `ballet_application_{status}`
+ * value is introduced, following that same established naming convention.
+ *
+ * Exported (Wave 1) so notificationSourceClassification.integration.test.ts
+ * can assert the exact type mapping directly, without needing to drive the
+ * full PATCH /admin/ballet/applications/:id/status transaction for every
+ * status value.
+ */
+export function getStatusNotification(
   status: string,
   childName: string,
-): { title: string; body: string } {
+): { title: string; body: string; type: string } {
   switch (status) {
     case "pending":
       return {
         title: "Application Received",
         body: `We've received ${childName}'s ballet application. We'll be in touch with next steps soon.`,
+        type: "ballet_application_pending",
       };
     case "needsFollowUp":
       return {
         title: "Follow-up Required",
         body: `Your application for ${childName} requires some follow-up. Please check the app or contact us for details.`,
+        type: "ballet_application_needs_follow_up",
       };
     case "accepted":
       return {
         title: "Application Accepted! 🎉",
         body: `Great news! ${childName} has been accepted into the Central Studio Ballet Program.`,
+        type: "ballet_application_accepted",
       };
     case "assignedToLevel":
       return {
         title: "Ballet Level Assigned 🩰",
         body: `${childName} has been placed in a ballet level. Check the app for details about classes and schedule.`,
+        type: "ballet_application_level_assigned",
       };
     case "active":
       return {
         title: "Enrolled in Ballet! ✨",
         body: `${childName} is now an active ballet student at Central Studio. Welcome to the program!`,
+        type: "ballet_application_active",
       };
     case "rejected":
       return {
         title: "Application Update",
         body: `We've reviewed ${childName}'s application. Unfortunately we're unable to accept it at this time. Contact us for more information.`,
+        type: "ballet_application_rejected",
       };
     case "cancelled":
       return {
         title: "Application Cancelled",
         body: `The ballet application for ${childName} has been cancelled. Contact us if you have any questions.`,
+        type: "ballet_application_cancelled",
       };
     default:
       return {
         title: "Ballet Application Updated",
         body: `The status of ${childName}'s ballet application has been updated.`,
+        // Stable, non-null fallback for any status value not enumerated
+        // above (e.g. "withdrawn") — never leave type unset.
+        type: "ballet_application_status_changed",
       };
   }
 }
@@ -999,13 +1028,21 @@ router.patch(
 
     // Create a per-student notification so the mobile badge updates
     if (app.parentStudentId) {
-      const { title, body } = getStatusNotification(status as BalletApplicationStatus, app.childName);
+      const { title, body, type } = getStatusNotification(status as BalletApplicationStatus, app.childName);
       await db.insert(notificationsTable).values({
         title,
         body,
-        target:   `student:${app.parentStudentId}`,
-        isDraft:  false,
-        sentAt:   new Date().toISOString(),
+        type,
+        relatedEntityType: "ballet_application",
+        relatedEntityId:   id,
+        metadata:          { applicationId: id, status },
+        target:            `student:${app.parentStudentId}`,
+        // Direct domain event (an admin changed the application's status),
+        // not a scheduled/automated process — matches every other Ballet
+        // notification creator's classification.
+        source:            "system",
+        isDraft:           false,
+        sentAt:            new Date().toISOString(),
       });
     }
 

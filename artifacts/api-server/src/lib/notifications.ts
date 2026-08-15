@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { db, notificationsTable, studentsTable } from "@workspace/db";
+import { db, notificationsTable, studentsTable, type NotificationSource } from "@workspace/db";
 import { logger } from "./logger";
 import { sendBroadcastPushNotification, sendPushNotification } from "./pushNotifications";
 
@@ -16,6 +16,15 @@ type StudentNotificationInput = {
   metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
   dispatchPush?: boolean;
+  /**
+   * Notification source/origin classification (Wave 1). Every current
+   * caller of createStudentNotification/createBroadcastNotification is a
+   * direct domain event, so this defaults to "system" below when omitted —
+   * callers only need to override it (e.g. scheduled package-reminder rules
+   * in notificationReminders.ts pass "automation" explicitly) rather than
+   * every call site having to remember a literal.
+   */
+  source?: NotificationSource;
 };
 
 type BroadcastNotificationInput = {
@@ -27,6 +36,7 @@ type BroadcastNotificationInput = {
   metadata?: Record<string, unknown> | null;
   dedupe?: boolean;
   dispatchPush?: boolean;
+  source?: NotificationSource;
 };
 
 function normalizeEmail(email: string): string {
@@ -63,7 +73,7 @@ async function insertNotification(
   target: string,
   title: string,
   body: string,
-  input: Pick<StudentNotificationInput, "type" | "relatedEntityType" | "relatedEntityId" | "metadata" | "dispatchPush"> = {},
+  input: Pick<StudentNotificationInput, "type" | "relatedEntityType" | "relatedEntityId" | "metadata" | "dispatchPush" | "source"> = {},
   dedupe = true,
 ) {
   if (dedupe) {
@@ -114,6 +124,11 @@ async function insertNotification(
       relatedEntityType: input.relatedEntityType ?? null,
       relatedEntityId: input.relatedEntityId ?? null,
       metadata: input.metadata ?? null,
+      // Every current caller of this shared helper is a direct domain-event
+      // creator (bookings, schedules, attendance, packages, Ballet
+      // cancellation/refund, ...); scheduled/worker callers override this
+      // explicitly (see runPackageRule in notificationReminders.ts).
+      source: input.source ?? "system",
       isDraft: false,
       sentAt: new Date().toISOString(),
     })

@@ -122,7 +122,11 @@ export default function Notifications() {
             Push {pushStatus?.enabled ? "Enabled" : "Disabled"}
           </Badge>
           <span className="text-muted-foreground">
-            Provider: {pushStatus?.provider ?? "expo"} · Broadcast limit: {pushStatus?.broadcastLimit ?? 25}
+            {/* Wave 1: NOTIFICATION_PUSH_BROADCAST_LIMIT now controls the device
+                page/batch size sendBroadcastPushNotification pages through the
+                full eligible audience with — it is no longer a total-recipient
+                ceiling, so the label must not read as one. */}
+            Provider: {pushStatus?.provider ?? "expo"} · Batch size: {pushStatus?.broadcastLimit ?? 25}
           </span>
           {!pushStatus?.enabled && (
             <span className="text-muted-foreground">In-app notifications continue normally.</span>
