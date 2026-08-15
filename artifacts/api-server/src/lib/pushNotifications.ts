@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import {
   db,
   notificationCampaignRecipientsTable,
@@ -63,6 +63,46 @@ function maxBroadcastBatches(): number {
 
 function pushEnabled(): boolean {
   return process.env["PUSH_NOTIFICATIONS_ENABLED"] === "true";
+}
+
+// ─── Wave 2.1: delivery error classification (campaign recovery) ────────────
+//
+// notification_delivery_logs.error_code today holds one of:
+//   - Expo's own ticket-level `details.error` values (documented by Expo):
+//     "DeviceNotRegistered", "MessageTooBig", "MessageRateExceeded",
+//     "InvalidCredentials" — or "" if Expo returned an error ticket with no
+//     `details.error` at all.
+//   - "expo_request_failed" — our own code for a network/fetch-level
+//     failure reaching Expo at all (the whole HTTP request threw).
+//   - "push_disabled" / "no_active_device" — sendPushNotification's skip
+//     reasons (single-student path only; campaign device-level logs never
+//     carry these, since a campaign only ever attempts devices it already
+//     found live and active).
+//
+// RETRYABLE_DELIVERY_ERROR_CODES is an explicit allowlist, not a denylist —
+// per the task's own instruction not to assume a failure is retryable by
+// default. Anything not in this list (including an unrecognized/unknown
+// future Expo error code) is treated as permanent, so recovery never
+// endlessly hammers a device that can never succeed.
+const RETRYABLE_DELIVERY_ERROR_CODES = new Set([
+  "expo_request_failed", // transient network/HTTP failure reaching Expo
+  "MessageRateExceeded",  // Expo-side rate limiting — expected to succeed later
+]);
+
+export function isRetryableDeliveryError(errorCode: string | null): boolean {
+  if (!errorCode) return false;
+  return RETRYABLE_DELIVERY_ERROR_CODES.has(errorCode);
+}
+
+// Bounds how many total delivery attempts (across the original send plus
+// every resume) a single device may receive for one notification — the
+// per-device analog of the campaign-level sendAttempt cap in
+// lib/notificationCampaigns.ts. Prevents a systemic issue (e.g. a
+// misconfigured Expo credential returning "MessageRateExceeded" forever)
+// from producing unbounded retries against the same device.
+function maxDeviceDeliveryAttempts(): number {
+  const value = Number.parseInt(process.env["NOTIFICATION_CAMPAIGN_DEVICE_MAX_ATTEMPTS"] ?? "3", 10);
+  return Number.isFinite(value) && value > 0 ? value : 3;
 }
 
 export function getPushStatus() {
@@ -441,20 +481,54 @@ type SendCampaignPushInput = {
   body: string;
   data?: PushData;
   batchSize?: number;
+  /**
+   * Wave 2.1 — the caller's own send_attempt value, captured at the moment
+   * it started (the initial send transaction) or claimed (resumeCampaign's
+   * atomic claim). This IS the durable ownership lease: sendCampaignPushNotification
+   * re-verifies it still matches the campaign's live send_attempt immediately
+   * before every page's provider dispatch (see the lease checkpoint below),
+   * and stops — throwing LeaseLostError, sending nothing further — the
+   * moment it no longer does. See notificationCampaigns.ts's resumeCampaign()
+   * doc comment for the full "original sender vs resume sender" race this
+   * closes.
+   */
+  leaseSendAttempt: number;
+  /**
+   * TEST-ONLY HOOK. Never set by production callers (sendCampaign /
+   * resumeCampaign never pass it). Invoked once per page, immediately after
+   * device selection/idempotency filtering and immediately before the lease
+   * re-check + provider dispatch — i.e. exactly the "selected the next
+   * device(s) but before provider send" boundary a concurrency test needs
+   * to pause at. Awaited before proceeding, so a test can hold a sender
+   * here, mutate DB state (force staleness, let a resume claim the lease),
+   * then release it to observe whether the lease check correctly aborts the
+   * pending send.
+   */
+  onDevicesSelected?: (studentIds: number[]) => Promise<void> | void;
 };
 
 export type CampaignPushResult = {
   /** Distinct active-eligible devices seen across every recipient page. */
   matchedDevices: number;
-  /** Distinct accounts that had at least one device attempted. */
+  /** Distinct accounts that had at least one device attempted THIS run. */
   matchedStudents: number;
-  /** Frozen-snapshot accounts with zero active eligible devices. */
+  /** Frozen-snapshot accounts with zero active eligible devices (this run). */
   noDeviceStudents: number;
+  /** THIS run's Expo outcomes — kept as the original Wave 2 field names for backward compatibility. */
   sent: number;
   failed: number;
   /** Number of recipient-snapshot pages fetched. */
   batches: number;
   truncated: boolean;
+  // ─── Wave 2.1 recovery-run counters (additive) ────────────────────────────
+  /** Devices skipped this run because a 'sent' delivery log already existed — never resent. */
+  devicesPreviouslySent: number;
+  /** Same figure as devicesPreviouslySent, exposed under the name the Wave 2.1 task asked for explicitly. */
+  skippedAlreadySent: number;
+  /** Devices actually included in an Expo send attempt this run (sent + failed this run). */
+  devicesAttemptedThisRun: number;
+  /** Devices skipped this run because their most recent failure was permanent, or they hit the per-device attempt cap. */
+  permanentlyFailedSkipped: number;
 };
 
 const EMPTY_CAMPAIGN_PUSH_RESULT: CampaignPushResult = {
@@ -465,7 +539,62 @@ const EMPTY_CAMPAIGN_PUSH_RESULT: CampaignPushResult = {
   failed: 0,
   batches: 0,
   truncated: false,
+  devicesPreviouslySent: 0,
+  skippedAlreadySent: 0,
+  devicesAttemptedThisRun: 0,
+  permanentlyFailedSkipped: 0,
 };
+
+/**
+ * Wave 2.1 — thrown when a sender (original or resumed) discovers, at a
+ * lease checkpoint, that it no longer owns the campaign's send lease (some
+ * other sender's resume claim has advanced send_attempt past the value this
+ * sender captured when it started). The sender must stop immediately:
+ * no further device pages, no further Expo calls, no finalization. Whoever
+ * currently holds the lease is responsible for finishing and finalizing.
+ */
+export class LeaseLostError extends Error {
+  constructor(public campaignId: number, public expectedSendAttempt: number) {
+    super(`Campaign ${campaignId} lease lost — send_attempt no longer matches ${expectedSendAttempt} (a concurrent resume has claimed ownership)`);
+    this.name = "LeaseLostError";
+  }
+}
+
+/**
+ * The entire ownership-race fix in one primitive: atomically verifies the
+ * campaign's live send_attempt still equals the lease this sender captured
+ * at start AND refreshes the heartbeat, in a single conditional UPDATE.
+ * Both effects are load-bearing:
+ *   - the WHERE clause is what makes this an OWNERSHIP CHECK, not just an
+ *     observability ping — a sender whose lease was reclaimed by a resume
+ *     (send_attempt incremented) gets zero rows back here, every time,
+ *     forever, and must stop.
+ *   - refreshing the heartbeat (only for the confirmed current owner) is
+ *     what keeps resumeCampaign()'s stale-claim UPDATE from matching again
+ *     while this sender is genuinely still working — see the "Stale
+ *     Threshold Safety" analysis in the Wave 2.1 concurrency review for why
+ *     one page's worth of prep-query time can never itself cross the stale
+ *     threshold.
+ * Fails CLOSED: if the UPDATE itself throws (transient DB error), ownership
+ * is NOT confirmed — treated exactly like a lost lease. A heartbeat write
+ * that silently swallowed its own failure (the pre-Wave-2.1 behavior) would
+ * let a sender that can no longer prove ownership keep sending anyway,
+ * which is exactly the race this function exists to close.
+ */
+async function touchCampaignHeartbeatIfLeaseHeld(campaignId: number, leaseSendAttempt: number): Promise<boolean> {
+  try {
+    const result = await db.execute(sql`
+      update notification_campaigns
+      set last_send_heartbeat_at = now()
+      where id = ${campaignId} and send_attempt = ${leaseSendAttempt}
+      returning id
+    `);
+    return result.rows.length > 0;
+  } catch (error) {
+    logger.warn({ err: error, campaignId, leaseSendAttempt }, "[PUSH_DIAG] Campaign lease-check/heartbeat update failed — treating as lease lost (fail closed)");
+    return false;
+  }
+}
 
 /**
  * Wave 2 — sends Push to the accounts in a campaign's FROZEN recipient
@@ -484,6 +613,51 @@ const EMPTY_CAMPAIGN_PUSH_RESULT: CampaignPushResult = {
  * Updates each recipient row's status (sent/failed/no_device) in batched
  * per-page UPDATEs (not one write per student) to keep this bounded at
  * O(pages), not O(recipients), in round trips.
+ *
+ * Wave 2.1: this function is now idempotent by construction, which is what
+ * makes campaign recovery safe without a separate "recovery-only" code
+ * path — the ORIGINAL send and every RESUME both call this exact function.
+ * Before attempting any device, its existing notification_delivery_logs
+ * history (if any) is consulted:
+ *   - a prior 'sent' row            -> never resend, counted as
+ *                                       devicesPreviouslySent/skippedAlreadySent
+ *   - a prior 'failed' row, permanent error (see isRetryableDeliveryError)
+ *                                    -> never retried, counted as
+ *                                       permanentlyFailedSkipped
+ *   - a prior 'failed' row, retryable error, under the per-device attempt
+ *     cap (maxDeviceDeliveryAttempts) -> retried
+ *   - at/over the per-device attempt cap regardless of error type
+ *                                    -> not retried, counted as
+ *                                       permanentlyFailedSkipped (bounded
+ *                                       retries, per the task's requirement)
+ *   - no prior log at all           -> attempted as a first try (the
+ *                                       original-send case)
+ * A recipient's final status this page is 'sent' if they have ANY
+ * successful device (from history OR this run), else 'failed' if they have
+ * any live device at all (attempted or not — e.g. permanently skipped),
+ * else 'no_device'. This generalizes the original Wave 2 logic rather than
+ * forking it.
+ *
+ * Wave 2.1 concurrency review — ORIGINAL SENDER VS RESUME SENDER: the
+ * per-device idempotency evidence above closes the race only for devices
+ * that already have a COMMITTED delivery log. It does NOT by itself stop
+ * two senders (an original sender that stalled mid-Expo-call past the
+ * stale threshold, and a resume that has since claimed the campaign) from
+ * both selecting the SAME not-yet-attempted device and both calling Expo
+ * before either has written a log — a genuine TOCTOU race. The fix is the
+ * lease checkpoint immediately below: input.leaseSendAttempt is the
+ * send_attempt this specific caller captured when it started/claimed, and
+ * touchCampaignHeartbeatIfLeaseHeld() re-verifies — atomically, in the same
+ * statement that refreshes the heartbeat — that send_attempt on the live
+ * row still matches, immediately after device selection and immediately
+ * before dispatching that page's devices to Expo. A sender whose lease has
+ * been reclaimed gets LeaseLostError thrown right there, before any further
+ * Expo call, and never reaches another page. See resumeCampaign()'s doc
+ * comment and the Wave 2.1 concurrency review report for the full race
+ * trace and the residual-window analysis (bounded to "already in-flight
+ * inside sendToDevices when staleness was crossed", which no DB-only
+ * checkpoint can close without holding a lock across the network call —
+ * explicitly out of scope here).
  */
 export async function sendCampaignPushNotification(input: SendCampaignPushInput): Promise<CampaignPushResult> {
   if (!pushEnabled()) {
@@ -493,6 +667,7 @@ export async function sendCampaignPushNotification(input: SendCampaignPushInput)
 
   const pageSize = input.batchSize ?? getPushStatus().broadcastLimit;
   const maxBatches = maxBroadcastBatches();
+  const maxDeviceAttempts = maxDeviceDeliveryAttempts();
   let matchedDevices = 0;
   let matchedStudents = 0;
   let noDeviceStudents = 0;
@@ -501,6 +676,9 @@ export async function sendCampaignPushNotification(input: SendCampaignPushInput)
   let batches = 0;
   let cursor = 0;
   let truncated = false;
+  let devicesPreviouslySent = 0;
+  let devicesAttemptedThisRun = 0;
+  let permanentlyFailedSkipped = 0;
 
   for (;;) {
     if (batches >= maxBatches) {
@@ -557,14 +735,78 @@ export async function sendCampaignPushNotification(input: SendCampaignPushInput)
     const eligible = devices.filter(isPushDeviceEligible);
     matchedDevices += eligible.length;
 
+    // ─── Idempotency evidence: what has already happened to these devices? ──
+    const eligibleDeviceIds = eligible.map((d) => d.id);
+    const priorLogs = eligibleDeviceIds.length > 0
+      ? await db
+        .select({
+          deviceId: notificationDeliveryLogsTable.deviceId,
+          status: notificationDeliveryLogsTable.status,
+          errorCode: notificationDeliveryLogsTable.errorCode,
+        })
+        .from(notificationDeliveryLogsTable)
+        .where(and(
+          eq(notificationDeliveryLogsTable.notificationId, input.notificationId),
+          inArray(notificationDeliveryLogsTable.deviceId, eligibleDeviceIds),
+        ))
+        .orderBy(asc(notificationDeliveryLogsTable.id))
+      : [];
+    const latestByDevice = new Map<number, { status: string; errorCode: string | null }>();
+    const attemptCountByDevice = new Map<number, number>();
+    for (const row of priorLogs) {
+      if (row.deviceId == null) continue;
+      attemptCountByDevice.set(row.deviceId, (attemptCountByDevice.get(row.deviceId) ?? 0) + 1);
+      latestByDevice.set(row.deviceId, { status: row.status, errorCode: row.errorCode }); // ascending-id iteration -> ends up latest
+    }
+
+    let attemptCountThisPage = 0;
+    const studentHasSuccess = new Set<number>();
     const byStudent = new Map<number, PushDevice[]>();
     for (const device of eligible) {
+      const latest = latestByDevice.get(device.id);
+      if (latest?.status === "sent") {
+        devicesPreviouslySent += 1;
+        studentHasSuccess.add(device.studentId);
+        continue;
+      }
+      const attempts = attemptCountByDevice.get(device.id) ?? 0;
+      if (latest?.status === "failed" && !isRetryableDeliveryError(latest.errorCode)) {
+        permanentlyFailedSkipped += 1;
+        continue;
+      }
+      if (attempts >= maxDeviceAttempts) {
+        permanentlyFailedSkipped += 1;
+        continue;
+      }
+      attemptCountThisPage += 1;
       const list = byStudent.get(device.studentId) ?? [];
       list.push({ id: device.id, pushToken: device.pushToken, platform: device.platform });
       byStudent.set(device.studentId, list);
     }
+    devicesAttemptedThisRun += attemptCountThisPage;
 
-    const noDeviceIdsThisPage = studentIds.filter((id) => !byStudent.has(id));
+    // ─── Lease checkpoint (Wave 2.1 concurrency fix) ────────────────────────
+    // Positioned deliberately HERE: device selection for this page is done
+    // (byStudent above is final), but no provider dispatch or recipient-
+    // status write for this page has happened yet. This is exactly the
+    // "selected the next device(s) but before provider send" boundary — the
+    // test hook fires here, then the lease is re-verified. A sender that no
+    // longer owns the lease stops dead: no Expo call, no recipient-status
+    // write, for this page or any later one.
+    await input.onDevicesSelected?.(Array.from(byStudent.keys()));
+    const leaseHeld = await touchCampaignHeartbeatIfLeaseHeld(input.campaignId, input.leaseSendAttempt);
+    if (!leaseHeld) {
+      logger.warn({
+        campaignId: input.campaignId,
+        notificationId: input.notificationId,
+        leaseSendAttempt: input.leaseSendAttempt,
+        batches,
+      }, "[CAMPAIGN] send lease lost mid-run — stopping before this page's provider dispatch, no finalization by this sender");
+      throw new LeaseLostError(input.campaignId, input.leaseSendAttempt);
+    }
+
+    const liveDeviceStudentIds = new Set(eligible.map((d) => d.studentId));
+    const noDeviceIdsThisPage = studentIds.filter((id) => !liveDeviceStudentIds.has(id));
     noDeviceStudents += noDeviceIdsThisPage.length;
     if (noDeviceIdsThisPage.length > 0) {
       await db.update(notificationCampaignRecipientsTable)
@@ -575,8 +817,6 @@ export async function sendCampaignPushNotification(input: SendCampaignPushInput)
         ));
     }
 
-    const sentIdsThisPage: number[] = [];
-    const failedIdsThisPage: number[] = [];
     for (const [studentId, studentDevices] of byStudent) {
       matchedStudents += 1;
       const result = await sendToDevices(
@@ -588,23 +828,35 @@ export async function sendCampaignPushNotification(input: SendCampaignPushInput)
       // One recipient row = "sent" if ANY of their devices got through —
       // mirrors how a person experiences it (they got the notification),
       // not a strict all-devices-must-succeed bar.
-      if (result.sent > 0) sentIdsThisPage.push(studentId);
-      else failedIdsThisPage.push(studentId);
+      if (result.sent > 0) studentHasSuccess.add(studentId);
     }
-    if (sentIdsThisPage.length > 0) {
+
+    // Final per-student status this page: success (from history or this
+    // run) beats a live-but-unsuccessful device, which beats no device at
+    // all. This is the generalized rule that makes a recipient who was
+    // already fully delivered before a crash correctly stay 'sent' on
+    // resume even if this run attempts zero new devices for them.
+    const finalSentIds: number[] = [];
+    const finalFailedIds: number[] = [];
+    for (const studentId of studentIds) {
+      if (studentHasSuccess.has(studentId)) finalSentIds.push(studentId);
+      else if (liveDeviceStudentIds.has(studentId)) finalFailedIds.push(studentId);
+      // else: already counted into noDeviceIdsThisPage above.
+    }
+    if (finalSentIds.length > 0) {
       await db.update(notificationCampaignRecipientsTable)
         .set({ status: "sent" })
         .where(and(
           eq(notificationCampaignRecipientsTable.campaignId, input.campaignId),
-          inArray(notificationCampaignRecipientsTable.studentId, sentIdsThisPage),
+          inArray(notificationCampaignRecipientsTable.studentId, finalSentIds),
         ));
     }
-    if (failedIdsThisPage.length > 0) {
+    if (finalFailedIds.length > 0) {
       await db.update(notificationCampaignRecipientsTable)
         .set({ status: "failed" })
         .where(and(
           eq(notificationCampaignRecipientsTable.campaignId, input.campaignId),
-          inArray(notificationCampaignRecipientsTable.studentId, failedIdsThisPage),
+          inArray(notificationCampaignRecipientsTable.studentId, finalFailedIds),
         ));
     }
 
@@ -621,7 +873,22 @@ export async function sendCampaignPushNotification(input: SendCampaignPushInput)
     sent,
     failed,
     truncated,
+    devicesPreviouslySent,
+    devicesAttemptedThisRun,
+    permanentlyFailedSkipped,
   }, truncated ? "[PUSH_DIAG] Campaign push completed INCOMPLETE (truncated)" : "[PUSH_DIAG] Campaign push completed");
 
-  return { matchedDevices, matchedStudents, noDeviceStudents, sent, failed, batches, truncated };
+  return {
+    matchedDevices,
+    matchedStudents,
+    noDeviceStudents,
+    sent,
+    failed,
+    batches,
+    truncated,
+    devicesPreviouslySent,
+    skippedAlreadySent: devicesPreviouslySent,
+    devicesAttemptedThisRun,
+    permanentlyFailedSkipped,
+  };
 }
