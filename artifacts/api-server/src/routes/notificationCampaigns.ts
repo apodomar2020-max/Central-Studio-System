@@ -14,21 +14,24 @@
  */
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, gte, ilike, lte, ne } from "drizzle-orm";
 import { blockStudentJwt } from "../middlewares/auth";
 import {
   db,
   notificationCampaignsTable,
+  systemUsersTable,
 } from "@workspace/db";
 import {
   NOTIFICATION_CAMPAIGN_AUDIENCE_TYPES,
   NOTIFICATION_CAMPAIGN_DELETABLE_STATUSES,
   NOTIFICATION_CAMPAIGN_EDITABLE_STATUSES,
+  NOTIFICATION_CAMPAIGN_STATUSES,
 } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
 import {
   computeCampaignAggregate,
+  isCampaignStaleSending,
   NotificationCampaignError,
   previewCampaignAudience,
   resumeCampaign,
@@ -64,9 +67,21 @@ const UpdateCampaignBody = z.object({
   audienceConfig: z.record(z.string(), z.unknown()).nullish(),
 });
 
+// Wave 4: server-side filters for the campaign list — status, audience
+// type, title search, and a created-date range, plus an explicit
+// includeArchived opt-in (archived campaigns are excluded from the default
+// view, mirroring the existing Admin archive convention: history stays
+// retrievable, never shown by default). All optional; an empty query still
+// returns the same "active" list as before this Wave.
 const ListCampaignsQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(25),
+  status: z.enum(NOTIFICATION_CAMPAIGN_STATUSES).optional(),
+  audienceType: z.enum(NOTIFICATION_CAMPAIGN_AUDIENCE_TYPES).optional(),
+  search: z.string().trim().min(1).optional(),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  includeArchived: z.coerce.boolean().default(false),
 });
 
 function isEditable(status: string): boolean {
@@ -170,17 +185,31 @@ router.get(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
-    const { page, limit } = parsed.data;
+    const { page, limit, status, audienceType, search, dateFrom, dateTo, includeArchived } = parsed.data;
     const offset = (page - 1) * limit;
+
+    const conditions = [
+      status ? eq(notificationCampaignsTable.status, status) : (includeArchived ? undefined : ne(notificationCampaignsTable.status, "archived")),
+      audienceType ? eq(notificationCampaignsTable.audienceType, audienceType) : undefined,
+      search ? ilike(notificationCampaignsTable.title, `%${search}%`) : undefined,
+      dateFrom ? gte(notificationCampaignsTable.createdAt, `${dateFrom}T00:00:00.000Z`) : undefined,
+      dateTo ? lte(notificationCampaignsTable.createdAt, `${dateTo}T23:59:59.999Z`) : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [rows, [{ total }]] = await Promise.all([
       db
-        .select()
+        .select({
+          ...getTableColumns(notificationCampaignsTable),
+          createdByAdminName: systemUsersTable.fullName,
+        })
         .from(notificationCampaignsTable)
+        .leftJoin(systemUsersTable, eq(systemUsersTable.id, notificationCampaignsTable.createdByAdminId))
+        .where(whereClause)
         .orderBy(desc(notificationCampaignsTable.createdAt))
         .limit(limit)
         .offset(offset),
-      db.select({ total: count() }).from(notificationCampaignsTable),
+      db.select({ total: count() }).from(notificationCampaignsTable).where(whereClause),
     ]);
 
     // List view intentionally uses the write-once cached counters (fast,
@@ -189,7 +218,20 @@ router.get(
     // exception (never cached) and would require a per-row query here;
     // Wave 2 leaves per-row read counts to the detail endpoint only, to
     // keep the list endpoint's cost independent of campaign count.
-    res.json({ data: rows, total, page, limit, totalPages: total === 0 ? 0 : Math.ceil(total / limit) });
+    //
+    // Wave 4: createdByAdminName is a LEFT JOIN to system_users (nullable —
+    // a deleted admin's campaigns keep createdByAdminId's own ON DELETE SET
+    // NULL behavior, so this is simply null; the UI shows "Former user" for
+    // that case). Only fullName is exposed — no other admin account fields,
+    // per the task's "avoid exposing unnecessary admin account fields."
+    //
+    // Wave 4 review fix: canResume is server-computed (isCampaignStaleSending,
+    // same threshold/semantics resumeCampaign() itself uses) — the Admin
+    // client must never reproduce a configurable backend staleness rule
+    // itself. This is a UX signal only; resumeCampaign()'s own atomic claim
+    // remains the sole actual authority.
+    const data = rows.map((row) => ({ ...row, canResume: isCampaignStaleSending(row) }));
+    res.json({ data, total, page, limit, totalPages: total === 0 ? 0 : Math.ceil(total / limit) });
   },
 );
 
@@ -205,13 +247,21 @@ router.get(
       res.status(400).json({ error: "Invalid campaign id" });
       return;
     }
-    const [campaign] = await db.select().from(notificationCampaignsTable).where(eq(notificationCampaignsTable.id, id)).limit(1);
+    const [campaign] = await db
+      .select({
+        ...getTableColumns(notificationCampaignsTable),
+        createdByAdminName: systemUsersTable.fullName,
+      })
+      .from(notificationCampaignsTable)
+      .leftJoin(systemUsersTable, eq(systemUsersTable.id, notificationCampaignsTable.createdByAdminId))
+      .where(eq(notificationCampaignsTable.id, id))
+      .limit(1);
     if (!campaign) {
       res.status(404).json({ error: "Campaign not found" });
       return;
     }
     const aggregate = await computeCampaignAggregate(id);
-    res.json({ ...campaign, aggregate });
+    res.json({ ...campaign, aggregate, canResume: isCampaignStaleSending(campaign) });
   },
 );
 

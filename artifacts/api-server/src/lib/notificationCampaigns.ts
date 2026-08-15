@@ -49,6 +49,29 @@ function staleSendingThresholdMinutes(): number {
   return Number.isFinite(value) && value > 0 ? value : STALE_SENDING_MINUTES_DEFAULT;
 }
 
+/**
+ * Wave 4 concurrency-review fix: the single server-side authority for
+ * "would a resume attempt on this campaign right now be considered stale",
+ * exposed to the Admin API as `canResume` (see routes/notificationCampaigns.ts)
+ * so the client never reproduces this business rule itself. Mirrors
+ * resumeCampaign()'s atomic claim's WHERE clause EXACTLY (status='sending'
+ * AND (heartbeat is null OR heartbeat older than the configured threshold))
+ * — same staleSendingThresholdMinutes() call, so a NOTIFICATION_CAMPAIGN_STALE_SENDING_MINUTES
+ * override is honored identically here and in the real claim. This is a
+ * read-only ESTIMATE for UX purposes only (computed at read time, not
+ * inside a lock) — resumeCampaign()'s own atomic UPDATE remains the sole
+ * actual authority; a resume attempt that races past this read is still
+ * safely rejected or serialized by that claim, exactly as before this
+ * field existed.
+ */
+export function isCampaignStaleSending(campaign: Pick<NotificationCampaign, "status" | "lastSendHeartbeatAt">): boolean {
+  if (campaign.status !== "sending") return false;
+  if (!campaign.lastSendHeartbeatAt) return true;
+  const staleMinutes = staleSendingThresholdMinutes();
+  const heartbeatAgeMs = Date.now() - new Date(campaign.lastSendHeartbeatAt).getTime();
+  return heartbeatAgeMs > staleMinutes * 60 * 1000;
+}
+
 // Bounds total resume attempts for one campaign — the campaign-level analog
 // of pushNotifications.ts's per-device attempt cap. Stops a campaign that
 // keeps crashing for some unrelated systemic reason (e.g. a bad deploy)

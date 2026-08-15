@@ -198,8 +198,15 @@ export const NAV_TREE: NavNode[] = [
     link("Promotions", "/promotions", [["promotions", "view"]], Tag, {
       description: "Promotional codes and discount offer campaigns",
     }),
-    link("Notifications", "/notifications", [["notifications", "view"]], Bell, {
-      description: "Broadcast mobile push notifications to members",
+    // Wave 4: renamed from generic "Notifications" — this page manages ONLY
+    // intentional, Admin-created Manual Push campaigns now (Wave 2/3's
+    // notification_campaigns), never system/automation/transactional
+    // notifications, so the old generic label would be actively misleading.
+    // System-side notification delivery visibility is Wave 5's page, not
+    // this one.
+    link("Manual Push Notifications", "/notifications", [["notifications", "view"]], Bell, {
+      pageTitle: "Manual Push Notifications",
+      description: "Create and send Manual Push campaigns to your community",
     }),
     link("WhatsApp Campaigns", "/marketing", [["marketing", "view"]], Send, {
       description: "Automated WhatsApp marketing messages and campaigns",

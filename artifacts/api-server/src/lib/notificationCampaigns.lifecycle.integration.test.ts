@@ -330,6 +330,21 @@ test("archiving requires notifications:delete", async () => {
   assert.equal(res.status, 403);
 });
 
+// Wave 4 review — RBAC mapping clarification: notifications:create grants
+// draft create/edit only, NEVER delete. An admin holding create (and even
+// send) but not delete must not be able to hard-delete a draft — that is
+// notifications:delete's job specifically, exactly like archive above.
+test("deleting a draft requires notifications:delete — create (even with send) is not sufficient", async () => {
+  const campaign = await createDraft({ title: "Lifecycle Verify DeleteDraftPerm" });
+  const res = await fetch(apiUrl(`/api/notification-campaigns/${campaign.id}`), {
+    method: "DELETE",
+    headers: adminHeaders("notifications:view,notifications:create,notifications:send"),
+  });
+  assert.equal(res.status, 403);
+  const { rows } = await pool.query(`SELECT id FROM notification_campaigns WHERE id = $1`, [campaign.id]);
+  assert.equal(rows.length, 1, "the draft must still exist — create/send permission must never authorize a delete");
+});
+
 // ─── Integrity review Part 1: legacy /notifications endpoint bypass ─────────
 // A sent campaign's canonical notifications row must be immune to the
 // legacy PATCH/DELETE /api/notifications/:id endpoints, not just to the
