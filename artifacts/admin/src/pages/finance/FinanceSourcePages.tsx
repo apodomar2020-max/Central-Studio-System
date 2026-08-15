@@ -25,9 +25,8 @@ import {
 import { FinanceLimitationsPanel } from "./finance-badges";
 
 /**
- * Shared shell so every scoped page gets the same header/caveat/table rhythm.
- * `caveats` is the page-level version of the Overview's warning panel: the
- * scope-specific reason its numbers must not be over-trusted.
+ * Shared shell so every scoped page gets the same header/information/table
+ * rhythm. `caveats` supplies the page-specific interpretation guidance.
  */
 function FinanceScopedPage({
   title,
@@ -52,10 +51,11 @@ function FinanceScopedPage({
 }) {
   return (
     <div className="admin2-finance-page admin2-finance-ledger space-y-5">
-      <PageHeader title={title} description={description} mode="general" />
-      {caveats && caveats.length > 0 && (
-        <FinanceLimitationsPanel warnings={caveats} title={caveatTitle ?? "What these figures mean"} />
-      )}
+      <PageHeader title={title} description={description} mode="general">
+        {caveats && caveats.length > 0 && (
+          <FinanceLimitationsPanel warnings={caveats} title={caveatTitle ?? "What these figures mean"} />
+        )}
+      </PageHeader>
       <FinanceTransactionsView
         queryKey={queryKey}
         lockedFamilies={lockedFamilies}

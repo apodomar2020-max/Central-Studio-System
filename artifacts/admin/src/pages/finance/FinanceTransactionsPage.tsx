@@ -30,8 +30,9 @@ export default function FinanceTransactionsPage() {
         title="Transactions"
         description="Monetary payments, receivables, refunds, and discounts across Studio and Ballet. Read-only."
         mode="general"
-      />
-      <FinanceLimitationsPanel warnings={MIXED_SOURCE_CAVEATS} title="Reading this feed" />
+      >
+        <FinanceLimitationsPanel warnings={MIXED_SOURCE_CAVEATS} title="Reading this feed" />
+      </PageHeader>
       <FinanceTransactionsView
         queryKey="all"
         allowedEventTypes={[

@@ -109,13 +109,12 @@ export default function FinanceExportsPage() {
         title="Reports & Exports"
         description={`${FINANCE_EXPORT_TITLE} — normalized financial activity across every source you can view.`}
         mode="general"
-      />
-
-      {/* Limitations come BEFORE the export controls, deliberately. */}
-      <FinanceLimitationsPanel
-        warnings={EXPORT_LIMITATIONS}
-        title="Read before exporting"
-      />
+      >
+        <FinanceLimitationsPanel
+          warnings={EXPORT_LIMITATIONS}
+          title="Read before exporting"
+        />
+      </PageHeader>
 
       {/* Filters — same dimensions as the Transactions page. */}
       <div className="flex flex-col gap-3 rounded-md border bg-card p-4">

@@ -16,8 +16,19 @@ import {
   type FinanceReliabilityBadge,
   type UnifiedFinanceTransaction,
 } from "@workspace/api-zod";
-import { AlertTriangle, HelpCircle } from "lucide-react";
+import { AlertTriangle, HelpCircle, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCreditUnits, formatEgp } from "./financeApi";
 
@@ -143,8 +154,9 @@ export function FinanceAmountCell({ transaction }: { transaction: UnifiedFinance
 }
 
 /**
- * Prominent, non-dismissable caveat block. Rendered above data on the Overview
- * and Exports pages so a figure is never read without its limitations.
+ * Shared Finance guidance action. The legacy name remains intentionally stable
+ * for existing consumers, while the presentation is now a neutral information
+ * control backed by the Admin dialog pattern instead of an amber warning panel.
  */
 export function FinanceLimitationsPanel({
   warnings,
@@ -154,25 +166,56 @@ export function FinanceLimitationsPanel({
   title?: string;
 }) {
   if (warnings.length === 0) return null;
+
+  const accessibleLabel = `Open ${title} information`;
+
   return (
-    <div
-      className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4"
-      data-testid="finance-limitations"
-    >
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">{title}</p>
-          <ul className="mt-1.5 space-y-1">
-            {warnings.map((warning) => (
-              <li key={warning} className="text-xs leading-relaxed text-amber-800/90 dark:text-amber-200/80">
-                • {warning}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
+    <Dialog>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="admin2-finance-info-trigger"
+              aria-label={accessibleLabel}
+              data-testid="button-finance-information"
+            >
+              <Info aria-hidden="true" />
+            </Button>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent>View finance information</TooltipContent>
+      </Tooltip>
+
+      <DialogContent className="admin2-finance-info-dialog sm:max-w-xl" data-testid="dialog-finance-information">
+        <DialogHeader className="admin2-finance-info-header">
+          <div className="admin2-finance-info-heading">
+            <span className="admin2-finance-info-icon" aria-hidden="true"><Info /></span>
+            <div>
+              <DialogTitle>{title}</DialogTitle>
+              <DialogDescription>Guidance for interpreting the financial information on this page.</DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <ul className="admin2-finance-info-list">
+          {warnings.map((warning) => (
+            <li key={warning}>
+              <span aria-hidden="true" />
+              <p>{warning}</p>
+            </li>
+          ))}
+        </ul>
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">Close</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

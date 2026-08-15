@@ -145,12 +145,15 @@ export default function FinanceOverviewPage() {
         description="Classified financial visibility across Studio, Ballet, credits, and discounts. Read-only."
         mode="general"
       >
-        <Button asChild variant="outline" className="gap-2 self-start">
-          <Link href="/finance/transactions" data-testid="link-finance-transactions">
-            View all transactions
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {overview && <FinanceLimitationsPanel warnings={overview.warnings} />}
+          <Button asChild variant="outline" className="gap-2 self-start">
+            <Link href="/finance/transactions" data-testid="link-finance-transactions">
+              View all transactions
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </PageHeader>
 
       {overviewQuery.isError ? (
@@ -158,9 +161,6 @@ export default function FinanceOverviewPage() {
           Failed to load the finance overview.
         </div>
       ) : null}
-
-      {/* Caveats appear ABOVE the numbers, never below them. */}
-      {overview && <FinanceLimitationsPanel warnings={overview.warnings} />}
 
       {/* ── 1. Recorded amounts ─────────────────────────────────────────── */}
       <section className="space-y-5">
