@@ -34,17 +34,26 @@ import {
   resumeCampaign,
   sendCampaign,
 } from "../lib/notificationCampaigns";
+import { validateAndNormalizeAudienceConfig } from "../lib/notificationCampaignAudience";
 
 const router: IRouter = Router();
 
 const CAMPAIGN_ACTIVITY_FIELDS = ["title", "body", "audienceType", "audienceConfig", "status"] as const;
 
+// Wave 3: new/edited campaigns may use any of the eight resolvable values
+// (the legacy "all" plus the seven-segment contract) — "all" is kept fully
+// creatable, not just resolvable, purely for backward compatibility with
+// any existing integration/tooling that already sends it; it behaves
+// identically to "all_members" in every respect (same resolver branch, same
+// config shape). "all_members" is the new DEFAULT and the name the Wave 3
+// contract asks new campaigns to use going forward, but nothing rejects the
+// old value outright.
 const AudienceTypeSchema = z.enum(NOTIFICATION_CAMPAIGN_AUDIENCE_TYPES);
 
 const CreateCampaignBody = z.object({
   title: z.string().min(1),
   body: z.string().min(1),
-  audienceType: AudienceTypeSchema.default("all"),
+  audienceType: AudienceTypeSchema.default("all_members"),
   audienceConfig: z.record(z.string(), z.unknown()).nullish(),
 });
 
@@ -83,6 +92,12 @@ const CAMPAIGN_ERROR_STATUS_CODES: Record<string, number> = {
   // send lease. Conflict-shaped for the same reason as the codes above: not
   // a client error, just "someone else already owns this now".
   LEASE_LOST: 409,
+  // Wave 3 — audienceConfig failed shape validation or an async DB check
+  // (nonexistent id, schedule/class mismatch, cancelled schedule, invalid
+  // occurrence, nonexistent package). Genuinely a client error (400),
+  // listed explicitly for readability even though it matches the default.
+  UNSUPPORTED_AUDIENCE_TYPE: 400,
+  INVALID_AUDIENCE_CONFIG: 400,
 };
 
 function handleCampaignError(res: import("express").Response, error: unknown): void {
@@ -107,13 +122,25 @@ router.post(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
+    // Wave 3: canonical server-side audienceConfig validation — shape
+    // (Zod, per audienceType) plus async DB checks (ids exist, schedule
+    // belongs to class, package exists, …). The client's raw config is
+    // NEVER trusted or stored directly; only the validated/normalized
+    // result (e.g. deduplicated specific_members.studentIds) is persisted.
+    let normalizedAudienceConfig: Record<string, unknown>;
+    try {
+      normalizedAudienceConfig = await validateAndNormalizeAudienceConfig(parsed.data.audienceType, parsed.data.audienceConfig ?? {}) as Record<string, unknown>;
+    } catch (error) {
+      handleCampaignError(res, error);
+      return;
+    }
     const [row] = await db
       .insert(notificationCampaignsTable)
       .values({
         title: parsed.data.title,
         body: parsed.data.body,
         audienceType: parsed.data.audienceType,
-        audienceConfig: parsed.data.audienceConfig ?? null,
+        audienceConfig: normalizedAudienceConfig,
         status: "draft",
         createdByAdminId: req.adminUser?.sub ?? null,
       })
@@ -245,13 +272,35 @@ router.patch(
       res.status(409).json({ error: `Campaign content is immutable once its status is "${before.status}" — only "draft" campaigns can be edited.` });
       return;
     }
+
+    // Wave 3: re-validate whenever EITHER audience field changes — an
+    // audienceType change with no fresh audienceConfig defaults to {} (an
+    // empty object) rather than silently reusing the OLD type's config
+    // shape, which would almost always be structurally wrong for the new
+    // type; a config-requiring type (specific_members/class_participants/
+    // package_holders) then correctly 400s asking for real configuration
+    // instead of persisting a stale/mismatched one.
+    let normalizedAudienceConfig: Record<string, unknown> | undefined;
+    if (parsed.data.audienceType !== undefined || parsed.data.audienceConfig !== undefined) {
+      const effectiveAudienceType = parsed.data.audienceType ?? before.audienceType;
+      const effectiveRawConfig = parsed.data.audienceConfig !== undefined
+        ? parsed.data.audienceConfig
+        : (parsed.data.audienceType !== undefined ? {} : before.audienceConfig);
+      try {
+        normalizedAudienceConfig = await validateAndNormalizeAudienceConfig(effectiveAudienceType as never, effectiveRawConfig ?? {}) as Record<string, unknown>;
+      } catch (error) {
+        handleCampaignError(res, error);
+        return;
+      }
+    }
+
     const [row] = await db
       .update(notificationCampaignsTable)
       .set({
         ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
         ...(parsed.data.body !== undefined ? { body: parsed.data.body } : {}),
         ...(parsed.data.audienceType !== undefined ? { audienceType: parsed.data.audienceType } : {}),
-        ...(parsed.data.audienceConfig !== undefined ? { audienceConfig: parsed.data.audienceConfig } : {}),
+        ...(normalizedAudienceConfig !== undefined ? { audienceConfig: normalizedAudienceConfig } : {}),
       })
       .where(eq(notificationCampaignsTable.id, id))
       .returning();

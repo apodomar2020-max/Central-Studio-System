@@ -131,7 +131,7 @@ test("recipient snapshot has zero rows before send and exactly one row per accou
   await seedStudent();
   const campaignId = await createDraftCampaign("Send Verify SnapshotTiming");
 
-  const preview = await campaigns.previewCampaignAudience({ audienceType: "all" });
+  const preview = await campaigns.previewCampaignAudience({ audienceType: "all", audienceConfig: null });
   assert.equal(preview.matchedAccounts, 2);
   const { rows: beforeSend } = await pool.query(`SELECT id FROM notification_campaign_recipients WHERE campaign_id = $1`, [campaignId]);
   assert.equal(beforeSend.length, 0, "preview must not have created any snapshot rows");
@@ -214,7 +214,7 @@ test("notification_campaign_recipients has no push-token column at all", async (
 test("send resolves the audience fresh, including accounts that registered after preview", async () => {
   const early = await seedStudent();
   const campaignId = await createDraftCampaign("Send Verify ReResolve");
-  const preview = await campaigns.previewCampaignAudience({ audienceType: "all" });
+  const preview = await campaigns.previewCampaignAudience({ audienceType: "all", audienceConfig: null });
   assert.equal(preview.matchedAccounts, 1);
 
   const late = await seedStudent(); // registers after preview, before send

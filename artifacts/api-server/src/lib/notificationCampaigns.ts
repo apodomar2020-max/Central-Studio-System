@@ -19,22 +19,20 @@ import {
   notificationDevicesTable,
   notificationReadReceiptsTable,
   notificationsTable,
-  studentsTable,
   type NotificationCampaign,
 } from "@workspace/db";
 import {
+  NOTIFICATION_CAMPAIGN_AUDIENCE_TYPES,
   NOTIFICATION_CAMPAIGN_SENDABLE_STATUSES,
+  type NotificationCampaignAudienceType,
   type NotificationCampaignStatus,
 } from "@workspace/api-zod";
 import { logger } from "./logger";
 import { LeaseLostError, sendCampaignPushNotification } from "./pushNotifications";
+import { NotificationCampaignError } from "./notificationCampaignError";
+import { buildAudienceAccountsSubquery } from "./notificationCampaignAudience";
 
-export class NotificationCampaignError extends Error {
-  constructor(public code: string, message: string) {
-    super(message);
-    this.name = "NotificationCampaignError";
-  }
-}
+export { NotificationCampaignError };
 
 // ─── Wave 2.1: recovery configuration ────────────────────────────────────────
 //
@@ -69,43 +67,57 @@ export type AudiencePreview = {
 };
 
 /**
- * Wave 2 supports exactly one audience type ("all" — every student
- * account). Segmented audiences (Specific Members, Students, Parents,
- * Ballet Families, Class Participants, Package Holders) are Wave 3+; this
- * function is the single place that widens when they land, so preview and
- * send can never drift onto different resolution logic.
+ * Wave 3: the full seven-segment audience contract (plus the legacy "all"
+ * alias) — see notificationCampaignAudience.ts's buildAudienceAccountsSubquery
+ * for what each type actually resolves to. This is the single gate before
+ * either previewCampaignAudience or freezeCampaignRecipients runs, so
+ * preview and send can never drift onto different resolution logic, and an
+ * audienceType that somehow bypassed the DB CHECK constraint / Zod
+ * validation at write time is still caught here.
  */
 function assertSupportedAudience(audienceType: string): void {
-  if (audienceType !== "all") {
+  if (!(NOTIFICATION_CAMPAIGN_AUDIENCE_TYPES as readonly string[]).includes(audienceType)) {
     throw new NotificationCampaignError(
       "UNSUPPORTED_AUDIENCE_TYPE",
-      `audienceType "${audienceType}" is not supported yet — Wave 2 only supports "all"`,
+      `audienceType "${audienceType}" is not supported`,
     );
   }
 }
 
 /**
- * Server-calculated preview — the SAME resolver semantics send() uses
- * (both are "all accounts" today), but this never writes anything. No
- * per-account list is returned, only counts, so a broad-segment preview
- * cannot be used to enumerate PII.
+ * Server-calculated preview — the SAME resolver (buildAudienceAccountsSubquery)
+ * send() uses, wrapped in the same "matched accounts left-joined against
+ * live active Expo devices" shape for every audience type. Never writes
+ * anything. No per-account list is returned, only counts, so a broad-segment
+ * preview can never be used to enumerate PII (see the Wave 3 report's RBAC
+ * section for why this is safe even for a notifications:create-only caller).
  */
 export async function previewCampaignAudience(
-  campaign: Pick<NotificationCampaign, "audienceType">,
+  campaign: Pick<NotificationCampaign, "audienceType" | "audienceConfig">,
 ): Promise<AudiencePreview> {
   assertSupportedAudience(campaign.audienceType);
+  const audienceSubquery = buildAudienceAccountsSubquery(
+    campaign.audienceType as NotificationCampaignAudienceType,
+    campaign.audienceConfig ?? {},
+  );
 
-  const [{ matchedAccounts }] = await db.select({ matchedAccounts: count() }).from(studentsTable);
-  const [{ pushEnabledAccounts, activeDevices }] = await db
-    .select({
-      pushEnabledAccounts: countDistinct(notificationDevicesTable.studentId),
-      activeDevices: count(),
-    })
-    .from(notificationDevicesTable)
-    .where(and(
-      eq(notificationDevicesTable.provider, "expo"),
-      eq(notificationDevicesTable.isActive, true),
-    ));
+  const result = await db.execute(sql`
+    select
+      count(*)::int as "matchedAccounts",
+      count(*) filter (where d.device_count > 0)::int as "pushEnabledAccounts",
+      coalesce(sum(coalesce(d.device_count, 0)), 0)::int as "activeDevices"
+    from ${audienceSubquery} audience
+    left join (
+      select student_id, count(*)::int as device_count
+      from notification_devices
+      where provider = 'expo' and is_active = true
+      group by student_id
+    ) d on d.student_id = audience.student_id
+  `);
+  const row = result.rows[0] as { matchedAccounts: number; pushEnabledAccounts: number; activeDevices: number } | undefined;
+  const matchedAccounts = row?.matchedAccounts ?? 0;
+  const pushEnabledAccounts = row?.pushEnabledAccounts ?? 0;
+  const activeDevices = row?.activeDevices ?? 0;
 
   return {
     matchedAccounts,
@@ -123,45 +135,56 @@ export type FrozenRecipient = {
 };
 
 /**
- * THE architectural core of Wave 2: freezes the recipient snapshot inside
- * the caller's transaction, in one set-based INSERT…SELECT (not an
- * app-side loop over fetched account ids) so the audience is resolved and
- * persisted atomically, with memory bounded by the RETURNING result set
- * rather than by holding the whole audience in JS twice.
+ * THE architectural core of Wave 2 (widened, not redesigned, by Wave 3):
+ * freezes the recipient snapshot inside the caller's transaction, in one
+ * set-based INSERT…SELECT (not an app-side loop over fetched account ids)
+ * so the audience is resolved and persisted atomically, with memory bounded
+ * by the RETURNING result set rather than by holding the whole audience in
+ * JS twice.
  *
  * Idempotent per (campaignId, studentId) via the unique index — safe to
  * call at most once per campaign in practice (send() only calls this
  * inside the single send transaction), but ON CONFLICT DO NOTHING means a
- * hypothetical retry can never duplicate a recipient row.
+ * hypothetical retry can never duplicate a recipient row. This is also
+ * what makes every audience type's account-level dedup requirement (one
+ * parent with N children, one account with N qualifying bookings/package
+ * orders/devices) a non-issue here specifically: buildAudienceAccountsSubquery
+ * already yields DISTINCT student_id, and the unique index is a second,
+ * DB-enforced backstop against ever inserting two rows for the same account.
  *
- * assertSupportedAudience() above is the single gate before this runs —
- * Wave 3 widens the SELECT below (or dispatches to a per-audienceType
- * query) when segmented audiences land; nothing else about this function's
- * shape needs to change.
+ * assertSupportedAudience() above is the single gate before this runs. The
+ * critical invariant (send-time snapshot consistency — see the Wave 3
+ * report §13): this call re-resolves the audience subquery FRESH, from the
+ * campaign's current audienceType/audienceConfig, at the exact moment the
+ * send transaction commits — never from a cached/previewed count. A
+ * preview taken minutes earlier is informational only and is never read by
+ * this function.
  */
 async function freezeCampaignRecipients(
   tx: Pick<typeof db, "execute">,
   campaignId: number,
   audienceType: string,
+  audienceConfig: unknown,
 ): Promise<FrozenRecipient[]> {
   assertSupportedAudience(audienceType);
+  const audienceSubquery = buildAudienceAccountsSubquery(audienceType as NotificationCampaignAudienceType, audienceConfig ?? {});
 
   const result = await tx.execute(sql`
     insert into notification_campaign_recipients
       (campaign_id, student_id, status, had_active_device_at_snapshot, active_device_count_at_snapshot)
     select
       ${campaignId},
-      s.id,
+      audience.student_id,
       'pending',
       coalesce(d.device_count, 0) > 0,
       coalesce(d.device_count, 0)
-    from students s
+    from ${audienceSubquery} audience
     left join (
       select student_id, count(*)::int as device_count
       from notification_devices
       where provider = 'expo' and is_active = true
       group by student_id
-    ) d on d.student_id = s.id
+    ) d on d.student_id = audience.student_id
     on conflict (campaign_id, student_id) do nothing
     returning id, student_id as "studentId",
       had_active_device_at_snapshot as "hadActiveDeviceAtSnapshot",
@@ -349,7 +372,7 @@ export async function sendCampaign(campaignId: number): Promise<CampaignSendResu
   }
 
   const { notificationId, recipients } = await db.transaction(async (tx) => {
-    const recipients = await freezeCampaignRecipients(tx, campaignId, campaign.audienceType);
+    const recipients = await freezeCampaignRecipients(tx, campaignId, campaign.audienceType, campaign.audienceConfig);
 
     const [notificationRow] = await tx
       .insert(notificationsTable)
