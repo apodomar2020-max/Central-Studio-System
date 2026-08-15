@@ -84,6 +84,10 @@ import { currentSubscription, getPaymentCyclesForApplications } from "../lib/bal
 import { buildMyBalletClassesResponse } from "../lib/balletMyClasses";
 import { computeAgeAsOf, isAgeEligible } from "../lib/balletAgeEligibility";
 import { cairoNow } from "../lib/occurrence";
+import {
+  assertAssessmentOccurrenceNotExpired,
+  hasAssessmentOccurrenceEnded,
+} from "../lib/balletAssessmentOccurrence";
 
 export { computeAgeAsOf, isAgeEligible };
 
@@ -172,6 +176,7 @@ export type ListAvailableAssessmentSchedulesResult = {
 
 export async function listAvailableAssessmentSchedules(
   childBirthday: string,
+  now: Date = new Date(),
 ): Promise<ListAvailableAssessmentSchedulesResult> {
   if (!childBirthday || !/^\d{4}-\d{2}-\d{2}$/.test(childBirthday)) {
     return {
@@ -181,7 +186,7 @@ export async function listAvailableAssessmentSchedules(
     };
   }
 
-  const today = todayIso();
+  const today = cairoNow(now).date;
   const end = addDaysIso(today, BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS);
 
   const ageAtToday = computeAgeAsOf(childBirthday, today);
@@ -302,6 +307,7 @@ export async function listAvailableAssessmentSchedules(
       if (age == null) continue;
       const eligible = isAgeEligible(age, row.ageMin, row.ageMax);
       if (!eligible) continue;
+      if (hasAssessmentOccurrenceEnded(cursor, row.startTime, row.endTime, now)) continue;
 
       const bookedKey = `${row.scheduleId}:${cursor}`;
       if (occurrenceKeys.has(bookedKey)) continue;
@@ -1566,7 +1572,8 @@ router.post(
           );
         }
 
-        const today = todayIso();
+        const now = new Date();
+        const today = cairoNow(now).date;
         if (resolvedBirthday > today) {
           throw Object.assign(
             new Error("Child birthday cannot be in the future."),
@@ -1597,6 +1604,13 @@ router.post(
             { status: 422, code: "ASSESSMENT_SCHEDULE_UNAVAILABLE" },
           );
         }
+
+        assertAssessmentOccurrenceNotExpired(
+          assessment.date,
+          assessment.startTime,
+          assessment.endTime,
+          now,
+        );
 
         if (preferredPackageId != null) {
           const [pkg] = await tx
