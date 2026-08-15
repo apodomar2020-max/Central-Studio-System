@@ -4,5 +4,6 @@ export * from './balletCancellation';
 export * from './finance';
 export * from './eligibility';
 export * from './notifications';
+export * from './notificationCampaigns';
 export * from './permissions';
 export * from './qr-attendance';

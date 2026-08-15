@@ -1,6 +1,7 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import {
   db,
+  notificationCampaignRecipientsTable,
   notificationDeliveryLogsTable,
   notificationDevicesTable,
 } from "@workspace/db";
@@ -431,4 +432,196 @@ export async function sendBroadcastPushNotification(input: SendBroadcastInput): 
     batches,
     truncated,
   };
+}
+
+type SendCampaignPushInput = {
+  campaignId: number;
+  notificationId: number;
+  title: string;
+  body: string;
+  data?: PushData;
+  batchSize?: number;
+};
+
+export type CampaignPushResult = {
+  /** Distinct active-eligible devices seen across every recipient page. */
+  matchedDevices: number;
+  /** Distinct accounts that had at least one device attempted. */
+  matchedStudents: number;
+  /** Frozen-snapshot accounts with zero active eligible devices. */
+  noDeviceStudents: number;
+  sent: number;
+  failed: number;
+  /** Number of recipient-snapshot pages fetched. */
+  batches: number;
+  truncated: boolean;
+};
+
+const EMPTY_CAMPAIGN_PUSH_RESULT: CampaignPushResult = {
+  matchedDevices: 0,
+  matchedStudents: 0,
+  noDeviceStudents: 0,
+  sent: 0,
+  failed: 0,
+  batches: 0,
+  truncated: false,
+};
+
+/**
+ * Wave 2 — sends Push to the accounts in a campaign's FROZEN recipient
+ * snapshot (notification_campaign_recipients), never to "whatever the
+ * audience definition currently matches". This is the delivery-side half
+ * of the same invariant that keeps mobile visibility frozen (see
+ * routes/notifications.ts's campaignRecipientVisibilityCondition): a
+ * device that registers after the snapshot was taken must not receive this
+ * campaign's push, exactly as it must not see the notification in-app.
+ *
+ * Reuses Wave 1's exact keyset-pagination + Expo-chunking machinery
+ * (sendToDevices, the page-size/MAX_BROADCAST_BATCHES safety backstop) —
+ * paginating over notification_campaign_recipients instead of
+ * notification_devices directly, since the recipient snapshot (not the
+ * live device table) is this function's source of "who to attempt".
+ * Updates each recipient row's status (sent/failed/no_device) in batched
+ * per-page UPDATEs (not one write per student) to keep this bounded at
+ * O(pages), not O(recipients), in round trips.
+ */
+export async function sendCampaignPushNotification(input: SendCampaignPushInput): Promise<CampaignPushResult> {
+  if (!pushEnabled()) {
+    logger.info({ campaignId: input.campaignId, notificationId: input.notificationId }, "Campaign push skipped: push disabled");
+    return EMPTY_CAMPAIGN_PUSH_RESULT;
+  }
+
+  const pageSize = input.batchSize ?? getPushStatus().broadcastLimit;
+  const maxBatches = maxBroadcastBatches();
+  let matchedDevices = 0;
+  let matchedStudents = 0;
+  let noDeviceStudents = 0;
+  let sent = 0;
+  let failed = 0;
+  let batches = 0;
+  let cursor = 0;
+  let truncated = false;
+
+  for (;;) {
+    if (batches >= maxBatches) {
+      truncated = true;
+      logger.error({
+        campaignId: input.campaignId,
+        notificationId: input.notificationId,
+        batches,
+        maxBatches,
+        matchedDevices,
+        cursor,
+      }, "[PUSH_DIAG] Campaign push INCOMPLETE: MAX_BROADCAST_BATCHES safety backstop reached before the recipient snapshot was exhausted");
+      break;
+    }
+
+    const page = await db
+      .select({
+        id: notificationCampaignRecipientsTable.id,
+        studentId: notificationCampaignRecipientsTable.studentId,
+      })
+      .from(notificationCampaignRecipientsTable)
+      .where(and(
+        eq(notificationCampaignRecipientsTable.campaignId, input.campaignId),
+        gt(notificationCampaignRecipientsTable.id, cursor),
+      ))
+      .orderBy(asc(notificationCampaignRecipientsTable.id))
+      .limit(pageSize);
+
+    if (page.length === 0) break;
+    batches += 1;
+    cursor = page[page.length - 1]!.id;
+
+    // A recipient's studentId can be NULL only if the account was deleted
+    // after the snapshot was frozen (ON DELETE SET NULL) — nothing to send
+    // to, and its status (whatever it already was) is left as-is.
+    const studentIds = page.map((r) => r.studentId).filter((id): id is number => id != null);
+    if (studentIds.length === 0) continue;
+
+    const devices = await db
+      .select({
+        id: notificationDevicesTable.id,
+        studentId: notificationDevicesTable.studentId,
+        pushToken: notificationDevicesTable.pushToken,
+        platform: notificationDevicesTable.platform,
+        provider: notificationDevicesTable.provider,
+        isActive: notificationDevicesTable.isActive,
+      })
+      .from(notificationDevicesTable)
+      .where(and(
+        inArray(notificationDevicesTable.studentId, studentIds),
+        eq(notificationDevicesTable.provider, "expo"),
+        eq(notificationDevicesTable.isActive, true),
+      ));
+    const eligible = devices.filter(isPushDeviceEligible);
+    matchedDevices += eligible.length;
+
+    const byStudent = new Map<number, PushDevice[]>();
+    for (const device of eligible) {
+      const list = byStudent.get(device.studentId) ?? [];
+      list.push({ id: device.id, pushToken: device.pushToken, platform: device.platform });
+      byStudent.set(device.studentId, list);
+    }
+
+    const noDeviceIdsThisPage = studentIds.filter((id) => !byStudent.has(id));
+    noDeviceStudents += noDeviceIdsThisPage.length;
+    if (noDeviceIdsThisPage.length > 0) {
+      await db.update(notificationCampaignRecipientsTable)
+        .set({ status: "no_device" })
+        .where(and(
+          eq(notificationCampaignRecipientsTable.campaignId, input.campaignId),
+          inArray(notificationCampaignRecipientsTable.studentId, noDeviceIdsThisPage),
+        ));
+    }
+
+    const sentIdsThisPage: number[] = [];
+    const failedIdsThisPage: number[] = [];
+    for (const [studentId, studentDevices] of byStudent) {
+      matchedStudents += 1;
+      const result = await sendToDevices(
+        { studentId, title: input.title, body: input.body, data: input.data, notificationId: input.notificationId },
+        studentDevices,
+      );
+      sent += result.sent;
+      failed += result.failed;
+      // One recipient row = "sent" if ANY of their devices got through —
+      // mirrors how a person experiences it (they got the notification),
+      // not a strict all-devices-must-succeed bar.
+      if (result.sent > 0) sentIdsThisPage.push(studentId);
+      else failedIdsThisPage.push(studentId);
+    }
+    if (sentIdsThisPage.length > 0) {
+      await db.update(notificationCampaignRecipientsTable)
+        .set({ status: "sent" })
+        .where(and(
+          eq(notificationCampaignRecipientsTable.campaignId, input.campaignId),
+          inArray(notificationCampaignRecipientsTable.studentId, sentIdsThisPage),
+        ));
+    }
+    if (failedIdsThisPage.length > 0) {
+      await db.update(notificationCampaignRecipientsTable)
+        .set({ status: "failed" })
+        .where(and(
+          eq(notificationCampaignRecipientsTable.campaignId, input.campaignId),
+          inArray(notificationCampaignRecipientsTable.studentId, failedIdsThisPage),
+        ));
+    }
+
+    if (page.length < pageSize) break;
+  }
+
+  logger.info({
+    campaignId: input.campaignId,
+    notificationId: input.notificationId,
+    batches,
+    matchedDevices,
+    matchedStudents,
+    noDeviceStudents,
+    sent,
+    failed,
+    truncated,
+  }, truncated ? "[PUSH_DIAG] Campaign push completed INCOMPLETE (truncated)" : "[PUSH_DIAG] Campaign push completed");
+
+  return { matchedDevices, matchedStudents, noDeviceStudents, sent, failed, batches, truncated };
 }

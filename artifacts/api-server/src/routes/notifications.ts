@@ -5,6 +5,8 @@ import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import {
   db,
+  notificationCampaignRecipientsTable,
+  notificationCampaignsTable,
   notificationDeliveryLogsTable,
   notificationDevicesTable,
   notificationReadReceiptsTable,
@@ -130,8 +132,75 @@ function automationAuditSummary(type: string, result: AutomationRunSummary | Aut
   };
 }
 
-function isNotificationVisibleToStudent(row: { target: string; isDraft: boolean }, studentId: number): boolean {
-  return !row.isDraft && (row.target === "all" || row.target === `student:${studentId}`);
+/**
+ * Wave 2: EXISTS condition matching a notification row whose target is
+ * "campaign:{id}" AND the requesting student is a row in that campaign's
+ * FROZEN recipient snapshot (notification_campaign_recipients) — never a
+ * live re-resolution of the campaign's audienceConfig. This is what keeps
+ * "users outside the frozen audience must not gain visibility just because
+ * the segment definition later changes" true: membership is decided once,
+ * at send time, by what's actually persisted in that snapshot table, not
+ * by re-evaluating who currently matches "all" (or any future segment).
+ *
+ * Joins on notification_campaigns.notification_id rather than parsing the
+ * "campaign:{id}" string, so this has no dependency on target's textual
+ * format beyond routing (existing "all"/"student:{id}" rows are completely
+ * unaffected — this EXISTS clause is simply false for them, since no
+ * campaign row references their id as its notificationId).
+ */
+function campaignRecipientVisibilityCondition(studentId: number) {
+  return sql`exists (
+    select 1
+    from ${notificationCampaignsTable} nc
+    join ${notificationCampaignRecipientsTable} ncr on ncr.campaign_id = nc.id
+    where nc.notification_id = ${notificationsTable.id}
+      and ncr.student_id = ${studentId}
+  )`;
+}
+
+/**
+ * Wave 2 integrity fix: a sent campaign's canonical notification row (the
+ * one notification_campaigns.notification_id points at) must be immune to
+ * the legacy PATCH/DELETE endpoints, exactly as it's already immune to
+ * PATCH/DELETE through the campaign API once the campaign leaves "draft".
+ * Without this, an admin (or any caller with the same "notifications:*"
+ * permission the legacy composer already requires) could edit or hard-delete
+ * campaign content, corrupt mobile history, or silently null out
+ * notification_campaigns.notification_id via the FK's ON DELETE SET NULL —
+ * completely bypassing the campaign lifecycle's own immutability rules,
+ * which live in a different route file with no visibility into this one.
+ *
+ * A draft campaign has notification_id = NULL (only ever set at send time
+ * inside sendCampaign()'s transaction) — so this is naturally a no-op for
+ * drafts, and for every ordinary legacy/system notification, which no
+ * campaign row ever references.
+ */
+async function findOwningCampaignId(notificationId: number): Promise<number | null> {
+  const [campaign] = await db
+    .select({ id: notificationCampaignsTable.id })
+    .from(notificationCampaignsTable)
+    .where(eq(notificationCampaignsTable.notificationId, notificationId))
+    .limit(1);
+  return campaign?.id ?? null;
+}
+
+async function isNotificationVisibleToStudent(row: { id: number; target: string; isDraft: boolean }, studentId: number): Promise<boolean> {
+  if (row.isDraft) return false;
+  if (row.target === "all" || row.target === `student:${studentId}`) return true;
+  // Legacy fast path above is untouched; this only runs for a row that
+  // didn't already match "all"/"student:{id}" — existing rows never reach
+  // the query below.
+  if (!/^campaign:\d+$/.test(row.target)) return false;
+  const [recipient] = await db
+    .select({ id: notificationCampaignRecipientsTable.id })
+    .from(notificationCampaignRecipientsTable)
+    .innerJoin(notificationCampaignsTable, eq(notificationCampaignsTable.id, notificationCampaignRecipientsTable.campaignId))
+    .where(and(
+      eq(notificationCampaignsTable.notificationId, row.id),
+      eq(notificationCampaignRecipientsTable.studentId, studentId),
+    ))
+    .limit(1);
+  return Boolean(recipient);
 }
 
 function dispatchPushForNotification(row: typeof notificationsTable.$inferSelect): void {
@@ -371,6 +440,7 @@ router.get("/notifications/my", requireStudentAuth, requireVerifiedStudent, asyn
   const visibility = or(
     eq(notificationsTable.target, "all"),
     eq(notificationsTable.target, `student:${studentId}`),
+    campaignRecipientVisibilityCondition(studentId),
   );
 
   const rows = await db
@@ -426,7 +496,7 @@ router.post("/notifications/:id/read", requireStudentAuth, requireVerifiedStuden
     .where(eq(notificationsTable.id, params.data.id))
     .limit(1);
 
-  if (!notification || !isNotificationVisibleToStudent(notification, studentId)) {
+  if (!notification || !(await isNotificationVisibleToStudent(notification, studentId))) {
     res.status(404).json({ error: "Notification not found" });
     return;
   }
@@ -454,6 +524,7 @@ router.post("/notifications/read-all", requireStudentAuth, requireVerifiedStuden
       or(
         eq(notificationsTable.target, "all"),
         eq(notificationsTable.target, `student:${studentId}`),
+        campaignRecipientVisibilityCondition(studentId),
       ),
       eq(notificationsTable.isDraft, false),
     ));
@@ -682,6 +753,19 @@ router.patch("/notifications/:id", blockStudentJwt, requireAdminAuth, requireNot
     .from(notificationsTable)
     .where(eq(notificationsTable.id, params.data.id))
     .limit(1);
+  if (!before) {
+    res.status(404).json({ error: "Notification not found" });
+    return;
+  }
+  const owningCampaignId = await findOwningCampaignId(before.id);
+  if (owningCampaignId != null) {
+    res.status(409).json({
+      error: "This notification is the canonical record of a Manual Push Campaign and cannot be edited through the legacy notifications endpoint. Manage its content and lifecycle via the campaign API.",
+      code: "CAMPAIGN_MANAGED_NOTIFICATION",
+      campaignId: owningCampaignId,
+    });
+    return;
+  }
   const [row] = await db
     .update(notificationsTable)
     .set({
@@ -727,6 +811,24 @@ router.delete("/notifications/:id", blockStudentJwt, requireAdminAuth, requireAd
   const params = DeleteNotificationParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [existing] = await db
+    .select({ id: notificationsTable.id })
+    .from(notificationsTable)
+    .where(eq(notificationsTable.id, params.data.id))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Notification not found" });
+    return;
+  }
+  const owningCampaignId = await findOwningCampaignId(existing.id);
+  if (owningCampaignId != null) {
+    res.status(409).json({
+      error: "This notification is the canonical record of a Manual Push Campaign and cannot be deleted through the legacy notifications endpoint. Archive the campaign via the campaign API instead — sent campaign history is never hard-deleted.",
+      code: "CAMPAIGN_MANAGED_NOTIFICATION",
+      campaignId: owningCampaignId,
+    });
     return;
   }
   const [row] = await db.delete(notificationsTable).where(eq(notificationsTable.id, params.data.id)).returning();
