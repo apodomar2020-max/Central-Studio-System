@@ -31,6 +31,7 @@ import {
   computeCampaignAggregate,
   NotificationCampaignError,
   previewCampaignAudience,
+  resumeCampaign,
   sendCampaign,
 } from "../lib/notificationCampaigns";
 
@@ -67,9 +68,26 @@ function isDeletable(status: string): boolean {
   return (NOTIFICATION_CAMPAIGN_DELETABLE_STATUSES as readonly string[]).includes(status);
 }
 
+const CAMPAIGN_ERROR_STATUS_CODES: Record<string, number> = {
+  NOT_FOUND: 404,
+  NOT_SENDABLE: 409,
+  // Wave 2.1 — resume-specific outcomes. All conflict-shaped: the request
+  // itself is well-formed, but the campaign's current state doesn't permit
+  // it right now.
+  NOT_RESUMABLE: 409,
+  NOT_STALE: 409,
+  MAX_ATTEMPTS_EXCEEDED: 409,
+  MISSING_NOTIFICATION: 409,
+  // Concurrency-review fix — a sender (initial send or an earlier resume)
+  // discovered mid-run that a concurrent resume reclaimed the campaign's
+  // send lease. Conflict-shaped for the same reason as the codes above: not
+  // a client error, just "someone else already owns this now".
+  LEASE_LOST: 409,
+};
+
 function handleCampaignError(res: import("express").Response, error: unknown): void {
   if (error instanceof NotificationCampaignError) {
-    const statusCode = error.code === "NOT_FOUND" ? 404 : error.code === "NOT_SENDABLE" ? 409 : 400;
+    const statusCode = CAMPAIGN_ERROR_STATUS_CODES[error.code] ?? 400;
     res.status(statusCode).json({ error: error.message, code: error.code });
     return;
   }
@@ -280,6 +298,44 @@ router.post(
         entityId: id,
         after: { ...result },
         summary: `Sent Manual Push Campaign ${id}: ${result.status}`,
+      });
+      res.json(result);
+    } catch (error) {
+      handleCampaignError(res, error);
+    }
+  },
+);
+
+// ─── POST /notification-campaigns/:id/resume — recover a stale "sending" campaign ──
+//
+// Wave 2.1. Gated on notifications:send (the same permission sending
+// itself requires — resuming is conceptually "continue sending", not a
+// separate lesser capability). Only ever acts on a STALE "sending"
+// campaign: an actively-running send is rejected (NOT_STALE), a campaign
+// in any other status is rejected (NOT_RESUMABLE). Never accepts a body —
+// there is nothing to configure; content/audience cannot be changed by
+// this or any other post-draft endpoint.
+
+router.post(
+  "/notification-campaigns/:id/resume",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("notifications", "send"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Invalid campaign id" });
+      return;
+    }
+    try {
+      const result = await resumeCampaign(id);
+      await logActivity(req, {
+        action: "resume",
+        module: "notificationCampaigns",
+        entityType: "notification_campaign",
+        entityId: id,
+        after: { ...result },
+        summary: `Resumed stale Manual Push Campaign ${id} (attempt ${result.sendAttempt}): ${result.status}`,
       });
       res.json(result);
     } catch (error) {

@@ -74,6 +74,30 @@ export const notificationCampaignsTable = pgTable(
     previewedAt: timestamp("previewed_at", { withTimezone: true, mode: "string" }),
     sentAt: timestamp("sent_at", { withTimezone: true, mode: "string" }),
     archivedAt: timestamp("archived_at", { withTimezone: true, mode: "string" }),
+    // Wave 2.1 — durable recovery state. No in-memory state is ever relied
+    // on to distinguish "actively sending" from "crashed mid-send"; these
+    // four columns are the entire durable record of that distinction.
+    //   sendStartedAt        — set once, when the campaign first enters
+    //     "sending" (never touched again by a resume). Observability only —
+    //     staleness is judged by the heartbeat below, not by this.
+    //   lastSendHeartbeatAt  — updated by the delivery loop after every
+    //     device page it processes (see sendCampaignPushNotification), and
+    //     by resumeCampaign() the moment it claims ownership. A campaign is
+    //     "stale" only when this hasn't moved in
+    //     NOTIFICATION_CAMPAIGN_STALE_SENDING_MINUTES — NOT based on total
+    //     elapsed time since sendStartedAt, so a legitimately large/slow
+    //     send (still actively advancing) is never mistaken for a crash.
+    //   sendAttempt          — incremented by both the initial send and
+    //     every resume claim. Bounds total resume attempts
+    //     (NOTIFICATION_CAMPAIGN_MAX_SEND_ATTEMPTS) so a campaign that keeps
+    //     crashing for some unrelated systemic reason terminates in
+    //     "failed" rather than remaining resumable forever.
+    //   lastError            — set on an unexpected exception during send/
+    //     resume, cleared on successful finalization. Diagnostic only.
+    sendStartedAt: timestamp("send_started_at", { withTimezone: true, mode: "string" }),
+    lastSendHeartbeatAt: timestamp("last_send_heartbeat_at", { withTimezone: true, mode: "string" }),
+    sendAttempt: integer("send_attempt").notNull().default(0),
+    lastError: text("last_error"),
     // Write-once at send completion — see the table-level doc comment above.
     intendedRecipientCount: integer("intended_recipient_count").notNull().default(0),
     pushEnabledAccountCount: integer("push_enabled_account_count").notNull().default(0),
@@ -87,6 +111,9 @@ export const notificationCampaignsTable = pgTable(
   (table) => ([
     index("notification_campaigns_status_created_at_idx").on(table.status, table.createdAt),
     index("notification_campaigns_notification_id_idx").on(table.notificationId),
+    // Supports "which sending campaigns look stale" queries (admin
+    // visibility / a possible future automated scanner) without a seq scan.
+    index("notification_campaigns_status_heartbeat_idx").on(table.status, table.lastSendHeartbeatAt),
   ]),
 );
 

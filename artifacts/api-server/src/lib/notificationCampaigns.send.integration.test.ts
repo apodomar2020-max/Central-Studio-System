@@ -519,6 +519,10 @@ test("a recipient who loses their active device between snapshot freeze and deli
     notificationId,
     title: "snapshot-logout body",
     body: "body",
+    // Wave 2.1 lease token: this test's raw-SQL setup above never sets
+    // send_attempt, so it stays at the column default (0) — must match for
+    // the lease checkpoint to confirm ownership.
+    leaseSendAttempt: 0,
   });
   assert.equal(pushResult.matchedDevices, 0, "the now-inactive device must not be attempted");
   assert.equal(pushResult.noDeviceStudents, 1);
@@ -562,6 +566,8 @@ test("a recipient who registers a device between snapshot freeze and delivery st
     notificationId,
     title: "snapshot-register body",
     body: "body",
+    // Wave 2.1 lease token — see the matching comment above.
+    leaseSendAttempt: 0,
   });
   assert.equal(pushResult.sent, 1, "delivery uses live device state, so the newly-registered device correctly receives the push");
 
