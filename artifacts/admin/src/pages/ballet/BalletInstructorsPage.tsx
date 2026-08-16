@@ -18,7 +18,6 @@ import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -31,7 +30,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Edit, Loader2 } from "lucide-react";
+import { Trash2, Edit, Loader2, Plus } from "lucide-react";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { TableToolbar } from "@/components/admin/table-toolbar";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 // ─── API helpers (matches ApplicationsPage.tsx / BalletLevelsPage.tsx) ───────
 
@@ -91,9 +93,14 @@ interface LevelsResponse {
   levels: BalletLevel[];
 }
 
-// Catalog-sized list — fetch a single generous page rather than build
-// pagination UI, matching the un-paginated feel of the generic Instructors page.
-const CATALOG_LIMIT = 100;
+const PAGE_SIZE = 20;
+
+type StatusFilter = "all" | "active" | "inactive";
+type SortOption = "default" | "name" | "name-desc" | "experience-desc" | "experience-asc";
+const SORT_LABELS: Record<SortOption, string> = {
+  default: "Default", name: "Name (A–Z)", "name-desc": "Name (Z–A)",
+  "experience-desc": "Experience (high–low)", "experience-asc": "Experience (low–high)",
+};
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -143,11 +150,31 @@ export default function BalletInstructorsPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletInstructor | null>(null);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [teachingLevelFilter, setTeachingLevelFilter] = useState<string | "all">("all");
+  const [sort, setSort] = useState<SortOption>("default");
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: EMPTY_VALUES });
 
+  const onSearchChange = (value: string) => { setSearch(value); setPage(1); };
+  const onStatusChange = (value: StatusFilter) => { setStatusFilter(value); setPage(1); };
+  const onTeachingLevelChange = (value: string | "all") => { setTeachingLevelFilter(value); setPage(1); };
+  const onSortChange = (value: SortOption) => { setSort(value); setPage(1); };
+  const activeFilterCount = [statusFilter !== "all", teachingLevelFilter !== "all"].filter(Boolean).length;
+  const hasActiveControls = activeFilterCount > 0 || sort !== "default" || search.length > 0;
+  const clearControls = () => { setSearch(""); setStatusFilter("all"); setTeachingLevelFilter("all"); setSort("default"); setPage(1); };
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-ballet-instructors", token],
-    queryFn: () => adminFetch<ListResponse>(`${API_BASE}/api/admin/ballet/instructors?limit=${CATALOG_LIMIT}`, {}, token),
+    queryKey: ["admin-ballet-instructors", token, page, debouncedSearch, statusFilter, teachingLevelFilter, sort],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), sort });
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (teachingLevelFilter !== "all") params.set("teachingLevel", teachingLevelFilter);
+      return adminFetch<ListResponse>(`${API_BASE}/api/admin/ballet/instructors?${params}`, {}, token);
+    },
     refetchOnWindowFocus: false,
   });
   const instructors = data?.data ?? [];
@@ -227,7 +254,63 @@ export default function BalletInstructorsPage() {
 
   return (
     <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
-      <PageHeader title="Ballet Instructors" description="Teaching staff for the Ballet program" mode="stage" addLabel="Add Instructor" addTestId="button-add-ballet-instructor" onAdd={canCreate ? openCreate : undefined} />
+      <TableToolbar
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        searchPlaceholder="Search instructors by name, bio, or level"
+        searchTestId="input-ballet-instructor-search"
+        activeFilterCount={activeFilterCount}
+        onClear={hasActiveControls ? clearControls : undefined}
+        activeSortLabel={sort !== "default" ? SORT_LABELS[sort] : undefined}
+        filtersContent={
+          <>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Status</span>
+              <div className="admin2-filter-pills">
+                {(["all", "active", "inactive"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={statusFilter === value} className={statusFilter === value ? "is-selected" : undefined} onClick={() => onStatusChange(value)}>
+                    {value === "all" ? "All" : value === "active" ? "Active" : "Inactive"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {activeLevelNames.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Teaching level</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={teachingLevelFilter === "all"} className={teachingLevelFilter === "all" ? "is-selected" : undefined} onClick={() => onTeachingLevelChange("all")}>All</Button>
+                  {activeLevelNames.map((name) => (
+                    <Button key={name} type="button" variant="outline" size="compact" aria-pressed={teachingLevelFilter === name} className={teachingLevelFilter === name ? "is-selected" : undefined} onClick={() => onTeachingLevelChange(name)}>
+                      {name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(SORT_LABELS) as SortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={sort === value} className={sort === value ? "is-selected" : undefined} onClick={() => onSortChange(value)}>
+                  {SORT_LABELS[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {canCreate && (
+          <div className="admin2-table-toolbar-add">
+            <Button data-testid="button-add-ballet-instructor" onClick={openCreate} className="gap-2 shrink-0" data-program-accent="ballet">
+              <Plus className="h-4 w-4" />
+              Add Instructor
+            </Button>
+          </div>
+        )}
+      </TableToolbar>
 
       <div className="border rounded-md">
         <Table>
@@ -248,7 +331,7 @@ export default function BalletInstructorsPage() {
             ) : isError ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-destructive">Ballet instructors could not be loaded.</TableCell></TableRow>
             ) : instructors.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No ballet instructors yet. Add one to get started.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">{hasActiveControls ? "No instructors match your search or filters." : "No ballet instructors yet. Add one to get started."}</TableCell></TableRow>
             ) : (
               instructors.map((instructor) => (
                 <TableRow key={instructor.id} data-testid={`row-ballet-instructor-${instructor.id}`}>
@@ -287,6 +370,10 @@ export default function BalletInstructorsPage() {
           </TableBody>
         </Table>
       </div>
+
+      {data && data.total > 0 && (
+        <TablePagination page={page} totalPages={data.totalPages} total={data.total} pageSize={PAGE_SIZE} isLoading={isLoading} itemLabel="instructors" onPageChange={setPage} />
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

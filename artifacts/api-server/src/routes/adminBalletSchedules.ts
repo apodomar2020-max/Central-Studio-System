@@ -18,7 +18,7 @@
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, count, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -55,9 +55,16 @@ export function deriveBalletScheduleDuration(startTime: string, endTime: string)
   return duration;
 }
 
+const SCHEDULES_SORT_OPTIONS = ["default", "start-time"] as const;
+
 const ListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(BALLET_SCHEDULE_STATUSES).optional(),
+  classId: z.coerce.number().int().positive().optional(),
+  dayOfWeek: z.coerce.number().int().min(0).max(6).optional(),
+  branchId: z.coerce.number().int().positive().optional(),
+  sort: z.enum(SCHEDULES_SORT_OPTIONS).default("default"),
 });
 
 const CreateScheduleBody = z.object({
@@ -305,13 +312,23 @@ async function validateScheduleClass(client: DbClient, classId: number): Promise
 router.get("/admin/ballet/schedules", requireAdminAuth, requireAdminPermission("ballet.schedules", "view"), async (req: AdminRequest, res): Promise<void> => {
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: "Invalid query parameters", code: "VALIDATION_ERROR" }); return; }
-  const { page, limit } = parsed.data;
+  const { page, limit, status, classId, dayOfWeek, branchId, sort } = parsed.data;
   const offset = (page - 1) * limit;
 
   try {
+    const conditions = [];
+    if (status) conditions.push(eq(balletSchedulesTable.status, status));
+    if (classId != null) conditions.push(eq(balletSchedulesTable.classId, classId));
+    if (dayOfWeek != null) conditions.push(eq(balletSchedulesTable.dayOfWeek, dayOfWeek));
+    if (branchId != null) conditions.push(eq(balletSchedulesTable.branchId, branchId));
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const orderBy = sort === "start-time" ? asc(balletSchedulesTable.startTime) : asc(balletSchedulesTable.createdAt);
+    const orderByClause = sort === "start-time" ? [orderBy, asc(balletSchedulesTable.dayOfWeek)] : [orderBy];
+
     const [rows, [{ total }]] = await Promise.all([
-      db.select().from(balletSchedulesTable).orderBy(asc(balletSchedulesTable.createdAt)).limit(limit).offset(offset),
-      db.select({ total: count(balletSchedulesTable.id) }).from(balletSchedulesTable),
+      db.select().from(balletSchedulesTable).where(where).orderBy(...orderByClause).limit(limit).offset(offset),
+      db.select({ total: count(balletSchedulesTable.id) }).from(balletSchedulesTable).where(where),
     ]);
 
     res.json({ data: await attachLocations(rows), total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });

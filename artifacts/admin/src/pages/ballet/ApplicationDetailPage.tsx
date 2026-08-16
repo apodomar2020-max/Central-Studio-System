@@ -25,6 +25,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Loader2, ChevronLeft, Download, ArrowRight } from "lucide-react";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 import { useToast } from "@/hooks/use-toast";
 import {
   isTransitionAllowed,
@@ -521,15 +522,19 @@ export default function ApplicationDetailPage() {
 
   // ── Fetch available groups ──────────────────────────────────────────────────
 
+  // Group-assignment reference data — must reflect every group, not just the
+  // first page, or a group beyond page 1 would be invisible to assign here.
   const { data: groupsData } = useQuery<GroupsResponse>({
     queryKey: ["ballet-groups"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/groups?limit=100`, {
-        headers: makeHeaders(token),
-      });
-      if (!res.ok) throw new Error("Failed to load groups");
-      return res.json();
-    },
+    queryFn: async () => ({
+      data: await fetchAllPages<Group>(async (page) => {
+        const res = await fetch(`${API_BASE}/api/admin/ballet/groups?page=${page}&limit=100`, {
+          headers: makeHeaders(token),
+        });
+        if (!res.ok) throw new Error("Failed to load groups");
+        return res.json();
+      }),
+    }),
   });
 
   const { data: packagesData } = useQuery<PackagesResponse>({

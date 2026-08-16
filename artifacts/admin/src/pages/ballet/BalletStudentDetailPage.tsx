@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
@@ -174,13 +175,17 @@ export default function BalletStudentDetailPage() {
     },
   });
 
+  // Group-assignment reference data — must reflect every group, not just the
+  // first page, or a group beyond page 1 would be invisible to assign here.
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery<GroupsResponse>({
     queryKey: ["ballet-groups", token],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/admin/ballet/groups?limit=100`, { headers: makeHeaders(token) });
-      if (!res.ok) throw new Error("Failed to load Ballet groups");
-      return res.json();
-    },
+    queryFn: async () => ({
+      data: await fetchAllPages<BalletGroup>(async (page) => {
+        const res = await fetch(`${API_BASE}/api/admin/ballet/groups?page=${page}&limit=100`, { headers: makeHeaders(token) });
+        if (!res.ok) throw new Error("Failed to load Ballet groups");
+        return res.json();
+      }),
+    }),
   });
 
   const groupMutation = useMutation({

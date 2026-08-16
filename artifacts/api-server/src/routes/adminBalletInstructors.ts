@@ -12,7 +12,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { db, balletClassesTable, balletInstructorsTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
@@ -39,20 +39,45 @@ function normalizeInstructorPayload<T extends { photoUrl?: string | null }>(payl
   return payload;
 }
 
+const INSTRUCTORS_SORT_OPTIONS = ["default", "name", "name-desc", "experience-desc", "experience-asc"] as const;
+
 const ListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  teachingLevel: z.string().optional(),
+  sort: z.enum(INSTRUCTORS_SORT_OPTIONS).default("default"),
 });
 
 router.get("/admin/ballet/instructors", requireAdminAuth, requireAdminPermission("ballet.instructors", "view"), async (req, res): Promise<void> => {
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: "Invalid query parameters" }); return; }
-  const { page, limit } = parsed.data;
+  const { page, limit, search, status, teachingLevel, sort } = parsed.data;
   const offset = (page - 1) * limit;
 
+  const conditions = [];
+  if (search && search.trim().length > 0) {
+    const pattern = `%${search.trim()}%`;
+    conditions.push(or(
+      ilike(balletInstructorsTable.name, pattern),
+      ilike(balletInstructorsTable.bio, pattern),
+      ilike(balletInstructorsTable.teachingLevel, pattern),
+    ));
+  }
+  if (status) conditions.push(eq(balletInstructorsTable.isActive, status === "active"));
+  if (teachingLevel) conditions.push(eq(balletInstructorsTable.teachingLevel, teachingLevel));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const orderBy = sort === "name" ? asc(balletInstructorsTable.name)
+    : sort === "name-desc" ? desc(balletInstructorsTable.name)
+    : sort === "experience-desc" ? desc(balletInstructorsTable.experienceYears)
+    : sort === "experience-asc" ? asc(balletInstructorsTable.experienceYears)
+    : asc(balletInstructorsTable.createdAt);
+
   const [rows, [{ total }]] = await Promise.all([
-    db.select().from(balletInstructorsTable).orderBy(asc(balletInstructorsTable.createdAt)).limit(limit).offset(offset),
-    db.select({ total: count(balletInstructorsTable.id) }).from(balletInstructorsTable),
+    db.select().from(balletInstructorsTable).where(where).orderBy(orderBy).limit(limit).offset(offset),
+    db.select({ total: count(balletInstructorsTable.id) }).from(balletInstructorsTable).where(where),
   ]);
 
   res.json({ data: rows.map(serializeBalletInstructor), total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });

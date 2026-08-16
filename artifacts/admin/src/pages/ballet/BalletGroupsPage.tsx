@@ -16,7 +16,6 @@ import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -29,7 +28,10 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Edit, Loader2 } from "lucide-react";
+import { Trash2, Edit, Loader2, Plus } from "lucide-react";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { TableToolbar } from "@/components/admin/table-toolbar";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -53,7 +55,11 @@ async function adminFetch<T>(url: string, init: RequestInit, token: string | nul
   return res.json() as Promise<T>;
 }
 
-const CATALOG_LIMIT = 100;
+const PAGE_SIZE = 20;
+
+type StatusFilter = "all" | "active" | "inactive";
+type SortOption = "default" | "name" | "name-desc";
+const SORT_LABELS: Record<SortOption, string> = { default: "Default", name: "Name (A–Z)", "name-desc": "Name (Z–A)" };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,10 +105,30 @@ export default function BalletGroupsPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletGroup | null>(null);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [levelFilter, setLevelFilter] = useState<number | "all">("all");
+  const [sort, setSort] = useState<SortOption>("default");
+
+  const onSearchChange = (value: string) => { setSearch(value); setPage(1); };
+  const onStatusChange = (value: StatusFilter) => { setStatusFilter(value); setPage(1); };
+  const onLevelFilterChange = (value: number | "all") => { setLevelFilter(value); setPage(1); };
+  const onSortChange = (value: SortOption) => { setSort(value); setPage(1); };
+  const activeFilterCount = [statusFilter !== "all", levelFilter !== "all"].filter(Boolean).length;
+  const hasActiveControls = activeFilterCount > 0 || sort !== "default" || search.length > 0;
+  const clearControls = () => { setSearch(""); setStatusFilter("all"); setLevelFilter("all"); setSort("default"); setPage(1); };
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-ballet-groups", token],
-    queryFn: () => adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?limit=${CATALOG_LIMIT}`, {}, token),
+    queryKey: ["admin-ballet-groups", token, page, debouncedSearch, statusFilter, levelFilter, sort],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), sort });
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (levelFilter !== "all") params.set("levelId", String(levelFilter));
+      return adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?${params}`, {}, token);
+    },
     refetchOnWindowFocus: false,
   });
   const groups = data?.data ?? [];
@@ -161,7 +187,63 @@ export default function BalletGroupsPage() {
 
   return (
     <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
-      <PageHeader title="Ballet Groups" description="Cohorts of children within a level" mode="stage" addLabel="Add Group" addTestId="button-add-ballet-group" onAdd={canCreate ? openCreate : undefined} />
+      <TableToolbar
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        searchPlaceholder="Search groups by name"
+        searchTestId="input-ballet-group-search"
+        activeFilterCount={activeFilterCount}
+        onClear={hasActiveControls ? clearControls : undefined}
+        activeSortLabel={sort !== "default" ? SORT_LABELS[sort] : undefined}
+        filtersContent={
+          <>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Status</span>
+              <div className="admin2-filter-pills">
+                {(["all", "active", "inactive"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={statusFilter === value} className={statusFilter === value ? "is-selected" : undefined} onClick={() => onStatusChange(value)}>
+                    {value === "all" ? "All" : value === "active" ? "Active" : "Inactive"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {levels.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Level</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={levelFilter === "all"} className={levelFilter === "all" ? "is-selected" : undefined} onClick={() => onLevelFilterChange("all")}>All</Button>
+                  {levels.filter((l) => l.isActive).map((l) => (
+                    <Button key={l.id} type="button" variant="outline" size="compact" aria-pressed={levelFilter === l.id} className={levelFilter === l.id ? "is-selected" : undefined} onClick={() => onLevelFilterChange(l.id)}>
+                      {l.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(SORT_LABELS) as SortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={sort === value} className={sort === value ? "is-selected" : undefined} onClick={() => onSortChange(value)}>
+                  {SORT_LABELS[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {canCreate && (
+          <div className="admin2-table-toolbar-add">
+            <Button data-testid="button-add-ballet-group" onClick={openCreate} className="gap-2 shrink-0" data-program-accent="ballet">
+              <Plus className="h-4 w-4" />
+              Add Group
+            </Button>
+          </div>
+        )}
+      </TableToolbar>
 
       <div className="border rounded-md">
         <Table>
@@ -181,7 +263,7 @@ export default function BalletGroupsPage() {
             ) : isError ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8 text-destructive">Ballet groups could not be loaded.</TableCell></TableRow>
             ) : groups.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ballet groups yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">{hasActiveControls ? "No groups match your search or filters." : "No ballet groups yet."}</TableCell></TableRow>
             ) : (
               groups.map((group) => (
                 <TableRow key={group.id} data-testid={`row-ballet-group-${group.id}`}>
@@ -228,6 +310,10 @@ export default function BalletGroupsPage() {
           </TableBody>
         </Table>
       </div>
+
+      {data && data.total > 0 && (
+        <TablePagination page={page} totalPages={data.totalPages} total={data.total} pageSize={PAGE_SIZE} isLoading={isLoading} itemLabel="groups" onPageChange={setPage} />
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">

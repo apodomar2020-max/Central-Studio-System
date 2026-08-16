@@ -1,6 +1,6 @@
 /** Admin Ballet Group routes for the canonical one-level group model. */
 import { Router, type IRouter } from "express";
-import { and, asc, count, eq, inArray, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db, balletGroupsTable, balletLevelsTable, balletLevelAssignmentsTable, balletClassesTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
@@ -50,18 +50,35 @@ async function attachOperationalCounts<T extends { id: number }>(rows: T[]) {
   return rows.map((row) => ({ ...row, activeAssignmentCount: assignments.get(row.id) ?? 0, classCount: classes.get(row.id) ?? 0, assignmentReadyClassCount: readyClasses.get(row.id) ?? 0 }));
 }
 
+const GROUPS_SORT_OPTIONS = ["default", "name", "name-desc"] as const;
+
 const ListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  levelId: z.coerce.number().int().positive().optional(),
+  sort: z.enum(GROUPS_SORT_OPTIONS).default("default"),
 });
 
 router.get("/admin/ballet/groups", requireAdminAuth, requireAdminPermission("ballet.groups", "view"), async (req, res): Promise<void> => {
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: "Invalid query parameters" }); return; }
-  const { page, limit } = parsed.data;
+  const { page, limit, search, status, levelId, sort } = parsed.data;
+
+  const conditions = [];
+  if (search && search.trim().length > 0) conditions.push(ilike(balletGroupsTable.name, `%${search.trim()}%`));
+  if (status) conditions.push(eq(balletGroupsTable.isActive, status === "active"));
+  if (levelId != null) conditions.push(eq(balletGroupsTable.levelId, levelId));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const orderBy = sort === "name" ? asc(balletGroupsTable.name)
+    : sort === "name-desc" ? desc(balletGroupsTable.name)
+    : asc(balletGroupsTable.createdAt);
+
   const [rows, [{ total }]] = await Promise.all([
-    db.select().from(balletGroupsTable).orderBy(asc(balletGroupsTable.createdAt)).limit(limit).offset((page - 1) * limit),
-    db.select({ total: count(balletGroupsTable.id) }).from(balletGroupsTable),
+    db.select().from(balletGroupsTable).where(where).orderBy(orderBy).limit(limit).offset((page - 1) * limit),
+    db.select({ total: count(balletGroupsTable.id) }).from(balletGroupsTable).where(where),
   ]);
   res.json({ data: await attachOperationalCounts(rows), total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) });
 });

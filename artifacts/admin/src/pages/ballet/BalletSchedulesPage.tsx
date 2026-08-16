@@ -11,7 +11,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -25,23 +24,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { BranchRoomFields } from "@/components/schedules/BranchRoomFields";
-import type { ScheduleBranch, ScheduleRoom } from "@workspace/api-client-react";
-import { Trash2, Edit, Loader2 } from "lucide-react";
+import { useListScheduleLocationBranches, type ScheduleBranch, type ScheduleRoom } from "@workspace/api-client-react";
+import { Trash2, Edit, Loader2, Plus } from "lucide-react";
 import { adminFetch, scheduleErrorMessage } from "./balletScheduleApiClient";
 import {
   BALLET_SCHEDULE_FORM_STATUSES,
   balletScheduleFormSchema,
   type BalletScheduleFormValues,
 } from "./balletScheduleFormSchema";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { fetchAllPages } from "@/lib/fetchAllPages";
+import { TableToolbar } from "@/components/admin/table-toolbar";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
 
 const CATALOG_LIMIT = 100;
+const PAGE_SIZE = 20;
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const STATUSES = BALLET_SCHEDULE_FORM_STATUSES;
+
+type ScheduleSortOption = "default" | "start-time";
+const SORT_LABELS: Record<ScheduleSortOption, string> = { default: "Default", "start-time": "Start time" };
 
 function statusBadgeClass(status: string) {
   switch (status) {
@@ -105,34 +111,58 @@ export default function BalletSchedulesPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BalletSchedule | null>(null);
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<"all" | (typeof STATUSES)[number]>("all");
+  const [classFilter, setClassFilter] = useState<number | "all">("all");
+  const [dayFilter, setDayFilter] = useState<number | "all">("all");
+  const [branchFilter, setBranchFilter] = useState<number | "all">("all");
+  const [sort, setSort] = useState<ScheduleSortOption>("default");
+
+  const onStatusChange = (value: "all" | (typeof STATUSES)[number]) => { setStatusFilter(value); setPage(1); };
+  const onClassFilterChange = (value: number | "all") => { setClassFilter(value); setPage(1); };
+  const onDayFilterChange = (value: number | "all") => { setDayFilter(value); setPage(1); };
+  const onBranchFilterChange = (value: number | "all") => { setBranchFilter(value); setPage(1); };
+  const onSortChange = (value: ScheduleSortOption) => { setSort(value); setPage(1); };
+  const activeFilterCount = [statusFilter !== "all", classFilter !== "all", dayFilter !== "all", branchFilter !== "all"].filter(Boolean).length;
+  const hasActiveControls = activeFilterCount > 0 || sort !== "default";
+  const clearControls = () => { setStatusFilter("all"); setClassFilter("all"); setDayFilter("all"); setBranchFilter("all"); setSort("default"); setPage(1); };
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-ballet-schedules", token],
-    queryFn: () => adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?limit=${CATALOG_LIMIT}`, {}, token, API_KEY),
+    queryKey: ["admin-ballet-schedules", token, page, statusFilter, classFilter, dayFilter, branchFilter, sort],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), sort });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (classFilter !== "all") params.set("classId", String(classFilter));
+      if (dayFilter !== "all") params.set("dayOfWeek", String(dayFilter));
+      if (branchFilter !== "all") params.set("branchId", String(branchFilter));
+      return adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?${params}`, {}, token, API_KEY);
+    },
     refetchOnWindowFocus: false,
   });
   const schedules = data?.data ?? [];
+  const branchesQuery = useListScheduleLocationBranches();
+  const branches = branchesQuery.data ?? [];
 
-  const { data: classesData } = useQuery({
+  // Reference lists resolve every schedule row's Class/Level/Group/Instructor
+  // and populate the Create dialog's Class dropdown — they must reflect the
+  // full catalogue, not just the first CATALOG_LIMIT rows.
+  const { data: classes = [] } = useQuery({
     queryKey: ["admin-ballet-classes-ref", token],
-    queryFn: () => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?limit=${CATALOG_LIMIT}`, {}, token, API_KEY),
+    queryFn: () => fetchAllPages<BalletClass>((p) => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?page=${p}&limit=${CATALOG_LIMIT}`, {}, token, API_KEY)),
     refetchOnWindowFocus: false,
   });
-  const classes = classesData?.data ?? [];
 
-  const { data: instructorsData } = useQuery({
+  const { data: instructors = [] } = useQuery({
     queryKey: ["admin-ballet-instructors-ref", token],
-    queryFn: () => adminFetch<ListResponse<BalletInstructor>>(`${API_BASE}/api/admin/ballet/instructors?limit=${CATALOG_LIMIT}`, {}, token, API_KEY),
+    queryFn: () => fetchAllPages<BalletInstructor>((p) => adminFetch<ListResponse<BalletInstructor>>(`${API_BASE}/api/admin/ballet/instructors?page=${p}&limit=${CATALOG_LIMIT}`, {}, token, API_KEY)),
     refetchOnWindowFocus: false,
   });
-  const instructors = instructorsData?.data ?? [];
 
-  const { data: groupsData } = useQuery({
+  const { data: groups = [] } = useQuery({
     queryKey: ["admin-ballet-groups-ref", token],
-    queryFn: () => adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?limit=${CATALOG_LIMIT}`, {}, token, API_KEY),
+    queryFn: () => fetchAllPages<BalletGroup>((p) => adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?page=${p}&limit=${CATALOG_LIMIT}`, {}, token, API_KEY)),
     refetchOnWindowFocus: false,
   });
-  const groups = groupsData?.data ?? [];
 
   const { data: levelsData } = useQuery({
     queryKey: ["admin-ballet-levels-ref", token],
@@ -239,14 +269,87 @@ export default function BalletSchedulesPage() {
 
   return (
     <div className="admin2-ballet-page admin2-ballet-registry space-y-6">
-      <PageHeader
-        title="Ballet Schedules"
-        description="Create and manage weekly Ballet class sessions"
-        mode="stage"
-        addLabel="Add Schedule"
-        addTestId="button-add-ballet-schedule"
-        onAdd={canCreate ? openCreate : undefined}
-      />
+      <TableToolbar
+        searchValue=""
+        onSearchChange={() => {}}
+        className="admin2-ballet-schedules-toolbar"
+        activeFilterCount={activeFilterCount}
+        onClear={hasActiveControls ? clearControls : undefined}
+        activeSortLabel={sort !== "default" ? SORT_LABELS[sort] : undefined}
+        filtersContent={
+          <>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Status</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={statusFilter === "all"} className={statusFilter === "all" ? "is-selected" : undefined} onClick={() => onStatusChange("all")}>All</Button>
+                {STATUSES.map((s) => (
+                  <Button key={s} type="button" variant="outline" size="compact" aria-pressed={statusFilter === s} className={statusFilter === s ? "is-selected" : undefined} onClick={() => onStatusChange(s)}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Day</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={dayFilter === "all"} className={dayFilter === "all" ? "is-selected" : undefined} onClick={() => onDayFilterChange("all")}>All</Button>
+                {DAY_SHORT.map((d, i) => (
+                  <Button key={i} type="button" variant="outline" size="compact" aria-pressed={dayFilter === i} className={dayFilter === i ? "is-selected" : undefined} onClick={() => onDayFilterChange(i)}>
+                    {d}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {eligibleClasses.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Class</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={classFilter === "all"} className={classFilter === "all" ? "is-selected" : undefined} onClick={() => onClassFilterChange("all")}>All</Button>
+                  {eligibleClasses.map((c) => (
+                    <Button key={c.id} type="button" variant="outline" size="compact" aria-pressed={classFilter === c.id} className={classFilter === c.id ? "is-selected" : undefined} onClick={() => onClassFilterChange(c.id)}>
+                      {c.title}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {branches.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Branch</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={branchFilter === "all"} className={branchFilter === "all" ? "is-selected" : undefined} onClick={() => onBranchFilterChange("all")}>All</Button>
+                  {branches.map((b) => (
+                    <Button key={b.id} type="button" variant="outline" size="compact" aria-pressed={branchFilter === b.id} className={branchFilter === b.id ? "is-selected" : undefined} onClick={() => onBranchFilterChange(b.id)}>
+                      {b.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(SORT_LABELS) as ScheduleSortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={sort === value} className={sort === value ? "is-selected" : undefined} onClick={() => onSortChange(value)}>
+                  {SORT_LABELS[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {canCreate && (
+          <div className="admin2-table-toolbar-add">
+            <Button data-testid="button-add-ballet-schedule" onClick={openCreate} className="gap-2 shrink-0" data-program-accent="ballet">
+              <Plus className="h-4 w-4" />
+              Add Schedule
+            </Button>
+          </div>
+        )}
+      </TableToolbar>
 
       <div className="border rounded-md">
         <Table>
@@ -270,7 +373,7 @@ export default function BalletSchedulesPage() {
             ) : isError ? (
               <TableRow><TableCell colSpan={10} className="text-center py-8 text-destructive">Ballet schedules could not be loaded.</TableCell></TableRow>
             ) : schedules.length === 0 ? (
-              <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No ballet schedules yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">{hasActiveControls ? "No schedules match your filters." : "No ballet schedules yet."}</TableCell></TableRow>
             ) : (
               schedules.map((s) => {
                 const item = classById.get(s.classId);
@@ -319,6 +422,10 @@ export default function BalletSchedulesPage() {
           </TableBody>
         </Table>
       </div>
+
+      {data && data.total > 0 && (
+        <TablePagination page={page} totalPages={data.totalPages} total={data.total} pageSize={PAGE_SIZE} isLoading={isLoading} itemLabel="schedules" onPageChange={setPage} />
+      )}
 
       <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) { setEditing(null); form.reset(EMPTY_VALUES); } }}>
         <DialogContent className="max-w-lg">
