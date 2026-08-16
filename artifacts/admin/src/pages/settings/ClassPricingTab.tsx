@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Save } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -113,7 +114,12 @@ export function ClassPricingTab() {
       <Form {...classPricingForm}>
         <form onSubmit={classPricingForm.handleSubmit(onClassPricingSubmit)} className="space-y-6">
           <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="text-sm font-semibold text-foreground mb-4">Category Prices</h3>
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-foreground">General Class Walk-in Pricing</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                The active prices — applied automatically once a class is assigned an Adults, Teens, or Kids category.
+              </p>
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <FormField
                 control={classPricingForm.control}
@@ -205,12 +211,17 @@ export function ClassPricingTab() {
             </div>
           </div>
 
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="text-sm font-semibold text-foreground mb-1">Single Class Price (legacy fallback)</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Used for any class without a configured category price, and for classes
-              not yet assigned Adults/Teens/Kids.
-            </p>
+          <div className="rounded-lg border bg-card p-6 shadow-sm" data-testid="section-legacy-fallback">
+            <div className="mb-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">Legacy Fallback</h3>
+                <Badge variant="secondary">Fallback</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                Fallback price used for classes without a configured Walk-in Pricing Category.
+                Not one of the main category prices above.
+              </p>
+            </div>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
               <FormField
                 control={classPricingForm.control}
