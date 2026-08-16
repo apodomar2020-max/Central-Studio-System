@@ -743,6 +743,13 @@
       "when": 1786896000000,
       "tag": "0105_notification_campaign_recovery_state",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1786982400000,
+      "tag": "0106_class_pricing_categories",
+      "breakpoints": true
     }
   ]
 }

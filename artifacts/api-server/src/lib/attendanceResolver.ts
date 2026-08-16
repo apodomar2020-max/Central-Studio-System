@@ -514,7 +514,7 @@ async function buildStudioWalkInCandidates(
     // uses (schedule override, else the Studio-wide default) — never the
     // raw, possibly-null schedule column alone, so this preview can never
     // under-report relative to what confirm() actually captures.
-    const priceEgp = await resolveSingleClassPriceEgp(db, row.scheduleId);
+    const priceEgp = await resolveSingleClassPriceEgp(db, { scheduleId: row.scheduleId, classId: row.classId });
 
     for (const participant of participants) {
       const ageEligibility = row.allowAllAges == null && row.minAge == null && row.maxAge == null

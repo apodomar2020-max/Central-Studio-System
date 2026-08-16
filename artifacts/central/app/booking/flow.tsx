@@ -29,7 +29,7 @@ import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
-import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { fetchClassPricing } from "@/services/classPricingService";
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { getBookingErrorMessage } from "@/services/bookingErrorMessages";
 
@@ -80,8 +80,6 @@ export default function BookingFlowScreen() {
     queryFn: fetchClassCapacitySettings,
     staleTime: 60 * 1000,
   });
-  const singleClassPriceEgp =
-    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
   const classCapacityEnabled =
     classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
   const primarySchedule = schedulesQuery.data
@@ -89,7 +87,7 @@ export default function BookingFlowScreen() {
       [...schedulesQuery.data].filter(isMobileVisibleSchedule).sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
-    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp, classCapacityEnabled)
+    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, classPricingQuery.data, classCapacityEnabled)
     : null;
   const participantCandidatesQuery = useQuery({
     queryKey: ["booking-participant-candidates", cls?.scheduleId, cls?.date],

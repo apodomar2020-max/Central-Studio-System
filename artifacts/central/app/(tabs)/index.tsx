@@ -64,7 +64,7 @@ import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/Skel
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
-import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { fetchClassPricing } from "@/services/classPricingService";
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { ACTIVE_APPLICATION_STATUSES, fetchBalletSettings, fetchMyApplications } from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
@@ -854,7 +854,6 @@ export default function StudioHomeScreen() {
   const { data: apiClasses, refetch: refetchClasses, isRefetching: refetchingClasses, isLoading: classesLoading } = useListClasses();
   const pricingQuery = useQuery({ queryKey: ["class-pricing"], queryFn: fetchClassPricing, staleTime: 5 * 60 * 1000 });
   const classCapacityQuery = useQuery({ queryKey: ["class-capacity"], queryFn: fetchClassCapacitySettings, staleTime: 60 * 1000 });
-  const singlePrice  = pricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
   const classCapacityEnabled = classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
 
   const weekClasses = React.useMemo<DanceClass[]>(() => {
@@ -867,7 +866,7 @@ export default function StudioHomeScreen() {
       .map((sched) => {
         const cls = classMap.get(sched.classId);
         if (!cls || !cls.isActive) return null;
-        const mapped = mapApiClassWithScheduleToMobile(cls, sched, singlePrice, classCapacityEnabled);
+        const mapped = mapApiClassWithScheduleToMobile(cls, sched, pricingQuery.data, classCapacityEnabled);
         if (mapped.isBallet) return null;
         return mapped;
       })
@@ -892,7 +891,7 @@ export default function StudioHomeScreen() {
     return deduped.sort((a, b) =>
       a.date !== b.date ? a.date.localeCompare(b.date) : parseTime(a.startTime) - parseTime(b.startTime),
     ).slice(0, 5);
-  }, [apiScheds, apiClasses, singlePrice, classCapacityEnabled]);
+  }, [apiScheds, apiClasses, pricingQuery.data, classCapacityEnabled]);
 
   const isRefreshing = refetchingInst || refetchingScheds || refetchingClasses || refetchingBalletApplications || refetchingBalletSettings;
   const onRefresh = useCallback(() => {

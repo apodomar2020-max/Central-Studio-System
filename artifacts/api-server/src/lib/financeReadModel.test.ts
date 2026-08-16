@@ -44,6 +44,7 @@ function bookingRow(overrides: Record<string, unknown> = {}) {
     classTitle: "Contemporary",
     scheduleId: 9,
     schedulePriceEgp: 350,
+    categoryWalkinPriceEgp: null,
     singleClassSettingEgp: 300,
     accountOwnerStudentId: 55,
     studentName: "Nour Hassan",
@@ -356,6 +357,57 @@ test("booking falls back to the global single-class setting, then to unknown", a
   assert.equal(unknown.amountAvailability, "unknown");
   assert.equal(unknown.amountSource, "unavailable");
   assert.equal(unknown.reliability.badge, "unknown_amount");
+});
+
+test("legacy estimate: category walk-in price outranks the legacy single-class setting, but never the schedule override", async () => {
+  const { mapBookingPayment } = await load();
+
+  // No schedule override: the class's category price wins over the legacy
+  // Studio-wide single price.
+  const categoryWins = mapBookingPayment(
+    bookingRow({ schedulePriceEgp: null, categoryWalkinPriceEgp: 250, singleClassSettingEgp: 300 }),
+  );
+  assert.equal(categoryWins.amounts.amountEgp, 250);
+  assert.equal(categoryWins.amountSource, "current_category_price_setting");
+  assert.equal(categoryWins.amountAvailability, "estimated");
+
+  // A schedule override is still the highest-priority signal, even when a
+  // category price also resolves.
+  const scheduleStillWins = mapBookingPayment(
+    bookingRow({ schedulePriceEgp: 350, categoryWalkinPriceEgp: 250 }),
+  );
+  assert.equal(scheduleStillWins.amounts.amountEgp, 350);
+  assert.equal(scheduleStillWins.amountSource, "current_schedule_price");
+
+  // Class has no assigned/configured category price: falls through to the
+  // legacy single price exactly as before this feature existed.
+  const unassignedFallsThrough = mapBookingPayment(
+    bookingRow({ schedulePriceEgp: null, categoryWalkinPriceEgp: null, singleClassSettingEgp: 300 }),
+  );
+  assert.equal(unassignedFallsThrough.amounts.amountEgp, 300);
+  assert.equal(unassignedFallsThrough.amountSource, "current_single_class_setting");
+});
+
+test("legacy estimate: a booking with a captured payment_records row never consults category/legacy pricing at all", async () => {
+  const { mapBookingPayment } = await load();
+  // Even though categoryWalkinPriceEgp/singleClassSettingEgp resolve to
+  // different numbers, a canonical payment_records row is the immutable
+  // snapshot and must win untouched — proving a later category-price edit
+  // can never retroactively change a captured historical amount.
+  const event = mapBookingPayment(bookingRow({
+    schedulePriceEgp: 999,
+    categoryWalkinPriceEgp: 999,
+    singleClassSettingEgp: 999,
+    paymentRecordStatus: "paid",
+    paymentRecordConfirmedMethod: "cash",
+    paymentRecordGrossAmountMinor: 30000,
+    paymentRecordFinalPayableAmountMinor: 30000,
+    paymentRecordPaidAmountMinor: 30000,
+    paymentRecordPaidAt: "2026-06-10T17:05:00.000Z",
+  }));
+  assert.equal(event.amounts.amountEgp, 300);
+  assert.equal(event.reliability.badge, "recorded_collection");
+  assert.equal(event.eventNature, "cash_inflow");
 });
 
 test("booking pending_payment normalizes to pending while keeping the raw status", async () => {

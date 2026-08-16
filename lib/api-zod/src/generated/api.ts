@@ -456,6 +456,16 @@ export const ListClassesResponseItem = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 export const ListClassesResponse = zod.array(ListClassesResponseItem);
@@ -476,6 +486,16 @@ export const CreateClassBody = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean().optional(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 export const CreateClassResponse = zod.object({
@@ -511,6 +531,16 @@ export const CreateClassResponse = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 
@@ -551,6 +581,16 @@ export const GetClassResponse = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 
@@ -574,6 +614,16 @@ export const UpdateClassBody = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean().optional(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 export const UpdateClassResponse = zod.object({
@@ -609,6 +659,16 @@ export const UpdateClassResponse = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 

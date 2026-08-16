@@ -17,7 +17,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
-const CLASS_ACTIVITY_FIELDS = ["title", "description", "instructorId", "category", "danceTypeId", "level", "ageGroup", "durationMins", "capacity", "photoUrl", "classVideoUrl", "isActive"] as const;
+const CLASS_ACTIVITY_FIELDS = ["title", "description", "instructorId", "category", "danceTypeId", "level", "ageGroup", "durationMins", "capacity", "photoUrl", "classVideoUrl", "isActive", "pricingCategory"] as const;
 
 const requireClassMediaPermission = (req: Request, res: Response, next: NextFunction): void => {
   const mediaFields = ["photoUrl", "classVideoUrl"];

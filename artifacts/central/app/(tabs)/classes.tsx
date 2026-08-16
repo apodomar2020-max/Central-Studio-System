@@ -46,10 +46,7 @@ import { ListSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
-import {
-  DEFAULT_SINGLE_CLASS_PRICE_EGP,
-  fetchClassPricing,
-} from "@/services/classPricingService";
+import { fetchClassPricing } from "@/services/classPricingService";
 import {
   DEFAULT_CLASS_CAPACITY_ENABLED,
   fetchClassCapacitySettings,
@@ -714,8 +711,6 @@ export default function ClassesScreen() {
     queryFn: fetchClassCapacitySettings,
     staleTime: 60 * 1000,
   });
-  const singleClassPriceEgp =
-    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
   const classCapacityEnabled =
     classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
 
@@ -766,8 +761,8 @@ export default function ClassesScreen() {
     return (classesQuery.data ?? [])
       .filter((c) => c.isActive)
       .filter((c) => !scheduledClassIds.has(c.id) || visibleScheduledClassIds.has(c.id))
-      .map((c) => mapApiClassWithScheduleToMobile(c, schedulesByClassId.get(c.id), singleClassPriceEgp, classCapacityEnabled));
-  }, [classesQuery.data, schedulesQuery.data, singleClassPriceEgp, classCapacityEnabled]);
+      .map((c) => mapApiClassWithScheduleToMobile(c, schedulesByClassId.get(c.id), classPricingQuery.data, classCapacityEnabled));
+  }, [classesQuery.data, schedulesQuery.data, classPricingQuery.data, classCapacityEnabled]);
 
   const nonBalletClasses = useMemo(() => allClasses.filter((c) => !c.isBallet), [allClasses]);
 

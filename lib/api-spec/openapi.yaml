@@ -1865,6 +1865,14 @@ components:
         tiktokUrl: { type: ["string", "null"] }
         youtubeUrl: { type: ["string", "null"] }
 
+    PricingCategory:
+      type: string
+      enum: [adults, teens, kids]
+      description: >
+        General Class walk-in pricing bucket. Null/absent means the class has
+        not been assigned a category yet, so the price resolver falls back to
+        the legacy Studio-wide single price (see class-pricing settings).
+
     Class:
       type: object
       required: [id, title, category, level, ageGroup, allowAllAges, minAge, maxAge, durationMins, capacity, isActive, createdAt, ageRangeLabel, configurationState, catalogueEligibility]
@@ -1888,6 +1896,8 @@ components:
         photoUrl: { type: ["string", "null"] }
         classVideoUrl: { type: ["string", "null"] }
         isActive: { type: boolean }
+        pricingCategory:
+          oneOf: [{ $ref: "#/components/schemas/PricingCategory" }, { type: "null" }]
         createdAt: { type: string }
 
     CreateClassBody:
@@ -1909,6 +1919,8 @@ components:
         photoUrl: { type: ["string", "null"] }
         classVideoUrl: { type: ["string", "null"] }
         isActive: { type: boolean }
+        pricingCategory:
+          oneOf: [{ $ref: "#/components/schemas/PricingCategory" }, { type: "null" }]
 
     UpdateClassBody:
       type: object
@@ -1928,6 +1940,8 @@ components:
         photoUrl: { type: ["string", "null"] }
         classVideoUrl: { type: ["string", "null"] }
         isActive: { type: boolean }
+        pricingCategory:
+          oneOf: [{ $ref: "#/components/schemas/PricingCategory" }, { type: "null" }]
 
     Schedule:
       type: object

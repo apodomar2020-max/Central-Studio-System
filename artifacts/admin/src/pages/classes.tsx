@@ -61,6 +61,18 @@ interface ClassCapacitySettings {
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "All Levels"];
 const AGE_GROUPS = ["Kids", "Teens", "Adults"] as const;
 const AGE_PRESETS = ["all", "kids", "teens", "adults", "custom"] as const;
+// General Class walk-in pricing bucket — deliberately separate from the
+// legacy AGE_GROUPS free text above; unassigned (null) is a valid, expected
+// state for every class until an Admin explicitly audits and assigns it.
+const PRICING_CATEGORIES = [
+  { value: "adults", label: "Adults" },
+  { value: "teens", label: "Teens" },
+  { value: "kids", label: "Kids" },
+] as const;
+const PRICING_CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
+  PRICING_CATEGORIES.map((c) => [c.value, c.label]),
+);
+const PRICING_CATEGORY_UNASSIGNED = "__unassigned__";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,6 +96,7 @@ const formSchema = z.object({
   danceTypeId: z.coerce.number().int().positive().nullish(),
   level: z.string().min(1, "Level is required"),
   ageGroup: z.string().min(1, "Age Group is required"),
+  pricingCategory: z.enum(["adults", "teens", "kids"]).nullable(),
   allowAllAges: z.boolean(),
   minAge: nullableAge,
   maxAge: nullableAge,
@@ -111,6 +124,7 @@ type Class = {
   danceTypeId?: number | null;
   level: string;
   ageGroup: string;
+  pricingCategory?: string | null;
   allowAllAges: boolean | null;
   minAge: number | null;
   maxAge: number | null;
@@ -188,6 +202,7 @@ export default function Classes() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "", category: "", level: "All Levels", ageGroup: "Adults",
+      pricingCategory: null,
       allowAllAges: true, minAge: null, maxAge: null,
       durationMins: 60, capacity: 20, photoUrl: "", classVideoUrl: "", isActive: true,
     },
@@ -197,7 +212,7 @@ export default function Classes() {
     setEditing(null);
     form.reset({
       title: "", description: "", category: "", level: "All Levels",
-      ageGroup: "Adults", allowAllAges: true, minAge: null, maxAge: null, durationMins: 60, capacity: 20,
+      ageGroup: "Adults", pricingCategory: null, allowAllAges: true, minAge: null, maxAge: null, durationMins: 60, capacity: 20,
       photoUrl: "", classVideoUrl: "", isActive: true,
     });
     setAgePreset("all");
@@ -214,6 +229,7 @@ export default function Classes() {
       danceTypeId: cls.danceTypeId ?? undefined,
       level: cls.level,
       ageGroup: cls.ageGroup || "Adults",
+      pricingCategory: (cls.pricingCategory as "adults" | "teens" | "kids" | null | undefined) ?? null,
       allowAllAges: cls.allowAllAges ?? false,
       minAge: cls.minAge,
       maxAge: cls.maxAge,
@@ -275,6 +291,9 @@ export default function Classes() {
   const getInstructorName = (id?: number | null) =>
     instructors?.find((i) => i.id === id)?.name ?? "—";
 
+  const activeClasses = classes?.filter((cls) => cls.isActive) ?? [];
+  const unassignedPricingCount = activeClasses.filter((cls) => !cls.pricingCategory).length;
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="admin2-studio-page admin2-studio-classes">
@@ -287,6 +306,17 @@ export default function Classes() {
         onAdd={canCreate ? openCreate : undefined}
       />
 
+      {!isLoading && unassignedPricingCount > 0 && (
+        <div
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 mb-4"
+          data-testid="banner-pricing-category-audit"
+        >
+          <strong>{unassignedPricingCount}</strong> active {unassignedPricingCount === 1 ? "class hasn't" : "classes haven't"} been
+          assigned a Walk-in Pricing Category yet. Until audited, {unassignedPricingCount === 1 ? "it" : "they"} will keep using the
+          legacy Single Class Price fallback from Settings → Class Pricing. Edit a class below to assign Adults, Teens, or Kids.
+        </div>
+      )}
+
       <div className="admin2-studio-registry">
         <Table>
           <TableHeader>
@@ -296,6 +326,7 @@ export default function Classes() {
               <TableHead>Category</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Age Eligibility</TableHead>
+              <TableHead>Pricing Category</TableHead>
               <TableHead>Duration</TableHead>
               <TableHead>Capacity</TableHead>
               <TableHead>Status</TableHead>
@@ -305,11 +336,11 @@ export default function Classes() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8">Loading...</TableCell>
+                <TableCell colSpan={10} className="text-center py-8">Loading...</TableCell>
               </TableRow>
             ) : classes?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                   No classes yet.
                 </TableCell>
               </TableRow>
@@ -324,6 +355,13 @@ export default function Classes() {
                     {cls.ageRangeLabel}
                     {cls.configurationState === "legacy_unconfigured" && (
                       <Badge variant="outline" className="ml-2">Needs configuration</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {cls.pricingCategory ? (
+                      PRICING_CATEGORY_LABEL[cls.pricingCategory] ?? cls.pricingCategory
+                    ) : (
+                      <Badge variant="outline" data-testid={`badge-pricing-unassigned-${cls.id}`}>Unassigned</Badge>
                     )}
                   </TableCell>
                   <TableCell>{cls.durationMins} min</TableCell>
@@ -466,6 +504,37 @@ export default function Classes() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="pricingCategory"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Walk-in Pricing Category</FormLabel>
+                    <Select
+                      onValueChange={(v) => field.onChange(v === PRICING_CATEGORY_UNASSIGNED ? null : v)}
+                      value={field.value ?? PRICING_CATEGORY_UNASSIGNED}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-class-pricing-category">
+                          <SelectValue placeholder="Unassigned" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={PRICING_CATEGORY_UNASSIGNED}>Unassigned (uses legacy fallback price)</SelectItem>
+                        {PRICING_CATEGORIES.map((c) => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Determines which Class Pricing category price applies to walk-ins for
+                      this class (Settings → Class Pricing). A schedule-specific price
+                      override always takes priority over this.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}

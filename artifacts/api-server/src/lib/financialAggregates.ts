@@ -5,12 +5,14 @@ import {
   balletPaymentsTable,
   balletRefundsTable,
   bookingsTable,
+  classesTable,
   classPricingSettingsTable,
   packageOrdersTable,
   paymentRecordsTable,
   pricePackagesTable,
   schedulesTable,
 } from "@workspace/db";
+import { categoryWalkinPriceSql } from "./singleClassPricing";
 export {
   buildFinancialAggregates,
   formatBalletPaymentMethodLabel,
@@ -36,10 +38,15 @@ export async function getFinancialAggregates(): Promise<FinancialAggregates> {
       .limit(1),
     db
       .select({
+        // Identical fallback order to BOOKING_RESOLVED_PRICE (financeSources.ts)
+        // and resolveSingleClassPriceEgp's live-capture order
+        // (singleClassPricing.ts): payment_records snapshot -> schedule
+        // override -> class's category price -> legacy single price.
         grossRevenue: sql<number>`
           coalesce(sum(coalesce(
             ${paymentRecordsTable.paidAmountMinor} / 100,
             ${schedulesTable.priceEgp},
+            ${categoryWalkinPriceSql(classesTable.pricingCategory, classPricingSettingsTable)},
             ${classPricingSettingsTable.singleClassPriceEgp}
           )), 0)::int
         `,
@@ -47,12 +54,14 @@ export async function getFinancialAggregates(): Promise<FinancialAggregates> {
           count(*) filter (
             where ${paymentRecordsTable.paidAmountMinor} is null
               and ${schedulesTable.priceEgp} is null
+              and ${categoryWalkinPriceSql(classesTable.pricingCategory, classPricingSettingsTable)} is null
               and ${classPricingSettingsTable.singleClassPriceEgp} is null
           )::int
         `,
       })
       .from(bookingsTable)
       .leftJoin(schedulesTable, eq(bookingsTable.scheduleId, schedulesTable.id))
+      .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
       .leftJoin(classPricingSettingsTable, eq(classPricingSettingsTable.id, sql`1`))
       .leftJoin(
         paymentRecordsTable,

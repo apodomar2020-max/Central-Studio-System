@@ -1209,7 +1209,10 @@ router.post(
     // The amount is always the server-resolved schedule/Studio-default
     // price — never a client-provided figure.
     if (isDirectPaymentBooking) {
-      const priceEgp = await resolveSingleClassPriceEgp(tx, normalized.scheduleId ?? null);
+      const priceEgp = await resolveSingleClassPriceEgp(tx, {
+        scheduleId: normalized.scheduleId ?? null,
+        classId: normalized.classId ?? null,
+      });
       const grossAmountMinor = egpToMinor(priceEgp);
       // No real, server-validated discount mechanism exists on this booking
       // flow today (no promotion service is wired into POST /bookings) —

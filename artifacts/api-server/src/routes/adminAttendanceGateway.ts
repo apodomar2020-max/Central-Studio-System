@@ -125,7 +125,7 @@ router.post(
         ? db.select({ id: childrenTable.id, parentId: childrenTable.parentId }).from(childrenTable).where(eq(childrenTable.id, body.childId)).limit(1)
         : Promise.resolve([]),
       db
-      .select({ id: schedulesTable.id, startTime: schedulesTable.startTime, endTime: schedulesTable.endTime })
+      .select({ id: schedulesTable.id, classId: schedulesTable.classId, startTime: schedulesTable.startTime, endTime: schedulesTable.endTime })
       .from(schedulesTable)
       .where(eq(schedulesTable.id, body.scheduleId))
       .limit(1),
@@ -144,7 +144,7 @@ router.post(
       res.status(409).json({ error: "Payment action is no longer eligible" });
       return;
     }
-    const amountEgp = await resolveSingleClassPriceEgp(db, body.scheduleId);
+    const amountEgp = await resolveSingleClassPriceEgp(db, { scheduleId: body.scheduleId, classId: schedule.classId });
     res.json({ candidateKey: body.candidateKey, amountEgp });
   },
 );
