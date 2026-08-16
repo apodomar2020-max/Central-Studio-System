@@ -41,7 +41,7 @@ import {
   BALLET_APPLICATION_STATUSES,
 } from "@workspace/db";
 import type { BalletApplicationStatus } from "@workspace/db";
-import { isTransitionAllowed } from "@workspace/api-zod";
+import { isTransitionAllowed, BALLET_PAYMENT_STATUSES, BALLET_SUBSCRIPTION_STATUSES } from "@workspace/api-zod";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { logger } from "../lib/logger";
 import { diffFields, logActivity } from "../lib/activityLog";
@@ -1420,9 +1420,17 @@ router.post(
 // but they must not multiply the operational Students list.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const StudentsListQuerySchema = z.object({
+const STUDENTS_SORT_OPTIONS = ["dateJoined", "dateJoined-asc", "name", "name-desc"] as const;
+
+export const StudentsListQuerySchema = z.object({
   page:  z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().optional(),
+  levelId: z.coerce.number().int().positive().optional(),
+  groupId: z.coerce.number().int().positive().optional(),
+  paymentStatus: z.enum(BALLET_PAYMENT_STATUSES).optional(),
+  subscriptionStatus: z.enum(BALLET_SUBSCRIPTION_STATUSES).optional(),
+  sort: z.enum(STUDENTS_SORT_OPTIONS).default("dateJoined"),
 });
 
 function deriveStudentStage(applicationStatus: string, subscriptionStatus: string | null): "Pending Payment" | "Active" | "Renewed" | "Expired" {
@@ -1514,8 +1522,58 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
     return;
   }
 
-  const { page, limit } = parsed.data;
+  const { page, limit, search, levelId, groupId, paymentStatus, subscriptionStatus, sort } = parsed.data;
   const offset = (page - 1) * limit;
+
+  // WHERE fragments applied to the OUTER query only (after "where rn = 1"
+  // dedup) — never inside the CTE's partition/order, which would change
+  // which historical assignment wins the per-student dedup.
+  const outerConditions: ReturnType<typeof sql>[] = [];
+  if (search && search.trim().length > 0) {
+    const pattern = `%${search.trim()}%`;
+    outerConditions.push(sql`(
+      "studentName" ilike ${pattern}
+      or "parentName" ilike ${pattern}
+      or "parentPhone" ilike ${pattern}
+    )`);
+  }
+  if (levelId != null) outerConditions.push(sql`"levelId" = ${levelId}`);
+  if (groupId != null) outerConditions.push(sql`"groupId" = ${groupId}`);
+
+  // Payment/subscription status is computed post-hoc from ballet_payments,
+  // not a plain column — resolve matching applicationIds first (scoped to
+  // students already matching search/level/group above), then filter the
+  // outer query by that resolved set. Mirrors the resolved-IDs pattern
+  // already used by GET /admin/ballet/applications' `subscription` filter,
+  // so a payment/subscription filter can never be applied to an
+  // already-paginated page.
+  if (paymentStatus || subscriptionStatus) {
+    const candidateWhere = outerConditions.length > 0 ? sql`and ${sql.join(outerConditions, sql` and `)}` : sql``;
+    const candidates = await db.execute<{ applicationId: number }>(sql`
+      ${currentBalletStudentsCte}
+      select "applicationId" from ranked_students where rn = 1 ${candidateWhere}
+    `);
+    const candidateIds = candidates.rows.map((row) => row.applicationId);
+    const latestPaymentsForCandidates = await getLatestPaymentByApplicationIds(candidateIds);
+    const matchingIds = candidateIds.filter((id) => {
+      const payment = latestPaymentsForCandidates.get(id) ?? null;
+      if (paymentStatus && (payment?.status ?? null) !== paymentStatus) return false;
+      if (subscriptionStatus && (payment?.subscriptionStatus ?? "pending") !== subscriptionStatus) return false;
+      return true;
+    });
+    outerConditions.push(
+      matchingIds.length > 0
+        ? sql`"applicationId" in (${sql.join(matchingIds.map((id) => sql`${id}`), sql`, `)})`
+        : sql`false`,
+    );
+  }
+
+  const whereClause = outerConditions.length > 0 ? sql`and ${sql.join(outerConditions, sql` and `)}` : sql``;
+  const orderClause = sort === "dateJoined-asc" ? sql`"dateJoined" asc nulls last, "assignmentId" desc`
+    : sort === "name" ? sql`"studentName" asc, "assignmentId" desc`
+    : sort === "name-desc" ? sql`"studentName" desc, "assignmentId" desc`
+    : sql`"dateJoined" desc nulls last, "assignmentId" desc`;
+
   const [rowsResult, totalResult] = await Promise.all([
     db.execute<BalletStudentListRow>(sql`
       ${currentBalletStudentsCte}
@@ -1533,8 +1591,8 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
         "groupId",
         "groupName"
       from ranked_students
-      where rn = 1
-      order by "dateJoined" desc nulls last, "assignmentId" desc
+      where rn = 1 ${whereClause}
+      order by ${orderClause}
       limit ${limit}
       offset ${offset}
     `),
@@ -1543,7 +1601,7 @@ router.get("/admin/ballet/students", requireAdminAuth, requireAdminPermission("b
       ${currentBalletStudentsCte}
       select count(*)::int as total
       from ranked_students
-      where rn = 1
+      where rn = 1 ${whereClause}
     `),
   ]);
   const rows = rowsResult.rows;

@@ -1,16 +1,25 @@
 /**
  * Ballet Students — current active ballet_level_assignments roster.
+ *
+ * Data Tables Enhancement: search/filter/sort are server-aware (applied
+ * before pagination on GET /admin/ballet/students) so returned rows/total/
+ * totalPages always represent the same matching dataset — never a filter
+ * applied only to the current page. Payment/subscription filters resolve
+ * matching applicationIds server-side before pagination (see adminBallet.ts).
  */
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, ChevronLeft, ChevronRight, Eye } from "lucide-react";
+import { Loader2, Eye } from "lucide-react";
+import { TableToolbar } from "@/components/admin/table-toolbar";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 
 interface StudentRow {
   assignmentId: number;
@@ -40,9 +49,27 @@ interface ListResponse {
   totalPages: number;
 }
 
+interface BalletLevel { id: number; name: string; isActive: boolean; }
+interface BalletGroup { id: number; name: string; levelId: number; isActive: boolean; }
+interface RefListResponse<T> { data: T[]; total: number; page: number; limit: number; totalPages: number; }
+
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
 const LIMIT = 20;
+const CATALOG_LIMIT = 100;
+
+const PAYMENT_STATUSES = ["pending", "paid", "rejected", "refunded"] as const;
+type PaymentStatusFilter = "all" | (typeof PAYMENT_STATUSES)[number];
+const SUBSCRIPTION_STATUSES = ["pending", "active", "renewed", "expired"] as const;
+type SubscriptionStatusFilter = "all" | (typeof SUBSCRIPTION_STATUSES)[number];
+type SortOption = "dateJoined" | "dateJoined-asc" | "name" | "name-desc";
+
+const SORT_LABELS: Record<SortOption, string> = {
+  dateJoined: "Date joined (newest)",
+  "dateJoined-asc": "Date joined (oldest)",
+  name: "Name (A–Z)",
+  "name-desc": "Name (Z–A)",
+};
 
 function makeHeaders(token: string | null): HeadersInit {
   return {
@@ -79,22 +106,150 @@ export default function BalletStudentsPage() {
   const { token } = useAdminAuth();
   const [, navigate] = useLocation();
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const [levelFilter, setLevelFilter] = useState<number | "all">("all");
+  const [groupFilter, setGroupFilter] = useState<number | "all">("all");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatusFilter>("all");
+  const [subscriptionStatusFilter, setSubscriptionStatusFilter] = useState<SubscriptionStatusFilter>("all");
+  const [sort, setSort] = useState<SortOption>("dateJoined");
+
+  // Any control that changes what the server returns must reset to page 1 —
+  // otherwise a filter narrowing the result set can strand the view on a
+  // page number beyond the new totalPages.
+  const withPageReset = <T,>(setter: (value: T) => void) => (value: T) => { setter(value); setPage(1); };
+  const onSearchChange = (value: string) => { setSearch(value); setPage(1); };
+  const onLevelChange = withPageReset(setLevelFilter);
+  const onGroupChange = withPageReset(setGroupFilter);
+  const onPaymentStatusChange = withPageReset(setPaymentStatusFilter);
+  const onSubscriptionStatusChange = withPageReset(setSubscriptionStatusFilter);
+  const onSortChange = withPageReset(setSort);
+
+  const activeFilterCount = [
+    levelFilter !== "all", groupFilter !== "all", paymentStatusFilter !== "all", subscriptionStatusFilter !== "all",
+  ].filter(Boolean).length;
+  const hasActiveControls = activeFilterCount > 0 || sort !== "dateJoined" || search.length > 0;
+  const clearControls = () => {
+    setSearch(""); setLevelFilter("all"); setGroupFilter("all");
+    setPaymentStatusFilter("all"); setSubscriptionStatusFilter("all"); setSort("dateJoined");
+    setPage(1);
+  };
 
   const { data, isLoading, isError } = useQuery<ListResponse>({
-    queryKey: ["ballet-students", page, token],
+    queryKey: ["ballet-students", page, debouncedSearch, levelFilter, groupFilter, paymentStatusFilter, subscriptionStatusFilter, sort, token],
     queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT), sort });
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (levelFilter !== "all") params.set("levelId", String(levelFilter));
+      if (groupFilter !== "all") params.set("groupId", String(groupFilter));
+      if (paymentStatusFilter !== "all") params.set("paymentStatus", paymentStatusFilter);
+      if (subscriptionStatusFilter !== "all") params.set("subscriptionStatus", subscriptionStatusFilter);
       const res = await fetch(`${API_BASE}/api/admin/ballet/students?${params}`, { headers: makeHeaders(token) });
       if (!res.ok) throw new Error("Failed to load students");
       return res.json();
     },
   });
 
+  // Reference lists for filter option labels — levels are already unpaginated
+  // (confirmed safe); groups exceed the single-page cap today, so every page
+  // is fetched to keep the Level/Group filters complete, not just the first 100.
+  const { data: levels = [] } = useQuery({
+    queryKey: ["ballet-levels-ref", token],
+    queryFn: async (): Promise<BalletLevel[]> => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/levels`, { headers: makeHeaders(token) });
+      if (!res.ok) throw new Error("Failed to load levels");
+      const json = await res.json();
+      return json.levels ?? [];
+    },
+  });
+  const { data: groups = [] } = useQuery({
+    queryKey: ["ballet-groups-ref", token],
+    queryFn: () => fetchAllPages<BalletGroup>(async (p) => {
+      const res = await fetch(`${API_BASE}/api/admin/ballet/groups?page=${p}&limit=${CATALOG_LIMIT}`, { headers: makeHeaders(token) });
+      if (!res.ok) throw new Error("Failed to load groups");
+      return res.json() as Promise<RefListResponse<BalletGroup>>;
+    }),
+  });
+  const activeLevels = levels.filter((l) => l.isActive);
+  const groupsForLevelFilter = levelFilter === "all" ? groups.filter((g) => g.isActive) : groups.filter((g) => g.isActive && g.levelId === levelFilter);
+
   const dash = <span className="italic text-muted-foreground">—</span>;
 
   return (
     <div className="admin2-ballet-page admin2-ballet-people space-y-6">
-      <PageHeader title="Ballet Students" description="Ballet student files created from current level assignments" mode="stage" />
+      <TableToolbar
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        searchPlaceholder="Search students by name, parent name, or phone"
+        searchTestId="input-ballet-student-search"
+        activeFilterCount={activeFilterCount}
+        onClear={hasActiveControls ? clearControls : undefined}
+        activeSortLabel={sort !== "dateJoined" ? SORT_LABELS[sort] : undefined}
+        filtersContent={
+          <>
+            {activeLevels.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Level</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={levelFilter === "all"} className={levelFilter === "all" ? "is-selected" : undefined} onClick={() => onLevelChange("all")}>All</Button>
+                  {activeLevels.map((l) => (
+                    <Button key={l.id} type="button" variant="outline" size="compact" aria-pressed={levelFilter === l.id} className={levelFilter === l.id ? "is-selected" : undefined} onClick={() => onLevelChange(l.id)}>
+                      {l.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {groupsForLevelFilter.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Group</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={groupFilter === "all"} className={groupFilter === "all" ? "is-selected" : undefined} onClick={() => onGroupChange("all")}>All</Button>
+                  {groupsForLevelFilter.map((g) => (
+                    <Button key={g.id} type="button" variant="outline" size="compact" aria-pressed={groupFilter === g.id} className={groupFilter === g.id ? "is-selected" : undefined} onClick={() => onGroupChange(g.id)}>
+                      {g.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Payment status</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={paymentStatusFilter === "all"} className={paymentStatusFilter === "all" ? "is-selected" : undefined} onClick={() => onPaymentStatusChange("all")}>All</Button>
+                {PAYMENT_STATUSES.map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={paymentStatusFilter === value} className={paymentStatusFilter === value ? "is-selected" : undefined} onClick={() => onPaymentStatusChange(value)}>
+                    {value.charAt(0).toUpperCase() + value.slice(1)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Subscription</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={subscriptionStatusFilter === "all"} className={subscriptionStatusFilter === "all" ? "is-selected" : undefined} onClick={() => onSubscriptionStatusChange("all")}>All</Button>
+                {SUBSCRIPTION_STATUSES.map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={subscriptionStatusFilter === value} className={subscriptionStatusFilter === value ? "is-selected" : undefined} onClick={() => onSubscriptionStatusChange(value)}>
+                    {value.charAt(0).toUpperCase() + value.slice(1)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(SORT_LABELS) as SortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={sort === value} className={sort === value ? "is-selected" : undefined} onClick={() => onSortChange(value)}>
+                  {SORT_LABELS[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      />
 
       <div className="border rounded-md">
         <Table>
@@ -121,7 +276,7 @@ export default function BalletStudentsPage() {
             ) : isError ? (
               <TableRow><TableCell colSpan={13} className="py-10 text-center text-destructive text-sm">Failed to load students.</TableCell></TableRow>
             ) : data?.data.length === 0 ? (
-              <TableRow><TableCell colSpan={13} className="py-10 text-center text-muted-foreground text-sm">No active ballet students yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="py-10 text-center text-muted-foreground text-sm">{hasActiveControls ? "No students match your search or filters." : "No active ballet students yet."}</TableCell></TableRow>
             ) : (
               data?.data.map((s) => (
                 <TableRow
@@ -162,15 +317,8 @@ export default function BalletStudentsPage() {
         </Table>
       </div>
 
-      {data && data.totalPages > 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-          <span>Showing {((page - 1) * LIMIT) + 1}–{Math.min(page * LIMIT, data.total)} of {data.total}</span>
-          <div className="flex gap-1">
-            <Button variant="outline" size="icon" className="h-7 w-7" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-            <span className="flex items-center px-2 text-xs">{page} / {data.totalPages}</span>
-            <Button variant="outline" size="icon" className="h-7 w-7" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
-          </div>
-        </div>
+      {data && data.total > 0 && (
+        <TablePagination page={page} totalPages={data.totalPages} total={data.total} pageSize={LIMIT} isLoading={isLoading} itemLabel="students" onPageChange={setPage} />
       )}
     </div>
   );
