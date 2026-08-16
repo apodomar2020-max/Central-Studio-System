@@ -102,3 +102,26 @@
    width, so it needs its own same-specificity override to actually hide
    below 1180px instead of silently winning every media query. */
 @media(max-width:1180px){.admin2-global-brand .admin2-brand-breadcrumb{display:none}}
+
+/* Data Tables Enhancement — shared table-controls toolbar (TableToolbar
+   component). Lives in the global shell stylesheet since it's used by both
+   Studio and Ballet registry pages, which don't otherwise share a loaded
+   CSS file. Reuses .admin2-command-bar as the outer card (already themed);
+   these rules only style the pieces TableToolbar itself renders. Search
+   treatment (icon + padded input) matches the existing
+   .admin2-bookings-search pattern in admin2-operations.css. */
+.admin2-table-toolbar{flex-wrap:wrap}
+.admin2-table-toolbar-search{position:relative;flex:1 1 240px;min-width:180px;max-width:420px}
+.admin2-table-toolbar-search svg{position:absolute;top:50%;left:12px;width:16px;height:16px;transform:translateY(-50%);color:var(--admin2-text-muted);pointer-events:none}
+.admin2-table-toolbar-search input{width:100%;padding-left:36px}
+.admin2-table-toolbar-panel{display:grid;gap:14px;width:min(340px,90vw);padding:16px}
+.admin2-table-toolbar-panel-group{display:grid;gap:6px}
+.admin2-table-toolbar-panel-group>span{font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--admin2-text-muted)}
+.admin2-table-toolbar-add{margin-left:auto}
+.admin2-table-toolbar-add>button{white-space:nowrap}
+/* Ballet Schedules has no server-side search field (day/time/location aren't
+   meaningful substring targets and class title is a joined, not owned,
+   column) — hide the otherwise-mandatory search box rather than ship one
+   that silently does nothing. */
+.admin2-ballet-schedules-toolbar .admin2-table-toolbar-search{display:none}
+@media(max-width:1024px){.admin2-table-toolbar{align-items:stretch}.admin2-table-toolbar-search{max-width:none;min-width:0}.admin2-table-toolbar-add{margin-left:0}}
