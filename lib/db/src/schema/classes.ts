@@ -9,6 +9,17 @@ import { z } from "zod/v4";
 // class belongs to, so pricingCategory is assigned explicitly by an Admin
 // (never inferred/backfilled from ageGroup) and starts out `null` (unassigned)
 // on every existing class. See singleClassPricing.ts for how it's resolved.
+//
+// KNOWN LIMITATION (documented, not implemented — needs business approval):
+// a class with allowAllAges=true, or a custom minAge/maxAge range spanning
+// more than one of these three buckets (e.g. 8–16), still has to be forced
+// into exactly one category — there is no "mixed"/"all ages" pricing
+// category. Recommended safest model when this is prioritized: add a 4th
+// value, "all_ages", to this tuple + the DB check constraint + the
+// class_pricing_settings table (a 4th nullable *_walkin_price_egp column) +
+// the resolver's category-price switch — additive in the same shape this
+// feature already uses, no redesign needed. See the pricing-gaps review
+// thread for the full analysis.
 export const PRICING_CATEGORIES = ["adults", "teens", "kids"] as const;
 export type PricingCategory = (typeof PRICING_CATEGORIES)[number];
 

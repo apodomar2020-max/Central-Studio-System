@@ -50,6 +50,11 @@ export interface ClassPricingSettings {
   kidsWalkinPriceEgp: number | null;
   createdAt: string;
   updatedAt: string;
+  // Admin-only visibility (not present on the public GET response): how many
+  // ACTIVE classes are currently assigned to each category, regardless of
+  // whether that category's price is configured. Used to warn when a
+  // category has classes depending on it but no price set.
+  activeClassCountsByCategory?: { adults: number; teens: number; kids: number };
 }
 
 export interface BackgroundMusicSettings {

@@ -56,6 +56,12 @@ interface ClassCapacitySettings {
   classCapacityEnabled: boolean;
 }
 
+interface ClassPricingSettingsSummary {
+  adultsWalkinPriceEgp: number | null;
+  teensWalkinPriceEgp: number | null;
+  kidsWalkinPriceEgp: number | null;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "All Levels"];
@@ -182,6 +188,30 @@ export default function Classes() {
   });
   const capacityInactive = classCapacity?.classCapacityEnabled === false;
 
+  // Cross-referenced with each class's pricingCategory below to flag a class
+  // that HAS a category assigned but whose category price is unconfigured —
+  // the failure mode the unassigned-category banner alone can't catch.
+  const { data: classPricingSettings } = useQuery<ClassPricingSettingsSummary>({
+    queryKey: ["admin-class-pricing-summary"],
+    queryFn: async () => {
+      const r = await fetch(`${API}/api/admin/settings/class-pricing`, {
+        headers: makeAdminHeaders(token),
+      });
+      if (!r.ok) return { adultsWalkinPriceEgp: null, teensWalkinPriceEgp: null, kidsWalkinPriceEgp: null };
+      return r.json() as Promise<ClassPricingSettingsSummary>;
+    },
+  });
+  const CATEGORY_PRICE_FIELD: Record<string, keyof ClassPricingSettingsSummary> = {
+    adults: "adultsWalkinPriceEgp",
+    teens: "teensWalkinPriceEgp",
+    kids: "kidsWalkinPriceEgp",
+  };
+  const hasUnconfiguredCategoryPrice = (pricingCategory?: string | null): boolean => {
+    if (!pricingCategory || !classPricingSettings) return false;
+    const field = CATEGORY_PRICE_FIELD[pricingCategory];
+    return field != null && classPricingSettings[field] == null;
+  };
+
   /** Active dance types sorted for the dropdown */
   const activeCategories = danceTypes
     .filter((dt) => dt.isActive)
@@ -293,6 +323,10 @@ export default function Classes() {
 
   const activeClasses = classes?.filter((cls) => cls.isActive) ?? [];
   const unassignedPricingCount = activeClasses.filter((cls) => !cls.pricingCategory).length;
+  // Distinct failure mode from "unassigned": a class HAS a category, but
+  // that category's own price was never configured in Settings -> Class
+  // Pricing — invisible without this cross-reference.
+  const unconfiguredCategoryPriceClasses = activeClasses.filter((cls) => hasUnconfiguredCategoryPrice(cls.pricingCategory));
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -314,6 +348,24 @@ export default function Classes() {
           <strong>{unassignedPricingCount}</strong> active {unassignedPricingCount === 1 ? "class hasn't" : "classes haven't"} been
           assigned a Walk-in Pricing Category yet. Until audited, {unassignedPricingCount === 1 ? "it" : "they"} will keep using the
           legacy Single Class Price fallback from Settings → Class Pricing. Edit a class below to assign Adults, Teens, or Kids.
+        </div>
+      )}
+
+      {!isLoading && unconfiguredCategoryPriceClasses.length > 0 && (
+        <div
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 mb-4"
+          data-testid="banner-category-price-unconfigured"
+        >
+          <p>
+            <strong>{unconfiguredCategoryPriceClasses.length}</strong> active class{unconfiguredCategoryPriceClasses.length === 1 ? " has" : "es have"} a
+            pricing category assigned, but that category's price isn't configured yet — {unconfiguredCategoryPriceClasses.length === 1 ? "it's" : "they're"} silently
+            using the legacy Single Class Price fallback. Configure the missing price{unconfiguredCategoryPriceClasses.length === 1 ? "" : "s"} from Settings → Class Pricing:
+          </p>
+          <ul className="list-disc pl-5 mt-1">
+            {unconfiguredCategoryPriceClasses.map((cls) => (
+              <li key={cls.id}>{cls.title} — {PRICING_CATEGORY_LABEL[cls.pricingCategory!] ?? cls.pricingCategory}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -359,7 +411,19 @@ export default function Classes() {
                   </TableCell>
                   <TableCell>
                     {cls.pricingCategory ? (
-                      PRICING_CATEGORY_LABEL[cls.pricingCategory] ?? cls.pricingCategory
+                      <>
+                        {PRICING_CATEGORY_LABEL[cls.pricingCategory] ?? cls.pricingCategory}
+                        {hasUnconfiguredCategoryPrice(cls.pricingCategory) && (
+                          <Badge
+                            variant="outline"
+                            className="ml-2 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                            data-testid={`badge-pricing-unconfigured-${cls.id}`}
+                            title="This category has no configured price — falling back to the Single Class Price."
+                          >
+                            No price set
+                          </Badge>
+                        )}
+                      </>
                     ) : (
                       <Badge variant="outline" data-testid={`badge-pricing-unassigned-${cls.id}`}>Unassigned</Badge>
                     )}

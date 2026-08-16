@@ -1190,6 +1190,11 @@ export interface CreateBookingBody {
   /** @nullable */
   notes?: string | null;
   bookedAt?: string;
+  /**
+   * The price the client displayed to the customer before they confirmed (from the same resolver the server re-resolves at creation time). Optional for backward compatibility with older app builds that don't send it — omitting it skips the stale-price check entirely, same as today. When present and it no longer matches the freshly-resolved price, the booking is rejected with 409 booking_price_changed and nothing is written. Only meaningful for a direct-payment booking (pay_at_studio / online_payment); ignored otherwise.
+   * @nullable
+   */
+  expectedPriceEgp?: number | null;
 }
 
 export interface UpdateBookingBody {

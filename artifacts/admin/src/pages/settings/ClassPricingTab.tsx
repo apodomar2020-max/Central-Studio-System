@@ -63,6 +63,22 @@ export function ClassPricingTab() {
     updateClassPricingMutation.mutate(values);
   };
 
+  // Admin visibility (pre-merge gap closure): a category can have active
+  // classes assigned to it while its own price is left unconfigured — that
+  // combination silently falls back to the Single Class Price below with no
+  // other signal anywhere in the UI. Surface it explicitly here.
+  const categoryGaps: Array<{ key: "adults" | "teens" | "kids"; label: string; activeClasses: number }> = (
+    [
+      { key: "adults" as const, label: "Adults", price: classPricing?.adultsWalkinPriceEgp },
+      { key: "teens" as const, label: "Teens", price: classPricing?.teensWalkinPriceEgp },
+      { key: "kids" as const, label: "Kids", price: classPricing?.kidsWalkinPriceEgp },
+    ]
+  )
+    .filter((c) => c.price == null && (classPricing?.activeClassCountsByCategory?.[c.key] ?? 0) > 0)
+    .map((c) => ({ key: c.key, label: c.label, activeClasses: classPricing!.activeClassCountsByCategory![c.key] }));
+
+  const activeClassesFor = (key: "adults" | "teens" | "kids") => classPricing?.activeClassCountsByCategory?.[key] ?? 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -75,6 +91,24 @@ export function ClassPricingTab() {
       </div>
 
       {isError && <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">Class pricing could not be loaded.</div>}
+
+      {!isLoadingClassPricing && categoryGaps.length > 0 && (
+        <div
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200"
+          data-testid="banner-category-price-gap"
+        >
+          <p className="font-medium">Some categories have active classes but no configured price:</p>
+          <ul className="list-disc pl-5 mt-1">
+            {categoryGaps.map((gap) => (
+              <li key={gap.key}>
+                <strong>{gap.activeClasses}</strong> active class{gap.activeClasses === 1 ? "" : "es"} {gap.activeClasses === 1 ? "is" : "are"} assigned{" "}
+                <strong>{gap.label}</strong> pricing, but no {gap.label} price is set below — {gap.activeClasses === 1 ? "it" : "they"} will keep
+                charging the Single Class Price fallback until you configure it.
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <Form {...classPricingForm}>
         <form onSubmit={classPricingForm.handleSubmit(onClassPricingSubmit)} className="space-y-6">
@@ -98,7 +132,14 @@ export function ClassPricingTab() {
                         value={field.value ?? ""}
                       />
                     </FormControl>
-                    <FormDescription>Leave blank to use the Single Class Price fallback.</FormDescription>
+                    <FormDescription data-testid="text-adults-active-count">
+                      {activeClassesFor("adults")} active class{activeClassesFor("adults") === 1 ? "" : "es"} use Adults pricing.{" "}
+                      {field.value == null && activeClassesFor("adults") > 0 ? (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">Blank — falling back to Single Class Price.</span>
+                      ) : (
+                        "Leave blank to use the Single Class Price fallback."
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -120,7 +161,14 @@ export function ClassPricingTab() {
                         value={field.value ?? ""}
                       />
                     </FormControl>
-                    <FormDescription>Leave blank to use the Single Class Price fallback.</FormDescription>
+                    <FormDescription data-testid="text-teens-active-count">
+                      {activeClassesFor("teens")} active class{activeClassesFor("teens") === 1 ? "" : "es"} use Teens pricing.{" "}
+                      {field.value == null && activeClassesFor("teens") > 0 ? (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">Blank — falling back to Single Class Price.</span>
+                      ) : (
+                        "Leave blank to use the Single Class Price fallback."
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -142,7 +190,14 @@ export function ClassPricingTab() {
                         value={field.value ?? ""}
                       />
                     </FormControl>
-                    <FormDescription>Leave blank to use the Single Class Price fallback.</FormDescription>
+                    <FormDescription data-testid="text-kids-active-count">
+                      {activeClassesFor("kids")} active class{activeClassesFor("kids") === 1 ? "" : "es"} use Kids pricing.{" "}
+                      {field.value == null && activeClassesFor("kids") > 0 ? (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">Blank — falling back to Single Class Price.</span>
+                      ) : (
+                        "Leave blank to use the Single Class Price fallback."
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

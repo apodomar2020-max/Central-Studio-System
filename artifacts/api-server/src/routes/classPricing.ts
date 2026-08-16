@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, classPricingSettingsTable } from "@workspace/db";
+import { db, classesTable, classPricingSettingsTable, PRICING_CATEGORIES, type PricingCategory } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { isPricingCategory } from "../lib/singleClassPricing";
 
 const router: IRouter = Router();
 
@@ -52,6 +53,34 @@ async function getOrCreateClassPricingSettings() {
   return created;
 }
 
+/**
+ * Admin visibility (pre-merge gap closure): how many ACTIVE classes are
+ * currently assigned to each pricing category, regardless of whether that
+ * category's price is configured. Combined client-side with the settings
+ * row's own null-ness, this is what lets Settings -> Class Pricing warn
+ * "N active classes use Kids pricing but no Kids price is configured" —
+ * the failure mode the original implementation could not surface (a class
+ * WITH a category assigned silently falling back to the legacy price
+ * because that category's own price was left blank). Read-only, purely
+ * additive to the response — never changes pricing behavior itself.
+ */
+async function getActiveClassCountsByCategory(): Promise<Record<PricingCategory, number>> {
+  const rows = await db
+    .select({
+      pricingCategory: classesTable.pricingCategory,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(classesTable)
+    .where(and(eq(classesTable.isActive, true)))
+    .groupBy(classesTable.pricingCategory);
+
+  const counts = Object.fromEntries(PRICING_CATEGORIES.map((category) => [category, 0])) as Record<PricingCategory, number>;
+  for (const row of rows) {
+    if (isPricingCategory(row.pricingCategory)) counts[row.pricingCategory] = row.count;
+  }
+  return counts;
+}
+
 router.get("/settings/class-pricing", async (_req, res): Promise<void> => {
   const settings = await getOrCreateClassPricingSettings();
   res.json(settings);
@@ -59,7 +88,8 @@ router.get("/settings/class-pricing", async (_req, res): Promise<void> => {
 
 router.get("/admin/settings/class-pricing", requireAdminAuth, requireAdminPermission("settings", "view"), async (_req, res): Promise<void> => {
   const settings = await getOrCreateClassPricingSettings();
-  res.json(settings);
+  const activeClassCountsByCategory = await getActiveClassCountsByCategory();
+  res.json({ ...settings, activeClassCountsByCategory });
 });
 
 router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPermission("settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -113,7 +143,8 @@ router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPerm
     });
   }
 
-  res.json(settings);
+  const activeClassCountsByCategory = await getActiveClassCountsByCategory();
+  res.json({ ...settings, activeClassCountsByCategory });
 });
 
 export default router;
