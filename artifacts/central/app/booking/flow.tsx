@@ -4,7 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Platform,
   ScrollView,
@@ -29,7 +29,7 @@ import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
-import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { fetchClassPricing } from "@/services/classPricingService";
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { getBookingErrorMessage } from "@/services/bookingErrorMessages";
 
@@ -70,6 +70,7 @@ export default function BookingFlowScreen() {
     { classId: numericClassId },
     { query: { queryKey: ["class-schedules", numericClassId], enabled: !!classId && !isNaN(numericClassId) } },
   );
+  const queryClient = useQueryClient();
   const classPricingQuery = useQuery({
     queryKey: ["class-pricing"],
     queryFn: fetchClassPricing,
@@ -80,8 +81,6 @@ export default function BookingFlowScreen() {
     queryFn: fetchClassCapacitySettings,
     staleTime: 60 * 1000,
   });
-  const singleClassPriceEgp =
-    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
   const classCapacityEnabled =
     classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
   const primarySchedule = schedulesQuery.data
@@ -89,7 +88,7 @@ export default function BookingFlowScreen() {
       [...schedulesQuery.data].filter(isMobileVisibleSchedule).sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
-    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp, classCapacityEnabled)
+    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, classPricingQuery.data, classCapacityEnabled)
     : null;
   const participantCandidatesQuery = useQuery({
     queryKey: ["booking-participant-candidates", cls?.scheduleId, cls?.date],
@@ -414,6 +413,11 @@ export default function BookingFlowScreen() {
           paymentStatus: apiPaymentStatus,
           paymentMode: apiPaymentMode,
           notes,
+          // Stale-price guard: only meaningful for a direct-payment booking —
+          // the backend re-resolves and rejects (409 booking_price_changed,
+          // nothing written) if this no longer matches. Omitted for
+          // package/free bookings, exactly like the backend expects.
+          expectedPriceEgp: apiPaymentMode === "pay_at_studio" ? finalPrice : undefined,
         },
       });
 
@@ -459,7 +463,7 @@ export default function BookingFlowScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       // Friendly handling for the backend duplicate-booking guard (HTTP 409 /
       // code "duplicate_booking") instead of the generic failure screen.
-      const errorData = (err as { data?: { code?: string; error?: string } })?.data;
+      const errorData = (err as { data?: { code?: string; error?: string; currentPriceEgp?: number | null } })?.data;
       const code = errorData?.code ?? errorData?.error;
       const msg = err instanceof Error ? err.message : "";
       const friendlyError = getBookingErrorMessage(code);
@@ -476,6 +480,22 @@ export default function BookingFlowScreen() {
           tone: "warning",
           title: "Booking limit reached",
           message: "You have reached the daily booking limit for this class. Please contact the studio if you need help.",
+        });
+        return;
+      }
+      if (code === "booking_price_changed" || /booking_price_changed/i.test(msg)) {
+        const updated = errorData?.currentPriceEgp;
+        // Nothing was written server-side, but the locally-cached price is
+        // now known-stale — invalidate it so going back actually shows the
+        // corrected price instead of the same stale one from cache.
+        queryClient.invalidateQueries({ queryKey: ["class-pricing"] });
+        alert.show({
+          tone: "warning",
+          title: "Price updated",
+          message: updated != null
+            ? `The price for this class changed to EGP ${updated}. Nothing was charged — please review and confirm again.`
+            : "The price for this class changed since you opened this screen. Nothing was charged — please review and confirm again.",
+          actions: [{ label: "Review class", tone: "primary", onPress: () => router.back() }],
         });
         return;
       }

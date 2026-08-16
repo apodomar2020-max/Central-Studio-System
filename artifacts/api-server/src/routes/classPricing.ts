@@ -1,17 +1,32 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, classPricingSettingsTable } from "@workspace/db";
+import { db, classesTable, classPricingSettingsTable, PRICING_CATEGORIES, type PricingCategory } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { isPricingCategory } from "../lib/singleClassPricing";
 
 const router: IRouter = Router();
 
 const DEFAULT_SINGLE_CLASS_PRICE_EGP = 300;
 
+// Category prices are optional on write: omitting a category leaves its
+// current configured value untouched (or unconfigured, if it never was) —
+// only singleClassPriceEgp is mandatory, preserving the legacy
+// always-required contract this endpoint had before category pricing.
 const UpdateClassPricingBody = z.object({
   singleClassPriceEgp: z.coerce.number().int().min(0),
+  adultsWalkinPriceEgp: z.coerce.number().int().min(0).nullish(),
+  teensWalkinPriceEgp: z.coerce.number().int().min(0).nullish(),
+  kidsWalkinPriceEgp: z.coerce.number().int().min(0).nullish(),
 });
+
+const CLASS_PRICING_ACTIVITY_FIELDS = [
+  "singleClassPriceEgp",
+  "adultsWalkinPriceEgp",
+  "teensWalkinPriceEgp",
+  "kidsWalkinPriceEgp",
+] as const;
 
 async function getOrCreateClassPricingSettings() {
   const [existing] = await db
@@ -21,12 +36,49 @@ async function getOrCreateClassPricingSettings() {
 
   if (existing) return existing;
 
+  // Freshly seeded singleton: category prices start equal to the legacy
+  // default so a brand-new deployment behaves identically whether or not any
+  // class has a pricing category assigned yet.
   const [created] = await db
     .insert(classPricingSettingsTable)
-    .values({ id: 1, singleClassPriceEgp: DEFAULT_SINGLE_CLASS_PRICE_EGP })
+    .values({
+      id: 1,
+      singleClassPriceEgp: DEFAULT_SINGLE_CLASS_PRICE_EGP,
+      adultsWalkinPriceEgp: DEFAULT_SINGLE_CLASS_PRICE_EGP,
+      teensWalkinPriceEgp: DEFAULT_SINGLE_CLASS_PRICE_EGP,
+      kidsWalkinPriceEgp: DEFAULT_SINGLE_CLASS_PRICE_EGP,
+    })
     .returning();
 
   return created;
+}
+
+/**
+ * Admin visibility (pre-merge gap closure): how many ACTIVE classes are
+ * currently assigned to each pricing category, regardless of whether that
+ * category's price is configured. Combined client-side with the settings
+ * row's own null-ness, this is what lets Settings -> Class Pricing warn
+ * "N active classes use Kids pricing but no Kids price is configured" —
+ * the failure mode the original implementation could not surface (a class
+ * WITH a category assigned silently falling back to the legacy price
+ * because that category's own price was left blank). Read-only, purely
+ * additive to the response — never changes pricing behavior itself.
+ */
+async function getActiveClassCountsByCategory(): Promise<Record<PricingCategory, number>> {
+  const rows = await db
+    .select({
+      pricingCategory: classesTable.pricingCategory,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(classesTable)
+    .where(and(eq(classesTable.isActive, true)))
+    .groupBy(classesTable.pricingCategory);
+
+  const counts = Object.fromEntries(PRICING_CATEGORIES.map((category) => [category, 0])) as Record<PricingCategory, number>;
+  for (const row of rows) {
+    if (isPricingCategory(row.pricingCategory)) counts[row.pricingCategory] = row.count;
+  }
+  return counts;
 }
 
 router.get("/settings/class-pricing", async (_req, res): Promise<void> => {
@@ -36,7 +88,8 @@ router.get("/settings/class-pricing", async (_req, res): Promise<void> => {
 
 router.get("/admin/settings/class-pricing", requireAdminAuth, requireAdminPermission("settings", "view"), async (_req, res): Promise<void> => {
   const settings = await getOrCreateClassPricingSettings();
-  res.json(settings);
+  const activeClassCountsByCategory = await getActiveClassCountsByCategory();
+  res.json({ ...settings, activeClassCountsByCategory });
 });
 
 router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPermission("settings", "edit"), async (req: AdminRequest, res): Promise<void> => {
@@ -49,20 +102,33 @@ router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPerm
   const beforeSettings = await getOrCreateClassPricingSettings();
   const [settings] = await db
     .insert(classPricingSettingsTable)
-    .values({ id: 1, singleClassPriceEgp: parsed.data.singleClassPriceEgp })
+    .values({
+      id: 1,
+      singleClassPriceEgp: parsed.data.singleClassPriceEgp,
+      // Only overwrite a category price when it was actually included in the
+      // request body — omitted (undefined) means "leave as configured",
+      // while an explicit null clears it back to "unconfigured" (falls
+      // through to the legacy single price).
+      ...(parsed.data.adultsWalkinPriceEgp !== undefined ? { adultsWalkinPriceEgp: parsed.data.adultsWalkinPriceEgp } : {}),
+      ...(parsed.data.teensWalkinPriceEgp !== undefined ? { teensWalkinPriceEgp: parsed.data.teensWalkinPriceEgp } : {}),
+      ...(parsed.data.kidsWalkinPriceEgp !== undefined ? { kidsWalkinPriceEgp: parsed.data.kidsWalkinPriceEgp } : {}),
+    })
     .onConflictDoUpdate({
       target: classPricingSettingsTable.id,
       set: {
         singleClassPriceEgp: parsed.data.singleClassPriceEgp,
+        ...(parsed.data.adultsWalkinPriceEgp !== undefined ? { adultsWalkinPriceEgp: parsed.data.adultsWalkinPriceEgp } : {}),
+        ...(parsed.data.teensWalkinPriceEgp !== undefined ? { teensWalkinPriceEgp: parsed.data.teensWalkinPriceEgp } : {}),
+        ...(parsed.data.kidsWalkinPriceEgp !== undefined ? { kidsWalkinPriceEgp: parsed.data.kidsWalkinPriceEgp } : {}),
         updatedAt: new Date().toISOString(),
       },
     })
     .returning();
 
   const { before, after } = diffFields(
-    { singleClassPriceEgp: beforeSettings.singleClassPriceEgp },
-    { singleClassPriceEgp: settings.singleClassPriceEgp },
-    ["singleClassPriceEgp"],
+    Object.fromEntries(CLASS_PRICING_ACTIVITY_FIELDS.map((key) => [key, beforeSettings[key]])),
+    Object.fromEntries(CLASS_PRICING_ACTIVITY_FIELDS.map((key) => [key, settings[key]])),
+    CLASS_PRICING_ACTIVITY_FIELDS,
   );
   if (Object.keys(after).length > 0) {
     await logActivity(req, {
@@ -77,7 +143,8 @@ router.patch("/admin/settings/class-pricing", requireAdminAuth, requireAdminPerm
     });
   }
 
-  res.json(settings);
+  const activeClassCountsByCategory = await getActiveClassCountsByCategory();
+  res.json({ ...settings, activeClassCountsByCategory });
 });
 
 export default router;

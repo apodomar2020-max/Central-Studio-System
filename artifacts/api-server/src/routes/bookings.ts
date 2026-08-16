@@ -855,8 +855,14 @@ router.post(
   const studentEmail = req.studentEmail!;
   const accountOwnerStudentId = req.studentId!;
 
+  // expectedPriceEgp is NOT a bookings-table column — pulled out here and
+  // never spread into `normalized`/the eventual insert. Optional: an older
+  // app build that omits it simply skips the stale-price check below,
+  // exactly like the pre-existing behavior.
+  const { expectedPriceEgp, ...bookingFields } = parsed.data;
+
   const normalized = normalizeBookingWrite({
-    ...parsed.data,
+    ...bookingFields,
     studentEmail,
     accountOwnerStudentId,
   });
@@ -1187,6 +1193,29 @@ router.post(
         creditOrder = credit.order;
       }
     }
+
+    // ── Stale-price guard (mirrors checkInService.ts's walk-in
+    // expectedPriceEgp/walkin_price_changed protection) — resolved and
+    // checked BEFORE any row is written, so a mismatch never creates a
+    // booking or payment_records row at all. Only applies to a
+    // direct-payment booking; package_credit/free bookings never resolve or
+    // charge a price. The same resolver/priority order used everywhere else
+    // (schedule override -> category price -> legacy fallback) — this is
+    // not a separate price calculation.
+    let priceEgp: number | null = null;
+    if (isDirectPaymentBooking) {
+      priceEgp = await resolveSingleClassPriceEgp(tx, {
+        scheduleId: normalized.scheduleId ?? null,
+        classId: normalized.classId ?? null,
+      });
+      if (
+        expectedPriceEgp != null &&
+        egpToMinor(expectedPriceEgp) !== egpToMinor(priceEgp)
+      ) {
+        return { kind: "price_changed" as const, currentPriceEgp: priceEgp };
+      }
+    }
+
     const [inserted] = await tx
       .insert(bookingsTable)
       .values({
@@ -1207,10 +1236,10 @@ router.post(
     // row, in the same transaction as the bookings write above — only for
     // an ordinary direct-payment booking (see isDirectPaymentBooking above).
     // The amount is always the server-resolved schedule/Studio-default
-    // price — never a client-provided figure.
+    // price — never a client-provided figure. priceEgp was already resolved
+    // (and stale-price-checked) above, before the booking row was inserted.
     if (isDirectPaymentBooking) {
-      const priceEgp = await resolveSingleClassPriceEgp(tx, normalized.scheduleId ?? null);
-      const grossAmountMinor = egpToMinor(priceEgp);
+      const grossAmountMinor = egpToMinor(priceEgp!);
       // No real, server-validated discount mechanism exists on this booking
       // flow today (no promotion service is wired into POST /bookings) —
       // per the locked spec, discount is 0 rather than inventing support.
@@ -1391,6 +1420,18 @@ router.post(
     }
     if (createResult.kind === "package_credit_error") {
       res.status(409).json({ error: createResult.code, code: createResult.code, message: createResult.message });
+      return;
+    }
+    if (createResult.kind === "price_changed") {
+      // Recoverable by design: nothing was written (booking/payment_records
+      // insert never ran), so the client can safely re-fetch pricing and
+      // resubmit. currentPriceEgp lets it do that without a second round-trip.
+      res.status(409).json({
+        error: "booking_price_changed",
+        code: "booking_price_changed",
+        message: "The class price changed since it was displayed — please review the updated price and confirm again.",
+        currentPriceEgp: createResult.currentPriceEgp,
+      });
       return;
     }
   }

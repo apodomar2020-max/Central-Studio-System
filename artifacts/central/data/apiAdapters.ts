@@ -13,6 +13,7 @@ import type {
 } from "@workspace/api-client-react";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
 
+import { resolveWalkinPriceEgp, type ClassPricingSettings } from "@/services/classPricingService";
 import { DANCE_CATEGORIES, type AgeGroup, type DanceClass, type Instructor } from "./mockData";
 import {
   addDaysToDateKey,
@@ -266,18 +267,32 @@ export function mapScheduleAndClassToMobile(
   schedule: ApiSchedule,
   cls: ApiClass,
   weekStart: Date, // the Saturday of the current Egyptian week
-  singleClassPriceEgp = 0,
+  classPricing?: ClassPricingSettings,
   classCapacityEnabled = true,
 ): DanceClass {
   return applySchedule(
-    mapApiClassToMobile(cls, singleClassPriceEgp),
+    mapApiClassToMobile(cls, classPricing, schedule),
     schedule,
     scheduleDateForWeek(schedule, weekStart),
     classCapacityEnabled,
   );
 }
 
-export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): DanceClass {
+/**
+ * Resolved walk-in price for display — never invented client-side. A
+ * schedule-specific override (schedule.priceEgp) always wins, exactly like
+ * the backend's resolveSingleClassPriceEgp; otherwise the class's assigned
+ * pricing category / legacy single price from `classPricing`
+ * (fetchClassPricing()) is used via resolveWalkinPriceEgp. The backend
+ * always re-resolves and captures the real charge at booking/walk-in time —
+ * this value is display-only.
+ */
+function resolveMobileDisplayPriceEgp(api: ApiClass, classPricing?: ClassPricingSettings, schedule?: ApiSchedule): number {
+  if (schedule?.priceEgp != null) return schedule.priceEgp;
+  return resolveWalkinPriceEgp(api.pricingCategory, classPricing);
+}
+
+export function mapApiClassToMobile(api: ApiClass, classPricing?: ClassPricingSettings, schedule?: ApiSchedule): DanceClass {
   const category = findCategoryByName(api.category);
 
   return {
@@ -300,7 +315,7 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
     duration: `${api.durationMins} min`,
     location: "Central Studio",
     room: "",
-    price: singleClassPriceEgp,
+    price: resolveMobileDisplayPriceEgp(api, classPricing, schedule),
     capacity: api.capacity,
     bookedCount: 0,
     classCapacityEnabled: true,
@@ -319,10 +334,10 @@ export function mapApiClassToMobile(api: ApiClass, singleClassPriceEgp = 0): Dan
 export function mapApiClassWithScheduleToMobile(
   api: ApiClass,
   schedule: ApiSchedule | undefined,
-  singleClassPriceEgp = 0,
+  classPricing?: ClassPricingSettings,
   classCapacityEnabled = true,
 ): DanceClass {
-  const cls = mapApiClassToMobile(api, singleClassPriceEgp);
+  const cls = mapApiClassToMobile(api, classPricing, schedule);
   cls.classCapacityEnabled = classCapacityEnabled;
   return applySchedule(cls, schedule, undefined, classCapacityEnabled);
 }

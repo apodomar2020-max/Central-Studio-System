@@ -497,6 +497,8 @@ export interface BookingSourceRow {
   scheduleId: number | null;
   /** schedules.price_egp — current, editable value. */
   schedulePriceEgp: number | null;
+  /** class_pricing_settings.<category>_walkin_price_egp for the class's assigned pricing category, when both resolve. */
+  categoryWalkinPriceEgp: number | null;
   /** class_pricing_settings.single_class_price_egp — current global fallback. */
   singleClassSettingEgp: number | null;
   accountOwnerStudentId: number | null;
@@ -663,8 +665,12 @@ function mapBookingPaymentFromPaymentRecord(row: BookingSourceRow): UnifiedFinan
 
 function mapBookingPaymentLegacyEstimate(row: BookingSourceRow): UnifiedFinanceTransaction {
   const schedulePrice = egpOrNull(row.schedulePriceEgp);
+  const categoryPrice = egpOrNull(row.categoryWalkinPriceEgp);
   const settingPrice = egpOrNull(row.singleClassSettingEgp);
-  const resolvedPrice = schedulePrice ?? settingPrice;
+  // Identical order to BOOKING_RESOLVED_PRICE (financeSources.ts) and to
+  // resolveSingleClassPriceEgp's live-capture order (singleClassPricing.ts):
+  // schedule override -> class's category price -> legacy single price.
+  const resolvedPrice = schedulePrice ?? categoryPrice ?? settingPrice;
 
   const amounts = emptyAmounts();
   if (resolvedPrice != null) {
@@ -677,9 +683,11 @@ function mapBookingPaymentLegacyEstimate(row: BookingSourceRow): UnifiedFinanceT
   const amountSource: FinanceAmountSource =
     schedulePrice != null
       ? "current_schedule_price"
-      : settingPrice != null
-        ? "current_single_class_setting"
-        : "unavailable";
+      : categoryPrice != null
+        ? "current_category_price_setting"
+        : settingPrice != null
+          ? "current_single_class_setting"
+          : "unavailable";
   const badge: FinanceReliabilityBadge =
     resolvedPrice != null ? "estimated_operational" : "unknown_amount";
 

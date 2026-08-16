@@ -165,6 +165,7 @@ router.post(
     status,
     settlementMode,
     confirmedPaymentMethod,
+    expectedPriceEgp,
   } = parsed.data as typeof parsed.data & { confirmedPaymentMethod?: "cash" | "card" };
 
   const performedBy = checkedInBy ?? "system";
@@ -256,6 +257,21 @@ router.post(
     // participant state. See STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
     // (Booking-linked check-ins go through the shared performBookingCheckIn()
     // above; this path intentionally remains its own implementation.)
+    //
+    // Legacy-endpoint decision (pre-merge gap closure, category walk-in
+    // pricing): this POST /attendance walk-in path is a SEPARATE flow from
+    // the Unified Attendance Gateway's resolve()/confirm() pair
+    // (adminAttendanceGateway.ts) — it is not superseded by it at the API
+    // layer. Its only currently-known admin caller,
+    // components/scan-check-in-dialog.tsx, is not rendered anywhere in the
+    // admin app as of this change (verified: no JSX usage found), but this
+    // route remains live, permissioned, and reachable by any direct caller,
+    // so it was kept — NOT deprecated/removed — and given the same
+    // stale-price protection performStudioWalkIn already offers the
+    // canonical flow (`expectedPriceEgp`, optional, backward-compatible: a
+    // caller that omits it — every known caller today — behaves exactly as
+    // before). Removing this route outright was explicitly out of scope
+    // without runtime traffic verification that nothing else calls it.
 
     const walkInResult = await db.transaction(async (tx) => {
       // ── Not Paid — cancel the whole operation up front. Zero writes: no
@@ -325,6 +341,11 @@ router.post(
           adminId,
           confirmedPaymentMethod: confirmedPaymentMethod!,
           performedBy,
+          // Pre-merge gap closure: same stale-price guard the Unified
+          // Attendance Gateway walk-in flow already has. Optional — a
+          // caller that omits it (as every known historical caller of this
+          // route does) simply skips the check, unchanged from before.
+          expectedPriceEgp: expectedPriceEgp ?? null,
         });
         return { kind: "paidWalkIn" as const, result };
       }

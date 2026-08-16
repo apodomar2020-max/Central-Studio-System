@@ -90,6 +90,14 @@ export const CheckInBodyExtended = zod.object({
   // STUDIO_WALKIN_EXPLICIT_SETTLEMENT_POLICY.md.
   settlementMode: zod.enum(["package_credit", "pay_at_studio", "not_paid"]).optional(),
   confirmedPaymentMethod: zod.enum(["cash", "card"]).optional(),
+  // Pre-merge gap closure (category walk-in pricing): the same stale-price
+  // guard the Unified Attendance Gateway walk-in flow already has
+  // (performStudioWalkIn already accepts and enforces this). Optional for
+  // backward compatibility — a caller that omits it (this route's only
+  // known historical caller, ScanCheckInDialog, never sent one) simply
+  // skips the check, same as before. Only meaningful when settlementMode
+  // is "pay_at_studio".
+  expectedPriceEgp: zod.number().nullish(),
 }).superRefine((body, ctx) => {
   // "absent" is a no-show status record, not an arrival — it is not a
   // Studio Walk-in in the payment-settlement sense (no attendance-linked

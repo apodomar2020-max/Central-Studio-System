@@ -723,7 +723,10 @@ export async function performStudioWalkIn(
   // Creation Capture and the Finance Phase 1 read model both use, so the
   // price this function captures can never disagree with what any other
   // surface displays for the same schedule/class.
-  const priceEgp = await resolveSingleClassPriceEgp(tx, params.scheduleId ?? null);
+  const priceEgp = await resolveSingleClassPriceEgp(tx, {
+    scheduleId: params.scheduleId ?? null,
+    classId: params.classId ?? null,
+  });
   if (!(priceEgp > 0)) {
     throw makeCheckInError(
       409,

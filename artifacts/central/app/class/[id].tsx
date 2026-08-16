@@ -38,7 +38,7 @@ import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
 import ErrorState from "@/components/ErrorState";
 import { isOfflineError } from "@/services/connectivity";
-import { DEFAULT_SINGLE_CLASS_PRICE_EGP, fetchClassPricing } from "@/services/classPricingService";
+import { fetchClassPricing } from "@/services/classPricingService";
 import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/services/classCapacityService";
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
@@ -160,8 +160,6 @@ export default function ClassDetailScreen() {
     queryFn: fetchClassCapacitySettings,
     staleTime: 60 * 1000,
   });
-  const singleClassPriceEgp =
-    classPricingQuery.data?.singleClassPriceEgp ?? DEFAULT_SINGLE_CLASS_PRICE_EGP;
   const classCapacityEnabled =
     classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
 
@@ -170,7 +168,7 @@ export default function ClassDetailScreen() {
       [...schedulesQuery.data].filter(isMobileVisibleSchedule).sort((a, b) => compareSchedulesByNextOccurrence(a, b))[0]
     : undefined;
   const cls = classQuery.data
-    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, singleClassPriceEgp, classCapacityEnabled)
+    ? mapApiClassWithScheduleToMobile(classQuery.data, primarySchedule, classPricingQuery.data, classCapacityEnabled)
     : null;
 
   const instructorQuery = useGetInstructor(classQuery.data?.instructorId ?? 0, {

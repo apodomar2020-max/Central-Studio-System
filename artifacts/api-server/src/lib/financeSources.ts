@@ -72,6 +72,7 @@ import {
   mapPackageRefund,
   mapPromotionDiscount,
 } from "./financeReadModel";
+import { categoryWalkinPriceSql } from "./singleClassPricing";
 
 // ─── Filter contract ──────────────────────────────────────────────────────────
 
@@ -196,8 +197,19 @@ const NOT_BALLET_LINKED_PACKAGE_ORDER = sql`not exists (
   select 1 from ballet_payments bp where bp.package_order_id = ${packageOrdersTable.id}
 )`;
 
-/** Generic booking price fallback — identical order to financialAggregates.ts. */
-const BOOKING_RESOLVED_PRICE = sql<number | null>`coalesce(${schedulesTable.priceEgp}, ${classPricingSettingsTable.singleClassPriceEgp})`;
+/**
+ * Generic booking price fallback — identical order to financialAggregates.ts
+ * and to resolveSingleClassPriceEgp's live-capture resolution order
+ * (singleClassPricing.ts): schedule override -> class's category price ->
+ * legacy Studio-wide single price. Only ever used for a booking with no
+ * payment_records row (see mapBookingPayment) — a real captured payment is
+ * an immutable snapshot and never re-estimated by this expression.
+ */
+const BOOKING_RESOLVED_PRICE = sql<number | null>`coalesce(
+  ${schedulesTable.priceEgp},
+  ${categoryWalkinPriceSql(classesTable.pricingCategory, classPricingSettingsTable)},
+  ${classPricingSettingsTable.singleClassPriceEgp}
+)`;
 
 /** ballet_refunds completion condition — identical to financialAggregates.ts. */
 const REFUND_COMPLETED = sql`(
@@ -373,6 +385,7 @@ function bookingFamily(
         classTitle: classesTable.title,
         scheduleId: bookingsTable.scheduleId,
         schedulePriceEgp: schedulesTable.priceEgp,
+        categoryWalkinPriceEgp: categoryWalkinPriceSql(classesTable.pricingCategory, classPricingSettingsTable),
         singleClassSettingEgp: classPricingSettingsTable.singleClassPriceEgp,
         accountOwnerStudentId: bookingsTable.accountOwnerStudentId,
         studentName: bookingsTable.studentName,

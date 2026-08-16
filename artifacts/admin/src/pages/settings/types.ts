@@ -45,8 +45,16 @@ export interface DanceType {
 export interface ClassPricingSettings {
   id: number;
   singleClassPriceEgp: number;
+  adultsWalkinPriceEgp: number | null;
+  teensWalkinPriceEgp: number | null;
+  kidsWalkinPriceEgp: number | null;
   createdAt: string;
   updatedAt: string;
+  // Admin-only visibility (not present on the public GET response): how many
+  // ACTIVE classes are currently assigned to each category, regardless of
+  // whether that category's price is configured. Used to warn when a
+  // category has classes depending on it but no price set.
+  activeClassCountsByCategory?: { adults: number; teens: number; kids: number };
 }
 
 export interface BackgroundMusicSettings {
@@ -131,10 +139,24 @@ export const danceTypeSchema = z.object({
 });
 export type DanceTypeForm = z.input<typeof danceTypeSchema>;
 
+// Blank field = "leave this category unconfigured" (falls back to the legacy
+// single price below) — distinct from 0, which is a deliberately free class.
+const nullableCategoryPrice = z.preprocess(
+  (value) => (value === "" || value == null ? null : Number(value)),
+  z.number().int().min(0, "Price must be 0 or greater").nullable(),
+);
+
 export const classPricingSchema = z.object({
   singleClassPriceEgp: z.coerce.number().int().min(0, "Price must be 0 or greater"),
+  adultsWalkinPriceEgp: nullableCategoryPrice,
+  teensWalkinPriceEgp: nullableCategoryPrice,
+  kidsWalkinPriceEgp: nullableCategoryPrice,
 });
-export type ClassPricingForm = z.input<typeof classPricingSchema>;
+// z.output (not z.input): the nullable category price fields are
+// preprocessed, so their input type is `unknown` — the form works with the
+// already-resolved `number | null` shape, matching the `values`/`onSubmit`
+// payloads used in ClassPricingTab.tsx.
+export type ClassPricingForm = z.infer<typeof classPricingSchema>;
 
 export const backgroundMusicSchema = z.object({
   enabled: z.boolean().default(false),

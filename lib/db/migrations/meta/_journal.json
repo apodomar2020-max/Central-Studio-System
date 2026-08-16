@@ -752,10 +752,17 @@
       "breakpoints": true
     },
     {
-      "idx": 107,
+      "idx": 108,
       "version": "7",
       "when": 1787068800000,
       "tag": "0107_notification_delivery_logs_status_created_at_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1787155200000,
+      "tag": "0108_class_pricing_categories",
       "breakpoints": true
     }
   ]

@@ -456,6 +456,16 @@ export const ListClassesResponseItem = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 export const ListClassesResponse = zod.array(ListClassesResponseItem);
@@ -476,6 +486,16 @@ export const CreateClassBody = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean().optional(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 export const CreateClassResponse = zod.object({
@@ -511,6 +531,16 @@ export const CreateClassResponse = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 
@@ -551,6 +581,16 @@ export const GetClassResponse = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 
@@ -574,6 +614,16 @@ export const UpdateClassBody = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean().optional(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 export const UpdateClassResponse = zod.object({
@@ -609,6 +659,16 @@ export const UpdateClassResponse = zod.object({
   photoUrl: zod.string().nullish(),
   classVideoUrl: zod.string().nullish(),
   isActive: zod.boolean(),
+  pricingCategory: zod
+    .union([
+      zod
+        .enum(["adults", "teens", "kids"])
+        .describe(
+          "General Class walk-in pricing bucket. Null\/absent means the class has not been assigned a category yet, so the price resolver falls back to the legacy Studio-wide single price (see class-pricing settings).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.string(),
 });
 
@@ -1857,6 +1917,12 @@ export const CreateBookingBody = zod.object({
   paymentMode: zod.string().nullish(),
   notes: zod.string().nullish(),
   bookedAt: zod.string().optional(),
+  expectedPriceEgp: zod
+    .number()
+    .nullish()
+    .describe(
+      "The price the client displayed to the customer before they confirmed (from the same resolver the server re-resolves at creation time). Optional for backward compatibility with older app builds that don't send it — omitting it skips the stale-price check entirely, same as today. When present and it no longer matches the freshly-resolved price, the booking is rejected with 409 booking_price_changed and nothing is written. Only meaningful for a direct-payment booking (pay_at_studio \/ online_payment); ignored otherwise.\n",
+    ),
 });
 
 export const CreateBookingResponse = zod.object({

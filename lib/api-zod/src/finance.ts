@@ -97,6 +97,8 @@ export const FINANCE_AMOUNT_SOURCES = [
   "payment_record_snapshot",
   "current_package_catalog_price",
   "current_schedule_price",
+  /** class_pricing_settings.<category>_walkin_price_egp for the class's assigned pricing category. */
+  "current_category_price_setting",
   "current_single_class_setting",
   "unavailable",
   "not_applicable_credit_only",
