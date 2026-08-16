@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,17 +25,21 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { Edit, Trash2 } from "lucide-react";
-import { PageHeader } from "@/components/layout/page-header";
+import { Edit, Trash2, Plus } from "lucide-react";
 import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Badge } from "@/components/ui/badge";
 import { BranchRoomFields } from "@/components/schedules/BranchRoomFields";
 import type { ScheduleBranch, ScheduleRoom } from "@workspace/api-client-react";
+import { TableToolbar } from "@/components/admin/table-toolbar";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import "./admin2-studio.css";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SCHEDULE_STATUSES = ["active", "completed", "expired", "cancelled"] as const;
+type ScheduleStatusFilter = "all" | (typeof SCHEDULE_STATUSES)[number];
+type ScheduleTypeFilter = "all" | "weekly" | "one_time";
+type ScheduleSortOption = "default" | "start-time" | "price-desc" | "price-asc";
 
 const formSchema = z.object({
   classId: z.coerce.number().int().min(1, "Class is required"),
@@ -316,9 +320,169 @@ export default function Schedules() {
 
   const getClassName = (id: number) => classes?.find((c) => c.id === id)?.title ?? `Class #${id}`;
 
+  // Data Tables Enhancement — client-side search/filter/sort over the
+  // complete array useListSchedules() already fetches. No API change;
+  // never mutates the query-cache array (sort operates on a copy).
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim().toLowerCase(), 200);
+  const [scheduleStatusFilter, setScheduleStatusFilter] = useState<ScheduleStatusFilter>("all");
+  const [scheduleTypeFilter, setScheduleTypeFilter] = useState<ScheduleTypeFilter>("all");
+  const [dayFilter, setDayFilter] = useState<number | "all">("all");
+  const [classFilter, setClassFilter] = useState<number | "all">("all");
+  const [branchFilter, setBranchFilter] = useState<number | "all">("all");
+  const [scheduleSort, setScheduleSort] = useState<ScheduleSortOption>("default");
+
+  const scheduleClassOptions = useMemo(
+    () => (classes ?? []).slice().sort((a, b) => a.title.localeCompare(b.title)),
+    [classes],
+  );
+  const branchOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const s of schedules ?? []) if (s.branch) map.set(s.branch.id, s.branch.name);
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [schedules]);
+
+  const scheduleActiveFilterCount = [
+    scheduleStatusFilter !== "all", scheduleTypeFilter !== "all", dayFilter !== "all",
+    classFilter !== "all", branchFilter !== "all",
+  ].filter(Boolean).length;
+  const scheduleHasActiveControls = scheduleActiveFilterCount > 0 || scheduleSort !== "default" || search.length > 0;
+  const clearScheduleControls = () => {
+    setSearch(""); setScheduleStatusFilter("all"); setScheduleTypeFilter("all"); setDayFilter("all");
+    setClassFilter("all"); setBranchFilter("all"); setScheduleSort("default");
+  };
+
+  const filteredSchedules = useMemo(() => {
+    let list = schedules ?? [];
+    if (debouncedSearch) {
+      list = list.filter((s) =>
+        getClassName(s.classId).toLowerCase().includes(debouncedSearch)
+        || (s.location ?? "").toLowerCase().includes(debouncedSearch)
+        || (s.branch?.name ?? "").toLowerCase().includes(debouncedSearch));
+    }
+    if (scheduleStatusFilter !== "all") list = list.filter((s) => (s.status ?? "active") === scheduleStatusFilter);
+    if (scheduleTypeFilter !== "all") list = list.filter((s) => s.type === scheduleTypeFilter);
+    // Day filter only makes sense for weekly rows — a one-time row has no
+    // dayOfWeek at all, so it's excluded from a Day match rather than
+    // forced into a false "no day" bucket.
+    if (dayFilter !== "all") list = list.filter((s) => s.type === "weekly" && s.dayOfWeek === dayFilter);
+    if (classFilter !== "all") list = list.filter((s) => s.classId === classFilter);
+    if (branchFilter !== "all") list = list.filter((s) => s.branch?.id === branchFilter);
+    if (scheduleSort !== "default") {
+      list = [...list].sort((a, b) => {
+        switch (scheduleSort) {
+          case "start-time": return a.startTime.localeCompare(b.startTime);
+          // priceEgp null = "Default" price — sorts last regardless of direction.
+          case "price-desc": return a.priceEgp == null ? (b.priceEgp == null ? 0 : 1) : b.priceEgp == null ? -1 : b.priceEgp - a.priceEgp;
+          case "price-asc": return a.priceEgp == null ? (b.priceEgp == null ? 0 : 1) : b.priceEgp == null ? -1 : a.priceEgp - b.priceEgp;
+          default: return 0;
+        }
+      });
+    }
+    return list;
+  }, [schedules, debouncedSearch, scheduleStatusFilter, scheduleTypeFilter, dayFilter, classFilter, branchFilter, scheduleSort, classes]);
+
+  const scheduleSortLabels: Record<ScheduleSortOption, string> = {
+    default: "Default", "start-time": "Start time", "price-desc": "Price ↓", "price-asc": "Price ↑",
+  };
+  const scheduleStatusLabels: Record<(typeof SCHEDULE_STATUSES)[number], string> = {
+    active: "Active", completed: "Completed", expired: "Expired", cancelled: "Cancelled",
+  };
+
   return (
     <div className="admin2-studio-page admin2-studio-schedules">
-      <PageHeader title="Schedules" description="Weekly classes and one-time workshops" mode="studio" addLabel="Add Schedule" addTestId="button-add-schedule" onAdd={canCreate ? openCreate : undefined} />
+      <TableToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search schedules by class, branch, or location"
+        searchTestId="input-schedule-search"
+        activeFilterCount={scheduleActiveFilterCount}
+        onClear={scheduleHasActiveControls ? clearScheduleControls : undefined}
+        activeSortLabel={scheduleSort !== "default" ? scheduleSortLabels[scheduleSort] : undefined}
+        filtersContent={
+          <>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Status</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={scheduleStatusFilter === "all"} className={scheduleStatusFilter === "all" ? "is-selected" : undefined} onClick={() => setScheduleStatusFilter("all")}>All</Button>
+                {SCHEDULE_STATUSES.map((s) => (
+                  <Button key={s} type="button" variant="outline" size="compact" aria-pressed={scheduleStatusFilter === s} className={scheduleStatusFilter === s ? "is-selected" : undefined} onClick={() => setScheduleStatusFilter(s)}>
+                    {scheduleStatusLabels[s]}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Type</span>
+              <div className="admin2-filter-pills">
+                {(["all", "weekly", "one_time"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={scheduleTypeFilter === value} className={scheduleTypeFilter === value ? "is-selected" : undefined} onClick={() => setScheduleTypeFilter(value)}>
+                    {value === "all" ? "All" : value === "one_time" ? "One-time" : "Weekly"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Day</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={dayFilter === "all"} className={dayFilter === "all" ? "is-selected" : undefined} onClick={() => setDayFilter("all")}>All</Button>
+                {DAY_SHORT.map((d, i) => (
+                  <Button key={i} type="button" variant="outline" size="compact" aria-pressed={dayFilter === i} className={dayFilter === i ? "is-selected" : undefined} onClick={() => setDayFilter(i)}>
+                    {d}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {scheduleClassOptions.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Class</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={classFilter === "all"} className={classFilter === "all" ? "is-selected" : undefined} onClick={() => setClassFilter("all")}>All</Button>
+                  {scheduleClassOptions.map((c) => (
+                    <Button key={c.id} type="button" variant="outline" size="compact" aria-pressed={classFilter === c.id} className={classFilter === c.id ? "is-selected" : undefined} onClick={() => setClassFilter(c.id)}>
+                      {c.title}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {branchOptions.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Branch</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={branchFilter === "all"} className={branchFilter === "all" ? "is-selected" : undefined} onClick={() => setBranchFilter("all")}>All</Button>
+                  {branchOptions.map(([id, name]) => (
+                    <Button key={id} type="button" variant="outline" size="compact" aria-pressed={branchFilter === id} className={branchFilter === id ? "is-selected" : undefined} onClick={() => setBranchFilter(id)}>
+                      {name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(scheduleSortLabels) as ScheduleSortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={scheduleSort === value} className={scheduleSort === value ? "is-selected" : undefined} onClick={() => setScheduleSort(value)}>
+                  {scheduleSortLabels[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {canCreate && (
+          <div className="admin2-table-toolbar-add">
+            <Button data-testid="button-add-schedule" onClick={openCreate} className="gap-2 shrink-0">
+              <Plus className="h-4 w-4" />
+              Add Schedule
+            </Button>
+          </div>
+        )}
+      </TableToolbar>
 
       <div className="admin2-studio-registry">
         <Table>
@@ -340,8 +504,10 @@ export default function Schedules() {
               <TableRow><TableCell colSpan={9} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : schedules?.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No schedules yet.</TableCell></TableRow>
+            ) : filteredSchedules.length === 0 ? (
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No schedules match your search or filters.</TableCell></TableRow>
             ) : (
-              schedules?.map((schedule) => (
+              filteredSchedules.map((schedule) => (
                 <TableRow key={schedule.id} data-testid={`row-schedule-${schedule.id}`}>
                   <TableCell className="font-medium">{getClassName(schedule.classId)}</TableCell>
                   <TableCell>

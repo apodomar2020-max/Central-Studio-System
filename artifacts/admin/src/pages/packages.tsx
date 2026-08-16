@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -24,15 +24,33 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Edit, Star } from "lucide-react";
-import { PageHeader } from "@/components/layout/page-header";
+import { Trash2, Edit, Star, Plus } from "lucide-react";
 import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Badge } from "@/components/ui/badge";
 import { deriveAgeRangeLabel } from "@workspace/api-zod";
+import { TableToolbar } from "@/components/admin/table-toolbar";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import "./admin2-studio.css";
 
 const TYPES = ["per_class", "monthly", "term"];
 const AGE_PRESETS = ["all", "kids", "teens", "adults", "custom"] as const;
+// Data Tables Enhancement — Age filter uses the same 3 bands the Create/Edit
+// form's age-preset shortcut already defines (kids 5–12, teens 13–17,
+// adults 18+), not invented bands.
+const AGE_FILTER_BANDS = { kids: [5, 12], teens: [13, 17], adults: [18, null] } as const;
+type StatusFilter = "all" | "active" | "inactive";
+type FeaturedFilter = "all" | "featured" | "not";
+type AgeFilter = "all" | keyof typeof AGE_FILTER_BANDS;
+type SortOption = "default" | "name" | "price-asc" | "price-desc" | "sessions-asc" | "sessions-desc";
+
+function packageMatchesAgeBand(pkg: { allowAllAges: boolean | null; minAge: number | null; maxAge: number | null }, band: keyof typeof AGE_FILTER_BANDS): boolean {
+  if (pkg.allowAllAges) return true;
+  const [bandMin, bandMax] = AGE_FILTER_BANDS[band];
+  const pkgMin = pkg.minAge ?? 0;
+  const pkgMax = pkg.maxAge ?? Infinity;
+  const effectiveBandMax = bandMax ?? Infinity;
+  return pkgMin <= effectiveBandMax && pkgMax >= bandMin;
+}
 const API = import.meta.env.VITE_API_URL ?? "";
 const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
 
@@ -126,6 +144,52 @@ export default function Packages() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Package | null>(null);
   const [agePreset, setAgePreset] = useState<(typeof AGE_PRESETS)[number]>("all");
+
+  // Data Tables Enhancement — client-side search/filter/sort. `packages` is
+  // the complete array useListPricePackages() already fetches (no API
+  // change); filtering/sorting derive a new array via useMemo, never
+  // mutating the query-cache array in place ([...list].sort(), not
+  // list.sort()).
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim().toLowerCase(), 200);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [featuredFilter, setFeaturedFilter] = useState<FeaturedFilter>("all");
+  const [ageFilter, setAgeFilter] = useState<AgeFilter>("all");
+  const [sort, setSort] = useState<SortOption>("default");
+
+  const activeFilterCount = [statusFilter !== "all", typeFilter !== "all", featuredFilter !== "all", ageFilter !== "all"].filter(Boolean).length;
+  const hasActiveControls = activeFilterCount > 0 || sort !== "default" || search.length > 0;
+  const clearControls = () => { setSearch(""); setStatusFilter("all"); setTypeFilter("all"); setFeaturedFilter("all"); setAgeFilter("all"); setSort("default"); };
+
+  const filteredPackages = useMemo(() => {
+    let list = packages ?? [];
+    if (debouncedSearch) list = list.filter((pkg) => pkg.name.toLowerCase().includes(debouncedSearch));
+    if (statusFilter !== "all") list = list.filter((pkg) => (statusFilter === "active" ? pkg.isActive : !pkg.isActive));
+    if (typeFilter !== "all") list = list.filter((pkg) => pkg.type === typeFilter);
+    if (featuredFilter !== "all") list = list.filter((pkg) => (featuredFilter === "featured" ? pkg.isFeatured : !pkg.isFeatured));
+    if (ageFilter !== "all") list = list.filter((pkg) => packageMatchesAgeBand(pkg, ageFilter));
+    if (sort !== "default") {
+      list = [...list].sort((a, b) => {
+        switch (sort) {
+          case "name": return a.name.localeCompare(b.name);
+          case "price-asc": return a.priceEgp - b.priceEgp;
+          case "price-desc": return b.priceEgp - a.priceEgp;
+          // Sessions is nullable ("Unlimited") — null intentionally sorts
+          // last regardless of direction, not flipped by asc/desc.
+          case "sessions-asc": return a.sessions == null ? (b.sessions == null ? 0 : 1) : b.sessions == null ? -1 : a.sessions - b.sessions;
+          case "sessions-desc": return a.sessions == null ? (b.sessions == null ? 0 : 1) : b.sessions == null ? -1 : b.sessions - a.sessions;
+          default: return 0;
+        }
+      });
+    }
+    return list;
+  }, [packages, debouncedSearch, statusFilter, typeFilter, featuredFilter, ageFilter, sort]);
+
+  const sortLabels: Record<SortOption, string> = {
+    default: "Default", name: "Name", "price-asc": "Price ↑", "price-desc": "Price ↓",
+    "sessions-asc": "Sessions ↑", "sessions-desc": "Sessions ↓",
+  };
   const { data: danceTypes = [] } = useQuery<DanceTypeItem[]>({
     queryKey: ["admin-dance-types"],
     queryFn: async () => {
@@ -219,7 +283,81 @@ export default function Packages() {
 
   return (
     <div className="admin2-studio-page admin2-studio-packages">
-      <PageHeader title="Packages" description="Pricing plans and subscriptions" mode="studio" addLabel="Add Package" addTestId="button-add-package" onAdd={canCreate ? openCreate : undefined} />
+      <TableToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search packages by name"
+        searchTestId="input-package-search"
+        activeFilterCount={activeFilterCount}
+        onClear={hasActiveControls ? clearControls : undefined}
+        activeSortLabel={sort !== "default" ? sortLabels[sort] : undefined}
+        filtersContent={
+          <>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Status</span>
+              <div className="admin2-filter-pills">
+                {(["all", "active", "inactive"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={statusFilter === value} className={statusFilter === value ? "is-selected" : undefined} onClick={() => setStatusFilter(value)}>
+                    {value === "all" ? "All" : value === "active" ? "Active" : "Inactive"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Type</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={typeFilter === "all"} className={typeFilter === "all" ? "is-selected" : undefined} onClick={() => setTypeFilter("all")}>All</Button>
+                {TYPES.map((t) => (
+                  <Button key={t} type="button" variant="outline" size="compact" aria-pressed={typeFilter === t} className={typeFilter === t ? "is-selected" : undefined} onClick={() => setTypeFilter(t)}>
+                    {t.replace("_", " ")}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Age</span>
+              <div className="admin2-filter-pills">
+                {(["all", "kids", "teens", "adults"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={ageFilter === value} className={ageFilter === value ? "is-selected" : undefined} onClick={() => setAgeFilter(value)}>
+                    {value === "all" ? "All" : value.charAt(0).toUpperCase() + value.slice(1)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Featured</span>
+              <div className="admin2-filter-pills">
+                {(["all", "featured", "not"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={featuredFilter === value} className={featuredFilter === value ? "is-selected" : undefined} onClick={() => setFeaturedFilter(value)}>
+                    {value === "all" ? "All" : value === "featured" ? "Featured" : "Not featured"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(sortLabels) as SortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={sort === value} className={sort === value ? "is-selected" : undefined} onClick={() => setSort(value)}>
+                  {sortLabels[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {canCreate && (
+          <div className="admin2-table-toolbar-add">
+            <Button data-testid="button-add-package" onClick={openCreate} className="gap-2 shrink-0">
+              <Plus className="h-4 w-4" />
+              Add Package
+            </Button>
+          </div>
+        )}
+      </TableToolbar>
 
       <div className="admin2-studio-registry">
         <Table>
@@ -240,8 +378,10 @@ export default function Packages() {
               <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : packages?.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No packages yet.</TableCell></TableRow>
+            ) : filteredPackages.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No packages match your search or filters.</TableCell></TableRow>
             ) : (
-              packages?.map((pkg) => (
+              filteredPackages.map((pkg) => (
                 <TableRow key={pkg.id} data-testid={`row-package-${pkg.id}`}>
                   <TableCell className="font-medium">{pkg.name}</TableCell>
                   <TableCell className="capitalize">{pkg.type.replace("_", " ")}</TableCell>

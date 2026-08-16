@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -33,11 +33,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { Trash2, Edit } from "lucide-react";
+import { Trash2, Edit, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { PageHeader } from "@/components/layout/page-header";
 import { useAdminConfirm } from "@/components/admin/admin-confirm";
+import { TableToolbar } from "@/components/admin/table-toolbar";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import "./admin2-studio.css";
+
+type StatusFilter = "all" | "active" | "inactive";
+type SortOption = "default" | "name" | "experience-desc" | "experience-asc";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -124,6 +128,59 @@ export default function Instructors() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Instructor | null>(null);
 
+  // Data Tables Enhancement — client-side search/filter/sort over the
+  // complete array useListInstructors() already fetches. No API change;
+  // never mutates the query-cache array (sort operates on a copy).
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim().toLowerCase(), 200);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [specialtyFilter, setSpecialtyFilter] = useState<string>("all");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [sort, setSort] = useState<SortOption>("default");
+
+  const specialtyOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const instructor of instructors ?? []) for (const s of instructor.specialties) if (s.trim()) set.add(s.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [instructors]);
+  const levelOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const instructor of instructors ?? []) if (instructor.teachingLevel?.trim()) set.add(instructor.teachingLevel.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [instructors]);
+
+  const activeFilterCount = [statusFilter !== "all", specialtyFilter !== "all", levelFilter !== "all"].filter(Boolean).length;
+  const hasActiveControls = activeFilterCount > 0 || sort !== "default" || search.length > 0;
+  const clearControls = () => { setSearch(""); setStatusFilter("all"); setSpecialtyFilter("all"); setLevelFilter("all"); setSort("default"); };
+
+  const filteredInstructors = useMemo(() => {
+    let list = instructors ?? [];
+    if (debouncedSearch) {
+      list = list.filter((i) =>
+        i.name.toLowerCase().includes(debouncedSearch)
+        || i.specialties.some((s) => s.toLowerCase().includes(debouncedSearch))
+        || (i.bio ?? "").toLowerCase().includes(debouncedSearch));
+    }
+    if (statusFilter !== "all") list = list.filter((i) => (statusFilter === "active" ? i.isActive : !i.isActive));
+    if (specialtyFilter !== "all") list = list.filter((i) => i.specialties.includes(specialtyFilter));
+    if (levelFilter !== "all") list = list.filter((i) => i.teachingLevel === levelFilter);
+    if (sort !== "default") {
+      list = [...list].sort((a, b) => {
+        switch (sort) {
+          case "name": return a.name.localeCompare(b.name);
+          case "experience-desc": return b.experienceYears - a.experienceYears;
+          case "experience-asc": return a.experienceYears - b.experienceYears;
+          default: return 0;
+        }
+      });
+    }
+    return list;
+  }, [instructors, debouncedSearch, statusFilter, specialtyFilter, levelFilter, sort]);
+
+  const sortLabels: Record<SortOption, string> = {
+    default: "Default", name: "Name", "experience-desc": "Experience ↓", "experience-asc": "Experience ↑",
+  };
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -208,7 +265,76 @@ export default function Instructors() {
 
   return (
     <div className="admin2-studio-page admin2-studio-instructors">
-      <PageHeader title="Instructors" description="Manage your teaching staff" mode="studio" addLabel="Add Instructor" addTestId="button-add-instructor" onAdd={canCreate ? openCreate : undefined} />
+      <TableToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search instructors by name, specialty, or bio"
+        searchTestId="input-instructor-search"
+        activeFilterCount={activeFilterCount}
+        onClear={hasActiveControls ? clearControls : undefined}
+        activeSortLabel={sort !== "default" ? sortLabels[sort] : undefined}
+        filtersContent={
+          <>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Status</span>
+              <div className="admin2-filter-pills">
+                {(["all", "active", "inactive"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={statusFilter === value} className={statusFilter === value ? "is-selected" : undefined} onClick={() => setStatusFilter(value)}>
+                    {value === "all" ? "All" : value === "active" ? "Active" : "Inactive"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {specialtyOptions.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Specialty</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={specialtyFilter === "all"} className={specialtyFilter === "all" ? "is-selected" : undefined} onClick={() => setSpecialtyFilter("all")}>All</Button>
+                  {specialtyOptions.map((s) => (
+                    <Button key={s} type="button" variant="outline" size="compact" aria-pressed={specialtyFilter === s} className={specialtyFilter === s ? "is-selected" : undefined} onClick={() => setSpecialtyFilter(s)}>
+                      {s}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {levelOptions.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Level</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={levelFilter === "all"} className={levelFilter === "all" ? "is-selected" : undefined} onClick={() => setLevelFilter("all")}>All</Button>
+                  {levelOptions.map((l) => (
+                    <Button key={l} type="button" variant="outline" size="compact" aria-pressed={levelFilter === l} className={levelFilter === l ? "is-selected" : undefined} onClick={() => setLevelFilter(l)}>
+                      {l}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(sortLabels) as SortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={sort === value} className={sort === value ? "is-selected" : undefined} onClick={() => setSort(value)}>
+                  {sortLabels[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {canCreate && (
+          <div className="admin2-table-toolbar-add">
+            <Button data-testid="button-add-instructor" onClick={openCreate} className="gap-2 shrink-0">
+              <Plus className="h-4 w-4" />
+              Add Instructor
+            </Button>
+          </div>
+        )}
+      </TableToolbar>
 
       <div className="admin2-studio-registry">
         <Table>
@@ -228,8 +354,10 @@ export default function Instructors() {
               <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : instructors?.length === 0 ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No instructors yet. Add one to get started.</TableCell></TableRow>
+            ) : filteredInstructors.length === 0 ? (
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No instructors match your search or filters.</TableCell></TableRow>
             ) : (
-              instructors?.map((instructor) => (
+              filteredInstructors.map((instructor) => (
                 <TableRow key={instructor.id} data-testid={`row-instructor-${instructor.id}`}>
                   <TableCell>
                     <InstructorPhoto url={instructor.photoUrl} name={instructor.name} />

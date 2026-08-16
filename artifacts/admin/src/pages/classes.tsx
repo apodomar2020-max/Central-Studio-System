@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -23,13 +23,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Trash2, Edit } from "lucide-react";
-import { PageHeader } from "@/components/layout/page-header";
+import { Trash2, Edit, Plus } from "lucide-react";
 import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { deriveAgeRangeLabel } from "@workspace/api-zod";
+import { TableToolbar } from "@/components/admin/table-toolbar";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import "./admin2-studio.css";
+
+type StatusFilter = "all" | "active" | "inactive";
+type SortOption = "default" | "title" | "duration-desc" | "duration-asc" | "capacity-desc" | "capacity-asc";
+// Same 3 age bands the Packages page's filter and this page's own Create/
+// Edit age-preset shortcut both already use — not invented here.
+const CLASS_AGE_FILTER_BANDS = { kids: [5, 12], teens: [13, 17], adults: [18, null] } as const;
+
+function classMatchesAgeBand(cls: { allowAllAges: boolean | null; minAge: number | null; maxAge: number | null }, band: keyof typeof CLASS_AGE_FILTER_BANDS): boolean {
+  if (cls.allowAllAges) return true;
+  const [bandMin, bandMax] = CLASS_AGE_FILTER_BANDS[band];
+  const clsMin = cls.minAge ?? 0;
+  const clsMax = cls.maxAge ?? Infinity;
+  const effectiveBandMax = bandMax ?? Infinity;
+  return clsMin <= effectiveBandMax && clsMax >= bandMin;
+}
 
 // ─── Dance types — loaded from Settings, replaces hardcoded CATEGORIES ────────
 
@@ -361,6 +377,76 @@ export default function Classes() {
   const getInstructorName = (id?: number | null) =>
     instructors?.find((i) => i.id === id)?.name ?? "—";
 
+  // Data Tables Enhancement — client-side search/filter/sort over the
+  // complete array useListClasses() already fetches. No API change; never
+  // mutates the query-cache array (sort operates on a copy).
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim().toLowerCase(), 200);
+  const [classStatusFilter, setClassStatusFilter] = useState<StatusFilter>("all");
+  const [instructorFilter, setInstructorFilter] = useState<number | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [ageFilter, setAgeFilter] = useState<"all" | keyof typeof CLASS_AGE_FILTER_BANDS>("all");
+  const [pricingCategoryFilter, setPricingCategoryFilter] = useState<string>("all");
+  const [classSort, setClassSort] = useState<SortOption>("default");
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const cls of classes ?? []) if (cls.category?.trim()) set.add(cls.category.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [classes]);
+  const classLevelOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const cls of classes ?? []) if (cls.level?.trim()) set.add(cls.level.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [classes]);
+  const instructorOptions = useMemo(
+    () => (instructors ?? []).slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [instructors],
+  );
+
+  const classActiveFilterCount = [
+    classStatusFilter !== "all", instructorFilter !== "all", categoryFilter !== "all",
+    levelFilter !== "all", ageFilter !== "all", pricingCategoryFilter !== "all",
+  ].filter(Boolean).length;
+  const classHasActiveControls = classActiveFilterCount > 0 || classSort !== "default" || search.length > 0;
+  const clearClassControls = () => {
+    setSearch(""); setClassStatusFilter("all"); setInstructorFilter("all"); setCategoryFilter("all");
+    setLevelFilter("all"); setAgeFilter("all"); setPricingCategoryFilter("all"); setClassSort("default");
+  };
+
+  const filteredClasses = useMemo(() => {
+    let list = classes ?? [];
+    if (debouncedSearch) list = list.filter((cls) => cls.title.toLowerCase().includes(debouncedSearch));
+    if (classStatusFilter !== "all") list = list.filter((cls) => (classStatusFilter === "active" ? cls.isActive : !cls.isActive));
+    if (instructorFilter !== "all") list = list.filter((cls) => cls.instructorId === instructorFilter);
+    if (categoryFilter !== "all") list = list.filter((cls) => cls.category === categoryFilter);
+    if (levelFilter !== "all") list = list.filter((cls) => cls.level === levelFilter);
+    if (ageFilter !== "all") list = list.filter((cls) => classMatchesAgeBand(cls, ageFilter));
+    if (pricingCategoryFilter !== "all") {
+      list = list.filter((cls) =>
+        pricingCategoryFilter === PRICING_CATEGORY_UNASSIGNED ? !cls.pricingCategory : cls.pricingCategory === pricingCategoryFilter);
+    }
+    if (classSort !== "default") {
+      list = [...list].sort((a, b) => {
+        switch (classSort) {
+          case "title": return a.title.localeCompare(b.title);
+          case "duration-desc": return b.durationMins - a.durationMins;
+          case "duration-asc": return a.durationMins - b.durationMins;
+          case "capacity-desc": return b.capacity - a.capacity;
+          case "capacity-asc": return a.capacity - b.capacity;
+          default: return 0;
+        }
+      });
+    }
+    return list;
+  }, [classes, debouncedSearch, classStatusFilter, instructorFilter, categoryFilter, levelFilter, ageFilter, pricingCategoryFilter, classSort]);
+
+  const classSortLabels: Record<SortOption, string> = {
+    default: "Default", title: "Title", "duration-desc": "Duration ↓", "duration-asc": "Duration ↑",
+    "capacity-desc": "Capacity ↓", "capacity-asc": "Capacity ↑",
+  };
+
   // ── Audience & Pricing dialog state (form-live, UI-only) ────────────────────
   const watchedAllowAllAges = form.watch("allowAllAges");
   const watchedMinAge = form.watch("minAge");
@@ -392,15 +478,6 @@ export default function Classes() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="admin2-studio-page admin2-studio-classes">
-      <PageHeader
-        title="Classes"
-        description="Manage your class catalog"
-        mode="studio"
-        addLabel="Add Class"
-        addTestId="button-add-class"
-        onAdd={canCreate ? openCreate : undefined}
-      />
-
       {!isLoading && unassignedPricingCount > 0 && (
         <div
           className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 mb-4"
@@ -430,6 +507,114 @@ export default function Classes() {
         </div>
       )}
 
+      <TableToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search classes by title"
+        searchTestId="input-class-search"
+        activeFilterCount={classActiveFilterCount}
+        onClear={classHasActiveControls ? clearClassControls : undefined}
+        activeSortLabel={classSort !== "default" ? classSortLabels[classSort] : undefined}
+        filtersContent={
+          <>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Status</span>
+              <div className="admin2-filter-pills">
+                {(["all", "active", "inactive"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={classStatusFilter === value} className={classStatusFilter === value ? "is-selected" : undefined} onClick={() => setClassStatusFilter(value)}>
+                    {value === "all" ? "All" : value === "active" ? "Active" : "Inactive"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {instructorOptions.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Instructor</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={instructorFilter === "all"} className={instructorFilter === "all" ? "is-selected" : undefined} onClick={() => setInstructorFilter("all")}>All</Button>
+                  {instructorOptions.map((i) => (
+                    <Button key={i.id} type="button" variant="outline" size="compact" aria-pressed={instructorFilter === i.id} className={instructorFilter === i.id ? "is-selected" : undefined} onClick={() => setInstructorFilter(i.id)}>
+                      {i.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {categoryOptions.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Category</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={categoryFilter === "all"} className={categoryFilter === "all" ? "is-selected" : undefined} onClick={() => setCategoryFilter("all")}>All</Button>
+                  {categoryOptions.map((c) => (
+                    <Button key={c} type="button" variant="outline" size="compact" aria-pressed={categoryFilter === c} className={categoryFilter === c ? "is-selected" : undefined} onClick={() => setCategoryFilter(c)}>
+                      {c}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {classLevelOptions.length > 0 && (
+              <div className="admin2-table-toolbar-panel-group">
+                <span>Level</span>
+                <div className="admin2-filter-pills">
+                  <Button type="button" variant="outline" size="compact" aria-pressed={levelFilter === "all"} className={levelFilter === "all" ? "is-selected" : undefined} onClick={() => setLevelFilter("all")}>All</Button>
+                  {classLevelOptions.map((l) => (
+                    <Button key={l} type="button" variant="outline" size="compact" aria-pressed={levelFilter === l} className={levelFilter === l ? "is-selected" : undefined} onClick={() => setLevelFilter(l)}>
+                      {l}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Age</span>
+              <div className="admin2-filter-pills">
+                {(["all", "kids", "teens", "adults"] as const).map((value) => (
+                  <Button key={value} type="button" variant="outline" size="compact" aria-pressed={ageFilter === value} className={ageFilter === value ? "is-selected" : undefined} onClick={() => setAgeFilter(value)}>
+                    {value === "all" ? "All" : value.charAt(0).toUpperCase() + value.slice(1)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="admin2-table-toolbar-panel-group">
+              <span>Pricing category</span>
+              <div className="admin2-filter-pills">
+                <Button type="button" variant="outline" size="compact" aria-pressed={pricingCategoryFilter === "all"} className={pricingCategoryFilter === "all" ? "is-selected" : undefined} onClick={() => setPricingCategoryFilter("all")}>All</Button>
+                {PRICING_CATEGORIES.map((c) => (
+                  <Button key={c.value} type="button" variant="outline" size="compact" aria-pressed={pricingCategoryFilter === c.value} className={pricingCategoryFilter === c.value ? "is-selected" : undefined} onClick={() => setPricingCategoryFilter(c.value)}>
+                    {c.label}
+                  </Button>
+                ))}
+                <Button type="button" variant="outline" size="compact" aria-pressed={pricingCategoryFilter === PRICING_CATEGORY_UNASSIGNED} className={pricingCategoryFilter === PRICING_CATEGORY_UNASSIGNED ? "is-selected" : undefined} onClick={() => setPricingCategoryFilter(PRICING_CATEGORY_UNASSIGNED)}>
+                  Unassigned
+                </Button>
+              </div>
+            </div>
+          </>
+        }
+        sortContent={
+          <div className="admin2-table-toolbar-panel-group">
+            <span>Sort by</span>
+            <div className="admin2-filter-pills">
+              {(Object.keys(classSortLabels) as SortOption[]).map((value) => (
+                <Button key={value} type="button" variant="outline" size="compact" aria-pressed={classSort === value} className={classSort === value ? "is-selected" : undefined} onClick={() => setClassSort(value)}>
+                  {classSortLabels[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {canCreate && (
+          <div className="admin2-table-toolbar-add">
+            <Button data-testid="button-add-class" onClick={openCreate} className="gap-2 shrink-0">
+              <Plus className="h-4 w-4" />
+              Add Class
+            </Button>
+          </div>
+        )}
+      </TableToolbar>
+
       <div className="admin2-studio-registry">
         <Table>
           <TableHeader>
@@ -457,8 +642,14 @@ export default function Classes() {
                   No classes yet.
                 </TableCell>
               </TableRow>
+            ) : filteredClasses.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                  No classes match your search or filters.
+                </TableCell>
+              </TableRow>
             ) : (
-              classes?.map((cls) => (
+              filteredClasses.map((cls) => (
                 <TableRow key={cls.id} data-testid={`row-class-${cls.id}`}>
                   <TableCell className="font-medium">{cls.title}</TableCell>
                   <TableCell>{getInstructorName(cls.instructorId)}</TableCell>
