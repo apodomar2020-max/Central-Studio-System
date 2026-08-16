@@ -750,6 +750,13 @@
       "when": 1786982400000,
       "tag": "0106_notification_campaign_audience_segments",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1787068800000,
+      "tag": "0107_notification_delivery_logs_status_created_at_index",
+      "breakpoints": true
     }
   ]
 }

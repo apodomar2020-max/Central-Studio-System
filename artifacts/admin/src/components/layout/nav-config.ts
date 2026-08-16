@@ -280,8 +280,16 @@ export const NAV_TREE: NavNode[] = [
       pageTitle: "System Users",
       description: "Manage admin accounts, roles, and permissions",
     }),
+    // Wave 5: gains a second internal tab, Notification Delivery
+    // (notification_delivery_logs — operational Push delivery visibility),
+    // alongside the existing Admin Activity tab. Nav permission stays
+    // auditLogs.view only (the minimum to see either tab) — Notification
+    // Delivery's stricter auditLogs.view AND notifications.view requirement
+    // is enforced inside the page itself (logs.tsx), the same
+    // finer-grained-inside-a-single-nav-link pattern System Users already
+    // uses for its own Users/Roles tabs.
     link("Logs", "/logs", [["auditLogs", "view"]], FileClock, {
-      description: "System audit logs and admin activity tracking",
+      description: "System audit trail and operational Push delivery visibility",
     }),
   ]),
 
