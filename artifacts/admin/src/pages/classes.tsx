@@ -87,6 +87,46 @@ function normalizeCat(s: string): string {
   return s.trim().toLowerCase().replace(/[\s\-_]+/g, "");
 }
 
+// ─── Audience & Pricing helpers (UX-only — never write anything themselves) ───
+//
+// These are presentation heuristics for the Class Add/Edit form, not part of
+// pricing resolution or booking eligibility. They exist purely to help an
+// Admin notice when Display Audience / Age Eligibility / Walk-in Pricing
+// Category — three independently-stored, independently-authoritative fields —
+// have drifted apart, and to suggest (never auto-apply) a Pricing Category
+// from the technical Age Eligibility range when it maps cleanly to exactly
+// one bucket. See PRICING_CATEGORIES for the walk-in pricing values and
+// AGE_GROUPS for the Display Audience values.
+
+/**
+ * A range that sits entirely inside exactly one of the three age bands
+ * (mirroring the Kids 5–12 / Teens 13–17 / Adults 18+ presets below) suggests
+ * that bucket. An "All Ages" class, an open-ended/unbounded range, or a range
+ * spanning more than one band has no single correct suggestion — returning
+ * null there (rather than guessing) is deliberate, matching the same
+ * "never silently assign" principle pricingCategory itself already follows.
+ */
+function suggestedPricingCategoryFromEligibility(
+  allowAllAges: boolean,
+  minAge: number | null,
+  maxAge: number | null,
+): (typeof PRICING_CATEGORIES)[number]["value"] | null {
+  if (allowAllAges || minAge == null) return null;
+  if (maxAge != null && maxAge <= 12) return "kids";
+  if (minAge >= 13 && maxAge != null && maxAge <= 17) return "teens";
+  if (minAge >= 18) return "adults";
+  return null;
+}
+
+/** Maps the free-text Display Audience value onto the same 3-value bucket as Pricing Category, for comparison only. */
+function ageGroupToBucket(ageGroup: string): (typeof PRICING_CATEGORIES)[number]["value"] | null {
+  const v = normalizeCat(ageGroup);
+  if (v === "kids") return "kids";
+  if (v === "teens") return "teens";
+  if (v === "adults") return "adults";
+  return null;
+}
+
 // ─── Form schema ──────────────────────────────────────────────────────────────
 
 const nullableAge = z.preprocess(
@@ -321,6 +361,27 @@ export default function Classes() {
   const getInstructorName = (id?: number | null) =>
     instructors?.find((i) => i.id === id)?.name ?? "—";
 
+  // ── Audience & Pricing dialog state (form-live, UI-only) ────────────────────
+  const watchedAllowAllAges = form.watch("allowAllAges");
+  const watchedMinAge = form.watch("minAge");
+  const watchedMaxAge = form.watch("maxAge");
+  const watchedAgeGroup = form.watch("ageGroup");
+  const watchedPricingCategory = form.watch("pricingCategory");
+
+  const eligibilitySuggestedCategory = suggestedPricingCategoryFromEligibility(
+    watchedAllowAllAges, watchedMinAge, watchedMaxAge,
+  );
+  // Only offer the suggestion when it would actually change something.
+  const showPricingSuggestion =
+    eligibilitySuggestedCategory != null && eligibilitySuggestedCategory !== watchedPricingCategory;
+
+  const audienceBuckets = [
+    ageGroupToBucket(watchedAgeGroup ?? ""),
+    eligibilitySuggestedCategory,
+    watchedPricingCategory ?? null,
+  ].filter((b): b is (typeof PRICING_CATEGORIES)[number]["value"] => b != null);
+  const audienceMismatch = new Set(audienceBuckets).size > 1;
+
   const activeClasses = classes?.filter((cls) => cls.isActive) ?? [];
   const unassignedPricingCount = activeClasses.filter((cls) => !cls.pricingCategory).length;
   // Distinct failure mode from "unassigned": a class HAS a category, but
@@ -550,99 +611,144 @@ export default function Classes() {
                   )}
                 />
               </div>
-              <FormField
-                control={form.control}
-                name="ageGroup"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Legacy Age Group</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-class-age-group">
-                          <SelectValue placeholder="Select age group" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {AGE_GROUPS.map((g) => (
-                          <SelectItem key={g} value={g}>{g}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="pricingCategory"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Walk-in Pricing Category</FormLabel>
-                    <Select
-                      onValueChange={(v) => field.onChange(v === PRICING_CATEGORY_UNASSIGNED ? null : v)}
-                      value={field.value ?? PRICING_CATEGORY_UNASSIGNED}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-class-pricing-category">
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value={PRICING_CATEGORY_UNASSIGNED}>Unassigned (uses legacy fallback price)</SelectItem>
-                        {PRICING_CATEGORIES.map((c) => (
-                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Determines which Class Pricing category price applies to walk-ins for
-                      this class (Settings → Class Pricing). A schedule-specific price
-                      override always takes priority over this.
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="space-y-3 rounded-md border p-3">
+              <div className="space-y-4 rounded-md border p-3" data-testid="section-audience-and-pricing">
                 <div>
-                  <p className="text-sm font-medium">Age Eligibility</p>
-                  <p className="text-xs text-muted-foreground">The label is derived from the technical range.</p>
+                  <p className="text-sm font-medium">Audience &amp; Pricing</p>
+                  <p className="text-xs text-muted-foreground">
+                    Three independent settings — set Age Eligibility first; it can suggest a Pricing Category below.
+                  </p>
                 </div>
-                <Select value={agePreset} onValueChange={(value) => applyAgePreset(value as (typeof AGE_PRESETS)[number])}>
-                  <SelectTrigger data-testid="select-class-age-preset"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Ages</SelectItem>
-                    <SelectItem value="kids">Kids 5–12</SelectItem>
-                    <SelectItem value="teens">Teens 13–17</SelectItem>
-                    <SelectItem value="adults">Adults 18+</SelectItem>
-                    <SelectItem value="custom">Custom range</SelectItem>
-                  </SelectContent>
-                </Select>
-                {!form.watch("allowAllAges") && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <FormField control={form.control} name="minAge" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Minimum Age</FormLabel>
-                        <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={form.control} name="maxAge" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Maximum Age (optional)</FormLabel>
-                        <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
+
+                {audienceMismatch && (
+                  <div
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200"
+                    data-testid="warning-audience-mismatch"
+                  >
+                    Display Audience, Age Eligibility, and Walk-in Pricing Category don't all agree for this
+                    class. That's allowed — they control different things — but double-check this is intentional.
                   </div>
                 )}
-                <p className="text-sm">
-                  Label: {deriveAgeRangeLabel({
-                    allowAllAges: form.watch("allowAllAges"),
-                    minAge: form.watch("minAge"),
-                    maxAge: form.watch("maxAge"),
-                  })}
-                </p>
+
+                {/* 1. Age Eligibility — the technical authority for who can book. */}
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      Age Eligibility <span className="font-normal text-muted-foreground">— controls who can book</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">The label is derived from the technical range.</p>
+                  </div>
+                  <Select value={agePreset} onValueChange={(value) => applyAgePreset(value as (typeof AGE_PRESETS)[number])}>
+                    <SelectTrigger data-testid="select-class-age-preset"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Ages</SelectItem>
+                      <SelectItem value="kids">Kids 5–12</SelectItem>
+                      <SelectItem value="teens">Teens 13–17</SelectItem>
+                      <SelectItem value="adults">Adults 18+</SelectItem>
+                      <SelectItem value="custom">Custom range</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {!watchedAllowAllAges && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormField control={form.control} name="minAge" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Minimum Age</FormLabel>
+                          <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="maxAge" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Maximum Age (optional)</FormLabel>
+                          <FormControl><Input type="number" min={0} max={150} {...field} value={field.value ?? ""} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  )}
+                  <p className="text-sm">
+                    Label: {deriveAgeRangeLabel({
+                      allowAllAges: watchedAllowAllAges,
+                      minAge: watchedMinAge,
+                      maxAge: watchedMaxAge,
+                    })}
+                  </p>
+                </div>
+
+                {/* 2. Walk-in Pricing Category — the sole input to walk-in price resolution. */}
+                <FormField
+                  control={form.control}
+                  name="pricingCategory"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Walk-in Pricing Category <span className="font-normal text-muted-foreground">— controls walk-in price</span>
+                      </FormLabel>
+                      <Select
+                        onValueChange={(v) => field.onChange(v === PRICING_CATEGORY_UNASSIGNED ? null : v)}
+                        value={field.value ?? PRICING_CATEGORY_UNASSIGNED}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-class-pricing-category">
+                            <SelectValue placeholder="Unassigned" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={PRICING_CATEGORY_UNASSIGNED}>Unassigned (uses legacy fallback price)</SelectItem>
+                          {PRICING_CATEGORIES.map((c) => (
+                            <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Determines which Class Pricing category price applies to walk-ins for
+                        this class (Settings → Class Pricing). A schedule-specific price
+                        override always takes priority over this.
+                      </p>
+                      {showPricingSuggestion && (
+                        <p className="text-xs text-muted-foreground" data-testid="text-pricing-suggestion">
+                          Suggested: <strong>{PRICING_CATEGORY_LABEL[eligibilitySuggestedCategory!]}</strong> based on Age Eligibility.{" "}
+                          <button
+                            type="button"
+                            className="underline underline-offset-2"
+                            data-testid="button-apply-pricing-suggestion"
+                            onClick={() => form.setValue("pricingCategory", eligibilitySuggestedCategory, { shouldValidate: true })}
+                          >
+                            Apply
+                          </button>
+                        </p>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* 3. Display Audience (legacy age_group) — mobile browse/filter label only. */}
+                <FormField
+                  control={form.control}
+                  name="ageGroup"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Display Audience</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-class-age-group">
+                            <SelectValue placeholder="Select age group" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {AGE_GROUPS.map((g) => (
+                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        This controls mobile browsing/filter labels only. It does not control
+                        booking eligibility or pricing.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
               <FormField
                 control={form.control}
