@@ -186,6 +186,22 @@ const permissionCatalog = [
     group: "Content & Engagement",
     actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
   },
+  // Website CMS Wave 1 — Backgrounds only. Grouped under "Content &
+  // Engagement" (not a new "Website" group) because PERMISSION_GROUPS
+  // (above) is a closed list the role editor (system-users.tsx) iterates
+  // strictly — a module whose `group` isn't in that list never renders in
+  // the role editor UI at all. website.news / website.performance are
+  // deliberately NOT declared yet — nothing in this catalog's architecture
+  // requires declaring sibling modules ahead of their own routes/pages
+  // shipping (each module here was added independently, over time); they
+  // will be added in their own waves.
+  {
+    key: "website.backgrounds",
+    label: "Website Backgrounds",
+    description: "Approved public-website section background media.",
+    group: "Content & Engagement",
+    actions: actions(["view", "View"], ["edit", "Edit"]),
+  },
   {
     key: "ballet.applications",
     label: "Ballet Applications",
