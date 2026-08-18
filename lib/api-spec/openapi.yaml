@@ -1104,6 +1104,160 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # Website CMS Wave 2 — News only. No Performance paths in this wave (see
+  # the Wave 2 report — Performance stays static, resolved on the website
+  # side, until its own CMS table arrives in Wave 3).
+  /website/news:
+    get:
+      operationId: listPublicWebsiteNews
+      tags: [websiteNews]
+      summary: List public News posts (active only, public listing projection)
+      responses:
+        "200":
+          description: Active News posts, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicWebsiteNewsListItem"
+
+  /website/news/{slug}:
+    get:
+      operationId: getPublicWebsiteNews
+      tags: [websiteNews]
+      summary: Get one active News post's full public detail content
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicWebsiteNewsDetail"
+        "404":
+          description: Unknown or inactive slug
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/website/news:
+    get:
+      operationId: listAdminWebsiteNews
+      tags: [websiteNews]
+      summary: List all News posts, active and inactive (Admin)
+      responses:
+        "200":
+          description: All News posts, full Admin shape
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebsiteNewsPost"
+    post:
+      operationId: createWebsiteNewsPost
+      tags: [websiteNews]
+      summary: Create a News post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebsiteNewsPostBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteNewsPost"
+        "400":
+          description: Invalid body or media URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Slug already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/website/news/{slug}:
+    get:
+      operationId: getAdminWebsiteNews
+      tags: [websiteNews]
+      summary: Get one News post, full Admin shape
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteNewsPost"
+        "404":
+          description: Unknown slug
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateWebsiteNewsPost
+      tags: [websiteNews]
+      summary: Edit a News post (slug is immutable — not accepted in this body)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWebsiteNewsPostBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteNewsPost"
+        "400":
+          description: Invalid body or media URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Unknown slug
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deactivateWebsiteNewsPost
+      tags: [websiteNews]
+      summary: Soft-deactivate a News post (never a physical delete)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteNewsPost"
+        "404":
+          description: Unknown slug
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /notifications:
     get:
       operationId: listNotifications
@@ -2736,6 +2890,202 @@ components:
       required: [mediaUrl]
       properties:
         mediaUrl: { type: ["string", "null"] }
+
+    # Website CMS Wave 2 — News. Structured content mirrors the website's
+    # existing ArticleSection[] block model verbatim (components/
+    # ArticleDetailView.tsx) — no HTML/Markdown fields anywhere here.
+    WebsiteNewsQuote:
+      type: object
+      required: [text, author, role]
+      properties:
+        text: { type: string }
+        author: { type: string }
+        role: { type: string }
+
+    WebsiteNewsSection:
+      type: object
+      required: [paragraphs]
+      properties:
+        heading: { type: string }
+        paragraphs: { type: array, items: { type: string } }
+        quote: { $ref: "#/components/schemas/WebsiteNewsQuote" }
+        bulletPoints: { type: array, items: { type: string } }
+        image: { type: string }
+        imageCaption: { type: string }
+
+    WebsiteNewsContent:
+      type: object
+      required: [leadParagraph, sections]
+      properties:
+        leadParagraph: { type: string }
+        sections:
+          type: array
+          items: { $ref: "#/components/schemas/WebsiteNewsSection" }
+
+    # Cross-type-aware related-content pointer (Wave 0 finding: 9 of 10
+    # existing News/Performance entries relate to the other type). type-
+    # tagged so a slug never gets misrouted to the wrong website route.
+    WebsiteNewsRelatedRef:
+      type: object
+      required: [type, slug]
+      properties:
+        type: { type: string, enum: [news, performance] }
+        slug: { type: string }
+
+    # Public detail's resolved form of a related ref: for type=news the
+    # server resolves title/subtitle/categoryLabel/image/date from this same
+    # table (subtitle is required by the website's existing related-card
+    # rendering, ArticleDetailView.tsx — confirmed via source read); for
+    # type=performance those are left null — Performance has no CMS table in
+    # Wave 2, so the website resolves those 5 fields client-side from its
+    # existing static Performance source (see the Wave 2 report's "temporary
+    # Performance-resolution bridge" section).
+    WebsiteNewsRelatedItem:
+      type: object
+      required: [type, slug, title, subtitle, categoryLabel, image, date]
+      properties:
+        type: { type: string, enum: [news, performance] }
+        slug: { type: string }
+        title: { type: ["string", "null"] }
+        subtitle: { type: ["string", "null"] }
+        categoryLabel: { type: ["string", "null"] }
+        image: { type: ["string", "null"] }
+        date: { type: ["string", "null"] }
+
+    WebsiteNewsPost:
+      type: object
+      required:
+        [id, slug, category, categoryLabel, title, subtitle, excerpt,
+         heroImageUrl, listingImageUrl, publishedDate, publishedAt, readTime,
+         isFeatured, authorName, authorRole, authorAvatarUrl, tags,
+         galleryImages, content, relatedRefs, isActive, updatedByAdminId,
+         createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        category: { type: string }
+        categoryLabel: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        excerpt: { type: ["string", "null"] }
+        heroImageUrl: { type: string }
+        listingImageUrl: { type: ["string", "null"] }
+        publishedDate: { type: string }
+        publishedAt: { type: string }
+        readTime: { type: ["string", "null"] }
+        isFeatured: { type: boolean }
+        authorName: { type: string }
+        authorRole: { type: string }
+        authorAvatarUrl: { type: ["string", "null"] }
+        tags: { type: array, items: { type: string } }
+        galleryImages: { type: array, items: { type: string } }
+        content: { $ref: "#/components/schemas/WebsiteNewsContent" }
+        relatedRefs:
+          type: array
+          items: { $ref: "#/components/schemas/WebsiteNewsRelatedRef" }
+        isActive: { type: boolean }
+        updatedByAdminId: { type: ["integer", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    PublicWebsiteNewsListItem:
+      type: object
+      required:
+        [slug, category, categoryLabel, title, excerpt, image, publishedDate,
+         readTime, isFeatured]
+      properties:
+        slug: { type: string }
+        category: { type: string }
+        categoryLabel: { type: string }
+        title: { type: string }
+        # Resolved: excerpt falls back to subtitle server-side when the
+        # excerpt column is null (see websiteNewsPosts.ts's doc comment).
+        excerpt: { type: string }
+        # Resolved: listingImageUrl falls back to heroImageUrl server-side.
+        image: { type: string }
+        publishedDate: { type: string }
+        readTime: { type: ["string", "null"] }
+        isFeatured: { type: boolean }
+
+    PublicWebsiteNewsDetail:
+      type: object
+      required:
+        [slug, category, categoryLabel, title, subtitle, heroImageUrl,
+         publishedDate, readTime, authorName, authorRole, authorAvatarUrl,
+         galleryImages, tags, content, relatedItems]
+      properties:
+        slug: { type: string }
+        category: { type: string }
+        categoryLabel: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        heroImageUrl: { type: string }
+        publishedDate: { type: string }
+        readTime: { type: ["string", "null"] }
+        authorName: { type: string }
+        authorRole: { type: string }
+        authorAvatarUrl: { type: ["string", "null"] }
+        galleryImages: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        content: { $ref: "#/components/schemas/WebsiteNewsContent" }
+        relatedItems:
+          type: array
+          items: { $ref: "#/components/schemas/WebsiteNewsRelatedItem" }
+
+    CreateWebsiteNewsPostBody:
+      type: object
+      required:
+        [slug, category, categoryLabel, title, subtitle, heroImageUrl,
+         publishedDate, publishedAt, authorName, authorRole, content]
+      properties:
+        slug: { type: string }
+        category: { type: string }
+        categoryLabel: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        excerpt: { type: ["string", "null"] }
+        heroImageUrl: { type: string }
+        listingImageUrl: { type: ["string", "null"] }
+        publishedDate: { type: string }
+        publishedAt: { type: string }
+        readTime: { type: ["string", "null"] }
+        isFeatured: { type: boolean }
+        authorName: { type: string }
+        authorRole: { type: string }
+        authorAvatarUrl: { type: ["string", "null"] }
+        tags: { type: array, items: { type: string } }
+        galleryImages: { type: array, items: { type: string } }
+        content: { $ref: "#/components/schemas/WebsiteNewsContent" }
+        relatedRefs:
+          type: array
+          items: { $ref: "#/components/schemas/WebsiteNewsRelatedRef" }
+        isActive: { type: boolean }
+
+    UpdateWebsiteNewsPostBody:
+      type: object
+      description: Partial update. Slug is immutable in Wave 2 and is not accepted here.
+      properties:
+        category: { type: string }
+        categoryLabel: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        excerpt: { type: ["string", "null"] }
+        heroImageUrl: { type: string }
+        listingImageUrl: { type: ["string", "null"] }
+        publishedDate: { type: string }
+        publishedAt: { type: string }
+        readTime: { type: ["string", "null"] }
+        isFeatured: { type: boolean }
+        authorName: { type: string }
+        authorRole: { type: string }
+        authorAvatarUrl: { type: ["string", "null"] }
+        tags: { type: array, items: { type: string } }
+        galleryImages: { type: array, items: { type: string } }
+        content: { $ref: "#/components/schemas/WebsiteNewsContent" }
+        relatedRefs:
+          type: array
+          items: { $ref: "#/components/schemas/WebsiteNewsRelatedRef" }
+        isActive: { type: boolean }
 
     Notification:
       type: object

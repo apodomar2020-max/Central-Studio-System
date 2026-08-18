@@ -2474,6 +2474,458 @@ export const UpdateWebsiteBackgroundResponse = zod.object({
   updatedAt: zod.string(),
 });
 
+/**
+ * @summary List public News posts (active only, public listing projection)
+ */
+export const ListPublicWebsiteNewsResponseItem = zod.object({
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  excerpt: zod.string(),
+  image: zod.string(),
+  publishedDate: zod.string(),
+  readTime: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+});
+export const ListPublicWebsiteNewsResponse = zod.array(
+  ListPublicWebsiteNewsResponseItem,
+);
+
+/**
+ * @summary Get one active News post's full public detail content
+ */
+export const GetPublicWebsiteNewsParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const GetPublicWebsiteNewsResponse = zod.object({
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  publishedDate: zod.string(),
+  readTime: zod.string().nullable(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  galleryImages: zod.array(zod.string()),
+  tags: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  relatedItems: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+      title: zod.string().nullable(),
+      subtitle: zod.string().nullable(),
+      categoryLabel: zod.string().nullable(),
+      image: zod.string().nullable(),
+      date: zod.string().nullable(),
+    }),
+  ),
+});
+
+/**
+ * @summary List all News posts, active and inactive (Admin)
+ */
+export const ListAdminWebsiteNewsResponseItem = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  excerpt: zod.string().nullable(),
+  heroImageUrl: zod.string(),
+  listingImageUrl: zod.string().nullable(),
+  publishedDate: zod.string(),
+  publishedAt: zod.string(),
+  readTime: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListAdminWebsiteNewsResponse = zod.array(
+  ListAdminWebsiteNewsResponseItem,
+);
+
+/**
+ * @summary Create a News post
+ */
+export const CreateWebsiteNewsPostBody = zod.object({
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  excerpt: zod.string().nullish(),
+  heroImageUrl: zod.string(),
+  listingImageUrl: zod.string().nullish(),
+  publishedDate: zod.string(),
+  publishedAt: zod.string(),
+  readTime: zod.string().nullish(),
+  isFeatured: zod.boolean().optional(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullish(),
+  tags: zod.array(zod.string()).optional(),
+  galleryImages: zod.array(zod.string()).optional(),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  relatedRefs: zod
+    .array(
+      zod.object({
+        type: zod.enum(["news", "performance"]),
+        slug: zod.string(),
+      }),
+    )
+    .optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const CreateWebsiteNewsPostResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  excerpt: zod.string().nullable(),
+  heroImageUrl: zod.string(),
+  listingImageUrl: zod.string().nullable(),
+  publishedDate: zod.string(),
+  publishedAt: zod.string(),
+  readTime: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Get one News post, full Admin shape
+ */
+export const GetAdminWebsiteNewsParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const GetAdminWebsiteNewsResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  excerpt: zod.string().nullable(),
+  heroImageUrl: zod.string(),
+  listingImageUrl: zod.string().nullable(),
+  publishedDate: zod.string(),
+  publishedAt: zod.string(),
+  readTime: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Edit a News post (slug is immutable — not accepted in this body)
+ */
+export const UpdateWebsiteNewsPostParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const UpdateWebsiteNewsPostBody = zod
+  .object({
+    category: zod.string().optional(),
+    categoryLabel: zod.string().optional(),
+    title: zod.string().optional(),
+    subtitle: zod.string().optional(),
+    excerpt: zod.string().nullish(),
+    heroImageUrl: zod.string().optional(),
+    listingImageUrl: zod.string().nullish(),
+    publishedDate: zod.string().optional(),
+    publishedAt: zod.string().optional(),
+    readTime: zod.string().nullish(),
+    isFeatured: zod.boolean().optional(),
+    authorName: zod.string().optional(),
+    authorRole: zod.string().optional(),
+    authorAvatarUrl: zod.string().nullish(),
+    tags: zod.array(zod.string()).optional(),
+    galleryImages: zod.array(zod.string()).optional(),
+    content: zod
+      .object({
+        leadParagraph: zod.string(),
+        sections: zod.array(
+          zod.object({
+            heading: zod.string().optional(),
+            paragraphs: zod.array(zod.string()),
+            quote: zod
+              .object({
+                text: zod.string(),
+                author: zod.string(),
+                role: zod.string(),
+              })
+              .optional(),
+            bulletPoints: zod.array(zod.string()).optional(),
+            image: zod.string().optional(),
+            imageCaption: zod.string().optional(),
+          }),
+        ),
+      })
+      .optional(),
+    relatedRefs: zod
+      .array(
+        zod.object({
+          type: zod.enum(["news", "performance"]),
+          slug: zod.string(),
+        }),
+      )
+      .optional(),
+    isActive: zod.boolean().optional(),
+  })
+  .describe(
+    "Partial update. Slug is immutable in Wave 2 and is not accepted here.",
+  );
+
+export const UpdateWebsiteNewsPostResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  excerpt: zod.string().nullable(),
+  heroImageUrl: zod.string(),
+  listingImageUrl: zod.string().nullable(),
+  publishedDate: zod.string(),
+  publishedAt: zod.string(),
+  readTime: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Soft-deactivate a News post (never a physical delete)
+ */
+export const DeactivateWebsiteNewsPostParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const DeactivateWebsiteNewsPostResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  excerpt: zod.string().nullable(),
+  heroImageUrl: zod.string(),
+  listingImageUrl: zod.string().nullable(),
+  publishedDate: zod.string(),
+  publishedAt: zod.string(),
+  readTime: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
 export const ListNotificationsResponseItem = zod.object({
   id: zod.number(),
   title: zod.string(),

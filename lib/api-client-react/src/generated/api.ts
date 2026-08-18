@@ -51,6 +51,7 @@ import type {
   CreateRoomReservationBody,
   CreateScheduleBody,
   CreateStudentBody,
+  CreateWebsiteNewsPostBody,
   DanceType,
   DashboardAnalytics,
   DashboardSummary,
@@ -89,6 +90,8 @@ import type {
   PackageRefundReview,
   PricePackage,
   PublicWebsiteBackgroundSetting,
+  PublicWebsiteNewsDetail,
+  PublicWebsiteNewsListItem,
   Room,
   RoomListResponse,
   RoomReservation,
@@ -115,8 +118,10 @@ import type {
   UpdateScheduleBody,
   UpdateStudentBody,
   UpdateWebsiteBackgroundBody,
+  UpdateWebsiteNewsPostBody,
   UploadDanceTypeIconBody,
   WebsiteBackgroundSetting,
+  WebsiteNewsPost,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -5362,6 +5367,597 @@ export const useUpdateWebsiteBackground = <
   TContext
 > => {
   return useMutation(getUpdateWebsiteBackgroundMutationOptions(options));
+};
+
+export const getListPublicWebsiteNewsUrl = () => {
+  return `/api/website/news`;
+};
+
+/**
+ * @summary List public News posts (active only, public listing projection)
+ */
+export const listPublicWebsiteNews = async (
+  options?: RequestInit,
+): Promise<PublicWebsiteNewsListItem[]> => {
+  return customFetch<PublicWebsiteNewsListItem[]>(
+    getListPublicWebsiteNewsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListPublicWebsiteNewsQueryKey = () => {
+  return [`/api/website/news`] as const;
+};
+
+export const getListPublicWebsiteNewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPublicWebsiteNews>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteNews>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPublicWebsiteNewsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPublicWebsiteNews>>
+  > = ({ signal }) => listPublicWebsiteNews({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteNews>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPublicWebsiteNewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPublicWebsiteNews>>
+>;
+export type ListPublicWebsiteNewsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List public News posts (active only, public listing projection)
+ */
+
+export function useListPublicWebsiteNews<
+  TData = Awaited<ReturnType<typeof listPublicWebsiteNews>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteNews>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPublicWebsiteNewsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetPublicWebsiteNewsUrl = (slug: string) => {
+  return `/api/website/news/${slug}`;
+};
+
+/**
+ * @summary Get one active News post's full public detail content
+ */
+export const getPublicWebsiteNews = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<PublicWebsiteNewsDetail> => {
+  return customFetch<PublicWebsiteNewsDetail>(
+    getGetPublicWebsiteNewsUrl(slug),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPublicWebsiteNewsQueryKey = (slug: string) => {
+  return [`/api/website/news/${slug}`] as const;
+};
+
+export const getGetPublicWebsiteNewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPublicWebsiteNews>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicWebsiteNews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPublicWebsiteNewsQueryKey(slug);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPublicWebsiteNews>>
+  > = ({ signal }) => getPublicWebsiteNews(slug, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: slug !== null && slug !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicWebsiteNews>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPublicWebsiteNewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPublicWebsiteNews>>
+>;
+export type GetPublicWebsiteNewsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one active News post's full public detail content
+ */
+
+export function useGetPublicWebsiteNews<
+  TData = Awaited<ReturnType<typeof getPublicWebsiteNews>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicWebsiteNews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPublicWebsiteNewsQueryOptions(slug, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListAdminWebsiteNewsUrl = () => {
+  return `/api/admin/website/news`;
+};
+
+/**
+ * @summary List all News posts, active and inactive (Admin)
+ */
+export const listAdminWebsiteNews = async (
+  options?: RequestInit,
+): Promise<WebsiteNewsPost[]> => {
+  return customFetch<WebsiteNewsPost[]>(getListAdminWebsiteNewsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAdminWebsiteNewsQueryKey = () => {
+  return [`/api/admin/website/news`] as const;
+};
+
+export const getListAdminWebsiteNewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminWebsiteNews>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsiteNews>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAdminWebsiteNewsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminWebsiteNews>>
+  > = ({ signal }) => listAdminWebsiteNews({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsiteNews>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminWebsiteNewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminWebsiteNews>>
+>;
+export type ListAdminWebsiteNewsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all News posts, active and inactive (Admin)
+ */
+
+export function useListAdminWebsiteNews<
+  TData = Awaited<ReturnType<typeof listAdminWebsiteNews>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsiteNews>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminWebsiteNewsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateWebsiteNewsPostUrl = () => {
+  return `/api/admin/website/news`;
+};
+
+/**
+ * @summary Create a News post
+ */
+export const createWebsiteNewsPost = async (
+  createWebsiteNewsPostBody: CreateWebsiteNewsPostBody,
+  options?: RequestInit,
+): Promise<WebsiteNewsPost> => {
+  return customFetch<WebsiteNewsPost>(getCreateWebsiteNewsPostUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createWebsiteNewsPostBody),
+  });
+};
+
+export const getCreateWebsiteNewsPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createWebsiteNewsPost>>,
+    TError,
+    { data: BodyType<CreateWebsiteNewsPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createWebsiteNewsPost>>,
+  TError,
+  { data: BodyType<CreateWebsiteNewsPostBody> },
+  TContext
+> => {
+  const mutationKey = ["createWebsiteNewsPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createWebsiteNewsPost>>,
+    { data: BodyType<CreateWebsiteNewsPostBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createWebsiteNewsPost(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateWebsiteNewsPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createWebsiteNewsPost>>
+>;
+export type CreateWebsiteNewsPostMutationBody =
+  BodyType<CreateWebsiteNewsPostBody>;
+export type CreateWebsiteNewsPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a News post
+ */
+export const useCreateWebsiteNewsPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createWebsiteNewsPost>>,
+    TError,
+    { data: BodyType<CreateWebsiteNewsPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createWebsiteNewsPost>>,
+  TError,
+  { data: BodyType<CreateWebsiteNewsPostBody> },
+  TContext
+> => {
+  return useMutation(getCreateWebsiteNewsPostMutationOptions(options));
+};
+
+export const getGetAdminWebsiteNewsUrl = (slug: string) => {
+  return `/api/admin/website/news/${slug}`;
+};
+
+/**
+ * @summary Get one News post, full Admin shape
+ */
+export const getAdminWebsiteNews = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<WebsiteNewsPost> => {
+  return customFetch<WebsiteNewsPost>(getGetAdminWebsiteNewsUrl(slug), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAdminWebsiteNewsQueryKey = (slug: string) => {
+  return [`/api/admin/website/news/${slug}`] as const;
+};
+
+export const getGetAdminWebsiteNewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminWebsiteNews>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminWebsiteNews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminWebsiteNewsQueryKey(slug);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAdminWebsiteNews>>
+  > = ({ signal }) => getAdminWebsiteNews(slug, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: slug !== null && slug !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminWebsiteNews>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminWebsiteNewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminWebsiteNews>>
+>;
+export type GetAdminWebsiteNewsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one News post, full Admin shape
+ */
+
+export function useGetAdminWebsiteNews<
+  TData = Awaited<ReturnType<typeof getAdminWebsiteNews>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminWebsiteNews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminWebsiteNewsQueryOptions(slug, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateWebsiteNewsPostUrl = (slug: string) => {
+  return `/api/admin/website/news/${slug}`;
+};
+
+/**
+ * @summary Edit a News post (slug is immutable — not accepted in this body)
+ */
+export const updateWebsiteNewsPost = async (
+  slug: string,
+  updateWebsiteNewsPostBody: UpdateWebsiteNewsPostBody,
+  options?: RequestInit,
+): Promise<WebsiteNewsPost> => {
+  return customFetch<WebsiteNewsPost>(getUpdateWebsiteNewsPostUrl(slug), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateWebsiteNewsPostBody),
+  });
+};
+
+export const getUpdateWebsiteNewsPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteNewsPost>>,
+    TError,
+    { slug: string; data: BodyType<UpdateWebsiteNewsPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateWebsiteNewsPost>>,
+  TError,
+  { slug: string; data: BodyType<UpdateWebsiteNewsPostBody> },
+  TContext
+> => {
+  const mutationKey = ["updateWebsiteNewsPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateWebsiteNewsPost>>,
+    { slug: string; data: BodyType<UpdateWebsiteNewsPostBody> }
+  > = (props) => {
+    const { slug, data } = props ?? {};
+
+    return updateWebsiteNewsPost(slug, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateWebsiteNewsPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateWebsiteNewsPost>>
+>;
+export type UpdateWebsiteNewsPostMutationBody =
+  BodyType<UpdateWebsiteNewsPostBody>;
+export type UpdateWebsiteNewsPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit a News post (slug is immutable — not accepted in this body)
+ */
+export const useUpdateWebsiteNewsPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteNewsPost>>,
+    TError,
+    { slug: string; data: BodyType<UpdateWebsiteNewsPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateWebsiteNewsPost>>,
+  TError,
+  { slug: string; data: BodyType<UpdateWebsiteNewsPostBody> },
+  TContext
+> => {
+  return useMutation(getUpdateWebsiteNewsPostMutationOptions(options));
+};
+
+export const getDeactivateWebsiteNewsPostUrl = (slug: string) => {
+  return `/api/admin/website/news/${slug}`;
+};
+
+/**
+ * @summary Soft-deactivate a News post (never a physical delete)
+ */
+export const deactivateWebsiteNewsPost = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<WebsiteNewsPost> => {
+  return customFetch<WebsiteNewsPost>(getDeactivateWebsiteNewsPostUrl(slug), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeactivateWebsiteNewsPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateWebsiteNewsPost>>,
+    TError,
+    { slug: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deactivateWebsiteNewsPost>>,
+  TError,
+  { slug: string },
+  TContext
+> => {
+  const mutationKey = ["deactivateWebsiteNewsPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deactivateWebsiteNewsPost>>,
+    { slug: string }
+  > = (props) => {
+    const { slug } = props ?? {};
+
+    return deactivateWebsiteNewsPost(slug, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeactivateWebsiteNewsPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deactivateWebsiteNewsPost>>
+>;
+
+export type DeactivateWebsiteNewsPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Soft-deactivate a News post (never a physical delete)
+ */
+export const useDeactivateWebsiteNewsPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateWebsiteNewsPost>>,
+    TError,
+    { slug: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deactivateWebsiteNewsPost>>,
+  TError,
+  { slug: string },
+  TContext
+> => {
+  return useMutation(getDeactivateWebsiteNewsPostMutationOptions(options));
 };
 
 export const getListNotificationsUrl = () => {

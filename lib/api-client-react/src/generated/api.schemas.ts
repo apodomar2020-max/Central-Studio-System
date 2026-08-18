@@ -1386,6 +1386,183 @@ export interface UpdateWebsiteBackgroundBody {
   mediaUrl: string | null;
 }
 
+export interface WebsiteNewsQuote {
+  text: string;
+  author: string;
+  role: string;
+}
+
+export interface WebsiteNewsSection {
+  heading?: string;
+  paragraphs: string[];
+  quote?: WebsiteNewsQuote;
+  bulletPoints?: string[];
+  image?: string;
+  imageCaption?: string;
+}
+
+export interface WebsiteNewsContent {
+  leadParagraph: string;
+  sections: WebsiteNewsSection[];
+}
+
+export type WebsiteNewsRelatedRefType =
+  (typeof WebsiteNewsRelatedRefType)[keyof typeof WebsiteNewsRelatedRefType];
+
+export const WebsiteNewsRelatedRefType = {
+  news: "news",
+  performance: "performance",
+} as const;
+
+export interface WebsiteNewsRelatedRef {
+  type: WebsiteNewsRelatedRefType;
+  slug: string;
+}
+
+export type WebsiteNewsRelatedItemType =
+  (typeof WebsiteNewsRelatedItemType)[keyof typeof WebsiteNewsRelatedItemType];
+
+export const WebsiteNewsRelatedItemType = {
+  news: "news",
+  performance: "performance",
+} as const;
+
+export interface WebsiteNewsRelatedItem {
+  type: WebsiteNewsRelatedItemType;
+  slug: string;
+  /** @nullable */
+  title: string | null;
+  /** @nullable */
+  subtitle: string | null;
+  /** @nullable */
+  categoryLabel: string | null;
+  /** @nullable */
+  image: string | null;
+  /** @nullable */
+  date: string | null;
+}
+
+export interface WebsiteNewsPost {
+  id: number;
+  slug: string;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  subtitle: string;
+  /** @nullable */
+  excerpt: string | null;
+  heroImageUrl: string;
+  /** @nullable */
+  listingImageUrl: string | null;
+  publishedDate: string;
+  publishedAt: string;
+  /** @nullable */
+  readTime: string | null;
+  isFeatured: boolean;
+  authorName: string;
+  authorRole: string;
+  /** @nullable */
+  authorAvatarUrl: string | null;
+  tags: string[];
+  galleryImages: string[];
+  content: WebsiteNewsContent;
+  relatedRefs: WebsiteNewsRelatedRef[];
+  isActive: boolean;
+  /** @nullable */
+  updatedByAdminId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublicWebsiteNewsListItem {
+  slug: string;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  excerpt: string;
+  image: string;
+  publishedDate: string;
+  /** @nullable */
+  readTime: string | null;
+  isFeatured: boolean;
+}
+
+export interface PublicWebsiteNewsDetail {
+  slug: string;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  subtitle: string;
+  heroImageUrl: string;
+  publishedDate: string;
+  /** @nullable */
+  readTime: string | null;
+  authorName: string;
+  authorRole: string;
+  /** @nullable */
+  authorAvatarUrl: string | null;
+  galleryImages: string[];
+  tags: string[];
+  content: WebsiteNewsContent;
+  relatedItems: WebsiteNewsRelatedItem[];
+}
+
+export interface CreateWebsiteNewsPostBody {
+  slug: string;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  subtitle: string;
+  /** @nullable */
+  excerpt?: string | null;
+  heroImageUrl: string;
+  /** @nullable */
+  listingImageUrl?: string | null;
+  publishedDate: string;
+  publishedAt: string;
+  /** @nullable */
+  readTime?: string | null;
+  isFeatured?: boolean;
+  authorName: string;
+  authorRole: string;
+  /** @nullable */
+  authorAvatarUrl?: string | null;
+  tags?: string[];
+  galleryImages?: string[];
+  content: WebsiteNewsContent;
+  relatedRefs?: WebsiteNewsRelatedRef[];
+  isActive?: boolean;
+}
+
+/**
+ * Partial update. Slug is immutable in Wave 2 and is not accepted here.
+ */
+export interface UpdateWebsiteNewsPostBody {
+  category?: string;
+  categoryLabel?: string;
+  title?: string;
+  subtitle?: string;
+  /** @nullable */
+  excerpt?: string | null;
+  heroImageUrl?: string;
+  /** @nullable */
+  listingImageUrl?: string | null;
+  publishedDate?: string;
+  publishedAt?: string;
+  /** @nullable */
+  readTime?: string | null;
+  isFeatured?: boolean;
+  authorName?: string;
+  authorRole?: string;
+  /** @nullable */
+  authorAvatarUrl?: string | null;
+  tags?: string[];
+  galleryImages?: string[];
+  content?: WebsiteNewsContent;
+  relatedRefs?: WebsiteNewsRelatedRef[];
+  isActive?: boolean;
+}
+
 export interface Notification {
   id: number;
   title: string;
