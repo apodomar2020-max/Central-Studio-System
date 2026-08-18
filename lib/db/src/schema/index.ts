@@ -86,3 +86,5 @@ export * from "./roomReservations";
 // Notifications Wave 2 — Manual Push Campaign + frozen recipient snapshot
 // (migration 0104)
 export * from "./notificationCampaigns";
+// Website CMS Wave 1 — Backgrounds foundation (migration 0109)
+export * from "./websiteBackgroundSettings";

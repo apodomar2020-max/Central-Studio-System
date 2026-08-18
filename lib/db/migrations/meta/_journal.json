@@ -764,6 +764,13 @@
       "when": 1787155200000,
       "tag": "0108_class_pricing_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1787241600000,
+      "tag": "0109_website_background_settings",
+      "breakpoints": true
     }
   ]
 }
