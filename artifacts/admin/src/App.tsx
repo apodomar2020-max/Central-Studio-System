@@ -42,6 +42,8 @@ import WebsiteBackgroundsHomePage from "@/pages/website/backgrounds/WebsiteBackg
 import WebsiteBackgroundsAboutStudioPage from "@/pages/website/backgrounds/WebsiteBackgroundsAboutStudioPage";
 import WebsiteBackgroundsBalletPage from "@/pages/website/backgrounds/WebsiteBackgroundsBalletPage";
 import WebsiteBackgroundsClassesPage from "@/pages/website/backgrounds/WebsiteBackgroundsClassesPage";
+import WebsiteNewsListPage from "@/pages/website/news/WebsiteNewsListPage";
+import WebsiteNewsEditorPage from "@/pages/website/news/WebsiteNewsEditorPage";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import BalletStudentsPage from "@/pages/ballet/BalletStudentsPage";
@@ -161,9 +163,14 @@ const ROUTE_PERMS = {
   reports: [["reports", "view"]],
   heroSlides: [["heroSlides", "view"]],
   appContent: [["appContent", "view"]],
-  // Website CMS Wave 1 — Backgrounds only. website.news / website.performance
-  // are not declared yet (no routes/pages for them exist in this wave).
+  // Website CMS Wave 1/2 — Backgrounds + News. website.performance is not
+  // declared yet (no routes/pages for it exist until Wave 3).
   websiteBackgrounds: [["website.backgrounds", "view"]],
+  // Route guard is view-only, mirroring balletApplications below — the
+  // create/edit pages internally check "website.news":"create"/"edit"
+  // (via can()) before allowing a save, the same finer-grained-inside-the-
+  // page pattern ApplicationDetailPage uses for review/approve/reject.
+  websiteNews: [["website.news", "view"]],
   systemUsers: [["adminUsers", "view"], ["roles", "view"]],
   balletApplications: [["ballet.applications", "view"]],
   balletStudents: [["ballet.applications", "view"]],
@@ -236,6 +243,9 @@ function ProtectedRouter() {
         <Route path="/website/backgrounds/about-studio">{guarded(ROUTE_PERMS.websiteBackgrounds, <WebsiteBackgroundsAboutStudioPage />)}</Route>
         <Route path="/website/backgrounds/ballet">{guarded(ROUTE_PERMS.websiteBackgrounds, <WebsiteBackgroundsBalletPage />)}</Route>
         <Route path="/website/backgrounds/classes">{guarded(ROUTE_PERMS.websiteBackgrounds, <WebsiteBackgroundsClassesPage />)}</Route>
+        <Route path="/website/news/new">{guarded(ROUTE_PERMS.websiteNews, <WebsiteNewsEditorPage />)}</Route>
+        <Route path="/website/news/:slug/edit">{guarded(ROUTE_PERMS.websiteNews, <WebsiteNewsEditorPage />)}</Route>
+        <Route path="/website/news">{guarded(ROUTE_PERMS.websiteNews, <WebsiteNewsListPage />)}</Route>
         <Route path="/system-users">{guarded(ROUTE_PERMS.systemUsers, <SystemUsers />)}</Route>
         <Route path="/ballet/applications/:id">{guarded(ROUTE_PERMS.balletApplications, <ApplicationDetailPage />)}</Route>
         <Route path="/ballet/applications">{guarded(ROUTE_PERMS.balletApplications, <ApplicationsPage />)}</Route>

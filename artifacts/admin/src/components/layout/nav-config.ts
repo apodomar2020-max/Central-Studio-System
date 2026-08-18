@@ -56,6 +56,7 @@ import {
   Building2,
   Globe,
   Image,
+  Newspaper,
 } from "lucide-react";
 import { BallerinaIcon } from "@/components/icons/ballerina-icon";
 import type { PermRequirement } from "@/lib/permissions";
@@ -304,14 +305,18 @@ export const NAV_TREE: NavNode[] = [
     }),
   ]),
 
-  // Website CMS Wave 1 — Backgrounds only. "Performance" and "News" are
-  // deliberately NOT added here yet — their pages/routes don't exist until
-  // their own waves ship (adding them now would be a dead link in the
-  // sidebar). The Ballet Backgrounds sub-link below is a public-website
-  // background media editor and is fully separate from the existing
-  // Ballet → Performances module (ballet.performances — internal student
-  // performance-opportunity invitations, an unrelated feature).
+  // Website CMS Wave 1/2 — Backgrounds + News. "Performance" is deliberately
+  // NOT added here yet — its pages/routes don't exist until Wave 3 ships
+  // (adding it now would be a dead link in the sidebar). The Ballet
+  // Backgrounds sub-link below is a public-website background media editor
+  // and is fully separate from the existing Ballet → Performances module
+  // (ballet.performances — internal student performance-opportunity
+  // invitations, an unrelated feature).
   group("Website", Globe, [
+    link("News", "/website/news", [["website.news", "view"]], Newspaper, {
+      pageTitle: "News",
+      description: "Public-website News posts — listing, detail content, and related articles",
+    }),
     group("Backgrounds", Image, [
       link("Home", "/website/backgrounds/home", [["website.backgrounds", "view"]], undefined, {
         pageTitle: "Home Backgrounds",
