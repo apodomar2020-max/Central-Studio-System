@@ -54,6 +54,8 @@ import {
   BadgePercent,
   FileDown,
   Building2,
+  Globe,
+  Image,
 } from "lucide-react";
 import { BallerinaIcon } from "@/components/icons/ballerina-icon";
 import type { PermRequirement } from "@/lib/permissions";
@@ -300,6 +302,34 @@ export const NAV_TREE: NavNode[] = [
     link("App Content", "/app-content", [["appContent", "view"]], FileText, {
       description: "Mobile app CMS content blocks and dynamic copy",
     }),
+  ]),
+
+  // Website CMS Wave 1 — Backgrounds only. "Performance" and "News" are
+  // deliberately NOT added here yet — their pages/routes don't exist until
+  // their own waves ship (adding them now would be a dead link in the
+  // sidebar). The Ballet Backgrounds sub-link below is a public-website
+  // background media editor and is fully separate from the existing
+  // Ballet → Performances module (ballet.performances — internal student
+  // performance-opportunity invitations, an unrelated feature).
+  group("Website", Globe, [
+    group("Backgrounds", Image, [
+      link("Home", "/website/backgrounds/home", [["website.backgrounds", "view"]], undefined, {
+        pageTitle: "Home Backgrounds",
+        description: "Home page — Section 1 (Hero) and Section 3 (Academy Feature)",
+      }),
+      link("About Studio", "/website/backgrounds/about-studio", [["website.backgrounds", "view"]], undefined, {
+        pageTitle: "About Studio Backgrounds",
+        description: "About Studio page — Section 1 (Hero), Section 4 (Co-Founder), Section 7 (App Download)",
+      }),
+      link("Ballet", "/website/backgrounds/ballet", [["website.backgrounds", "view"]], undefined, {
+        pageTitle: "Ballet Backgrounds",
+        description: "Ballet page — Section 1 (Hero) and Section 2 (Metrics)",
+      }),
+      link("Classes", "/website/backgrounds/classes", [["website.backgrounds", "view"]], undefined, {
+        pageTitle: "Classes Backgrounds",
+        description: "Classes page — Section 1 (Hero)",
+      }),
+    ]),
   ]),
 
   link("Settings", "/settings", [["settings", "view"]], Settings2, {

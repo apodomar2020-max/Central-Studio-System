@@ -38,6 +38,10 @@ import ReportsPage from "@/pages/reports";
 import HeroItems from "@/pages/hero-items";
 import SystemUsers from "@/pages/system-users";
 import AppContentPage from "@/pages/app-content";
+import WebsiteBackgroundsHomePage from "@/pages/website/backgrounds/WebsiteBackgroundsHomePage";
+import WebsiteBackgroundsAboutStudioPage from "@/pages/website/backgrounds/WebsiteBackgroundsAboutStudioPage";
+import WebsiteBackgroundsBalletPage from "@/pages/website/backgrounds/WebsiteBackgroundsBalletPage";
+import WebsiteBackgroundsClassesPage from "@/pages/website/backgrounds/WebsiteBackgroundsClassesPage";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import BalletStudentsPage from "@/pages/ballet/BalletStudentsPage";
@@ -157,6 +161,9 @@ const ROUTE_PERMS = {
   reports: [["reports", "view"]],
   heroSlides: [["heroSlides", "view"]],
   appContent: [["appContent", "view"]],
+  // Website CMS Wave 1 — Backgrounds only. website.news / website.performance
+  // are not declared yet (no routes/pages for them exist in this wave).
+  websiteBackgrounds: [["website.backgrounds", "view"]],
   systemUsers: [["adminUsers", "view"], ["roles", "view"]],
   balletApplications: [["ballet.applications", "view"]],
   balletStudents: [["ballet.applications", "view"]],
@@ -225,6 +232,10 @@ function ProtectedRouter() {
         <Route path="/reports">{guarded(ROUTE_PERMS.reports, <ReportsPage />)}</Route>
         <Route path="/hero-items">{guarded(ROUTE_PERMS.heroSlides, <HeroItems />)}</Route>
         <Route path="/app-content">{guarded(ROUTE_PERMS.appContent, <AppContentPage />)}</Route>
+        <Route path="/website/backgrounds/home">{guarded(ROUTE_PERMS.websiteBackgrounds, <WebsiteBackgroundsHomePage />)}</Route>
+        <Route path="/website/backgrounds/about-studio">{guarded(ROUTE_PERMS.websiteBackgrounds, <WebsiteBackgroundsAboutStudioPage />)}</Route>
+        <Route path="/website/backgrounds/ballet">{guarded(ROUTE_PERMS.websiteBackgrounds, <WebsiteBackgroundsBalletPage />)}</Route>
+        <Route path="/website/backgrounds/classes">{guarded(ROUTE_PERMS.websiteBackgrounds, <WebsiteBackgroundsClassesPage />)}</Route>
         <Route path="/system-users">{guarded(ROUTE_PERMS.systemUsers, <SystemUsers />)}</Route>
         <Route path="/ballet/applications/:id">{guarded(ROUTE_PERMS.balletApplications, <ApplicationDetailPage />)}</Route>
         <Route path="/ballet/applications">{guarded(ROUTE_PERMS.balletApplications, <ApplicationsPage />)}</Route>
