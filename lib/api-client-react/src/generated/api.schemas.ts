@@ -1302,6 +1302,90 @@ export interface UpdateHeroItemBody {
   isActive?: boolean;
 }
 
+export type WebsiteBackgroundSettingPage =
+  (typeof WebsiteBackgroundSettingPage)[keyof typeof WebsiteBackgroundSettingPage];
+
+export const WebsiteBackgroundSettingPage = {
+  home: "home",
+  "about-studio": "about-studio",
+  ballet: "ballet",
+  classes: "classes",
+} as const;
+
+/**
+ * @nullable
+ */
+export type WebsiteBackgroundSettingMediaKind =
+  | (typeof WebsiteBackgroundSettingMediaKind)[keyof typeof WebsiteBackgroundSettingMediaKind]
+  | null;
+
+export const WebsiteBackgroundSettingMediaKind = {
+  image: "image",
+  video: "video",
+} as const;
+
+export type WebsiteBackgroundSettingAllowedMediaKind =
+  (typeof WebsiteBackgroundSettingAllowedMediaKind)[keyof typeof WebsiteBackgroundSettingAllowedMediaKind];
+
+export const WebsiteBackgroundSettingAllowedMediaKind = {
+  image: "image",
+  video: "video",
+} as const;
+
+export interface WebsiteBackgroundSetting {
+  id: number;
+  sectionKey: string;
+  page: WebsiteBackgroundSettingPage;
+  sectionLabel: string;
+  /** @nullable */
+  mediaUrl: string | null;
+  /** @nullable */
+  mediaKind: WebsiteBackgroundSettingMediaKind;
+  allowedMediaKind: WebsiteBackgroundSettingAllowedMediaKind;
+  version: number;
+  /** @nullable */
+  updatedByAdminId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PublicWebsiteBackgroundSettingPage =
+  (typeof PublicWebsiteBackgroundSettingPage)[keyof typeof PublicWebsiteBackgroundSettingPage];
+
+export const PublicWebsiteBackgroundSettingPage = {
+  home: "home",
+  "about-studio": "about-studio",
+  ballet: "ballet",
+  classes: "classes",
+} as const;
+
+/**
+ * @nullable
+ */
+export type PublicWebsiteBackgroundSettingMediaKind =
+  | (typeof PublicWebsiteBackgroundSettingMediaKind)[keyof typeof PublicWebsiteBackgroundSettingMediaKind]
+  | null;
+
+export const PublicWebsiteBackgroundSettingMediaKind = {
+  image: "image",
+  video: "video",
+} as const;
+
+export interface PublicWebsiteBackgroundSetting {
+  sectionKey: string;
+  page: PublicWebsiteBackgroundSettingPage;
+  sectionLabel: string;
+  /** @nullable */
+  mediaUrl: string | null;
+  /** @nullable */
+  mediaKind: PublicWebsiteBackgroundSettingMediaKind;
+}
+
+export interface UpdateWebsiteBackgroundBody {
+  /** @nullable */
+  mediaUrl: string | null;
+}
+
 export interface Notification {
   id: number;
   title: string;

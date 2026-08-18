@@ -88,6 +88,7 @@ import type {
   PackageRefundRequest,
   PackageRefundReview,
   PricePackage,
+  PublicWebsiteBackgroundSetting,
   Room,
   RoomListResponse,
   RoomReservation,
@@ -113,7 +114,9 @@ import type {
   UpdateRoomReservationBody,
   UpdateScheduleBody,
   UpdateStudentBody,
+  UpdateWebsiteBackgroundBody,
   UploadDanceTypeIconBody,
+  WebsiteBackgroundSetting,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -5108,6 +5111,257 @@ export const useDeleteHeroItem = <
   TContext
 > => {
   return useMutation(getDeleteHeroItemMutationOptions(options));
+};
+
+export const getListPublicWebsiteBackgroundsUrl = () => {
+  return `/api/website/backgrounds`;
+};
+
+/**
+ * @summary List public website background media (public projection only)
+ */
+export const listPublicWebsiteBackgrounds = async (
+  options?: RequestInit,
+): Promise<PublicWebsiteBackgroundSetting[]> => {
+  return customFetch<PublicWebsiteBackgroundSetting[]>(
+    getListPublicWebsiteBackgroundsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListPublicWebsiteBackgroundsQueryKey = () => {
+  return [`/api/website/backgrounds`] as const;
+};
+
+export const getListPublicWebsiteBackgroundsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPublicWebsiteBackgrounds>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteBackgrounds>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListPublicWebsiteBackgroundsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPublicWebsiteBackgrounds>>
+  > = ({ signal }) =>
+    listPublicWebsiteBackgrounds({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteBackgrounds>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPublicWebsiteBackgroundsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPublicWebsiteBackgrounds>>
+>;
+export type ListPublicWebsiteBackgroundsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List public website background media (public projection only)
+ */
+
+export function useListPublicWebsiteBackgrounds<
+  TData = Awaited<ReturnType<typeof listPublicWebsiteBackgrounds>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteBackgrounds>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPublicWebsiteBackgroundsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListAdminWebsiteBackgroundsUrl = () => {
+  return `/api/admin/website/backgrounds`;
+};
+
+/**
+ * @summary List all website background sections (Admin)
+ */
+export const listAdminWebsiteBackgrounds = async (
+  options?: RequestInit,
+): Promise<WebsiteBackgroundSetting[]> => {
+  return customFetch<WebsiteBackgroundSetting[]>(
+    getListAdminWebsiteBackgroundsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAdminWebsiteBackgroundsQueryKey = () => {
+  return [`/api/admin/website/backgrounds`] as const;
+};
+
+export const getListAdminWebsiteBackgroundsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminWebsiteBackgrounds>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsiteBackgrounds>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAdminWebsiteBackgroundsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminWebsiteBackgrounds>>
+  > = ({ signal }) =>
+    listAdminWebsiteBackgrounds({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsiteBackgrounds>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminWebsiteBackgroundsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminWebsiteBackgrounds>>
+>;
+export type ListAdminWebsiteBackgroundsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all website background sections (Admin)
+ */
+
+export function useListAdminWebsiteBackgrounds<
+  TData = Awaited<ReturnType<typeof listAdminWebsiteBackgrounds>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsiteBackgrounds>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminWebsiteBackgroundsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateWebsiteBackgroundUrl = (sectionKey: string) => {
+  return `/api/admin/website/backgrounds/${sectionKey}`;
+};
+
+/**
+ * @summary Set or clear a website section's background media URL
+ */
+export const updateWebsiteBackground = async (
+  sectionKey: string,
+  updateWebsiteBackgroundBody: UpdateWebsiteBackgroundBody,
+  options?: RequestInit,
+): Promise<WebsiteBackgroundSetting> => {
+  return customFetch<WebsiteBackgroundSetting>(
+    getUpdateWebsiteBackgroundUrl(sectionKey),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateWebsiteBackgroundBody),
+    },
+  );
+};
+
+export const getUpdateWebsiteBackgroundMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteBackground>>,
+    TError,
+    { sectionKey: string; data: BodyType<UpdateWebsiteBackgroundBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateWebsiteBackground>>,
+  TError,
+  { sectionKey: string; data: BodyType<UpdateWebsiteBackgroundBody> },
+  TContext
+> => {
+  const mutationKey = ["updateWebsiteBackground"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateWebsiteBackground>>,
+    { sectionKey: string; data: BodyType<UpdateWebsiteBackgroundBody> }
+  > = (props) => {
+    const { sectionKey, data } = props ?? {};
+
+    return updateWebsiteBackground(sectionKey, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateWebsiteBackgroundMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateWebsiteBackground>>
+>;
+export type UpdateWebsiteBackgroundMutationBody =
+  BodyType<UpdateWebsiteBackgroundBody>;
+export type UpdateWebsiteBackgroundMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Set or clear a website section's background media URL
+ */
+export const useUpdateWebsiteBackground = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteBackground>>,
+    TError,
+    { sectionKey: string; data: BodyType<UpdateWebsiteBackgroundBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateWebsiteBackground>>,
+  TError,
+  { sectionKey: string; data: BodyType<UpdateWebsiteBackgroundBody> },
+  TContext
+> => {
+  return useMutation(getUpdateWebsiteBackgroundMutationOptions(options));
 };
 
 export const getListNotificationsUrl = () => {

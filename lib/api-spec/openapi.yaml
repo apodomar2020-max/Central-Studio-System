@@ -1037,6 +1037,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # Website CMS Wave 1 — Backgrounds only. No News/Performance paths in this
+  # wave (see the Wave 1 report). Fixed set of 8 section keys — there is
+  # deliberately no POST (create) or DELETE path: rows are seeded once
+  # (scripts/src/seedWebsiteBackgrounds.ts) and only ever updated afterward.
+  /website/backgrounds:
+    get:
+      operationId: listPublicWebsiteBackgrounds
+      tags: [websiteBackgrounds]
+      summary: List public website background media (public projection only)
+      responses:
+        "200":
+          description: The 8 approved sections' current background media
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicWebsiteBackgroundSetting"
+
+  /admin/website/backgrounds:
+    get:
+      operationId: listAdminWebsiteBackgrounds
+      tags: [websiteBackgrounds]
+      summary: List all website background sections (Admin)
+      responses:
+        "200":
+          description: The 8 approved sections, full Admin shape
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebsiteBackgroundSetting"
+
+  /admin/website/backgrounds/{sectionKey}:
+    patch:
+      operationId: updateWebsiteBackground
+      tags: [websiteBackgrounds]
+      summary: Set or clear a website section's background media URL
+      parameters:
+        - { name: sectionKey, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWebsiteBackgroundBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteBackgroundSetting"
+        "400":
+          description: Invalid section key or media URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Unknown section key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /notifications:
     get:
       operationId: listNotifications
@@ -2633,6 +2700,42 @@ components:
         buttonRoute: { type: string }
         sortOrder: { type: integer }
         isActive: { type: boolean }
+
+    WebsiteBackgroundSetting:
+      type: object
+      required: [id, sectionKey, page, sectionLabel, mediaUrl, mediaKind, allowedMediaKind, version, updatedByAdminId, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        sectionKey: { type: string }
+        page: { type: string, enum: [home, about-studio, ballet, classes] }
+        sectionLabel: { type: string }
+        mediaUrl: { type: ["string", "null"] }
+        mediaKind: { type: ["string", "null"], enum: [image, video, null] }
+        # Server-registry metadata (lib/db/src/websiteBackgroundSections.ts),
+        # NOT a stored column — enriched onto the row at response time so
+        # Admin can label/validate a section without importing the registry
+        # directly (Admin cannot import @workspace/db). Read-only.
+        allowedMediaKind: { type: string, enum: [image, video] }
+        version: { type: integer }
+        updatedByAdminId: { type: ["integer", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    PublicWebsiteBackgroundSetting:
+      type: object
+      required: [sectionKey, page, sectionLabel, mediaUrl, mediaKind]
+      properties:
+        sectionKey: { type: string }
+        page: { type: string, enum: [home, about-studio, ballet, classes] }
+        sectionLabel: { type: string }
+        mediaUrl: { type: ["string", "null"] }
+        mediaKind: { type: ["string", "null"], enum: [image, video, null] }
+
+    UpdateWebsiteBackgroundBody:
+      type: object
+      required: [mediaUrl]
+      properties:
+        mediaUrl: { type: ["string", "null"] }
 
     Notification:
       type: object

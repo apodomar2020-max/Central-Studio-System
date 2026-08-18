@@ -2409,6 +2409,71 @@ export const DeleteHeroItemParams = zod.object({
 
 export const DeleteHeroItemResponse = zod.void();
 
+/**
+ * @summary List public website background media (public projection only)
+ */
+export const ListPublicWebsiteBackgroundsResponseItem = zod.object({
+  sectionKey: zod.string(),
+  page: zod.enum(["home", "about-studio", "ballet", "classes"]),
+  sectionLabel: zod.string(),
+  mediaUrl: zod.string().nullable(),
+  mediaKind: zod
+    .union([zod.literal("image"), zod.literal("video"), zod.literal(null)])
+    .nullable(),
+});
+export const ListPublicWebsiteBackgroundsResponse = zod.array(
+  ListPublicWebsiteBackgroundsResponseItem,
+);
+
+/**
+ * @summary List all website background sections (Admin)
+ */
+export const ListAdminWebsiteBackgroundsResponseItem = zod.object({
+  id: zod.number(),
+  sectionKey: zod.string(),
+  page: zod.enum(["home", "about-studio", "ballet", "classes"]),
+  sectionLabel: zod.string(),
+  mediaUrl: zod.string().nullable(),
+  mediaKind: zod
+    .union([zod.literal("image"), zod.literal("video"), zod.literal(null)])
+    .nullable(),
+  allowedMediaKind: zod.enum(["image", "video"]),
+  version: zod.number(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListAdminWebsiteBackgroundsResponse = zod.array(
+  ListAdminWebsiteBackgroundsResponseItem,
+);
+
+/**
+ * @summary Set or clear a website section's background media URL
+ */
+export const UpdateWebsiteBackgroundParams = zod.object({
+  sectionKey: zod.coerce.string(),
+});
+
+export const UpdateWebsiteBackgroundBody = zod.object({
+  mediaUrl: zod.string().nullable(),
+});
+
+export const UpdateWebsiteBackgroundResponse = zod.object({
+  id: zod.number(),
+  sectionKey: zod.string(),
+  page: zod.enum(["home", "about-studio", "ballet", "classes"]),
+  sectionLabel: zod.string(),
+  mediaUrl: zod.string().nullable(),
+  mediaKind: zod
+    .union([zod.literal("image"), zod.literal("video"), zod.literal(null)])
+    .nullable(),
+  allowedMediaKind: zod.enum(["image", "video"]),
+  version: zod.number(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
 export const ListNotificationsResponseItem = zod.object({
   id: zod.number(),
   title: zod.string(),
