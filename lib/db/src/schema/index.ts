@@ -88,3 +88,5 @@ export * from "./roomReservations";
 export * from "./notificationCampaigns";
 // Website CMS Wave 1 — Backgrounds foundation (migration 0109)
 export * from "./websiteBackgroundSettings";
+// Website CMS Wave 2 — News (migration 0110)
+export * from "./websiteNewsPosts";

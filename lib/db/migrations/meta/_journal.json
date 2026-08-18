@@ -771,6 +771,13 @@
       "when": 1787241600000,
       "tag": "0109_website_background_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1787328000000,
+      "tag": "0110_website_news_posts",
+      "breakpoints": true
     }
   ]
 }
