@@ -54,6 +54,7 @@ import financeBackfillBatchesRouter from "./financeBackfillBatches";
 import catalogueReadinessRouter from "./catalogueReadiness";
 import packageRefundsRouter from "./packageRefunds";
 import adminRoomReservationsRouter from "./adminRoomReservations";
+import websiteBackgroundsRouter from "./websiteBackgrounds";
 
 const router: IRouter = Router();
 
@@ -110,6 +111,8 @@ router.use(classReminderSettingsRouter);
 router.use(catalogueReadinessRouter);
 router.use(packageRefundsRouter);
 router.use(adminRoomReservationsRouter);
+// Website CMS Wave 1 — Backgrounds only (no News/Performance routes yet).
+router.use(websiteBackgroundsRouter);
 // Finance Department (Phase 1) — read-only aggregation over the existing
 // operational tables. Registered last; it adds no mutation routes.
 router.use(financeRouter);
