@@ -21,7 +21,7 @@ import {
 import { BadgeCheck, Edit } from "lucide-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { UsersWorkspaceNav } from "@/components/admin/users-workspace-nav";
+import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import "./admin2-operations.css";
 
 /**
@@ -154,7 +154,8 @@ export default function ParentsPage() {
           Students — see students.tsx for the full rationale. Parents has no
           Add action, so the toolbar is switcher + search + rows. */}
       <div className="admin2-command-bar admin2-users-command">
-        <UsersWorkspaceNav
+        <WorkspaceRouteNav
+          ariaLabel="Users workspace"
           items={[
             ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
             ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),

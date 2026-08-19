@@ -24,7 +24,7 @@ import { Edit, BadgeCheck } from "lucide-react";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import { UsersWorkspaceNav } from "@/components/admin/users-workspace-nav";
+import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import "./admin2-operations.css";
 
 const formSchema = z.object({
@@ -142,7 +142,8 @@ export default function Students() {
           asked for, reusing the same .admin2-command-bar container Bookings
           already uses for its multi-control row — no new architecture. */}
       <div className="admin2-command-bar admin2-users-command">
-        <UsersWorkspaceNav
+        <WorkspaceRouteNav
+          ariaLabel="Users workspace"
           items={[
             ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
             ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
