@@ -1563,6 +1563,325 @@ export interface UpdateWebsiteNewsPostBody {
   isActive?: boolean;
 }
 
+export interface WebsitePerformanceQuote {
+  text: string;
+  author: string;
+  role: string;
+}
+
+export interface WebsitePerformanceSection {
+  heading?: string;
+  paragraphs: string[];
+  quote?: WebsitePerformanceQuote;
+  bulletPoints?: string[];
+  image?: string;
+  imageCaption?: string;
+}
+
+export interface WebsitePerformanceContent {
+  leadParagraph: string;
+  sections: WebsitePerformanceSection[];
+}
+
+export interface WebsitePerformanceScheduleItem {
+  time: string;
+  event: string;
+}
+
+export interface WebsitePerformanceCastMember {
+  name: string;
+  role: string;
+  imageUrl: string;
+}
+
+export type WebsitePerformanceRelatedRefType =
+  (typeof WebsitePerformanceRelatedRefType)[keyof typeof WebsitePerformanceRelatedRefType];
+
+export const WebsitePerformanceRelatedRefType = {
+  news: "news",
+  performance: "performance",
+} as const;
+
+export interface WebsitePerformanceRelatedRef {
+  type: WebsitePerformanceRelatedRefType;
+  slug: string;
+}
+
+export type WebsitePerformanceRelatedItemType =
+  (typeof WebsitePerformanceRelatedItemType)[keyof typeof WebsitePerformanceRelatedItemType];
+
+export const WebsitePerformanceRelatedItemType = {
+  news: "news",
+  performance: "performance",
+} as const;
+
+export interface WebsitePerformanceRelatedItem {
+  type: WebsitePerformanceRelatedItemType;
+  slug: string;
+  /** @nullable */
+  title: string | null;
+  /** @nullable */
+  subtitle: string | null;
+  /** @nullable */
+  categoryLabel: string | null;
+  /** @nullable */
+  image: string | null;
+  /** @nullable */
+  date: string | null;
+}
+
+export type WebsitePerformanceBadgeVariant =
+  (typeof WebsitePerformanceBadgeVariant)[keyof typeof WebsitePerformanceBadgeVariant];
+
+export const WebsitePerformanceBadgeVariant = {
+  cyan: "cyan",
+  purple: "purple",
+  gold: "gold",
+} as const;
+
+export interface WebsitePerformance {
+  id: number;
+  slug: string;
+  sortOrder: number;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  subtitle: string;
+  heroImageUrl: string;
+  eventDateDisplay: string;
+  season: string;
+  /** @nullable */
+  featuredHeroImageUrl: string | null;
+  /** @nullable */
+  featuredHeroDateBadge: string | null;
+  isFeatured: boolean;
+  cardTitle: string;
+  cardDescription: string;
+  cardImageUrl: string;
+  cardVenue: string;
+  cardDatesDisplay: string;
+  cardTime: string;
+  dateDay: string;
+  dateMonth: string;
+  cardBadgeLabel: string;
+  venue: string;
+  times: string[];
+  /** @nullable */
+  orchestra: string | null;
+  runtime: string;
+  /** @nullable */
+  ticketLink: string | null;
+  /** @nullable */
+  ticketPriceRange: string | null;
+  detailBadgeLabel: string;
+  badgeVariant: WebsitePerformanceBadgeVariant;
+  authorName: string;
+  authorRole: string;
+  /** @nullable */
+  authorAvatarUrl: string | null;
+  tags: string[];
+  galleryImages: string[];
+  content: WebsitePerformanceContent;
+  keyHighlights: string[];
+  scheduleOverview: WebsitePerformanceScheduleItem[];
+  castAndFaculty: WebsitePerformanceCastMember[];
+  relatedRefs: WebsitePerformanceRelatedRef[];
+  isActive: boolean;
+  /** @nullable */
+  updatedByAdminId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PublicWebsitePerformanceListItemBadgeVariant =
+  (typeof PublicWebsitePerformanceListItemBadgeVariant)[keyof typeof PublicWebsitePerformanceListItemBadgeVariant];
+
+export const PublicWebsitePerformanceListItemBadgeVariant = {
+  cyan: "cyan",
+  purple: "purple",
+  gold: "gold",
+} as const;
+
+export interface PublicWebsitePerformanceListItem {
+  slug: string;
+  cardTitle: string;
+  cardDescription: string;
+  cardImageUrl: string;
+  cardVenue: string;
+  cardDatesDisplay: string;
+  cardTime: string;
+  dateDay: string;
+  dateMonth: string;
+  cardBadgeLabel: string;
+  badgeVariant: PublicWebsitePerformanceListItemBadgeVariant;
+}
+
+export interface PublicWebsitePerformanceFeatured {
+  slug: string;
+  title: string;
+  heroImageUrl: string;
+  dateBadge: string;
+}
+
+export type PublicWebsitePerformanceDetailBadgeVariant =
+  (typeof PublicWebsitePerformanceDetailBadgeVariant)[keyof typeof PublicWebsitePerformanceDetailBadgeVariant];
+
+export const PublicWebsitePerformanceDetailBadgeVariant = {
+  cyan: "cyan",
+  purple: "purple",
+  gold: "gold",
+} as const;
+
+export interface PublicWebsitePerformanceDetail {
+  slug: string;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  subtitle: string;
+  heroImageUrl: string;
+  eventDateDisplay: string;
+  venue: string;
+  times: string[];
+  /** @nullable */
+  orchestra: string | null;
+  runtime: string;
+  /** @nullable */
+  ticketLink: string | null;
+  /** @nullable */
+  ticketPriceRange: string | null;
+  detailBadgeLabel: string;
+  badgeVariant: PublicWebsitePerformanceDetailBadgeVariant;
+  season: string;
+  authorName: string;
+  authorRole: string;
+  /** @nullable */
+  authorAvatarUrl: string | null;
+  galleryImages: string[];
+  tags: string[];
+  content: WebsitePerformanceContent;
+  keyHighlights: string[];
+  castAndFaculty: WebsitePerformanceCastMember[];
+  relatedItems: WebsitePerformanceRelatedItem[];
+}
+
+export type CreateWebsitePerformanceBodyBadgeVariant =
+  (typeof CreateWebsitePerformanceBodyBadgeVariant)[keyof typeof CreateWebsitePerformanceBodyBadgeVariant];
+
+export const CreateWebsitePerformanceBodyBadgeVariant = {
+  cyan: "cyan",
+  purple: "purple",
+  gold: "gold",
+} as const;
+
+export interface CreateWebsitePerformanceBody {
+  slug: string;
+  sortOrder: number;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  subtitle: string;
+  heroImageUrl: string;
+  eventDateDisplay: string;
+  season: string;
+  /** @nullable */
+  featuredHeroImageUrl?: string | null;
+  /** @nullable */
+  featuredHeroDateBadge?: string | null;
+  isFeatured?: boolean;
+  cardTitle: string;
+  cardDescription: string;
+  cardImageUrl: string;
+  cardVenue: string;
+  cardDatesDisplay: string;
+  cardTime: string;
+  dateDay: string;
+  dateMonth: string;
+  cardBadgeLabel: string;
+  venue: string;
+  times?: string[];
+  /** @nullable */
+  orchestra?: string | null;
+  runtime: string;
+  /** @nullable */
+  ticketLink?: string | null;
+  /** @nullable */
+  ticketPriceRange?: string | null;
+  detailBadgeLabel: string;
+  badgeVariant: CreateWebsitePerformanceBodyBadgeVariant;
+  authorName: string;
+  authorRole: string;
+  /** @nullable */
+  authorAvatarUrl?: string | null;
+  tags?: string[];
+  galleryImages?: string[];
+  content: WebsitePerformanceContent;
+  keyHighlights?: string[];
+  scheduleOverview?: WebsitePerformanceScheduleItem[];
+  castAndFaculty?: WebsitePerformanceCastMember[];
+  relatedRefs?: WebsitePerformanceRelatedRef[];
+  isActive?: boolean;
+}
+
+export type UpdateWebsitePerformanceBodyBadgeVariant =
+  (typeof UpdateWebsitePerformanceBodyBadgeVariant)[keyof typeof UpdateWebsitePerformanceBodyBadgeVariant];
+
+export const UpdateWebsitePerformanceBodyBadgeVariant = {
+  cyan: "cyan",
+  purple: "purple",
+  gold: "gold",
+} as const;
+
+/**
+ * Partial update. Slug is immutable in Wave 3 and is not accepted here.
+ */
+export interface UpdateWebsitePerformanceBody {
+  sortOrder?: number;
+  category?: string;
+  categoryLabel?: string;
+  title?: string;
+  subtitle?: string;
+  heroImageUrl?: string;
+  eventDateDisplay?: string;
+  season?: string;
+  /** @nullable */
+  featuredHeroImageUrl?: string | null;
+  /** @nullable */
+  featuredHeroDateBadge?: string | null;
+  isFeatured?: boolean;
+  cardTitle?: string;
+  cardDescription?: string;
+  cardImageUrl?: string;
+  cardVenue?: string;
+  cardDatesDisplay?: string;
+  cardTime?: string;
+  dateDay?: string;
+  dateMonth?: string;
+  cardBadgeLabel?: string;
+  venue?: string;
+  times?: string[];
+  /** @nullable */
+  orchestra?: string | null;
+  runtime?: string;
+  /** @nullable */
+  ticketLink?: string | null;
+  /** @nullable */
+  ticketPriceRange?: string | null;
+  detailBadgeLabel?: string;
+  badgeVariant?: UpdateWebsitePerformanceBodyBadgeVariant;
+  authorName?: string;
+  authorRole?: string;
+  /** @nullable */
+  authorAvatarUrl?: string | null;
+  tags?: string[];
+  galleryImages?: string[];
+  content?: WebsitePerformanceContent;
+  keyHighlights?: string[];
+  scheduleOverview?: WebsitePerformanceScheduleItem[];
+  castAndFaculty?: WebsitePerformanceCastMember[];
+  relatedRefs?: WebsitePerformanceRelatedRef[];
+  isActive?: boolean;
+}
+
 export interface Notification {
   id: number;
   title: string;

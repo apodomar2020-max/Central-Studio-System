@@ -2926,6 +2926,714 @@ export const DeactivateWebsiteNewsPostResponse = zod.object({
   updatedAt: zod.string(),
 });
 
+/**
+ * @summary List public Performance repertoire cards (active only, sortOrder ASC)
+ */
+export const ListPublicWebsitePerformancesResponseItem = zod.object({
+  slug: zod.string(),
+  cardTitle: zod.string(),
+  cardDescription: zod.string(),
+  cardImageUrl: zod.string(),
+  cardVenue: zod.string(),
+  cardDatesDisplay: zod.string(),
+  cardTime: zod.string(),
+  dateDay: zod.string(),
+  dateMonth: zod.string(),
+  cardBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+});
+export const ListPublicWebsitePerformancesResponse = zod.array(
+  ListPublicWebsitePerformancesResponseItem,
+);
+
+/**
+ * @summary Get the current featured Performance for the landing hero (or null)
+ */
+export const GetPublicWebsitePerformanceFeaturedResponse = zod.union([
+  zod.object({
+    slug: zod.string(),
+    title: zod.string(),
+    heroImageUrl: zod.string(),
+    dateBadge: zod.string(),
+  }),
+  zod.null(),
+]);
+
+/**
+ * @summary Get one active Performance's full public detail content
+ */
+export const GetPublicWebsitePerformanceParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const GetPublicWebsitePerformanceResponse = zod.object({
+  slug: zod.string(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  eventDateDisplay: zod.string(),
+  venue: zod.string(),
+  times: zod.array(zod.string()),
+  orchestra: zod.string().nullable(),
+  runtime: zod.string(),
+  ticketLink: zod.string().nullable(),
+  ticketPriceRange: zod.string().nullable(),
+  detailBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+  season: zod.string(),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  galleryImages: zod.array(zod.string()),
+  tags: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  keyHighlights: zod.array(zod.string()),
+  castAndFaculty: zod.array(
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      imageUrl: zod.string(),
+    }),
+  ),
+  relatedItems: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+      title: zod.string().nullable(),
+      subtitle: zod.string().nullable(),
+      categoryLabel: zod.string().nullable(),
+      image: zod.string().nullable(),
+      date: zod.string().nullable(),
+    }),
+  ),
+});
+
+/**
+ * @summary List all Performances, active and inactive (Admin)
+ */
+export const ListAdminWebsitePerformancesResponseItem = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  sortOrder: zod.number(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  eventDateDisplay: zod.string(),
+  season: zod.string(),
+  featuredHeroImageUrl: zod.string().nullable(),
+  featuredHeroDateBadge: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  cardTitle: zod.string(),
+  cardDescription: zod.string(),
+  cardImageUrl: zod.string(),
+  cardVenue: zod.string(),
+  cardDatesDisplay: zod.string(),
+  cardTime: zod.string(),
+  dateDay: zod.string(),
+  dateMonth: zod.string(),
+  cardBadgeLabel: zod.string(),
+  venue: zod.string(),
+  times: zod.array(zod.string()),
+  orchestra: zod.string().nullable(),
+  runtime: zod.string(),
+  ticketLink: zod.string().nullable(),
+  ticketPriceRange: zod.string().nullable(),
+  detailBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  keyHighlights: zod.array(zod.string()),
+  scheduleOverview: zod.array(
+    zod.object({
+      time: zod.string(),
+      event: zod.string(),
+    }),
+  ),
+  castAndFaculty: zod.array(
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      imageUrl: zod.string(),
+    }),
+  ),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListAdminWebsitePerformancesResponse = zod.array(
+  ListAdminWebsitePerformancesResponseItem,
+);
+
+/**
+ * @summary Create a Performance
+ */
+export const CreateWebsitePerformanceBody = zod.object({
+  slug: zod.string(),
+  sortOrder: zod.number(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  eventDateDisplay: zod.string(),
+  season: zod.string(),
+  featuredHeroImageUrl: zod.string().nullish(),
+  featuredHeroDateBadge: zod.string().nullish(),
+  isFeatured: zod.boolean().optional(),
+  cardTitle: zod.string(),
+  cardDescription: zod.string(),
+  cardImageUrl: zod.string(),
+  cardVenue: zod.string(),
+  cardDatesDisplay: zod.string(),
+  cardTime: zod.string(),
+  dateDay: zod.string(),
+  dateMonth: zod.string(),
+  cardBadgeLabel: zod.string(),
+  venue: zod.string(),
+  times: zod.array(zod.string()).optional(),
+  orchestra: zod.string().nullish(),
+  runtime: zod.string(),
+  ticketLink: zod.string().nullish(),
+  ticketPriceRange: zod.string().nullish(),
+  detailBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullish(),
+  tags: zod.array(zod.string()).optional(),
+  galleryImages: zod.array(zod.string()).optional(),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  keyHighlights: zod.array(zod.string()).optional(),
+  scheduleOverview: zod
+    .array(
+      zod.object({
+        time: zod.string(),
+        event: zod.string(),
+      }),
+    )
+    .optional(),
+  castAndFaculty: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        role: zod.string(),
+        imageUrl: zod.string(),
+      }),
+    )
+    .optional(),
+  relatedRefs: zod
+    .array(
+      zod.object({
+        type: zod.enum(["news", "performance"]),
+        slug: zod.string(),
+      }),
+    )
+    .optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const CreateWebsitePerformanceResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  sortOrder: zod.number(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  eventDateDisplay: zod.string(),
+  season: zod.string(),
+  featuredHeroImageUrl: zod.string().nullable(),
+  featuredHeroDateBadge: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  cardTitle: zod.string(),
+  cardDescription: zod.string(),
+  cardImageUrl: zod.string(),
+  cardVenue: zod.string(),
+  cardDatesDisplay: zod.string(),
+  cardTime: zod.string(),
+  dateDay: zod.string(),
+  dateMonth: zod.string(),
+  cardBadgeLabel: zod.string(),
+  venue: zod.string(),
+  times: zod.array(zod.string()),
+  orchestra: zod.string().nullable(),
+  runtime: zod.string(),
+  ticketLink: zod.string().nullable(),
+  ticketPriceRange: zod.string().nullable(),
+  detailBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  keyHighlights: zod.array(zod.string()),
+  scheduleOverview: zod.array(
+    zod.object({
+      time: zod.string(),
+      event: zod.string(),
+    }),
+  ),
+  castAndFaculty: zod.array(
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      imageUrl: zod.string(),
+    }),
+  ),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Get one Performance, full Admin shape
+ */
+export const GetAdminWebsitePerformanceParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const GetAdminWebsitePerformanceResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  sortOrder: zod.number(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  eventDateDisplay: zod.string(),
+  season: zod.string(),
+  featuredHeroImageUrl: zod.string().nullable(),
+  featuredHeroDateBadge: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  cardTitle: zod.string(),
+  cardDescription: zod.string(),
+  cardImageUrl: zod.string(),
+  cardVenue: zod.string(),
+  cardDatesDisplay: zod.string(),
+  cardTime: zod.string(),
+  dateDay: zod.string(),
+  dateMonth: zod.string(),
+  cardBadgeLabel: zod.string(),
+  venue: zod.string(),
+  times: zod.array(zod.string()),
+  orchestra: zod.string().nullable(),
+  runtime: zod.string(),
+  ticketLink: zod.string().nullable(),
+  ticketPriceRange: zod.string().nullable(),
+  detailBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  keyHighlights: zod.array(zod.string()),
+  scheduleOverview: zod.array(
+    zod.object({
+      time: zod.string(),
+      event: zod.string(),
+    }),
+  ),
+  castAndFaculty: zod.array(
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      imageUrl: zod.string(),
+    }),
+  ),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Edit a Performance (slug is immutable — not accepted in this body)
+ */
+export const UpdateWebsitePerformanceParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const UpdateWebsitePerformanceBody = zod
+  .object({
+    sortOrder: zod.number().optional(),
+    category: zod.string().optional(),
+    categoryLabel: zod.string().optional(),
+    title: zod.string().optional(),
+    subtitle: zod.string().optional(),
+    heroImageUrl: zod.string().optional(),
+    eventDateDisplay: zod.string().optional(),
+    season: zod.string().optional(),
+    featuredHeroImageUrl: zod.string().nullish(),
+    featuredHeroDateBadge: zod.string().nullish(),
+    isFeatured: zod.boolean().optional(),
+    cardTitle: zod.string().optional(),
+    cardDescription: zod.string().optional(),
+    cardImageUrl: zod.string().optional(),
+    cardVenue: zod.string().optional(),
+    cardDatesDisplay: zod.string().optional(),
+    cardTime: zod.string().optional(),
+    dateDay: zod.string().optional(),
+    dateMonth: zod.string().optional(),
+    cardBadgeLabel: zod.string().optional(),
+    venue: zod.string().optional(),
+    times: zod.array(zod.string()).optional(),
+    orchestra: zod.string().nullish(),
+    runtime: zod.string().optional(),
+    ticketLink: zod.string().nullish(),
+    ticketPriceRange: zod.string().nullish(),
+    detailBadgeLabel: zod.string().optional(),
+    badgeVariant: zod.enum(["cyan", "purple", "gold"]).optional(),
+    authorName: zod.string().optional(),
+    authorRole: zod.string().optional(),
+    authorAvatarUrl: zod.string().nullish(),
+    tags: zod.array(zod.string()).optional(),
+    galleryImages: zod.array(zod.string()).optional(),
+    content: zod
+      .object({
+        leadParagraph: zod.string(),
+        sections: zod.array(
+          zod.object({
+            heading: zod.string().optional(),
+            paragraphs: zod.array(zod.string()),
+            quote: zod
+              .object({
+                text: zod.string(),
+                author: zod.string(),
+                role: zod.string(),
+              })
+              .optional(),
+            bulletPoints: zod.array(zod.string()).optional(),
+            image: zod.string().optional(),
+            imageCaption: zod.string().optional(),
+          }),
+        ),
+      })
+      .optional(),
+    keyHighlights: zod.array(zod.string()).optional(),
+    scheduleOverview: zod
+      .array(
+        zod.object({
+          time: zod.string(),
+          event: zod.string(),
+        }),
+      )
+      .optional(),
+    castAndFaculty: zod
+      .array(
+        zod.object({
+          name: zod.string(),
+          role: zod.string(),
+          imageUrl: zod.string(),
+        }),
+      )
+      .optional(),
+    relatedRefs: zod
+      .array(
+        zod.object({
+          type: zod.enum(["news", "performance"]),
+          slug: zod.string(),
+        }),
+      )
+      .optional(),
+    isActive: zod.boolean().optional(),
+  })
+  .describe(
+    "Partial update. Slug is immutable in Wave 3 and is not accepted here.",
+  );
+
+export const UpdateWebsitePerformanceResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  sortOrder: zod.number(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  eventDateDisplay: zod.string(),
+  season: zod.string(),
+  featuredHeroImageUrl: zod.string().nullable(),
+  featuredHeroDateBadge: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  cardTitle: zod.string(),
+  cardDescription: zod.string(),
+  cardImageUrl: zod.string(),
+  cardVenue: zod.string(),
+  cardDatesDisplay: zod.string(),
+  cardTime: zod.string(),
+  dateDay: zod.string(),
+  dateMonth: zod.string(),
+  cardBadgeLabel: zod.string(),
+  venue: zod.string(),
+  times: zod.array(zod.string()),
+  orchestra: zod.string().nullable(),
+  runtime: zod.string(),
+  ticketLink: zod.string().nullable(),
+  ticketPriceRange: zod.string().nullable(),
+  detailBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  keyHighlights: zod.array(zod.string()),
+  scheduleOverview: zod.array(
+    zod.object({
+      time: zod.string(),
+      event: zod.string(),
+    }),
+  ),
+  castAndFaculty: zod.array(
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      imageUrl: zod.string(),
+    }),
+  ),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Soft-deactivate a Performance (never a physical delete)
+ */
+export const DeactivateWebsitePerformanceParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const DeactivateWebsitePerformanceResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string(),
+  sortOrder: zod.number(),
+  category: zod.string(),
+  categoryLabel: zod.string(),
+  title: zod.string(),
+  subtitle: zod.string(),
+  heroImageUrl: zod.string(),
+  eventDateDisplay: zod.string(),
+  season: zod.string(),
+  featuredHeroImageUrl: zod.string().nullable(),
+  featuredHeroDateBadge: zod.string().nullable(),
+  isFeatured: zod.boolean(),
+  cardTitle: zod.string(),
+  cardDescription: zod.string(),
+  cardImageUrl: zod.string(),
+  cardVenue: zod.string(),
+  cardDatesDisplay: zod.string(),
+  cardTime: zod.string(),
+  dateDay: zod.string(),
+  dateMonth: zod.string(),
+  cardBadgeLabel: zod.string(),
+  venue: zod.string(),
+  times: zod.array(zod.string()),
+  orchestra: zod.string().nullable(),
+  runtime: zod.string(),
+  ticketLink: zod.string().nullable(),
+  ticketPriceRange: zod.string().nullable(),
+  detailBadgeLabel: zod.string(),
+  badgeVariant: zod.enum(["cyan", "purple", "gold"]),
+  authorName: zod.string(),
+  authorRole: zod.string(),
+  authorAvatarUrl: zod.string().nullable(),
+  tags: zod.array(zod.string()),
+  galleryImages: zod.array(zod.string()),
+  content: zod.object({
+    leadParagraph: zod.string(),
+    sections: zod.array(
+      zod.object({
+        heading: zod.string().optional(),
+        paragraphs: zod.array(zod.string()),
+        quote: zod
+          .object({
+            text: zod.string(),
+            author: zod.string(),
+            role: zod.string(),
+          })
+          .optional(),
+        bulletPoints: zod.array(zod.string()).optional(),
+        image: zod.string().optional(),
+        imageCaption: zod.string().optional(),
+      }),
+    ),
+  }),
+  keyHighlights: zod.array(zod.string()),
+  scheduleOverview: zod.array(
+    zod.object({
+      time: zod.string(),
+      event: zod.string(),
+    }),
+  ),
+  castAndFaculty: zod.array(
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      imageUrl: zod.string(),
+    }),
+  ),
+  relatedRefs: zod.array(
+    zod.object({
+      type: zod.enum(["news", "performance"]),
+      slug: zod.string(),
+    }),
+  ),
+  isActive: zod.boolean(),
+  updatedByAdminId: zod.number().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
 export const ListNotificationsResponseItem = zod.object({
   id: zod.number(),
   title: zod.string(),

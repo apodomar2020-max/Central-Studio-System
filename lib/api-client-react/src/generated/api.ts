@@ -52,6 +52,7 @@ import type {
   CreateScheduleBody,
   CreateStudentBody,
   CreateWebsiteNewsPostBody,
+  CreateWebsitePerformanceBody,
   DanceType,
   DashboardAnalytics,
   DashboardSummary,
@@ -92,6 +93,9 @@ import type {
   PublicWebsiteBackgroundSetting,
   PublicWebsiteNewsDetail,
   PublicWebsiteNewsListItem,
+  PublicWebsitePerformanceDetail,
+  PublicWebsitePerformanceFeatured,
+  PublicWebsitePerformanceListItem,
   Room,
   RoomListResponse,
   RoomReservation,
@@ -119,9 +123,11 @@ import type {
   UpdateStudentBody,
   UpdateWebsiteBackgroundBody,
   UpdateWebsiteNewsPostBody,
+  UpdateWebsitePerformanceBody,
   UploadDanceTypeIconBody,
   WebsiteBackgroundSetting,
   WebsiteNewsPost,
+  WebsitePerformance,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -5958,6 +5964,697 @@ export const useDeactivateWebsiteNewsPost = <
   TContext
 > => {
   return useMutation(getDeactivateWebsiteNewsPostMutationOptions(options));
+};
+
+export const getListPublicWebsitePerformancesUrl = () => {
+  return `/api/website/performances`;
+};
+
+/**
+ * @summary List public Performance repertoire cards (active only, sortOrder ASC)
+ */
+export const listPublicWebsitePerformances = async (
+  options?: RequestInit,
+): Promise<PublicWebsitePerformanceListItem[]> => {
+  return customFetch<PublicWebsitePerformanceListItem[]>(
+    getListPublicWebsitePerformancesUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListPublicWebsitePerformancesQueryKey = () => {
+  return [`/api/website/performances`] as const;
+};
+
+export const getListPublicWebsitePerformancesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPublicWebsitePerformances>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsitePerformances>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListPublicWebsitePerformancesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPublicWebsitePerformances>>
+  > = ({ signal }) =>
+    listPublicWebsitePerformances({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsitePerformances>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPublicWebsitePerformancesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPublicWebsitePerformances>>
+>;
+export type ListPublicWebsitePerformancesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List public Performance repertoire cards (active only, sortOrder ASC)
+ */
+
+export function useListPublicWebsitePerformances<
+  TData = Awaited<ReturnType<typeof listPublicWebsitePerformances>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsitePerformances>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPublicWebsitePerformancesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetPublicWebsitePerformanceFeaturedUrl = () => {
+  return `/api/website/performances/featured`;
+};
+
+/**
+ * @summary Get the current featured Performance for the landing hero (or null)
+ */
+export const getPublicWebsitePerformanceFeatured = async (
+  options?: RequestInit,
+): Promise<PublicWebsitePerformanceFeatured | null> => {
+  return customFetch<PublicWebsitePerformanceFeatured | null>(
+    getGetPublicWebsitePerformanceFeaturedUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPublicWebsitePerformanceFeaturedQueryKey = () => {
+  return [`/api/website/performances/featured`] as const;
+};
+
+export const getGetPublicWebsitePerformanceFeaturedQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPublicWebsitePerformanceFeatured>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicWebsitePerformanceFeatured>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPublicWebsitePerformanceFeaturedQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPublicWebsitePerformanceFeatured>>
+  > = ({ signal }) =>
+    getPublicWebsitePerformanceFeatured({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicWebsitePerformanceFeatured>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPublicWebsitePerformanceFeaturedQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPublicWebsitePerformanceFeatured>>
+>;
+export type GetPublicWebsitePerformanceFeaturedQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current featured Performance for the landing hero (or null)
+ */
+
+export function useGetPublicWebsitePerformanceFeatured<
+  TData = Awaited<ReturnType<typeof getPublicWebsitePerformanceFeatured>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicWebsitePerformanceFeatured>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions =
+    getGetPublicWebsitePerformanceFeaturedQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetPublicWebsitePerformanceUrl = (slug: string) => {
+  return `/api/website/performances/${slug}`;
+};
+
+/**
+ * @summary Get one active Performance's full public detail content
+ */
+export const getPublicWebsitePerformance = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<PublicWebsitePerformanceDetail> => {
+  return customFetch<PublicWebsitePerformanceDetail>(
+    getGetPublicWebsitePerformanceUrl(slug),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPublicWebsitePerformanceQueryKey = (slug: string) => {
+  return [`/api/website/performances/${slug}`] as const;
+};
+
+export const getGetPublicWebsitePerformanceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPublicWebsitePerformance>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicWebsitePerformance>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPublicWebsitePerformanceQueryKey(slug);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPublicWebsitePerformance>>
+  > = ({ signal }) =>
+    getPublicWebsitePerformance(slug, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: slug !== null && slug !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicWebsitePerformance>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPublicWebsitePerformanceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPublicWebsitePerformance>>
+>;
+export type GetPublicWebsitePerformanceQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one active Performance's full public detail content
+ */
+
+export function useGetPublicWebsitePerformance<
+  TData = Awaited<ReturnType<typeof getPublicWebsitePerformance>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicWebsitePerformance>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPublicWebsitePerformanceQueryOptions(
+    slug,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListAdminWebsitePerformancesUrl = () => {
+  return `/api/admin/website/performances`;
+};
+
+/**
+ * @summary List all Performances, active and inactive (Admin)
+ */
+export const listAdminWebsitePerformances = async (
+  options?: RequestInit,
+): Promise<WebsitePerformance[]> => {
+  return customFetch<WebsitePerformance[]>(
+    getListAdminWebsitePerformancesUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAdminWebsitePerformancesQueryKey = () => {
+  return [`/api/admin/website/performances`] as const;
+};
+
+export const getListAdminWebsitePerformancesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminWebsitePerformances>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsitePerformances>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAdminWebsitePerformancesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminWebsitePerformances>>
+  > = ({ signal }) =>
+    listAdminWebsitePerformances({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsitePerformances>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminWebsitePerformancesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminWebsitePerformances>>
+>;
+export type ListAdminWebsitePerformancesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all Performances, active and inactive (Admin)
+ */
+
+export function useListAdminWebsitePerformances<
+  TData = Awaited<ReturnType<typeof listAdminWebsitePerformances>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminWebsitePerformances>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminWebsitePerformancesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateWebsitePerformanceUrl = () => {
+  return `/api/admin/website/performances`;
+};
+
+/**
+ * @summary Create a Performance
+ */
+export const createWebsitePerformance = async (
+  createWebsitePerformanceBody: CreateWebsitePerformanceBody,
+  options?: RequestInit,
+): Promise<WebsitePerformance> => {
+  return customFetch<WebsitePerformance>(getCreateWebsitePerformanceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createWebsitePerformanceBody),
+  });
+};
+
+export const getCreateWebsitePerformanceMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createWebsitePerformance>>,
+    TError,
+    { data: BodyType<CreateWebsitePerformanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createWebsitePerformance>>,
+  TError,
+  { data: BodyType<CreateWebsitePerformanceBody> },
+  TContext
+> => {
+  const mutationKey = ["createWebsitePerformance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createWebsitePerformance>>,
+    { data: BodyType<CreateWebsitePerformanceBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createWebsitePerformance(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateWebsitePerformanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createWebsitePerformance>>
+>;
+export type CreateWebsitePerformanceMutationBody =
+  BodyType<CreateWebsitePerformanceBody>;
+export type CreateWebsitePerformanceMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a Performance
+ */
+export const useCreateWebsitePerformance = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createWebsitePerformance>>,
+    TError,
+    { data: BodyType<CreateWebsitePerformanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createWebsitePerformance>>,
+  TError,
+  { data: BodyType<CreateWebsitePerformanceBody> },
+  TContext
+> => {
+  return useMutation(getCreateWebsitePerformanceMutationOptions(options));
+};
+
+export const getGetAdminWebsitePerformanceUrl = (slug: string) => {
+  return `/api/admin/website/performances/${slug}`;
+};
+
+/**
+ * @summary Get one Performance, full Admin shape
+ */
+export const getAdminWebsitePerformance = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<WebsitePerformance> => {
+  return customFetch<WebsitePerformance>(
+    getGetAdminWebsitePerformanceUrl(slug),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetAdminWebsitePerformanceQueryKey = (slug: string) => {
+  return [`/api/admin/website/performances/${slug}`] as const;
+};
+
+export const getGetAdminWebsitePerformanceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminWebsitePerformance>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminWebsitePerformance>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminWebsitePerformanceQueryKey(slug);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAdminWebsitePerformance>>
+  > = ({ signal }) =>
+    getAdminWebsitePerformance(slug, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: slug !== null && slug !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminWebsitePerformance>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminWebsitePerformanceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminWebsitePerformance>>
+>;
+export type GetAdminWebsitePerformanceQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one Performance, full Admin shape
+ */
+
+export function useGetAdminWebsitePerformance<
+  TData = Awaited<ReturnType<typeof getAdminWebsitePerformance>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAdminWebsitePerformance>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminWebsitePerformanceQueryOptions(slug, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateWebsitePerformanceUrl = (slug: string) => {
+  return `/api/admin/website/performances/${slug}`;
+};
+
+/**
+ * @summary Edit a Performance (slug is immutable — not accepted in this body)
+ */
+export const updateWebsitePerformance = async (
+  slug: string,
+  updateWebsitePerformanceBody: UpdateWebsitePerformanceBody,
+  options?: RequestInit,
+): Promise<WebsitePerformance> => {
+  return customFetch<WebsitePerformance>(getUpdateWebsitePerformanceUrl(slug), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateWebsitePerformanceBody),
+  });
+};
+
+export const getUpdateWebsitePerformanceMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsitePerformance>>,
+    TError,
+    { slug: string; data: BodyType<UpdateWebsitePerformanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateWebsitePerformance>>,
+  TError,
+  { slug: string; data: BodyType<UpdateWebsitePerformanceBody> },
+  TContext
+> => {
+  const mutationKey = ["updateWebsitePerformance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateWebsitePerformance>>,
+    { slug: string; data: BodyType<UpdateWebsitePerformanceBody> }
+  > = (props) => {
+    const { slug, data } = props ?? {};
+
+    return updateWebsitePerformance(slug, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateWebsitePerformanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateWebsitePerformance>>
+>;
+export type UpdateWebsitePerformanceMutationBody =
+  BodyType<UpdateWebsitePerformanceBody>;
+export type UpdateWebsitePerformanceMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit a Performance (slug is immutable — not accepted in this body)
+ */
+export const useUpdateWebsitePerformance = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsitePerformance>>,
+    TError,
+    { slug: string; data: BodyType<UpdateWebsitePerformanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateWebsitePerformance>>,
+  TError,
+  { slug: string; data: BodyType<UpdateWebsitePerformanceBody> },
+  TContext
+> => {
+  return useMutation(getUpdateWebsitePerformanceMutationOptions(options));
+};
+
+export const getDeactivateWebsitePerformanceUrl = (slug: string) => {
+  return `/api/admin/website/performances/${slug}`;
+};
+
+/**
+ * @summary Soft-deactivate a Performance (never a physical delete)
+ */
+export const deactivateWebsitePerformance = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<WebsitePerformance> => {
+  return customFetch<WebsitePerformance>(
+    getDeactivateWebsitePerformanceUrl(slug),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeactivateWebsitePerformanceMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateWebsitePerformance>>,
+    TError,
+    { slug: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deactivateWebsitePerformance>>,
+  TError,
+  { slug: string },
+  TContext
+> => {
+  const mutationKey = ["deactivateWebsitePerformance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deactivateWebsitePerformance>>,
+    { slug: string }
+  > = (props) => {
+    const { slug } = props ?? {};
+
+    return deactivateWebsitePerformance(slug, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeactivateWebsitePerformanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deactivateWebsitePerformance>>
+>;
+
+export type DeactivateWebsitePerformanceMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Soft-deactivate a Performance (never a physical delete)
+ */
+export const useDeactivateWebsitePerformance = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateWebsitePerformance>>,
+    TError,
+    { slug: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deactivateWebsitePerformance>>,
+  TError,
+  { slug: string },
+  TContext
+> => {
+  return useMutation(getDeactivateWebsitePerformanceMutationOptions(options));
 };
 
 export const getListNotificationsUrl = () => {
