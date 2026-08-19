@@ -8,6 +8,7 @@
     "backfill-membership-ids": "tsx ./src/backfillMembershipIds.ts",
     "seed-website-backgrounds": "tsx ./src/seedWebsiteBackgrounds.ts",
     "seed-website-news": "tsx ./src/seedWebsiteNewsPosts.ts",
+    "seed-website-performances": "tsx ./src/seedWebsitePerformances.ts",
     "fresh-launch:inventory": "tsx ./src/fresh-launch-cutover/freshLaunchSourceInventory.ts",
     "fresh-launch:rehearse": "tsx ./src/fresh-launch-cutover/runFreshLaunchCutoverRehearsal.ts",
     "fresh-launch:test-g2a": "tsx ./src/fresh-launch-cutover/runG2aApprovalTests.ts",

@@ -90,3 +90,5 @@ export * from "./notificationCampaigns";
 export * from "./websiteBackgroundSettings";
 // Website CMS Wave 2 — News (migration 0110)
 export * from "./websiteNewsPosts";
+// Website CMS Wave 3 — Performance (migration 0111)
+export * from "./websitePerformances";
