@@ -28,6 +28,7 @@ import {
   useCreateWebsiteNewsPost,
   useUpdateWebsiteNewsPost,
   useListAdminWebsiteNews,
+  useListAdminWebsitePerformances,
   getListAdminWebsiteNewsQueryKey,
   getGetAdminWebsiteNewsQueryKey,
 } from "@workspace/api-client-react";
@@ -154,6 +155,10 @@ export default function WebsiteNewsEditorPage() {
     query: { enabled: isEdit, queryKey: getGetAdminWebsiteNewsQueryKey(editingSlug ?? "") },
   });
   const { data: allPosts } = useListAdminWebsiteNews();
+  // Wave 3: the Performance CMS now exists — the related-content picker
+  // below uses a real catalog dropdown instead of the Wave-2 raw-slug
+  // input, matching the News picker's own pattern.
+  const { data: allPerformances } = useListAdminWebsitePerformances();
   const createPost = useCreateWebsiteNewsPost();
   const updatePost = useUpdateWebsiteNewsPost();
   const saving = createPost.isPending || updatePost.isPending;
@@ -210,6 +215,7 @@ export default function WebsiteNewsEditorPage() {
   const currentSlug = watch("slug");
 
   const relatedNewsOptions = (allPosts ?? []).filter((p) => p.slug !== (editingSlug ?? currentSlug));
+  const relatedPerformanceOptions = allPerformances ?? [];
 
   const onSubmit = (values: FormValues) => {
     const body = {
@@ -458,9 +464,8 @@ export default function WebsiteNewsEditorPage() {
           <section className="rounded-lg border border-border bg-card p-6 space-y-4">
             <h2 className="text-sm font-semibold text-foreground">Related Content</h2>
             <p className="text-xs text-muted-foreground">
-              Order is preserved exactly as shown here. News references are validated against existing posts.
-              Performance references cannot be validated yet — Performance has no CMS in this wave (arriving in
-              Wave 3) — so any slug is accepted as-is; double-check it matches a real Performance page.
+              Order is preserved exactly as shown here. Both News and Performance references are validated against
+              existing posts.
             </p>
             <div className="space-y-2">
               {relatedArray.fields.map((field, index) => {
@@ -494,12 +499,19 @@ export default function WebsiteNewsEditorPage() {
                         </SelectContent>
                       </Select>
                     ) : (
-                      <Input
-                        {...register(`relatedRefs.${index}.slug`)}
-                        placeholder="performance-slug"
-                        className="flex-1"
-                        data-testid={`input-related-slug-${index}`}
-                      />
+                      <Select
+                        value={watch(`relatedRefs.${index}.slug`)}
+                        onValueChange={(v) => form.setValue(`relatedRefs.${index}.slug`, v)}
+                      >
+                        <SelectTrigger className="flex-1" data-testid={`select-related-performance-${index}`}>
+                          <SelectValue placeholder="Choose a Performance" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {relatedPerformanceOptions.map((p) => (
+                            <SelectItem key={p.slug} value={p.slug}>{p.title}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     )}
                     <Button type="button" variant="ghost" size="icon" onClick={() => relatedArray.remove(index)} aria-label="Remove related item">
                       <Trash2 className="h-4 w-4" />
