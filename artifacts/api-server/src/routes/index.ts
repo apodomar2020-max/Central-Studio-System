@@ -56,6 +56,7 @@ import packageRefundsRouter from "./packageRefunds";
 import adminRoomReservationsRouter from "./adminRoomReservations";
 import websiteBackgroundsRouter from "./websiteBackgrounds";
 import websiteNewsRouter from "./websiteNews";
+import websitePerformancesRouter from "./websitePerformances";
 
 const router: IRouter = Router();
 
@@ -114,8 +115,10 @@ router.use(packageRefundsRouter);
 router.use(adminRoomReservationsRouter);
 // Website CMS Wave 1 — Backgrounds.
 router.use(websiteBackgroundsRouter);
-// Website CMS Wave 2 — News only (no Performance routes yet).
+// Website CMS Wave 2 — News.
 router.use(websiteNewsRouter);
+// Website CMS Wave 3 — Performance.
+router.use(websitePerformancesRouter);
 // Finance Department (Phase 1) — read-only aggregation over the existing
 // operational tables. Registered last; it adds no mutation routes.
 router.use(financeRouter);

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
-import { db, websiteNewsPostsTable } from "@workspace/db";
+import { db, websiteNewsPostsTable, websitePerformancesTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { logger } from "../lib/logger";
@@ -27,14 +27,21 @@ import {
 } from "@workspace/api-zod";
 
 /**
- * Website CMS Wave 2 — News only. No Performance routes here (see the
- * Wave 2 report — Performance stays static/Wave-0-canonical until its own
- * CMS table arrives in Wave 3).
+ * Website CMS Wave 2 — News routes. No Performance routes here (see
+ * websitePerformances.ts, added in Wave 3).
  *
  * Modeled on websiteBackgrounds.ts (public unauthenticated read + admin-
  * guarded read/write, Zod-validated bodies, activity-logged mutations) and
  * heroItems.ts (full CRUD shape, 23505-unique-violation → 409). DELETE is a
  * soft-deactivate only — see the module's own handler doc comment.
+ *
+ * WAVE-3 UPDATE: this file's `resolveRelatedItems`/`validateRelatedRefs`
+ * 'performance'-type branches now resolve/validate against the real
+ * website_performances table (Wave 3) instead of returning nulls/accepting
+ * any slug on faith (Wave 2's temporary bridge, now complete). This is the
+ * News-side half of the Wave-3 related-resolver handoff — see the Wave 3
+ * report for the full picture. No stored News relatedRefs value changes;
+ * only how a 'performance' ref is resolved changes.
  */
 
 const router: IRouter = Router();
@@ -73,27 +80,37 @@ function toPublicListItem(row: NewsRow) {
 
 /**
  * Resolve a post's ordered relatedRefs into public-safe related items.
- * 'news' refs are resolved from THIS table (active posts only — a
- * deactivated related post is silently dropped rather than surfaced as a
- * broken link, matching getRelatedArticles' existing tolerance for missing
- * entries). 'performance' refs are passed through with slug/type only —
- * Performance has no CMS table in Wave 2, so the website resolves
- * title/subtitle/categoryLabel/image/date for those client-side from its
- * existing static Performance source (see the Wave 2 report's "temporary
- * Performance-resolution bridge" section). `subtitle` is included because
- * the website's existing related-card rendering (ArticleDetailView.tsx)
- * renders it, confirmed via source read. Order is preserved exactly as
- * stored (locked requirement).
+ * 'news' refs are resolved from THIS table; 'performance' refs are resolved
+ * from the Wave-3 website_performances table (using its canonical
+ * title/subtitle/heroImageUrl/eventDateDisplay fields, mirroring exactly
+ * what the Wave-2 static bridge used to return via the full static Article
+ * object — never the Performance-side card-specific fields — so current
+ * visual output doesn't change). Active rows only for both types — a
+ * deactivated related item is silently dropped rather than surfaced as a
+ * broken link, matching getRelatedArticles' original tolerance for missing
+ * entries. `subtitle` is included because the website's existing
+ * related-card rendering (ArticleDetailView.tsx) renders it. Order is
+ * preserved exactly as stored (locked requirement).
  */
 async function resolveRelatedItems(refs: RelatedRef[]) {
   const newsSlugsNeeded = refs.filter((r) => r.type === "news").map((r) => r.slug);
-  const newsRows = newsSlugsNeeded.length
-    ? await db
-        .select()
-        .from(websiteNewsPostsTable)
-        .where(and(inArray(websiteNewsPostsTable.slug, newsSlugsNeeded), eq(websiteNewsPostsTable.isActive, true)))
-    : [];
-  const bySlug = new Map(newsRows.map((r) => [r.slug, r]));
+  const performanceSlugsNeeded = refs.filter((r) => r.type === "performance").map((r) => r.slug);
+  const [newsRows, performanceRows] = await Promise.all([
+    newsSlugsNeeded.length
+      ? db
+          .select()
+          .from(websiteNewsPostsTable)
+          .where(and(inArray(websiteNewsPostsTable.slug, newsSlugsNeeded), eq(websiteNewsPostsTable.isActive, true)))
+      : Promise.resolve([]),
+    performanceSlugsNeeded.length
+      ? db
+          .select()
+          .from(websitePerformancesTable)
+          .where(and(inArray(websitePerformancesTable.slug, performanceSlugsNeeded), eq(websitePerformancesTable.isActive, true)))
+      : Promise.resolve([]),
+  ]);
+  const newsBySlug = new Map(newsRows.map((r) => [r.slug, r]));
+  const performanceBySlug = new Map(performanceRows.map((r) => [r.slug, r]));
 
   const items: Array<{
     type: "news" | "performance";
@@ -106,7 +123,7 @@ async function resolveRelatedItems(refs: RelatedRef[]) {
   }> = [];
   for (const ref of refs) {
     if (ref.type === "news") {
-      const match = bySlug.get(ref.slug);
+      const match = newsBySlug.get(ref.slug);
       if (!match) continue; // unknown/inactive news ref — silently dropped, not surfaced as a broken link
       items.push({
         type: "news",
@@ -118,7 +135,17 @@ async function resolveRelatedItems(refs: RelatedRef[]) {
         date: match.publishedDate,
       });
     } else {
-      items.push({ type: "performance", slug: ref.slug, title: null, subtitle: null, categoryLabel: null, image: null, date: null });
+      const match = performanceBySlug.get(ref.slug);
+      if (!match) continue; // unknown/inactive performance ref — silently dropped
+      items.push({
+        type: "performance",
+        slug: match.slug,
+        title: match.title,
+        subtitle: match.subtitle,
+        categoryLabel: match.categoryLabel,
+        image: match.heroImageUrl,
+        date: match.eventDateDisplay,
+      });
     }
   }
   return items;
@@ -211,15 +238,16 @@ async function validateBodyImageUrls(body: {
 }
 
 /**
- * Validate relatedRefs shape/type and, for 'news' refs only, that the
- * referenced slug actually exists (any state). 'performance' refs cannot be
- * validated against a real table in Wave 2 — Performance has no CMS entity
- * — so any non-empty slug is accepted for that type (see the Wave 2
- * report's related-content Admin UX section: no fake backend entity is
- * invented to enable stronger validation here).
+ * Validate relatedRefs shape/type and, for BOTH ref types now, that the
+ * referenced slug actually exists (any state). Wave 2 could only validate
+ * 'news' refs (Performance had no CMS table); Wave 3 completes this by
+ * validating 'performance' refs against the real website_performances
+ * table too — this is the News-side half of the Wave-3 News follow-up (see
+ * websitePerformances.ts's own validateRelatedRefs for the mirror image).
  */
 async function validateRelatedRefs(refs: RelatedRef[], selfSlug?: string): Promise<{ error: string } | null> {
   const newsSlugs = refs.filter((r) => r.type === "news").map((r) => r.slug);
+  const performanceSlugs = refs.filter((r) => r.type === "performance").map((r) => r.slug);
   if (selfSlug && newsSlugs.includes(selfSlug)) {
     return { error: "A News post cannot list itself as related content" };
   }
@@ -232,6 +260,17 @@ async function validateRelatedRefs(refs: RelatedRef[], selfSlug?: string): Promi
     const missing = newsSlugs.filter((s) => !foundSet.has(s));
     if (missing.length > 0) {
       return { error: `Related news post(s) not found: ${missing.join(", ")}` };
+    }
+  }
+  if (performanceSlugs.length > 0) {
+    const found = await db
+      .select({ slug: websitePerformancesTable.slug })
+      .from(websitePerformancesTable)
+      .where(inArray(websitePerformancesTable.slug, performanceSlugs));
+    const foundSet = new Set(found.map((r) => r.slug));
+    const missing = performanceSlugs.filter((s) => !foundSet.has(s));
+    if (missing.length > 0) {
+      return { error: `Related Performance(s) not found: ${missing.join(", ")}` };
     }
   }
   return null;
