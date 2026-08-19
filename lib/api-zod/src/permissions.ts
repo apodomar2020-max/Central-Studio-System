@@ -186,13 +186,11 @@ const permissionCatalog = [
     group: "Content & Engagement",
     actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
   },
-  // Website CMS Wave 1/2 — Backgrounds + News. Grouped under "Content &
-  // Engagement" (not a new "Website" group) because PERMISSION_GROUPS
-  // (above) is a closed list the role editor (system-users.tsx) iterates
-  // strictly — a module whose `group` isn't in that list never renders in
-  // the role editor UI at all. website.performance is deliberately NOT
-  // declared yet — Performance remains static/Wave-0-canonical until its
-  // own CMS table and routes arrive in Wave 3.
+  // Website CMS Wave 1/2/3 — Backgrounds + News + Performance. Grouped
+  // under "Content & Engagement" (not a new "Website" group) because
+  // PERMISSION_GROUPS (above) is a closed list the role editor
+  // (system-users.tsx) iterates strictly — a module whose `group` isn't in
+  // that list never renders in the role editor UI at all.
   {
     key: "website.backgrounds",
     label: "Website Backgrounds",
@@ -204,6 +202,13 @@ const permissionCatalog = [
     key: "website.news",
     label: "Website News",
     description: "Public-website News posts (listing, detail, and related content).",
+    group: "Content & Engagement",
+    actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
+  },
+  {
+    key: "website.performance",
+    label: "Website Performance",
+    description: "Public-website Performance repertoire, hero, and detail content.",
     group: "Content & Engagement",
     actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
   },
