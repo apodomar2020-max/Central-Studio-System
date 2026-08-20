@@ -542,19 +542,6 @@ export const PACKAGES: Package[] = [
   },
 ];
 
-export const BALLET_LEVELS = [
-  "Pre-Ballet",
-  "Ballet Level 1",
-  "Ballet Level 2",
-  "Ballet Level 3",
-  "Ballet Level 4",
-  "Ballet Level 5",
-  "Ballet Level 6",
-  "Ballet Level 7",
-  "Ballet Level 8",
-  "Ballet Level 9",
-];
-
 export const BALLET_ASSESSMENT_SLOTS: BalletAssessmentSlot[] = [
   {
     id: "bs1",

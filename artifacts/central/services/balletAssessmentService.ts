@@ -3,10 +3,6 @@
  *
  * ─── What lives here and why ──────────────────────────────────────────────────
  *
- * STATIC CONFIG  (defined in code — these are programme definitions)
- *   BALLET_LEVELS   — the level progression offered by the studio.
- *                     Changes only when the studio restructures its curriculum.
- *
  * DYNAMIC DATA  (always fetched from the backend)
  *   fetchBalletSettings()   — admin-managed mobile presentation settings.
  *   fetchAvailableAssessmentSchedules() — schedule-based assessment availability.
@@ -43,22 +39,6 @@ export {
   type BalletMyClassesEntitlementState,
   type BalletMyClassesResponse,
 } from "./balletMyClassesModel";
-
-// ─── Static programme config ──────────────────────────────────────────────────
-
-/** Ballet level progression. Update when the studio restructures its curriculum. */
-export const BALLET_LEVELS: string[] = [
-  "Pre-Ballet",
-  "Ballet Level 1",
-  "Ballet Level 2",
-  "Ballet Level 3",
-  "Ballet Level 4",
-  "Ballet Level 5",
-  "Ballet Level 6",
-  "Ballet Level 7",
-  "Ballet Level 8",
-  "Ballet Level 9",
-];
 
 // ─── Response types ────────────────────────────────────────────────────────────
 
