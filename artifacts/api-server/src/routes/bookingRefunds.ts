@@ -14,6 +14,7 @@ import {
   completeBookingRefund,
   failBookingRefund,
   getBookingRefund,
+  getBookingRefundOverview,
   rejectBookingRefund,
 } from "../lib/bookingRefundService";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
@@ -49,6 +50,15 @@ function sendError(res: Response, error: unknown): void {
 router.get("/admin/bookings/:id/refund-eligibility", ...viewGuards, async (req: AdminRequest, res): Promise<void> => {
   const id = parseId(req, res); if (id == null) return;
   try { res.json(await bookingRefundEligibility(id)); } catch (error) { sendError(res, error); }
+});
+
+// Wave 3.1: combined view (eligibility + the existing refund row, if the
+// student's cancellation already opened one) for the Admin refund dialog —
+// mirrors GET /admin/package-orders/:id/refund-eligibility's overview
+// shape. Read-only; no new refund math.
+router.get("/admin/bookings/:id/refund", ...viewGuards, async (req: AdminRequest, res): Promise<void> => {
+  const id = parseId(req, res); if (id == null) return;
+  try { res.json(await getBookingRefundOverview(id)); } catch (error) { sendError(res, error); }
 });
 
 router.get("/admin/booking-refunds/:id", ...viewGuards, async (req: AdminRequest, res): Promise<void> => {

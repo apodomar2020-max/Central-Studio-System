@@ -25,7 +25,7 @@
  * cancellation. No historical cancelled-paid booking is touched,
  * backfilled, or reinterpreted by anything in this file.
  */
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   bookingsTable,
   db,
@@ -72,6 +72,27 @@ export async function bookingRefundEligibility(bookingId: number, client: typeof
   const refundableAmountMinor = Math.max(0, record.paidAmountMinor - record.refundedAmountMinor);
   if (refundableAmountMinor <= 0) return { bookingId, paymentRecordId: record.id, eligible: false, refundableAmountMinor: 0, reason: "no_remaining_balance" };
   return { bookingId, paymentRecordId: record.id, eligible: true, refundableAmountMinor, reason: "eligible" };
+}
+
+/**
+ * Wave 3.1: read-only combined view for the Admin refund dialog — the
+ * eligibility snapshot plus the existing refund row for this booking, if
+ * one has already been opened (by the student's own cancellation; Admin
+ * never opens a booking refund directly, unlike packages). Purely additive
+ * — computed entirely from bookingRefundEligibility() and a plain lookup,
+ * no new math, no lifecycle change. Mirrors getPackageRefundOverview's
+ * exact shape so the Admin UI can reuse the same dialog pattern.
+ */
+export async function getBookingRefundOverview(bookingId: number): Promise<{ eligibility: BookingRefundEligibility; refund: PaymentRefund | null }> {
+  const eligibility = await bookingRefundEligibility(bookingId);
+  if (eligibility.paymentRecordId == null) return { eligibility, refund: null };
+  const [refund] = await db
+    .select()
+    .from(paymentRefundsTable)
+    .where(eq(paymentRefundsTable.paymentRecordId, eligibility.paymentRecordId))
+    .orderBy(desc(paymentRefundsTable.id))
+    .limit(1);
+  return { eligibility, refund: refund ?? null };
 }
 
 async function lockPaymentRecordForBooking(tx: Tx, bookingId: number): Promise<PaymentRecord | null> {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -63,6 +63,130 @@ const SCOPE_FILTERS = ["all", "self", "child"] as const;
 const PAGE_SIZE = 50;
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
+
+function makeAdminHeaders(token?: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
+    ...(token ? { "x-admin-token": token } : {}),
+  };
+}
+
+// Wave 3.1 — single-class booking refund review. Mirrors package-orders.tsx's
+// RefundDialog exactly (same load/action/status pattern), simplified for a
+// single-class booking's flat one-payment refund (no credit lots, no
+// partial/discretionary amount — the refundable amount is always the full
+// remaining paid balance, computed server-side).
+type BookingRefundEligibility = {
+  bookingId: number;
+  paymentRecordId: number | null;
+  eligible: boolean;
+  refundableAmountMinor: number;
+  reason: "eligible" | "no_payment_record" | "not_paid" | "no_remaining_balance" | "wrong_flow_type";
+};
+type BookingRefund = { id: number; status: string; requestedAmountMinor: number; approvedAmountMinor?: number | null; refundedAmountMinor?: number | null };
+type BookingRefundOverview = { eligibility: BookingRefundEligibility; refund: BookingRefund | null };
+
+const BOOKING_REFUND_REASON_LABELS: Record<string, string> = {
+  no_payment_record: "This booking has no canonical payment record (a package-credit or free booking never opens a refund).",
+  not_paid: "This booking's payment was never confirmed as paid.",
+  no_remaining_balance: "This booking's payment has no remaining refundable balance.",
+  wrong_flow_type: "This payment record does not belong to a single-class booking.",
+};
+
+function BookingRefundDialog({ booking, onClose }: { booking: Booking; onClose: () => void }) {
+  const { token } = useAdminAuth();
+  const [overview, setOverview] = useState<BookingRefundOverview | null>(null);
+  const [reference, setReference] = useState("");
+  const [failureReason, setFailureReason] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [pending, setPending] = useState(false);
+  const completionKey = useRef(crypto.randomUUID());
+
+  const load = async () => {
+    const res = await fetch(`${API_BASE}/api/admin/bookings/${booking.id}/refund`, { headers: makeAdminHeaders(token) });
+    if (!res.ok) throw new Error("Could not load refund details");
+    setOverview(await res.json() as BookingRefundOverview);
+  };
+  useEffect(() => { void load().catch((e: Error) => setError(e.message)); }, [booking.id]);
+
+  async function action(path: string, body: object, successMessage: string) {
+    setPending(true); setError(""); setSuccess("");
+    try {
+      const res = await fetch(`${API_BASE}/api/${path}`, { method: "POST", headers: makeAdminHeaders(token), body: JSON.stringify(body) });
+      const data = await res.json() as { refund?: BookingRefund; message?: string; error?: string };
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Refund action failed");
+      setOverview((current) => current ? { ...current, refund: data.refund ?? current.refund } : current);
+      setSuccess(successMessage);
+    } catch (e) { setError(e instanceof Error ? e.message : "Refund action failed"); }
+    finally { setPending(false); }
+  }
+
+  if (!overview) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl border bg-card p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <p role={error ? "alert" : "status"} className={error ? "text-sm text-destructive" : "text-sm"}>{error || "Loading refund details…"}</p>
+        {error && <button onClick={onClose} className="w-full rounded-lg border px-3 py-2 text-sm font-semibold">Close</button>}
+      </div>
+    </div>
+  );
+
+  const { eligibility, refund } = overview;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl border bg-card p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h2 className="text-lg font-bold">Booking Refund</h2>
+          <p className="text-xs text-muted-foreground">{booking.studentName} · {booking.classTitle ?? `Class #${booking.classId ?? "—"}`} · Booking #{booking.id}</p>
+        </div>
+        {!refund && (
+          <div className="rounded-lg bg-muted p-3 text-sm">
+            Refundable <strong>{(eligibility.refundableAmountMinor / 100).toFixed(2)} EGP</strong>
+          </div>
+        )}
+        {!refund && !eligibility.eligible && (
+          <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-500">
+            {BOOKING_REFUND_REASON_LABELS[eligibility.reason] ?? "This booking is not eligible for a refund."}
+          </div>
+        )}
+        {!refund && eligibility.eligible && (
+          <p className="text-xs text-muted-foreground">
+            This booking's cancellation already opened this refund request automatically — Admin reviews and processes it below; the amount is fixed by the original payment, never entered manually.
+          </p>
+        )}
+        {refund && (
+          <div className="rounded-lg bg-cyan-500/10 p-3 text-sm">
+            Refund status: <strong>{refund.status}</strong> · Amount: <strong>{((refund.approvedAmountMinor ?? refund.requestedAmountMinor) / 100).toFixed(2)} EGP</strong>
+          </div>
+        )}
+        {(refund?.status === "approved" || refund?.status === "processing") && (
+          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Payout transaction reference" className="w-full rounded-lg bg-muted p-3 text-sm" />
+        )}
+        {(refund?.status === "approved" || refund?.status === "processing") && (
+          <input value={failureReason} onChange={(e) => setFailureReason(e.target.value)} placeholder="Failure reason (if payout failed)" className="w-full rounded-lg bg-muted p-3 text-sm" />
+        )}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {success && <p role="status" className="text-sm text-emerald-500">{success}</p>}
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button onClick={onClose} className="rounded-lg border px-3 py-2 text-sm">Close</button>
+          {refund?.status === "underReview" && (
+            <>
+              <button disabled={pending} onClick={() => action(`admin/booking-refunds/${refund.id}/reject`, {}, "Refund request rejected.")} className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50">Reject</button>
+              <button disabled={pending} onClick={() => action(`admin/booking-refunds/${refund.id}/approve`, {}, "Refund request approved.")} className="rounded-lg bg-green-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50">Approve</button>
+            </>
+          )}
+          {(refund?.status === "approved" || refund?.status === "processing") && (
+            <>
+              <button disabled={pending || !failureReason.trim()} onClick={() => action(`admin/booking-refunds/${refund.id}/fail`, { failedReason: failureReason }, "Refund payout marked as failed.")} className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50">Mark failed</button>
+              <button disabled={pending || !reference.trim()} onClick={() => action(`admin/booking-refunds/${refund.id}/complete`, { completionIdempotencyKey: completionKey.current, transactionReference: reference }, "Refund payout completed.")} className="rounded-lg bg-green-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50">Complete payout</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const formSchema = z.object({
   studentName: z.string().min(1, "Name is required"),
@@ -165,6 +289,10 @@ export default function Bookings() {
   const canCreate = can("bookings", "create");
   const canEdit = can("bookings", "edit");
   const canCancel = can("bookings", "cancel");
+  // Wave 3.1 — mirrors package-orders.tsx's canManageRefunds gate exactly
+  // (bookings:cancel + finance:refundsManage), matching the same two
+  // permissions the backend's booking-refunds routes require.
+  const canManageRefunds = canCancel && can("finance", "refundsManage");
   // Finance Roles & Permissions integration: confirming a Pay-at-Studio
   // booking payment requires finance.paymentsConfirm in addition to the
   // existing bookings.edit permission, even though this button lives on
@@ -238,6 +366,7 @@ export default function Bookings() {
   const [editing, setEditing] = useState<Booking | null>(null);
   const [statusConfirm, setStatusConfirm] = useState<{ booking: Booking; status: "confirmed" | "rejected" | "cancelled" } | null>(null);
   const [paymentConfirm, setPaymentConfirm] = useState<{ booking: Booking; status: "paid" | "failed" } | null>(null);
+  const [refundingBooking, setRefundingBooking] = useState<Booking | null>(null);
   const [confirmedPaymentMethod, setConfirmedPaymentMethod] = useState<ConfirmedPaymentMethod | "">("");
   const [paymentConfirmSubmitLock, setPaymentConfirmSubmitLock] = useState(false);
   const [paymentConfirmError, setPaymentConfirmError] = useState("");
@@ -452,6 +581,11 @@ export default function Bookings() {
                 const canShowBookingActions = canEdit && (booking.bookingStatus ?? booking.status) === "pending";
                 const canShowCancelAction = canCancel && !["cancelled", "rejected", "attended", "completed"].includes(booking.bookingStatus ?? booking.status);
                 const canShowPaymentActions = canEdit && canConfirmPayments && booking.paymentStatus === "pending_payment";
+                // Wave 3.1 — a refund is only ever relevant for a cancelled,
+                // non-package-credit booking (H5: package credit is never
+                // taken pre-attendance, so cancelling one never opens a
+                // refund) — matches requestBookingRefundInTx's own guard.
+                const canShowRefundAction = canManageRefunds && (booking.bookingStatus ?? booking.status) === "cancelled" && booking.packageOrderId == null;
                 const bookingStatus = booking.bookingStatus ?? booking.status;
                 const paymentStatus = booking.paymentStatus ?? "not_required";
                 const BookingStatusIcon = bookingStatus === "pending" ? Clock3 : bookingStatus === "confirmed" || bookingStatus === "attended" || bookingStatus === "completed" ? Check : X;
@@ -596,7 +730,7 @@ export default function Bookings() {
                           {canShowBookingActions && (
                             <Button variant="secondary" size="compact" data-testid={`button-approve-booking-${booking.id}`} onClick={() => setStatusConfirm({ booking, status: "confirmed" })} title="Confirm booking"><Check />Confirm</Button>
                           )}
-                          {(canShowBookingActions || canShowCancelAction || canShowPaymentActions) && (
+                          {(canShowBookingActions || canShowCancelAction || canShowPaymentActions || canShowRefundAction) && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="iconSm" aria-label={`More actions for booking ${booking.id}`} data-testid={`button-more-booking-${booking.id}`}>
@@ -631,6 +765,15 @@ export default function Bookings() {
                                     onClick={() => setStatusConfirm({ booking, status: "cancelled" })}
                                   >
                                     <X /> Cancel
+                                  </DropdownMenuItem>
+                                )}
+                                {canShowRefundAction && (canShowBookingActions || canShowCancelAction || canShowPaymentActions) && <DropdownMenuSeparator />}
+                                {canShowRefundAction && (
+                                  <DropdownMenuItem
+                                    data-testid={`button-refund-booking-${booking.id}`}
+                                    onClick={() => setRefundingBooking(booking)}
+                                  >
+                                    <CreditCard /> Refund
                                   </DropdownMenuItem>
                                 )}
                               </DropdownMenuContent>
@@ -900,6 +1043,9 @@ export default function Bookings() {
           )}
         </DialogContent>
       </Dialog>
+      {canManageRefunds && refundingBooking && (
+        <BookingRefundDialog booking={refundingBooking} onClose={() => setRefundingBooking(null)} />
+      )}
     </div>
   );
 }

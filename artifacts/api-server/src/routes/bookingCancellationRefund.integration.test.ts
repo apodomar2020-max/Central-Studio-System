@@ -287,7 +287,11 @@ test("admin approve -> complete moves the refund to refunded, updates payment_re
   assert.equal(approveRes.status, 200);
 
   const completionKey = crypto.randomUUID();
-  const completeBody = JSON.stringify({ completionIdempotencyKey: completionKey, transactionReference: "TEST-REF-1" });
+  // provider_reference is unique per event_type at the DB level — must be
+  // unique per test run, not a hardcoded literal, since this disposable DB
+  // persists across repeated local test runs.
+  const transactionReference = `TEST-REF-${crypto.randomUUID()}`;
+  const completeBody = JSON.stringify({ completionIdempotencyKey: completionKey, transactionReference });
   const completeRes1 = await asAdmin(`/api/admin/booking-refunds/${refund!.id}/complete`, { method: "POST", body: completeBody });
   assert.equal(completeRes1.status, 200);
   const completeBody1 = await jsonBody(completeRes1);
