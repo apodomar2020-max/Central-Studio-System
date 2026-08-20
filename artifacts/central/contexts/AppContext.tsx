@@ -144,44 +144,6 @@ export type PackageParticipantSelection =
   | { participantType: "self"; participantChildId?: never }
   | { participantType: "child"; participantChildId: number };
 
-export interface PackageUsage {
-  id: string;
-  userPackageId: string;
-  bookingId: string;
-  className: string;
-  creditDeducted: number;
-  deductedAt: string;
-  reason: "attended" | "noShowPolicy";
-}
-
-export interface BalletApplication {
-  id: string;
-  parentName: string;
-  parentPhone: string;
-  parentEmail: string;
-  childName: string;
-  childBirthday: string;
-  childAge: number;
-  childGender: "male" | "female";
-  previousExperience: boolean;
-  experienceDetails?: string;
-  medicalNotes?: string;
-  preferredSlotId: string;
-  preferredSlotLabel: string;
-  emergencyContactName: string;
-  emergencyContactPhone: string;
-  notes?: string;
-  status:
-    | "pending"
-    | "accepted"
-    | "needsFollowUp"
-    | "assignedToLevel"
-    | "active"
-    | "rejected"
-    | "cancelled";
-  assignedLevel?: string;
-  createdAt: string;
-}
 
 export interface AppNotification {
   id: string;
@@ -217,7 +179,6 @@ interface AppContextType {
    *  any local optimistic rows. Call on Schedule focus / pull-to-refresh. */
   refreshBookings: () => Promise<void>;
   userPackages: UserPackage[];
-  packageUsageHistory: PackageUsage[];
   purchasePackage: (pkg: {
     id: number;
     name: string;
@@ -229,9 +190,6 @@ interface AppContextType {
   }) => Promise<void>;
   cancelPackage: (userPackageId: string) => Promise<void>;
   refreshUserPackages: () => Promise<void>;
-  usePackageCredit: (userPackageId: string, bookingId: string, className: string) => boolean;
-  baletApplications: BalletApplication[];
-  submitBalletApplication: (app: Omit<BalletApplication, "id" | "createdAt" | "status">) => boolean;
   notifications: AppNotification[];
   markNotificationRead: (id: string) => void;
   unreadNotifications: number;
@@ -335,8 +293,6 @@ const AUTH_SCOPED_STORAGE_KEYS = [
   "studentToken",
   "bookings",
   "children",
-  "packageUsageHistory",
-  "baletApplications",
   "notifications",
   "referralCode",
   "referralCredits",
@@ -354,8 +310,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   const [children, setChildren] = useState<ChildProfile[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [userPackages, setUserPackages] = useState<UserPackage[]>([]);
-  const [packageUsageHistory, setPackageUsageHistory] = useState<PackageUsage[]>([]);
-  const [baletApplications, setBaletApplications] = useState<BalletApplication[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newStudentBannerDismissed, setNewStudentBannerDismissed] = useState(false);
@@ -397,15 +351,13 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   async function loadPersistedState() {
     try {
-      const [lang, onboarded, usr, bks, chldrn, usage, ballets, notifs, bannerDismissed, refCode, refCredits] =
+      const [lang, onboarded, usr, bks, chldrn, notifs, bannerDismissed, refCode, refCredits] =
         await Promise.all([
           AsyncStorage.getItem("language"),
           AsyncStorage.getItem("isOnboarded"),
           AsyncStorage.getItem("user"),
           AsyncStorage.getItem("bookings"),
           AsyncStorage.getItem("children"),
-          AsyncStorage.getItem("packageUsageHistory"),
-          AsyncStorage.getItem("baletApplications"),
           AsyncStorage.getItem("notifications"),
           AsyncStorage.getItem("newStudentBannerDismissed"),
           AsyncStorage.getItem("referralCode"),
@@ -442,8 +394,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       if (confirmedUser) {
         if (bks) setBookings(JSON.parse(bks));
         if (chldrn) setChildren(JSON.parse(chldrn));
-        if (usage) setPackageUsageHistory(JSON.parse(usage));
-        if (ballets) setBaletApplications(JSON.parse(ballets));
         if (notifs) setNotifications(JSON.parse(notifs));
       }
       if (bannerDismissed === "true") setNewStudentBannerDismissed(true);
@@ -619,8 +569,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       setBookings([]);
       setUserPackages([]);
       setChildren([]);
-      setPackageUsageHistory([]);
-      setBaletApplications([]);
       setNotifications([]);
       setReferralCode("");
       setReferralCredits(0);
@@ -835,46 +783,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     []
   );
 
-  const usePackageCredit = useCallback(
-    (userPackageId: string, bookingId: string, className: string): boolean => {
-      let success = false;
-      setUserPackages((prev) => {
-        const idx = prev.findIndex((p) => p.id === userPackageId && p.remainingCredits > 0 && p.status === "active");
-        if (idx === -1) return prev;
-        const updated = prev.map((p, i) => {
-          if (i !== idx) return p;
-          const remaining = p.remainingCredits - 1;
-          return {
-            ...p,
-            remainingCredits: remaining,
-            status: remaining === 0 ? ("fullyUsed" as const) : ("active" as const),
-          };
-        });
-        AsyncStorage.setItem("userPackages", JSON.stringify(updated));
-        success = true;
-        return updated;
-      });
-      if (success) {
-        const usage: PackageUsage = {
-          id: `usage-${Date.now()}`,
-          userPackageId,
-          bookingId,
-          className,
-          creditDeducted: 1,
-          deductedAt: new Date().toISOString(),
-          reason: "attended",
-        };
-        setPackageUsageHistory((prev) => {
-          const updated = [usage, ...prev];
-          AsyncStorage.setItem("packageUsageHistory", JSON.stringify(updated));
-          return updated;
-        });
-      }
-      return success;
-    },
-    []
-  );
-
   // Wave 3.1 (Gap 3): previously called the admin-only PATCH /package-orders/:id
   // (requireAdminAuth) — a student JWT could never actually succeed there, so
   // this was silently broken (the try/catch swallowed the resulting error and
@@ -887,37 +795,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     await customFetch(`/api/package-orders/${userPackageId}/cancel`, { method: "PATCH" });
     await fetchAndSetPackages();
   }, []);
-
-  const submitBalletApplication = useCallback(
-    (app: Omit<BalletApplication, "id" | "createdAt" | "status">): boolean => {
-      const newApp: BalletApplication = {
-        ...app,
-        id: `ballet-${Date.now()}`,
-        status: "pending",
-        createdAt: new Date().toISOString(),
-      };
-      setBaletApplications((prev) => {
-        const updated = [newApp, ...prev];
-        AsyncStorage.setItem("baletApplications", JSON.stringify(updated));
-        return updated;
-      });
-      const notif: AppNotification = {
-        id: `notif-${Date.now()}`,
-        title: "Ballet Application Submitted",
-        body: `Your application for ${app.childName} has been received. We'll contact you to confirm your assessment appointment.`,
-        type: "ballet",
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      };
-      setNotifications((prev) => {
-        const updated = [notif, ...prev];
-        AsyncStorage.setItem("notifications", JSON.stringify(updated));
-        return updated;
-      });
-      return true;
-    },
-    []
-  );
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications((prev) => {
@@ -953,14 +830,10 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         cancelBooking,
         refreshBookings,
         userPackages,
-        packageUsageHistory,
         purchasePackage,
         cancelPackage,
         refreshUserPackages,
         refreshChildren,
-        usePackageCredit,
-        baletApplications,
-        submitBalletApplication,
         notifications,
         markNotificationRead,
         unreadNotifications,
