@@ -24,8 +24,10 @@ import {
   pricePackagesTable,
   studioBranchesTable,
   studioRoomsTable,
+  paymentRecordsTable,
 } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
+import { resolveMyBookingPriceEgp, resolveMyPackagePriceEgp } from "../lib/myPurchaseAmount";
 
 const router: IRouter = Router();
 
@@ -77,22 +79,43 @@ router.get("/my/packages", async (req, res): Promise<void> => {
       expiresAt: packageOrdersTable.expiresAt,
       createdAt: packageOrdersTable.createdAt,
       updatedAt: packageOrdersTable.updatedAt,
-      priceEgp: pricePackagesTable.priceEgp,
+      catalogPriceEgp: pricePackagesTable.priceEgp,
       participantType: packageOrdersTable.participantType,
       participantChildId: packageOrdersTable.participantChildId,
       participantName: packageOrdersTable.participantNameSnapshot,
       participantAgeAtPurchase: packageOrdersTable.participantAgeAtPurchase,
       purchaseEligibilityConfigurationState: packageOrdersTable.purchaseEligibilityConfigurationState,
+      // F-05: canonical historical amount, when Finance has captured one
+      // for this order. A packageOrderId can carry at most one
+      // payment_records row — payment_records_source_fk_matches_flow_
+      // type_check requires any row with a non-null packageOrderId to be
+      // flowType 'package_purchase', and payment_records_flow_package_
+      // order_unique scopes uniqueness to (flowType, packageOrderId) — so
+      // this plain LEFT JOIN cannot duplicate an order row.
+      paymentRecordAmountAvailability: paymentRecordsTable.amountAvailability,
+      paymentRecordFinalPayableAmountMinor: paymentRecordsTable.finalPayableAmountMinor,
     })
     .from(packageOrdersTable)
     .leftJoin(pricePackagesTable, eq(packageOrdersTable.packageId, pricePackagesTable.id))
+    .leftJoin(paymentRecordsTable, eq(paymentRecordsTable.packageOrderId, packageOrdersTable.id))
     .where(eq(packageOrdersTable.studentEmail, req.studentEmail!))
     .orderBy(desc(packageOrdersTable.createdAt));
 
-  res.json(rows.map((row) => ({
-    ...row,
-    ownershipState: row.participantType == null ? "legacy_unassigned" : "assigned",
-  })));
+  res.json(rows.map((row) => {
+    const { catalogPriceEgp, paymentRecordAmountAvailability, paymentRecordFinalPayableAmountMinor, ...rest } = row;
+    return {
+      ...rest,
+      // F-05: the actual historical amount the customer paid — never the
+      // live catalogue price, which is product-catalogue information, not
+      // payment history. See lib/myPurchaseAmount.ts for the full policy.
+      priceEgp: resolveMyPackagePriceEgp({
+        paymentRecordAmountAvailability,
+        paymentRecordFinalPayableAmountMinor,
+        catalogPriceEgp,
+      }),
+      ownershipState: row.participantType == null ? "legacy_unassigned" : "assigned",
+    };
+  }));
 });
 
 // ---------------------------------------------------------------------------
@@ -368,6 +391,16 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       roomName: studioRoomsTable.name,
       schedulePriceEgp: schedulesTable.priceEgp,
       participantChildName: childrenTable.fullName,
+      // Canonical historical amount, when Finance has captured one for this
+      // booking. A booking can carry at most one payment_records row across
+      // BOTH flow types ('single_class_booking' and 'studio_walkin') — the
+      // backfill classifier refuses to write a second row once any row
+      // exists for a bookingId (already_canonical / mismatched_finance_
+      // record_corrupt), and the live-capture insert path in POST /bookings
+      // only ever runs once per booking at creation time. So this plain
+      // LEFT JOIN on bookingId cannot duplicate a booking row.
+      paymentRecordAmountAvailability: paymentRecordsTable.amountAvailability,
+      paymentRecordFinalPayableAmountMinor: paymentRecordsTable.finalPayableAmountMinor,
     })
     .from(bookingsTable)
     .leftJoin(classesTable, eq(bookingsTable.classId, classesTable.id))
@@ -376,6 +409,7 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
     .leftJoin(studioRoomsTable, eq(schedulesTable.roomId, studioRoomsTable.id))
     .leftJoin(instructorsTable, eq(classesTable.instructorId, instructorsTable.id))
     .leftJoin(childrenTable, eq(bookingsTable.participantChildId, childrenTable.id))
+    .leftJoin(paymentRecordsTable, eq(paymentRecordsTable.bookingId, bookingsTable.id))
     .where(sql`(${bookingsTable.accountOwnerStudentId} = ${req.studentId!} OR lower(trim(${bookingsTable.studentEmail})) = ${email})`)
     .orderBy(desc(bookingsTable.createdAt));
 
@@ -413,6 +447,16 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
           ? "cancelled"
           : "booked";
     const sourceUnavailable = r.classTitle == null || r.scheduleType == null;
+    const resolvedPaymentStatus = b.paymentStatus ?? "not_required";
+    // F-04/F-19 — see lib/myPurchaseAmount.ts for the full historical-amount
+    // resolution policy (exact capture > non-monetary zero > legacy
+    // schedule-price fallback).
+    const price = resolveMyBookingPriceEgp({
+      paymentRecordAmountAvailability: r.paymentRecordAmountAvailability,
+      paymentRecordFinalPayableAmountMinor: r.paymentRecordFinalPayableAmountMinor,
+      paymentStatus: resolvedPaymentStatus,
+      schedulePriceEgp: r.schedulePriceEgp,
+    });
 
     return {
       id: b.id,
@@ -431,7 +475,7 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       scheduleLabel,
       duration: r.classDurationMins != null ? `${r.classDurationMins} min` : "",
       location: r.branchName ?? r.scheduleLocation ?? "Central Studio",
-      price: r.schedulePriceEgp ?? 0,
+      price,
       participantType,
       participantName: r.participantChildName ?? b.studentName,
       // Stable child identity (children.id) for this booking, when present —
@@ -440,7 +484,7 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       // across siblings. Null only for legacy rows without one.
       participantChildId: b.participantChildId ?? null,
       paymentMethod,
-      paymentStatus: b.paymentStatus ?? "not_required",
+      paymentStatus: resolvedPaymentStatus,
       bookingStatus,
       bookingType: isPackage ? "package" : "single",
       bookingNumber: "CS" + String(b.id).padStart(6, "0"),
