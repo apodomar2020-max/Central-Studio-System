@@ -261,7 +261,24 @@ const acStyles = StyleSheet.create({
 });
 
 // ─── BookingDetailOverlay ───────────────────────────────────────────────────
-function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClose: () => void; topPad: number }) {
+function BookingDetailOverlay({
+  item,
+  onClose,
+  topPad,
+  onCancel,
+}: {
+  item: ListItem;
+  onClose: () => void;
+  topPad: number;
+  /** Reuses the SAME cancellation operation BookingCard's Cancel action
+   *  calls (PATCH /api/bookings/:id/cancel via cancelBooking) — this is
+   *  the same capability shown from a second surface, not a second
+   *  implementation. Undefined for a Ballet item: Ballet cancellation is
+   *  a separate, already-existing flow (enrolment cancellation requests
+   *  via BalletProgramDangerZone) with its own contract, out of scope
+   *  for this correction. */
+  onCancel?: () => void;
+}) {
   const isBallet = item.kind === "ballet";
   const b = item.data as any;
 
@@ -292,6 +309,9 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
 
   const isPast = isBallet ? (b.status === "rejected" || b.status === "cancelled") : (b.bookingStatus === "attended" || b.bookingStatus === "completed" || b.bookingStatus === "noShow");
   const isCancelled = isBallet ? (b.status === "cancelled") : (b.bookingStatus === "cancelled" || b.bookingStatus === "rejected");
+  // Mirrors BookingCard's isUpcomingActive gate exactly, so a booking is
+  // never cancellable from one surface and not the other.
+  const canCancel = !isBallet && !isPast && !isCancelled && !b.sourceUnavailable;
   const timeline = !isPast && !isCancelled
     ? [
         { label: "Booking Created", done: true, date: new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") },
@@ -407,11 +427,26 @@ function BookingDetailOverlay({ item, onClose, topPad }: { item: ListItem; onClo
         colors={["rgba(10,11,13,0)", "#0A0B0D"]}
         style={{ position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 30, height: 80, flexDirection: "row", gap: 10, justifyContent: "space-evenly" }}
       >
-        {!isPast && !isCancelled && (
-          <View style={{ flex: 1, height: 48, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, opacity: 0.6 }}>
-            <SBI name="cancel" size={16} stroke={2.2} color="#6B747F" />
-            <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" }}>Cancel (Soon)</Text>
-          </View>
+        {canCancel ? (
+          <TouchableOpacity
+            onPress={onCancel}
+            activeOpacity={0.85}
+            style={{ flex: 1, height: 48, backgroundColor: "rgba(255,59,71,0.10)", borderWidth: 1, borderColor: "rgba(255,59,71,0.30)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 }}
+          >
+            <SBI name="cancel" size={16} stroke={2.2} color="#FF3B47" />
+            <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#FF3B47" }}>Cancel Booking</Text>
+          </TouchableOpacity>
+        ) : (
+          // Ballet: no generic cancel here — a Ballet application/enrolment
+          // is cancelled through its own existing flow (the Danger Zone on
+          // the application-status screen), which this control must not
+          // duplicate or bypass.
+          !isPast && !isCancelled && isBallet && (
+            <View style={{ flex: 1, height: 48, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, opacity: 0.6 }}>
+              <SBI name="cancel" size={16} stroke={2.2} color="#6B747F" />
+              <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" }}>Cancel (Soon)</Text>
+            </View>
+          )
         )}
         {(isPast || b.paymentStatus === "paid") && (
           <View style={{ flex: 1, height: 48, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, opacity: 0.6 }}>
@@ -433,6 +468,37 @@ export default function BookingsScreen() {
   const [studentFilter, setStudentFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItem, setSelectedItem] = useState<ListItem | null>(null);
+
+  // Single shared cancel operation for a general (non-Ballet) booking —
+  // used identically from the list card and from the detail overlay, so
+  // the same booking is never cancellable from one surface and not the
+  // other (F-09). Calls the same cancelBooking() the card always did;
+  // no new backend contract, no new confirmation UX.
+  const confirmCancelBooking = useCallback((booking: Booking) => {
+    alert.show({
+      tone: "destructive",
+      title: "Cancel booking?",
+      message: `Cancel your booking for ${booking.className}? This frees up your seat.`,
+      actions: [
+        { label: "Keep booking", tone: "neutral" },
+        {
+          label: "Cancel booking",
+          tone: "danger",
+          onPress: async () => {
+            try {
+              await cancelBooking(booking.id);
+            } catch (e) {
+              alert.show({
+                tone: "error",
+                title: "Couldn't cancel",
+                message: e instanceof Error ? e.message : "Please try again.",
+              });
+            }
+          },
+        },
+      ],
+    });
+  }, [alert, cancelBooking]);
 
   const [balletApps, setBalletApps] = useState<BalletApplication[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -716,31 +782,7 @@ export default function BookingsScreen() {
             <BookingCard
               item={item.data}
               onPress={() => setSelectedItem(item)}
-              onCancel={() => {
-                alert.show({
-                  tone: "destructive",
-                  title: "Cancel booking?",
-                  message: `Cancel your booking for ${item.data.className}? This frees up your seat.`,
-                  actions: [
-                    { label: "Keep booking", tone: "neutral" },
-                    {
-                      label: "Cancel booking",
-                      tone: "danger",
-                      onPress: async () => {
-                        try {
-                          await cancelBooking(item.data.id);
-                        } catch (e) {
-                          alert.show({
-                            tone: "error",
-                            title: "Couldn't cancel",
-                            message: e instanceof Error ? e.message : "Please try again.",
-                          });
-                        }
-                      },
-                    },
-                  ],
-                });
-              }}
+              onCancel={() => confirmCancelBooking(item.data)}
               onPayNow={() => {
                 alert.show({
                   tone: "info",
@@ -774,7 +816,21 @@ export default function BookingsScreen() {
           )
         }
       />
-      {selectedItem && <BookingDetailOverlay item={selectedItem} onClose={() => setSelectedItem(null)} topPad={Platform.OS === "web" ? 67 : insets.top} />}
+      {selectedItem && (
+        <BookingDetailOverlay
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+          topPad={Platform.OS === "web" ? 67 : insets.top}
+          onCancel={
+            selectedItem.kind === "booking"
+              ? () => {
+                  setSelectedItem(null);
+                  confirmCancelBooking(selectedItem.data);
+                }
+              : undefined
+          }
+        />
+      )}
     </View>
   );
 }
