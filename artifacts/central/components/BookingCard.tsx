@@ -31,6 +31,11 @@ export function bookingStatusConfig(status: Booking["bookingStatus"]) {
     case "attended":  return { label: "Attended",  c: "#00B6D7", bg: "rgba(0,182,215,0.14)" };
     case "completed": return { label: "Completed", c: "#00B6D7", bg: "rgba(0,182,215,0.14)" };
     case "noShow":    return { label: "No Show",   c: "#6B747F", bg: "rgba(255,255,255,0.06)" };
+    // F-08: neutral by design — no business meaning (attended, cancelled,
+    // refunded, etc.) is inferred for a status the client doesn't
+    // recognize. Same neutral grey the default branch below already used
+    // for this exact purpose, just with a readable label.
+    case "unknown":   return { label: "Unknown",   c: "#6B747F", bg: "rgba(255,255,255,0.06)" };
     default:          return { label: status,      c: "#6B747F", bg: "rgba(255,255,255,0.06)" };
   }
 }
@@ -83,7 +88,11 @@ function ActionBtn({ label, icon, primary, danger, disabled, onPress }: any) {
 }
 
 export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo }: BookingCardProps) {
-  const isPast = item.bookingStatus === "attended" || item.bookingStatus === "completed" || item.bookingStatus === "noShow";
+  // F-08: an unrecognized backend status (surfaced here as "unknown", e.g.
+  // attendance_reversed) is treated as non-actionable/past — never as an
+  // active upcoming booking — so it can never render a live Cancel button
+  // or be counted as Confirmed/Upcoming. See utils/bookingStatus.ts.
+  const isPast = item.bookingStatus === "attended" || item.bookingStatus === "completed" || item.bookingStatus === "noShow" || item.bookingStatus === "unknown";
   const isCanceled = item.bookingStatus === "cancelled" || item.bookingStatus === "rejected";
   const opacity = isPast || isCanceled ? 0.6 : 1;
 

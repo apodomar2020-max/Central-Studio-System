@@ -95,7 +95,11 @@ export interface Booking {
   participantChildId?: number | null;
   paymentMethod: "online" | "cash" | "packageCredit";
   paymentStatus: "not_required" | "pending_payment" | "paid" | "refunded" | "failed";
-  bookingStatus: "pending" | "confirmed" | "rejected" | "cancelled" | "attended" | "completed" | "noShow";
+  // F-08: "unknown" is the safe fallback for any status the client does
+  // not recognize (e.g. the backend's "attendance_reversed") — see
+  // utils/bookingStatus.ts's mapApiStatusToLocal, the single place that
+  // produces this value.
+  bookingStatus: "pending" | "confirmed" | "rejected" | "cancelled" | "attended" | "completed" | "noShow" | "unknown";
   bookingType: "single" | "package" | "ballet";
   userPackageId?: string;
   bookingNumber: string;

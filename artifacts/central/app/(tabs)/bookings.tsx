@@ -307,7 +307,10 @@ function BookingDetailOverlay({
     ? (balletIsClass && balletActive?.hasInstructor ? balletActive.instructorLabel : "Assigned Instructor")
     : b.instructorName;
 
-  const isPast = isBallet ? (b.status === "rejected" || b.status === "cancelled") : (b.bookingStatus === "attended" || b.bookingStatus === "completed" || b.bookingStatus === "noShow");
+  // F-08: an unrecognized backend status ("unknown", e.g. attendance_reversed)
+  // is treated as non-actionable/past — never as an active upcoming booking —
+  // so it can never surface a live Cancel action. See utils/bookingStatus.ts.
+  const isPast = isBallet ? (b.status === "rejected" || b.status === "cancelled") : (b.bookingStatus === "attended" || b.bookingStatus === "completed" || b.bookingStatus === "noShow" || b.bookingStatus === "unknown");
   const isCancelled = isBallet ? (b.status === "cancelled") : (b.bookingStatus === "cancelled" || b.bookingStatus === "rejected");
   // Mirrors BookingCard's isUpcomingActive gate exactly, so a booking is
   // never cancellable from one surface and not the other.
@@ -555,7 +558,11 @@ export default function BookingsScreen() {
         bd.setHours(23, 59, 59, 999);
         isPast = bd.getTime() < Date.now();
       }
-      if (b.bookingStatus === "attended" || b.bookingStatus === "noShow" || b.bookingStatus === "completed") {
+      // F-08: an unrecognized backend status ("unknown", e.g.
+      // attendance_reversed) is forced into Past — never left to fall into
+      // Upcoming by date alone — so it never renders as an active,
+      // cancellable booking. See utils/bookingStatus.ts.
+      if (b.bookingStatus === "attended" || b.bookingStatus === "noShow" || b.bookingStatus === "completed" || b.bookingStatus === "unknown") {
         isPast = true;
       }
       return { ...b, _isPast: isPast };

@@ -5,7 +5,13 @@ export type LocalBookingStatus =
   | "cancelled"
   | "attended"
   | "completed"
-  | "noShow";
+  | "noShow"
+  // F-08: the safe invariant for any status the client doesn't recognize
+  // (e.g. the backend's "attendance_reversed" — see
+  // api-server/src/lib/bookingStatus.ts) — never silently presented as
+  // Confirmed. No business meaning is inferred for it; it is deliberately
+  // neutral, matching BookingCard.tsx's existing unknown-status treatment.
+  | "unknown";
 
 export type LocalPaymentStatus =
   | "not_required"
@@ -26,7 +32,12 @@ export function mapApiStatusToLocal(apiStatus: string): LocalBookingStatus {
     noShow: "noShow",
     no_show: "noShow",
   };
-  return map[apiStatus] ?? "confirmed";
+  // F-08: an unrecognized status (e.g. "attendance_reversed" — a real,
+  // reachable backend value; see attendanceReversalService.ts) must never
+  // fall through to "confirmed". No canonical customer-facing label exists
+  // for it anywhere in the system today, so no business meaning is
+  // invented here — it maps to the neutral "unknown" state instead.
+  return map[apiStatus] ?? "unknown";
 }
 
 export function mapApiPaymentStatusToLocal(apiStatus: string | undefined): LocalPaymentStatus {
