@@ -24,6 +24,8 @@ import type { PackageOrder } from "@workspace/api-client-react";
 import SBI from "@/components/SbIcon";
 import { formatApiDate, isApiDatePast } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
+import { useAppContext } from "@/contexts/AppContext";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
 
 const CYAN = "#00B6D7";
 const CYAN_400 = "#2DCDEC";
@@ -158,7 +160,11 @@ function DateRow({ label, value, valueColor = "#FFFFFF" }: { label: string; valu
 }
 
 // ─── Package list card (design parity) ───────────────────────────────────────
-function PackageCard({ pkg }: { pkg: PackageOrderWithDateAliases }) {
+// Wave 3.1 (Gap 3): onCancel/cancelling are only ever passed for a
+// pendingPayment package request — see isPendingRequest below, the only
+// caller that supplies them. An active/paid package never receives these
+// props, so it never renders the Cancel affordance.
+function PackageCard({ pkg, onCancel, cancelling }: { pkg: PackageOrderWithDateAliases; onCancel?: () => void; cancelling?: boolean }) {
   const label = statusLabel(pkg);
   const color = statusColor(label);
   const kind = packageStatusKind(pkg);
@@ -184,6 +190,16 @@ function PackageCard({ pkg }: { pkg: PackageOrderWithDateAliases }) {
       <View style={styles.barTrack}>
         <LinearGradient colors={[CYAN, CYAN_400]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.barFill, { width: `${pct}%` }]} />
       </View>
+      {onCancel && (
+        <TouchableOpacity
+          onPress={onCancel}
+          disabled={cancelling}
+          style={styles.cardCancelBtn}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.cardCancelBtnText}>{cancelling ? "Cancelling…" : "Cancel Request"}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -194,6 +210,9 @@ export default function PackageCenterScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<"active" | "past">("active");
   const topPad = (Platform.OS === "web" ? 67 : insets.top) + 12;
+  const { cancelPackage } = useAppContext();
+  const alert = useCentralAlert();
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch } = useGetMyPackages();
   const packages = useMemo(() => data ?? [], [data]);
@@ -203,6 +222,39 @@ export default function PackageCenterScreen() {
     await refetch();
     setRefreshing(false);
   }, [refetch]);
+
+  // Wave 3.1 (Gap 3): pendingPayment-only self-service cancellation. No
+  // payment was ever collected for a pendingPayment request, so this never
+  // fabricates a refund — the server itself scopes this to pendingPayment
+  // only (409 otherwise), matching the approved policy exactly.
+  const confirmCancelPackage = useCallback((pkg: PackageOrderWithDateAliases) => {
+    alert.show({
+      tone: "destructive",
+      title: "Cancel package request?",
+      message: `Cancel your request for ${pkg.packageName}? This removes the request before any payment is processed.`,
+      actions: [
+        { label: "Keep request", tone: "neutral" },
+        {
+          label: "Cancel request",
+          tone: "danger",
+          onPress: async () => {
+            setCancellingId(String(pkg.id));
+            try {
+              await cancelPackage(String(pkg.id));
+            } catch (e) {
+              alert.show({
+                tone: "error",
+                title: "Couldn't cancel",
+                message: e instanceof Error ? e.message : "Please try again.",
+              });
+            } finally {
+              setCancellingId(null);
+            }
+          },
+        },
+      ],
+    });
+  }, [alert, cancelPackage]);
 
   // Finance Batch 1 (Part B2): refetch on every screen focus, not only app
   // foreground — same rationale as credit-history.tsx.
@@ -297,7 +349,14 @@ export default function PackageCenterScreen() {
               <View style={styles.sectionBlock}>
                 <Text style={[styles.sectionLabel, { color: "#3B82F6" }]}>Pending Requests</Text>
                 <View style={{ gap: 12 }}>
-                  {pendingRequests.map((pkg) => <PackageCard key={pkg.id} pkg={pkg} />)}
+                  {pendingRequests.map((pkg) => (
+                    <PackageCard
+                      key={pkg.id}
+                      pkg={pkg}
+                      onCancel={() => confirmCancelPackage(pkg)}
+                      cancelling={cancellingId === String(pkg.id)}
+                    />
+                  ))}
                 </View>
               </View>
             )}
@@ -387,6 +446,8 @@ const styles = StyleSheet.create({
   dateValue: { fontFamily: "Archivo_700Bold", fontSize: 13, lineHeight: 18 },
   barTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 3 },
+  cardCancelBtn: { marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,59,71,0.35)", backgroundColor: "rgba(255,59,71,0.08)", paddingVertical: 11, alignItems: "center" },
+  cardCancelBtnText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: DANGER },
 
   // states
   skeleton: { height: 150, backgroundColor: INK_800, borderRadius: 16 },

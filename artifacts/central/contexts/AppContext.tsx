@@ -875,16 +875,16 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     []
   );
 
+  // Wave 3.1 (Gap 3): previously called the admin-only PATCH /package-orders/:id
+  // (requireAdminAuth) — a student JWT could never actually succeed there, so
+  // this was silently broken (the try/catch swallowed the resulting error and
+  // just refreshed the unchanged list). Now calls the real student
+  // self-cancel route, scoped server-side to pendingPayment orders only — an
+  // active/paid order is rejected by the server (409 not_cancellable), never
+  // silently no-opped here. Errors are no longer swallowed: they propagate so
+  // the caller can show them.
   const cancelPackage = useCallback(async (userPackageId: string): Promise<void> => {
-    const usr = userRef.current;
-    try {
-      await customFetch(`/api/package-orders/${userPackageId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "cancelled" }),
-      });
-    } catch {
-      // Best-effort — still refresh list even if the PATCH failed
-    }
+    await customFetch(`/api/package-orders/${userPackageId}/cancel`, { method: "PATCH" });
     await fetchAndSetPackages();
   }, []);
 
