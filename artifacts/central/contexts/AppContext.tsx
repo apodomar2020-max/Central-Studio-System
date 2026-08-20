@@ -73,6 +73,10 @@ export interface Booking {
   /** The specific class occurrence this booking is for (YYYY-MM-DD), from the
    *  backend. Used to scope the Cancel CTA to the current occurrence only. */
   occurrenceDate?: string;
+  /** Wave 3 (F-20): raw schedule start time ("HH:MM[:SS]"), paired with
+   *  occurrenceDate above — together the SAME two inputs the server uses to
+   *  resolve the 2-hour self-cancellation cutoff. UI mirror only. */
+  scheduleStartTime?: string | null;
   className: string;
   danceType: string;
   instructorName: string;
@@ -257,6 +261,7 @@ interface ApiMyBooking {
   classId: number | null;
   scheduleId: number | null;
   occurrenceDate: string | null;
+  scheduleStartTime?: string | null;
   className: string;
   danceType: string;
   instructorName: string;
@@ -289,6 +294,7 @@ function mapMyBookingToLocal(r: ApiMyBooking): Booking {
     classId: r.classId != null ? String(r.classId) : "",
     scheduleId: r.scheduleId != null ? String(r.scheduleId) : undefined,
     occurrenceDate: r.occurrenceDate ?? undefined,
+    scheduleStartTime: r.scheduleStartTime ?? null,
     className: r.sourceUnavailable ? "Class details unavailable" : (r.className || "Class"),
     danceType: r.danceType || "",
     instructorName: r.sourceUnavailable ? "" : (r.instructorName || "Instructor"),

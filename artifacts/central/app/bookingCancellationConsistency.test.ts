@@ -54,8 +54,8 @@ test("the detail overlay's Cancel button is wired to the same shared operation f
 test("the overlay's cancellability check mirrors BookingCard's isUpcomingActive gate exactly", () => {
   assert.match(
     source,
-    /const canCancel = !isBallet && !isPast && !isCancelled && !b\.sourceUnavailable;/,
-    "canCancel must match: not Ballet, not past, not already cancelled/rejected, and not sourceUnavailable — the same conditions BookingCard uses",
+    /const canCancel = !isBallet && !isPast && !isCancelled && !b\.sourceUnavailable\s*\n\s*&& isBookingSelfCancellableClientSide\(/,
+    "canCancel must match: not Ballet, not past, not already cancelled/rejected, not sourceUnavailable, and within the Wave 3 2-hour self-cancellation window — the same conditions BookingCard uses",
   );
 });
 
@@ -74,8 +74,14 @@ test("the working Cancel Booking button is present and reuses onCancel, not a ne
   assert.match(source, />Cancel Booking</);
 });
 
-test("no cancellation time window, fee, or refund rule was introduced by this correction", () => {
+// Superseded by Wave 3 (F-20): the owner-approved policy is a real 2-hour
+// self-cancellation cutoff, applied identically on both surfaces via the
+// SHARED isBookingSelfCancellableClientSide utility — never a second,
+// locally-invented window/fee/refund rule duplicated inline in this file.
+test("the 2-hour cutoff is applied via the shared utility, not a locally re-invented window/fee rule", () => {
+  assert.match(source, /import \{ isBookingSelfCancellableClientSide \} from "@\/utils\/bookingCancellationEligibility";/);
   assert.equal(/\b(cancellationWindow|cancelWindow|refundRule|cancellationFee)\b/i.test(source), false);
-  // No new hour-based cutoff constants (e.g. 2h/6h/12h/24h) near the cancel logic.
-  assert.equal(/canCancel[\s\S]{0,400}\b(hours?|hrs)\b/i.test(source), false);
+  // No ad-hoc hour-based constant (e.g. a bare "2", "120", "hours") is
+  // computed inline here — the only cutoff math lives in the shared utility.
+  assert.equal(/const canCancel[\s\S]{0,400}\b(hours?|hrs)\b/i.test(source), false);
 });

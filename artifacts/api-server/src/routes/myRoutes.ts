@@ -465,6 +465,13 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       // Raw occurrence key (YYYY-MM-DD) — used by the app to scope Cancel CTAs
       // and to decide whether a confirmed booking is past.
       occurrenceDate: b.occurrenceDate ?? null,
+      // Wave 3 (F-20): raw schedule start time ("HH:MM[:SS]"), alongside
+      // occurrenceDate above — together they are the SAME two inputs
+      // PATCH /bookings/:id/cancel resolves the 2-hour self-cancellation
+      // cutoff from server-side. The app uses them only to mirror that same
+      // window for UI purposes (hide/disable Cancel) — the server remains
+      // authoritative in any race/boundary case.
+      scheduleStartTime: r.scheduleStartTime ?? null,
       className: r.classTitle ?? "Class details unavailable",
       danceType: r.classCategory ?? "",
       instructorName: r.instructorName ?? "",

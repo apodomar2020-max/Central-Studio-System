@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { Booking } from "@/contexts/AppContext";
 import SBI from "@/components/SbIcon";
+import { isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
 
 interface BookingCardProps {
   item: Booking;
@@ -227,6 +228,16 @@ export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo
             && phase === "upcoming"
             && item.bookingStatus !== "cancelled"
             && item.bookingStatus !== "rejected";
+          // Wave 3 (F-20): mirrors the server's 2-hour self-cancellation
+          // cutoff so Cancel is never offered as working once the server
+          // would reject it — the server remains authoritative for any
+          // boundary/race case (see bookingCancellationEligibility.ts).
+          // Only gates the Cancel action itself: View Details / Pay Now stay
+          // available past the cutoff, since neither is a cancellation.
+          const canSelfCancel = isUpcomingActive && isBookingSelfCancellableClientSide({
+            occurrenceDate: item.occurrenceDate ?? null,
+            startTime: item.scheduleStartTime ?? null,
+          });
 
           const viewBtn = <ActionBtn key="view" label="View Details" icon="eye" onPress={onPress} />;
           const cancelBtn = <ActionBtn key="cancel" label="Cancel" icon="cancel" danger onPress={onCancel} />;
@@ -236,11 +247,11 @@ export default function BookingCard({ item, onPress, onCancel, onPayNow, pkgInfo
           if (!isUpcomingActive) {
             buttons = [viewBtn];
           } else if (isPackage) {
-            buttons = [viewBtn, cancelBtn];
+            buttons = canSelfCancel ? [viewBtn, cancelBtn] : [viewBtn];
           } else if (item.paymentStatus === "pending_payment") {
-            buttons = [cancelBtn, payBtn];
+            buttons = canSelfCancel ? [cancelBtn, payBtn] : [payBtn];
           } else {
-            buttons = [viewBtn, cancelBtn];
+            buttons = canSelfCancel ? [viewBtn, cancelBtn] : [viewBtn];
           }
           return <View style={styles.actionsRow}>{buttons}</View>;
         })()}

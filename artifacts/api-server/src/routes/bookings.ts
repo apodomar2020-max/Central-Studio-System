@@ -26,7 +26,7 @@ import { logger } from "../lib/logger";
 import { resolveSingleClassPriceEgp } from "../lib/singleClassPricing";
 import { createStudentNotification } from "../lib/notifications";
 import { sendPushNotification } from "../lib/pushNotifications";
-import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
+import { requireAdminAuth, requireAdminPermission, requireSuperAdmin, type AdminRequest } from "./adminAuth";
 import { confirmCanonicalPaymentRecord } from "../lib/financeConfirmation";
 import {
   ListBookingsQueryParams,
@@ -40,6 +40,8 @@ import {
   ListBookingsResponse,
 } from "@workspace/api-zod";
 import { currentOccurrenceDate, checkInWindowState } from "../lib/occurrence";
+import { evaluateBookingCancellationEligibility } from "../lib/bookingCancellationEligibility";
+import { requestBookingRefundInTx } from "../lib/bookingRefundService";
 import { DUPLICATE_BLOCKING_STATUSES, RESERVED_SEAT_STATUSES, isSeatReservedBooking } from "../lib/bookingStatus";
 import { isClassCapacityEnabled } from "../lib/classCapacitySettings";
 import { resolveBookingParticipant } from "../lib/participants/resolveBookingParticipant";
@@ -68,7 +70,17 @@ const DAY_NAMES = [
   "Saturday",
 ] as const;
 
-const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed"] as const;
+// Wave 3: "attendance_reversed" added so normalizeBookingWrite's existing-
+// value fallback (`isOneOf(BOOKING_STATUSES, existing?.bookingStatus)`)
+// recognizes it and preserves it on an unrelated PATCH — before this, an
+// admin editing any OTHER field (notes, schedule, etc.) on an
+// attendance_reversed booking would have silently reset bookingStatus back
+// to the pending/confirmed default, since the value wasn't in this list.
+// This was latent/unreachable before Wave 3 (attendance_reversed had no
+// route that could ever produce it); the PATCH /bookings/:id state-machine
+// guard (below, in this file) already independently blocks a client from
+// setting this value directly regardless of this array.
+const BOOKING_STATUSES = ["pending", "confirmed", "rejected", "cancelled", "attended", "completed", "attendance_reversed"] as const;
 const PAYMENT_STATUSES = ["not_required", "pending_payment", "paid", "refunded", "failed"] as const;
 const PAYMENT_MODES = ["package_credit", "pay_at_studio", "online_payment", "free"] as const;
 
@@ -1530,10 +1542,37 @@ router.patch(
         (existing.accountOwnerStudentId != null && existing.accountOwnerStudentId === req.studentId) ||
         normalizeEmail(existing.studentEmail) === normalizeEmail(req.studentEmail ?? "");
       if (!ownsIt) return { kind: "not_found" as const }; // 404 — never leak others' bookings
-      if (existing.bookingStatus === "cancelled") return { kind: "ok" as const, booking: existing };
+      if (existing.bookingStatus === "cancelled") return { kind: "ok" as const, booking: existing, refundOpened: false };
+      // Attendance is terminal for ordinary cancellation (Wave 3 policy) —
+      // an attended (or attendance_reversed) booking can never be
+      // self-cancelled; corrections go through Attendance Reversal only.
       if (existing.bookingStatus !== "pending" && existing.bookingStatus !== "confirmed") {
         return { kind: "not_cancellable" as const };
       }
+
+      // Wave 3 (F-20): 2-hour self-cancellation cutoff — server is
+      // authoritative regardless of what the client believes the window to
+      // be. Uses the SAME canonical occurrence resolution as check-in
+      // (cairoDateTimeToUtcMs via evaluateBookingCancellationEligibility),
+      // never a second time source. The booking's own locked-in
+      // occurrenceDate is used, not a re-derived "current" occurrence.
+      let scheduleStartTime: string | null = null;
+      if (existing.scheduleId != null) {
+        const [schedule] = await tx
+          .select({ startTime: schedulesTable.startTime })
+          .from(schedulesTable)
+          .where(eq(schedulesTable.id, existing.scheduleId))
+          .limit(1);
+        scheduleStartTime = schedule?.startTime ?? null;
+      }
+      const eligibility = evaluateBookingCancellationEligibility({
+        occurrenceDate: existing.occurrenceDate,
+        startTime: scheduleStartTime,
+      });
+      if (!eligibility.eligible) {
+        return { kind: "cutoff_blocked" as const, reason: eligibility.reason };
+      }
+
       if (existing.packageOrderId != null) {
         const [historicalDeduction] = await tx
           .select()
@@ -1597,6 +1636,25 @@ router.patch(
         .set({ bookingStatus: "cancelled", status: "cancelled" })
         .where(eq(bookingsTable.id, existing.id))
         .returning();
+
+      // Wave 3: a paid single-class booking cancelled within the permitted
+      // window must open an auditable refund request — never just leave
+      // paymentStatus silently "paid" on a cancelled booking. Seat release
+      // (the update above) is NOT conditioned on this: it always proceeds.
+      // Package-credit and free bookings never reach here — H5 means no
+      // credit was ever taken pre-attendance, so there is nothing to
+      // refund; requestBookingRefundInTx itself also no-ops when there is
+      // no canonical payment_records row or it was never paid, so an
+      // unpaid Pay-at-Studio booking never fabricates a refund either.
+      let refundOpened = false;
+      if (existing.packageOrderId == null) {
+        const refundResult = await requestBookingRefundInTx(tx, {
+          bookingId: existing.id,
+          requestedReason: "student_self_cancellation",
+        });
+        refundOpened = refundResult != null && !refundResult.replayed;
+      }
+
       const notification = await bookingStatusNotification(tx, updated, "cancelled");
       if (notification) {
         await createStudentNotification(tx, {
@@ -1605,7 +1663,7 @@ router.patch(
           ...notification,
         });
       }
-      return { kind: "ok" as const, booking: updated };
+      return { kind: "ok" as const, booking: updated, refundOpened };
     });
     if (result.kind === "not_found") {
       res.status(404).json({ error: "Booking not found" });
@@ -1614,6 +1672,18 @@ router.patch(
     if (result.kind === "not_cancellable") {
       res.status(409).json({ error: "This booking can no longer be cancelled.", code: "not_cancellable" });
       return;
+    }
+    if (result.kind === "cutoff_blocked") {
+      res.status(409).json({
+        error: result.reason === "occurrence_unresolvable"
+          ? "This booking's class time could not be determined, so it can no longer be self-cancelled. Please contact the studio."
+          : "This booking can no longer be cancelled — self-cancellation closes 2 hours before class start.",
+        code: "cancellation_window_closed",
+      });
+      return;
+    }
+    if (result.refundOpened) {
+      res.setHeader("X-Booking-Refund-Opened", "true");
     }
     res.json(GetBookingResponse.parse(result.booking));
   },
@@ -1715,16 +1785,32 @@ router.patch(
       }
     }
 
-    // ── State-machine guard (Phase D) ───────────────────────────────────────
+    // ── State-machine guard (Phase D, extended Wave 3) ──────────────────────
     // "attended" is a CHECK-IN outcome, not an admin-editable label. It must be
     // produced only by the attendance flow (/check-in/qr or POST /attendance),
     // which atomically creates the attendance record (+ credit + notification)
     // alongside the status change. So the booking PATCH may NOT:
     //   • move a booking INTO attended/completed (no attendance row would exist), or
     //   • move a booking OUT of attended/completed (a booking can never return
-    //     from Attended to Confirmed).
+    //     from Attended to Confirmed) — this now also covers "cancelled",
+    //     closing the exact gap Wave 3 identified: an admin selecting
+    //     Cancelled after attendance must go through Attendance Reversal
+    //     instead, never a bare status PATCH.
+    //
+    // "attendance_reversed" (Wave 3) is likewise terminal in the OTHER
+    // direction: it is produced only by completeAttendanceReversal
+    // (attendanceReversalService.ts, exposed via
+    // POST /admin/attendance-reversals/:id/complete), which atomically
+    // reverses the attendance record and restores the credit alongside the
+    // status change. A bare PATCH may not move a booking INTO
+    // attendance_reversed (bypassing that atomic reversal + restoration),
+    // nor OUT of it (bypassing the reversal's own audit trail — e.g.
+    // "cancelling" an already-reversed booking to hide it from the
+    // Attendance Reversal history).
     const wasAttended = existing.bookingStatus === "attended" || existing.bookingStatus === "completed";
     const willBeAttended = normalized.bookingStatus === "attended" || normalized.bookingStatus === "completed";
+    const wasAttendanceReversed = existing.bookingStatus === "attendance_reversed";
+    const willBeAttendanceReversed = normalized.bookingStatus === "attendance_reversed";
     if (normalized.bookingStatus !== existing.bookingStatus) {
       if (willBeAttended) {
         return {
@@ -1735,7 +1821,19 @@ router.patch(
       if (wasAttended) {
         return {
           kind: "forbidden" as const,
-          message: "An attended booking cannot be changed back to another status.",
+          message: "An attended booking cannot be changed back to another status. Use Attendance Reversal to correct a recorded attendance.",
+        };
+      }
+      if (willBeAttendanceReversed) {
+        return {
+          kind: "forbidden" as const,
+          message: "attendance_reversed can only be produced by completing an Attendance Reversal, not by editing the booking status.",
+        };
+      }
+      if (wasAttendanceReversed) {
+        return {
+          kind: "forbidden" as const,
+          message: "An attendance-reversed booking cannot be changed to another status.",
         };
       }
     }
@@ -1951,11 +2049,22 @@ router.patch(
   },
 );
 
+// Wave 3: hard-delete has no wiring anywhere in Admin or Mobile (grep-
+// verified across both apps) — the only real callers today are OTHER
+// integration tests' own cleanup helpers (bookings.delete.integration.test.ts
+// and several others), which is why the route is kept rather than removed
+// outright. Business/customer cancellation always goes through
+// PATCH /bookings/:id/cancel (soft, history-preserving) — this route is
+// restricted to Super Admin on top of the existing bookings:delete
+// permission, so an ordinary admin role can never reach for this instead
+// of a cancellation, and historical booking records stay preserved for
+// every real operational path.
 router.delete(
   "/bookings/:id",
   blockStudentJwt,
   requireAdminAuth,
   requireAdminPermission("bookings", "delete"),
+  requireSuperAdmin,
   async (req, res): Promise<void> => {
   const params = DeleteBookingParams.safeParse(req.params);
   if (!params.success) {

@@ -40,6 +40,7 @@ import { isOfflineError } from "@/services/connectivity";
 import { BALLET_APPLICATION_STATUSES, type BalletApplicationStatus } from "@workspace/api-zod";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
+import { isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
 
 // Terminal statuses (assessment concluded) — derived from the canonical enum
 // rather than hand-typed, so the Upcoming/Past/Cancelled tab partition below
@@ -312,9 +313,11 @@ function BookingDetailOverlay({
   // so it can never surface a live Cancel action. See utils/bookingStatus.ts.
   const isPast = isBallet ? (b.status === "rejected" || b.status === "cancelled") : (b.bookingStatus === "attended" || b.bookingStatus === "completed" || b.bookingStatus === "noShow" || b.bookingStatus === "unknown");
   const isCancelled = isBallet ? (b.status === "cancelled") : (b.bookingStatus === "cancelled" || b.bookingStatus === "rejected");
-  // Mirrors BookingCard's isUpcomingActive gate exactly, so a booking is
-  // never cancellable from one surface and not the other.
-  const canCancel = !isBallet && !isPast && !isCancelled && !b.sourceUnavailable;
+  // Mirrors BookingCard's isUpcomingActive + Wave 3 2-hour cutoff gate
+  // exactly, so a booking is never cancellable from one surface and not
+  // the other, and never past the same self-cancellation cutoff.
+  const canCancel = !isBallet && !isPast && !isCancelled && !b.sourceUnavailable
+    && isBookingSelfCancellableClientSide({ occurrenceDate: b.occurrenceDate ?? null, startTime: b.scheduleStartTime ?? null });
   const timeline = !isPast && !isCancelled
     ? [
         { label: "Booking Created", done: true, date: new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") },
