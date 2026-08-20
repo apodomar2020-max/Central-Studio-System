@@ -30,7 +30,6 @@ import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes
 
 import {
   DANCE_CATEGORIES,
-  AgeGroup,
   type DanceClass,
   type Instructor,
 } from "@/data/mockData";
@@ -148,10 +147,9 @@ function statusBg(st: DanceClass["status"]) {
        : "rgba(255,255,255,0.06)";
 }
 
-/* ─── Difficulty derived from ageGroup ───────────────────────────── */
-function deriveDifficulty(ag: AgeGroup) {
-  return ag === "Kids" ? "Beginner" : ag === "Teens" ? "Intermediate" : "Advanced";
-}
+/* ─── Level display color. Level is the canonical stored skill-level field
+   (classes.level via DanceClass["level"]) — never derived from ageGroup,
+   which is a distinct business concept (Age Eligibility/Display Audience). */
 function diffColor(d: string) {
   return d === "Beginner" ? CYAN : d === "Intermediate" ? AMBER : MAGENTA;
 }
@@ -436,7 +434,7 @@ function ExploreClassCard({
   const st = item.status;
   const stC = statusColor(st);
   const stBg = statusBg(st);
-  const difficulty = deriveDifficulty(item.ageGroup);
+  const difficulty = item.level;
   const isTrending = showCapacity && pct > 50;
   const creditsLeft = item.packageEligible ? packageCreditsRemaining : 0;
   const availableSeats = cap.available;
@@ -770,7 +768,7 @@ export default function ClassesScreen() {
     const q = search.toLowerCase();
     return nonBalletClasses.filter((c) => {
       if (ageFilter !== "all" && c.ageGroup.toLowerCase() !== ageFilter) return false;
-      if (levelFilter !== "all" && deriveDifficulty(c.ageGroup).toLowerCase() !== levelFilter) return false;
+      if (levelFilter !== "all" && c.level.toLowerCase() !== levelFilter) return false;
       if (q && !c.title.toLowerCase().includes(q) && !c.categoryName.toLowerCase().includes(q) &&
           !(instructorById.get(c.instructorId)?.name ?? "").toLowerCase().includes(q)) return false;
       return true;

@@ -43,7 +43,7 @@ import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/se
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
-import type { AgeGroup, DanceClass, Instructor } from "@/data/mockData";
+import type { DanceClass, Instructor } from "@/data/mockData";
 
 const INK_900 = "#0A0B0D";
 const INK_800 = "#15171B";
@@ -105,10 +105,9 @@ function statusBg(st: DanceClass["status"]) {
        : "rgba(255,255,255,0.06)";
 }
 
-function deriveDifficulty(ageGroup: AgeGroup) {
-  return ageGroup === "Kids" ? "Beginner" : ageGroup === "Teens" ? "Intermediate" : "Advanced";
-}
-
+/* Level display color. Level is the canonical stored skill-level field
+   (classes.level via DanceClass["level"]) — never derived from ageGroup,
+   which is a distinct business concept (Age Eligibility/Display Audience). */
 function diffColor(difficulty: string) {
   return difficulty === "Beginner" ? CYAN : difficulty === "Intermediate" ? AMBER : MAGENTA;
 }
@@ -254,7 +253,7 @@ export default function ClassDetailScreen() {
   const st = cls.status;
   const stC = statusColor(st);
   const stBg = statusBg(st);
-  const difficulty = deriveDifficulty(cls.ageGroup);
+  const difficulty = cls.level;
   const cap = classCapacityDisplay(cls);
   const showCapacity = isClassCapacityDisplayEnabled(cls);
   const availableSeats = cap.available;
