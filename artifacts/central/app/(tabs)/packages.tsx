@@ -189,6 +189,12 @@ export default function PackagesScreen() {
         validityMonths: 0,
         promoCode,
         participant,
+        // Online Payment is disabled in this UI (Coming Soon) — Pay at
+        // Studio / Cash is the only enabled path today. Must match the
+        // Home carousel's purchase call so equivalent purchase actions
+        // record the same requestedPaymentChannel in Finance, regardless
+        // of which screen they were started from.
+        paymentMode: "pay_at_studio",
       });
       setConfirmPkg(null);
       router.push("/package-center");
