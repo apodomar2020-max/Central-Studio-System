@@ -33,6 +33,12 @@ export interface DanceClass {
   packageEligible?: boolean;
   categoryId: string;
   categoryName: string;
+  /** Canonical Dance Type relationship (dance_types.id), when the backend
+   *  has one for this class. Preferred over categoryName's free-text
+   *  fuzzy match for grouping/filtering by dance style — see
+   *  classes.tsx's matchesClass(). Undefined for classes with no Dance
+   *  Type assigned, which fall back to the free-text match. */
+  danceTypeId?: number;
   instructorId: string;
   title: string;
   description: string;

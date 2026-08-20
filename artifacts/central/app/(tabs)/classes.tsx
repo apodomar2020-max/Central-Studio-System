@@ -792,8 +792,7 @@ export default function ClassesScreen() {
           iconUrl: dt.iconUrl ?? null,
           legacyIcon: null,
           matchesClass: (c) => {
-            const dtId = (c as { danceTypeId?: number | null }).danceTypeId;
-            if (dtId != null) return dtId === dt.id; // prefer ID when present
+            if (c.danceTypeId != null) return c.danceTypeId === dt.id; // prefer ID when present
             const n = normCat(c.categoryName);        // legacy string/slug/name fallback
             return n === normCat(dt.name) || n === normCat(dt.slug);
           },

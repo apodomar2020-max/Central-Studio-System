@@ -302,6 +302,7 @@ export function mapApiClassToMobile(api: ApiClass, classPricing?: ClassPricingSe
     // when it doesn't match one of the known mobile categories.
     categoryId: category?.id ?? api.category,
     categoryName: api.category,
+    danceTypeId: api.danceTypeId ?? undefined,
     instructorId: api.instructorId != null ? String(api.instructorId) : "",
     title: api.title,
     description: api.description ?? "",
