@@ -54,6 +54,7 @@ import financeBackfillBatchesRouter from "./financeBackfillBatches";
 import catalogueReadinessRouter from "./catalogueReadiness";
 import packageRefundsRouter from "./packageRefunds";
 import bookingRefundsRouter from "./bookingRefunds";
+import attendanceReversalRouter from "./attendanceReversal";
 import adminRoomReservationsRouter from "./adminRoomReservations";
 import websiteBackgroundsRouter from "./websiteBackgrounds";
 import websiteNewsRouter from "./websiteNews";
@@ -114,6 +115,7 @@ router.use(classReminderSettingsRouter);
 router.use(catalogueReadinessRouter);
 router.use(packageRefundsRouter);
 router.use(bookingRefundsRouter);
+router.use(attendanceReversalRouter);
 router.use(adminRoomReservationsRouter);
 // Website CMS Wave 1 — Backgrounds.
 router.use(websiteBackgroundsRouter);
