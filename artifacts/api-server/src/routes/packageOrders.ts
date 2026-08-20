@@ -1012,14 +1012,29 @@ router.patch(
       });
     }
   } else {
+    // Wave 3: this bare status-flip path must never be used to financially
+    // cancel a package order that has already been activated (paid) — it
+    // only sets status and writes no ledger row, so a paid/active order
+    // would end up status:"cancelled" while remainingCredits/credit lots
+    // stay exactly as they were: inconsistent with the refund workflow's
+    // invariant (which retires every remaining credit to 0 as part of
+    // completion — see completePackageRefund). Only a never-activated
+    // (pendingPayment) order — which was never paid and has no credits to
+    // retire — may use this bare path; anything already active/fullyUsed
+    // must go through POST /admin/package-orders/:id/refunds instead.
     const result = await db.transaction(async (tx) => {
       const [current] = await tx
         .select()
         .from(packageOrdersTable)
-        .where(eq(packageOrdersTable.id, params.data.id));
+        .where(eq(packageOrdersTable.id, params.data.id))
+        .for("update");
 
-      if (!current) return undefined;
+      if (!current) return { kind: "not_found" as const };
       beforeOrder = current;
+
+      if (parsed.data.status === "cancelled" && current.status !== "pendingPayment") {
+        return { kind: "requires_refund_workflow" as const, current };
+      }
 
       const [updated] = await tx
         .update(packageOrdersTable)
@@ -1043,11 +1058,18 @@ router.patch(
         });
       }
 
-      return { before: current, updated };
+      return { kind: "ok" as const, before: current, updated };
     });
 
-    if (!result) {
+    if (result.kind === "not_found") {
       res.status(404).json({ error: "Package order not found" });
+      return;
+    }
+    if (result.kind === "requires_refund_workflow") {
+      res.status(409).json({
+        error: `Package order ${params.data.id} cannot be bare-cancelled from status "${result.current.status}" — an already-activated order must be cancelled through the refund workflow (POST /admin/package-orders/:id/refunds), which retires remaining credits consistently.`,
+        code: "PACKAGE_ORDER_REQUIRES_REFUND_WORKFLOW",
+      });
       return;
     }
     beforeOrder = result.before;
@@ -1093,6 +1115,71 @@ router.patch(
     res.setHeader("X-Finance-Compatibility", financeCompatibility);
   }
   res.json(UpdatePackageOrderResponse.parse(row));
+  },
+);
+
+// Wave 3: customer self-service cancellation, scoped ONLY to a package
+// order that is still pendingPayment — no payment was ever collected, so
+// there is nothing to refund and no credit lots to retire (mirrors the
+// booking self-cancel route's ownership/safety shape, and the bare-cancel
+// guard above: this path is exactly the "pendingPayment" case that guard
+// still allows). Once a package order has been activated (paid), the
+// customer can no longer bare-cancel it — that must go through the Admin
+// refund workflow.
+router.patch(
+  "/package-orders/:id/cancel",
+  requireStudentAuth,
+  requireVerifiedStudent,
+  async (req, res): Promise<void> => {
+    const params = GetPackageOrderParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const result = await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(packageOrdersTable)
+        .where(eq(packageOrdersTable.id, params.data.id))
+        .for("update");
+      if (!existing) return { kind: "not_found" as const };
+      const ownsIt =
+        (existing.studentId != null && existing.studentId === req.studentId) ||
+        normalizeEmail(existing.studentEmail) === normalizeEmail(req.studentEmail ?? "");
+      if (!ownsIt) return { kind: "not_found" as const }; // 404 — never leak others' orders
+      if (existing.status === "cancelled") return { kind: "ok" as const, order: existing };
+      if (existing.status !== "pendingPayment") {
+        return { kind: "not_cancellable" as const, status: existing.status };
+      }
+      const [updated] = await tx
+        .update(packageOrdersTable)
+        .set({ status: "cancelled" })
+        .where(eq(packageOrdersTable.id, existing.id))
+        .returning();
+      await createStudentNotification(tx, {
+        studentId: updated.studentId,
+        studentEmail: updated.studentEmail,
+        title: "Package request cancelled",
+        body: `Your ${updated.packageName} package request was cancelled.`,
+        type: "package_cancelled",
+        relatedEntityType: "package_order",
+        relatedEntityId: updated.id,
+        metadata: { packageName: updated.packageName },
+      });
+      return { kind: "ok" as const, order: updated };
+    });
+    if (result.kind === "not_found") {
+      res.status(404).json({ error: "Package order not found" });
+      return;
+    }
+    if (result.kind === "not_cancellable") {
+      res.status(409).json({
+        error: `This package request can no longer be self-cancelled from status "${result.status}". An already-activated package must be cancelled through Admin (which handles any applicable refund).`,
+        code: "not_cancellable",
+      });
+      return;
+    }
+    res.json(UpdatePackageOrderResponse.parse(result.order));
   },
 );
 
