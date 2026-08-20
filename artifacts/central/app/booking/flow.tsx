@@ -730,7 +730,10 @@ export default function BookingFlowScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.refCodeSuccessTitle, { color: "#1FB871" }]}>Referral Applied!</Text>
                     <Text style={styles.refCodeSuccessDesc}>
-                      Code {appliedCode ?? refCodeInput.toUpperCase()} — your referrer earns EGP 100 credit.
+                      {/* F-02: the EGP 100 referrer-credit claim was removed — no
+                          crediting system exists to back it. Only confirm the
+                          code was captured. */}
+                      Code {appliedCode ?? refCodeInput.toUpperCase()} applied to this booking.
                     </Text>
                   </View>
                 </View>

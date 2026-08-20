@@ -33,13 +33,12 @@ const HOW_IT_WORKS = [
     title: "Friend Applies Code",
     desc: "When your friend books their first class, they enter your referral code at checkout.",
   },
-  {
-    step: "3",
-    icon: "gift-outline",
-    title: "Earn Rewards",
-    desc: "You earn EGP 100 credit on your account when your friend registers and books a class.",
-  },
 ];
+// F-02: the previous step 3 ("Earn Rewards" — "You earn EGP 100 credit...")
+// promised a specific credit amount with no crediting system behind it. It
+// was removed rather than reworded, since no reward mechanism exists today
+// to describe accurately. Referral-code capture (steps 1-2 above) is
+// unaffected.
 
 export default function ReferralScreen() {
   const { user, referralCode, referralCredits } = useAppContext();
@@ -95,9 +94,11 @@ export default function ReferralScreen() {
           <View style={[styles.giftIcon, { backgroundColor: colors.studio.primary + "20" }]}>
             <Ionicons name="gift" size={40} color={colors.studio.primary} />
           </View>
-          <Text style={styles.heroTitle}>Refer a Friend,{"\n"}Earn EGP 100</Text>
+          {/* F-02: the EGP 100 reward claim was removed — no crediting system
+              exists to back it. Referral-code sharing itself is unaffected. */}
+          <Text style={styles.heroTitle}>Refer a Friend</Text>
           <Text style={styles.heroDesc}>
-            Refer your friends to Central Studio and earn EGP 100 credit for every successful referral.
+            Share your referral code with friends who want to join Central Studio.
           </Text>
         </LinearGradient>
 
@@ -193,8 +194,11 @@ export default function ReferralScreen() {
 
         <View style={[styles.termsBox, { backgroundColor: "#0E1619", borderColor: "#1E2E38" }]}>
           <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
+          {/* F-02: dropped the "credits are awarded..." claim — no crediting
+              system exists to back it. The expiry statement is unrelated
+              and remains accurate. */}
           <Text style={styles.termsText}>
-            Credits are awarded when your referred friend completes their first paid class booking. Referral codes have no expiry date. Credits apply to your next class booking automatically.
+            Referral codes have no expiry date.
           </Text>
         </View>
       </ScrollView>
