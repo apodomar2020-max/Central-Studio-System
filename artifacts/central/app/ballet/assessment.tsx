@@ -228,7 +228,7 @@ export default function BalletAssessmentScreen() {
 
   const settingsQuery = useQuery({
     queryKey: ["ballet-settings"],
-    queryFn: fetchBalletSettings,
+    queryFn: ({ signal }) => fetchBalletSettings(signal),
     staleTime: 5 * 60 * 1000,
   });
   const assessmentFeeEgp = settingsQuery.data?.assessmentFeeEgp ?? null;
