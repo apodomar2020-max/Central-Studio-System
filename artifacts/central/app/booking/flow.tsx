@@ -53,8 +53,6 @@ const INK = {
   text4: "#6B747F",  // --cs-ink-400
 };
 
-const NEW_MEMBER_OFFER_TITLE = "New Member Welcome";
-
 export default function BookingFlowScreen() {
   const { classId, scheduleId, usePackage } = useLocalSearchParams<{ classId: string; scheduleId?: string; usePackage?: string }>();
   const { user, addBooking, children, bookings, userPackages } = useAppContext();
@@ -175,7 +173,6 @@ export default function BookingFlowScreen() {
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
   const [refCodeState, setRefCodeState] = useState<"idle" | "valid" | "invalid">("idle");
   const selectedChild = children.find((child) => child.id === selectedChildId);
-  const isFirstBooking = false;
   const hasSchedule = Boolean(cls?.scheduleId && cls?.dayOfWeek && cls?.startTime);
   const canBookSchedule = hasSchedule && isBookableScheduleStatus(cls?.scheduleStatus);
   const participantName =
@@ -393,8 +390,14 @@ export default function BookingFlowScreen() {
       // Package credits are authoritatively resolved and deducted by the booking
       // transaction for the selected participant.
       const apiBookingStatus = "pending";
-      const apiPaymentStatus = isPackageMode || finalPrice === 0 ? "not_required" : "pending_payment";
-      const apiPaymentMode = isPackageMode ? "package_credit" : finalPrice === 0 ? "free" : "pay_at_studio";
+      // F-17: First Class Free is permanently retired — a class price of 0
+      // must never be silently reinterpreted as the retired free-booking
+      // mode. Only package-credit bookings are "not_required"/non-cash;
+      // every other booking (regardless of price) goes through the normal
+      // pay_at_studio flow — the backend's own resolved price is always
+      // authoritative here anyway (server-side stale-price guard below).
+      const apiPaymentStatus = isPackageMode ? "not_required" : "pending_payment";
+      const apiPaymentMode = isPackageMode ? "package_credit" : "pay_at_studio";
       const apiBooking = await createBookingAsync({
         data: {
           studentName: participantName,
@@ -788,34 +791,14 @@ export default function BookingFlowScreen() {
                 </React.Fragment>
               ))}
 
-              {isFirstBooking && (
-                <>
-                  <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
-                  <View style={[styles.summaryRow, { backgroundColor: "#00B6D715" }]}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Ionicons name="pricetag" size={13} color={colors.studio.primary} />
-                      <Text style={[styles.summaryLabel, { color: colors.studio.primary }]}>
-                        {NEW_MEMBER_OFFER_TITLE}
-                      </Text>
-                    </View>
-                    <Text style={[styles.summaryValue, { color: colors.studio.primary }]}>-100%</Text>
-                  </View>
-                </>
-              )}
-
               <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.08)" }]} />
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.studio.primary }]}>
                   {isPackageMode ? "Package Credit" : "Total Price"}
                 </Text>
                 <View style={styles.priceValueWrap}>
-                  {isFirstBooking && !isPackageMode && cls.price > 0 && (
-                    <Text style={{ fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B747F", textDecorationLine: "line-through" }}>
-                      EGP {cls.price}
-                    </Text>
-                  )}
                   <Text style={[styles.summaryValue, { color: colors.studio.primary, fontSize: 18, fontFamily: "Archivo_700Bold" }]}>
-                    {isPackageMode ? "Uses 1 credit" : isFirstBooking ? "FREE" : `EGP ${cls.price}`}
+                    {isPackageMode ? "Uses 1 credit" : `EGP ${cls.price}`}
                   </Text>
                 </View>
               </View>
@@ -827,133 +810,104 @@ export default function BookingFlowScreen() {
         {step === 3 && (
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>
-              {isPackageMode ? "Confirm Package Booking" : isFirstBooking ? "Confirm Free Class" : "Choose Payment Method"}
+              {isPackageMode ? "Confirm Package Booking" : "Choose Payment Method"}
             </Text>
 
-              {isFirstBooking && !isPackageMode ? (
-              <>
-              <View style={[styles.summaryCard, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Schedule</Text>
-                  <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
-                </View>
+            <View style={[styles.summaryCard, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Schedule</Text>
+                <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
               </View>
+            </View>
+            <TouchableOpacity
+              disabled
+              style={[
+                styles.paymentCard,
+                styles.paymentCardDisabled,
+              ]}
+              activeOpacity={0.8}
+            >
               <LinearGradient
-                colors={["#003A47", "#001E28"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.freeCard, { borderColor: colors.studio.primary + "50" }]}
+                colors={["#22262C", "#15171B"]}
+                style={styles.paymentGradient}
               >
-                <View style={[styles.freeIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
-                  <Ionicons name="gift-outline" size={32} color={colors.studio.primary} />
+                <View style={styles.paymentTop}>
+                  <View style={[styles.paymentIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
+                    <Ionicons name="card-outline" size={24} color={colors.studio.primary} />
+                  </View>
+                  <View style={[styles.recommendedBadge, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
+                    <Text style={[styles.recommendedText, { color: "#8E97A2" }]}>COMING SOON</Text>
+                  </View>
                 </View>
-                <Text style={[styles.freeTitle, { color: colors.studio.primary }]}>
-                  Your First Class Is FREE 🎉
-                </Text>
-                <Text style={styles.freeDesc}>
-                  The <Text style={{ color: "#FFFFFF" }}>New Member Welcome</Text> offer has been automatically applied. No payment needed — just show up and dance!
-                </Text>
+                <Text style={styles.paymentTitle}>Pay Now - Coming Soon</Text>
+                <Text style={styles.paymentDesc}>Online card payments are coming soon.</Text>
+                <Text style={[styles.paymentAmount, { color: colors.studio.primary }]}>EGP {cls.price}</Text>
               </LinearGradient>
-              </>
-            ) : (
-              <>
-                <View style={[styles.summaryCard, { backgroundColor: "#15171B", borderColor: "rgba(255,255,255,0.08)" }]}>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Schedule</Text>
-                    <Text style={styles.summaryValue}>{getScheduleLabel(cls)}</Text>
-                  </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("cash"); }}
+              style={[
+                styles.paymentCard,
+                paymentMethod === "cash" && { borderColor: "#6B747F", backgroundColor: "#22262C" },
+              ]}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={["#15171B", "#0A0B0D"]}
+                style={styles.paymentGradient}
+              >
+                <View style={[styles.paymentIconCircle, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
+                  <Ionicons name="business-outline" size={24} color="#8E97A2" />
                 </View>
-                <TouchableOpacity
-                  disabled
-                  style={[
-                    styles.paymentCard,
-                    styles.paymentCardDisabled,
-                  ]}
-                  activeOpacity={0.8}
+                <Text style={[styles.paymentTitle, { color: "#8E97A2" }]}>Pay at Studio</Text>
+                <Text style={styles.paymentDesc}>Pay in cash when you arrive at the studio.</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {canUsePackageCredits && (
+              <TouchableOpacity
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("packageCredit"); }}
+                style={[
+                  styles.paymentCard,
+                  paymentMethod === "packageCredit" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "10" },
+                ]}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={paymentMethod === "packageCredit" ? [colors.studio.primary + "20", colors.studio.primary + "05"] : ["#15171B", "#0A0B0D"]}
+                  style={styles.paymentGradient}
                 >
-                  <LinearGradient
-                    colors={["#22262C", "#15171B"]}
-                    style={styles.paymentGradient}
-                  >
-                    <View style={styles.paymentTop}>
-                      <View style={[styles.paymentIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
-                        <Ionicons name="card-outline" size={24} color={colors.studio.primary} />
-                      </View>
-                      <View style={[styles.recommendedBadge, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
-                        <Text style={[styles.recommendedText, { color: "#8E97A2" }]}>COMING SOON</Text>
-                      </View>
+                  <View style={styles.paymentTop}>
+                    <View style={[styles.paymentIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
+                      <Ionicons name="ticket-outline" size={24} color={colors.studio.primary} />
                     </View>
-                    <Text style={styles.paymentTitle}>Pay Now - Coming Soon</Text>
-                    <Text style={styles.paymentDesc}>Online card payments are coming soon.</Text>
-                    <Text style={[styles.paymentAmount, { color: colors.studio.primary }]}>EGP {cls.price}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("cash"); }}
-                  style={[
-                    styles.paymentCard,
-                    paymentMethod === "cash" && { borderColor: "#6B747F", backgroundColor: "#22262C" },
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <LinearGradient
-                    colors={["#15171B", "#0A0B0D"]}
-                    style={styles.paymentGradient}
-                  >
-                    <View style={[styles.paymentIconCircle, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
-                      <Ionicons name="business-outline" size={24} color="#8E97A2" />
+                    <View style={[styles.recommendedBadge, { backgroundColor: colors.studio.primary }]}>
+                      <Text style={styles.recommendedText}>{packageCreditsRemaining} LEFT</Text>
                     </View>
-                    <Text style={[styles.paymentTitle, { color: "#8E97A2" }]}>Pay at Studio</Text>
-                    <Text style={styles.paymentDesc}>Pay in cash when you arrive at the studio.</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {canUsePackageCredits && (
-                  <TouchableOpacity
-                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod("packageCredit"); }}
-                    style={[
-                      styles.paymentCard,
-                      paymentMethod === "packageCredit" && { borderColor: colors.studio.primary, backgroundColor: colors.studio.primary + "10" },
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    <LinearGradient
-                      colors={paymentMethod === "packageCredit" ? [colors.studio.primary + "20", colors.studio.primary + "05"] : ["#15171B", "#0A0B0D"]}
-                      style={styles.paymentGradient}
-                    >
-                      <View style={styles.paymentTop}>
-                        <View style={[styles.paymentIconCircle, { backgroundColor: colors.studio.primary + "20" }]}>
-                          <Ionicons name="ticket-outline" size={24} color={colors.studio.primary} />
-                        </View>
-                        <View style={[styles.recommendedBadge, { backgroundColor: colors.studio.primary }]}>
-                          <Text style={styles.recommendedText}>{packageCreditsRemaining} LEFT</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.paymentTitle}>Take From My Credits - {packageCreditsRemaining} left</Text>
-                      <Text style={styles.paymentDesc}>Use 1 active package credit for this class.</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
-
-                {!schedulePackageEligible && packageCreditsRemaining > 0 && (
-                  <View style={[styles.warningBanner, { backgroundColor: "#22262C", borderColor: "rgba(255,255,255,0.08)" }]}>
-                    <Ionicons name="information-circle-outline" size={16} color="#8E97A2" />
-                    <Text style={[styles.warningText, { color: "#8E97A2" }]}>
-                      Package credits are not available for this class.
-                    </Text>
                   </View>
-                )}
+                  <Text style={styles.paymentTitle}>Take From My Credits - {packageCreditsRemaining} left</Text>
+                  <Text style={styles.paymentDesc}>Use 1 active package credit for this class.</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
 
-                {paymentMethod === "cash" && (
-                  <View style={[styles.warningBanner, { backgroundColor: colors.warning + "15", borderColor: colors.warning + "40" }]}>
-                    <Ionicons name="warning-outline" size={16} color={colors.warning} />
-                    <Text style={[styles.warningText, { color: colors.warning }]}>
-                      Your seat is not guaranteed until payment is completed at the studio.
-                    </Text>
-                  </View>
-                )}
-              </>
+            {!schedulePackageEligible && packageCreditsRemaining > 0 && (
+              <View style={[styles.warningBanner, { backgroundColor: "#22262C", borderColor: "rgba(255,255,255,0.08)" }]}>
+                <Ionicons name="information-circle-outline" size={16} color="#8E97A2" />
+                <Text style={[styles.warningText, { color: "#8E97A2" }]}>
+                  Package credits are not available for this class.
+                </Text>
+              </View>
+            )}
+
+            {paymentMethod === "cash" && (
+              <View style={[styles.warningBanner, { backgroundColor: colors.warning + "15", borderColor: colors.warning + "40" }]}>
+                <Ionicons name="warning-outline" size={16} color={colors.warning} />
+                <Text style={[styles.warningText, { color: colors.warning }]}>
+                  Your seat is not guaranteed until payment is completed at the studio.
+                </Text>
+              </View>
             )}
           </View>
         )}
@@ -1076,10 +1030,6 @@ const styles = StyleSheet.create({
   refCodeSuccessTitle: { fontSize: 13, fontFamily: "Archivo_600SemiBold" },
   refCodeSuccessDesc: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#8E97A2", marginTop: 2, lineHeight: 16 },
   refCodeError: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#EF4444", lineHeight: 16 },
-  freeCard: { borderRadius: 18, borderWidth: 1, padding: 22, alignItems: "center", gap: 14 },
-  freeIconCircle: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center" },
-  freeTitle: { fontSize: 20, fontFamily: "Archivo_700Bold", textAlign: "center" },
-  freeDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#8E97A2", textAlign: "center", lineHeight: 20 },
   footer: {
     paddingHorizontal: 20, paddingTop: 12,
     borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)", backgroundColor: "#0A0B0D",

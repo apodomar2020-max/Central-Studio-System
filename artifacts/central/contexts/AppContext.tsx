@@ -194,8 +194,6 @@ interface AppContextType {
   markNotificationRead: (id: string) => void;
   unreadNotifications: number;
   isLoading: boolean;
-  newStudentBannerDismissed: boolean;
-  dismissNewStudentBanner: () => void;
   referralCode: string;
   referralCredits: number;
 }
@@ -312,7 +310,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   const [userPackages, setUserPackages] = useState<UserPackage[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [newStudentBannerDismissed, setNewStudentBannerDismissed] = useState(false);
   const [referralCode, setReferralCode] = useState("");
   const [referralCredits, setReferralCredits] = useState(0);
 
@@ -351,7 +348,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   async function loadPersistedState() {
     try {
-      const [lang, onboarded, usr, bks, chldrn, notifs, bannerDismissed, refCode, refCredits] =
+      const [lang, onboarded, usr, bks, chldrn, notifs, refCode, refCredits] =
         await Promise.all([
           AsyncStorage.getItem("language"),
           AsyncStorage.getItem("isOnboarded"),
@@ -359,7 +356,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           AsyncStorage.getItem("bookings"),
           AsyncStorage.getItem("children"),
           AsyncStorage.getItem("notifications"),
-          AsyncStorage.getItem("newStudentBannerDismissed"),
           AsyncStorage.getItem("referralCode"),
           AsyncStorage.getItem("referralCredits"),
         ]);
@@ -396,7 +392,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         if (chldrn) setChildren(JSON.parse(chldrn));
         if (notifs) setNotifications(JSON.parse(notifs));
       }
-      if (bannerDismissed === "true") setNewStudentBannerDismissed(true);
       if (confirmedUser && refCredits) setReferralCredits(parseInt(refCredits, 10));
 
       // Reload the referral code for the now-confirmed user (may be null if invalidated)
@@ -804,11 +799,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     });
   }, []);
 
-  const dismissNewStudentBanner = useCallback(async () => {
-    setNewStudentBannerDismissed(true);
-    await AsyncStorage.setItem("newStudentBannerDismissed", "true");
-  }, []);
-
   const unreadNotifications = notifications.filter((n) => !n.isRead).length;
 
   return (
@@ -838,8 +828,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         markNotificationRead,
         unreadNotifications,
         isLoading,
-        newStudentBannerDismissed,
-        dismissNewStudentBanner,
         referralCode,
         referralCredits,
       }}

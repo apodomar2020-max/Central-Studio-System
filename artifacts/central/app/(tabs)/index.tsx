@@ -57,7 +57,6 @@ import PackageVisualCard, { PACKAGE_CARD_HEIGHT, PACKAGE_CARD_WIDTH } from "@/co
 import PackageDetailsSheet from "@/components/PackageDetailsSheet";
 import type { PackageParticipantSelection } from "@/contexts/AppContext";
 import BalletFeaturedProgramCard from "@/components/BalletFeaturedProgramCard";
-import NewStudentBanner from "@/components/NewStudentBanner";
 import ProfileCompletionBanner from "@/components/ProfileCompletionBanner";
 import { nextStepRoute } from "@/services/authProfile";
 import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/SkeletonLoader";
@@ -773,10 +772,8 @@ export default function StudioHomeScreen() {
       Animated.timing(enterY,       { toValue: 0, duration: 520, useNativeDriver: true }),
     ]).start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const { user, unreadNotifications, bookings, newStudentBannerDismissed, dismissNewStudentBanner } = useAppContext();
+  const { user, unreadNotifications, bookings } = useAppContext();
   const insets = useSafeAreaInsets();
-
-  const showNewStudentBanner = false;
 
   // Profile Completion Engine (Phase 4): session-only dismiss (component
   // state, not persisted) — reappears next time the app is opened.
@@ -955,7 +952,6 @@ export default function StudioHomeScreen() {
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={CYAN} colors={[CYAN]} />
         }
       >
-        {showNewStudentBanner && <NewStudentBanner onDismiss={dismissNewStudentBanner} />}
         {showCompletionBanner && user?.profileCompletion && (
           <ProfileCompletionBanner
             completion={user.profileCompletion}
