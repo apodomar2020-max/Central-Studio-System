@@ -13,6 +13,10 @@ import {
   shouldLockSingleRoutedBalletChild,
 // @ts-expect-error Node's native TypeScript test runner requires the explicit extension.
 } from "./balletStudentPreviewModel.ts";
+import {
+  decideChildEligibilityAction,
+// @ts-expect-error Node's native TypeScript test runner requires the explicit extension.
+} from "./balletAssessmentStateModel.ts";
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 const dangerSource = read("artifacts/central/components/ballet/BalletProgramDangerZone.tsx");
@@ -181,8 +185,28 @@ test("a new child id is recorded before the session continues", () => {
   assert.match(assessmentSource, /setSelectedChild\(created\)/);
 });
 
-test("a session-created selection is not cleared by routed synchronization", () => {
-  assert.match(assessmentSource, /if \(selectedChild && sessionCreatedChildIds\.has\(Number\(selectedChild\.id\)\)\) return/);
+// This invariant previously asserted on assessment.tsx's raw source for an
+// inline `if (selectedChild && sessionCreatedChildIds.has(...)) return`
+// early-exit. That exact logic has since moved into
+// decideChildEligibilityAction (balletAssessmentStateModel.ts) as its own
+// explicit branch — assessment.tsx now just computes
+// `isSessionCreatedSelectedChild` and passes it in. Testing the pure
+// function directly is a behavioral assertion of the real business
+// invariant, not a brittle match on source text/structure that can drift
+// out of sync with a legitimate refactor.
+test("a session-created selection is not cleared, changed, or bounced by routed synchronization", () => {
+  const action = decideChildEligibilityAction({
+    hasRoutedAllowList: true,
+    applicationsReady: true,
+    hasSubmittedSnapshot: false,
+    hasEditingApplication: false,
+    isSubmissionInFlight: false,
+    selectedChildId: "9",
+    isSessionCreatedSelectedChild: true,
+    step: "child",
+    visibleChildIds: [],
+  });
+  assert.deepEqual(action, { type: "none" });
 });
 
 test("creating a child clears the prior single-routed-child lock only for this session", () => {
