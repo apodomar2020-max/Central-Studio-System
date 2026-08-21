@@ -10,7 +10,8 @@
     "finance:backfill:execute": "pnpm --filter @workspace/api-server run finance:backfill:execute",
     "finance:backfill:production-dry-run": "pnpm --filter @workspace/api-server run finance:backfill:production-dry-run",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "test:mobile": "sh ./test-mobile.sh"
   },
   "private": true,
   "pnpm": {
