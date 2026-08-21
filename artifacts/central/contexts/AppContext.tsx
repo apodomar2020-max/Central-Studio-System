@@ -194,15 +194,6 @@ interface AppContextType {
   markNotificationRead: (id: string) => void;
   unreadNotifications: number;
   isLoading: boolean;
-  referralCode: string;
-  referralCredits: number;
-}
-
-function generateCode(fullName: string): string {
-  const letters = fullName.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4).padEnd(4, "X");
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const suffix = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  return `${letters}-${suffix}`;
 }
 
 function addMonths(dateStr: string, months: number): string {
@@ -292,8 +283,6 @@ const AUTH_SCOPED_STORAGE_KEYS = [
   "bookings",
   "children",
   "notifications",
-  "referralCode",
-  "referralCredits",
 ];
 
 async function clearAuthScopedStorage() {
@@ -310,8 +299,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   const [userPackages, setUserPackages] = useState<UserPackage[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [referralCode, setReferralCode] = useState("");
-  const [referralCredits, setReferralCredits] = useState(0);
 
   const isMountedRef = useRef(true);
   // Track user in a ref so callbacks can access it without re-creating
@@ -348,7 +335,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   async function loadPersistedState() {
     try {
-      const [lang, onboarded, usr, bks, chldrn, notifs, refCode, refCredits] =
+      const [lang, onboarded, usr, bks, chldrn, notifs] =
         await Promise.all([
           AsyncStorage.getItem("language"),
           AsyncStorage.getItem("isOnboarded"),
@@ -356,8 +343,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           AsyncStorage.getItem("bookings"),
           AsyncStorage.getItem("children"),
           AsyncStorage.getItem("notifications"),
-          AsyncStorage.getItem("referralCode"),
-          AsyncStorage.getItem("referralCredits"),
         ]);
 
       if (lang) setLanguageState(lang as "en" | "ar");
@@ -391,16 +376,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         if (bks) setBookings(JSON.parse(bks));
         if (chldrn) setChildren(JSON.parse(chldrn));
         if (notifs) setNotifications(JSON.parse(notifs));
-      }
-      if (confirmedUser && refCredits) setReferralCredits(parseInt(refCredits, 10));
-
-      // Reload the referral code for the now-confirmed user (may be null if invalidated)
-      if (refCode) {
-        setReferralCode(refCode);
-      } else if (confirmedUser) {
-        const generated = generateCode(confirmedUser.fullName);
-        setReferralCode(generated);
-        await AsyncStorage.setItem("referralCode", generated);
       }
       // Load packages + bookings from API for the confirmed user
       if (confirmedUser) {
@@ -541,12 +516,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       // raw AsyncStorage file on a rooted/jailbroken device.
       const { qrToken: _qrToken, ...persistedUser } = usr;
       await AsyncStorage.setItem("user", JSON.stringify(persistedUser));
-      const existing = await AsyncStorage.getItem("referralCode");
-      if (!existing) {
-        const generated = generateCode(usr.fullName);
-        setReferralCode(generated);
-        await AsyncStorage.setItem("referralCode", generated);
-      }
       // Load this user's packages + bookings from the API
       fetchAndSetPackages().catch(() => {});
       fetchAndSetBookings().catch(() => {});
@@ -565,8 +534,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       setUserPackages([]);
       setChildren([]);
       setNotifications([]);
-      setReferralCode("");
-      setReferralCredits(0);
     }
   }, []);
 
@@ -828,8 +795,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         markNotificationRead,
         unreadNotifications,
         isLoading,
-        referralCode,
-        referralCredits,
       }}
     >
       {childrenNodes}

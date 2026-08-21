@@ -272,7 +272,6 @@ function RootLayoutNav() {
           name="ballet/assessment"
           options={{ animation: "slide_from_right" }}
         />
-        <Stack.Screen name="referral" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="notifications" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="edit-profile" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="change-password" options={{ animation: "slide_from_right" }} />

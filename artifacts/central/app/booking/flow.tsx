@@ -23,7 +23,7 @@ import { compareSchedulesByNextOccurrence, getScheduleLabel, isBookableScheduleS
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
-import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import ParticipantAvatar from "@/components/ParticipantAvatar";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
 import OfflineState from "@/components/OfflineState";
@@ -169,9 +169,6 @@ export default function BookingFlowScreen() {
   const [packageParamApplied, setPackageParamApplied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [bookingFailed, setBookingFailed] = useState(false);
-  const [refCodeInput, setRefCodeInput] = useState("");
-  const [appliedCode, setAppliedCode] = useState<string | null>(null);
-  const [refCodeState, setRefCodeState] = useState<"idle" | "valid" | "invalid">("idle");
   const selectedChild = children.find((child) => child.id === selectedChildId);
   const hasSchedule = Boolean(cls?.scheduleId && cls?.dayOfWeek && cls?.startTime);
   const canBookSchedule = hasSchedule && isBookableScheduleStatus(cls?.scheduleStatus);
@@ -256,18 +253,6 @@ export default function BookingFlowScreen() {
       setPaymentMethod("cash");
     }
   }, [canUsePackageCredits, packageParamApplied, paymentMethod, usePackage]);
-
-  function handleApplyRefCode() {
-    const code = refCodeInput.trim().toUpperCase();
-    if (!code) return;
-    const valid = /^[A-Z]{2,4}-[A-Z0-9]{4}$/.test(code);
-    if (valid) {
-      setAppliedCode(code);
-      setRefCodeState("valid");
-    } else {
-      setRefCodeState("invalid");
-    }
-  }
 
   // ── Guard: must be signed in ──
   if (!user) {
@@ -378,7 +363,6 @@ export default function BookingFlowScreen() {
 
     try {
       const notes = [
-        appliedCode ? `Referral code: ${appliedCode}` : null,
         participantType === "child" ? `Participant: ${participantName}` : null,
         isPackageMode && selectedPackage
           ? `Package credit intent: ${selectedPackage.packageTitle} (#${selectedPackage.id})`
@@ -722,50 +706,6 @@ export default function BookingFlowScreen() {
                 })}
               </View>
             ) : null}
-
-            <View style={[styles.refCodeSection, { borderColor: "#1E2E38", backgroundColor: "#0E1619" }]}>
-              <Text style={styles.refCodeLabel}>
-                <Ionicons name="gift-outline" size={13} color={colors.studio.primary} /> Have a referral code?
-              </Text>
-              {refCodeState === "valid" ? (
-                <View style={[styles.refCodeSuccess, { backgroundColor: "#1FB87115", borderColor: "#1FB87140" }]}>
-                  <Ionicons name="checkmark-circle" size={18} color="#1FB871" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.refCodeSuccessTitle, { color: "#1FB871" }]}>Referral Applied!</Text>
-                    <Text style={styles.refCodeSuccessDesc}>
-                      {/* F-02: the EGP 100 referrer-credit claim was removed — no
-                          crediting system exists to back it. Only confirm the
-                          code was captured. */}
-                      Code {appliedCode ?? refCodeInput.toUpperCase()} applied to this booking.
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.refCodeRow}>
-                  <TextInput
-                    value={refCodeInput}
-                    onChangeText={(t) => { setRefCodeInput(t.toUpperCase()); setRefCodeState("idle"); }}
-                    placeholder="e.g. SARA-XK7F"
-                    placeholderTextColor="#6B747F"
-                    autoCapitalize="characters"
-                    style={[
-                      styles.refCodeInput,
-                      { borderColor: refCodeState === "invalid" ? "#EF4444" : "#1E2E38", color: "#FFFFFF", backgroundColor: "#15171B" },
-                    ]}
-                  />
-                  <TouchableOpacity
-                    onPress={handleApplyRefCode}
-                    disabled={!refCodeInput.trim()}
-                    style={[styles.refCodeBtn, { backgroundColor: refCodeInput.trim() ? colors.studio.primary : "#1E2E38" }]}
-                  >
-                    <Text style={[styles.refCodeBtnText, { color: refCodeInput.trim() ? "#000" : "#6B747F" }]}>Apply</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              {refCodeState === "invalid" && (
-                <Text style={styles.refCodeError}>Invalid code. Check the format (e.g. SARA-XK7F) and try again.</Text>
-              )}
-            </View>
           </View>
         )}
 
@@ -1016,20 +956,6 @@ const styles = StyleSheet.create({
   paymentAmount: { fontSize: 22, fontFamily: "Archivo_700Bold", ...iosDisplayTextStyle(22, 26, "archivo") },
   warningBanner: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: "flex-start" },
   warningText: { fontSize: 13, fontFamily: "Archivo_500Medium", flex: 1, lineHeight: 18 },
-  refCodeSection: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 10 },
-  refCodeLabel: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
-  refCodeRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  refCodeInput: {
-    flex: 1, height: 44, borderRadius: 10, borderWidth: 1,
-    paddingHorizontal: 12, fontFamily: "Archivo_600SemiBold", fontSize: 14, letterSpacing: 1,
-    ...iosTextInputStyle(14, 18),
-  },
-  refCodeBtn: { height: 44, paddingHorizontal: 16, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  refCodeBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold" },
-  refCodeSuccess: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 10, borderWidth: 1 },
-  refCodeSuccessTitle: { fontSize: 13, fontFamily: "Archivo_600SemiBold" },
-  refCodeSuccessDesc: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#8E97A2", marginTop: 2, lineHeight: 16 },
-  refCodeError: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#EF4444", lineHeight: 16 },
   footer: {
     paddingHorizontal: 20, paddingTop: 12,
     borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)", backgroundColor: "#0A0B0D",
