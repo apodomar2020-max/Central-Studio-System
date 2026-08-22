@@ -35,6 +35,7 @@ import { buildProfileCompletion } from "../lib/studentProfileResponse";
 import { computeProfileCompletion } from "../lib/profileCompletion";
 import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./studentProfilePdf";
 import { diffFields, logActivity } from "../lib/activityLog";
+import { computeStudentDeletionImpact } from "../lib/studentDeletionImpact";
 import { computeAgeAsOf } from "../lib/balletAgeEligibility";
 import * as zod from "zod";
 
@@ -1331,6 +1332,38 @@ router.post("/students/:id/reactivate", blockStudentJwt, requireAdminAuth, async
     summary: `Reactivated ${targetModule === "parents" ? "parent" : "student"} ${existing.name}`,
   });
 });
+
+// ── Deletion impact (Phase B2B) ─────────────────────────────────────────
+// Read-only. Writes NOTHING — no audit row, no Student mutation, no OTP/
+// device mutation. See lib/studentDeletionImpact.ts for the full query
+// architecture, blocker model, and the financial data-graph correction it
+// documents. Gated on users.delete — the same permission the (currently
+// disabled) hard-delete route below already requires — because viewing the
+// deletion impact of an account is squarely part of "can manage account
+// deletion", and no separate permission was added for this read-only step.
+router.get(
+  "/students/:id/deletion-impact",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = UpdateStudentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const outcome = await computeStudentDeletionImpact(params.data.id);
+    if (outcome.kind === "notFound") {
+      res.status(404).json({ error: "Student not found" });
+      return;
+    }
+    if (outcome.kind === "alreadyDeleted") {
+      res.status(409).json({ error: "Student account has already been permanently deleted." });
+      return;
+    }
+    res.status(200).json(outcome.result);
+  },
+);
 
 // Student account hard-deletion is intentionally disabled. The prior
 // implementation performed a raw, untransacted DELETE with no audit logging

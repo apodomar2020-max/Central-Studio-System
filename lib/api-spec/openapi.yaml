@@ -830,6 +830,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /students/{id}/deletion-impact:
+    get:
+      operationId: getStudentDeletionImpact
+      tags: [students]
+      description: >-
+        Phase B2B: read-only deletion impact analysis for permanent Student
+        account deletion. Requires users.delete. Truly read-only — no audit
+        row, no Student mutation, no OTP/device mutation is ever produced by
+        this call. Advisory only: `canDelete`/`blockers` reflect
+        current-state information as of `generatedAt` under `policyVersion`;
+        a future Permanent Delete execution MUST recompute the full blocker
+        set inside its own locked transaction and must never trust a
+        client-supplied deletion state (this GET has no request body).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Deletion impact analysis (returned even when blocked)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDeletionImpactResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Student account has already been permanently deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /bookings:
     get:
       operationId: listBookings
@@ -3068,6 +3115,115 @@ components:
       properties:
         id: { type: integer }
         accountStatus: { type: string, enum: [active, deactivated] }
+
+    StudentDeletionImpactBlocker:
+      type: object
+      readOnly: true
+      required: [key, label, description]
+      properties:
+        key:
+          type: string
+          enum:
+            - ACCOUNT_MUST_BE_DEACTIVATED
+            - FUTURE_BOOKINGS
+            - PENDING_BOOKING_PAYMENT
+            - ACTIVE_PACKAGE_VALUE
+            - PENDING_PACKAGE_ORDER
+            - OPEN_REFUND
+            - ACTIVE_BALLET_ENROLLMENT
+            - OPEN_BALLET_APPLICATION
+            - PENDING_BALLET_PAYMENT
+            - OPEN_BALLET_CANCELLATION_REVIEW
+            - CHILD_FUTURE_COMMITMENT
+            - AMBIGUOUS_LEGACY_ATTRIBUTION
+            - LEGACY_IDENTITY_BACKFILL_REQUIRED
+        label: { type: string }
+        description: { type: string }
+        count: { type: integer }
+
+    StudentDeletionImpactCategory:
+      type: object
+      readOnly: true
+      required: [key, label, classification]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        classification: { type: string, enum: [delete, anonymize, retain, blocker] }
+
+    StudentDeletionImpactResponse:
+      type: object
+      readOnly: true
+      description: >-
+        Advisory-only deletion impact analysis. Not a concurrency token, not
+        a signed confirmation token — see policyVersion/generatedAt notes on
+        the parent operation.
+      required: [studentId, lifecycleStatus, canDelete, generatedAt, policyVersion, blockers, summary, categories]
+      properties:
+        studentId: { type: integer }
+        lifecycleStatus: { type: string, enum: [active, deactivated, deleted] }
+        canDelete: { type: boolean }
+        generatedAt: { type: string, format: date-time }
+        policyVersion: { type: string }
+        blockers:
+          type: array
+          items: { $ref: "#/components/schemas/StudentDeletionImpactBlocker" }
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/StudentDeletionImpactCategory" }
+        summary:
+          type: object
+          required: [bookings, payments, packages, children, ballet, security, legacyAttribution]
+          properties:
+            bookings:
+              type: object
+              required: [historical, future]
+              properties:
+                historical: { type: integer }
+                future: { type: integer }
+            payments:
+              type: object
+              required: [completed, pending, openRefunds]
+              properties:
+                completed: { type: integer }
+                pending: { type: integer }
+                openRefunds: { type: integer }
+            packages:
+              type: object
+              required: [active, expired, unusedCredits, pendingOrders]
+              properties:
+                active: { type: integer }
+                expired: { type: integer }
+                unusedCredits: { type: integer }
+                pendingOrders: { type: integer }
+            children:
+              type: object
+              required: [total, withFutureActivity]
+              properties:
+                total: { type: integer }
+                withFutureActivity: { type: integer }
+            ballet:
+              type: object
+              required: [applicationsOpen, applicationsTerminal, enrollmentsActive, paymentsPending, refundsOpen, cancellationsPendingReview]
+              properties:
+                applicationsOpen: { type: integer }
+                applicationsTerminal: { type: integer }
+                enrollmentsActive: { type: integer }
+                paymentsPending: { type: integer }
+                refundsOpen: { type: integer }
+                cancellationsPendingReview: { type: integer }
+            security:
+              type: object
+              required: [devices, otpChallenges, providerLinks]
+              properties:
+                devices: { type: integer }
+                otpChallenges: { type: integer }
+                providerLinks: { type: integer }
+            legacyAttribution:
+              type: object
+              required: [emailOnlyRows, ambiguousRows]
+              properties:
+                emailOnlyRows: { type: integer }
+                ambiguousRows: { type: integer }
 
     GetStudentChildItem:
       type: object

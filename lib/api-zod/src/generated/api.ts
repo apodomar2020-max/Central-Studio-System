@@ -1827,6 +1827,92 @@ export const ReactivateStudentResponse = zod.object({
   accountStatus: zod.enum(["active", "deactivated"]),
 });
 
+/**
+ * Phase B2B: read-only deletion impact analysis for permanent Student account deletion. Requires users.delete. Truly read-only — no audit row, no Student mutation, no OTP/device mutation is ever produced by this call. Advisory only: `canDelete`/`blockers` reflect current-state information as of `generatedAt` under `policyVersion`; a future Permanent Delete execution MUST recompute the full blocker set inside its own locked transaction and must never trust a client-supplied deletion state (this GET has no request body).
+ */
+export const GetStudentDeletionImpactParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetStudentDeletionImpactResponse = zod
+  .object({
+    studentId: zod.number(),
+    lifecycleStatus: zod.enum(["active", "deactivated", "deleted"]),
+    canDelete: zod.boolean(),
+    generatedAt: zod.coerce.date(),
+    policyVersion: zod.string(),
+    blockers: zod.array(
+      zod.object({
+        key: zod.enum([
+          "ACCOUNT_MUST_BE_DEACTIVATED",
+          "FUTURE_BOOKINGS",
+          "PENDING_BOOKING_PAYMENT",
+          "ACTIVE_PACKAGE_VALUE",
+          "PENDING_PACKAGE_ORDER",
+          "OPEN_REFUND",
+          "ACTIVE_BALLET_ENROLLMENT",
+          "OPEN_BALLET_APPLICATION",
+          "PENDING_BALLET_PAYMENT",
+          "OPEN_BALLET_CANCELLATION_REVIEW",
+          "CHILD_FUTURE_COMMITMENT",
+          "AMBIGUOUS_LEGACY_ATTRIBUTION",
+          "LEGACY_IDENTITY_BACKFILL_REQUIRED",
+        ]),
+        label: zod.string(),
+        description: zod.string(),
+        count: zod.number().optional(),
+      }),
+    ),
+    categories: zod.array(
+      zod.object({
+        key: zod.string(),
+        label: zod.string(),
+        classification: zod.enum(["delete", "anonymize", "retain", "blocker"]),
+      }),
+    ),
+    summary: zod.object({
+      bookings: zod.object({
+        historical: zod.number(),
+        future: zod.number(),
+      }),
+      payments: zod.object({
+        completed: zod.number(),
+        pending: zod.number(),
+        openRefunds: zod.number(),
+      }),
+      packages: zod.object({
+        active: zod.number(),
+        expired: zod.number(),
+        unusedCredits: zod.number(),
+        pendingOrders: zod.number(),
+      }),
+      children: zod.object({
+        total: zod.number(),
+        withFutureActivity: zod.number(),
+      }),
+      ballet: zod.object({
+        applicationsOpen: zod.number(),
+        applicationsTerminal: zod.number(),
+        enrollmentsActive: zod.number(),
+        paymentsPending: zod.number(),
+        refundsOpen: zod.number(),
+        cancellationsPendingReview: zod.number(),
+      }),
+      security: zod.object({
+        devices: zod.number(),
+        otpChallenges: zod.number(),
+        providerLinks: zod.number(),
+      }),
+      legacyAttribution: zod.object({
+        emailOnlyRows: zod.number(),
+        ambiguousRows: zod.number(),
+      }),
+    }),
+  })
+  .describe(
+    "Advisory-only deletion impact analysis. Not a concurrency token, not a signed confirmation token — see policyVersion\/generatedAt notes on the parent operation.",
+  );
+
 export const listBookingsQueryDateRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
 
 export const listBookingsQueryPageSizeMax = 100;

@@ -1277,6 +1277,124 @@ export interface StudentLifecycleResponse {
   accountStatus: StudentLifecycleResponseAccountStatus;
 }
 
+export type StudentDeletionImpactBlockerKey =
+  (typeof StudentDeletionImpactBlockerKey)[keyof typeof StudentDeletionImpactBlockerKey];
+
+export const StudentDeletionImpactBlockerKey = {
+  ACCOUNT_MUST_BE_DEACTIVATED: "ACCOUNT_MUST_BE_DEACTIVATED",
+  FUTURE_BOOKINGS: "FUTURE_BOOKINGS",
+  PENDING_BOOKING_PAYMENT: "PENDING_BOOKING_PAYMENT",
+  ACTIVE_PACKAGE_VALUE: "ACTIVE_PACKAGE_VALUE",
+  PENDING_PACKAGE_ORDER: "PENDING_PACKAGE_ORDER",
+  OPEN_REFUND: "OPEN_REFUND",
+  ACTIVE_BALLET_ENROLLMENT: "ACTIVE_BALLET_ENROLLMENT",
+  OPEN_BALLET_APPLICATION: "OPEN_BALLET_APPLICATION",
+  PENDING_BALLET_PAYMENT: "PENDING_BALLET_PAYMENT",
+  OPEN_BALLET_CANCELLATION_REVIEW: "OPEN_BALLET_CANCELLATION_REVIEW",
+  CHILD_FUTURE_COMMITMENT: "CHILD_FUTURE_COMMITMENT",
+  AMBIGUOUS_LEGACY_ATTRIBUTION: "AMBIGUOUS_LEGACY_ATTRIBUTION",
+  LEGACY_IDENTITY_BACKFILL_REQUIRED: "LEGACY_IDENTITY_BACKFILL_REQUIRED",
+} as const;
+
+export interface StudentDeletionImpactBlocker {
+  readonly key: StudentDeletionImpactBlockerKey;
+  readonly label: string;
+  readonly description: string;
+  readonly count?: number;
+}
+
+export type StudentDeletionImpactCategoryClassification =
+  (typeof StudentDeletionImpactCategoryClassification)[keyof typeof StudentDeletionImpactCategoryClassification];
+
+export const StudentDeletionImpactCategoryClassification = {
+  delete: "delete",
+  anonymize: "anonymize",
+  retain: "retain",
+  blocker: "blocker",
+} as const;
+
+export interface StudentDeletionImpactCategory {
+  readonly key: string;
+  readonly label: string;
+  readonly classification: StudentDeletionImpactCategoryClassification;
+}
+
+export type StudentDeletionImpactResponseLifecycleStatus =
+  (typeof StudentDeletionImpactResponseLifecycleStatus)[keyof typeof StudentDeletionImpactResponseLifecycleStatus];
+
+export const StudentDeletionImpactResponseLifecycleStatus = {
+  active: "active",
+  deactivated: "deactivated",
+  deleted: "deleted",
+} as const;
+
+export type StudentDeletionImpactResponseSummaryBookings = {
+  historical: number;
+  future: number;
+};
+
+export type StudentDeletionImpactResponseSummaryPayments = {
+  completed: number;
+  pending: number;
+  openRefunds: number;
+};
+
+export type StudentDeletionImpactResponseSummaryPackages = {
+  active: number;
+  expired: number;
+  unusedCredits: number;
+  pendingOrders: number;
+};
+
+export type StudentDeletionImpactResponseSummaryChildren = {
+  total: number;
+  withFutureActivity: number;
+};
+
+export type StudentDeletionImpactResponseSummaryBallet = {
+  applicationsOpen: number;
+  applicationsTerminal: number;
+  enrollmentsActive: number;
+  paymentsPending: number;
+  refundsOpen: number;
+  cancellationsPendingReview: number;
+};
+
+export type StudentDeletionImpactResponseSummarySecurity = {
+  devices: number;
+  otpChallenges: number;
+  providerLinks: number;
+};
+
+export type StudentDeletionImpactResponseSummaryLegacyAttribution = {
+  emailOnlyRows: number;
+  ambiguousRows: number;
+};
+
+export type StudentDeletionImpactResponseSummary = {
+  bookings: StudentDeletionImpactResponseSummaryBookings;
+  payments: StudentDeletionImpactResponseSummaryPayments;
+  packages: StudentDeletionImpactResponseSummaryPackages;
+  children: StudentDeletionImpactResponseSummaryChildren;
+  ballet: StudentDeletionImpactResponseSummaryBallet;
+  security: StudentDeletionImpactResponseSummarySecurity;
+  legacyAttribution: StudentDeletionImpactResponseSummaryLegacyAttribution;
+};
+
+/**
+ * Advisory-only deletion impact analysis. Not a concurrency token, not a signed confirmation token — see policyVersion/generatedAt notes on the parent operation.
+ */
+export interface StudentDeletionImpactResponse {
+  readonly studentId: number;
+  readonly lifecycleStatus: StudentDeletionImpactResponseLifecycleStatus;
+  readonly canDelete: boolean;
+  readonly generatedAt: string;
+  readonly policyVersion: string;
+  readonly blockers: StudentDeletionImpactBlocker[];
+  readonly categories: StudentDeletionImpactCategory[];
+  readonly summary: StudentDeletionImpactResponseSummary;
+}
+
 export interface ListStudentsResponse {
   students: Student[];
   total: number;

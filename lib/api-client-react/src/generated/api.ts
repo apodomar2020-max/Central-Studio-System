@@ -105,6 +105,7 @@ import type {
   ScheduleRoom,
   SendCampaignResponse,
   Student,
+  StudentDeletionImpactResponse,
   StudentLifecycleResponse,
   UpdateAdminClassCapacitySettings409,
   UpdateAdminClassCapacitySettingsBody,
@@ -3976,6 +3977,94 @@ export const useReactivateStudent = <
 > => {
   return useMutation(getReactivateStudentMutationOptions(options));
 };
+
+export const getGetStudentDeletionImpactUrl = (id: number) => {
+  return `/api/students/${id}/deletion-impact`;
+};
+
+/**
+ * Phase B2B: read-only deletion impact analysis for permanent Student account deletion. Requires users.delete. Truly read-only — no audit row, no Student mutation, no OTP/device mutation is ever produced by this call. Advisory only: `canDelete`/`blockers` reflect current-state information as of `generatedAt` under `policyVersion`; a future Permanent Delete execution MUST recompute the full blocker set inside its own locked transaction and must never trust a client-supplied deletion state (this GET has no request body).
+ */
+export const getStudentDeletionImpact = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StudentDeletionImpactResponse> => {
+  return customFetch<StudentDeletionImpactResponse>(
+    getGetStudentDeletionImpactUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetStudentDeletionImpactQueryKey = (id: number) => {
+  return [`/api/students/${id}/deletion-impact`] as const;
+};
+
+export const getGetStudentDeletionImpactQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStudentDeletionImpact>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStudentDeletionImpact>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStudentDeletionImpactQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStudentDeletionImpact>>
+  > = ({ signal }) =>
+    getStudentDeletionImpact(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStudentDeletionImpact>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStudentDeletionImpactQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStudentDeletionImpact>>
+>;
+export type GetStudentDeletionImpactQueryError = ErrorType<ErrorResponse>;
+
+export function useGetStudentDeletionImpact<
+  TData = Awaited<ReturnType<typeof getStudentDeletionImpact>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStudentDeletionImpact>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStudentDeletionImpactQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListBookingsUrl = (params?: ListBookingsParams) => {
   const normalizedParams = new URLSearchParams();
