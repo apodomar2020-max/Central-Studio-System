@@ -19,6 +19,7 @@ let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _adminTokenGetter: AuthTokenGetter | null = null;
 let _sessionRevokedHandler: (() => void) | null = null;
+let _accountDeactivatedHandler: (() => void) | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -77,8 +78,31 @@ export function setSessionRevokedHandler(handler: (() => void) | null): void {
   _sessionRevokedHandler = handler;
 }
 
+/**
+ * Register a handler invoked (fire-and-forget, never awaited) the moment any
+ * response comes back `401` with `{ code: "ACCOUNT_DEACTIVATED" }` — the
+ * shape the API's student-account-lifecycle check (Phase B1B) uses
+ * exclusively when the account itself (not just the session) has been
+ * deactivated server-side. This is a DISTINCT signal from SESSION_REVOKED:
+ * same response shape, different code string, different meaning (account
+ * blocked vs. session invalid) — the two must never be conflated, since the
+ * user-facing message differs between them. Exact code match only; no other
+ * 401 ever triggers it.
+ *
+ * Mirrors setSessionRevokedHandler exactly for consistency. Intended for one
+ * registration from the app's top-level auth context. Pass `null` to clear
+ * it (e.g. in tests).
+ */
+export function setAccountDeactivatedHandler(handler: (() => void) | null): void {
+  _accountDeactivatedHandler = handler;
+}
+
 function isSessionRevokedBody(data: unknown): boolean {
   return !!data && typeof data === "object" && (data as Record<string, unknown>)["code"] === "SESSION_REVOKED";
+}
+
+function isAccountDeactivatedBody(data: unknown): boolean {
+  return !!data && typeof data === "object" && (data as Record<string, unknown>)["code"] === "ACCOUNT_DEACTIVATED";
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -410,6 +434,9 @@ export async function customFetch<T = unknown>(
     const errorData = await parseErrorBody(response, method);
     if (response.status === 401 && isSessionRevokedBody(errorData)) {
       _sessionRevokedHandler?.();
+    }
+    if (response.status === 401 && isAccountDeactivatedBody(errorData)) {
+      _accountDeactivatedHandler?.();
     }
     throw new ApiError(response, errorData, requestInfo);
   }

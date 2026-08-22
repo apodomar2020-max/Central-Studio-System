@@ -17,6 +17,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { GOOGLE_CLIENT_IDS } from "@/constants/google";
 import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
 import { setOAuthFlowState } from "@/services/oauthFlowState";
+import { deriveAuthErrorMessage } from "@/services/accountDeactivation";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const GOOGLE_NATIVE_REDIRECT_URI = "com.centralstudio.app:/oauthredirect";
@@ -110,7 +111,10 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
         if (__DEV__) {
           console.log("[AUTH_NAV] google exchange failure", { source, status: res.status });
         }
-        setError(data?.error ?? "Google sign-in failed. Please try again.");
+        // Student Account Lifecycle (Phase B1C): a deactivated account
+        // rejecting a fresh social-login attempt — no session to tear down,
+        // no partial auth state to persist, no auto-retry.
+        setError(deriveAuthErrorMessage(data, "Google sign-in failed. Please try again."));
         return;
       }
 

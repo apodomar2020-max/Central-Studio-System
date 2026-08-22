@@ -28,6 +28,7 @@ import { BackBtn, GhostBtn, FacebookLogo, GoogleLogo } from "@/components/signup
 import { continueAfterAuth, postAuthDestination } from "@/services/authProfile";
 import { clearSignupDrafts } from "./register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { deriveAuthErrorMessage } from "@/services/accountDeactivation";
 
 export default function LoginScreen() {
   const { setUser, user } = useAppContext();
@@ -81,7 +82,11 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error ?? "Login failed. Please try again.");
+        // Student Account Lifecycle (Phase B1C): the backend rejects a fresh
+        // login attempt for a deactivated account with this code — there is
+        // no existing session to tear down here, just a login attempt to
+        // reject. Never show this as a generic "wrong password" error.
+        setError(deriveAuthErrorMessage(data, "Login failed. Please try again."));
         setLoading(false);
         return;
       }

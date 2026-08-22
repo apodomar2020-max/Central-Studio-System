@@ -2,10 +2,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, type AppStateStatus } from "react-native";
 import { router } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { customFetch, normalizeMediaUrl, setSessionRevokedHandler } from "@workspace/api-client-react";
+import { customFetch, normalizeMediaUrl, setSessionRevokedHandler, setAccountDeactivatedHandler } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/utils/bookingStatus";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { presentCentralAlert } from "@/providers/CentralAlertProvider";
+import { ACCOUNT_DEACTIVATED_MESSAGE } from "@/services/accountDeactivation";
 import {
   beginPushLogout,
   finishPushLogout,
@@ -570,6 +572,45 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       router.replace("/onboarding/welcome" as never);
     });
     return () => setSessionRevokedHandler(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Student Account Lifecycle (Phase B1C): a 401 ACCOUNT_DEACTIVATED from ANY
+  // authenticated request means the account itself (not just the session)
+  // has been deactivated server-side. Distinct from SESSION_REVOKED above —
+  // same shared tear-down mechanics (clear local state, best-effort device
+  // unregister via the same logout coordinator, navigate to the same login
+  // landing screen) but a DIFFERENT, explicit one-time user message, so the
+  // two codes must never be routed through the same handler indistinguishably.
+  //
+  // `deactivationHandled` guards against several near-simultaneous 401s (many
+  // screens' in-flight requests failing at once) showing the alert more than
+  // once — setUser(null)/router.replace are naturally idempotent like the
+  // SESSION_REVOKED path, but presentCentralAlert is not, so it needs its own
+  // one-shot guard here.
+  useEffect(() => {
+    let deactivationHandled = false;
+    setAccountDeactivatedHandler(() => {
+      if (deactivationHandled) return;
+      deactivationHandled = true;
+      presentCentralAlert({
+        title: "Account Deactivated",
+        message: ACCOUNT_DEACTIVATED_MESSAGE,
+        tone: "error",
+        dedupeKey: "account-deactivated",
+        actions: [{ label: "OK", tone: "primary" }],
+      });
+      // Best-effort-only cleanup: same coordinator the manual/session-revoked
+      // logout paths use. revokeSession/unregister are already wrapped in
+      // .catch(() => {}) inside the coordinator, so a failed or unreachable
+      // unregister call never blocks navigation or leaves the device
+      // "logged in" locally. The account is already deactivated server-side
+      // (and any device rows already deactivated as part of that same
+      // transaction, per B1B) — this call is cosmetic cleanup only.
+      void logoutRef.current?.();
+      router.replace("/onboarding/welcome" as never);
+    });
+    return () => setAccountDeactivatedHandler(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
