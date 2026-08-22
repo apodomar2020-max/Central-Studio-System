@@ -799,6 +799,13 @@
       "when": 1787587200000,
       "tag": "0113_student_token_version",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1787673600000,
+      "tag": "0114_email_otps_digest_at_rest",
+      "breakpoints": true
     }
   ]
 }
