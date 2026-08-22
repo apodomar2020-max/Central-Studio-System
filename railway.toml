@@ -3,7 +3,7 @@
 # In the Railway dashboard: leave "Root Directory" empty (use repo root).
 
 [build]
-buildCommand = "pnpm install --no-frozen-lockfile && pnpm --filter @workspace/api-server run build"
+buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build"
 
 [deploy]
 # Explicit migration step: runs after build, before the new deployment starts

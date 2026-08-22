@@ -2,22 +2,30 @@
 # SECURITY: Minimum release age for npm packages (supply-chain attack defense)
 # ============================================================================
 #
-# This setting requires that any npm package version must have been published
-# for at least 1 day (1440 minutes) before pnpm will allow installing it.
-# This is a critical defense against supply-chain attacks. In most cases,
-# malicious npm releases are discovered and pulled within hours, so a 1-day
-# delay provides a strong safety buffer.
+# INTENT: require that any npm package version must have been published for
+# at least 1 day (1440 minutes) before pnpm will allow installing it, as a
+# defense against a compromised-maintainer/malicious-release supply-chain
+# attack landing inside an already-permitted semver range.
 #
-# DO NOT DISABLE THIS SETTING. Removing or setting it to 0 is considered
-# extremely dangerous and leaves the entire workspace vulnerable to supply-
-# chain attacks, which have been the #1 vector for npm ecosystem compromises.
+# CURRENT STATUS (Security-05A/05B1): NOT ACTIVE. `minimumReleaseAge` is a
+# pnpm 10+ feature; this workspace is pinned to pnpm@9.15.9 (see root
+# package.json's "packageManager" field), which does not recognize this key
+# at all and silently ignores it — confirmed empirically (`pnpm config get
+# minimumReleaseAge` returns undefined, and installs of just-published
+# versions proceed with no warning). This setting currently provides ZERO
+# protection. It is left in place, unmodified, as a statement of intent and
+# so it takes effect automatically once the pnpm major version is upgraded
+# (tracked separately as Security-05B2) — do not treat its presence here as
+# evidence that release-age protection is active today.
 #
-# If you absolutely need to install a package before the 1-day window has
-# passed (e.g. an urgent security bugfix), you can add it to the
-# `minimumReleaseAgeExclude` allowlist below. Only consider doing this for
-# packages released by trusted organizations with an impeccable security
-# posture (e.g. Replit packsges, react from Meta, typescript from Microsoft). Even then,
-# remove the exclusion once the 1-day window has passed.
+# Once pnpm 10+ is adopted and this setting becomes live: do not disable it
+# or set it to 0 without equivalent justification, since it will then be a
+# real control. If a package must be installed before its release-age window
+# has passed (e.g. an urgent security bugfix), add it to the
+# `minimumReleaseAgeExclude` allowlist below — only for packages from
+# trusted organizations with an impeccable security posture (e.g. Replit
+# packages, react from Meta, typescript from Microsoft) — and remove the
+# exclusion once the window has passed.
 #
 # Example:
 #   minimumReleaseAgeExclude:

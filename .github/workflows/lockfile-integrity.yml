@@ -1,0 +1,39 @@
+# Security-05B1 (CS-SEC-H-04): detects package manifest / pnpm-lock.yaml
+# drift before merge. This is the only CI gate this repo currently has for
+# lockfile reproducibility — every production build path (Railway, EAS,
+# Vercel) now enforces --frozen-lockfile at install time, but nothing
+# previously caught a manifest/lockfile mismatch before it reached one of
+# those platforms. Deliberately minimal: install-only, no build/test/deploy
+# steps, no secrets.
+name: Lockfile Integrity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  frozen-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the exact version in root package.json's "packageManager"
+      # field (pnpm@9.15.9) — keep these in sync if that field ever changes.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      # No Node version is pinned anywhere else in this repo (no .nvmrc,
+      # .node-version, or "engines" field in any package.json). Node 22 is
+      # chosen here to match what Railway's production/release
+      # infrastructure has been observed running successfully — the closest
+      # thing to an authoritative version in the absence of a repo-level
+      # pin. Revisit this if the repo ever adopts an explicit Node pin.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install with frozen lockfile
+        run: pnpm install --frozen-lockfile
