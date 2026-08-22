@@ -15,6 +15,7 @@ import {
   Package,
   Phone,
   QrCode,
+  RefreshCw,
   ShieldOff,
   Star,
   UserCog,
@@ -38,12 +39,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import {
   useDeactivateStudent,
   useReactivateStudent,
+  useGetStudentDeletionImpact,
   getListStudentsQueryKey,
+  getGetStudentDeletionImpactQueryKey,
 } from "@workspace/api-client-react";
+import type { StudentDeletionImpactResponse } from "@workspace/api-client-react";
 import "./admin2-operations.css";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
@@ -299,6 +311,293 @@ function EmptyState({ text }: { text: string }) {
   return <div className="py-8 text-center text-sm text-muted-foreground">{text}</div>;
 }
 
+// ---------------------------------------------------------------------------
+// Permanent Account Deletion — Impact Review (Phase B2C)
+//
+// Pure read-only consumption of the already-live B2B contract
+// (GET /api/students/:id/deletion-impact). This component performs ZERO
+// writes: no mutation is ever called from here, and no field from the
+// response (blockers, canDelete, categories, ...) is ever submitted back to
+// the server. Classification into the four display groups below is a pure
+// passthrough of the backend's `categories[].classification` — never
+// reinterpreted client-side.
+// ---------------------------------------------------------------------------
+
+const IMPACT_GROUPS: {
+  key: StudentDeletionImpactResponse["categories"][number]["classification"];
+  title: string;
+}[] = [
+  { key: "blocker", title: "Must Resolve First" },
+  { key: "anonymize", title: "Will Be Anonymized" },
+  { key: "retain", title: "Will Be Retained" },
+  { key: "delete", title: "Will Be Deleted" },
+];
+
+function impactErrorStatus(error: unknown): number | null {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === "number" ? status : null;
+  }
+  return null;
+}
+
+function ImpactErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = impactErrorStatus(error);
+  let message: string;
+  if (status === 401) {
+    message = "Your admin session has expired. Please log in again.";
+  } else if (status === 403) {
+    message = "You don't have permission to review deletion impact for this account.";
+  } else if (status === 404) {
+    message = "This student no longer exists.";
+  } else if (status === 409) {
+    message = "This account is already permanently deleted, or is no longer eligible for impact review.";
+  } else {
+    message = "Could not load the deletion impact review. Please try again.";
+  }
+  return (
+    <div role="alert" className="space-y-3 rounded-lg border border-red-500/40 bg-red-500/5 p-4">
+      <p className="text-sm text-red-400">{message}</p>
+      {status !== 403 && status !== 404 && status !== 409 && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ImpactSummaryRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between border-b py-1.5 text-sm last:border-b-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-white">{value}</span>
+    </div>
+  );
+}
+
+function ImpactSummaryCard({ title, rows }: { title: string; rows: { label: string; value: number }[] }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {rows.map((r) => (
+          <ImpactSummaryRow key={r.label} label={r.label} value={r.value} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeletionImpactDialog({
+  open,
+  onOpenChange,
+  query,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  query: ReturnType<typeof useGetStudentDeletionImpact<StudentDeletionImpactResponse>>;
+}) {
+  const data = query.data;
+  const hasError = query.isError;
+  const summary = data?.summary;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[85vh]">
+        <DialogHeader>
+          <DialogTitle>Permanent Deletion Impact</DialogTitle>
+          <DialogDescription>
+            Review what must be resolved, what will be anonymized, what will remain for historical or financial
+            integrity, and what account data will eventually be removed.
+          </DialogDescription>
+        </DialogHeader>
+
+        {query.isLoading || (query.isFetching && !data && !hasError) ? (
+          <div role="status" aria-live="polite" className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading deletion impact…
+          </div>
+        ) : hasError || !data ? (
+          <div role="status" aria-live="polite">
+            <ImpactErrorState error={query.error} onRetry={() => void query.refetch()} />
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>Generated: {formatDateTime(data.generatedAt)}</span>
+              <span>Policy version: {data.policyVersion}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Refresh Impact"
+                disabled={query.isFetching}
+                onClick={() => void query.refetch()}
+              >
+                {query.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh Impact
+              </Button>
+            </div>
+
+            {data.blockers.length > 0 && (
+              <section aria-labelledby="impact-blockers-heading" className="rounded-lg border border-red-500/40 bg-red-500/5 p-4 space-y-3">
+                <h3 id="impact-blockers-heading" className="text-sm font-semibold text-red-400">
+                  Permanent deletion cannot proceed yet.
+                </h3>
+                <ul className="space-y-2">
+                  {data.blockers.map((b) => (
+                    <li key={b.key} className="text-sm">
+                      <div className="font-medium text-white">
+                        {b.label}
+                        {typeof b.count === "number" ? ` (${b.count})` : ""}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{b.description}</div>
+                    </li>
+                  ))}
+                </ul>
+                {data.blockers.some((b) => b.key === "ACCOUNT_MUST_BE_DEACTIVATED") && (
+                  <p className="text-xs text-muted-foreground">
+                    The account must be deactivated before permanent deletion can eventually be performed.
+                  </p>
+                )}
+              </section>
+            )}
+
+            <section aria-labelledby="impact-eligibility-heading" className="rounded-lg border p-4 space-y-1">
+              <h3 id="impact-eligibility-heading" className="text-sm font-semibold text-white">
+                Eligibility
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {data.canDelete ? "No current blockers detected." : "Not eligible for permanent deletion."}
+              </p>
+              <p className="text-xs text-muted-foreground">Permanent deletion execution is not enabled yet.</p>
+              <p className="text-xs text-muted-foreground">
+                This analysis reflects the current account state and will be revalidated before any future
+                permanent deletion.
+              </p>
+            </section>
+
+            {(summary && (summary.legacyAttribution.emailOnlyRows > 0 || summary.legacyAttribution.ambiguousRows > 0)) && (
+              <section aria-labelledby="impact-legacy-heading" className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 space-y-2">
+                <h3 id="impact-legacy-heading" className="text-sm font-semibold text-amber-400">
+                  Legacy attribution
+                </h3>
+                {summary.legacyAttribution.emailOnlyRows > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Some historical records are still linked through legacy identity data and must be safely
+                    attached to the internal Student record before anonymization.
+                  </p>
+                )}
+                {summary.legacyAttribution.ambiguousRows > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Some historical records cannot yet be attributed safely.
+                  </p>
+                )}
+              </section>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {IMPACT_GROUPS.map((group) => {
+                const items = data.categories.filter((c) => c.classification === group.key);
+                return (
+                  <section key={group.key} aria-labelledby={`impact-group-${group.key}`} className="rounded-lg border p-4">
+                    <h3 id={`impact-group-${group.key}`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {group.title}
+                    </h3>
+                    {items.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">None.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {items.map((c) => (
+                          <li key={c.key} className="text-sm text-white">{c.label}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {group.key === "retain" && items.length > 0 && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Financial and historical records may be retained to preserve accounting, reconciliation,
+                        and audit integrity.
+                      </p>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+
+            {summary && (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <ImpactSummaryCard
+                  title="Bookings"
+                  rows={[
+                    { label: "Historical", value: summary.bookings.historical },
+                    { label: "Future", value: summary.bookings.future },
+                  ]}
+                />
+                <ImpactSummaryCard
+                  title="Payments"
+                  rows={[
+                    { label: "Completed", value: summary.payments.completed },
+                    { label: "Pending", value: summary.payments.pending },
+                    { label: "Open refunds", value: summary.payments.openRefunds },
+                  ]}
+                />
+                <ImpactSummaryCard
+                  title="Packages"
+                  rows={[
+                    { label: "Active", value: summary.packages.active },
+                    { label: "Expired", value: summary.packages.expired },
+                    { label: "Unused credits", value: summary.packages.unusedCredits },
+                    { label: "Pending orders", value: summary.packages.pendingOrders },
+                  ]}
+                />
+                <ImpactSummaryCard
+                  title="Children"
+                  rows={[
+                    { label: "Total", value: summary.children.total },
+                    { label: "With future activity", value: summary.children.withFutureActivity },
+                  ]}
+                />
+                <ImpactSummaryCard
+                  title="Ballet"
+                  rows={[
+                    { label: "Open applications", value: summary.ballet.applicationsOpen },
+                    { label: "Terminal applications", value: summary.ballet.applicationsTerminal },
+                    { label: "Active enrollments", value: summary.ballet.enrollmentsActive },
+                    { label: "Pending payments", value: summary.ballet.paymentsPending },
+                    { label: "Open refunds", value: summary.ballet.refundsOpen },
+                  ]}
+                />
+                <ImpactSummaryCard
+                  title="Security"
+                  rows={[
+                    { label: "Devices", value: summary.security.devices },
+                    { label: "OTP challenges", value: summary.security.otpChallenges },
+                    { label: "Provider links", value: summary.security.providerLinks },
+                  ]}
+                />
+                <ImpactSummaryCard
+                  title="Legacy attribution"
+                  rows={[
+                    { label: "Email-only rows", value: summary.legacyAttribution.emailOnlyRows },
+                    { label: "Ambiguous rows", value: summary.legacyAttribution.ambiguousRows },
+                  ]}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const studentId = Number(id);
@@ -312,6 +611,21 @@ export default function StudentDetailPage() {
   const [deactivateReason, setDeactivateReason] = useState("");
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleSuccess, setLifecycleSuccess] = useState<string | null>(null);
+
+  // Permanent Account Deletion — Impact Review (Phase B2C). Read-only,
+  // advisory analysis fetched from the already-live B2B contract
+  // (GET /api/students/:id/deletion-impact). Lazy: this hook does not fire
+  // until the Admin explicitly opens the review dialog (enabled gate below).
+  const [impactDialogOpen, setImpactDialogOpen] = useState(false);
+  const impactQuery = useGetStudentDeletionImpact<StudentDeletionImpactResponse>(studentId, {
+    query: {
+      queryKey: getGetStudentDeletionImpactQueryKey(studentId),
+      enabled: impactDialogOpen && Number.isInteger(studentId) && studentId > 0,
+      staleTime: 0,
+      gcTime: 0,
+      retry: false,
+    },
+  });
 
   const query = useQuery({
     queryKey: ["student-overview", studentId],
@@ -635,6 +949,45 @@ export default function StudentDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Permanent Account Deletion — review-only (Phase B2C). Deliberately
+              a separate subsection from Account Access above: reversible
+              deactivation and irreversible-deletion analysis must never be
+              mixed into one card or one button. The only action here is
+              read-only impact review; there is no execution path yet
+              (Permanent Delete is a future phase, B4). */}
+          {can("users", "delete") && d.user.accountStatus !== "deleted" && (
+            <Card className="mt-6 border-red-500/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm text-red-400">
+                  <AlertTriangle className="h-4 w-4" /> Permanent Account Deletion
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Permanent deletion is irreversible and handled separately from account deactivation.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Review Deletion Impact"
+                  disabled={impactDialogOpen && impactQuery.isFetching}
+                  onClick={() => { setImpactDialogOpen(true); void impactQuery.refetch(); }}
+                >
+                  {impactDialogOpen && impactQuery.isFetching ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Review Deletion Impact
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          <DeletionImpactDialog
+            open={impactDialogOpen}
+            onOpenChange={(open) => setImpactDialogOpen(open)}
+            query={impactQuery}
+          />
 
           <AlertDialog open={dangerDialog === "deactivate"} onOpenChange={(open) => { if (!open) setDangerDialog(null); }}>
             <AlertDialogContent>
