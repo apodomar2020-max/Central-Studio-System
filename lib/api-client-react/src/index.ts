@@ -5,6 +5,7 @@ export {
   setBaseUrl,
   setAuthTokenGetter,
   setAdminTokenGetter,
+  setSessionRevokedHandler,
   customFetch,
 } from "./custom-fetch";
 export type { AuthTokenGetter, CustomFetchOptions } from "./custom-fetch";

@@ -52,3 +52,50 @@ test("duplicate logout calls share one unregister and one session clear", async 
   assert.equal(unregisters, 1);
   assert.equal(clears, 1);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Security-02B (CS-SEC-H-03): backend session revocation on logout.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("logout attempts backend revocation FIRST, before unregister and clearSession", async () => {
+  const events: string[] = [];
+  const logout = createLogoutCoordinator({
+    begin: () => events.push("guard"),
+    revokeSession: async () => { events.push("revoke"); },
+    unregister: async () => { events.push("unregister"); },
+    clearSession: async () => { events.push("clear"); },
+    finish: () => events.push("finish"),
+  });
+  await logout();
+  assert.deepEqual(events, ["guard", "revoke", "unregister", "clear", "finish"]);
+});
+
+test("logout still completes (unregisters and clears local state) if the backend revocation call fails", async () => {
+  const events: string[] = [];
+  const logout = createLogoutCoordinator({
+    begin: () => events.push("guard"),
+    revokeSession: async () => { throw new Error("network unreachable"); },
+    unregister: async () => { events.push("unregister"); },
+    clearSession: async () => { events.push("clear"); },
+    finish: () => events.push("finish"),
+  });
+  // Must not throw — a dead backend can never trap the user in a
+  // logged-in-looking UI state.
+  await logout();
+  assert.deepEqual(events, ["guard", "unregister", "clear", "finish"]);
+});
+
+test("omitting revokeSession entirely preserves the exact prior local-only-logout behavior", async () => {
+  // Backward compatibility: a caller built before this feature (or one that
+  // deliberately wants local-only logout, e.g. in a context with no
+  // reachable backend) is completely unaffected by revokeSession's addition.
+  const events: string[] = [];
+  const logout = createLogoutCoordinator({
+    begin: () => events.push("guard"),
+    unregister: async () => { events.push("unregister"); },
+    clearSession: async () => { events.push("clear"); },
+    finish: () => events.push("finish"),
+  });
+  await logout();
+  assert.deepEqual(events, ["guard", "unregister", "clear", "finish"]);
+});

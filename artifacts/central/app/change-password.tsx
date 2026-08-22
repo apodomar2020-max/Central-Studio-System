@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
@@ -25,6 +26,7 @@ import {
   changePasswordOutcome,
   forgotPasswordOutcome,
   maskEmail,
+  persistChangePasswordToken,
   toApiErrorLike,
 } from "@/services/passwordRecoveryFlow";
 
@@ -87,10 +89,21 @@ export default function ChangePasswordScreen() {
     setLoading(true);
 
     try {
-      await customFetch("/api/auth/change-password", {
-        method: "POST",
-        body: JSON.stringify(buildChangePasswordPayload(current, next)),
-      });
+      // Security-02B (CS-SEC-H-03): the backend revokes every OTHER
+      // outstanding session as part of this call (token_version bump), and
+      // — because this device's own token is one of the ones that gets
+      // revoked — issues a fresh replacement token in the response so THIS
+      // device stays logged in. Persist it if present; older server builds
+      // that don't yet send it leave this a no-op and the existing token
+      // simply keeps working exactly as before.
+      const result = await customFetch<{ ok: boolean; accessToken?: string }>(
+        "/api/auth/change-password",
+        { method: "POST", body: JSON.stringify(buildChangePasswordPayload(current, next)) },
+      );
+      // The token getter (app/_layout.tsx) reads AsyncStorage fresh on every
+      // request — no separate in-memory copy to update, and no re-fetch of
+      // the user/session is needed to pick this up.
+      await persistChangePasswordToken(result, AsyncStorage);
       setLoading(false);
       setSuccess(true);
     } catch (err: unknown) {

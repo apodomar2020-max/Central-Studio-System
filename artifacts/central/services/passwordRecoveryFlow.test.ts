@@ -7,6 +7,7 @@ import {
   buildResetPasswordPayload,
   buildChangePasswordPayload,
   maskEmail,
+  persistChangePasswordToken,
 } from "./passwordRecoveryFlow";
 
 // ─── Forgot Password: no account-existence branching ────────────────────────
@@ -122,4 +123,36 @@ test("maskEmail: domain remains intact and identifiable while the local part sta
   const masked = maskEmail("test@centralstudioco.com");
   assert.ok(masked.endsWith("@centralstudioco.com"));
   assert.ok(!masked.startsWith("test"), "the real local part must not appear in the masked output");
+});
+
+// ─── Security-02B (CS-SEC-H-03): change-password replacement token ──────────
+
+test("persistChangePasswordToken: stores the token and reports it persisted, when present", async () => {
+  const stored: Record<string, string> = {};
+  const storage = { setItem: async (key: string, value: string) => { stored[key] = value; } };
+
+  const didPersist = await persistChangePasswordToken({ accessToken: "fresh.jwt.token" }, storage);
+
+  assert.equal(didPersist, true);
+  assert.equal(stored["studentToken"], "fresh.jwt.token");
+});
+
+test("persistChangePasswordToken: no-ops and reports false when the server omits accessToken (older build)", async () => {
+  let setItemCalls = 0;
+  const storage = { setItem: async () => { setItemCalls += 1; } };
+
+  const didPersist = await persistChangePasswordToken({}, storage);
+
+  assert.equal(didPersist, false);
+  assert.equal(setItemCalls, 0, "must not touch storage at all when there is nothing to persist");
+});
+
+test("persistChangePasswordToken: an empty-string accessToken is treated as absent", async () => {
+  let setItemCalls = 0;
+  const storage = { setItem: async () => { setItemCalls += 1; } };
+
+  const didPersist = await persistChangePasswordToken({ accessToken: "" }, storage);
+
+  assert.equal(didPersist, false);
+  assert.equal(setItemCalls, 0);
 });

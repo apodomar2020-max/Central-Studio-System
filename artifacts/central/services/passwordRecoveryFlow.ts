@@ -97,6 +97,29 @@ export function buildChangePasswordPayload(currentPassword: string, newPassword:
   return { currentPassword, newPassword };
 }
 
+/** Minimal shape this module needs from AsyncStorage — real AsyncStorage
+ *  satisfies this structurally, so no import of it is needed here to stay
+ *  trivially unit-testable (same dependency-injection style as
+ *  logoutCoordinator.ts's LogoutDependencies). */
+export type TokenStorage = { setItem: (key: string, value: string) => Promise<void> };
+
+/**
+ * Security-02B (CS-SEC-H-03): POST /api/auth/change-password revokes every
+ * OTHER outstanding session for the account and returns a fresh replacement
+ * token so THIS device stays logged in. Persists it when present; a no-op
+ * against an older server build that doesn't yet send one, in which case the
+ * existing token simply keeps working exactly as it did before this feature.
+ * Returns whether it actually persisted a token (for tests / logging).
+ */
+export async function persistChangePasswordToken(
+  result: { accessToken?: string },
+  storage: TokenStorage,
+): Promise<boolean> {
+  if (!result.accessToken) return false;
+  await storage.setItem("studentToken", result.accessToken);
+  return true;
+}
+
 /**
  * Masks an email address for display-only UI copy (e.g. "We'll send a code
  * to u***@example.com" on the authenticated Change Password recovery

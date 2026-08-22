@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, type AppStateStatus } from "react-native";
+import { router } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { customFetch, normalizeMediaUrl } from "@workspace/api-client-react";
+import { customFetch, normalizeMediaUrl, setSessionRevokedHandler } from "@workspace/api-client-react";
 import { mapStudentToUser, type AuthStudent } from "@/services/authProfile";
 import { mapApiStatusToLocal, mapApiPaymentStatusToLocal } from "@/utils/bookingStatus";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
@@ -540,6 +541,12 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   if (!logoutRef.current) {
     logoutRef.current = createLogoutCoordinator({
       begin: () => { beginPushLogout(); },
+      // Security-02B (CS-SEC-H-03): best-effort call to revoke every
+      // outstanding session for this account server-side. Runs FIRST, while
+      // the studentToken is still present — clearSession removes it.
+      // Coordinator-level `.catch()` already covers a failed/offline call;
+      // this must never block the rest of logout.
+      revokeSession: () => customFetch("/api/auth/logout", { method: "POST" }).then(() => undefined),
       unregister: unregisterPushDeviceForLogout,
       // setUser(null) removes the student JWT, so this is deliberately second.
       clearSession: () => setUser(null),
@@ -547,6 +554,24 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
     });
   }
   const logout = logoutRef.current;
+
+  // Security-02B: a 401 SESSION_REVOKED from ANY request (password changed
+  // or logged out on another device, an admin-forced revocation, etc.) tears
+  // down the local session and returns to the same screen the manual logout
+  // button already routes to. Deliberately local-only — no /auth/logout call
+  // here (the session is already revoked server-side; calling it again would
+  // just 401 with the same code and could recurse). setUser(null) and the
+  // route replace are both naturally idempotent, so repeated near-simultaneous
+  // 401s (e.g. several screens' in-flight requests all failing at once) are
+  // safe without extra guarding.
+  useEffect(() => {
+    setSessionRevokedHandler(() => {
+      void setUser(null);
+      router.replace("/onboarding/welcome" as never);
+    });
+    return () => setSessionRevokedHandler(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const addChild = useCallback(async (child: ChildProfile) => {
     try {
