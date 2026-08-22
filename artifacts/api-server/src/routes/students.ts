@@ -990,6 +990,10 @@ async function buildStudentOverviewData(
       nationality: row.nationality ?? null,
       howDidYouHearAboutUs: row.howDidYouHearAboutUs ?? null,
       policiesAcceptedAt: row.policiesAcceptedAt ?? null,
+      // Account Lifecycle (Phase B1D) — surfaced so the admin Student Detail
+      // page can render a status badge and gate the Danger Zone controls.
+      accountStatus: row.accountStatus,
+      deactivatedAt: row.deactivatedAt ?? null,
     },
     completion: permissions.canViewProfileCompletion ? completion : null,
     membershipStatus,

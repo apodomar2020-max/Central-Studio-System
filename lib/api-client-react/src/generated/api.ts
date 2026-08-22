@@ -56,6 +56,7 @@ import type {
   DanceType,
   DashboardAnalytics,
   DashboardSummary,
+  DeactivateStudentBody,
   ErrorResponse,
   GetAdminCalendarOccurrenceRosterParams,
   GetAdminCalendarResourceViewParams,
@@ -104,6 +105,7 @@ import type {
   ScheduleRoom,
   SendCampaignResponse,
   Student,
+  StudentLifecycleResponse,
   UpdateAdminClassCapacitySettings409,
   UpdateAdminClassCapacitySettingsBody,
   UpdateBalletScheduleBody,
@@ -3806,6 +3808,173 @@ export const useDeletePricePackage = <
   TContext
 > => {
   return useMutation(getDeletePricePackageMutationOptions(options));
+};
+
+export const getDeactivateStudentUrl = (id: number) => {
+  return `/api/students/${id}/deactivate`;
+};
+
+/**
+ * Deactivates the account (accountType-appropriate students.edit / parents.edit permission required). Idempotent — a redundant call on an already-deactivated account returns 200 with no additional audit event. Notification devices are deactivated as part of this action.
+ */
+export const deactivateStudent = async (
+  id: number,
+  deactivateStudentBody?: DeactivateStudentBody,
+  options?: RequestInit,
+): Promise<StudentLifecycleResponse> => {
+  return customFetch<StudentLifecycleResponse>(getDeactivateStudentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deactivateStudentBody),
+  });
+};
+
+export const getDeactivateStudentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateStudent>>,
+    TError,
+    { id: number; data?: BodyType<DeactivateStudentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deactivateStudent>>,
+  TError,
+  { id: number; data?: BodyType<DeactivateStudentBody> },
+  TContext
+> => {
+  const mutationKey = ["deactivateStudent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deactivateStudent>>,
+    { id: number; data?: BodyType<DeactivateStudentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return deactivateStudent(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeactivateStudentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deactivateStudent>>
+>;
+export type DeactivateStudentMutationBody =
+  | BodyType<DeactivateStudentBody>
+  | undefined;
+export type DeactivateStudentMutationError = ErrorType<ErrorResponse>;
+
+export const useDeactivateStudent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateStudent>>,
+    TError,
+    { id: number; data?: BodyType<DeactivateStudentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deactivateStudent>>,
+  TError,
+  { id: number; data?: BodyType<DeactivateStudentBody> },
+  TContext
+> => {
+  return useMutation(getDeactivateStudentMutationOptions(options));
+};
+
+export const getReactivateStudentUrl = (id: number) => {
+  return `/api/students/${id}/reactivate`;
+};
+
+/**
+ * Reactivates a deactivated account (accountType-appropriate students.edit / parents.edit permission required). Idempotent — a redundant call on an already-active account returns 200 with no additional audit event. Notification devices disabled at deactivation time are NOT restored; a fresh login/device registration is required.
+ */
+export const reactivateStudent = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StudentLifecycleResponse> => {
+  return customFetch<StudentLifecycleResponse>(getReactivateStudentUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getReactivateStudentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reactivateStudent>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reactivateStudent>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["reactivateStudent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reactivateStudent>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return reactivateStudent(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReactivateStudentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reactivateStudent>>
+>;
+
+export type ReactivateStudentMutationError = ErrorType<ErrorResponse>;
+
+export const useReactivateStudent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reactivateStudent>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reactivateStudent>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getReactivateStudentMutationOptions(options));
 };
 
 export const getListBookingsUrl = (params?: ListBookingsParams) => {

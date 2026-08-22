@@ -734,6 +734,102 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /students/{id}/deactivate:
+    post:
+      operationId: deactivateStudent
+      tags: [students]
+      description: >-
+        Deactivates the account (accountType-appropriate students.edit /
+        parents.edit permission required). Idempotent — a redundant call on
+        an already-deactivated account returns 200 with no additional audit
+        event. Notification devices are deactivated as part of this action.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Deactivated (or already deactivated)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentLifecycleResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Account cannot be deactivated from its current state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /students/{id}/reactivate:
+    post:
+      operationId: reactivateStudent
+      tags: [students]
+      description: >-
+        Reactivates a deactivated account (accountType-appropriate
+        students.edit / parents.edit permission required). Idempotent — a
+        redundant call on an already-active account returns 200 with no
+        additional audit event. Notification devices disabled at
+        deactivation time are NOT restored; a fresh login/device
+        registration is required.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Reactivated (or already active)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentLifecycleResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Account cannot be reactivated from its current state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /bookings:
     get:
       operationId: listBookings
@@ -2958,11 +3054,20 @@ components:
         joinedAt: { type: string }
         createdAt: { type: string }
         accountType: { type: ["string", "null"] }
+        accountStatus: { type: string, readOnly: true, enum: [active, deactivated, deleted] }
+        deactivatedAt: { type: ["string", "null"], readOnly: true }
         childCount: { type: integer }
         children:
           type: array
           items:
             $ref: "#/components/schemas/GetStudentChildItem"
+
+    StudentLifecycleResponse:
+      type: object
+      required: [id, accountStatus]
+      properties:
+        id: { type: integer }
+        accountStatus: { type: string, enum: [active, deactivated] }
 
     GetStudentChildItem:
       type: object

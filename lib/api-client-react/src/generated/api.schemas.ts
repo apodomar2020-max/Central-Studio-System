@@ -1215,6 +1215,15 @@ export interface UpdateBookingBody {
   notes?: string | null;
 }
 
+export type StudentAccountStatus =
+  (typeof StudentAccountStatus)[keyof typeof StudentAccountStatus];
+
+export const StudentAccountStatus = {
+  active: "active",
+  deactivated: "deactivated",
+  deleted: "deleted",
+} as const;
+
 export interface GetStudentChildItem {
   id: number;
   fullName: string;
@@ -1248,8 +1257,24 @@ export interface Student {
   createdAt: string;
   /** @nullable */
   accountType?: string | null;
+  readonly accountStatus?: StudentAccountStatus;
+  /** @nullable */
+  readonly deactivatedAt?: string | null;
   childCount?: number;
   children?: GetStudentChildItem[];
+}
+
+export type StudentLifecycleResponseAccountStatus =
+  (typeof StudentLifecycleResponseAccountStatus)[keyof typeof StudentLifecycleResponseAccountStatus];
+
+export const StudentLifecycleResponseAccountStatus = {
+  active: "active",
+  deactivated: "deactivated",
+} as const;
+
+export interface StudentLifecycleResponse {
+  id: number;
+  accountStatus: StudentLifecycleResponseAccountStatus;
 }
 
 export interface ListStudentsResponse {
@@ -2845,6 +2870,11 @@ export type ListSchedulesParams = {
 export type ListAdminBalletSchedulesParams = {
   page?: number;
   limit?: number;
+};
+
+export type DeactivateStudentBody = {
+  /** @maxLength 500 */
+  reason?: string;
 };
 
 export type ListBookingsParams = {

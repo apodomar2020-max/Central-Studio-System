@@ -1797,6 +1797,36 @@ export const DeletePricePackageParams = zod.object({
 
 export const DeletePricePackageResponse = zod.void();
 
+/**
+ * Deactivates the account (accountType-appropriate students.edit / parents.edit permission required). Idempotent — a redundant call on an already-deactivated account returns 200 with no additional audit event. Notification devices are deactivated as part of this action.
+ */
+export const DeactivateStudentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const deactivateStudentBodyReasonMax = 500;
+
+export const DeactivateStudentBody = zod.object({
+  reason: zod.string().max(deactivateStudentBodyReasonMax).optional(),
+});
+
+export const DeactivateStudentResponse = zod.object({
+  id: zod.number(),
+  accountStatus: zod.enum(["active", "deactivated"]),
+});
+
+/**
+ * Reactivates a deactivated account (accountType-appropriate students.edit / parents.edit permission required). Idempotent — a redundant call on an already-active account returns 200 with no additional audit event. Notification devices disabled at deactivation time are NOT restored; a fresh login/device registration is required.
+ */
+export const ReactivateStudentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReactivateStudentResponse = zod.object({
+  id: zod.number(),
+  accountStatus: zod.enum(["active", "deactivated"]),
+});
+
 export const listBookingsQueryDateRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
 
 export const listBookingsQueryPageSizeMax = 100;
@@ -2198,6 +2228,8 @@ export const ListStudentsResponse = zod.object({
       joinedAt: zod.string(),
       createdAt: zod.string(),
       accountType: zod.string().nullish(),
+      accountStatus: zod.enum(["active", "deactivated", "deleted"]).optional(),
+      deactivatedAt: zod.string().nullish(),
       childCount: zod.number().optional(),
       children: zod
         .array(
@@ -2240,6 +2272,8 @@ export const CreateStudentResponse = zod.object({
   joinedAt: zod.string(),
   createdAt: zod.string(),
   accountType: zod.string().nullish(),
+  accountStatus: zod.enum(["active", "deactivated", "deleted"]).optional(),
+  deactivatedAt: zod.string().nullish(),
   childCount: zod.number().optional(),
   children: zod
     .array(
@@ -2273,6 +2307,8 @@ export const GetStudentResponse = zod.object({
   joinedAt: zod.string(),
   createdAt: zod.string(),
   accountType: zod.string().nullish(),
+  accountStatus: zod.enum(["active", "deactivated", "deleted"]).optional(),
+  deactivatedAt: zod.string().nullish(),
   childCount: zod.number().optional(),
   children: zod
     .array(
@@ -2314,6 +2350,8 @@ export const UpdateStudentResponse = zod.object({
   joinedAt: zod.string(),
   createdAt: zod.string(),
   accountType: zod.string().nullish(),
+  accountStatus: zod.enum(["active", "deactivated", "deleted"]).optional(),
+  deactivatedAt: zod.string().nullish(),
   childCount: zod.number().optional(),
   children: zod
     .array(
