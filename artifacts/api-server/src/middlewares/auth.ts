@@ -81,6 +81,7 @@ import type { NextFunction, Request, Response } from "express";
 import { eq } from "drizzle-orm";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentAccountStatus";
 
 // ─── Global Express type extensions ──────────────────────────────────────────
 declare global {
@@ -223,7 +224,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // account's current generation.
     try {
       const [student] = await db
-        .select({ tokenVersion: studentsTable.tokenVersion })
+        .select({ tokenVersion: studentsTable.tokenVersion, accountStatus: studentsTable.accountStatus })
         .from(studentsTable)
         .where(eq(studentsTable.id, payload.sub))
         .limit(1);
@@ -233,6 +234,22 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         // revocation in the response; both mean "this token cannot be used".
         logger.warn({ path: req.path, studentId: payload.sub }, "Student JWT for a nonexistent account");
         res.status(401).json(SESSION_REVOKED_BODY);
+        return;
+      }
+
+      // ── Account lifecycle (Phase B1B) ──────────────────────────────────
+      // Checked BEFORE the token-version comparison below, deliberately.
+      // Both a deactivate and a reactivate bump token_version, so an old
+      // token from a now-deactivated account is simultaneously "revoked"
+      // and "deactivated" — checking lifecycle first gives the client the
+      // more actionable, specific code (ACCOUNT_DEACTIVATED) instead of
+      // always masking it behind the generic SESSION_REVOKED. Fail closed
+      // on anything other than the known-good "active" state — this also
+      // covers "deleted" and any future/unexpected value, not just
+      // "deactivated". Must run before req.studentId is attached.
+      if (!isActiveAccountStatus(student.accountStatus)) {
+        logger.info({ path: req.path, studentId: payload.sub }, "Student JWT rejected: account not active");
+        res.status(401).json(ACCOUNT_DEACTIVATED_BODY);
         return;
       }
 

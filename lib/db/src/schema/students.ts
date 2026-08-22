@@ -1,6 +1,8 @@
-import { boolean, date, integer, pgTable, serial, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, date, integer, pgTable, serial, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { systemUsersTable } from "./systemUsers";
 
 export const studentsTable = pgTable("students", {
   id: serial("id").primaryKey(),
@@ -35,6 +37,16 @@ export const studentsTable = pgTable("students", {
   // version 1 — deployment alone (every row starts at 1) never logs anyone
   // out; only an explicit reset/change/logout bump does.
   tokenVersion: integer("token_version").notNull().default(1),
+  // Account lifecycle (Phase B1B). Only "active"/"deactivated" are
+  // reachable via any route this phase — "deleted" exists solely so the
+  // CHECK constraint and downstream fail-closed logic already account for
+  // it ahead of the future tombstone phase. deactivated_at/by_admin_id are
+  // set together on deactivation and cleared together on reactivation;
+  // there is deliberately no persisted deactivation-reason column — a
+  // reason (if supplied) lives only in the audit log payload.
+  accountStatus: text("account_status").notNull().default("active"),
+  deactivatedAt: timestamp("deactivated_at", { withTimezone: true, mode: "string" }),
+  deactivatedByAdminId: integer("deactivated_by_admin_id").references(() => systemUsersTable.id, { onDelete: "set null" }),
   emailVerified: boolean("email_verified").notNull().default(false),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true, mode: "string" }),
   // Which mechanism last authenticated this account: "local" | "google" | "apple" | "facebook".
@@ -62,7 +74,9 @@ export const studentsTable = pgTable("students", {
   joinedAt: timestamp("joined_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
-});
+}, (table) => [
+  check("students_account_status_check", sql`${table.accountStatus} IN ('active', 'deactivated', 'deleted')`),
+]);
 
 // qrToken is excluded from the insert schema — it is always auto-generated
 // and must never be set or overridden via the API.

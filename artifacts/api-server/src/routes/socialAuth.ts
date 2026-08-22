@@ -55,6 +55,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentAccountStatus";
 import { signStudentToken, issueOtp, OtpRateLimitError } from "../lib/authHelpers";
 import { publicStudent } from "../lib/studentProfileResponse";
 import {
@@ -154,7 +155,8 @@ type SocialLoginOutcome =
   | { kind: "ok"; student: StudentRow; verified: boolean }
   | { kind: "needsEmail" }
   | { kind: "linkVerificationRequired"; maskedEmail: string; targetStudentId: number }
-  | { kind: "providerAlreadyLinked" };
+  | { kind: "providerAlreadyLinked" }
+  | { kind: "accountDeactivated" };
 
 /**
  * Resolve a verified provider identity into a student account.
@@ -173,6 +175,12 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
   // already-linked user reaches this and never touches the email path at all.
   const linked = await findByProviderId(provider, providerId);
   if (linked) {
+    // Account lifecycle (Phase B1B): fail closed before any mutation or
+    // token issuance for a non-active account. Never auto-reactivate.
+    if (!isActiveAccountStatus(linked.accountStatus)) {
+      return { kind: "accountDeactivated" };
+    }
+
     // A provider that attests THIS account's own address may promote it to
     // verified. Requires an exact match against the account's stored address,
     // so an attested identity for some other address can never verify it.
@@ -233,6 +241,13 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
   // the ONLY acceptable proof at this stage is a provider attestation over
   // this exact address. `existing.emailVerified` is deliberately not consulted:
   // it records what the owner did in the past, not who is authenticating now.
+  // Account lifecycle (Phase B1B): fail closed before any linking mutation
+  // or token issuance. Checked before the attestation gate so a deactivated
+  // account never leaks whether it would otherwise qualify for linking.
+  if (!isActiveAccountStatus(existing.accountStatus)) {
+    return { kind: "accountDeactivated" };
+  }
+
   if (emailTrust !== "provider_attested") {
     return {
       kind: "linkVerificationRequired",
@@ -381,6 +396,12 @@ function makeHandler(provider: ProviderName) {
         provider,
         maskedEmail: result.maskedEmail,
       });
+      return;
+    }
+
+    if (result.kind === "accountDeactivated") {
+      logger.info({ provider }, "Social login refused: account not active");
+      res.status(401).json(ACCOUNT_DEACTIVATED_BODY);
       return;
     }
 

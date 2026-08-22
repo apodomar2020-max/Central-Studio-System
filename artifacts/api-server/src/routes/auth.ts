@@ -40,6 +40,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentAccountStatus";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import {
   invalidateOtpCodes,
@@ -222,6 +223,15 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   if (!valid) {
     logger.warn({ email }, "Failed login attempt");
     res.status(401).json({ error: "Invalid email or password" });
+    return;
+  }
+
+  // Account lifecycle (Phase B1B): password verified, but never issue a
+  // token for a non-active account. Fail closed on anything other than
+  // "active" (covers "deactivated", "deleted", and any unexpected value).
+  if (!isActiveAccountStatus(student.accountStatus)) {
+    logger.info({ studentId: student.id }, "Login rejected: account not active");
+    res.status(401).json(ACCOUNT_DEACTIVATED_BODY);
     return;
   }
 

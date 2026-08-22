@@ -15,6 +15,7 @@ import {
   instructorsTable,
   studentDanceInterestsTable,
   danceTypesTable,
+  notificationDevicesTable,
 } from "@workspace/db";
 import {
   CreateStudentBody,
@@ -1141,6 +1142,190 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
     });
   }
   res.json(UpdateStudentResponse.parse(row));
+});
+
+// ── Account lifecycle: deactivate / reactivate (Phase B1B) ─────────────────
+// Neither route can reach account_status='deleted' — that value exists only
+// in the CHECK constraint ahead of a future tombstone phase. Permission is
+// gated on the SAME module/action the PATCH route above already uses for
+// account-management edits (students.edit / parents.edit, chosen by the
+// target's accountType via accountModule()) — a lifecycle action was not
+// added to lib/api-zod/src/permissions.ts because "edit" already represents
+// "manage this account" and deactivation/reactivation is squarely that.
+router.post("/students/:id/deactivate", blockStudentJwt, requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+  const params = UpdateStudentParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.slice(0, 500) : undefined;
+
+  const [existing] = await db
+    .select({ id: studentsTable.id, accountType: studentsTable.accountType, name: studentsTable.name })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, params.data.id))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  const targetModule = accountModule(existing.accountType);
+  if (!adminCan(req, "users", "edit") && !adminCan(req, targetModule, "edit")) {
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: { anyOf: [`users.edit`, `${targetModule}.edit`] },
+    });
+    return;
+  }
+
+  const adminId = req.adminUser!.id;
+  const outcome = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ id: studentsTable.id, accountStatus: studentsTable.accountStatus })
+      .from(studentsTable)
+      .where(eq(studentsTable.id, params.data.id))
+      .for("update")
+      .limit(1);
+    if (!locked) return { kind: "notFound" as const };
+
+    if (locked.accountStatus === "deactivated") {
+      return { kind: "noop" as const, status: locked.accountStatus };
+    }
+    if (locked.accountStatus !== "active") {
+      // Defensive: no route can put a row in "deleted" this phase, but never
+      // transition out of it if one somehow existed (e.g. manual DB edit).
+      return { kind: "conflict" as const, status: locked.accountStatus };
+    }
+
+    await tx
+      .update(studentsTable)
+      .set({
+        accountStatus: "deactivated",
+        deactivatedAt: new Date().toISOString(),
+        deactivatedByAdminId: adminId,
+        tokenVersion: sql`${studentsTable.tokenVersion} + 1`,
+      })
+      .where(eq(studentsTable.id, params.data.id));
+
+    await tx
+      .update(notificationDevicesTable)
+      .set({ isActive: false })
+      .where(eq(notificationDevicesTable.studentId, params.data.id));
+
+    return { kind: "deactivated" as const };
+  });
+
+  if (outcome.kind === "notFound") {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+  if (outcome.kind === "conflict") {
+    res.status(409).json({ error: "Account cannot be deactivated from its current state.", accountStatus: outcome.status });
+    return;
+  }
+  if (outcome.kind === "noop") {
+    // Idempotent: already deactivated. No additional token_version bump,
+    // no duplicate audit event.
+    res.status(200).json({ id: existing.id, accountStatus: "deactivated" });
+    return;
+  }
+
+  res.status(200).json({ id: existing.id, accountStatus: "deactivated" });
+
+  // Audit AFTER commit, per activityLog.ts's documented contract.
+  await logActivity(req, {
+    action: "deactivate",
+    module: targetModule,
+    entityType: targetModule === "parents" ? "parent" : "student",
+    entityId: existing.id,
+    entityLabel: existing.name,
+    summary: `Deactivated ${targetModule === "parents" ? "parent" : "student"} ${existing.name}`,
+    ...(reason ? { after: { reason } } : {}),
+  });
+});
+
+router.post("/students/:id/reactivate", blockStudentJwt, requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
+  const params = UpdateStudentParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const [existing] = await db
+    .select({ id: studentsTable.id, accountType: studentsTable.accountType, name: studentsTable.name })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, params.data.id))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  const targetModule = accountModule(existing.accountType);
+  if (!adminCan(req, "users", "edit") && !adminCan(req, targetModule, "edit")) {
+    res.status(403).json({
+      error: "Permission denied",
+      requiredPermission: { anyOf: [`users.edit`, `${targetModule}.edit`] },
+    });
+    return;
+  }
+
+  const outcome = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ id: studentsTable.id, accountStatus: studentsTable.accountStatus })
+      .from(studentsTable)
+      .where(eq(studentsTable.id, params.data.id))
+      .for("update")
+      .limit(1);
+    if (!locked) return { kind: "notFound" as const };
+
+    if (locked.accountStatus === "active") {
+      return { kind: "noop" as const };
+    }
+    if (locked.accountStatus === "deleted") {
+      return { kind: "conflict" as const };
+    }
+
+    // notification_devices is deliberately untouched here — reactivation
+    // does not resurrect old disabled devices; a fresh login + device
+    // registration is required to get a new active device row.
+    await tx
+      .update(studentsTable)
+      .set({
+        accountStatus: "active",
+        deactivatedAt: null,
+        deactivatedByAdminId: null,
+        tokenVersion: sql`${studentsTable.tokenVersion} + 1`,
+      })
+      .where(eq(studentsTable.id, params.data.id));
+
+    return { kind: "reactivated" as const };
+  });
+
+  if (outcome.kind === "notFound") {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+  if (outcome.kind === "conflict") {
+    res.status(409).json({ error: "Account cannot be reactivated from its current state." });
+    return;
+  }
+  if (outcome.kind === "noop") {
+    res.status(200).json({ id: existing.id, accountStatus: "active" });
+    return;
+  }
+
+  res.status(200).json({ id: existing.id, accountStatus: "active" });
+
+  await logActivity(req, {
+    action: "reactivate",
+    module: targetModule,
+    entityType: targetModule === "parents" ? "parent" : "student",
+    entityId: existing.id,
+    entityLabel: existing.name,
+    summary: `Reactivated ${targetModule === "parents" ? "parent" : "student"} ${existing.name}`,
+  });
 });
 
 // Student account hard-deletion is intentionally disabled. The prior
