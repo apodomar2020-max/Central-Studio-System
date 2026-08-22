@@ -10,7 +10,6 @@ const DATABASE_URL = process.env.DISPOSABLE_ROUTES_DATABASE_URL
   ?? "postgresql://localhost:5432/central_studio_disposable_routes";
 
 process.env.DATABASE_URL = DATABASE_URL;
-process.env.API_SECRET_KEY = "test-api-secret-key";
 delete process.env.REDIS_URL;
 delete process.env.PUSH_NOTIFICATIONS_ENABLED;
 

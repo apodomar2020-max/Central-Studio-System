@@ -59,16 +59,12 @@ In Railway → your service → **Variables**, add:
 | Variable | Value |
 |----------|-------|
 | `NODE_ENV` | `production` |
-| `API_SECRET_KEY` | A strong random string — generate with the command below |
 | `ALLOWED_ORIGINS` | Leave blank for now; you'll fill this in after Vercel is set up |
 
-Generate the key locally:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-Copy the output — you'll use the same value in Vercel and EAS.
+There is no shared server-to-server API secret to configure — public/auth
+routes need no credential, student routes are gated by a student JWT, and
+admin routes are gated by an admin JWT + RBAC. Each is verified independently
+per-request; nothing here is a shared static key.
 
 ### 1.4 — Deploy
 
@@ -128,7 +124,9 @@ In Vercel → Project → **Settings → Environment Variables**:
 | Variable | Value |
 |----------|-------|
 | `VITE_API_URL` | Your Railway URL, e.g. `https://central-studio-api-production.up.railway.app` |
-| `VITE_API_KEY` | The same `API_SECRET_KEY` value you set on Railway |
+
+No API key variable is needed — the admin dashboard authenticates with an
+admin JWT (obtained via login) sent as `X-Admin-Token`, not a shared secret.
 
 ### 2.3 — Deploy
 
@@ -147,9 +145,8 @@ Open your Vercel URL in a browser. The admin dashboard should load.
 Go to **Classes** → click **New Class** → save. Then check:
 
 ```bash
-curl https://YOUR-RAILWAY-URL.up.railway.app/api/classes \
-  -H "X-Api-Key: YOUR_API_SECRET_KEY"
-# → [{"id":1,...}]
+curl https://YOUR-RAILWAY-URL.up.railway.app/api/classes
+# → [{"id":1,...}]  (public catalog GET — no credential needed)
 ```
 
 ### 2.5 — Update ALLOWED_ORIGINS on Railway
@@ -202,11 +199,10 @@ eas init
 # Public API URL (visible in the bundle — that's fine)
 eas secret:create --scope project --name EXPO_PUBLIC_API_URL \
   --value "https://YOUR-RAILWAY-URL.up.railway.app"
-
-# API key (semi-public — same key used by the admin dashboard)
-eas secret:create --scope project --name EXPO_PUBLIC_API_KEY \
-  --value "YOUR_API_SECRET_KEY"
 ```
+
+No API key secret is needed — the mobile app sends no Authorization header
+until a student logs in, at which point it sends the student's JWT.
 
 ### 3.5 — Build the APK (Android — sideload or distribute directly)
 
@@ -248,15 +244,15 @@ to confirm the booking appears.
 |----------|---------|-------------|
 | `NODE_ENV=production` | API | Railway → Variables |
 | `DATABASE_URL` | API | Railway (auto-set by Postgres plugin) |
-| `API_SECRET_KEY` | API | Railway → Variables |
 | `ALLOWED_ORIGINS` | API | Railway → Variables |
 | `VITE_API_URL` | Admin | Vercel → Env vars |
-| `VITE_API_KEY` | Admin | Vercel → Env vars |
 | `EXPO_PUBLIC_API_URL` | Mobile | EAS secrets |
-| `EXPO_PUBLIC_API_KEY` | Mobile | EAS secrets |
 
-`API_SECRET_KEY`, `VITE_API_KEY`, and `EXPO_PUBLIC_API_KEY` must all be the
-same value.
+There is no server-to-server shared API secret in this system. Trust model:
+public/auth routes need no credential, student routes require a student JWT
+(obtained via login/OTP/social auth), and admin routes require an admin JWT
+plus RBAC. Each request is authenticated independently — there is nothing
+that needs to match across services.
 
 ---
 
@@ -266,7 +262,7 @@ same value.
 2. Mobile app → open **Classes** tab → class appears
 3. Mobile app → tap class → **Book This Class** → complete flow
 4. Admin dashboard → **Bookings** → booking appears in the table
-5. `curl https://YOUR-RAILWAY-URL/api/bookings -H "X-Api-Key: KEY"` → booking in JSON
+5. `curl https://YOUR-RAILWAY-URL/api/bookings` → booking in JSON (public read; write routes require the relevant JWT)
 
 ---
 

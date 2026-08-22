@@ -13,17 +13,17 @@ for the Fresh Launch Database cutover or public launch.
 
 ## Expo Go
 
-From the repository root, obtain the existing pre-launch API key through the
-approved secure channel, then run:
+From the repository root, run:
 
 ```sh
 cd artifacts/central
 EXPO_PUBLIC_API_URL=https://supportive-magic-production-b800.up.railway.app \
-EXPO_PUBLIC_API_KEY='<existing pre-launch API key>' \
 pnpm exec expo start --go
 ```
 
-Do not commit the API key or save it in an unignored file.
+No API key is needed — the app has no shared secret to configure. It sends
+no Authorization header until a participant logs in, at which point it sends
+their student JWT.
 
 Expo Go does not support the native Facebook SDK or production push delivery.
 Use email authentication for this acceptance pass. Participant Lifecycle

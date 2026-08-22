@@ -13,7 +13,6 @@ function assertDisposableUrl(databaseUrl: string): void {
 assertDisposableUrl(DATABASE_URL);
 
 process.env.DATABASE_URL = DATABASE_URL;
-process.env.API_SECRET_KEY = "test-api-secret-key";
 
 let pool: typeof import("@workspace/db").pool;
 let getFinancialAggregates: typeof import("./financialAggregates").getFinancialAggregates;

@@ -29,7 +29,6 @@ function assertDisposableUrl(databaseUrl: string): void {
 assertDisposableUrl(DATABASE_URL);
 
 process.env.DATABASE_URL = DATABASE_URL;
-process.env.API_SECRET_KEY = "test-api-secret-key";
 process.env.STUDENT_JWT_SECRET = "test-student-secret";
 delete process.env.REDIS_URL;
 delete process.env.PUSH_NOTIFICATIONS_ENABLED;

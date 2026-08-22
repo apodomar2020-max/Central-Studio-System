@@ -30,7 +30,6 @@ function assertDisposableUrl(databaseUrl: string): void {
 assertDisposableUrl(DATABASE_URL);
 
 process.env.DATABASE_URL = DATABASE_URL;
-process.env.API_SECRET_KEY = "test-api-secret-key";
 delete process.env.REDIS_URL;
 
 const ADMIN_JWT_SECRET = "dev-admin-secret-change-in-production";
@@ -100,7 +99,6 @@ before(async () => {
       ...process.env,
       DATABASE_URL,
       PORT: String(port),
-      API_SECRET_KEY: "test-api-secret-key",
       NODE_ENV: "test",
     },
     stdio: "pipe",

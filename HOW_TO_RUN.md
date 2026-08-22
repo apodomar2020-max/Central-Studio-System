@@ -78,18 +78,18 @@ PORT=3000
 NODE_ENV=development
 DATABASE_URL=postgresql://centralstudio_user:changeme@localhost:5432/centralstudio
 
-# Generate a key with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-# Leave blank in dev (server will warn but still run without auth)
-API_SECRET_KEY=
-
 # Leave blank in dev (all origins allowed)
 ALLOWED_ORIGINS=
 ```
 
+There is no shared API secret to configure. Trust model: public/auth routes
+need no credential; student routes require a student JWT (issued at
+login/OTP/social auth); admin routes require an admin JWT plus RBAC. Each is
+verified independently per-request.
+
 ### Admin dashboard — `artifacts/admin/.env.local`
 ```
 # In dev, Vite proxies /api → localhost:3000, so no VITE_API_URL needed
-VITE_API_KEY=
 ```
 
 ### Mobile app — `artifacts/central/.env.local`
@@ -102,8 +102,6 @@ EXPO_PUBLIC_API_URL=http://localhost:3000
 
 # For a physical device: use your Mac's LAN IP (find with: ifconfig | grep "inet ")
 # EXPO_PUBLIC_API_URL=http://192.168.1.x:3000
-
-EXPO_PUBLIC_API_KEY=
 ```
 
 > **Note:** `EXPO_PUBLIC_*` variables are bundled into the app at build time.

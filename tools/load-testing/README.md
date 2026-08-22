@@ -43,7 +43,7 @@ Only put real staging secrets in your shell or secret manager. Do not commit cre
 
 `BASE_URL`: Staging API base URL, for example `https://staging-api.example.com`.
 
-`API_KEY`: Optional shared staging API key. Most `/api` routes are protected by the Central Studio shared API key; `/api/healthz` is public. Set this when staging requires `X-Api-Key`.
+`API_KEY`: Unused — the API has no shared server-to-server secret. Public/auth routes need no credential, student routes need a student JWT (see `authHeaders`/`STUDENT_EMAIL`/`STUDENT_PASSWORD` below), and admin routes need an admin JWT + RBAC. Left as a no-op env var for backward compatibility with existing staging scripts; safe to leave unset.
 
 `STUDENT_EMAIL`: Verified staging student email for authenticated student reads.
 

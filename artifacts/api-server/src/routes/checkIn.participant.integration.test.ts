@@ -8,7 +8,6 @@ if (!["127.0.0.1", "localhost"].includes(url.hostname) || !/disposable|test|loca
   throw new Error("Refusing to run QR attendance tests outside a disposable local database.");
 }
 process.env.DATABASE_URL = DATABASE_URL;
-process.env.API_SECRET_KEY = "test-api-secret-key";
 delete process.env.REDIS_URL;
 
 let server: import("node:http").Server;

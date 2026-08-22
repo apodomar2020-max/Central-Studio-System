@@ -36,11 +36,10 @@ if (
 }
 process.env.DATABASE_URL = DATABASE_URL;
 process.env.NODE_ENV ??= "test"; // ensures issueOtp's sendOtpEmail() takes the safe DEV MODE no-op path, never a real network call
-// middlewares/auth.ts reads API_SECRET_KEY at module-load time into a
-// top-level const; it must be set BEFORE that module is first imported
-// (transitively, via authHelpers.ts) or requireAuth silently no-ops for
-// every request (its documented "no key configured" dev-mode passthrough),
-// which would make the route-level tests below pass for the wrong reason.
+// API_SECRET_KEY has zero authorization significance in requireAuth
+// (Security-04B/04C) — this placeholder value only exercises the legacy
+// non-JWT-shaped-bearer compatibility path below, it is never compared
+// against anything server-side.
 process.env.API_SECRET_KEY ??= "test-otp-send-limits-api-secret-key";
 
 let pool: typeof import("@workspace/db").pool;
@@ -408,10 +407,10 @@ test("POST /auth/forgot-password stays generic-200 once the shared hourly budget
   const student = await createStudent("route-forgot-generic");
   await insertAlternatingHistory(student.email, 5, 45 * 60_000); // exhaust the shared hourly budget
 
-  // Anonymous requests (no student session yet) authenticate to requireAuth
-  // with the shared API secret key, exactly as the real mobile client does
-  // for guest/pre-login calls — see middlewares/auth.ts's "Shared API key
-  // path (admin dashboard, guest mobile browsing)".
+  // Anonymous requests (no student session yet) send a non-JWT-shaped bearer
+  // token here purely as legacy-client compatibility coverage — requireAuth
+  // treats it as anonymous and never compares it against anything (see
+  // middlewares/auth.ts). forgot-password is a public route either way.
   const res = await fetch(apiUrl("/auth/forgot-password"), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${process.env.API_SECRET_KEY}` },

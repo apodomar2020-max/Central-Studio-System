@@ -46,7 +46,6 @@ assertDisposableUrl(DATABASE_URL);
 // left unset — both middlewares fall back to documented dev defaults, which
 // this file signs test tokens with (see studentToken()/adminToken() below).
 process.env.DATABASE_URL = DATABASE_URL;
-process.env.API_SECRET_KEY = "test-api-secret-key";
 delete process.env.REDIS_URL;
 delete process.env.PUSH_NOTIFICATIONS_ENABLED;
 

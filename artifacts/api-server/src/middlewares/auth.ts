@@ -13,9 +13,9 @@
  *      `type`, or revoked via tokenVersion — see Security-02B below).
  *   2. Otherwise (no token, or a token that is present but not JWT-shaped),
  *      treat the request as anonymous and call next() with no identity
- *      attached. This includes the legacy shared API key — as of
- *      Security-04B, `API_SECRET_KEY` / `X-Api-Key` has ZERO authorization
- *      significance. It is never compared against anything here.
+ *      attached. This includes the retired shared API key: `API_SECRET_KEY` /
+ *      `X-Api-Key` has ZERO authorization significance and is never compared
+ *      against anything here (Security-04B/04C retired it; see below).
  *
  * Accepted headers (unchanged from before, `extractToken`'s precedence order
  * is preserved for backward compatibility with old clients that still send
@@ -59,21 +59,22 @@
  * phase, by design: caching would reintroduce the propagation-delay window
  * this feature exists to close.
  *
- * ─── Security-04B: API_SECRET_KEY retired from authorization ────────────────
+ * ─── API_SECRET_KEY: retired from authorization (Security-04B/04C) ──────────
  *
  * Route-level trust was audited (357 route registrations, 60 route modules):
- * every route that actually needs identity already has its own independent
- * gate (requireStudentAuth/requireVerifiedStudent using STUDENT_JWT_SECRET,
+ * every route that actually needs identity has its own independent gate
+ * (requireStudentAuth/requireVerifiedStudent using STUDENT_JWT_SECRET,
  * requireAdminAuth + RBAC using ADMIN_JWT_SECRET, or a route-local read-access
- * gate such as requireBookingReadAccess). The only routes that relied on the
- * shared key ALONE were public catalog/CMS GETs, the auth entry points
+ * gate such as requireBookingReadAccess). The only routes that ever relied on
+ * the shared key ALONE were public catalog/CMS GETs, the auth entry points
  * (register/login/forgot-password/reset-password/social login/admin login —
  * which must be reachable by definition), the device-unregister route (which
  * has its own separate unregisterSecret hash comparison), health/version, and
  * one hardcoded 405 stub. None of those need API_SECRET_KEY to be safe, so
- * the key now carries no authorization weight anywhere in this middleware.
- * This is deliberately NOT conditioned on whether API_SECRET_KEY happens to
- * be set in the environment — behavior is identical either way.
+ * the key carries no authorization weight anywhere in this middleware, and no
+ * client (Security-04C removed the last client-side sender) sends it anymore.
+ * This is not conditioned on whether API_SECRET_KEY happens to be set in the
+ * environment — behavior is identical either way.
  */
 import jwt from "jsonwebtoken";
 import type { NextFunction, Request, Response } from "express";
