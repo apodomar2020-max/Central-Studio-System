@@ -7,25 +7,32 @@
 # defense against a compromised-maintainer/malicious-release supply-chain
 # attack landing inside an already-permitted semver range.
 #
-# CURRENT STATUS (Security-05A/05B1): NOT ACTIVE. `minimumReleaseAge` is a
-# pnpm 10+ feature; this workspace is pinned to pnpm@9.15.9 (see root
-# package.json's "packageManager" field), which does not recognize this key
-# at all and silently ignores it — confirmed empirically (`pnpm config get
-# minimumReleaseAge` returns undefined, and installs of just-published
-# versions proceed with no warning). This setting currently provides ZERO
-# protection. It is left in place, unmodified, as a statement of intent and
-# so it takes effect automatically once the pnpm major version is upgraded
-# (tracked separately as Security-05B2) — do not treat its presence here as
-# evidence that release-age protection is active today.
+# CURRENT STATUS (Security-05B2): ACTIVE. This workspace is pinned to
+# pnpm@10.34.5 (see root package.json's "packageManager" field), which
+# supports `minimumReleaseAge` (introduced in pnpm 10.16) and enforces it.
+# 1440 minutes = a 24-hour maturity delay applied to any package version
+# that pnpm has to newly resolve (a version not already pinned in the
+# committed lockfile) — e.g. `pnpm add`, `pnpm update`, or any install that
+# needs to pick a version for a range not yet satisfied by the lockfile.
 #
-# Once pnpm 10+ is adopted and this setting becomes live: do not disable it
-# or set it to 0 without equivalent justification, since it will then be a
-# real control. If a package must be installed before its release-age window
-# has passed (e.g. an urgent security bugfix), add it to the
-# `minimumReleaseAgeExclude` allowlist below — only for packages from
+# IMPORTANT SCOPE LIMIT: this control does NOT retroactively vet or protect
+# against a malicious package version that is already committed into the
+# current pnpm-lock.yaml. A normal `pnpm install --frozen-lockfile`
+# deployment (which is what every production build path — Railway, EAS,
+# Vercel — actually runs) installs exactly what the lockfile already
+# specifies and does not re-evaluate package release age at all. This
+# setting only guards the moment a new/updated version is being resolved
+# into the lockfile in the first place, not what happens afterward.
+#
+# Do not disable this or set it to 0 without equivalent justification, since
+# it is a real, active control. If a package must be installed before its
+# release-age window has passed (e.g. an urgent security bugfix), add it to
+# the `minimumReleaseAgeExclude` allowlist below — only for packages from
 # trusted organizations with an impeccable security posture (e.g. Replit
 # packages, react from Meta, typescript from Microsoft) — and remove the
-# exclusion once the window has passed.
+# exclusion once the window has passed. The current exclusions below
+# (`@replit/*`, `stripe-replit-sync`) are intentional, documented exceptions
+# for exactly that reason, not an oversight.
 #
 # Example:
 #   minimumReleaseAgeExclude:
