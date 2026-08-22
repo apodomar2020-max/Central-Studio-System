@@ -27,6 +27,9 @@ if (
 }
 process.env.DATABASE_URL = DATABASE_URL;
 process.env.NODE_ENV ??= "test"; // ensures issueOtp's sendOtpEmail() takes the safe DEV MODE no-op path, never a real network call
+// Deterministic test-only pepper for HMAC-ing OTPs at rest (Security-06B).
+// Not a real secret — this database and every row in it are disposable.
+process.env.OTP_PEPPER ??= "test-otp-expiry-pepper-".padEnd(64, "0");
 
 let pool: typeof import("@workspace/db").pool;
 let studentId: number;
@@ -37,8 +40,27 @@ function testEmail(tag: string): string {
   return `otpfix-${tag}-${runSuffix}@example.test`;
 }
 
+// Security-06B (task J): email_otps.code now stores only an HMAC digest, not
+// the raw OTP, so tests can no longer recover it with `SELECT code`. Instead
+// we register a test-only listener (authHelpers.__setOtpEmailTestListener)
+// that captures the raw code at the moment issueOtp composes the outbound
+// email — the same boundary tests already relied on to avoid real delivery.
+const capturedOtps = new Map<string, string>();
+function captureKey(email: string, purpose: string): string {
+  return `${email}|${purpose}`;
+}
+function capturedCode(email: string, purpose: string): string {
+  const code = capturedOtps.get(captureKey(email, purpose));
+  assert.ok(code, `expected a captured OTP for ${email}/${purpose}`);
+  return code;
+}
+
 before(async () => {
   pool = (await import("@workspace/db")).pool;
+  const { __setOtpEmailTestListener } = await import("./authHelpers");
+  __setOtpEmailTestListener((to, code, purpose) => {
+    capturedOtps.set(captureKey(to, purpose), code);
+  });
   studentEmail = testEmail("verify-path");
   const res = await pool.query(
     `INSERT INTO students (name, email) VALUES ('OTP Fix Test Student', $1) RETURNING id`,
@@ -54,30 +76,35 @@ after(async () => {
 });
 
 async function latestUnusedCode(email: string, purpose: string): Promise<string> {
-  const res = await pool.query(
-    `SELECT code FROM email_otps WHERE email = $1 AND purpose = $2 AND used_at IS NULL ORDER BY created_at DESC LIMIT 1`,
-    [email, purpose],
-  );
-  assert.ok(res.rows[0], `expected an unused OTP row for ${email}/${purpose}`);
-  return res.rows[0].code as string;
+  return capturedCode(email, purpose);
 }
 
-/** Raw-insert an email_otps row with an explicit createdAt/expiresAt, bypassing issueOtp entirely. */
+/**
+ * Raw-insert an email_otps row with an explicit createdAt/expiresAt,
+ * bypassing issueOtp entirely. `code` is the RAW OTP the test wants to be
+ * able to verify with later — it is HMAC-digested here (same as issueOtp
+ * does) before being written, since the digest format is now enforced by a
+ * DB CHECK constraint and is the only thing verifyOtpCode will accept.
+ */
 async function insertRow(opts: {
   email: string;
-  purpose: string;
+  purpose: "verify" | "reset";
   code?: string;
   createdAtMsAgo: number;
   expiresAtMsFromCreated: number;
   usedAt?: Date | null;
   attempts?: number;
 }): Promise<void> {
+  const { computeOtpDigest } = await import("./otpDigest");
+  const { OTP_PEPPER } = await import("./authHelpers");
   const createdAt = new Date(Date.now() - opts.createdAtMsAgo);
   const expiresAt = new Date(createdAt.getTime() + opts.expiresAtMsFromCreated);
+  const rawCode = opts.code ?? "000000";
+  const digest = computeOtpDigest(opts.purpose, opts.email, rawCode, OTP_PEPPER);
   await pool.query(
     `INSERT INTO email_otps (student_id, email, code, purpose, attempts, expires_at, used_at, created_at)
      VALUES (NULL, $1, $2, $3, $4, $5, $6, $7)`,
-    [opts.email, opts.code ?? "000000", opts.purpose, opts.attempts ?? 0, expiresAt, opts.usedAt ?? null, createdAt],
+    [opts.email, digest, opts.purpose, opts.attempts ?? 0, expiresAt, opts.usedAt ?? null, createdAt],
   );
 }
 

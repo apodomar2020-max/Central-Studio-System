@@ -45,6 +45,7 @@ assertDisposableUrl(DATABASE_URL);
 process.env.DATABASE_URL = DATABASE_URL;
 process.env.API_SECRET_KEY = "test-api-secret-key";
 process.env.STUDENT_JWT_SECRET = "test-student-secret";
+process.env.OTP_PEPPER = "test-session-revocation-otp-pepper".padEnd(64, "0");
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY; // dev-mode no-op path for OTP/security emails
 
@@ -235,9 +236,15 @@ test("B: full password-reset lifecycle — pre-reset token revoked, new login wo
   assert.equal((await get("/api/auth/me", preResetToken)).status, 200);
 
   const code = "654321";
+  // Security-06B: email_otps.code stores an HMAC digest, not the raw code —
+  // compute the same digest issueOtp would, so this direct-insert fixture
+  // still satisfies the DB CHECK constraint and verifies against `code`.
+  const { computeOtpDigest } = await import("../lib/otpDigest");
+  const { OTP_PEPPER } = await import("../lib/authHelpers");
+  const digest = computeOtpDigest("reset", email.toLowerCase().trim(), code, OTP_PEPPER);
   await pool.query(
     `INSERT INTO email_otps (student_id, email, code, purpose, expires_at) VALUES ($1, $2, $3, 'reset', now() + interval '10 minutes')`,
-    [studentId, email, code],
+    [studentId, email, digest],
   );
   const reset = await post("/api/auth/reset-password", { email, code, newPassword: "BrandNewPass456" });
   assert.equal(reset.status, 200);

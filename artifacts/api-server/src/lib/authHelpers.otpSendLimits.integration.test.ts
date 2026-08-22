@@ -41,8 +41,24 @@ process.env.NODE_ENV ??= "test"; // ensures issueOtp's sendOtpEmail() takes the 
 // non-JWT-shaped-bearer compatibility path below, it is never compared
 // against anything server-side.
 process.env.API_SECRET_KEY ??= "test-otp-send-limits-api-secret-key";
+// Deterministic test-only pepper for HMAC-ing OTPs at rest (Security-06B).
+// Not a real secret — this database and every row in it are disposable.
+process.env.OTP_PEPPER ??= "test-otp-send-limits-pepper-".padEnd(64, "0");
 
 let pool: typeof import("@workspace/db").pool;
+
+// Security-06B (task J): email_otps.code now stores only an HMAC digest, not
+// the raw OTP. Capture the raw code at the outbound-email boundary via the
+// test-only listener instead of reading the DB column.
+const capturedOtps = new Map<string, string>();
+function captureKey(email: string, purpose: string): string {
+  return `${email}|${purpose}`;
+}
+function capturedCode(email: string, purpose: string): string {
+  const code = capturedOtps.get(captureKey(email, purpose));
+  assert.ok(code, `expected a captured OTP for ${email}/${purpose}`);
+  return code;
+}
 
 const runSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 function testEmail(tag: string): string {
@@ -63,6 +79,10 @@ async function createStudent(tag: string): Promise<{ id: number; email: string }
 
 before(async () => {
   pool = (await import("@workspace/db")).pool;
+  const { __setOtpEmailTestListener } = await import("./authHelpers");
+  __setOtpEmailTestListener((to, code, purpose) => {
+    capturedOtps.set(captureKey(to, purpose), code);
+  });
 });
 
 after(async () => {
@@ -73,7 +93,12 @@ after(async () => {
   await pool.end();
 });
 
-/** Raw-insert an email_otps row with an explicit createdAt, bypassing issueOtp entirely. */
+/**
+ * Raw-insert an email_otps row with an explicit createdAt, bypassing
+ * issueOtp entirely. `code` is the RAW OTP; it is HMAC-digested here (same
+ * as issueOtp does) before being written, since the digest format is now
+ * enforced by a DB CHECK constraint.
+ */
 async function insertRow(opts: {
   email: string;
   purpose: "verify" | "reset";
@@ -82,12 +107,16 @@ async function insertRow(opts: {
   expiresAtMsFromCreated?: number;
   usedAt?: Date | null;
 }): Promise<void> {
+  const { computeOtpDigest } = await import("./otpDigest");
+  const { OTP_PEPPER } = await import("./authHelpers");
   const createdAt = new Date(Date.now() - opts.createdAtMsAgo);
   const expiresAt = new Date(createdAt.getTime() + (opts.expiresAtMsFromCreated ?? 600_000));
+  const rawCode = opts.code ?? "000000";
+  const digest = computeOtpDigest(opts.purpose, opts.email, rawCode, OTP_PEPPER);
   await pool.query(
     `INSERT INTO email_otps (student_id, email, code, purpose, attempts, expires_at, used_at, created_at)
      VALUES (NULL, $1, $2, $3, 0, $4, $5, $6)`,
-    [opts.email, opts.code ?? "000000", opts.purpose, expiresAt, opts.usedAt ?? null, createdAt],
+    [opts.email, digest, opts.purpose, expiresAt, opts.usedAt ?? null, createdAt],
   );
 }
 
@@ -193,11 +222,8 @@ test("a reset-purpose code cannot be consumed by the email-verification flow", a
   const { issueOtp, verifyEmailOtpForStudent } = await import("./authHelpers");
   const student = await createStudent("reset-not-verify");
   await issueOtp(student.email, { studentId: student.id, purpose: "reset" });
-  const [row] = await pool.query(
-    `SELECT code FROM email_otps WHERE email = $1 AND purpose = 'reset' AND used_at IS NULL ORDER BY created_at DESC LIMIT 1`,
-    [student.email],
-  ).then((r) => r.rows);
-  const result = await verifyEmailOtpForStudent(student.id, student.email, row.code);
+  const code = capturedCode(student.email, "reset");
+  const result = await verifyEmailOtpForStudent(student.id, student.email, code);
   assert.notEqual(result.status, "ok");
 });
 
@@ -206,11 +232,8 @@ test("a verify-purpose code cannot be consumed by the password-reset flow", asyn
   const { issueOtp, verifyOtpCode } = await import("./authHelpers");
   const email = testEmail("verify-not-reset");
   await issueOtp(email, { purpose: "verify" });
-  const [row] = await pool.query(
-    `SELECT code FROM email_otps WHERE email = $1 AND purpose = 'verify' AND used_at IS NULL ORDER BY created_at DESC LIMIT 1`,
-    [email],
-  ).then((r) => r.rows);
-  const result = await verifyOtpCode(email, row.code, "reset");
+  const code = capturedCode(email, "verify");
+  const result = await verifyOtpCode(email, code, "reset");
   assert.notEqual(result.status, "ok");
 });
 

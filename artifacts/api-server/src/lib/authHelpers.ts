@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db, emailOtpsTable, studentsTable } from "@workspace/db";
 import { STUDENT_JWT_SECRET, type StudentTokenPayload } from "../middlewares/auth";
 import { logger } from "./logger";
+import { computeOtpDigest, verifyOtpDigest } from "./otpDigest";
 
 // ─── JWT ──────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,31 @@ export const PasswordSchema = z.string()
   .regex(/[0-9]/, "Password must include at least one number");
 
 export type OtpPurpose = "verify" | "reset";
+
+// ─── OTP pepper (CS-SEC-M-01 / Security-06B) ───────────────────────────────
+//
+// Server-only, API-only secret used to HMAC-SHA-256 OTP codes before they
+// are stored in email_otps.code. NEVER expose this via an EXPO_PUBLIC_*/
+// VITE_*-prefixed name or any client-reachable config — it must only ever
+// be read here, server-side. Expected to be at least 32 random bytes
+// (256-bit) of entropy, e.g.:
+//   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+// Follows the exact same fail-closed-in-production / warn-in-dev pattern as
+// STUDENT_JWT_SECRET (middlewares/auth.ts).
+export const OTP_PEPPER = process.env["OTP_PEPPER"] ?? "dev-otp-pepper-change-in-production";
+
+if (!process.env["OTP_PEPPER"]) {
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error(
+      "OTP_PEPPER must be set in production. " +
+        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+    );
+  }
+  logger.warn(
+    "OTP_PEPPER is not set — using insecure dev default. " +
+      "Set this env var before deploying to production.",
+  );
+}
 
 /** Generate a cryptographically secure 6-digit numeric code (zero-padded). */
 export function generateOtp(): string {
@@ -207,7 +233,32 @@ async function sendEmail(payload: EmailPayload): Promise<void> {
   }
 }
 
+/**
+ * Test-only hook (Security-06B / task J): when set, receives the raw OTP at
+ * the moment it is composed into an outbound email, so integration tests can
+ * recover it without reading email_otps.code directly — that column now
+ * stores only an HMAC digest, not the plaintext code. Production code paths
+ * never call the setter; it is a no-op unless a test explicitly registers a
+ * listener, and it does not change OTP generation or delivery in any way.
+ *
+ * Security-06C hardening: this is a module-level global, so ANY code with
+ * import access to this file could otherwise call the setter and silently
+ * intercept every OTP sent for the lifetime of the process — not just test
+ * code. Guarded here so the setter is inert in production regardless of who
+ * calls it, closing that surface without changing the test-facing API tests
+ * already rely on.
+ */
+let otpEmailTestListener: ((to: string, code: string, purpose: OtpPurpose) => void) | null = null;
+export function __setOtpEmailTestListener(fn: typeof otpEmailTestListener): void {
+  if (process.env["NODE_ENV"] === "production") {
+    logger.error("__setOtpEmailTestListener called in production — ignored");
+    return;
+  }
+  otpEmailTestListener = fn;
+}
+
 export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose): Promise<void> {
+  otpEmailTestListener?.(to, code, purpose);
   await sendEmail({ to, ...otpEmailContent(code, purpose) });
   logger.info({ to, purpose }, "OTP email sent");
 }
@@ -360,12 +411,13 @@ export async function issueOtp(
         isNull(emailOtpsTable.usedAt),
       ));
 
+    const digest = computeOtpDigest(purpose, normalizedEmail, code, OTP_PEPPER);
     const [inserted] = await tx
       .insert(emailOtpsTable)
       .values({
         studentId: opts.studentId ?? null,
         email: normalizedEmail,
-        code,
+        code: digest,
         purpose,
         expiresAt,
       })
@@ -423,7 +475,7 @@ async function verifyOtpInTransaction(
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= toEpochMs(now)) return { status: "expired" };
   if (otp.attempts >= OTP_MAX_ATTEMPTS) return { status: "locked" };
 
-  if (otp.code !== code) {
+  if (!verifyOtpDigest(otp.code, purpose, email, code, OTP_PEPPER)) {
     const attempts = otp.attempts + 1;
     await tx
       .update(emailOtpsTable)
