@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
 import {
+  AlertTriangle,
   ArrowLeft,
   BadgeCheck,
   CalendarCheck,
@@ -14,6 +15,7 @@ import {
   Package,
   Phone,
   QrCode,
+  ShieldOff,
   Star,
   UserCog,
   UserPlus,
@@ -25,7 +27,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import {
+  useDeactivateStudent,
+  useReactivateStudent,
+  getListStudentsQueryKey,
+} from "@workspace/api-client-react";
 import "./admin2-operations.css";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
@@ -62,6 +80,9 @@ interface OverviewUser {
   nationality: string | null;
   howDidYouHearAboutUs: string | null;
   policiesAcceptedAt: string | null;
+  /** Account Lifecycle (Phase B1D) — Active/Deactivated/Deleted. */
+  accountStatus: "active" | "deactivated" | "deleted";
+  deactivatedAt: string | null;
 }
 /** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
 interface OverviewCompletion {
@@ -229,6 +250,25 @@ const MEMBERSHIP_STATUS_STYLE: Record<MembershipStatus, string> = {
   Inactive: "text-muted-foreground",
 };
 
+const ACCOUNT_STATUS_LABEL: Record<OverviewUser["accountStatus"], string> = {
+  active: "Active",
+  deactivated: "Deactivated",
+  deleted: "Deleted / unavailable",
+};
+const ACCOUNT_STATUS_STYLE: Record<OverviewUser["accountStatus"], string> = {
+  active: "border-transparent bg-emerald-500/15 text-emerald-400",
+  deactivated: "border-transparent bg-amber-500/15 text-amber-400",
+  deleted: "border-transparent bg-red-500/15 text-red-400",
+};
+
+function AccountStatusBadge({ status }: { status: OverviewUser["accountStatus"] }) {
+  return (
+    <Badge variant="outline" className={ACCOUNT_STATUS_STYLE[status]}>
+      {ACCOUNT_STATUS_LABEL[status]}
+    </Badge>
+  );
+}
+
 function DetailRow({ label, value, notCollected }: { label: string; value: React.ReactNode; notCollected?: boolean }) {
   return (
     <div>
@@ -262,9 +302,16 @@ function EmptyState({ text }: { text: string }) {
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const studentId = Number(id);
-  const { token } = useAdminAuth();
+  const { token, can } = useAdminAuth();
+  const queryClient = useQueryClient();
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportPdfError, setExportPdfError] = useState<string | null>(null);
+
+  // Danger Zone (Phase B1D) ------------------------------------------------
+  const [dangerDialog, setDangerDialog] = useState<"deactivate" | "reactivate" | null>(null);
+  const [deactivateReason, setDeactivateReason] = useState("");
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [lifecycleSuccess, setLifecycleSuccess] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ["student-overview", studentId],
@@ -278,6 +325,58 @@ export default function StudentDetailPage() {
       return res.json();
     },
   });
+
+  async function invalidateAfterLifecycleChange() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["student-overview", studentId] }),
+      queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey() }),
+    ]);
+  }
+
+  const deactivateMutation = useDeactivateStudent({
+    mutation: {
+      onSuccess: async () => {
+        setLifecycleError(null);
+        setLifecycleSuccess("Account deactivated.");
+        setDangerDialog(null);
+        setDeactivateReason("");
+        await invalidateAfterLifecycleChange();
+      },
+      onError: (err) => {
+        setLifecycleSuccess(null);
+        const message = (err as { message?: string })?.message;
+        setLifecycleError(message || "Failed to deactivate account. Please try again.");
+      },
+    },
+  });
+
+  const reactivateMutation = useReactivateStudent({
+    mutation: {
+      onSuccess: async () => {
+        setLifecycleError(null);
+        setLifecycleSuccess("Account reactivated.");
+        setDangerDialog(null);
+        await invalidateAfterLifecycleChange();
+      },
+      onError: (err) => {
+        setLifecycleSuccess(null);
+        const message = (err as { message?: string })?.message;
+        setLifecycleError(message || "Failed to reactivate account. Please try again.");
+      },
+    },
+  });
+
+  const lifecyclePending = deactivateMutation.isPending || reactivateMutation.isPending;
+
+  function confirmDeactivate() {
+    if (deactivateMutation.isPending) return;
+    const reason = deactivateReason.trim();
+    deactivateMutation.mutate({ id: studentId, data: reason ? { reason } : undefined });
+  }
+  function confirmReactivate() {
+    if (reactivateMutation.isPending) return;
+    reactivateMutation.mutate({ id: studentId });
+  }
 
   if (query.isLoading) {
     return (
@@ -296,6 +395,9 @@ export default function StudentDetailPage() {
 
   const d = query.data;
   const isParent = d.user.accountType === "parent";
+  // Mirrors accountModule() in artifacts/api-server/src/routes/students.ts —
+  // the same module the backend deactivate/reactivate routes check.
+  const lifecycleModule = isParent ? "parents" : "students";
   const listBackHref = isParent ? "/parents" : "/students";
   const bookingsHref = `/bookings?studentEmail=${encodeURIComponent(d.user.email)}`;
   const attendanceHref = `/attendance?studentEmail=${encodeURIComponent(d.user.email)}`;
@@ -362,6 +464,7 @@ export default function StudentDetailPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-lg font-semibold text-white">{d.user.name}</span>
                 <Badge variant="secondary" className="capitalize">{d.user.accountType ?? "student"}</Badge>
+                <AccountStatusBadge status={d.user.accountStatus} />
                 <Badge variant="outline" className={MEMBERSHIP_STATUS_STYLE[d.membershipStatus]}>{d.membershipStatus}</Badge>
                 {d.completion?.verificationBadge ? (
                   <Badge className="gap-1 border-transparent bg-emerald-500/15 text-emerald-400">
@@ -476,6 +579,111 @@ export default function StudentDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Danger Zone — Account Lifecycle (Phase B1D). Reuses the same
+              students.edit / parents.edit permission check the backend
+              deactivate/reactivate routes enforce (falls back to users.edit,
+              matching adminCan's anyOf). Super Admin roles carry every
+              permission true in their role.permissions map, so `can()`
+              already resolves true for them with no special-case here. */}
+          {(can(lifecycleModule, "edit") || can("users", "edit")) && d.user.accountStatus !== "deleted" && (
+            <Card className="mt-6 border-red-500/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm text-red-400">
+                  <AlertTriangle className="h-4 w-4" /> Danger Zone
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {lifecycleSuccess && <p role="status" className="text-sm text-emerald-400">{lifecycleSuccess}</p>}
+                {lifecycleError && <p role="alert" className="text-sm text-destructive">{lifecycleError}</p>}
+
+                {d.user.accountStatus === "active" ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      This does not delete the account. Bookings, payments, children, and history all remain.
+                      Active sessions are revoked, device push notifications are disabled, and the user cannot
+                      log in again until an admin reactivates the account.
+                    </p>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      aria-label="Deactivate account"
+                      disabled={lifecyclePending}
+                      onClick={() => { setLifecycleError(null); setLifecycleSuccess(null); setDangerDialog("deactivate"); }}
+                    >
+                      <ShieldOff className="h-4 w-4" /> Deactivate Account
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Reactivating lets this user log in again. Old sessions remain invalid — a fresh login is
+                      required. All historical data was never removed. Device push notifications are not
+                      automatically restored; the user must register a device again after logging in.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label="Reactivate account"
+                      disabled={lifecyclePending}
+                      onClick={() => { setLifecycleError(null); setLifecycleSuccess(null); setDangerDialog("reactivate"); }}
+                    >
+                      Reactivate Account
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <AlertDialog open={dangerDialog === "deactivate"} onOpenChange={(open) => { if (!open) setDangerDialog(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Deactivate this account?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {d.user.name} will be signed out of every session, their device push notifications will be
+                  disabled, and they will not be able to log in until an admin reactivates the account. Bookings,
+                  payments, children, and history are preserved.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <Textarea
+                placeholder="Reason (optional, visible in the audit log)"
+                value={deactivateReason}
+                onChange={(e) => setDeactivateReason(e.target.value)}
+                maxLength={500}
+              />
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deactivateMutation.isPending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deactivateMutation.isPending}
+                  onClick={(e) => { e.preventDefault(); confirmDeactivate(); }}
+                >
+                  {deactivateMutation.isPending ? "Deactivating…" : "Deactivate Account"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog open={dangerDialog === "reactivate"} onOpenChange={(open) => { if (!open) setDangerDialog(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reactivate this account?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {d.user.name} will be able to log in again with a fresh session. Historical data was never
+                  removed. Device push notifications are not automatically restored.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={reactivateMutation.isPending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={reactivateMutation.isPending}
+                  onClick={(e) => { e.preventDefault(); confirmReactivate(); }}
+                >
+                  {reactivateMutation.isPending ? "Reactivating…" : "Reactivate Account"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </TabsContent>
 
         {/* Children ------------------------------------------------------ */}

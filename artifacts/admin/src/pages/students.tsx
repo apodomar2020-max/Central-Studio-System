@@ -45,6 +45,10 @@ type Student = { id: number; name: string; email: string; phone?: string | null;
  */
 type StudentRow = Student & {
   accountType?: string | null;
+  /** Account Lifecycle (Phase B1D) — GET /students already returns this
+   * (sanitizeStudentRow does not strip it); widened locally like the other
+   * Phase 4 fields above rather than regenerating the list-response type. */
+  accountStatus?: "active" | "deactivated" | "deleted";
   authProvider?: string | null;
   howDidYouHearAboutUs?: string | null;
   childCount?: number;
@@ -205,6 +209,18 @@ export default function Students() {
                         <AvatarFallback>{student.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <span>{student.name}</span>
+                      {student.accountStatus && student.accountStatus !== "active" && (
+                        <Badge
+                          variant="outline"
+                          className={
+                            student.accountStatus === "deactivated"
+                              ? "border-transparent bg-amber-500/15 text-amber-400"
+                              : "border-transparent bg-red-500/15 text-red-400"
+                          }
+                        >
+                          {student.accountStatus === "deactivated" ? "Deactivated" : "Deleted"}
+                        </Badge>
+                      )}
                     </Link>
                   </TableCell>
                   <TableCell>
