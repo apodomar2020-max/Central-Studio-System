@@ -4650,11 +4650,15 @@ export const getDeleteStudentUrl = (id: number) => {
   return `/api/students/${id}`;
 };
 
+/**
+ * Disabled. Student account hard-deletion is temporarily unavailable while the safe account lifecycle workflow (deletion funnel / anonymization / deactivation) is being built. This operation now always returns 405 with code STUDENT_ACCOUNT_DELETION_DISABLED, regardless of caller permissions.
+ * @deprecated
+ */
 export const deleteStudent = async (
   id: number,
   options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteStudentUrl(id), {
+): Promise<unknown> => {
+  return customFetch<unknown>(getDeleteStudentUrl(id), {
     ...options,
     method: "DELETE",
   });
@@ -4704,6 +4708,9 @@ export type DeleteStudentMutationResult = NonNullable<
 
 export type DeleteStudentMutationError = ErrorType<ErrorResponse>;
 
+/**
+ * @deprecated
+ */
 export const useDeleteStudent = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,

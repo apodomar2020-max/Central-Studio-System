@@ -2332,6 +2332,10 @@ export const UpdateStudentResponse = zod.object({
     .optional(),
 });
 
+/**
+ * Disabled. Student account hard-deletion is temporarily unavailable while the safe account lifecycle workflow (deletion funnel / anonymization / deactivation) is being built. This operation now always returns 405 with code STUDENT_ACCOUNT_DELETION_DISABLED, regardless of caller permissions.
+ * @deprecated
+ */
 export const DeleteStudentParams = zod.object({
   id: zod.coerce.number(),
 });

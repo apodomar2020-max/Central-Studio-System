@@ -23,7 +23,6 @@ import {
   UpdateStudentParams,
   UpdateStudentBody,
   UpdateStudentResponse,
-  DeleteStudentParams,
   ListStudentsQueryParams,
   GetStudentByTokenParams,
   hasRolePermission,
@@ -1144,37 +1143,29 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
   res.json(UpdateStudentResponse.parse(row));
 });
 
-router.delete("/students/:id", blockStudentJwt, requireAdminAuth, async (req: AdminRequest, res): Promise<void> => {
-  const params = DeleteStudentParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const [existing] = await db
-    .select({ id: studentsTable.id, accountType: studentsTable.accountType })
-    .from(studentsTable)
-    .where(eq(studentsTable.id, params.data.id))
-    .limit(1);
-  if (!existing) {
-    res.status(404).json({ error: "Student not found" });
-    return;
-  }
-
-  const targetModule = accountModule(existing.accountType);
-  if (!adminCan(req, "users", "delete") && !adminCan(req, targetModule, "delete")) {
-    res.status(403).json({
-      error: "Permission denied",
-      requiredPermission: { anyOf: [`users.delete`, `${targetModule}.delete`] },
+// Student account hard-deletion is intentionally disabled. The prior
+// implementation performed a raw, untransacted DELETE with no audit logging
+// that could either violate FK/CHECK constraints (promotion_redemptions,
+// bookings/package_orders/payment_records/credit_transactions/attendance
+// participant_shape checks on child-scoped activity) or, where it succeeded,
+// leave PII behind and dangling references in credit_transactions, feedback,
+// and email_otps. A safe account lifecycle workflow (deletion funnel /
+// anonymization / deactivation) is planned separately; until it ships, this
+// route unconditionally rejects the destructive operation for every caller,
+// including Super Admin. The auth chain (blockStudentJwt, requireAdminAuth,
+// requireAdminPermission) is preserved so unauthenticated and unauthorized
+// callers still get the normal 401/403 responses rather than this 405.
+router.delete(
+  "/students/:id",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  (_req: AdminRequest, res): void => {
+    res.status(405).json({
+      error: "Student account deletion is temporarily unavailable while the safe account lifecycle workflow is being used.",
+      code: "STUDENT_ACCOUNT_DELETION_DISABLED",
     });
-    return;
-  }
-
-  const [row] = await db.delete(studentsTable).where(eq(studentsTable.id, params.data.id)).returning();
-  if (!row) {
-    res.status(404).json({ error: "Student not found" });
-    return;
-  }
-  res.sendStatus(204);
-});
+  },
+);
 
 export default router;

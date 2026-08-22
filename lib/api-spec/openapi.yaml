@@ -935,11 +935,22 @@ paths:
     delete:
       operationId: deleteStudent
       tags: [students]
+      deprecated: true
+      description: >-
+        Disabled. Student account hard-deletion is temporarily unavailable
+        while the safe account lifecycle workflow (deletion funnel /
+        anonymization / deactivation) is being built. This operation now
+        always returns 405 with code STUDENT_ACCOUNT_DELETION_DISABLED,
+        regardless of caller permissions.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        "204":
-          description: Deleted
+        "405":
+          description: Disabled — student account deletion is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
           content:
