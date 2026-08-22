@@ -24,13 +24,25 @@ const STUDENT_JWT_EXPIRES_IN = "30d"; // mobile sessions live for 30 days
  * route guarded by requireVerifiedStudent will reject it (403 requiresOtp),
  * while OTP and /auth/me routes still accept it so the client can finish
  * verification.
+ *
+ * `tokenVersion` is REQUIRED, not defaulted, and MUST be the account's
+ * current `students.token_version` at the moment of issuance (Security-02B,
+ * CS-SEC-H-03) — never a hardcoded 1. For a brand-new account the row's
+ * DEFAULT 1 IS that current value, so passing the freshly-inserted row's own
+ * `tokenVersion` is correct there too; the point is every caller reads it off
+ * an actual row rather than assuming it. requireAuth's student fast-path
+ * rejects any token whose embedded version no longer matches the database,
+ * so a token signed with a stale version would be silently unusable — making
+ * this a required parameter turns that class of mistake into a compile error
+ * instead of a runtime one.
  */
-export function signStudentToken(studentId: number, email: string, emailVerified: boolean): string {
+export function signStudentToken(studentId: number, email: string, emailVerified: boolean, tokenVersion: number): string {
   const payload: Omit<StudentTokenPayload, "iat" | "exp"> = {
     sub: studentId,
     email,
     type: "student",
     emailVerified,
+    tokenVersion,
   };
   return jwt.sign(payload, STUDENT_JWT_SECRET, { expiresIn: STUDENT_JWT_EXPIRES_IN });
 }
@@ -465,6 +477,9 @@ const verifiedStudentReturning = {
   providerDisplayName: studentsTable.providerDisplayName,
   joinedAt: studentsTable.joinedAt,
   qrToken: studentsTable.qrToken,
+  // Callers (emailOtp.ts) sign a fresh token from this returned row and must
+  // embed its actual current token_version, not a hardcoded 1.
+  tokenVersion: studentsTable.tokenVersion,
 };
 
 export type VerifyEmailOtpResult =

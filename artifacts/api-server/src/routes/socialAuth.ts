@@ -400,7 +400,7 @@ function makeHandler(provider: ProviderName) {
     }
 
     const { student, verified } = result;
-    const accessToken = signStudentToken(student.id, student.email, verified);
+    const accessToken = signStudentToken(student.id, student.email, verified, student.tokenVersion);
 
     // 3. Unverified → send an OTP so the client can verify on the OTP screen.
     if (!verified) {

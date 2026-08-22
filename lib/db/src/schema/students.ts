@@ -27,6 +27,14 @@ export const studentsTable = pgTable("students", {
   lastCompletionStep: text("last_completion_step"),
   notes: text("notes"),
   passwordHash: text("password_hash"),
+  // Session revocation (Security-02B, CS-SEC-H-03). Every student JWT embeds
+  // the token_version that was current at issuance. requireAuth's student
+  // fast-path rejects a token whose embedded version no longer matches this
+  // column, so bumping it atomically invalidates every outstanding token for
+  // the account. A legacy JWT with no tokenVersion claim is treated as
+  // version 1 — deployment alone (every row starts at 1) never logs anyone
+  // out; only an explicit reset/change/logout bump does.
+  tokenVersion: integer("token_version").notNull().default(1),
   emailVerified: boolean("email_verified").notNull().default(false),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true, mode: "string" }),
   // Which mechanism last authenticated this account: "local" | "google" | "apple" | "facebook".

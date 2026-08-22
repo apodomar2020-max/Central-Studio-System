@@ -6,15 +6,37 @@
  * GET  /api/auth/me                — current student from the bearer token
  * POST /api/auth/forgot-password   — send OTP code to email for password reset
  * POST /api/auth/reset-password    — verify OTP and set a new password
+ * POST /api/auth/change-password   — change password while authenticated
+ * POST /api/auth/logout             — revoke every outstanding session (Security-02B)
  *
  * Mandatory email verification: register always creates an unverified account
  * and login of an unverified account both return a *limited* token plus
  * { requiresOtp: true, email }. The client must complete OTP (see emailOtp.ts)
  * before any requireVerifiedStudent route will accept the token.
+ *
+ * ─── Session revocation (Security-02B, CS-SEC-H-03) ──────────────────────────
+ *
+ * Reset, change, and logout all bump `students.token_version` — atomically,
+ * via `token_version = token_version + 1` inside the SQL statement itself
+ * (never SELECT-then-increment-in-JS-then-UPDATE, which would lose
+ * concurrent bumps). requireAuth's student fast-path (middlewares/auth.ts)
+ * compares each token's embedded version against this column on every
+ * request, so a bump invalidates every previously-issued token for the
+ * account immediately, on its very next use — no caching, no propagation
+ * delay. There is no per-device session table in this phase: one bump
+ * revokes ALL of that account's outstanding tokens, on every device.
+ *   - reset-password: bumps the version but issues no new token (unchanged
+ *     product contract — the user re-authenticates via /auth/login).
+ *   - change-password: bumps the version AND issues a fresh token carrying
+ *     it, so the device that just changed the password stays logged in;
+ *     every OTHER outstanding token for the account is revoked.
+ *   - logout: bumps the version and returns success; the calling device's
+ *     own token is revoked along with everyone else's (there is no way to
+ *     spare it, since revocation in this phase has no per-device grain).
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
@@ -162,7 +184,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     .returning();
 
   // Limited token (emailVerified=false): unlocks OTP + /auth/me only.
-  const accessToken = signStudentToken(student.id, student.email, false);
+  const accessToken = signStudentToken(student.id, student.email, false, student.tokenVersion);
 
   logger.info({ studentId: student.id }, "New student registered (pending verification)");
 
@@ -210,7 +232,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   // Token verification scope mirrors the account: an unverified account gets a
   // limited token and must complete OTP before reaching verified-only routes.
-  const accessToken = signStudentToken(student.id, student.email, student.emailVerified);
+  const accessToken = signStudentToken(student.id, student.email, student.emailVerified, student.tokenVersion);
 
   logger.info({ studentId: student.id, emailVerified: student.emailVerified }, "Student logged in");
 
@@ -459,9 +481,23 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
 
+  // Security-02B: bump token_version in the SAME UPDATE that changes the
+  // password — one statement, atomic by Postgres's own single-row UPDATE
+  // guarantee. `token_version = token_version + 1` is computed IN SQL, never
+  // read-then-incremented-in-JS, so a concurrent reset/change/logout for
+  // this account can never clobber another's bump (see requireAuth for the
+  // read side of this invariant). This invalidates every token issued before
+  // this moment, on every device, on its next request. No replacement token
+  // is issued here — the product contract for reset-password has never
+  // included one; the user re-authenticates via /auth/login as before.
   await db
     .update(studentsTable)
-    .set({ passwordHash, authProvider: student.authProvider ?? "local", updatedAt: now })
+    .set({
+      passwordHash,
+      authProvider: student.authProvider ?? "local",
+      updatedAt: now,
+      tokenVersion: sql`${studentsTable.tokenVersion} + 1`,
+    })
     .where(eq(studentsTable.id, student.id));
 
   await invalidateOtpCodes(normalizedEmail, "reset");
@@ -509,13 +545,52 @@ router.post("/auth/change-password", requireStudentAuth, async (req, res): Promi
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
-  await db
+
+  // Security-02B: atomic increment in the same UPDATE as the password write
+  // (see the reset-password handler above for why — identical invariant).
+  // `.returning()` hands back the POST-increment value directly from the
+  // database, so the replacement token below is never at risk of embedding a
+  // stale version even under concurrent writes to this row.
+  const [updated] = await db
     .update(studentsTable)
-    .set({ passwordHash, authProvider: student.authProvider ?? "local", updatedAt: new Date().toISOString() })
-    .where(eq(studentsTable.id, student.id));
+    .set({
+      passwordHash,
+      authProvider: student.authProvider ?? "local",
+      updatedAt: new Date().toISOString(),
+      tokenVersion: sql`${studentsTable.tokenVersion} + 1`,
+    })
+    .where(eq(studentsTable.id, student.id))
+    .returning({ tokenVersion: studentsTable.tokenVersion });
 
   logPasswordSecurityEvent(student.id, "password_changed");
   void notifyPasswordSecurityEvent(student.email, "password_changed");
+
+  // The device that just changed the password stays logged in: it receives a
+  // fresh token carrying the NEW version. Every other outstanding token for
+  // this account — including one that might currently be sitting on a second
+  // device — embeds the OLD version and is rejected on its next request.
+  // Additive response field: existing clients that only read `ok` are
+  // unaffected; `accessToken` is new.
+  const accessToken = signStudentToken(student.id, student.email, student.emailVerified, updated!.tokenVersion);
+
+  res.json({ ok: true, accessToken });
+});
+
+// ─── POST /api/auth/logout ────────────────────────────────────────────────────
+// Security-02B (CS-SEC-H-03). Revokes every outstanding session for this
+// account — there is no per-device session table in this phase, so logging
+// out on one device also ends every other device's session. This is a
+// deliberate, documented scope for this phase, not an oversight; see the file
+// header. Requires a currently-valid student JWT: an already-expired or
+// already-revoked token cannot "log out" (there is nothing left to revoke),
+// which requireStudentAuth's normal 401 already communicates correctly.
+router.post("/auth/logout", requireStudentAuth, async (req, res): Promise<void> => {
+  await db
+    .update(studentsTable)
+    .set({ tokenVersion: sql`${studentsTable.tokenVersion} + 1` })
+    .where(eq(studentsTable.id, req.studentId!));
+
+  logger.info({ studentId: req.studentId }, "Student logged out (all sessions revoked)");
 
   res.json({ ok: true });
 });

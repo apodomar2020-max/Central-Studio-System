@@ -149,9 +149,12 @@ router.post("/auth/verify-otp", requireStudentAuth, async (req, res): Promise<vo
   const { student } = result;
 
   // Issue a fresh FULL token now that the account is verified.
-  const accessToken = signStudentToken(student.id, student.email, true);
+  const accessToken = signStudentToken(student.id, student.email, true, student.tokenVersion);
   logger.info({ studentId: student.id }, "Email verified via OTP");
-  res.json({ ok: true, accessToken, student });
+  // Security-02B: tokenVersion is internal revocation state — strip it before
+  // the row reaches the client, same as passwordHash/qrToken elsewhere.
+  const { tokenVersion: _tokenVersion, ...publicStudentFields } = student;
+  res.json({ ok: true, accessToken, student: publicStudentFields });
 });
 
 // ─── Legacy studentId-keyed endpoints (backward compatibility) ───────────────
@@ -225,9 +228,12 @@ router.post("/auth/verify-email-otp", requireStudentAuth, async (req, res): Prom
   }
 
   const verifiedStudent = result.student;
-  const accessToken = signStudentToken(verifiedStudent.id, verifiedStudent.email, true);
+  const accessToken = signStudentToken(verifiedStudent.id, verifiedStudent.email, true, verifiedStudent.tokenVersion);
   logger.info({ studentId }, "Email verified successfully (legacy endpoint)");
-  res.json({ ok: true, student: verifiedStudent, accessToken });
+  // Security-02B: tokenVersion is internal revocation state — strip it before
+  // the row reaches the client, same as passwordHash/qrToken elsewhere.
+  const { tokenVersion: _tokenVersion, ...publicVerifiedStudent } = verifiedStudent;
+  res.json({ ok: true, student: publicVerifiedStudent, accessToken });
 });
 
 export default router;
