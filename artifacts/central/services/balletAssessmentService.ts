@@ -187,8 +187,8 @@ export async function fetchBalletFaqs(
  * levels, classes, and class schedules. Age filtering is derived server-side
  * from the child's birthday.
  *
- * No student JWT required — slot availability is public programme info.
- * The shared API key (set in EXPO_PUBLIC_API_KEY) is sufficient.
+ * No student JWT required — slot availability is public programme info,
+ * so the request is sent with no Authorization header at all.
  *
  * Throws on any failure — the calling screen catches and renders the
  * appropriate state (use isOfflineError() to distinguish offline vs error).

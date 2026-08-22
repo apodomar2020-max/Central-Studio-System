@@ -174,12 +174,11 @@ export default function RegisterScreen() {
       if (isSameEmail) {
         try {
           const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-          const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
           const name = `${firstName.trim()} ${lastName.trim()}`.trim();
 
           await fetch(`${apiUrl}/api/auth/profile`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name }),
           });
           await continueAfterAuth(undefined, setUser, { guidedOnboarding: true, source: "email-signup" });
@@ -219,11 +218,10 @@ export default function RegisterScreen() {
 
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-      const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
       const name = `${firstName.trim()} ${lastName.trim()}`.trim();
       const response = await fetch(`${apiUrl}/api/auth/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email: email.trim(), accountType: "student", password }),
       });
       const data = await response.json();

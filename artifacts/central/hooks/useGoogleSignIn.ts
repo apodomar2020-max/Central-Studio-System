@@ -19,7 +19,6 @@ import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
 import { setOAuthFlowState } from "@/services/oauthFlowState";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
 const GOOGLE_NATIVE_REDIRECT_URI = "com.centralstudio.app:/oauthredirect";
 
 export function useGoogleSignIn(source: AuthSource = "social-login") {
@@ -102,7 +101,6 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${API_KEY}`,
         },
         body: JSON.stringify({ idToken }),
       });

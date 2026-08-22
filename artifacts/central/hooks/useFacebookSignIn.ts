@@ -28,7 +28,6 @@ import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
 import { setOAuthFlowState } from "@/services/oauthFlowState";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? "";
 
 export function useFacebookSignIn(source: AuthSource = "social-login") {
   const { setUser } = useAppContext();
@@ -59,7 +58,6 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${API_KEY}`,
         },
         body: JSON.stringify({ accessToken }),
       });

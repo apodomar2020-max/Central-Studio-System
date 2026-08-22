@@ -105,23 +105,21 @@ WebBrowser.maybeCompleteAuthSession();
 // Point the generated API client at the backend.
 // Override via env vars in your .env.local file (never commit secrets):
 //   EXPO_PUBLIC_API_URL=https://your-api.example.com
-//   EXPO_PUBLIC_API_KEY=your-secret-key
 setBaseUrl(process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000");
 
 // Dynamic auth token getter:
-//   1. If a student access token (JWT) is stored from a prior login, use it.
-//      The server verifies the JWT signature — the mobile app never trusted.
-//   2. Otherwise fall back to the shared EXPO_PUBLIC_API_KEY for guest browsing
-//      (unauthenticated class listings, packages, etc. still work).
-const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? null;
+//   If a student access token (JWT) is stored from a prior login, use it.
+//   The server verifies the JWT signature — the mobile app never trusted.
+//   Otherwise return null so no Authorization header is sent — unauthenticated
+//   class listings, packages, etc. are public routes and need no credential.
 setAuthTokenGetter(async () => {
   try {
     const studentToken = await AsyncStorage.getItem("studentToken");
     if (studentToken) return studentToken;
   } catch {
-    // AsyncStorage failure — fall through to API key
+    // AsyncStorage failure — fall through to guest (no token)
   }
-  return apiKey;
+  return null;
 });
 
 const queryClient = new QueryClient();

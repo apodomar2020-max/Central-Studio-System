@@ -70,12 +70,10 @@ export default function LoginScreen() {
 
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-      const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? "";
       const response = await fetch(`${apiUrl}/api/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({ email: email.trim(), password }),
       });

@@ -3,9 +3,9 @@
  * headline.  Three CTAs (revised product spec):
  *
  *   [Enter As Guest]   — primary cyan button — navigates directly to /(tabs)
- *                        using the existing unauthenticated API-key browsing mode.
- *                        No fake guest token; the app already supports unauthenticated
- *                        browsing via the EXPO_PUBLIC_API_KEY fallback in _layout.tsx.
+ *                        using the app's existing unauthenticated browsing mode.
+ *                        No fake guest token; public routes need no credential —
+ *                        requests are simply sent without an Authorization header.
  *   [Sign Up]          — ghost button — routes to /auth/register
  *   [Sign In]          — ghost button — routes to /auth/login
  *
