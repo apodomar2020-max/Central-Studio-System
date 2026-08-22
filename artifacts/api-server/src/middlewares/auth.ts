@@ -1,12 +1,28 @@
 /**
  * API authentication middleware.
  *
- * All routes under /api are protected except public diagnostic endpoints.
+ * All routes under /api are subject to this middleware except the public
+ * diagnostic endpoints (/healthz, /version). It does NOT by itself decide
+ * whether a route requires identity — that is left entirely to each route's
+ * own downstream gate (requireStudentAuth, requireAdminAuth, a route-local
+ * "requireXReadAccess", etc). This middleware's only job is:
  *
- * Accepted credential formats:
- *   - Header:  X-Api-Key: <key>               (admin dashboard / server-to-server)
- *   - Header:  Authorization: Bearer <apiKey>  (mobile guest mode)
- *   - Header:  Authorization: Bearer <jwt>     (mobile logged-in — student JWT)
+ *   1. If the request carries a token that looks like a JWT, verify it as a
+ *      student access token and attach identity on success, or fail closed
+ *      with 401 on any verification failure (bad signature, expired, wrong
+ *      `type`, or revoked via tokenVersion — see Security-02B below).
+ *   2. Otherwise (no token, or a token that is present but not JWT-shaped),
+ *      treat the request as anonymous and call next() with no identity
+ *      attached. This includes the legacy shared API key — as of
+ *      Security-04B, `API_SECRET_KEY` / `X-Api-Key` has ZERO authorization
+ *      significance. It is never compared against anything here.
+ *
+ * Accepted headers (unchanged from before, `extractToken`'s precedence order
+ * is preserved for backward compatibility with old clients that still send
+ * these — they simply stop being meaningful for authorization):
+ *   - Header:  X-Api-Key: <anything>            (now inert — never checked)
+ *   - Header:  Authorization: Bearer <anything>  (checked ONLY if JWT-shaped)
+ *   - Header:  Authorization: Bearer <jwt>       (mobile logged-in — student JWT)
  *
  * Student JWT fast-path:
  *   If the Bearer token contains two dots (looks like a JWT), it is verified
@@ -19,7 +35,12 @@
  *     req.studentId          — numeric student ID from the JWT sub claim
  *     req.studentEmail       — email from the JWT
  *     req.studentJwtVerified — true (flag used by requireStudentAuth)
- *   An invalid or revoked JWT returns 401 immediately (no API key fallback).
+ *   An invalid, expired, wrong-type, or revoked JWT-shaped token returns 401
+ *   IMMEDIATELY — it must never be treated as "no credential" / anonymous.
+ *   Falling through to anonymous on a failed JWT would let an attacker
+ *   holding an expired/forged/revoked token silently retry as if they had
+ *   sent nothing, which is a strictly worse signal than a clean 401 and is
+ *   a named Security-04B release blocker.
  *
  * ─── Session revocation (Security-02B) ───────────────────────────────────────
  *
@@ -38,11 +59,22 @@
  * phase, by design: caching would reintroduce the propagation-delay window
  * this feature exists to close.
  *
- * In development, if API_SECRET_KEY is not set the middleware logs a warning
- * and allows all requests through — so local dev still works without setup.
- * In production (NODE_ENV=production) a missing key causes startup to abort.
+ * ─── Security-04B: API_SECRET_KEY retired from authorization ────────────────
+ *
+ * Route-level trust was audited (357 route registrations, 60 route modules):
+ * every route that actually needs identity already has its own independent
+ * gate (requireStudentAuth/requireVerifiedStudent using STUDENT_JWT_SECRET,
+ * requireAdminAuth + RBAC using ADMIN_JWT_SECRET, or a route-local read-access
+ * gate such as requireBookingReadAccess). The only routes that relied on the
+ * shared key ALONE were public catalog/CMS GETs, the auth entry points
+ * (register/login/forgot-password/reset-password/social login/admin login —
+ * which must be reachable by definition), the device-unregister route (which
+ * has its own separate unregisterSecret hash comparison), health/version, and
+ * one hardcoded 405 stub. None of those need API_SECRET_KEY to be safe, so
+ * the key now carries no authorization weight anywhere in this middleware.
+ * This is deliberately NOT conditioned on whether API_SECRET_KEY happens to
+ * be set in the environment — behavior is identical either way.
  */
-import { timingSafeEqual } from "crypto";
 import jwt from "jsonwebtoken";
 import type { NextFunction, Request, Response } from "express";
 import { eq } from "drizzle-orm";
@@ -68,21 +100,6 @@ declare global {
 // Middleware is mounted at /api so Express strips that prefix —
 // req.path inside here is "/healthz", not "/api/healthz".
 const PUBLIC_PATHS = new Set(["/healthz", "/version"]);
-
-const secretKey = process.env["API_SECRET_KEY"];
-
-if (!secretKey) {
-  if (process.env["NODE_ENV"] === "production") {
-    throw new Error(
-      "API_SECRET_KEY must be set in production. " +
-        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
-    );
-  }
-  logger.warn(
-    "API_SECRET_KEY is not set — all requests are allowed. " +
-      "Set this env var before deploying to production.",
-  );
-}
 
 // Student JWT secret — separate from the admin JWT secret.
 export const STUDENT_JWT_SECRET =
@@ -150,12 +167,6 @@ function extractToken(req: Request): string | null {
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  // Pass through if no key is configured (dev mode)
-  if (!secretKey) {
-    next();
-    return;
-  }
-
   // Skip auth for public paths
   if (PUBLIC_PATHS.has(req.path)) {
     next();
@@ -164,16 +175,28 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   const token = extractToken(req);
 
-  if (!token) {
-    res.status(401).json({ error: "Missing authentication credentials" });
+  // No credential at all, OR a credential that is present but not JWT-shaped
+  // (the legacy shared API key, sent via X-Api-Key or Bearer) — both are
+  // anonymous as of Security-04B. There is nothing left to compare a
+  // non-JWT token against: API_SECRET_KEY has no authorization role here.
+  // Anonymous requests are NOT rejected at this global gate — each route's
+  // own downstream requirement (requireStudentAuth, requireAdminAuth, a
+  // route-local read-access gate, or none at all for public routes) decides
+  // whether that's sufficient.
+  if (!token || !looksLikeJwt(token)) {
+    next();
     return;
   }
 
   // ── Student JWT fast-path ────────────────────────────────────────────────
-  // If the token looks like a JWT, treat it as a student access token.
-  // We do NOT fall through to the API key check on failure — an invalid JWT
-  // must be rejected outright to avoid token-downgrade confusion.
-  if (looksLikeJwt(token)) {
+  // A JWT-shaped token is always verified as a student access token, and an
+  // invalid one is REJECTED OUTRIGHT (401) — it must never be treated as
+  // "no credential" / anonymous. That distinction matters: silently
+  // downgrading a bad/expired/revoked JWT to anonymous would let a request
+  // that should fail closed instead pass through to whatever a route allows
+  // unauthenticated (which may be nothing, or may be more than the sender
+  // should get), and would mask the fact that a real credential was rejected.
+  {
     let payload: StudentTokenPayload;
     try {
       // algorithms pinned: defense-in-depth against algorithm confusion.
@@ -237,30 +260,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     next();
     return;
   }
-
-  // ── Shared API key path (admin dashboard, guest mobile browsing) ─────────
-  const expected = Buffer.from(secretKey, "utf8");
-  const provided = Buffer.from(token, "utf8");
-
-  if (
-    expected.length !== provided.length ||
-    !timingSafeEqual(expected, provided)
-  ) {
-    logger.warn({ ip: req.ip, path: req.path }, "Rejected request with invalid API key");
-    res.status(403).json({ error: "Invalid credentials" });
-    return;
-  }
-
-  next();
 }
 
 /**
  * Blocks requests authenticated with a student JWT from reaching routes that
  * are intended for admin/server-to-server use only.
  *
- * The admin dashboard authenticates via the shared API key (Bearer <key>) for
- * resource routes — this middleware leaves those through. Only student JWTs
- * (identified by req.studentJwtVerified) are rejected.
+ * The admin dashboard authenticates via its own X-Admin-Token (see
+ * requireAdminAuth in routes/adminAuth.ts) — this middleware leaves those
+ * requests through untouched. Only student JWTs (identified by
+ * req.studentJwtVerified) are rejected.
  *
  * Apply to every POST/PATCH/DELETE route that should never be called by a
  * mobile-app student, e.g. creating/editing instructors, deleting bookings.
