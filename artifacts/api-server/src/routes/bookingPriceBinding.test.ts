@@ -81,7 +81,7 @@ test("CheckInBodyExtended: expectedPriceEgp is optional and nullable — every k
 test("bookings.ts: expectedPriceEgp is stripped out before normalizeBookingWrite — never spread into the bookingsTable insert", () => {
   assert.match(
     bookingsRoute,
-    /const\s*\{\s*expectedPriceEgp,\s*\.\.\.bookingFields\s*\}\s*=\s*parsed\.data/,
+    /const\s*\{\s*expectedPriceEgp,[\s\S]{0,300}?\.\.\.bookingFields\s*\}\s*=\s*parsed\.data/,
     "expectedPriceEgp must be destructured out of parsed.data before it reaches normalizeBookingWrite/the insert",
   );
   assert.match(

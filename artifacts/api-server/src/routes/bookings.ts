@@ -871,13 +871,51 @@ router.post(
   // never spread into `normalized`/the eventual insert. Optional: an older
   // app build that omits it simply skips the stale-price check below,
   // exactly like the pre-existing behavior.
-  const { expectedPriceEgp, ...bookingFields } = parsed.data;
+  //
+  // Security (H-02): this is the untrusted student boundary — bookingStatus,
+  // status (legacy alias), paymentStatus, and bookedAt are all attacker-
+  // controlled lifecycle/state fields that must never flow into
+  // normalizeBookingWrite or the eventual insert from this route. They are
+  // still accepted syntactically (hybrid compatibility: already-installed
+  // mobile clients harmlessly send e.g. bookingStatus:"pending" today), but
+  // their values are never trusted here — stripped before normalization so
+  // normalizeBookingWrite's own default-derivation branch (no `existing`
+  // row on create, so its existing?.* fallbacks are moot) always assigns
+  // the server's own values. The admin PATCH route below is untouched and
+  // continues to pass these fields into normalizeBookingWrite as before —
+  // it is permission-gated and not part of this boundary.
+  const {
+    expectedPriceEgp,
+    bookingStatus: submittedBookingStatus,
+    status: submittedStatus,
+    paymentStatus: submittedPaymentStatus,
+    bookedAt: submittedBookedAt,
+    ...bookingFields
+  } = parsed.data;
 
   const normalized = normalizeBookingWrite({
     ...bookingFields,
     studentEmail,
     accountOwnerStudentId,
   });
+
+  if (
+    (submittedBookingStatus != null && submittedBookingStatus !== normalized.bookingStatus)
+    || (submittedStatus != null && submittedStatus !== normalized.status)
+    || (submittedPaymentStatus != null && submittedPaymentStatus !== normalized.paymentStatus)
+    || submittedBookedAt != null
+  ) {
+    logger.warn({
+      event: "booking_creation_lifecycle_field_ignored",
+      accountOwnerStudentId,
+      submittedBookingStatus: submittedBookingStatus ?? null,
+      submittedStatus: submittedStatus ?? null,
+      submittedPaymentStatus: submittedPaymentStatus ?? null,
+      submittedBookedAt: submittedBookedAt != null,
+      serverBookingStatus: normalized.bookingStatus,
+      serverPaymentStatus: normalized.paymentStatus,
+    }, "Student POST /bookings submitted a lifecycle field that differs from the server-assigned value; ignored.");
+  }
 
   if (normalized.paymentMode === "free") {
     res.status(400).json({ error: "Free class booking is currently disabled." });
