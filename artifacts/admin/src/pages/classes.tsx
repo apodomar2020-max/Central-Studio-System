@@ -50,12 +50,10 @@ function classMatchesAgeBand(cls: { allowAllAges: boolean | null; minAge: number
 // ─── Dance types — loaded from Settings, replaces hardcoded CATEGORIES ────────
 
 const API = import.meta.env.VITE_API_URL ?? "";
-const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
 
 function makeAdminHeaders(token: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

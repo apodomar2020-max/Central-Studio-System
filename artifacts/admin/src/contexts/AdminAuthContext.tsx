@@ -12,7 +12,6 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { hasRolePermission, type PermissionMap } from "@workspace/api-zod";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
-const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
 export const ADMIN_TOKEN_STORAGE_KEY = "admin_jwt";
 
 export interface AdminRole {
@@ -46,7 +45,6 @@ const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
 function makeHeaders(token?: string | null): HeadersInit {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
   return headers;

@@ -12,12 +12,10 @@
 import { normalizeMediaUrl } from "@workspace/api-client-react";
 
 const API = import.meta.env.VITE_API_URL ?? "";
-const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
 
 export function makeHeaders(token: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

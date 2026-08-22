@@ -59,11 +59,9 @@ const CHART_CURSOR = "hsl(var(--accent) / 0.55)";
 
 // ─── API base / headers (admin reports endpoints) ──────────────────────────────
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
-const API_KEY  = (import.meta.env.VITE_API_KEY  as string | undefined) ?? "";
 function adminHeaders(token: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

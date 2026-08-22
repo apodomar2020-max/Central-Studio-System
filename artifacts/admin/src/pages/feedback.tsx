@@ -12,7 +12,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
-const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
 const PAGE_SIZE = 25;
 
 interface FeedbackListRow {
@@ -41,7 +40,6 @@ interface FeedbackListResponse {
 function makeHeaders(token?: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

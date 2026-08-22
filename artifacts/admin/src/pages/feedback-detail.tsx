@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
-const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
 const REVIEW_STATUSES = ["pending", "in_review", "resolved", "dismissed"] as const;
 
 interface FeedbackDetail {
@@ -42,7 +41,6 @@ interface FeedbackDetail {
 function makeHeaders(token?: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

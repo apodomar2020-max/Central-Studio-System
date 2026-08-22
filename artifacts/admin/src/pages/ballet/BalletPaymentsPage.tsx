@@ -21,13 +21,11 @@ import { Loader2, ChevronLeft, ChevronRight, FileText, RefreshCw, CheckCircle2 }
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
-const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
 const LIMIT = 20;
 
 function makeHeaders(token: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

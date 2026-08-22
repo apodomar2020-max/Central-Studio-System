@@ -21,7 +21,6 @@ import { TableToolbar } from "@/components/admin/table-toolbar";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
-const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
 const CATALOG_LIMIT = 100;
 const PAGE_SIZE = 20;
 
@@ -29,7 +28,7 @@ type StatusFilter = "all" | "active" | "inactive";
 type SortOption = "default" | "title" | "title-desc";
 const SORT_LABELS: Record<SortOption, string> = { default: "Default", title: "Title (A–Z)", "title-desc": "Title (Z–A)" };
 function makeHeaders(token: string | null): HeadersInit {
-  return { "Content-Type": "application/json", ...(API_KEY ? { "x-api-key": API_KEY } : {}), ...(token ? { "x-admin-token": token } : {}) };
+  return { "Content-Type": "application/json", ...(token ? { "x-admin-token": token } : {}) };
 }
 async function adminFetch<T>(url: string, init: RequestInit, token: string | null): Promise<T> {
   const res = await fetch(url, { ...init, headers: makeHeaders(token) });

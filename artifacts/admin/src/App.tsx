@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setBaseUrl, setAuthTokenGetter, setAdminTokenGetter } from "@workspace/api-client-react";
+import { setBaseUrl, setAdminTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
@@ -87,11 +87,6 @@ import "@/components/admin/admin2-system.css";
 // Wire the API client to the backend.
 if (import.meta.env.VITE_API_URL) {
   setBaseUrl(import.meta.env.VITE_API_URL as string);
-}
-// Admin dashboard uses X-Api-Key header via the Bearer token path
-const adminApiKey = import.meta.env.VITE_API_KEY as string | undefined;
-if (adminApiKey) {
-  setAuthTokenGetter(() => adminApiKey);
 }
 setAdminTokenGetter(() => localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY));
 

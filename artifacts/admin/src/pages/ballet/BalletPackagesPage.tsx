@@ -34,12 +34,10 @@ import { Trash2, Edit, Loader2 } from "lucide-react";
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
-const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
 
 function makeHeaders(token: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

@@ -71,7 +71,6 @@ const BORDER = "hsl(var(--border))";
 const MUTED = "hsl(var(--muted-foreground))";
 const MUTED_DARK = "hsl(var(--muted-foreground) / 0.68)";
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
-const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
 
 type PackageOrder = {
   id: number;
@@ -130,7 +129,6 @@ function refundReasonLabel(code: string, labels: Record<string, string>): string
 function makeHeaders(token?: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }

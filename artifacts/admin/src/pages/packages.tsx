@@ -52,7 +52,6 @@ function packageMatchesAgeBand(pkg: { allowAllAges: boolean | null; minAge: numb
   return pkgMin <= effectiveBandMax && pkgMax >= bandMin;
 }
 const API = import.meta.env.VITE_API_URL ?? "";
-const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
 
 const DESC_MAX = 160;
 const FEATURE_MAX = 48;
@@ -195,7 +194,6 @@ export default function Packages() {
     queryFn: async () => {
       const response = await fetch(`${API}/api/admin/settings/dance-types`, {
         headers: {
-          ...(API_KEY ? { "x-api-key": API_KEY } : {}),
           ...(token ? { "x-admin-token": token } : {}),
         },
       });

@@ -49,10 +49,9 @@ export function classifyErrorResponse(status: number, contentType: string, data:
   return new AdminApiError("validation", body.error, { status, code: body.code, fieldErrors: body.fieldErrors });
 }
 
-function makeHeaders(token: string | null, apiKey: string): HeadersInit {
+function makeHeaders(token: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(apiKey ? { "x-api-key": apiKey } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }
@@ -61,11 +60,10 @@ export async function adminFetch<T>(
   url: string,
   init: RequestInit,
   token: string | null,
-  apiKey: string,
 ): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, { ...init, headers: makeHeaders(token, apiKey) });
+    res = await fetch(url, { ...init, headers: makeHeaders(token) });
   } catch {
     throw new AdminApiError("network", "Unable to reach the schedules service.");
   }

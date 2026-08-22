@@ -37,7 +37,6 @@ import { fetchAllPages } from "@/lib/fetchAllPages";
 import { TableToolbar } from "@/components/admin/table-toolbar";
 
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
-const API_KEY  = import.meta.env.VITE_API_KEY  as string | undefined ?? "";
 
 const CATALOG_LIMIT = 100;
 const PAGE_SIZE = 20;
@@ -135,7 +134,7 @@ export default function BalletSchedulesPage() {
       if (classFilter !== "all") params.set("classId", String(classFilter));
       if (dayFilter !== "all") params.set("dayOfWeek", String(dayFilter));
       if (branchFilter !== "all") params.set("branchId", String(branchFilter));
-      return adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?${params}`, {}, token, API_KEY);
+      return adminFetch<ListResponse<BalletSchedule>>(`${API_BASE}/api/admin/ballet/schedules?${params}`, {}, token);
     },
     refetchOnWindowFocus: false,
   });
@@ -148,25 +147,25 @@ export default function BalletSchedulesPage() {
   // full catalogue, not just the first CATALOG_LIMIT rows.
   const { data: classes = [] } = useQuery({
     queryKey: ["admin-ballet-classes-ref", token],
-    queryFn: () => fetchAllPages<BalletClass>((p) => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?page=${p}&limit=${CATALOG_LIMIT}`, {}, token, API_KEY)),
+    queryFn: () => fetchAllPages<BalletClass>((p) => adminFetch<ListResponse<BalletClass>>(`${API_BASE}/api/admin/ballet/classes?page=${p}&limit=${CATALOG_LIMIT}`, {}, token)),
     refetchOnWindowFocus: false,
   });
 
   const { data: instructors = [] } = useQuery({
     queryKey: ["admin-ballet-instructors-ref", token],
-    queryFn: () => fetchAllPages<BalletInstructor>((p) => adminFetch<ListResponse<BalletInstructor>>(`${API_BASE}/api/admin/ballet/instructors?page=${p}&limit=${CATALOG_LIMIT}`, {}, token, API_KEY)),
+    queryFn: () => fetchAllPages<BalletInstructor>((p) => adminFetch<ListResponse<BalletInstructor>>(`${API_BASE}/api/admin/ballet/instructors?page=${p}&limit=${CATALOG_LIMIT}`, {}, token)),
     refetchOnWindowFocus: false,
   });
 
   const { data: groups = [] } = useQuery({
     queryKey: ["admin-ballet-groups-ref", token],
-    queryFn: () => fetchAllPages<BalletGroup>((p) => adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?page=${p}&limit=${CATALOG_LIMIT}`, {}, token, API_KEY)),
+    queryFn: () => fetchAllPages<BalletGroup>((p) => adminFetch<ListResponse<BalletGroup>>(`${API_BASE}/api/admin/ballet/groups?page=${p}&limit=${CATALOG_LIMIT}`, {}, token)),
     refetchOnWindowFocus: false,
   });
 
   const { data: levelsData } = useQuery({
     queryKey: ["admin-ballet-levels-ref", token],
-    queryFn: () => adminFetch<{ levels: BalletLevel[] }>(`${API_BASE}/api/admin/ballet/levels`, {}, token, API_KEY),
+    queryFn: () => adminFetch<{ levels: BalletLevel[] }>(`${API_BASE}/api/admin/ballet/levels`, {}, token),
     refetchOnWindowFocus: false,
   });
   const levels = levelsData?.levels ?? [];
@@ -195,13 +194,13 @@ export default function BalletSchedulesPage() {
   ]);
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => adminFetch(`${API_BASE}/api/admin/ballet/schedules`, { method: "POST", body: JSON.stringify(body) }, token, API_KEY),
+    mutationFn: (body: object) => adminFetch(`${API_BASE}/api/admin/ballet/schedules`, { method: "POST", body: JSON.stringify(body) }, token),
     onSuccess: async () => { await invalidate(); toast({ title: "Schedule created" }); setOpen(false); },
     onError: (e: unknown) => toast({ title: "Error", description: scheduleErrorMessage(e, "Failed to create schedule."), variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, body }: { id: number; body: object }) => adminFetch(`${API_BASE}/api/admin/ballet/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token, API_KEY),
+    mutationFn: ({ id, body }: { id: number; body: object }) => adminFetch(`${API_BASE}/api/admin/ballet/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
     onSuccess: async () => { await invalidate(); toast({ title: "Schedule updated" }); setOpen(false); },
     onError: (e: unknown) => toast({ title: "Error", description: scheduleErrorMessage(e, "Failed to update schedule."), variant: "destructive" }),
   });

@@ -62,12 +62,10 @@ const FILTERS = ["all", "pending", "confirmed", "rejected", "cancelled", "attend
 const SCOPE_FILTERS = ["all", "self", "child"] as const;
 const PAGE_SIZE = 50;
 const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? "";
-const API_KEY = import.meta.env.VITE_API_KEY as string | undefined ?? "";
 
 function makeAdminHeaders(token?: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
-    ...(API_KEY ? { "x-api-key": API_KEY } : {}),
     ...(token ? { "x-admin-token": token } : {}),
   };
 }
@@ -384,7 +382,6 @@ export default function Bookings() {
     setPaymentActionAmountLoading(true);
     void fetch(`${API_BASE}/api/bookings/${paymentConfirm.booking.id}/payment-confirmation-amount`, {
       headers: {
-        ...(API_KEY ? { "x-api-key": API_KEY } : {}),
         ...(token ? { "x-admin-token": token } : {}),
       },
       signal: controller.signal,
