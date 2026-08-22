@@ -8,16 +8,48 @@
  * Status:
  *   - Google   : implemented (validates the ID token via Google's tokeninfo
  *                endpoint and checks the audience against GOOGLE_CLIENT_ID).
- *   - Apple    : placeholder — throws ProviderNotConfiguredError until wired.
- *   - Facebook : placeholder — throws ProviderNotConfiguredError until wired.
+ *   - Facebook : implemented (validates the access token via /debug_token with
+ *                an app token, then reads the minimal profile via /me).
+ *   - Apple    : NOT implemented — throws ProviderNotConfiguredError (fail
+ *                closed). Do not implement it before Security-01B2 lands, or
+ *                it will inherit the linking rules wholesale.
  *
- * To add Apple/Facebook later, replace the placeholder bodies with real
- * validation (Apple: verify the identity token against Apple's JWKS and check
- * aud === APPLE_CLIENT_ID; Facebook: GET /debug_token with an app token, then
- * GET /me?fields=id,email). The route layer needs no changes.
+ * ─── Email trust (Security-01B1, CS-SEC-C-01) ────────────────────────────────
+ *
+ * `emailVerified: boolean` was replaced by the three-valued `emailTrust`
+ * because a boolean cannot distinguish "the provider cryptographically
+ * attests this address" from "the provider handed us a string". Facebook's
+ * Graph API exposes no email_verified signal at all, so the previous
+ * `emailVerified: !!profile.email` manufactured an attestation that the
+ * provider never made — and the route layer then used it to authorise
+ * linking a provider identity onto a pre-existing account.
+ *
+ * The tier is the ONLY input the route layer may use to decide whether a
+ * provider identity is allowed to attach to an account that already exists.
+ * See routes/socialAuth.ts for the linking rules that consume it.
  */
 
 export type ProviderName = "google" | "apple" | "facebook";
+
+/**
+ * How much the backend may trust the email attached to a provider identity.
+ *
+ *   provider_attested — the provider makes an explicit, machine-readable
+ *                       claim that this subject owns this address
+ *                       (Google OIDC `email_verified === true`). Strong
+ *                       enough to locate and link a pre-existing account.
+ *
+ *   provider_asserted — the provider returned an address but makes NO
+ *                       verification claim about it (every Facebook email —
+ *                       Graph exposes no such field; Google with
+ *                       `email_verified` falsy). Sufficient to seed a NEW
+ *                       account (which then starts unverified and goes
+ *                       through OTP), never sufficient to attach to an
+ *                       account that already exists.
+ *
+ *   none              — the provider released no address at all.
+ */
+export type EmailTrust = "provider_attested" | "provider_asserted" | "none";
 
 export interface ProviderIdentity {
   provider: ProviderName;
@@ -25,8 +57,12 @@ export interface ProviderIdentity {
   providerId: string;
   /** Email the provider released, or null (e.g. Apple "Hide My Email" with no relay). */
   email: string | null;
-  /** Whether the provider asserts the email is verified/owned by this subject. */
-  emailVerified: boolean;
+  /**
+   * Strength of the provider's claim over `email`. Never derived from, or
+   * conflated with, any value stored on the student row — see
+   * routes/socialAuth.ts (CS-SEC-C-01).
+   */
+  emailTrust: EmailTrust;
   /** Display name if the provider released one. */
   name: string | null;
   /** Profile picture URL the provider released, or null. */
@@ -87,13 +123,19 @@ async function verifyGoogle(idToken: string): Promise<ProviderIdentity> {
     throw new ProviderTokenInvalidError("Google token audience mismatch.");
   }
 
-  const emailVerified = info.email_verified === true || info.email_verified === "true";
+  // Google's tokeninfo returns email_verified as a JSON boolean or the string
+  // "true" depending on the token/endpoint; both forms mean attested.
+  const attested = info.email_verified === true || info.email_verified === "true";
+  const email = info.email ? info.email.toLowerCase() : null;
 
   return {
     provider: "google",
     providerId: info.sub,
-    email: info.email ? info.email.toLowerCase() : null,
-    emailVerified,
+    email,
+    // No email claim at all (token minted without the `email` scope) => "none".
+    // Present but not attested => "provider_asserted": usable to seed a new
+    // account, never to attach to an existing one.
+    emailTrust: !email ? "none" : attested ? "provider_attested" : "provider_asserted",
     name: info.name ?? null,
     avatarUrl: info.picture ?? null,
   };
@@ -170,14 +212,20 @@ async function verifyFacebook(accessToken: string): Promise<ProviderIdentity> {
     ? null
     : profile.picture?.data?.url ?? null;
 
+  const email = profile.email ? profile.email.toLowerCase() : null;
+
   return {
     provider: "facebook",
     providerId: profile.id,
-    email: profile.email ? profile.email.toLowerCase() : null,
-    // Facebook exposes no email_verified flag via Graph; a returned email is
-    // treated as confirmed (same trusted-provider-email policy as Google). When
-    // no email is returned, the resolver routes the user through email + OTP.
-    emailVerified: !!profile.email,
+    email,
+    // Facebook's Graph API exposes NO email_verified field on /me, so there is
+    // no provider-side attestation to read — the strongest honest tier is
+    // "provider_asserted". This is deliberately NOT "provider_attested":
+    // equating "an address came back" with "this subject owns that address"
+    // is what made CS-SEC-C-01 exploitable. A Facebook email can therefore
+    // seed a brand-new account (unverified, OTP follows) but can never attach
+    // this identity to an account that already exists.
+    emailTrust: email ? "provider_asserted" : "none",
     name: profile.name ?? null,
     avatarUrl,
   };
