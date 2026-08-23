@@ -92,3 +92,6 @@ export * from "./websiteBackgroundSettings";
 export * from "./websiteNewsPosts";
 // Website CMS Wave 3 — Performance (migration 0111)
 export * from "./websitePerformances";
+// Phase B3B0-1A — forward-looking student email-identity provenance (migration 0116)
+export * from "./studentEmailIdentityHistory";
+export * from "./provenanceActivation";

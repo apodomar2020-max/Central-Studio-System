@@ -37,6 +37,7 @@ import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./stude
 import { diffFields, logActivity } from "../lib/activityLog";
 import { computeStudentDeletionImpact } from "../lib/studentDeletionImpact";
 import { computeAgeAsOf } from "../lib/balletAgeEligibility";
+import { applyStudentEmailChange, openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import * as zod from "zod";
 
 const router: IRouter = Router();
@@ -370,10 +371,22 @@ router.post("/students", blockStudentJwt, requireAdminAuth, requireAdminPermissi
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db
-    .insert(studentsTable)
-    .values({ ...parsed.data, email: normalizeEmail(parsed.data.email) })
-    .returning();
+  // Phase B3B0-1A completion (Section F): admin-created student rows and
+  // their initial provenance interval are atomic (same transaction).
+  const row = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(studentsTable)
+      .values({ ...parsed.data, email: normalizeEmail(parsed.data.email) })
+      .returning();
+    const created = inserted!;
+    await openInitialProvenanceInterval(tx, {
+      studentId: created.id,
+      email: created.email,
+      source: "admin_update",
+      validFrom: created.createdAt,
+    });
+    return created;
+  });
   res.status(201).json(GetStudentResponse.parse(row));
 });
 
@@ -1119,10 +1132,31 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const data = parsed.data.email
-    ? { ...parsed.data, email: normalizeEmail(parsed.data.email) }
-    : parsed.data;
-  const [row] = await db.update(studentsTable).set(data).where(eq(studentsTable.id, params.data.id)).returning();
+  // Non-email fields (name/phone/notes/etc.) are applied directly. The email
+  // field, if present, goes through the atomic provenance-aware helper
+  // (Phase B3B0-1A) inside the SAME transaction so a provenance-write
+  // failure rolls back any other field changes in this request too.
+  const { email: rawEmailInput, ...nonEmailData } = parsed.data;
+  const row = await db.transaction(async (tx) => {
+    const emailOutcome = await applyStudentEmailChange(tx, {
+      studentId: params.data.id,
+      rawEmail: rawEmailInput,
+      source: "admin_update",
+      changedByAdminId: req.adminUser?.id ?? null,
+    });
+    if (emailOutcome.kind === "notFound") return undefined;
+
+    if (Object.keys(nonEmailData).length > 0) {
+      await tx.update(studentsTable).set(nonEmailData).where(eq(studentsTable.id, params.data.id));
+    }
+
+    const [updated] = await tx
+      .select()
+      .from(studentsTable)
+      .where(eq(studentsTable.id, params.data.id))
+      .limit(1);
+    return updated;
+  });
   if (!row) {
     res.status(404).json({ error: "Student not found" });
     return;

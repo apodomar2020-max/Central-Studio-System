@@ -48,6 +48,7 @@ process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.OTP_PEPPER = "test-session-revocation-otp-pepper".padEnd(64, "0");
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY; // dev-mode no-op path for OTP/security emails
+process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
 type Identity = {
   provider: "google" | "apple" | "facebook";

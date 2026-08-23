@@ -38,6 +38,7 @@ process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY; // OTP send is a dev-mode no-op
+process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
 type EmailTrust = "provider_attested" | "provider_asserted" | "none";
 type Identity = {
@@ -388,6 +389,20 @@ test("google attested email + no existing account -> new VERIFIED account", asyn
   const row = await readRow(json.student.id);
   assert.equal(row.email_verified, true);
   assert.equal(row.google_id, nextIdentity.providerId);
+
+  // B3B0-1A verification closure item 13 — route-specific wiring proof (not
+  // just the shared helper tested in isolation): the real /api/auth/google
+  // route opened an initial provenance interval for this specific student.
+  const provenance = (await pool.query(
+    `SELECT valid_from, valid_to FROM student_email_identity_history WHERE student_id = $1`,
+    [json.student.id],
+  )).rows;
+  assert.equal(provenance.length, 1, "exactly one provenance interval opened for the new google student");
+  assert.equal(provenance[0].valid_to, null, "interval is open");
+  assert.ok(
+    Math.abs(new Date(provenance[0].valid_from).getTime() - Date.now()) < 60_000,
+    "validFrom is close to now (server time, not backdated)",
+  );
 });
 
 test("facebook asserted email + no existing account -> new UNVERIFIED account (OTP path)", async () => {
@@ -403,6 +418,24 @@ test("facebook asserted email + no existing account -> new UNVERIFIED account (O
   const row = await readRow(json.student.id);
   assert.equal(row.email_verified, false);
   assert.equal(row.email_verified_at, null);
+
+  // B3B0-1A verification closure item 14 — route-specific wiring proof for
+  // Facebook specifically (previously only indirect, via the Branch-3 path
+  // shared with google): the real /api/auth/facebook route opened an
+  // initial provenance interval for this student, and it was NOT skipped
+  // or deferred merely because the provider email is only "asserted" (not
+  // yet verified) — provenance tracks account-email ownership, which is
+  // independent of the emailVerified/OTP trust state.
+  const provenance = (await pool.query(
+    `SELECT valid_from, valid_to FROM student_email_identity_history WHERE student_id = $1`,
+    [row.id],
+  )).rows;
+  assert.equal(provenance.length, 1, "exactly one provenance interval opened for the new facebook student");
+  assert.equal(provenance[0].valid_to, null, "interval is open");
+  assert.ok(
+    Math.abs(new Date(provenance[0].valid_from).getTime() - Date.now()) < 60_000,
+    "validFrom is close to now (server time, not backdated)",
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

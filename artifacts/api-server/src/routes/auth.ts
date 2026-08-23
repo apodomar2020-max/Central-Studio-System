@@ -53,6 +53,7 @@ import {
 } from "../lib/authHelpers";
 import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfileResponse";
 import { validateProfileAge } from "../lib/eligibility/profileAgeValidation";
+import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 
 const router: IRouter = Router();
 
@@ -168,21 +169,40 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   };
   const completion = legacyProfileCompletionPatch(profileInput);
 
-  const [student] = await db
-    .insert(studentsTable)
-    .values({
-      name: profileInput.name,
-      email: normalizeEmail(email),
-      phone: profileInput.phone,
-      accountType: profileInput.accountType,
-      dateOfBirth: profileInput.dateOfBirth,
-      ...completion,
-      passwordHash,
-      authProvider: "local",
-      // emailVerified defaults to false — the account must pass OTP before
-      // it can reach any verified-only route.
-    })
-    .returning();
+  // Phase B3B0-1A completion (Section F): student creation and the initial
+  // provenance interval are atomic — if either write fails, both roll back
+  // (natural db.transaction behavior). This does NOT change trust/
+  // verification semantics: the email is already what the pre-existing
+  // logic trusts enough to store as students.email, so provenance simply
+  // mirrors that same trust boundary at the same insert point.
+  const student = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(studentsTable)
+      .values({
+        name: profileInput.name,
+        email: normalizeEmail(email),
+        phone: profileInput.phone,
+        accountType: profileInput.accountType,
+        dateOfBirth: profileInput.dateOfBirth,
+        ...completion,
+        passwordHash,
+        authProvider: "local",
+        // emailVerified defaults to false — the account must pass OTP before
+        // it can reach any verified-only route.
+      })
+      .returning();
+    const created = row!;
+    // validFrom reuses the student row's own server-generated createdAt
+    // (defaultNow(), never client input) — never a second independent
+    // `new Date()` reading, so the two writes can never diverge.
+    await openInitialProvenanceInterval(tx, {
+      studentId: created.id,
+      email: created.email,
+      source: "registration",
+      validFrom: created.createdAt,
+    });
+    return created;
+  });
 
   // Limited token (emailVerified=false): unlocks OTP + /auth/me only.
   const accessToken = signStudentToken(student.id, student.email, false, student.tokenVersion);

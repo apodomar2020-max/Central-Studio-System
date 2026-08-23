@@ -33,6 +33,7 @@ process.env.STUDENT_JWT_SECRET = "test-student-secret-matrix";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret-matrix";
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY;
+process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
 const LEGACY_BEARER = process.env.API_SECRET_KEY;
 

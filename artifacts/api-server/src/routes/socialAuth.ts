@@ -58,6 +58,7 @@ import { logger } from "../lib/logger";
 import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentAccountStatus";
 import { signStudentToken, issueOtp, OtpRateLimitError } from "../lib/authHelpers";
 import { publicStudent } from "../lib/studentProfileResponse";
+import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import {
   verifyProviderToken,
   ProviderNotConfiguredError,
@@ -218,21 +219,37 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
   // through the existing OTP flow by the handler below.
   if (!existing) {
     const attested = emailTrust === "provider_attested";
-    const [created] = await db
-      .insert(studentsTable)
-      .values({
-        name: identity.name ?? email.split("@")[0] ?? "Member",
-        email,
-        authProvider: provider,
-        providerDisplayName: identity.name,
-        ...providerPatch(provider, providerId),
-        ...avatarPatch(identity),
-        emailVerified: attested,
-        emailVerifiedAt: attested ? now : null,
-        lastLoginAt: now,
-      })
-      .returning();
-    const student = created!;
+    // Phase B3B0-1A completion (Section F/G): the student INSERT and the
+    // initial provenance interval are atomic (same transaction). This does
+    // NOT add a new trust boundary — `email` here is already the exact
+    // value about to be stored as students.email under this branch's
+    // existing (unchanged) trust rules, whether or not it is
+    // provider-attested/emailVerified. Provenance simply mirrors that same
+    // already-happening, already-trusted insert; it never runs ahead of it.
+    const student = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(studentsTable)
+        .values({
+          name: identity.name ?? email.split("@")[0] ?? "Member",
+          email,
+          authProvider: provider,
+          providerDisplayName: identity.name,
+          ...providerPatch(provider, providerId),
+          ...avatarPatch(identity),
+          emailVerified: attested,
+          emailVerifiedAt: attested ? now : null,
+          lastLoginAt: now,
+        })
+        .returning();
+      const created = row!;
+      await openInitialProvenanceInterval(tx, {
+        studentId: created.id,
+        email: created.email,
+        source: "registration",
+        validFrom: created.createdAt,
+      });
+      return created;
+    });
     return { kind: "ok", student, verified: student.emailVerified };
   }
 

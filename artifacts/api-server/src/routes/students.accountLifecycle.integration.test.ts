@@ -46,6 +46,7 @@ process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 process.env.OTP_PEPPER = "test-lifecycle-otp-pepper".padEnd(64, "0");
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY;
+process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
 type Identity = {
   provider: "google" | "apple" | "facebook";
