@@ -16,6 +16,7 @@ import {
   studentDanceInterestsTable,
   danceTypesTable,
   notificationDevicesTable,
+  studentDeletionWorkflowsTable,
 } from "@workspace/db";
 import {
   CreateStudentBody,
@@ -38,6 +39,11 @@ import { diffFields, logActivity } from "../lib/activityLog";
 import { computeStudentDeletionImpact } from "../lib/studentDeletionImpact";
 import { computeAgeAsOf } from "../lib/balletAgeEligibility";
 import { applyStudentEmailChange, openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
+import {
+  getActivePreparation,
+  DELETION_PREPARATION_POLICY_VERSION,
+  STUDENT_DELETION_PREPARATION_ACTIVE_CODE,
+} from "../lib/studentDeletionPreparation";
 import * as zod from "zod";
 
 const router: IRouter = Router();
@@ -1137,14 +1143,15 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
   // (Phase B3B0-1A) inside the SAME transaction so a provenance-write
   // failure rolls back any other field changes in this request too.
   const { email: rawEmailInput, ...nonEmailData } = parsed.data;
-  const row = await db.transaction(async (tx) => {
+  const txResult = await db.transaction(async (tx) => {
     const emailOutcome = await applyStudentEmailChange(tx, {
       studentId: params.data.id,
       rawEmail: rawEmailInput,
       source: "admin_update",
       changedByAdminId: req.adminUser?.id ?? null,
     });
-    if (emailOutcome.kind === "notFound") return undefined;
+    if (emailOutcome.kind === "notFound") return { kind: "notFound" as const };
+    if (emailOutcome.kind === "deletionPreparationActive") return { kind: "deletionPreparationActive" as const };
 
     if (Object.keys(nonEmailData).length > 0) {
       await tx.update(studentsTable).set(nonEmailData).where(eq(studentsTable.id, params.data.id));
@@ -1155,8 +1162,20 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
       .from(studentsTable)
       .where(eq(studentsTable.id, params.data.id))
       .limit(1);
-    return updated;
+    return { kind: "ok" as const, row: updated };
   });
+  if (txResult.kind === "notFound") {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+  if (txResult.kind === "deletionPreparationActive") {
+    res.status(409).json({
+      error: "This student's email cannot be changed while a deletion preparation is active.",
+      code: "STUDENT_DELETION_PREPARATION_ACTIVE",
+    });
+    return;
+  }
+  const row = txResult.row;
   if (!row) {
     res.status(404).json({ error: "Student not found" });
     return;
@@ -1326,6 +1345,15 @@ router.post("/students/:id/reactivate", blockStudentJwt, requireAdminAuth, async
       return { kind: "conflict" as const };
     }
 
+    // Phase B3B0-2: reactivation must never coexist with an active deletion
+    // preparation. Checked inside this same transaction (after the FOR
+    // UPDATE lock on the student row above), so it serializes correctly
+    // against a concurrent Start-Preparation call.
+    const activePreparation = await getActivePreparation(tx, params.data.id);
+    if (activePreparation) {
+      return { kind: "preparationActive" as const };
+    }
+
     // notification_devices is deliberately untouched here — reactivation
     // does not resurrect old disabled devices; a fresh login + device
     // registration is required to get a new active device row.
@@ -1350,6 +1378,13 @@ router.post("/students/:id/reactivate", blockStudentJwt, requireAdminAuth, async
     res.status(409).json({ error: "Account cannot be reactivated from its current state." });
     return;
   }
+  if (outcome.kind === "preparationActive") {
+    res.status(409).json({
+      error: "This student cannot be reactivated while a deletion preparation is active. Cancel the preparation first.",
+      code: STUDENT_DELETION_PREPARATION_ACTIVE_CODE,
+    });
+    return;
+  }
   if (outcome.kind === "noop") {
     res.status(200).json({ id: existing.id, accountStatus: "active" });
     return;
@@ -1366,6 +1401,174 @@ router.post("/students/:id/reactivate", blockStudentJwt, requireAdminAuth, async
     summary: `Reactivated ${targetModule === "parents" ? "parent" : "student"} ${existing.name}`,
   });
 });
+
+// ── Deletion preparation (Phase B3B0-2) ─────────────────────────────────
+// Administrative freeze workflow, orthogonal to account_status. Gated on the
+// SAME users.delete permission the (read-only) deletion-impact route above
+// uses — starting/cancelling a preparation is squarely "managing account
+// deletion", and no genuine evidence was found that reusing that permission
+// is unsafe here. Does NOT implement Permanent Delete execution.
+router.post(
+  "/students/:id/deletion-preparation/start",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = UpdateStudentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const adminId = req.adminUser!.id;
+
+    const outcome = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: studentsTable.id, accountStatus: studentsTable.accountStatus, name: studentsTable.name })
+        .from(studentsTable)
+        .where(eq(studentsTable.id, params.data.id))
+        .for("update")
+        .limit(1);
+      if (!locked) return { kind: "notFound" as const };
+
+      if (locked.accountStatus === "deleted") {
+        return { kind: "conflict" as const, status: locked.accountStatus };
+      }
+      if (locked.accountStatus !== "deactivated") {
+        return { kind: "conflict" as const, status: locked.accountStatus };
+      }
+
+      const existingActive = await getActivePreparation(tx, params.data.id);
+      if (existingActive) {
+        return { kind: "alreadyActive" as const, workflow: existingActive, name: locked.name };
+      }
+
+      const [created] = await tx
+        .insert(studentDeletionWorkflowsTable)
+        .values({
+          studentId: params.data.id,
+          status: "PREPARING",
+          startedByAdminId: adminId,
+          policyVersion: DELETION_PREPARATION_POLICY_VERSION,
+        })
+        .returning();
+
+      return { kind: "started" as const, workflow: created, name: locked.name };
+    });
+
+    if (outcome.kind === "notFound") {
+      res.status(404).json({ error: "Student not found" });
+      return;
+    }
+    if (outcome.kind === "conflict") {
+      res.status(409).json({
+        error: "Deletion preparation can only be started for a deactivated account.",
+        accountStatus: outcome.status,
+      });
+      return;
+    }
+    if (outcome.kind === "alreadyActive") {
+      // Idempotent: a preparation is already active. No duplicate row, no
+      // duplicate audit event.
+      res.status(200).json({
+        id: outcome.workflow.id,
+        studentId: outcome.workflow.studentId,
+        status: outcome.workflow.status,
+        startedAt: outcome.workflow.startedAt,
+        cancelledAt: outcome.workflow.cancelledAt,
+        policyVersion: outcome.workflow.policyVersion,
+      });
+      return;
+    }
+
+    res.status(201).json({
+      id: outcome.workflow.id,
+      studentId: outcome.workflow.studentId,
+      status: outcome.workflow.status,
+      startedAt: outcome.workflow.startedAt,
+      cancelledAt: outcome.workflow.cancelledAt,
+      policyVersion: outcome.workflow.policyVersion,
+    });
+
+    // Audit AFTER commit — only on a genuine state transition, never on the
+    // idempotent already-active branch above.
+    await logActivity(req, {
+      action: "deletion_preparation_start",
+      module: "users",
+      entityType: "student",
+      entityId: params.data.id,
+      entityLabel: outcome.name,
+      summary: `Started deletion preparation for student ${outcome.name} (workflow #${outcome.workflow.id}, policy v${outcome.workflow.policyVersion})`,
+    });
+  },
+);
+
+router.post(
+  "/students/:id/deletion-preparation/cancel",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = UpdateStudentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const adminId = req.adminUser!.id;
+
+    const outcome = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: studentsTable.id, name: studentsTable.name })
+        .from(studentsTable)
+        .where(eq(studentsTable.id, params.data.id))
+        .for("update")
+        .limit(1);
+      if (!locked) return { kind: "notFound" as const };
+
+      const active = await getActivePreparation(tx, params.data.id);
+      if (!active) {
+        // Idempotent: no active preparation to cancel (already cancelled, or
+        // never started). Non-crashing, no state change, no audit event.
+        return { kind: "noneActive" as const, name: locked.name };
+      }
+
+      const nowIso = new Date().toISOString();
+      const [updated] = await tx
+        .update(studentDeletionWorkflowsTable)
+        .set({ status: "CANCELLED", cancelledAt: nowIso, cancelledByAdminId: adminId, updatedAt: nowIso })
+        .where(eq(studentDeletionWorkflowsTable.id, active.id))
+        .returning();
+
+      return { kind: "cancelled" as const, workflow: updated, name: locked.name };
+    });
+
+    if (outcome.kind === "notFound") {
+      res.status(404).json({ error: "Student not found" });
+      return;
+    }
+    if (outcome.kind === "noneActive") {
+      res.status(200).json({ id: params.data.id, status: "CANCELLED", active: false });
+      return;
+    }
+
+    res.status(200).json({
+      id: outcome.workflow.id,
+      studentId: outcome.workflow.studentId,
+      status: outcome.workflow.status,
+      startedAt: outcome.workflow.startedAt,
+      cancelledAt: outcome.workflow.cancelledAt,
+      policyVersion: outcome.workflow.policyVersion,
+    });
+
+    await logActivity(req, {
+      action: "deletion_preparation_cancel",
+      module: "users",
+      entityType: "student",
+      entityId: params.data.id,
+      entityLabel: outcome.name,
+      summary: `Cancelled deletion preparation for student ${outcome.name} (workflow #${outcome.workflow.id})`,
+    });
+  },
+);
 
 // ── Deletion impact (Phase B2B) ─────────────────────────────────────────
 // Read-only. Writes NOTHING — no audit row, no Student mutation, no OTP/
@@ -1395,7 +1598,19 @@ router.get(
       res.status(409).json({ error: "Student account has already been permanently deleted." });
       return;
     }
-    res.status(200).json(outcome.result);
+    // Phase B3B0-2 additive extension: surface whether a deletion
+    // preparation is currently active, so a future Admin UI/B3B1 planner can
+    // see this state without a second API call. B2B remains strictly
+    // read-only — this is a plain SELECT, no mutation capability added.
+    const activePreparation = await getActivePreparation(db, params.data.id);
+    res.status(200).json({
+      ...outcome.result,
+      deletionPreparation: {
+        active: activePreparation !== null,
+        startedAt: activePreparation?.startedAt ?? null,
+        status: activePreparation?.status ?? null,
+      },
+    });
   },
 );
 

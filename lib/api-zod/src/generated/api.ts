@@ -1828,6 +1828,48 @@ export const ReactivateStudentResponse = zod.object({
 });
 
 /**
+ * Phase B3B0-2: starts (or, if already active, idempotently re-returns) an administrative deletion-preparation freeze workflow for an already-deactivated Student account. Requires users.delete. Not a permanent delete — no data is removed or anonymized. Orthogonal to accountStatus: while a preparation is PREPARING, identity-changing email PATCHes and Reactivate are both rejected with 409 STUDENT_DELETION_PREPARATION_ACTIVE. Only non-sensitive workflow metadata is returned or stored — no raw email, provenance fingerprint, secret material, child PII, or financial detail.
+ */
+export const StartStudentDeletionPreparationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const StartStudentDeletionPreparationResponse = zod
+  .object({
+    id: zod.number(),
+    studentId: zod.number().optional(),
+    status: zod.enum(["PREPARING", "CANCELLED"]),
+    active: zod.boolean().optional(),
+    startedAt: zod.coerce.date().nullish(),
+    cancelledAt: zod.coerce.date().nullish(),
+    policyVersion: zod.string().optional(),
+  })
+  .describe(
+    'Phase B3B0-2 workflow metadata only. `id` is the workflow row id on the started\/cancelled\/already-active branches; on the \"no active preparation to cancel\" idempotent branch `id` is the studentId and `active: false` is returned instead. No raw email, provenance fingerprint, secret material, child PII, or financial detail is ever present in this shape.',
+  );
+
+/**
+ * Phase B3B0-2: cancels the active deletion-preparation workflow for a Student, if one exists. Requires users.delete. Idempotent — if no preparation is currently active, returns 200 with active: false and produces no state change or audit event. Cancelling does NOT reactivate the account; accountStatus remains deactivated and a separate explicit Reactivate call is required. After cancellation, email identity changes become available again.
+ */
+export const CancelStudentDeletionPreparationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CancelStudentDeletionPreparationResponse = zod
+  .object({
+    id: zod.number(),
+    studentId: zod.number().optional(),
+    status: zod.enum(["PREPARING", "CANCELLED"]),
+    active: zod.boolean().optional(),
+    startedAt: zod.coerce.date().nullish(),
+    cancelledAt: zod.coerce.date().nullish(),
+    policyVersion: zod.string().optional(),
+  })
+  .describe(
+    'Phase B3B0-2 workflow metadata only. `id` is the workflow row id on the started\/cancelled\/already-active branches; on the \"no active preparation to cancel\" idempotent branch `id` is the studentId and `active: false` is returned instead. No raw email, provenance fingerprint, secret material, child PII, or financial detail is ever present in this shape.',
+  );
+
+/**
  * Phase B2B: read-only deletion impact analysis for permanent Student account deletion. Requires users.delete. Truly read-only — no audit row, no Student mutation, no OTP/device mutation is ever produced by this call. Advisory only: `canDelete`/`blockers` reflect current-state information as of `generatedAt` under `policyVersion`; a future Permanent Delete execution MUST recompute the full blocker set inside its own locked transaction and must never trust a client-supplied deletion state (this GET has no request body).
  */
 export const GetStudentDeletionImpactParams = zod.object({
@@ -1870,6 +1912,21 @@ export const GetStudentDeletionImpactResponse = zod
         classification: zod.enum(["delete", "anonymize", "retain", "blocker"]),
       }),
     ),
+    deletionPreparation: zod
+      .object({
+        active: zod.boolean(),
+        startedAt: zod.coerce.date().nullable(),
+        status: zod
+          .union([
+            zod.literal("PREPARING"),
+            zod.literal("CANCELLED"),
+            zod.literal(null),
+          ])
+          .nullable(),
+      })
+      .describe(
+        "Phase B3B0-2 additive extension. Read-only status surface — this GET performs no writes. Does not add a Permanent Delete capability; canDelete\/blockers semantics above are unchanged.",
+      ),
     summary: zod.object({
       bookings: zod.object({
         historical: zod.number(),

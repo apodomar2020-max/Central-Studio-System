@@ -33,6 +33,7 @@ import { eq, and, isNull, sql } from "drizzle-orm";
 import { db, studentsTable, studentEmailIdentityHistoryTable, provenanceActivationTable } from "@workspace/db";
 import { normalizeEmail } from "./membershipIdentity";
 import { fingerprintStudentEmail } from "./studentEmailProvenance";
+import { getActivePreparation, STUDENT_DELETION_PREPARATION_ACTIVE_CODE } from "./studentDeletionPreparation";
 
 export type ProvenanceSource = "admin_update" | "registration" | "self_service" | "bootstrap";
 
@@ -40,7 +41,12 @@ export type StudentEmailChangeResult =
   | { kind: "notFound" }
   | { kind: "unchanged" } // no raw email field supplied, or exactly identical string
   | { kind: "recasedOnly" } // normalization-equivalent, raw casing/whitespace updated, no interval churn
-  | { kind: "changed"; previousNormalizedEmail: string; newNormalizedEmail: string };
+  | { kind: "changed"; previousNormalizedEmail: string; newNormalizedEmail: string }
+  // Phase B3B0-2: a normalized (real, interval-opening) email change was
+  // attempted while an active deletion-preparation workflow exists for this
+  // student. The freeze does NOT apply to no-op/recasedOnly changes — those
+  // never reach this branch.
+  | { kind: "deletionPreparationActive" };
 
 /**
  * Applies a (possibly absent) raw email change to a student within an
@@ -87,6 +93,16 @@ export async function applyStudentEmailChange(
       return { kind: "recasedOnly" };
     }
     return { kind: "unchanged" };
+  }
+
+  // Phase B3B0-2 IDENTITY FREEZE: this is a real, interval-opening identity
+  // change. If an active deletion-preparation workflow exists for this
+  // student, reject it here, inside the SAME transaction that already holds
+  // the FOR UPDATE lock on the student row — never a pre-check outside the
+  // lock, which could race a concurrent Start-Preparation call.
+  const activePreparation = await getActivePreparation(tx, studentId);
+  if (activePreparation) {
+    return { kind: "deletionPreparationActive" };
   }
 
   // Real identity change: close current open interval (if any), open a new

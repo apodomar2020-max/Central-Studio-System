@@ -1277,6 +1277,29 @@ export interface StudentLifecycleResponse {
   accountStatus: StudentLifecycleResponseAccountStatus;
 }
 
+export type StudentDeletionPreparationResponseStatus =
+  (typeof StudentDeletionPreparationResponseStatus)[keyof typeof StudentDeletionPreparationResponseStatus];
+
+export const StudentDeletionPreparationResponseStatus = {
+  PREPARING: "PREPARING",
+  CANCELLED: "CANCELLED",
+} as const;
+
+/**
+ * Phase B3B0-2 workflow metadata only. `id` is the workflow row id on the started/cancelled/already-active branches; on the "no active preparation to cancel" idempotent branch `id` is the studentId and `active: false` is returned instead. No raw email, provenance fingerprint, secret material, child PII, or financial detail is ever present in this shape.
+ */
+export interface StudentDeletionPreparationResponse {
+  readonly id: number;
+  readonly studentId?: number;
+  readonly status: StudentDeletionPreparationResponseStatus;
+  readonly active?: boolean;
+  /** @nullable */
+  readonly startedAt?: string | null;
+  /** @nullable */
+  readonly cancelledAt?: string | null;
+  readonly policyVersion?: string;
+}
+
 export type StudentDeletionImpactBlockerKey =
   (typeof StudentDeletionImpactBlockerKey)[keyof typeof StudentDeletionImpactBlockerKey];
 
@@ -1327,6 +1350,29 @@ export const StudentDeletionImpactResponseLifecycleStatus = {
   deactivated: "deactivated",
   deleted: "deleted",
 } as const;
+
+/**
+ * @nullable
+ */
+export type StudentDeletionImpactResponseDeletionPreparationStatus =
+  | (typeof StudentDeletionImpactResponseDeletionPreparationStatus)[keyof typeof StudentDeletionImpactResponseDeletionPreparationStatus]
+  | null;
+
+export const StudentDeletionImpactResponseDeletionPreparationStatus = {
+  PREPARING: "PREPARING",
+  CANCELLED: "CANCELLED",
+} as const;
+
+/**
+ * Phase B3B0-2 additive extension. Read-only status surface — this GET performs no writes. Does not add a Permanent Delete capability; canDelete/blockers semantics above are unchanged.
+ */
+export type StudentDeletionImpactResponseDeletionPreparation = {
+  readonly active: boolean;
+  /** @nullable */
+  readonly startedAt: string | null;
+  /** @nullable */
+  readonly status: StudentDeletionImpactResponseDeletionPreparationStatus;
+};
 
 export type StudentDeletionImpactResponseSummaryBookings = {
   historical: number;
@@ -1392,6 +1438,8 @@ export interface StudentDeletionImpactResponse {
   readonly policyVersion: string;
   readonly blockers: StudentDeletionImpactBlocker[];
   readonly categories: StudentDeletionImpactCategory[];
+  /** Phase B3B0-2 additive extension. Read-only status surface — this GET performs no writes. Does not add a Permanent Delete capability; canDelete/blockers semantics above are unchanged. */
+  readonly deletionPreparation: StudentDeletionImpactResponseDeletionPreparation;
   readonly summary: StudentDeletionImpactResponseSummary;
 }
 

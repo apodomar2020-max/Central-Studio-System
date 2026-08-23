@@ -95,3 +95,5 @@ export * from "./websitePerformances";
 // Phase B3B0-1A — forward-looking student email-identity provenance (migration 0116)
 export * from "./studentEmailIdentityHistory";
 export * from "./provenanceActivation";
+// Phase B3B0-2 — deletion-preparation freeze foundation (migration 0117)
+export * from "./studentDeletionWorkflows";

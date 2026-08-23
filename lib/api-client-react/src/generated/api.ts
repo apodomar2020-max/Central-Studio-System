@@ -106,6 +106,7 @@ import type {
   SendCampaignResponse,
   Student,
   StudentDeletionImpactResponse,
+  StudentDeletionPreparationResponse,
   StudentLifecycleResponse,
   UpdateAdminClassCapacitySettings409,
   UpdateAdminClassCapacitySettingsBody,
@@ -3976,6 +3977,180 @@ export const useReactivateStudent = <
   TContext
 > => {
   return useMutation(getReactivateStudentMutationOptions(options));
+};
+
+export const getStartStudentDeletionPreparationUrl = (id: number) => {
+  return `/api/students/${id}/deletion-preparation/start`;
+};
+
+/**
+ * Phase B3B0-2: starts (or, if already active, idempotently re-returns) an administrative deletion-preparation freeze workflow for an already-deactivated Student account. Requires users.delete. Not a permanent delete — no data is removed or anonymized. Orthogonal to accountStatus: while a preparation is PREPARING, identity-changing email PATCHes and Reactivate are both rejected with 409 STUDENT_DELETION_PREPARATION_ACTIVE. Only non-sensitive workflow metadata is returned or stored — no raw email, provenance fingerprint, secret material, child PII, or financial detail.
+ */
+export const startStudentDeletionPreparation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StudentDeletionPreparationResponse> => {
+  return customFetch<StudentDeletionPreparationResponse>(
+    getStartStudentDeletionPreparationUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getStartStudentDeletionPreparationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startStudentDeletionPreparation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startStudentDeletionPreparation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["startStudentDeletionPreparation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startStudentDeletionPreparation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return startStudentDeletionPreparation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartStudentDeletionPreparationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startStudentDeletionPreparation>>
+>;
+
+export type StartStudentDeletionPreparationMutationError =
+  ErrorType<ErrorResponse>;
+
+export const useStartStudentDeletionPreparation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startStudentDeletionPreparation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startStudentDeletionPreparation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(
+    getStartStudentDeletionPreparationMutationOptions(options),
+  );
+};
+
+export const getCancelStudentDeletionPreparationUrl = (id: number) => {
+  return `/api/students/${id}/deletion-preparation/cancel`;
+};
+
+/**
+ * Phase B3B0-2: cancels the active deletion-preparation workflow for a Student, if one exists. Requires users.delete. Idempotent — if no preparation is currently active, returns 200 with active: false and produces no state change or audit event. Cancelling does NOT reactivate the account; accountStatus remains deactivated and a separate explicit Reactivate call is required. After cancellation, email identity changes become available again.
+ */
+export const cancelStudentDeletionPreparation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StudentDeletionPreparationResponse> => {
+  return customFetch<StudentDeletionPreparationResponse>(
+    getCancelStudentDeletionPreparationUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getCancelStudentDeletionPreparationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelStudentDeletionPreparation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelStudentDeletionPreparation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["cancelStudentDeletionPreparation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelStudentDeletionPreparation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return cancelStudentDeletionPreparation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelStudentDeletionPreparationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelStudentDeletionPreparation>>
+>;
+
+export type CancelStudentDeletionPreparationMutationError =
+  ErrorType<ErrorResponse>;
+
+export const useCancelStudentDeletionPreparation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelStudentDeletionPreparation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelStudentDeletionPreparation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(
+    getCancelStudentDeletionPreparationMutationOptions(options),
+  );
 };
 
 export const getGetStudentDeletionImpactUrl = (id: number) => {

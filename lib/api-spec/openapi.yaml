@@ -830,6 +830,100 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /students/{id}/deletion-preparation/start:
+    post:
+      operationId: startStudentDeletionPreparation
+      tags: [students]
+      description: >-
+        Phase B3B0-2: starts (or, if already active, idempotently re-returns)
+        an administrative deletion-preparation freeze workflow for an
+        already-deactivated Student account. Requires users.delete. Not a
+        permanent delete — no data is removed or anonymized. Orthogonal to
+        accountStatus: while a preparation is PREPARING, identity-changing
+        email PATCHes and Reactivate are both rejected with 409
+        STUDENT_DELETION_PREPARATION_ACTIVE. Only non-sensitive workflow
+        metadata is returned or stored — no raw email, provenance
+        fingerprint, secret material, child PII, or financial detail.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "201":
+          description: Deletion preparation started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDeletionPreparationResponse"
+        "200":
+          description: Deletion preparation already active (idempotent re-return)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDeletionPreparationResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Account is not in a deactivated state (or has been deleted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /students/{id}/deletion-preparation/cancel:
+    post:
+      operationId: cancelStudentDeletionPreparation
+      tags: [students]
+      description: >-
+        Phase B3B0-2: cancels the active deletion-preparation workflow for a
+        Student, if one exists. Requires users.delete. Idempotent — if no
+        preparation is currently active, returns 200 with active: false and
+        produces no state change or audit event. Cancelling does NOT
+        reactivate the account; accountStatus remains deactivated and a
+        separate explicit Reactivate call is required. After cancellation,
+        email identity changes become available again.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Cancelled (or no active preparation to cancel)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDeletionPreparationResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /students/{id}/deletion-impact:
     get:
       operationId: getStudentDeletionImpact
@@ -3116,6 +3210,26 @@ components:
         id: { type: integer }
         accountStatus: { type: string, enum: [active, deactivated] }
 
+    StudentDeletionPreparationResponse:
+      type: object
+      readOnly: true
+      description: >-
+        Phase B3B0-2 workflow metadata only. `id` is the workflow row id on
+        the started/cancelled/already-active branches; on the "no active
+        preparation to cancel" idempotent branch `id` is the studentId and
+        `active: false` is returned instead. No raw email, provenance
+        fingerprint, secret material, child PII, or financial detail is ever
+        present in this shape.
+      required: [id, status]
+      properties:
+        id: { type: integer }
+        studentId: { type: integer }
+        status: { type: string, enum: [PREPARING, CANCELLED] }
+        active: { type: boolean }
+        startedAt: { type: ["string", "null"], format: date-time }
+        cancelledAt: { type: ["string", "null"], format: date-time }
+        policyVersion: { type: string }
+
     StudentDeletionImpactBlocker:
       type: object
       readOnly: true
@@ -3157,7 +3271,7 @@ components:
         Advisory-only deletion impact analysis. Not a concurrency token, not
         a signed confirmation token — see policyVersion/generatedAt notes on
         the parent operation.
-      required: [studentId, lifecycleStatus, canDelete, generatedAt, policyVersion, blockers, summary, categories]
+      required: [studentId, lifecycleStatus, canDelete, generatedAt, policyVersion, blockers, summary, categories, deletionPreparation]
       properties:
         studentId: { type: integer }
         lifecycleStatus: { type: string, enum: [active, deactivated, deleted] }
@@ -3170,6 +3284,18 @@ components:
         categories:
           type: array
           items: { $ref: "#/components/schemas/StudentDeletionImpactCategory" }
+        deletionPreparation:
+          type: object
+          readOnly: true
+          description: >-
+            Phase B3B0-2 additive extension. Read-only status surface — this
+            GET performs no writes. Does not add a Permanent Delete
+            capability; canDelete/blockers semantics above are unchanged.
+          required: [active, startedAt, status]
+          properties:
+            active: { type: boolean }
+            startedAt: { type: ["string", "null"], format: date-time }
+            status: { type: ["string", "null"], enum: [PREPARING, CANCELLED, null] }
         summary:
           type: object
           required: [bookings, payments, packages, children, ballet, security, legacyAttribution]
