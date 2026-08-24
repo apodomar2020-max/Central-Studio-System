@@ -35,6 +35,7 @@ import type { RolePermissions } from "@workspace/db";
 import { countCatalogPermissions, hasRolePermission, PERMISSION_CATALOG } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 import { logActivity } from "../lib/activityLog";
+import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middlewares/authRateLimit";
 
 const router: IRouter = Router();
 
@@ -285,7 +286,23 @@ const LoginBody = z.object({
   password: z.string().min(1),
 });
 
-router.post("/admin/auth/login", async (req, res): Promise<void> => {
+function limitEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+const adminLoginIpLimiter = ipRateLimiter("admin-login", { limit: limitEnv("AUTH_ADMIN_LOGIN_IP_LIMIT", 40), windowSeconds: 15 * 60 });
+const adminLoginAccountLimiter = accountRateLimiter("admin-login", {
+  limit: limitEnv("AUTH_ADMIN_LOGIN_ACCOUNT_LIMIT", 8),
+  windowSeconds: 15 * 60,
+  identifierFor: (req) => {
+    const username = (req.body as { username?: unknown } | undefined)?.username;
+    return typeof username === "string" && username.trim() ? username.trim().toLowerCase() : null;
+  },
+});
+
+router.post("/admin/auth/login", adminLoginIpLimiter, adminLoginAccountLimiter, async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Username and password are required" });
@@ -333,6 +350,10 @@ router.post("/admin/auth/login", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
+
+  // Successful auth — age out any accumulated failure state for this
+  // admin username.
+  await resetAccountLimiter("admin-login", user.username.trim().toLowerCase());
 
   const token = signAdminToken({
     sub: user.id,

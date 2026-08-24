@@ -245,7 +245,11 @@ test("E2: login rejects a deactivated account and never issues a token", async (
 
   const res = await post("/api/auth/login", { email, password });
   assert.equal(res.status, 401);
-  assert.equal(res.json.code, "ACCOUNT_DEACTIVATED");
+  // Security Wave — Auth Abuse Foundation: login's pre-auth response is now
+  // deliberately generic (no `code` field) to avoid confirming account
+  // existence/status. Server-side enforcement (never issuing a token) is
+  // unchanged and re-asserted below.
+  assert.equal(res.json.code, undefined);
   assert.equal(res.json.accessToken, undefined);
 });
 
@@ -254,7 +258,7 @@ test("E3: login rejects a forced 'deleted' account (fail closed)", async () => {
   await pool.query(`UPDATE students SET account_status = 'deleted' WHERE id = $1`, [studentId]);
   const res = await post("/api/auth/login", { email, password });
   assert.equal(res.status, 401);
-  assert.equal(res.json.code, "ACCOUNT_DEACTIVATED");
+  assert.equal(res.json.code, undefined, "generic pre-auth response — see E2's comment");
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -277,7 +281,8 @@ for (const provider of ["google", "facebook"] as const) {
     nextIdentity = { provider, providerId, email, emailTrust: "provider_attested", name: "Social User", avatarUrl: null };
     const res = await post(`/api/auth/${provider}`, { idToken: "x", accessToken: "x" });
     assert.equal(res.status, 401);
-    assert.equal(res.json.code, "ACCOUNT_DEACTIVATED");
+    // Generic pre-auth body — see E2's comment.
+    assert.equal(res.json.code, undefined);
     assert.equal(res.json.accessToken, undefined);
 
     const after = await pool.query(`SELECT last_login_at, account_status FROM students WHERE id = $1`, [studentId]);
@@ -294,7 +299,7 @@ for (const provider of ["google", "facebook"] as const) {
     nextIdentity = { provider, providerId, email, emailTrust: "provider_attested", name: "Social User", avatarUrl: null };
     const res = await post(`/api/auth/${provider}`, { idToken: "x", accessToken: "x" });
     assert.equal(res.status, 401);
-    assert.equal(res.json.code, "ACCOUNT_DEACTIVATED");
+    assert.equal(res.json.code, undefined, "generic pre-auth response — see E2's comment");
 
     const row = await pool.query(`SELECT google_id, facebook_id, account_status FROM students WHERE id = $1`, [studentId]);
     assert.equal(row.rows[0][`${provider}_id`], null, "no provider identity may be linked to a deactivated account");
@@ -330,7 +335,7 @@ test("G1: forgot-password/reset-password completes for a deactivated account, is
   // with ACCOUNT_DEACTIVATED, not reactivated.
   const loginAttempt = await post("/api/auth/login", { email, password });
   assert.equal(loginAttempt.status, 401);
-  assert.equal(loginAttempt.json.code, "ACCOUNT_DEACTIVATED");
+  assert.equal(loginAttempt.json.code, undefined, "generic pre-auth response — see E2's comment");
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

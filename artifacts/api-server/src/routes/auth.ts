@@ -54,8 +54,39 @@ import {
 import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfileResponse";
 import { validateProfileAge } from "../lib/eligibility/profileAgeValidation";
 import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
+import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middlewares/authRateLimit";
 
 const router: IRouter = Router();
+
+// Security Wave — Auth Abuse Foundation. IP + account-scoped, Redis-backed
+// (see lib/authAbuseProtection.ts). The account key is always the
+// HMAC-fingerprinted normalized email, never the raw address. Limits are
+// intentionally generous enough not to interfere with legitimate retry
+// behavior (a mistyped password, a slow network) while still bounding
+// brute-force/credential-stuffing volume.
+const emailIdentifier = (req: import("express").Request): string | null => {
+  const email = (req.body as { email?: unknown } | undefined)?.email;
+  return typeof email === "string" && email.includes("@") ? normalizeEmail(email) : null;
+};
+function limitEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+// IP limits are deliberately generous — an IP represents an unknown number
+// of real people behind it (school labs, offices, carrier-grade NAT), so
+// this bounds abuse volume without punishing shared-IP legitimate use.
+// Account limits are much tighter since a single account has exactly one
+// legitimate owner.
+const loginIpLimiter = ipRateLimiter("login", { limit: limitEnv("AUTH_LOGIN_IP_LIMIT", 60), windowSeconds: 15 * 60 });
+const loginAccountLimiter = accountRateLimiter("login", { limit: limitEnv("AUTH_LOGIN_ACCOUNT_LIMIT", 10), windowSeconds: 15 * 60, identifierFor: emailIdentifier });
+const registerIpLimiter = ipRateLimiter("register", { limit: limitEnv("AUTH_REGISTER_IP_LIMIT", 60), windowSeconds: 60 * 60 });
+const registerAccountLimiter = accountRateLimiter("register", { limit: limitEnv("AUTH_REGISTER_ACCOUNT_LIMIT", 5), windowSeconds: 60 * 60, identifierFor: emailIdentifier });
+const forgotPasswordIpLimiter = ipRateLimiter("forgot-password", { limit: limitEnv("AUTH_FORGOT_PASSWORD_IP_LIMIT", 40), windowSeconds: 15 * 60 });
+const forgotPasswordAccountLimiter = accountRateLimiter("forgot-password", { limit: limitEnv("AUTH_FORGOT_PASSWORD_ACCOUNT_LIMIT", 5), windowSeconds: 15 * 60, identifierFor: emailIdentifier });
+const resetPasswordIpLimiter = ipRateLimiter("reset-password", { limit: limitEnv("AUTH_RESET_PASSWORD_IP_LIMIT", 40), windowSeconds: 15 * 60 });
+const resetPasswordAccountLimiter = accountRateLimiter("reset-password", { limit: limitEnv("AUTH_RESET_PASSWORD_ACCOUNT_LIMIT", 8), windowSeconds: 15 * 60, identifierFor: emailIdentifier });
 
 const RegisterBody = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -76,22 +107,8 @@ const GENERIC_RESET_RESPONSE = {
   message: "If an account exists for this email, a reset code will be sent.",
 };
 
-const forgotPasswordAttempts = new Map<string, number>();
-
 function normalizeEmail(email: string): string {
   return email.toLowerCase().trim();
-}
-
-function throttleKey(email: string, ip: string | undefined): string {
-  return `${email}:${ip ?? "unknown"}`;
-}
-
-function isForgotPasswordThrottled(email: string, ip: string | undefined): boolean {
-  const key = throttleKey(email, ip);
-  const now = Date.now();
-  const last = forgotPasswordAttempts.get(key);
-  forgotPasswordAttempts.set(key, now);
-  return last != null && now - last < 60_000;
 }
 
 function passwordResetFailure(res: import("express").Response, message = "Invalid or expired code. Please request a new one."): void {
@@ -127,7 +144,7 @@ const ProfileBody = z.object({
 });
 
 // POST /api/auth/register
-router.post("/auth/register", async (req, res): Promise<void> => {
+router.post("/auth/register", registerIpLimiter, registerAccountLimiter, async (req, res): Promise<void> => {
   const parsed = RegisterBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -155,6 +172,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     .where(eq(studentsTable.email, normalizeEmail(email)));
 
   if (existing) {
+    // Account-enumeration policy decision (Security Wave — Auth Abuse
+    // Foundation): registration keeps its existing 409 + explicit message.
+    // Fully collapsing this into a generic response would be a materially
+    // larger UX change (the mobile client's "this email is taken, log in
+    // instead" flow depends on it) than this focused pass should make
+    // silently. Enumeration risk here is instead mitigated by the new
+    // registerIpLimiter/registerAccountLimiter above, which bound how many
+    // distinct addresses one caller can probe per window.
     res.status(409).json({ error: "An account with this email already exists" });
     return;
   }
@@ -213,7 +238,20 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 });
 
 // POST /api/auth/login
-router.post("/auth/login", async (req, res): Promise<void> => {
+//
+// Account-enumeration hardening (Security Wave — Auth Abuse Foundation):
+// every pre-auth rejection reason below — unknown email, social-only
+// account (no passwordHash), wrong password, and a non-active account
+// (deactivated/deleted) — returns the exact SAME generic 401 body. This is
+// deliberate: an external caller must not be able to distinguish "no such
+// account" from "account exists but is deactivated" from "this is a
+// Google-only account". Server-side lifecycle enforcement (the
+// isActiveAccountStatus gate) is unchanged and still fully blocks the
+// login — only the OUTWARD response shape was collapsed. Nothing here is
+// logged with a raw email address; failures are logged by internal
+// studentId (when known) or omitted entirely (when the account is unknown,
+// there is no safe internal id to log).
+router.post("/auth/login", loginIpLimiter, loginAccountLimiter, async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -221,39 +259,50 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   const { email, password } = parsed.data;
+  const normalizedEmail = normalizeEmail(email);
+  const GENERIC_LOGIN_FAILURE = { error: "Invalid email or password" };
 
   const [student] = await db
     .select()
     .from(studentsTable)
-    .where(eq(studentsTable.email, normalizeEmail(email)));
+    .where(eq(studentsTable.email, normalizedEmail));
 
   if (!student) {
-    // Return a generic message to avoid leaking whether the email exists
-    res.status(401).json({ error: "Invalid email or password" });
+    res.status(401).json(GENERIC_LOGIN_FAILURE);
     return;
   }
 
   if (!student.passwordHash) {
-    // Student was created by admin without a password — they need to register
-    res.status(401).json({ error: "No password set for this account. Please register." });
+    // Social-only account (no local password set). Same generic response as
+    // every other pre-auth rejection — never reveals the account's
+    // provider type or that it exists at all.
+    res.status(401).json(GENERIC_LOGIN_FAILURE);
     return;
   }
 
   const valid = await bcrypt.compare(password, student.passwordHash);
   if (!valid) {
-    logger.warn({ email }, "Failed login attempt");
-    res.status(401).json({ error: "Invalid email or password" });
+    logger.warn({ studentId: student.id }, "Failed login attempt");
+    res.status(401).json(GENERIC_LOGIN_FAILURE);
     return;
   }
 
   // Account lifecycle (Phase B1B): password verified, but never issue a
   // token for a non-active account. Fail closed on anything other than
   // "active" (covers "deactivated", "deleted", and any unexpected value).
+  // Externally generic (same GENERIC_LOGIN_FAILURE body/status as every
+  // other rejection above) — server-side enforcement is unchanged, only the
+  // outward response no longer distinguishes this case.
   if (!isActiveAccountStatus(student.accountStatus)) {
     logger.info({ studentId: student.id }, "Login rejected: account not active");
-    res.status(401).json(ACCOUNT_DEACTIVATED_BODY);
+    res.status(401).json(GENERIC_LOGIN_FAILURE);
     return;
   }
+
+  // Successful auth — age out any accumulated failure state for this
+  // account so a legitimate user who mistyped their password a few times
+  // isn't left sitting near the rate-limit threshold.
+  await resetAccountLimiter("login", normalizedEmail);
 
   await db
     .update(studentsTable)
@@ -430,7 +479,7 @@ const ForgotPasswordBody = z.object({
   email: z.string().email("Invalid email address"),
 });
 
-router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+router.post("/auth/forgot-password", forgotPasswordIpLimiter, forgotPasswordAccountLimiter, async (req, res): Promise<void> => {
   const parsed = ForgotPasswordBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -445,13 +494,10 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
     .from(studentsTable)
     .where(eq(studentsTable.email, normalizedEmail));
 
-  if (isForgotPasswordThrottled(normalizedEmail, req.ip)) {
-    logger.warn({ email: normalizedEmail, ip: req.ip }, "Forgot password throttled");
-    res.json(GENERIC_RESET_RESPONSE);
-    return;
-  }
-
-  // Always respond success to avoid leaking whether an email exists.
+  // Always respond success to avoid leaking whether an email exists. The
+  // old per-(email,ip) in-memory debounce Map was removed in favor of the
+  // Redis-backed forgotPasswordIpLimiter/forgotPasswordAccountLimiter
+  // middleware above — one system, not two overlapping ones.
   if (!student) {
     res.json(GENERIC_RESET_RESPONSE);
     return;
@@ -479,7 +525,7 @@ const ResetPasswordBody = z.object({
   newPassword: PasswordSchema,
 });
 
-router.post("/auth/reset-password", async (req, res): Promise<void> => {
+router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccountLimiter, async (req, res): Promise<void> => {
   const parsed = ResetPasswordBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -508,6 +554,13 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
     passwordResetFailure(res);
     return;
   }
+
+  // Successful reset — age out any accumulated failure state for this
+  // account across both the login and reset-password limiter scopes.
+  await Promise.all([
+    resetAccountLimiter("reset-password", normalizedEmail),
+    resetAccountLimiter("login", normalizedEmail),
+  ]);
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
 

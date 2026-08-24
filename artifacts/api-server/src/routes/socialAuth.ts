@@ -55,10 +55,11 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentAccountStatus";
+import { isActiveAccountStatus } from "../lib/studentAccountStatus";
 import { signStudentToken, issueOtp, OtpRateLimitError } from "../lib/authHelpers";
 import { publicStudent } from "../lib/studentProfileResponse";
 import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
+import { ipRateLimiter } from "../middlewares/authRateLimit";
 import {
   verifyProviderToken,
   ProviderNotConfiguredError,
@@ -417,8 +418,13 @@ function makeHandler(provider: ProviderName) {
     }
 
     if (result.kind === "accountDeactivated") {
+      // Account-enumeration hardening (Security Wave — Auth Abuse
+      // Foundation): generic body, does not confirm account_status/
+      // existence. Server-side enforcement (the isActiveAccountStatus gate
+      // inside resolveSocialLogin) is unchanged — only the outward message
+      // no longer says "deactivated".
       logger.info({ provider }, "Social login refused: account not active");
-      res.status(401).json(ACCOUNT_DEACTIVATED_BODY);
+      res.status(401).json({ error: "This account is not available for sign-in." });
       return;
     }
 
@@ -455,8 +461,16 @@ function makeHandler(provider: ProviderName) {
   };
 }
 
-router.post("/auth/google", makeHandler("google"));
-router.post("/auth/apple", makeHandler("apple"));
-router.post("/auth/facebook", makeHandler("facebook"));
+function limitEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+const socialAuthIpLimiter = ipRateLimiter("social-auth", { limit: limitEnv("AUTH_SOCIAL_IP_LIMIT", 60), windowSeconds: 15 * 60 });
+
+router.post("/auth/google", socialAuthIpLimiter, makeHandler("google"));
+router.post("/auth/apple", socialAuthIpLimiter, makeHandler("apple"));
+router.post("/auth/facebook", socialAuthIpLimiter, makeHandler("facebook"));
 
 export default router;

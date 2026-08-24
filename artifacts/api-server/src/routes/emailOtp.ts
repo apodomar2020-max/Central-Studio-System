@@ -22,6 +22,7 @@ import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { requireStudentAuth } from "../middlewares/studentAuth";
+import { idRateLimiter, resetIdLimiter } from "../middlewares/authRateLimit";
 import {
   invalidateOtpCodes,
   issueOtp,
@@ -36,6 +37,16 @@ import {
 
 const router: IRouter = Router();
 const GENERIC_SEND_RESPONSE = { ok: true, expiresIn: OTP_TTL_SECONDS };
+
+// Security Wave — Auth Abuse Foundation: additive Redis-backed layer on top
+// of the existing DB-backed cooldown/hourly/daily budget in authHelpers.ts
+// (issueOtp) — this does NOT replace that logic, it bounds request VOLUME
+// (including malformed/rejected ones that never reach issueOtp) per already-
+// authenticated studentId. studentId is a numeric internal id, not raw PII,
+// so no HMAC fingerprint is needed here (contrast with the pre-auth email-
+// keyed limiters in auth.ts).
+const otpSendLimiter = idRateLimiter("otp-send", { limit: 10, windowSeconds: 15 * 60, idFor: (req) => req.studentId ?? null });
+const otpVerifyLimiter = idRateLimiter("otp-verify", { limit: 15, windowSeconds: 15 * 60, idFor: (req) => req.studentId ?? null });
 
 // Maps a non-"ok" verifyOtpCode result to an HTTP response.
 function respondVerifyFailure(
@@ -103,7 +114,7 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
     .where(eq(studentsTable.email, email));
 
   if (!student || student.emailVerified) {
-    logger.info({ email }, "Email verification OTP requested for unavailable email-keyed account");
+    logger.info({ studentId: req.studentId }, "Email verification OTP requested for unavailable email-keyed account");
     res.json(GENERIC_SEND_RESPONSE);
     return;
   }
@@ -117,13 +128,13 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
       return;
     }
     await invalidateOtpCodes(email, "verify");
-    if (respondEmailDeliveryFailure(res, err, { email })) return;
+    if (respondEmailDeliveryFailure(res, err, { studentId: student.id })) return;
     throw err;
   }
 }
 
-router.post("/auth/send-otp", requireStudentAuth, handleSendOtp);
-router.post("/auth/resend-otp", requireStudentAuth, handleSendOtp);
+router.post("/auth/send-otp", requireStudentAuth, otpSendLimiter, handleSendOtp);
+router.post("/auth/resend-otp", requireStudentAuth, otpSendLimiter, handleSendOtp);
 
 // ─── POST /api/auth/verify-otp ───────────────────────────────────────────────
 const VerifyOtpBody = z.object({
@@ -131,7 +142,7 @@ const VerifyOtpBody = z.object({
   code: z.string().length(6, "Code must be exactly 6 digits"),
 });
 
-router.post("/auth/verify-otp", requireStudentAuth, async (req, res): Promise<void> => {
+router.post("/auth/verify-otp", requireStudentAuth, otpVerifyLimiter, async (req, res): Promise<void> => {
   const parsed = VerifyOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -145,6 +156,7 @@ router.post("/auth/verify-otp", requireStudentAuth, async (req, res): Promise<vo
     respondVerifyFailure(res, result);
     return;
   }
+  await resetIdLimiter("otp-verify", req.studentId!);
 
   const { student } = result;
 
@@ -160,7 +172,7 @@ router.post("/auth/verify-otp", requireStudentAuth, async (req, res): Promise<vo
 // ─── Legacy studentId-keyed endpoints (backward compatibility) ───────────────
 const SendEmailOtpBody = z.object({ studentId: z.coerce.number().int().positive() });
 
-router.post("/auth/send-email-otp", requireStudentAuth, async (req, res): Promise<void> => {
+router.post("/auth/send-email-otp", requireStudentAuth, otpSendLimiter, async (req, res): Promise<void> => {
   const parsed = SendEmailOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -202,7 +214,7 @@ const VerifyEmailOtpBody = z.object({
   code: z.string().length(6, "Code must be exactly 6 digits"),
 });
 
-router.post("/auth/verify-email-otp", requireStudentAuth, async (req, res): Promise<void> => {
+router.post("/auth/verify-email-otp", requireStudentAuth, otpVerifyLimiter, async (req, res): Promise<void> => {
   const parsed = VerifyEmailOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -226,6 +238,7 @@ router.post("/auth/verify-email-otp", requireStudentAuth, async (req, res): Prom
     respondVerifyFailure(res, result);
     return;
   }
+  await resetIdLimiter("otp-verify", studentId);
 
   const verifiedStudent = result.student;
   const accessToken = signStudentToken(verifiedStudent.id, verifiedStudent.email, true, verifiedStudent.tokenVersion);

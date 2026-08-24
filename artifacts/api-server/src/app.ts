@@ -2,13 +2,13 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import cors from "cors";
 import compression from "compression";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { requireAuth } from "./middlewares/auth";
 import { captureError } from "./lib/errorMonitoring";
 import { ExposableHttpError } from "./lib/httpError";
+import { ipRateLimiter } from "./middlewares/authRateLimit";
 
 const app: Express = express();
 
@@ -21,14 +21,18 @@ function positiveIntegerEnv(name: string, fallback: number): number {
 
 app.set("trust proxy", positiveIntegerEnv("TRUST_PROXY_HOPS", 1));
 
-const authRateLimitWindowMs = positiveIntegerEnv("AUTH_RATE_LIMIT_WINDOW_MS", 15 * 60 * 1000);
+// Broad, IP-scoped outer layer over the whole /api/auth and
+// /api/admin/auth prefixes — distributed via Redis (lib/authAbuseProtection.ts),
+// with a bounded per-instance fallback if Redis is unavailable (never
+// silently unlimited). Narrower, endpoint-specific IP + account-scoped
+// limiters are layered on top of this inside auth.ts / emailOtp.ts /
+// socialAuth.ts / adminAuth.ts for the genuinely sensitive routes.
+const authRateLimitWindowSeconds = Math.round(positiveIntegerEnv("AUTH_RATE_LIMIT_WINDOW_MS", 15 * 60 * 1000) / 1000);
 const authRateLimitMax = positiveIntegerEnv("AUTH_RATE_LIMIT_MAX", 50);
-const authRateLimiter = rateLimit({
-  windowMs: authRateLimitWindowMs,
+const authRateLimiter = ipRateLimiter("auth-broad", {
   limit: authRateLimitMax,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many authentication attempts. Please try again later." },
+  windowSeconds: authRateLimitWindowSeconds,
+  message: "Too many authentication attempts. Please try again later.",
 });
 
 app.use(
