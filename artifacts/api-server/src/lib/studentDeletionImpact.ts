@@ -460,3 +460,59 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
 
   return { kind: "ok", result };
 }
+
+/**
+ * Phase B3B2E — Level-B manual-resolution deletion blocking.
+ *
+ * Binding policy — an unresolved Level-B legacy candidate inside a student's
+ * canonical deletion plan BLOCKS deletion for that student. "Unresolved"
+ * covers all three shapes, through this one blocker path:
+ *
+ *   • no decision row recorded at all      (status NONE)   → BLOCK
+ *   • an explicit UNRESOLVED decision                      → BLOCK
+ *   • a cross-signal EVIDENCE_CONFLICT                     → BLOCK
+ *
+ * and the resolved states clear it:
+ *
+ *   • PROVEN_OWNER      → no longer blocks (ownership backfill is separate)
+ *   • NOT_THIS_STUDENT  → no longer blocks for THIS student
+ *
+ * `computeManualResolutionBlockSummary` already folds conflict rows into
+ * `unresolvedCount`, so `unresolvedCount` is the single, complete trigger;
+ * `conflictCount` remains only as additive observability. Leaving
+ * `canDelete` true while any Level-B row is unresolved would advertise a
+ * deletable account whose legacy ownership is not actually established.
+ * Fail-closed.
+ *
+ * Deliberately reuses the EXISTING `AMBIGUOUS_LEGACY_ATTRIBUTION` blocker
+ * key — an unresolved Level-B row is exactly "legacy rows could not be
+ * uniquely attributed to this account" — so no new key is introduced into
+ * the published OpenAPI blocker enum and no generated client changes.
+ *
+ * Pure function over an already-computed impact result; no queries, no
+ * writes, no deletion capability added.
+ */
+export function applyManualResolutionBlocker(
+  result: DeletionImpactResult,
+  manualResolution: { unresolvedCount: number; conflictCount: number },
+): DeletionImpactResult {
+  if (manualResolution.unresolvedCount <= 0) return result;
+  const description = manualResolution.conflictCount > 0
+    ? "Legacy rows could not be uniquely attributed to this account. At least one row's email provenance and its independent check-in/credit evidence disagree on the owning student. These must be resolved before permanent deletion can be considered."
+    : "Legacy rows could not be uniquely attributed to this account. An Admin must record an explicit ownership decision for each before permanent deletion can be considered.";
+  const blockers: DeletionBlocker[] = [
+    ...result.blockers,
+    {
+      key: "AMBIGUOUS_LEGACY_ATTRIBUTION",
+      label: "Ambiguous legacy attribution",
+      description,
+      count: manualResolution.unresolvedCount,
+    },
+  ];
+  return {
+    ...result,
+    canDelete: false,
+    blockers,
+    categories: blockers.map((b) => ({ key: b.key, label: b.label, classification: "blocker" as const })),
+  };
+}

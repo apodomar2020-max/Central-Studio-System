@@ -30,6 +30,7 @@ process.env.API_SECRET_KEY = "test-api-secret-key";
 process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 process.env.OTP_PEPPER = "test-di-otp-pepper".padEnd(64, "0");
+process.env.IDENTITY_PROVENANCE_PEPPER = "test-di-identity-provenance-pepper".padEnd(64, "0");
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY;
 

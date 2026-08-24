@@ -36,8 +36,9 @@ import { buildProfileCompletion } from "../lib/studentProfileResponse";
 import { computeProfileCompletion } from "../lib/profileCompletion";
 import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./studentProfilePdf";
 import { diffFields, logActivity } from "../lib/activityLog";
-import { computeStudentDeletionImpact } from "../lib/studentDeletionImpact";
+import { computeStudentDeletionImpact, applyManualResolutionBlocker } from "../lib/studentDeletionImpact";
 import { computeStudentDeletionAttributionPlan } from "../lib/studentDeletionAttributionPlanner";
+import { recordManualResolution, computeManualResolutionBlockSummary } from "../lib/studentDeletionManualResolution";
 import { computeAgeAsOf } from "../lib/balletAgeEligibility";
 import { applyStudentEmailChange, openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import {
@@ -1604,13 +1605,22 @@ router.get(
     // see this state without a second API call. B2B remains strictly
     // read-only — this is a plain SELECT, no mutation capability added.
     const activePreparation = await getActivePreparation(db, params.data.id);
+    // Phase B3B2E additive extension: aggregate Level-B manual-resolution
+    // block counts. No raw evidence/PII exposed — counts only.
+    const manualResolution = await computeManualResolutionBlockSummary(db, params.data.id);
+    // Phase B3B2E binding policy: ANY unresolved Level-B legacy candidate —
+    // no decision row, an explicit UNRESOLVED, or an EVIDENCE_CONFLICT — is a
+    // hard deletion blocker, so it must force canDelete=false and appear in
+    // `blockers`. All three flow through the one blocker path.
+    const impactResult = applyManualResolutionBlocker(outcome.result, manualResolution);
     res.status(200).json({
-      ...outcome.result,
+      ...impactResult,
       deletionPreparation: {
         active: activePreparation !== null,
         startedAt: activePreparation?.startedAt ?? null,
         status: activePreparation?.status ?? null,
       },
+      manualResolution,
     });
   },
 );
@@ -1650,7 +1660,127 @@ router.get(
       });
       return;
     }
-    res.status(200).json(outcome.plan);
+    // Phase B3B2E additive extension: attach resolutionStatus to Level-B
+    // package_orders candidates. Pure additive read, no write, no change to
+    // classifyRow/interval-matching logic.
+    const levelBCandidates = await (await import("../lib/studentDeletionManualResolution")).computeLevelBCandidatesWithResolutions(db, params.data.id);
+    // Per-candidate resolutionStatus, keyed by package_orders id — the
+    // planner's own `domains` entries are aggregated counts (not per-row),
+    // so a per-row resolutionStatus is exposed as a sibling array rather
+    // than mutating the existing aggregated shape (Section 15: pure
+    // additive read, no change to the existing classification output).
+    const planWithResolutionStatus = {
+      ...outcome.plan,
+      levelBResolutions: levelBCandidates.map((c) => ({
+        domain: "package_orders" as const,
+        targetRecordId: c.targetRecordId,
+        resolutionStatus: c.resolutionStatus,
+      })),
+    };
+    res.status(200).json(planWithResolutionStatus);
+  },
+);
+
+// ── Deletion attribution manual resolution (Phase B3B2E) ────────────────
+// LEVEL-B ONLY. Records a durable, append-only Admin decision on a Level-B
+// package_orders candidate. Never writes to any canonical ownership FK
+// (package_orders.student_id, bookings.account_owner_student_id, etc.) —
+// this is an authorization/evidence decision row only; B3B3 (a future,
+// separately-authorized phase) consumes it later. Server independently
+// re-derives Level-B evidence fresh, inside the same transaction as the
+// insert — a client-submitted evidenceLevel claim is never trusted (there
+// is none in the request body at all).
+const RecordManualResolutionBody = zod.object({
+  workflowId: zod.number().int().positive(),
+  domain: zod.literal("package_orders"),
+  targetRecordId: zod.number().int().positive(),
+  decision: zod.enum(["PROVEN_OWNER", "NOT_THIS_STUDENT", "UNRESOLVED"]),
+  // No free-text field is accepted. The resolution record stores only
+  // internal ids, a server-derived evidence reason code, the decision, the
+  // acting admin and timestamps — the client can never submit an evidence
+  // narrative (which would be a raw-PII persistence capability).
+}).strict();
+
+router.post(
+  "/students/:id/deletion-attribution-resolutions",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = UpdateStudentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = RecordManualResolutionBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const adminId = req.adminUser!.id;
+
+    const outcome = await recordManualResolution({
+      studentId: params.data.id,
+      workflowId: body.data.workflowId,
+      domain: body.data.domain,
+      targetRecordId: body.data.targetRecordId,
+      decision: body.data.decision,
+      adminId,
+    });
+
+    if (outcome.kind === "studentNotFound") {
+      res.status(404).json({ error: "Student not found" });
+      return;
+    }
+    if (outcome.kind === "studentAlreadyDeleted") {
+      res.status(409).json({ error: "Student account has already been permanently deleted.", code: "STUDENT_ALREADY_DELETED" });
+      return;
+    }
+    if (outcome.kind === "studentNotDeactivated") {
+      res.status(409).json({ error: "Student must be deactivated before a manual resolution can be recorded.", code: "STUDENT_NOT_DEACTIVATED" });
+      return;
+    }
+    if (outcome.kind === "preparationRequired") {
+      res.status(409).json({ error: "An active deletion preparation is required.", code: "STUDENT_DELETION_PREPARATION_REQUIRED" });
+      return;
+    }
+    if (outcome.kind === "workflowStale") {
+      res.status(409).json({ error: "The referenced deletion-preparation workflow is no longer the active one for this student.", code: "LEGACY_IDENTITY_RESOLUTION_STALE" });
+      return;
+    }
+    if (outcome.kind === "notCandidate") {
+      res.status(409).json({ error: "The referenced record is not a genuine unattributed candidate for this student.", code: "LEGACY_IDENTITY_RESOLUTION_NOT_A_CANDIDATE", reason: outcome.reason });
+      return;
+    }
+    if (outcome.kind === "notLevelB") {
+      res.status(409).json({ error: "The referenced record does not currently qualify as Level-B evidence.", code: "LEGACY_IDENTITY_RESOLUTION_NOT_LEVEL_B", reason: outcome.reason });
+      return;
+    }
+    if (outcome.kind === "evidenceConflict") {
+      res.status(409).json({ error: "The referenced record's legacy-email provenance and its independent evidence disagree on the owning student; manual resolution is blocked until this conflict is resolved by a future policy.", code: "LEGACY_IDENTITY_RESOLUTION_EVIDENCE_CONFLICT" });
+      return;
+    }
+
+    res.status(201).json({
+      id: outcome.row.id,
+      studentId: outcome.row.studentId,
+      domain: outcome.row.domain,
+      targetRecordId: outcome.row.targetRecordId,
+      deletionWorkflowId: outcome.row.deletionWorkflowId,
+      evidenceLevel: outcome.row.evidenceLevel,
+      decision: outcome.row.decision,
+      evidenceReasonCode: outcome.row.evidenceReasonCode,
+      resolvedAt: outcome.row.resolvedAt,
+    });
+
+    await logActivity(req, {
+      action: "deletion_attribution_manual_resolution",
+      module: "users",
+      entityType: "student",
+      entityId: params.data.id,
+      entityLabel: `student #${params.data.id}`,
+      summary: `Recorded manual resolution decision ${outcome.row.decision} for ${outcome.row.domain}#${outcome.row.targetRecordId} (workflow #${outcome.row.deletionWorkflowId}, evidence ${outcome.row.evidenceReasonCode})`,
+    });
   },
 );
 

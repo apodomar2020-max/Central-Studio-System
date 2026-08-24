@@ -35,6 +35,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { fingerprintStudentEmail } from "./studentEmailProvenance";
+import { computePackageOrderCandidateUniverse } from "./studentDeletionCandidateUniverse";
 
 export const DELETION_ATTRIBUTION_PLANNER_POLICY_VERSION = "1";
 
@@ -46,7 +47,13 @@ export type AttributionClassification =
   | "NO_MATCH"
   | "SEMANTICALLY_NOT_STUDENT_OWNERSHIP"
   | "MISSING_REQUIRED_TIMESTAMP"
-  | "MALFORMED_LEGACY_IDENTITY";
+  | "MALFORMED_LEGACY_IDENTITY"
+  // Phase B3B2E canonicalization additions (Section 2/8 of the brief):
+  // channel-C-only (independent credit_transactions+attendance evidence)
+  // candidates, and cross-signal channel-B-vs-channel-C conflicts. Additive
+  // only — existing classification values and their meaning are unchanged.
+  | "INDEPENDENT_LEVEL_B_EVIDENCE"
+  | "EVIDENCE_CONFLICT";
 
 export type AttributionDomain = "bookings" | "package_orders" | "feedback";
 
@@ -100,6 +107,8 @@ const REASON = {
   SEMANTICALLY_NOT_STUDENT_OWNERSHIP: "Row's participant/entitlement semantics identify a different owner (e.g. a child) than the contact/payer email; email match is not proof of Student ownership here.",
   MISSING_REQUIRED_TIMESTAMP: "Row has no usable creation timestamp for interval comparison.",
   MALFORMED_LEGACY_IDENTITY: "Row's legacy email field is empty or not a well-formed address.",
+  INDEPENDENT_LEVEL_B_EVIDENCE: "Row has independent, non-conflicting credit_transactions+attendance evidence pointing at this Student, regardless of legacy email relevance; requires manual resolution (see B3B2E).",
+  EVIDENCE_CONFLICT: "Row's legacy-email provenance and its independent credit_transactions/attendance evidence disagree on the owning Student; automatic precedence is not applied, manual resolution is blocked until a future policy resolves it.",
 } as const satisfies Record<AttributionClassification, string>;
 
 function isWellFormedEmail(raw: string | null | undefined): boolean {
@@ -321,17 +330,27 @@ export async function computeStudentDeletionAttributionPlan(studentId: number): 
     if (Number(bookingAttributedAlready.n ?? "0") > 0) tally(bookingCounts, "ALREADY_ATTRIBUTED");
 
     // ── package_orders ── (payer/contact vs entitlement-owner semantics)
+    // Phase B3B2E: package_orders candidacy/classification is now sourced
+    // from the ONE canonical shared derivation function (channel A/B/C +
+    // cross-signal conflict), not from a locally re-derived row loop, so
+    // the planner and manual-resolution module can never disagree on
+    // candidate membership by construction (brief Sections 1/7/10).
     const packageCounts = new Map<AttributionClassification, number>();
-    for (const r of packageOrderRows) {
-      if (r.participant_type === "child") {
-        // Semantics forbid attribution regardless of temporal match.
-        if (!isWellFormedEmail(r.student_email)) { tally(packageCounts, "MALFORMED_LEGACY_IDENTITY"); continue; }
-        if (!r.created_at) { tally(packageCounts, "MISSING_REQUIRED_TIMESTAMP"); continue; }
-        tally(packageCounts, "SEMANTICALLY_NOT_STUDENT_OWNERSHIP");
+    const canonicalPackageCandidates = await computePackageOrderCandidateUniverse(tx, studentId, t0, knownFingerprints);
+    for (const cand of canonicalPackageCandidates) {
+      if (cand.crossSignalConflict) {
+        tally(packageCounts, "EVIDENCE_CONFLICT");
         continue;
       }
-      const c = classifyRow(studentId, r.student_email, r.created_at, t0, intervalsByFingerprint);
-      tally(packageCounts, c);
+      if (cand.levelBEvidence === "LEVEL_B") {
+        tally(packageCounts, "INDEPENDENT_LEVEL_B_EVIDENCE");
+        continue;
+      }
+      // Channel-B-only (or channel B with insufficient/no channel-C
+      // evidence): fall back to the unchanged provenance classification.
+      if (cand.provenanceClassification !== "NOT_A_CANDIDATE") {
+        tally(packageCounts, cand.provenanceClassification as AttributionClassification);
+      }
     }
     const packageAttributedAlready = await one<{ n: string }>(tx, sql`
       SELECT count(*) AS n FROM package_orders WHERE student_id = ${studentId}

@@ -97,3 +97,5 @@ export * from "./studentEmailIdentityHistory";
 export * from "./provenanceActivation";
 // Phase B3B0-2 — deletion-preparation freeze foundation (migration 0117)
 export * from "./studentDeletionWorkflows";
+// Phase B3B2E — Level-B manual resolution decision layer (migration 0118)
+export * from "./studentLegacyIdentityResolutions";

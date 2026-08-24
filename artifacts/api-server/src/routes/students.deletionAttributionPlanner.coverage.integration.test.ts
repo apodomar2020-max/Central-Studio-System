@@ -890,7 +890,7 @@ test("PII-1: planner module and route handler contain zero logging call sites (s
   assert.equal(loggingPattern.test(plannerSrc), false, "studentDeletionAttributionPlanner.ts must contain no logging calls");
   // Only check the added route block (route file has unrelated logging for
   // other endpoints, which is out of scope for this planner-only proof).
-  const routeBlockMatch = routeSrc.match(/\/\/ ── Deletion attribution planner[\s\S]*?res\.status\(200\)\.json\(outcome\.plan\);\s*\n\s*\},\s*\n\);/);
+  const routeBlockMatch = routeSrc.match(/\/\/ ── Deletion attribution planner[\s\S]*?res\.status\(200\)\.json\(planWithResolutionStatus\);\s*\n\s*\},\s*\n\);/);
   assert.ok(routeBlockMatch, "attribution-planner route block must be present");
   assert.equal(loggingPattern.test(routeBlockMatch![0]), false, "the attribution-planner route block must contain no logging calls");
 });
