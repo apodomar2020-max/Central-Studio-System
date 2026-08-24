@@ -56,6 +56,7 @@ import {
   useCancelStudentDeletionPreparation,
   useGetStudentDeletionAttributionPlan,
   useRecordStudentDeletionManualResolution,
+  useApplyStudentDeletionOwnershipBackfill,
   getListStudentsQueryKey,
   getGetStudentDeletionImpactQueryKey,
   getGetStudentDeletionAttributionPlanQueryKey,
@@ -872,6 +873,28 @@ function manualResolutionErrorMessage(error: unknown): string {
   return "Could not record the decision. Please try again.";
 }
 
+function ownershipBackfillErrorMessage(error: unknown): string {
+  const status = attributionPlanErrorStatus(error);
+  const code = attributionPlanErrorCode(error);
+  if (status === 401) return "Your admin session has expired. Please log in again.";
+  if (status === 403) return "You don't have permission to apply confirmed ownership for this account.";
+  if (status === 404) return "This student no longer exists.";
+  if (code === "LEGACY_OWNERSHIP_BACKFILL_CONFLICT") {
+    return "One of the records is already linked to a different Student, so nothing was changed for it. The review has been refreshed.";
+  }
+  if (code === "LEGACY_IDENTITY_RESOLUTION_STALE") {
+    return "The deletion preparation changed while you were reviewing. The plan has been refreshed — please review it again.";
+  }
+  if (code === "STUDENT_NOT_DEACTIVATED") {
+    return "The account must be deactivated before confirmed ownership can be applied.";
+  }
+  if (code === "STUDENT_DELETION_PREPARATION_REQUIRED") {
+    return "Deletion preparation is no longer active. Start deletion preparation again to continue.";
+  }
+  if (code === "STUDENT_ALREADY_DELETED") return "This account has already been permanently deleted.";
+  return "Could not apply confirmed ownership. Please try again.";
+}
+
 function ManualResolutionSection({
   studentId,
   plan,
@@ -888,6 +911,32 @@ function ManualResolutionSection({
   const [pending, setPending] = useState<{ entry: LevelBResolutionEntry; decision: LevelBDecision } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [backfillPending, setBackfillPending] = useState(false);
+
+  // Phase B3B3: applies confirmed ownership. Deliberately NOT a new screen —
+  // one compact action in the existing resolution area. The request carries
+  // only the workflow id; the server re-derives which records are eligible.
+  const backfillMutation = useApplyStudentDeletionOwnershipBackfill({
+    mutation: {
+      onSuccess: (result) => {
+        setBackfillPending(false);
+        setError(null);
+        const applied = (result as { appliedCount?: number } | undefined)?.appliedCount ?? 0;
+        setSuccess(
+          applied === 0
+            ? "No confirmed-ownership decisions were eligible to apply."
+            : `Applied confirmed ownership to ${applied} record${applied === 1 ? "" : "s"}.`,
+        );
+        onResolved();
+      },
+      onError: (err) => {
+        setBackfillPending(false);
+        setSuccess(null);
+        setError(ownershipBackfillErrorMessage(err));
+        onResolved();
+      },
+    },
+  });
 
   const mutation = useRecordStudentDeletionManualResolution({
     mutation: {
@@ -912,6 +961,11 @@ function ManualResolutionSection({
 
   const entries = plan.levelBResolutions;
   const unresolvedCount = entries.filter((e) => levelBStillBlocks(e.resolutionStatus)).length;
+  // Records that carry a confirmed-ownership decision and are still listed
+  // here are, by construction, still unlinked: the backend drops a record
+  // from this list as soon as its ownership FK is populated. So this count
+  // is exactly what "Apply Confirmed Ownership" would act on.
+  const eligibleForBackfillCount = entries.filter((e) => e.resolutionStatus === "PROVEN_OWNER").length;
 
   return (
     <section aria-labelledby="level-b-resolution-heading" className="rounded-lg border p-4 space-y-3">
@@ -928,6 +982,23 @@ function ManualResolutionSection({
         Records below have independent system evidence pointing at this Student but are not linked to the account.
         Recording a decision stores an Admin decision only — it does not change the historical record ownership.
       </p>
+
+      {canResolve && eligibleForBackfillCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+          <span className="text-xs text-muted-foreground">
+            {eligibleForBackfillCount} record{eligibleForBackfillCount === 1 ? " has" : "s have"} confirmed ownership
+            ready to apply.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={backfillMutation.isPending || mutation.isPending}
+            onClick={() => { setSuccess(null); setError(null); setBackfillPending(true); }}
+          >
+            {backfillMutation.isPending ? "Applying…" : "Apply Confirmed Ownership"}
+          </Button>
+        </div>
+      )}
 
       {conflictCount > 0 && (
         <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 space-y-1">
@@ -1041,6 +1112,33 @@ function ManualResolutionSection({
               }}
             >
               {mutation.isPending ? "Recording…" : pending ? LEVEL_B_CONFIRM_COPY[pending.decision].action : ""}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={backfillPending} onOpenChange={(open) => { if (!open) setBackfillPending(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apply confirmed ownership?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Only records you marked "Confirm Ownership" are applied — records left unresolved, marked not this
+              Student, or in evidence conflict are skipped entirely. Applying links{" "}
+              {eligibleForBackfillCount} historical record{eligibleForBackfillCount === 1 ? "" : "s"} to this
+              Student, which changes their ownership. Nothing else about those records changes, and no Student
+              account is deleted by this action.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={backfillMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={backfillMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                backfillMutation.mutate({ id: studentId, data: { workflowId: plan.workflowId } });
+              }}
+            >
+              {backfillMutation.isPending ? "Applying…" : "Apply Confirmed Ownership"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

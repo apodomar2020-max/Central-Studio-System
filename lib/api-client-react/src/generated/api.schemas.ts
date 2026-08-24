@@ -1605,6 +1605,51 @@ export interface StudentDeletionManualResolutionRecord {
   readonly resolvedAt: string;
 }
 
+/**
+ * Phase B3B3. Carries NO ownership data by design — only the workflow id, used for staleness matching against the Student's currently active deletion preparation. Target ids, owner ids and evidence are all re-derived server-side inside the applying transaction, so a client can never nominate a record or an owner.
+ */
+export interface ApplyStudentDeletionOwnershipBackfillRequest {
+  workflowId: number;
+}
+
+export type StudentDeletionOwnershipBackfillResultDomain =
+  (typeof StudentDeletionOwnershipBackfillResultDomain)[keyof typeof StudentDeletionOwnershipBackfillResultDomain];
+
+export const StudentDeletionOwnershipBackfillResultDomain = {
+  package_orders: "package_orders",
+} as const;
+
+/**
+ * APPLIED — the canonical ownership FK was NULL and now points at this Student. ALREADY_APPLIED — it already pointed at this Student (idempotent no-op, not an error).
+ */
+export type StudentDeletionOwnershipBackfillResultAction =
+  (typeof StudentDeletionOwnershipBackfillResultAction)[keyof typeof StudentDeletionOwnershipBackfillResultAction];
+
+export const StudentDeletionOwnershipBackfillResultAction = {
+  APPLIED: "APPLIED",
+  ALREADY_APPLIED: "ALREADY_APPLIED",
+} as const;
+
+export interface StudentDeletionOwnershipBackfillResult {
+  domain: StudentDeletionOwnershipBackfillResultDomain;
+  targetRecordId: number;
+  /** APPLIED — the canonical ownership FK was NULL and now points at this Student. ALREADY_APPLIED — it already pointed at this Student (idempotent no-op, not an error). */
+  action: StudentDeletionOwnershipBackfillResultAction;
+  /** @nullable */
+  resolutionId: number | null;
+}
+
+/**
+ * Outcome of applying every currently eligible PROVEN_OWNER decision. The ONLY mutation performed is populating the canonical historical ownership FK (package_orders.student_id). No Student account is deleted, anonymized or tombstoned, no historical snapshot column is rewritten, and the append-only resolution history is untouched.
+ */
+export interface StudentDeletionOwnershipBackfillResponse {
+  readonly studentId: number;
+  readonly workflowId: number;
+  readonly appliedCount: number;
+  readonly alreadyAppliedCount: number;
+  readonly results: StudentDeletionOwnershipBackfillResult[];
+}
+
 export interface ListStudentsResponse {
   students: Student[];
   total: number;

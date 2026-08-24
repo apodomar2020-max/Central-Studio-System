@@ -39,6 +39,7 @@ import { diffFields, logActivity } from "../lib/activityLog";
 import { computeStudentDeletionImpact, applyManualResolutionBlocker } from "../lib/studentDeletionImpact";
 import { computeStudentDeletionAttributionPlan } from "../lib/studentDeletionAttributionPlanner";
 import { recordManualResolution, computeManualResolutionBlockSummary } from "../lib/studentDeletionManualResolution";
+import { applyProvenOwnershipBackfill } from "../lib/studentDeletionOwnershipBackfill";
 import { computeAgeAsOf } from "../lib/balletAgeEligibility";
 import { applyStudentEmailChange, openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import {
@@ -1781,6 +1782,93 @@ router.post(
       entityLabel: `student #${params.data.id}`,
       summary: `Recorded manual resolution decision ${outcome.row.decision} for ${outcome.row.domain}#${outcome.row.targetRecordId} (workflow #${outcome.row.deletionWorkflowId}, evidence ${outcome.row.evidenceReasonCode})`,
     });
+  },
+);
+
+// ── Proven ownership backfill executor (Phase B3B3) ─────────────────────
+// The ONLY consumer of a durable PROVEN_OWNER Level-B resolution. Applies
+// the canonical historical ownership FK (package_orders.student_id) and
+// NOTHING else — no account_status write, no tombstone, no anonymization,
+// no permanent delete, no Level C/D attribution, no snapshot rewrite.
+//
+// The request body carries NO ownership data: only the workflow id, used
+// for staleness matching against the student's currently-active
+// preparation. Target ids, owner ids and evidence are re-derived
+// server-side, fresh, inside the applying transaction. Same auth chain and
+// users.delete permission as the B3B2E resolution-mutation endpoint.
+const ApplyOwnershipBackfillBody = zod.object({
+  workflowId: zod.number().int().positive(),
+}).strict();
+
+router.post(
+  "/students/:id/deletion-attribution-backfill",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = UpdateStudentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = ApplyOwnershipBackfillBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+
+    const outcome = await applyProvenOwnershipBackfill({
+      studentId: params.data.id,
+      workflowId: body.data.workflowId,
+    });
+
+    if (outcome.kind === "rejected") {
+      switch (outcome.reason) {
+        case "studentNotFound":
+          res.status(404).json({ error: "Student not found" });
+          return;
+        case "studentAlreadyDeleted":
+          res.status(409).json({ error: "Student account has already been permanently deleted.", code: "STUDENT_ALREADY_DELETED" });
+          return;
+        case "studentNotDeactivated":
+          res.status(409).json({ error: "Student must be deactivated before confirmed ownership can be applied.", code: "STUDENT_NOT_DEACTIVATED" });
+          return;
+        case "preparationRequired":
+          res.status(409).json({ error: "An active deletion preparation is required.", code: "STUDENT_DELETION_PREPARATION_REQUIRED" });
+          return;
+        case "workflowStale":
+          res.status(409).json({ error: "The referenced deletion-preparation workflow is no longer the active one for this student.", code: "LEGACY_IDENTITY_RESOLUTION_STALE" });
+          return;
+        case "ownershipConflict":
+          res.status(409).json({
+            error: "The target record is already owned by a different student; confirmed ownership was not applied.",
+            code: "LEGACY_OWNERSHIP_BACKFILL_CONFLICT",
+            targetRecordId: outcome.targetRecordId,
+          });
+          return;
+      }
+    }
+
+    res.status(200).json({
+      studentId: params.data.id,
+      workflowId: outcome.workflowId,
+      appliedCount: outcome.appliedCount,
+      alreadyAppliedCount: outcome.alreadyAppliedCount,
+      results: outcome.results,
+    });
+
+    // Audit only AFTER the mutating transactions have committed, and only
+    // with structured internal identifiers — no raw email/PII anywhere.
+    for (const result of outcome.results) {
+      await logActivity(req, {
+        action: "deletion_attribution_ownership_backfill",
+        module: "users",
+        entityType: "student",
+        entityId: params.data.id,
+        entityLabel: `student #${params.data.id}`,
+        summary: `Applied confirmed legacy ownership (${result.action}) for ${result.domain}#${result.targetRecordId} (workflow #${outcome.workflowId}, resolution #${result.resolutionId ?? "n/a"})`,
+      });
+    }
   },
 );
 

@@ -19,6 +19,7 @@ import type {
 import type {
   AdjustCreditsBody,
   AdjustCreditsResponse,
+  ApplyStudentDeletionOwnershipBackfillRequest,
   Attendance,
   AttendanceStats,
   BalletScheduleListResponse,
@@ -109,6 +110,7 @@ import type {
   StudentDeletionAttributionPlanResponse,
   StudentDeletionImpactResponse,
   StudentDeletionManualResolutionRecord,
+  StudentDeletionOwnershipBackfillResponse,
   StudentDeletionPreparationResponse,
   StudentLifecycleResponse,
   UpdateAdminClassCapacitySettings409,
@@ -4430,6 +4432,103 @@ export const useRecordStudentDeletionManualResolution = <
 > => {
   return useMutation(
     getRecordStudentDeletionManualResolutionMutationOptions(options),
+  );
+};
+
+export const getApplyStudentDeletionOwnershipBackfillUrl = (id: number) => {
+  return `/api/students/${id}/deletion-attribution-backfill`;
+};
+
+/**
+ * Phase B3B3: applies every currently eligible PROVEN_OWNER Level-B resolution for this Student by populating the canonical historical ownership FK (package_orders.student_id). Requires users.delete. package_orders is the ONLY supported domain — it is the only one with an independent Level-B evidence source. Every precondition (Student exists, deactivated, active preparation, workflow current, decision still PROVEN_OWNER and not superseded, target still a canonical candidate, Level-B evidence still valid, no evidence conflict, ownership FK still NULL) is re-validated fresh inside the applying transaction under row locks; anything stale fails closed. This endpoint NEVER deletes, anonymizes or tombstones a Student account, never touches Level C/D rows, never rewrites a historical snapshot (legacy email, payer contact, amounts, payment data, credit_transactions, attendance, provenance), and never mutates the append-only resolution history. Repeated and concurrent execution is safe and idempotent.
+ */
+export const applyStudentDeletionOwnershipBackfill = async (
+  id: number,
+  applyStudentDeletionOwnershipBackfillRequest: ApplyStudentDeletionOwnershipBackfillRequest,
+  options?: RequestInit,
+): Promise<StudentDeletionOwnershipBackfillResponse> => {
+  return customFetch<StudentDeletionOwnershipBackfillResponse>(
+    getApplyStudentDeletionOwnershipBackfillUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(applyStudentDeletionOwnershipBackfillRequest),
+    },
+  );
+};
+
+export const getApplyStudentDeletionOwnershipBackfillMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyStudentDeletionOwnershipBackfill>>,
+    TError,
+    {
+      id: number;
+      data: BodyType<ApplyStudentDeletionOwnershipBackfillRequest>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof applyStudentDeletionOwnershipBackfill>>,
+  TError,
+  { id: number; data: BodyType<ApplyStudentDeletionOwnershipBackfillRequest> },
+  TContext
+> => {
+  const mutationKey = ["applyStudentDeletionOwnershipBackfill"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof applyStudentDeletionOwnershipBackfill>>,
+    { id: number; data: BodyType<ApplyStudentDeletionOwnershipBackfillRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return applyStudentDeletionOwnershipBackfill(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApplyStudentDeletionOwnershipBackfillMutationResult = NonNullable<
+  Awaited<ReturnType<typeof applyStudentDeletionOwnershipBackfill>>
+>;
+export type ApplyStudentDeletionOwnershipBackfillMutationBody =
+  BodyType<ApplyStudentDeletionOwnershipBackfillRequest>;
+export type ApplyStudentDeletionOwnershipBackfillMutationError =
+  ErrorType<ErrorResponse>;
+
+export const useApplyStudentDeletionOwnershipBackfill = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyStudentDeletionOwnershipBackfill>>,
+    TError,
+    {
+      id: number;
+      data: BodyType<ApplyStudentDeletionOwnershipBackfillRequest>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof applyStudentDeletionOwnershipBackfill>>,
+  TError,
+  { id: number; data: BodyType<ApplyStudentDeletionOwnershipBackfillRequest> },
+  TContext
+> => {
+  return useMutation(
+    getApplyStudentDeletionOwnershipBackfillMutationOptions(options),
   );
 };
 

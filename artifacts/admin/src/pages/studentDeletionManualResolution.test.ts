@@ -219,8 +219,21 @@ test("13: no notes/free-text input exists in the resolution flow (backend accept
 
 // ─── 14: no ownership-backfill wording ──────────────────────────────────────
 
-test("14: no copy claims the historical record has been reassigned, linked, or rewritten", () => {
-  const s = section();
+test("14: no RECORDING copy claims the historical record has been reassigned, linked, or rewritten", () => {
+  // Phase B3B3 narrowed the scope of this guard. Recording a decision still
+  // changes nothing, and the recording copy must never imply otherwise. The
+  // separate "Apply Confirmed Ownership" action introduced by B3B3 genuinely
+  // does change ownership and is REQUIRED to say so — so its own copy is
+  // stripped out before this assertion runs.
+  const s = section()
+    .replace(/const backfillMutation = useApplyStudentDeletionOwnershipBackfill\([\s\S]*?\n  \}\);\n/, "")
+    .replace(/const eligibleForBackfillCount[\s\S]*?;\n/, "")
+    .replace(/\{canResolve && eligibleForBackfillCount > 0 && \([\s\S]*?\n      \)\}\n/, "")
+    .replace(/<AlertDialog open=\{backfillPending\}[\s\S]*?<\/AlertDialog>/, "")
+    // This assertion is about user-facing COPY, so comments and the
+    // backfill state declaration are not part of what it governs.
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/^.*\bbackfillPending\b.*$/gm, "");
   assert.doesNotMatch(
     s,
     /(records? (have|has) been (re)?assigned|ownership (has been|was) (transferred|updated|applied|backfilled)|now belongs to|has been linked to this Student|backfill)/i,

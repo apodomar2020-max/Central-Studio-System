@@ -307,9 +307,20 @@ test("43: no permanent-delete mutation (DELETE /students/:id or any permanent-de
   assert.doesNotMatch(detailSource, /permanent-delete|permanentDelete/i);
 });
 
-test("44: no anonymization/backfill mutation call exists in student-detail.tsx", () => {
-  assert.doesNotMatch(detailSource, /anonymize\w*\(|backfill\w*\(/i);
-  assert.doesNotMatch(detailSource, /useAnonymize|useBackfill/i);
+// Phase B3B3 narrowed this guard. The ONE backfill mutation now permitted is
+// the proven-ownership executor (useApplyStudentDeletionOwnershipBackfill),
+// which populates a canonical historical ownership FK and nothing else.
+// Anonymization remains categorically forbidden, and no OTHER backfill
+// mutation may appear.
+test("44: no anonymization mutation, and the only backfill call is the proven-ownership executor", () => {
+  assert.doesNotMatch(detailSource, /anonymize\w*\(/i);
+  assert.doesNotMatch(detailSource, /useAnonymize/i);
+
+  const backfillHooks = detailSource.match(/use\w*Backfill\w*/gi) ?? [];
+  for (const hook of backfillHooks) {
+    assert.equal(hook, "useApplyStudentDeletionOwnershipBackfill", `unexpected backfill hook: ${hook}`);
+  }
+  assert.ok(backfillHooks.length > 0, "the proven-ownership backfill hook must be the one used");
 });
 
 // ─── Student 34 absence (45) ────────────────────────────────────────────────

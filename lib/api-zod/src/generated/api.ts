@@ -2081,6 +2081,44 @@ export const RecordStudentDeletionManualResolutionResponse = zod
     "The durable, append-only decision row that was created. Recording a PROVEN_OWNER decision does NOT rewrite any canonical ownership column — no historical record ownership is changed by this call.",
   );
 
+/**
+ * Phase B3B3: applies every currently eligible PROVEN_OWNER Level-B resolution for this Student by populating the canonical historical ownership FK (package_orders.student_id). Requires users.delete. package_orders is the ONLY supported domain — it is the only one with an independent Level-B evidence source. Every precondition (Student exists, deactivated, active preparation, workflow current, decision still PROVEN_OWNER and not superseded, target still a canonical candidate, Level-B evidence still valid, no evidence conflict, ownership FK still NULL) is re-validated fresh inside the applying transaction under row locks; anything stale fails closed. This endpoint NEVER deletes, anonymizes or tombstones a Student account, never touches Level C/D rows, never rewrites a historical snapshot (legacy email, payer contact, amounts, payment data, credit_transactions, attendance, provenance), and never mutates the append-only resolution history. Repeated and concurrent execution is safe and idempotent.
+ */
+export const ApplyStudentDeletionOwnershipBackfillParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ApplyStudentDeletionOwnershipBackfillBody = zod
+  .object({
+    workflowId: zod.number(),
+  })
+  .describe(
+    "Phase B3B3. Carries NO ownership data by design — only the workflow id, used for staleness matching against the Student's currently active deletion preparation. Target ids, owner ids and evidence are all re-derived server-side inside the applying transaction, so a client can never nominate a record or an owner.",
+  );
+
+export const ApplyStudentDeletionOwnershipBackfillResponse = zod
+  .object({
+    studentId: zod.number(),
+    workflowId: zod.number(),
+    appliedCount: zod.number(),
+    alreadyAppliedCount: zod.number(),
+    results: zod.array(
+      zod.object({
+        domain: zod.enum(["package_orders"]),
+        targetRecordId: zod.number(),
+        action: zod
+          .enum(["APPLIED", "ALREADY_APPLIED"])
+          .describe(
+            "APPLIED — the canonical ownership FK was NULL and now points at this Student. ALREADY_APPLIED — it already pointed at this Student (idempotent no-op, not an error).",
+          ),
+        resolutionId: zod.number().nullable(),
+      }),
+    ),
+  })
+  .describe(
+    "Outcome of applying every currently eligible PROVEN_OWNER decision. The ONLY mutation performed is populating the canonical historical ownership FK (package_orders.student_id). No Student account is deleted, anonymized or tombstoned, no historical snapshot column is rewritten, and the append-only resolution history is untouched.",
+  );
+
 export const listBookingsQueryDateRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
 
 export const listBookingsQueryPageSizeMax = 100;

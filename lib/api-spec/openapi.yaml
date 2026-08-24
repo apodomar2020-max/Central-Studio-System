@@ -1088,6 +1088,81 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /students/{id}/deletion-attribution-backfill:
+    post:
+      operationId: applyStudentDeletionOwnershipBackfill
+      tags: [students]
+      description: >-
+        Phase B3B3: applies every currently eligible PROVEN_OWNER Level-B
+        resolution for this Student by populating the canonical historical
+        ownership FK (package_orders.student_id). Requires users.delete.
+        package_orders is the ONLY supported domain — it is the only one
+        with an independent Level-B evidence source. Every precondition
+        (Student exists, deactivated, active preparation, workflow current,
+        decision still PROVEN_OWNER and not superseded, target still a
+        canonical candidate, Level-B evidence still valid, no evidence
+        conflict, ownership FK still NULL) is re-validated fresh inside the
+        applying transaction under row locks; anything stale fails closed.
+        This endpoint NEVER deletes, anonymizes or tombstones a Student
+        account, never touches Level C/D rows, never rewrites a historical
+        snapshot (legacy email, payer contact, amounts, payment data,
+        credit_transactions, attendance, provenance), and never mutates the
+        append-only resolution history. Repeated and concurrent execution is
+        safe and idempotent.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyStudentDeletionOwnershipBackfillRequest"
+      responses:
+        "200":
+          description: >-
+            Backfill completed. appliedCount may be 0 when nothing is
+            currently eligible — that is a successful no-op, not an error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDeletionOwnershipBackfillResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >-
+            Not applicable in the current state. `code` is one of
+            STUDENT_ALREADY_DELETED, STUDENT_NOT_DEACTIVATED,
+            STUDENT_DELETION_PREPARATION_REQUIRED,
+            LEGACY_IDENTITY_RESOLUTION_STALE or
+            LEGACY_OWNERSHIP_BACKFILL_CONFLICT (the target record is already
+            owned by a different Student and was never overwritten).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /bookings:
     get:
       operationId: listBookings
@@ -3601,6 +3676,54 @@ components:
         decision: { type: string, enum: [PROVEN_OWNER, NOT_THIS_STUDENT, UNRESOLVED] }
         evidenceReasonCode: { type: string }
         resolvedAt: { type: string, format: date-time }
+
+    ApplyStudentDeletionOwnershipBackfillRequest:
+      type: object
+      description: >-
+        Phase B3B3. Carries NO ownership data by design — only the workflow
+        id, used for staleness matching against the Student's currently
+        active deletion preparation. Target ids, owner ids and evidence are
+        all re-derived server-side inside the applying transaction, so a
+        client can never nominate a record or an owner.
+      required: [workflowId]
+      additionalProperties: false
+      properties:
+        workflowId: { type: integer }
+
+    StudentDeletionOwnershipBackfillResult:
+      type: object
+      required: [domain, targetRecordId, action, resolutionId]
+      properties:
+        domain: { type: string, enum: [package_orders] }
+        targetRecordId: { type: integer }
+        action:
+          type: string
+          enum: [APPLIED, ALREADY_APPLIED]
+          description: >-
+            APPLIED — the canonical ownership FK was NULL and now points at
+            this Student. ALREADY_APPLIED — it already pointed at this
+            Student (idempotent no-op, not an error).
+        resolutionId: { type: ["integer", "null"] }
+
+    StudentDeletionOwnershipBackfillResponse:
+      type: object
+      readOnly: true
+      description: >-
+        Outcome of applying every currently eligible PROVEN_OWNER decision.
+        The ONLY mutation performed is populating the canonical historical
+        ownership FK (package_orders.student_id). No Student account is
+        deleted, anonymized or tombstoned, no historical snapshot column is
+        rewritten, and the append-only resolution history is untouched.
+      required: [studentId, workflowId, appliedCount, alreadyAppliedCount, results]
+      properties:
+        studentId: { type: integer }
+        workflowId: { type: integer }
+        appliedCount: { type: integer }
+        alreadyAppliedCount: { type: integer }
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudentDeletionOwnershipBackfillResult"
 
     GetStudentChildItem:
       type: object
