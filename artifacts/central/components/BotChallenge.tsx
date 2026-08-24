@@ -1,18 +1,26 @@
 /**
  * Security Wave — Bot Protection + Register Enumeration Closure.
  *
- * Renders a Cloudflare Turnstile challenge inside a WebView loading a tiny,
- * self-contained inline HTML page (Turnstile's own script, loaded from
- * Cloudflare's CDN — the ONLY network resource this page needs). On success
- * the widget's callback posts the opaque challenge token back to React
- * Native via `window.ReactNativeWebView.postMessage`; this component hands
- * that token to its caller and nothing else — it is never persisted
- * (no AsyncStorage), never logged, and lives only in this component's own
- * in-memory state for as long as the screen is mounted.
+ * Renders a Cloudflare Turnstile challenge inside a WebView loading a REAL
+ * HTTPS page — Cloudflare's native-mobile guidance expects Turnstile to run
+ * on an authorized, controlled hostname, not inline/local HTML
+ * (`source={{ html: ... }}`), `about:blank`, or a data/file URI. The page
+ * lives on the existing Central Studio website
+ * (https://central-studio-website.vercel.app/turnstile-challenge — see
+ * app/turnstile-challenge/route.ts in that repo) and is added to that
+ * project's Turnstile-authorized hostnames in the Cloudflare dashboard.
  *
- * PUBLIC SITE KEY ONLY. `EXPO_PUBLIC_TURNSTILE_SITE_KEY` is, by Cloudflare's
- * own design, safe to ship in a client bundle — it identifies the site, not
- * a secret. The verification SECRET never leaves the API server (see
+ * The page contains no Student/account data — it receives only the public
+ * Turnstile site key (its own server-side env var) and an `action` query
+ * param, and posts the resulting token back to React Native via
+ * `window.ReactNativeWebView.postMessage`. This component hands that token
+ * to its caller and nothing else — never persisted (no AsyncStorage),
+ * never logged, in-memory only for as long as the screen is mounted.
+ *
+ * NO SITE KEY IN THE MOBILE BUNDLE AT ALL. The public Turnstile site key
+ * lives only on the challenge page (its own server-side env var on the
+ * website deployment) — this component only needs that page's URL. The
+ * verification SECRET never leaves the API server (see
  * artifacts/api-server/src/lib/botProtection.ts).
  *
  * Shown only when the caller actually needs a token for a protected action
@@ -23,47 +31,18 @@ import { useCallback, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import WebView from "react-native-webview";
 
-const SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY ?? "";
-
-/** One tiny static HTML document — Turnstile's script is the only external resource. */
-function challengeHtml(siteKey: string, action: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-  <style>
-    html, body { margin: 0; padding: 0; background: transparent; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-  </style>
-</head>
-<body>
-  <div class="cf-turnstile"
-       data-sitekey="${siteKey}"
-       data-action="${action}"
-       data-callback="onToken"
-       data-error-callback="onError"
-       data-expired-callback="onExpired"
-       data-theme="dark">
-  </div>
-  <script>
-    function onToken(token) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: "token", token }));
-    }
-    function onError() {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: "error" }));
-    }
-    function onExpired() {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: "expired" }));
-    }
-  </script>
-</body>
-</html>`;
-}
+const CHALLENGE_PAGE_BASE_URL =
+  process.env.EXPO_PUBLIC_TURNSTILE_CHALLENGE_URL ?? "https://central-studio-website.vercel.app/turnstile-challenge";
 
 export type BotChallengeStatus = "loading" | "ready" | "error" | "expired";
 
 export function isBotProtectionConfiguredOnClient(): boolean {
-  return SITE_KEY.length > 0;
+  // The site key itself lives server-side on the challenge page now — the
+  // only thing this component needs is a challenge-page URL, which always
+  // has a default. "Configured" here just means the page URL is non-empty,
+  // which it always will be; kept as a named check so callers/tests don't
+  // need to know that detail changed.
+  return CHALLENGE_PAGE_BASE_URL.length > 0;
 }
 
 /**
@@ -106,8 +85,8 @@ export default function BotChallenge({
   );
 
   if (!isBotProtectionConfiguredOnClient()) {
-    // Fails loudly in dev rather than silently rendering nothing — a
-    // missing site key means the protected action cannot be completed at
+    // Fails loudly in dev rather than silently rendering nothing — no
+    // challenge-page URL means the protected action cannot be completed at
     // all, and that should be obvious immediately, not a confusing 503
     // from the server after the user fills in the whole form.
     return (
@@ -117,21 +96,24 @@ export default function BotChallenge({
     );
   }
 
+  const challengeUrl = `${CHALLENGE_PAGE_BASE_URL}?action=${encodeURIComponent(action)}`;
+
   return (
     <View style={styles.container}>
       <WebView
         ref={webviewRef}
         key={resetKey}
-        originWhitelist={["*"]}
-        source={{ html: challengeHtml(SITE_KEY, action) }}
+        source={{ uri: challengeUrl }}
         onMessage={handleMessage}
         style={styles.webview}
         scrollEnabled={false}
         javaScriptEnabled
-        // No cookies/local storage need to persist across sessions for a
-        // one-shot challenge widget.
+        domStorageEnabled
+        // Cloudflare's own challenge-completion flow needs a normal,
+        // consistent User-Agent to reason about — no override here.
         thirdPartyCookiesEnabled={false}
         onError={() => setStatus("error")}
+        onHttpError={() => setStatus("error")}
       />
       {status === "expired" && (
         <TouchableOpacity onPress={() => setStatus("loading")} style={styles.retryRow}>
