@@ -40,6 +40,7 @@ import { computeStudentDeletionImpact, applyManualResolutionBlocker } from "../l
 import { computeStudentDeletionAttributionPlan } from "../lib/studentDeletionAttributionPlanner";
 import { recordManualResolution, computeManualResolutionBlockSummary } from "../lib/studentDeletionManualResolution";
 import { applyProvenOwnershipBackfill } from "../lib/studentDeletionOwnershipBackfill";
+import { applyStudentPermanentDelete } from "../lib/studentDeletionPermanentDelete";
 import { computeAgeAsOf } from "../lib/balletAgeEligibility";
 import { applyStudentEmailChange, openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import {
@@ -1620,6 +1621,12 @@ router.get(
         active: activePreparation !== null,
         startedAt: activePreparation?.startedAt ?? null,
         status: activePreparation?.status ?? null,
+        // Phase B3B4 additive extension: the active workflow id, needed by
+        // the Admin UI to submit POST /permanent-delete's required
+        // workflowId (the same staleness-matching id already used by the
+        // resolution/backfill endpoints). No new query — activePreparation
+        // was already fetched above for the deletionPreparation block.
+        workflowId: activePreparation?.id ?? null,
       },
       manualResolution,
     });
@@ -1869,6 +1876,93 @@ router.post(
         summary: `Applied confirmed legacy ownership (${result.action}) for ${result.domain}#${result.targetRecordId} (workflow #${outcome.workflowId}, resolution #${result.resolutionId ?? "n/a"})`,
       });
     }
+  },
+);
+
+// ── Permanent Student Deletion / Tombstone (Phase B3B4) ──────────────────
+// Terminal account-lifecycle transition: account_status -> "deleted",
+// Student PII anonymized on the SAME row, every outstanding JWT invalidated
+// (token_version bump), devices deactivated. The Student row itself is
+// NEVER physically deleted — see studentDeletionPermanentDelete.ts's module
+// doc for the complete list of what this never does (no hard DELETE, no
+// historical snapshot rewrite, no Level C/D attribution, no Finance
+// mutation, no cascade). The request body carries only the workflow id for
+// staleness matching; every precondition (deactivated, active preparation,
+// canDelete, zero pending ownership backfill) is re-derived server-side,
+// fresh, inside the same locked transaction — a client-supplied eligibility
+// snapshot is never trusted.
+const PermanentDeleteBody = zod.object({
+  workflowId: zod.number().int().positive(),
+}).strict();
+
+router.post(
+  "/students/:id/permanent-delete",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = UpdateStudentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = PermanentDeleteBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const adminId = req.adminUser!.id;
+
+    const outcome = await applyStudentPermanentDelete({
+      studentId: params.data.id,
+      workflowId: body.data.workflowId,
+      adminId,
+    });
+
+    if (outcome.kind === "rejected") {
+      switch (outcome.reason) {
+        case "studentNotFound":
+          res.status(404).json({ error: "Student not found" });
+          return;
+        case "studentActive":
+          res.status(409).json({ error: "Student must be deactivated before permanent deletion.", code: "STUDENT_NOT_DEACTIVATED" });
+          return;
+        case "preparationRequired":
+          res.status(409).json({ error: "An active deletion preparation is required.", code: "STUDENT_DELETION_PREPARATION_REQUIRED" });
+          return;
+        case "workflowStale":
+          res.status(409).json({ error: "The referenced deletion-preparation workflow is no longer the active one for this student.", code: "LEGACY_IDENTITY_RESOLUTION_STALE" });
+          return;
+        case "pendingOwnershipBackfill":
+          res.status(409).json({ error: "One or more confirmed-ownership decisions have not yet been applied. Apply them before permanent deletion.", code: "PERMANENT_DELETE_PENDING_OWNERSHIP_BACKFILL" });
+          return;
+        case "canDeleteFalse":
+          res.status(409).json({
+            error: "This Student cannot be permanently deleted while blockers remain.",
+            code: "PERMANENT_DELETE_BLOCKED",
+            blockers: outcome.blockers ?? [],
+          });
+          return;
+      }
+    }
+    if (outcome.kind === "alreadyDeleted") {
+      // Idempotent: a second identical request against an already-deleted
+      // Student is a stable success, not an error and not a re-run.
+      res.status(200).json({ id: outcome.studentId, accountStatus: "deleted", deletedAt: outcome.deletedAt, alreadyDeleted: true });
+      return;
+    }
+
+    res.status(200).json({ id: outcome.studentId, accountStatus: "deleted", deletedAt: outcome.deletedAt, alreadyDeleted: false });
+
+    // Audit AFTER commit, structured ids only — no raw old email/phone/name.
+    await logActivity(req, {
+      action: "permanent_delete",
+      module: "users",
+      entityType: "student",
+      entityId: outcome.studentId,
+      entityLabel: `student #${outcome.studentId}`,
+      summary: `Student #${outcome.studentId} permanently deleted (tombstoned) under workflow #${outcome.workflowId}`,
+    });
   },
 );
 

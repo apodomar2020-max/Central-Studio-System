@@ -554,15 +554,22 @@ test("32: no audit activity row created", async () => {
 });
 
 // ═══════════════════════════════ 33-34: no delete route exists ════════════
-test("33: no Permanent Delete route exists (only the disabled 405 legacy DELETE)", async () => {
-  const sid = await makeStudent("no-permdel", { accountStatus: "deactivated" });
+test("33: the Phase B3B4 Permanent Delete route exists and fails closed without an active preparation (legacy DELETE remains separately disabled)", async () => {
+  // Narrowed (not removed) from its original B2B-era form, which asserted
+  // this route did not exist yet. Phase B3B4 legitimately introduces it —
+  // this now asserts it behaves correctly (fails closed with a real
+  // precondition rejection, never a raw 404/500) rather than asserting the
+  // capability is absent.
+  const sid = await makeStudent("permdel-exists", { accountStatus: "deactivated" });
   const admin = await makeAdmin(DELETE_ADMIN_PERM);
   const res = await fetch(apiUrl(`/api/students/${sid}/permanent-delete`), {
     method: "POST",
     headers: { authorization: `Bearer ${process.env.API_SECRET_KEY}`, "x-admin-token": admin.token, "content-type": "application/json" },
-    body: "{}",
+    body: JSON.stringify({ workflowId: 999999 }),
   });
-  assert.equal(res.status, 404);
+  assert.equal(res.status, 409);
+  const body = await res.json() as { code?: string };
+  assert.equal(body.code, "STUDENT_DELETION_PREPARATION_REQUIRED");
 });
 
 test("34: legacy DELETE remains 405", async () => {
@@ -591,6 +598,27 @@ test("35: bounded query count documented (see module doc comment; no per-child N
   // rather than instrumented here (no query-counting harness exists yet
   // in this repo's test infra to hook pg.Pool transparently without
   // touching shared library code out of scope for this phase).
+});
+
+test("39: deletionPreparation.workflowId is null with no active preparation, and matches the real workflow id once started", async () => {
+  const sid = await makeStudent("wf-id", { accountStatus: "deactivated" });
+  const admin = await makeAdmin(DELETE_ADMIN_PERM);
+
+  const before = await deletionImpact(sid, admin.token);
+  assert.equal(before.status, 200);
+  assert.equal(before.json.deletionPreparation.workflowId, null);
+
+  const startRes = await fetch(apiUrl(`/api/students/${sid}/deletion-preparation/start`), {
+    method: "POST",
+    headers: { authorization: `Bearer ${process.env.API_SECRET_KEY}`, "x-admin-token": admin.token, "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(startRes.status, 201);
+  const workflowId = ((await startRes.json()) as { id: number }).id;
+
+  const after = await deletionImpact(sid, admin.token);
+  assert.equal(after.status, 200);
+  assert.equal(after.json.deletionPreparation.workflowId, workflowId);
 });
 
 test("36/37: generatedAt and policyVersion returned", async () => {

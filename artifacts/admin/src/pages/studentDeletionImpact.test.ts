@@ -90,13 +90,17 @@ test("10: canDelete=true renders 'No current blockers detected.'", () => {
   assert.match(detailSource, /"No current blockers detected\."/);
 });
 
-test("11: no executable/final Delete button exists anywhere in the rendered output", () => {
+test("11: the Phase B3B4 Permanent Delete action exists in exactly one place, gated on canDelete + workflowId + permission, behind a confirmation dialog", () => {
+  // Narrowed (not removed): Phase B3B4 legitimately introduces this action.
+  // Still forbidden: alternate destructive labels, and any button reachable
+  // without the eligibility/permission gate.
   assert.doesNotMatch(detailSource, />Delete Account</);
   assert.doesNotMatch(detailSource, />Delete Permanently</);
-  assert.doesNotMatch(detailSource, />Confirm Delete</);
   assert.doesNotMatch(detailSource, /aria-label="Delete Account"/);
-  assert.doesNotMatch(detailSource, /aria-label="Delete Permanently"/);
-  assert.match(detailSource, /Permanent deletion execution is not enabled yet\./);
+  assert.match(detailSource, /aria-label="Permanent Delete"/);
+  assert.match(detailSource, /canDelete && data\.canDelete && data\.deletionPreparation\.workflowId !== null/);
+  assert.match(detailSource, /AlertDialogTitle>Permanently delete this account\?</);
+  assert.match(detailSource, /permanentDeleteMutation\.mutate\(/);
 });
 
 test("16: resolutionHint is not referenced — the live B2B contract does not carry this field (see final report §A)", () => {
@@ -209,13 +213,16 @@ test("28: Refresh Impact button re-calls query.refetch()", () => {
   assert.match(detailSource, /onClick=\{\(\) => void query\.refetch\(\)\}/);
 });
 
-test("29: refresh never calls a mutation endpoint — only the read-only query's refetch", () => {
-  const dialogBlock = detailSource.match(
-    /function DeletionImpactDialog\([\s\S]*?\n\}\n/,
+test("29: the Refresh Impact button specifically calls only the read-only query's refetch, never a mutation", () => {
+  // Narrowed (not removed): Phase B3B4 legitimately adds ONE mutation
+  // (the Permanent Delete action) elsewhere inside this same dialog. This
+  // test is now scoped to the Refresh Impact button's own onClick only.
+  const refreshBlock = detailSource.match(
+    /aria-label="Refresh Impact"[\s\S]*?onClick=\{[^}]*\}/,
   );
-  assert.ok(dialogBlock);
-  assert.doesNotMatch(dialogBlock![0], /\.mutate\(/);
-  assert.doesNotMatch(dialogBlock![0], /useMutation/);
+  assert.ok(refreshBlock, "Refresh Impact button not found");
+  assert.match(refreshBlock[0], /query\.refetch\(\)/);
+  assert.doesNotMatch(refreshBlock[0], /\.mutate\(/);
 });
 
 // ─── Stale data on failure (30) ─────────────────────────────────────────────
@@ -302,9 +309,13 @@ test("42: no legacy deleteStudent call/import anywhere in student-detail.tsx or 
   assert.doesNotMatch(listSource, /useDeleteStudent|deleteStudent\(/);
 });
 
-test("43: no permanent-delete mutation (DELETE /students/:id or any permanent-delete route) exists in student-detail.tsx", () => {
+test("43: the ONLY permanent-delete capability is the Phase B3B4 confirmed mutation (POST /permanent-delete) — the legacy DELETE route is never called", () => {
+  // Narrowed (not removed): Phase B3B4 legitimately introduces the real
+  // permanent-delete mutation. Still forbidden: the raw legacy DELETE verb
+  // and any second/duplicate permanent-delete code path.
   assert.doesNotMatch(detailSource, /method:\s*["']DELETE["']/);
-  assert.doesNotMatch(detailSource, /permanent-delete|permanentDelete/i);
+  const hookImports = (detailSource.match(/usePermanentDelete|useDeleteStudent|useApplyStudentPermanentDelete/g) ?? []);
+  assert.deepEqual(new Set(hookImports), new Set(["useApplyStudentPermanentDelete"]));
 });
 
 // Phase B3B3 narrowed this guard. The ONE backfill mutation now permitted is

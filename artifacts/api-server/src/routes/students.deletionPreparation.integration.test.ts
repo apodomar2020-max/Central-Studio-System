@@ -533,7 +533,11 @@ test("34: no raw email or fingerprint value appears in any audit log payload for
 // U. No production delete capability (items 37-38, grep-based)
 // ═══════════════════════════════════════════════════════════════════════
 
-test("37/38: no Permanent Delete / tombstone / anonymize / backfill mutation code exists anywhere in src", async () => {
+test("37/38: Permanent Delete / tombstone mutation exists in EXACTLY the Phase B3B4 executor \u2014 nowhere else", async () => {
+  // Phase B3B4 legitimately introduces the tombstone transition. Narrowed
+  // (not removed) from its original B1B/B3B0-2-era form: it now asserts the
+  // capability is confined to its one authored location rather than
+  // asserting the capability doesn't exist at all.
   const { execSync } = await import("node:child_process");
   const root = new URL("../../", import.meta.url).pathname; // artifacts/api-server/src
   const grepFor = (pattern: string) => {
@@ -543,6 +547,22 @@ test("37/38: no Permanent Delete / tombstone / anonymize / backfill mutation cod
       return "";
     }
   };
-  assert.equal(grepFor("accountStatus: \\\"deleted\\\""), "", "no code path may set accountStatus to 'deleted'");
-  assert.equal(grepFor("permanentDelete\\|tombstoneStudent\\|anonymizeStudent"), "", "no tombstone/anonymize/permanent-delete function must exist");
+  const ALLOWED_TOMBSTONE_FILES = new Set([
+    "src/lib/studentDeletionPermanentDelete.ts",
+    "src/routes/students.ts",
+  ]);
+  const assertOnlyAllowed = (hits: string) => {
+    if (!hits) return;
+    for (const file of hits.split("\n")) {
+      const rel = file.slice(root.length);
+      assert.ok(ALLOWED_TOMBSTONE_FILES.has(rel), `unexpected tombstone-capable file: ${rel}`);
+    }
+  };
+  assertOnlyAllowed(grepFor('accountStatus: \\"deleted\\"'));
+  assertOnlyAllowed(grepFor("permanentDelete\\|tombstoneStudent\\|anonymizeStudent"));
+  assert.equal(
+    grepFor("anonymizeAllStudents\\|bulkTombstone\\|heuristicBackfill"),
+    "",
+    "no bulk/heuristic tombstone capability must exist",
+  );
 });

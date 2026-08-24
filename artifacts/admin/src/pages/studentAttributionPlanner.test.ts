@@ -248,11 +248,14 @@ test("30: Cancel Deletion Preparation remains intact (regression)", () => {
 
 // ─── 31-32: no mutation controls anywhere in this new code ────────────────
 
-test("31: no Permanent Delete action exists anywhere in student-detail.tsx", () => {
-  assert.doesNotMatch(detailSource, /aria-label="Permanent Delete"/);
-  assert.doesNotMatch(detailSource, />Permanent Delete</);
+test("31: the Phase B3B4 Permanent Delete action exists in exactly one place, correctly gated — no duplicate/alternate destructive labels", () => {
+  // Narrowed (not removed): Phase B3B4 legitimately introduces this action
+  // in the Deletion Impact dialog. Still forbidden: alternate destructive
+  // labels and a second copy of the action anywhere else on the page.
   assert.doesNotMatch(detailSource, />Delete Account</);
   assert.doesNotMatch(detailSource, />Delete Permanently</);
+  const count = (detailSource.match(/aria-label="Permanent Delete"/g) ?? []).length;
+  assert.equal(count, 1, "Permanent Delete action must exist in exactly one place");
 });
 
 test("32: no Apply/Backfill/Auto Resolve/Link Records/Tombstone/Anonymize action exists anywhere in student-detail.tsx", () => {

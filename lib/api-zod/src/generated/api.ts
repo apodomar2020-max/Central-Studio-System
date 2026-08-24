@@ -1923,6 +1923,12 @@ export const GetStudentDeletionImpactResponse = zod
             zod.literal(null),
           ])
           .nullable(),
+        workflowId: zod
+          .number()
+          .nullable()
+          .describe(
+            "Phase B3B4 additive extension. The active workflow id, for submitting POST \/permanent-delete's required workflowId. null when no preparation is active.",
+          ),
       })
       .describe(
         "Phase B3B0-2 additive extension. Read-only status surface — this GET performs no writes. Does not add a Permanent Delete capability; canDelete\/blockers semantics above are unchanged.",
@@ -2117,6 +2123,36 @@ export const ApplyStudentDeletionOwnershipBackfillResponse = zod
   })
   .describe(
     "Outcome of applying every currently eligible PROVEN_OWNER decision. The ONLY mutation performed is populating the canonical historical ownership FK (package_orders.student_id). No Student account is deleted, anonymized or tombstoned, no historical snapshot column is rewritten, and the append-only resolution history is untouched.",
+  );
+
+/**
+ * Phase B3B4: the terminal Student account-lifecycle transition. account_status becomes "deleted" (the Student row is never physically removed — this is a tombstone, not a hard delete); Student PII (email, name, phone, password hash, social provider identifiers, avatar, profile fields) is anonymized on the same row; every outstanding JWT is invalidated (token_version bump); active notification devices are deactivated. Requires users.delete. Every precondition (Student exists, deactivated, active preparation current, the full deletion-impact blocker set recomputed fresh including unresolved Level-B / EVIDENCE_CONFLICT, and zero pending PROVEN_OWNER decisions not yet applied via the ownership-backfill executor) is re-validated inside one locked transaction; a client-supplied eligibility snapshot is never trusted. Historical rows (bookings/package_orders/feedback, credit_transactions, attendance, payment_records, provenance history) are completely untouched — an owned row's ownership FK keeps pointing at the now-tombstoned Student id, and Level C/D legacy rows are never assigned. Repeated execution against an already-deleted Student is a stable idempotent success, not an error.
+ */
+export const ApplyStudentPermanentDeleteParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ApplyStudentPermanentDeleteBody = zod
+  .object({
+    workflowId: zod.number(),
+  })
+  .describe(
+    "Phase B3B4. Carries no PII and no eligibility claim — only the workflow id, used for staleness matching against the Student's currently active deletion preparation. The full blocker set is re-derived server-side inside the applying transaction.",
+  );
+
+export const ApplyStudentPermanentDeleteResponse = zod
+  .object({
+    id: zod.number(),
+    accountStatus: zod.enum(["deleted"]),
+    deletedAt: zod.string().nullable(),
+    alreadyDeleted: zod
+      .boolean()
+      .describe(
+        "true if this call found the Student already deleted (idempotent, no new mutation performed); false if this call performed the real transition.",
+      ),
+  })
+  .describe(
+    'Outcome of the terminal tombstone transition. The Student row still exists; account_status is now \"deleted\".',
   );
 
 export const listBookingsQueryDateRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");

@@ -138,8 +138,10 @@ const PACKAGE_ORDER_PENDING = ["pendingPayment"];
 
 interface Row { [key: string]: unknown }
 
-async function one<T = Row>(query: any): Promise<T> {
-  const result = await db.execute(query);
+type Executor = Parameters<Parameters<typeof db.transaction>[0]>[0] | typeof db;
+
+async function one<T = Row>(executor: Executor, query: any): Promise<T> {
+  const result = await (executor as typeof db).execute(query);
   return (result.rows[0] ?? {}) as T;
 }
 
@@ -170,8 +172,8 @@ async function one<T = Row>(query: any): Promise<T> {
  * studentDeletionImpact.queryCount.integration.test.ts for the exact
  * instrumented count on a real run.
  */
-export async function computeStudentDeletionImpact(studentId: number): Promise<DeletionImpactOutcome> {
-  const student = await one<{ id: number; account_status: string; email: string }>(sql`
+export async function computeStudentDeletionImpact(studentId: number, executor: Executor = db): Promise<DeletionImpactOutcome> {
+  const student = await one<{ id: number; account_status: string; email: string }>(executor, sql`
     SELECT id, account_status, email FROM students WHERE id = ${studentId} LIMIT 1
   `);
   if (student.id === undefined) return { kind: "notFound" };
@@ -181,7 +183,7 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
   const normalizedEmail = sql`lower(trim(${student.email}))`;
 
   // ── 2. Bookings ──────────────────────────────────────────────────────
-  const bookingsAgg = await one<{ historical: string; future: string }>(sql`
+  const bookingsAgg = await one<{ historical: string; future: string }>(executor, sql`
     SELECT
       count(*) FILTER (WHERE occurrence_date IS NULL OR occurrence_date < ${CAIRO_TODAY}) AS historical,
       count(*) FILTER (
@@ -192,7 +194,7 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
   `);
 
   // ── 3. Payments / refunds ───────────────────────────────────────────
-  const paymentsAgg = await one<{ completed: string; pending: string; pending_booking: string; pending_package: string }>(sql`
+  const paymentsAgg = await one<{ completed: string; pending: string; pending_booking: string; pending_package: string }>(executor, sql`
     SELECT
       count(*) FILTER (WHERE status NOT IN ('unpaid','pending_confirmation')) AS completed,
       count(*) FILTER (WHERE status IN ('unpaid','pending_confirmation')) AS pending,
@@ -200,7 +202,7 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
       count(*) FILTER (WHERE status IN ('unpaid','pending_confirmation') AND flow_type = 'package_purchase') AS pending_package
     FROM payment_records WHERE student_id = ${studentId}
   `);
-  const refundsAgg = await one<{ open: string }>(sql`
+  const refundsAgg = await one<{ open: string }>(executor, sql`
     SELECT count(*) AS open
     FROM payment_refunds pr
     JOIN payment_records pmr ON pmr.id = pr.payment_record_id
@@ -208,7 +210,7 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
   `);
 
   // ── 4. Package orders ────────────────────────────────────────────────
-  const packagesAgg = await one<{ active: string; expired: string; unused_credits: string; pending: string }>(sql`
+  const packagesAgg = await one<{ active: string; expired: string; unused_credits: string; pending: string }>(executor, sql`
     SELECT
       count(*) FILTER (WHERE status = 'active') AS active,
       count(*) FILTER (WHERE status = 'expired') AS expired,
@@ -218,7 +220,7 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
   `);
 
   // ── 5. Children ──────────────────────────────────────────────────────
-  const childrenAgg = await one<{ total: string; with_future: string }>(sql`
+  const childrenAgg = await one<{ total: string; with_future: string }>(executor, sql`
     WITH kids AS (SELECT id FROM children WHERE parent_id = ${studentId})
     SELECT
       (SELECT count(*) FROM kids) AS total,
@@ -236,7 +238,7 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
   `);
 
   // ── 6. Ballet (self via parent_student_id + owned children via child_id) ─
-  const balletAppsAgg = await one<{ open: string; terminal: string }>(sql`
+  const balletAppsAgg = await one<{ open: string; terminal: string }>(executor, sql`
     SELECT
       count(*) FILTER (WHERE status IN (${sql.join(BALLET_APPLICATION_OPEN.map((s) => sql`${s}`), sql`,`)})) AS open,
       count(*) FILTER (WHERE status NOT IN (${sql.join(BALLET_APPLICATION_OPEN.map((s) => sql`${s}`), sql`,`)})) AS terminal
@@ -244,39 +246,39 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
     WHERE parent_student_id = ${studentId}
        OR child_id IN (SELECT id FROM children WHERE parent_id = ${studentId})
   `);
-  const balletEnrollAgg = await one<{ active: string }>(sql`
+  const balletEnrollAgg = await one<{ active: string }>(executor, sql`
     SELECT count(*) AS active FROM ballet_level_assignments bla
     JOIN ballet_applications app ON app.id = bla.application_id
     WHERE bla.status IN (${sql.join(BALLET_ENROLLMENT_ACTIVE.map((s) => sql`${s}`), sql`,`)})
       AND (app.parent_student_id = ${studentId} OR bla.child_id IN (SELECT id FROM children WHERE parent_id = ${studentId}))
   `);
-  const balletPaymentsAgg = await one<{ pending: string }>(sql`
+  const balletPaymentsAgg = await one<{ pending: string }>(executor, sql`
     SELECT count(*) AS pending FROM ballet_payments bp
     JOIN ballet_applications app ON app.id = bp.application_id
     WHERE bp.status IN (${sql.join(BALLET_PAYMENT_PENDING.map((s) => sql`${s}`), sql`,`)})
       AND (app.parent_student_id = ${studentId} OR app.child_id IN (SELECT id FROM children WHERE parent_id = ${studentId}))
   `);
-  const balletRefundsAgg = await one<{ open: string }>(sql`
+  const balletRefundsAgg = await one<{ open: string }>(executor, sql`
     SELECT count(*) AS open FROM ballet_refunds br
     JOIN ballet_applications app ON app.id = br.application_id
     WHERE br.status IN (${sql.join(REFUND_OPEN.map((s) => sql`${s}`), sql`,`)})
       AND (app.parent_student_id = ${studentId} OR app.child_id IN (SELECT id FROM children WHERE parent_id = ${studentId}))
   `);
-  const balletCancelAgg = await one<{ pending: string }>(sql`
+  const balletCancelAgg = await one<{ pending: string }>(executor, sql`
     SELECT count(*) AS pending FROM ballet_enrollment_cancellation_requests
     WHERE status IN (${sql.join(BALLET_CANCELLATION_OPEN.map((s) => sql`${s}`), sql`,`)})
       AND (parent_student_id = ${studentId} OR child_id IN (SELECT id FROM children WHERE parent_id = ${studentId}))
   `);
 
   // ── 7. Security artifacts ───────────────────────────────────────────
-  const securityAgg = await one<{ devices: string; otp: string; providers: string }>(sql`
+  const securityAgg = await one<{ devices: string; otp: string; providers: string }>(executor, sql`
     SELECT
       (SELECT count(*) FROM notification_devices WHERE student_id = ${studentId} AND is_active = true) AS devices,
       (SELECT count(*) FROM email_otps WHERE student_id = ${studentId} AND used_at IS NULL AND expires_at > now()) AS otp,
       (SELECT count(*) FROM students WHERE id = ${studentId}
         AND (google_id IS NOT NULL OR apple_id IS NOT NULL OR facebook_id IS NOT NULL)) AS providers_flag
   `);
-  const providerCount = await one<{ n: string }>(sql`
+  const providerCount = await one<{ n: string }>(executor, sql`
     SELECT
       (CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END
        + CASE WHEN apple_id IS NOT NULL THEN 1 ELSE 0 END
@@ -299,22 +301,22 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
   //    modeled defensively, never assumed impossible).
   //  - unattributable: no student matches at all — informational only,
   //    excluded from both counts, never crashes.
-  const legacyBookings = await one<{ email_only: string }>(sql`
+  const legacyBookings = await one<{ email_only: string }>(executor, sql`
     SELECT count(*) AS email_only FROM bookings
     WHERE account_owner_student_id IS NULL AND lower(trim(student_email)) = ${normalizedEmail}
   `);
-  const legacyPackageOrders = await one<{ email_only: string }>(sql`
+  const legacyPackageOrders = await one<{ email_only: string }>(executor, sql`
     SELECT count(*) AS email_only FROM package_orders
     WHERE student_id IS NULL AND lower(trim(student_email)) = ${normalizedEmail}
   `);
-  const legacyAttendance = await one<{ email_only: string }>(sql`
+  const legacyAttendance = await one<{ email_only: string }>(executor, sql`
     SELECT count(*) AS email_only FROM attendance
     WHERE student_id IS NULL
   `);
-  const legacyCreditTx = await one<{ email_only: string }>(sql`
+  const legacyCreditTx = await one<{ email_only: string }>(executor, sql`
     SELECT count(*) AS email_only FROM credit_transactions WHERE student_id IS NULL
   `);
-  const legacyFeedback = await one<{ email_only: string }>(sql`
+  const legacyFeedback = await one<{ email_only: string }>(executor, sql`
     SELECT count(*) AS email_only FROM feedback
     WHERE student_id IS NULL AND lower(trim(student_email_snapshot)) = ${normalizedEmail}
   `);
@@ -323,7 +325,7 @@ export async function computeStudentDeletionImpact(studentId: number): Promise<D
   // always 0 or 1 today — kept as an explicit, defensive check rather than
   // assumed, per the brief's "malformed/unattributable legacy data must
   // not crash" requirement.)
-  const emailMatches = await one<{ n: string }>(sql`
+  const emailMatches = await one<{ n: string }>(executor, sql`
     SELECT count(*) AS n FROM students WHERE lower(trim(email)) = ${normalizedEmail}
   `);
   const isAmbiguousIdentity = Number(emailMatches.n ?? "0") > 1;

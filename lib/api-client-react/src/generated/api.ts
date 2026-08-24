@@ -20,6 +20,7 @@ import type {
   AdjustCreditsBody,
   AdjustCreditsResponse,
   ApplyStudentDeletionOwnershipBackfillRequest,
+  ApplyStudentPermanentDeleteRequest,
   Attendance,
   AttendanceStats,
   BalletScheduleListResponse,
@@ -113,6 +114,7 @@ import type {
   StudentDeletionOwnershipBackfillResponse,
   StudentDeletionPreparationResponse,
   StudentLifecycleResponse,
+  StudentPermanentDeleteResponse,
   UpdateAdminClassCapacitySettings409,
   UpdateAdminClassCapacitySettingsBody,
   UpdateBalletScheduleBody,
@@ -4530,6 +4532,94 @@ export const useApplyStudentDeletionOwnershipBackfill = <
   return useMutation(
     getApplyStudentDeletionOwnershipBackfillMutationOptions(options),
   );
+};
+
+export const getApplyStudentPermanentDeleteUrl = (id: number) => {
+  return `/api/students/${id}/permanent-delete`;
+};
+
+/**
+ * Phase B3B4: the terminal Student account-lifecycle transition. account_status becomes "deleted" (the Student row is never physically removed — this is a tombstone, not a hard delete); Student PII (email, name, phone, password hash, social provider identifiers, avatar, profile fields) is anonymized on the same row; every outstanding JWT is invalidated (token_version bump); active notification devices are deactivated. Requires users.delete. Every precondition (Student exists, deactivated, active preparation current, the full deletion-impact blocker set recomputed fresh including unresolved Level-B / EVIDENCE_CONFLICT, and zero pending PROVEN_OWNER decisions not yet applied via the ownership-backfill executor) is re-validated inside one locked transaction; a client-supplied eligibility snapshot is never trusted. Historical rows (bookings/package_orders/feedback, credit_transactions, attendance, payment_records, provenance history) are completely untouched — an owned row's ownership FK keeps pointing at the now-tombstoned Student id, and Level C/D legacy rows are never assigned. Repeated execution against an already-deleted Student is a stable idempotent success, not an error.
+ */
+export const applyStudentPermanentDelete = async (
+  id: number,
+  applyStudentPermanentDeleteRequest: ApplyStudentPermanentDeleteRequest,
+  options?: RequestInit,
+): Promise<StudentPermanentDeleteResponse> => {
+  return customFetch<StudentPermanentDeleteResponse>(
+    getApplyStudentPermanentDeleteUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(applyStudentPermanentDeleteRequest),
+    },
+  );
+};
+
+export const getApplyStudentPermanentDeleteMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyStudentPermanentDelete>>,
+    TError,
+    { id: number; data: BodyType<ApplyStudentPermanentDeleteRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof applyStudentPermanentDelete>>,
+  TError,
+  { id: number; data: BodyType<ApplyStudentPermanentDeleteRequest> },
+  TContext
+> => {
+  const mutationKey = ["applyStudentPermanentDelete"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof applyStudentPermanentDelete>>,
+    { id: number; data: BodyType<ApplyStudentPermanentDeleteRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return applyStudentPermanentDelete(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApplyStudentPermanentDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof applyStudentPermanentDelete>>
+>;
+export type ApplyStudentPermanentDeleteMutationBody =
+  BodyType<ApplyStudentPermanentDeleteRequest>;
+export type ApplyStudentPermanentDeleteMutationError = ErrorType<ErrorResponse>;
+
+export const useApplyStudentPermanentDelete = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyStudentPermanentDelete>>,
+    TError,
+    { id: number; data: BodyType<ApplyStudentPermanentDeleteRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof applyStudentPermanentDelete>>,
+  TError,
+  { id: number; data: BodyType<ApplyStudentPermanentDeleteRequest> },
+  TContext
+> => {
+  return useMutation(getApplyStudentPermanentDeleteMutationOptions(options));
 };
 
 export const getListBookingsUrl = (params?: ListBookingsParams) => {

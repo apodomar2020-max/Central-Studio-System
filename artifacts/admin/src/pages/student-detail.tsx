@@ -57,6 +57,7 @@ import {
   useGetStudentDeletionAttributionPlan,
   useRecordStudentDeletionManualResolution,
   useApplyStudentDeletionOwnershipBackfill,
+  useApplyStudentPermanentDelete,
   getListStudentsQueryKey,
   getGetStudentDeletionImpactQueryKey,
   getGetStudentDeletionAttributionPlanQueryKey,
@@ -400,18 +401,74 @@ function ImpactSummaryCard({ title, rows }: { title: string; rows: { label: stri
   );
 }
 
+function permanentDeleteErrorMessage(error: unknown): string {
+  const status = attributionPlanErrorStatus(error);
+  const code = attributionPlanErrorCode(error);
+  if (status === 401) return "Your admin session has expired. Please log in again.";
+  if (status === 403) return "You don't have permission to permanently delete this account.";
+  if (status === 404) return "This student no longer exists.";
+  if (code === "STUDENT_ALREADY_DELETED") return "This account has already been permanently deleted.";
+  if (code === "STUDENT_NOT_DEACTIVATED") return "The account must be deactivated before permanent deletion.";
+  if (code === "STUDENT_DELETION_PREPARATION_REQUIRED") {
+    return "Deletion preparation is no longer active. Start deletion preparation again to continue.";
+  }
+  if (code === "LEGACY_IDENTITY_RESOLUTION_STALE") {
+    return "The deletion preparation changed while you were reviewing. The review has been refreshed — please try again.";
+  }
+  if (code === "PERMANENT_DELETE_PENDING_OWNERSHIP_BACKFILL") {
+    return "One or more confirmed-ownership decisions have not been applied yet. Apply them from the Historical Attribution Plan first.";
+  }
+  if (code === "PERMANENT_DELETE_BLOCKED") {
+    return "This account cannot be permanently deleted while blockers remain. The review has been refreshed.";
+  }
+  return "Could not permanently delete this account. Please try again.";
+}
+
 function DeletionImpactDialog({
   open,
   onOpenChange,
   query,
+  studentId,
+  canDelete,
+  onDeleted,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   query: ReturnType<typeof useGetStudentDeletionImpact<StudentDeletionImpactResponse>>;
+  studentId: number;
+  canDelete: boolean;
+  onDeleted: () => void | Promise<void>;
 }) {
   const data = query.data;
   const hasError = query.isError;
   const summary = data?.summary;
+
+  // Phase B3B4: Permanent Delete. Deliberately no new screen — one compact
+  // confirmed action inside this existing, already-read-only-first review
+  // dialog. The confirmation copy is explicit that this is a decision with
+  // real, irreversible PII anonymization, while historical financial
+  // records remain untouched.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [permanentDeleteError, setPermanentDeleteError] = useState<string | null>(null);
+  const [permanentDeleteSuccess, setPermanentDeleteSuccess] = useState(false);
+  const permanentDeleteMutation = useApplyStudentPermanentDelete({
+    mutation: {
+      onSuccess: async () => {
+        setConfirmOpen(false);
+        setPermanentDeleteError(null);
+        setPermanentDeleteSuccess(true);
+        await onDeleted();
+      },
+      onError: async (err) => {
+        setConfirmOpen(false);
+        setPermanentDeleteSuccess(false);
+        setPermanentDeleteError(permanentDeleteErrorMessage(err));
+        // The eligibility snapshot may be stale — always re-read authoritative
+        // state from the server rather than leaving a possibly-outdated view.
+        await onDeleted();
+      },
+    },
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -480,14 +537,13 @@ function DeletionImpactDialog({
               </section>
             )}
 
-            <section aria-labelledby="impact-eligibility-heading" className="rounded-lg border p-4 space-y-1">
+            <section aria-labelledby="impact-eligibility-heading" className="rounded-lg border p-4 space-y-2">
               <h3 id="impact-eligibility-heading" className="text-sm font-semibold text-white">
                 Eligibility
               </h3>
               <p className="text-sm text-muted-foreground">
                 {data.canDelete ? "No current blockers detected." : "Not eligible for permanent deletion."}
               </p>
-              <p className="text-xs text-muted-foreground">Permanent deletion execution is not enabled yet.</p>
               {!data.canDelete && (
                 <p className="text-xs text-muted-foreground">
                   Clearing historical ownership resolution does not by itself make this account deletable — other
@@ -498,7 +554,70 @@ function DeletionImpactDialog({
                 This analysis reflects the current account state and will be revalidated before any future
                 permanent deletion.
               </p>
+
+              {permanentDeleteSuccess && (
+                <p role="status" className="text-sm text-emerald-400">
+                  This account has been permanently deleted.
+                </p>
+              )}
+              {permanentDeleteError && (
+                <p role="alert" className="text-sm text-destructive">{permanentDeleteError}</p>
+              )}
+
+              {canDelete && data.canDelete && data.deletionPreparation.workflowId !== null && !permanentDeleteSuccess ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  aria-label="Permanent Delete"
+                  disabled={permanentDeleteMutation.isPending}
+                  onClick={() => { setPermanentDeleteError(null); setConfirmOpen(true); }}
+                >
+                  {permanentDeleteMutation.isPending ? "Deleting…" : "Permanent Delete"}
+                </Button>
+              ) : (
+                !permanentDeleteSuccess && (
+                  <p className="text-xs text-muted-foreground">
+                    {!canDelete
+                      ? "You don't have permission to permanently delete this account."
+                      : !data.canDelete
+                        ? "Resolve the blockers above before permanent deletion becomes available."
+                        : "Deletion preparation must be active to permanently delete this account."}
+                  </p>
+                )
+              )}
             </section>
+
+            <AlertDialog open={confirmOpen} onOpenChange={(o) => { if (!o) setConfirmOpen(false); }}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Permanently delete this account?</AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2">
+                    <span className="block">
+                      This is irreversible. Login, profile, and social-provider identity data will be anonymized
+                      and the account will no longer be usable.
+                    </span>
+                    <span className="block">
+                      Historical financial records (payments, credits, bookings, packages) remain unchanged for
+                      accounting integrity — this action does not delete or rewrite them.
+                    </span>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={permanentDeleteMutation.isPending}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={permanentDeleteMutation.isPending || data.deletionPreparation.workflowId === null}
+                    className="bg-red-600 text-white hover:bg-red-700"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (data.deletionPreparation.workflowId === null) return;
+                      permanentDeleteMutation.mutate({ id: studentId, data: { workflowId: data.deletionPreparation.workflowId } });
+                    }}
+                  >
+                    {permanentDeleteMutation.isPending ? "Deleting…" : "Permanent Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
 
             {/* Historical ownership resolution (Phase B3B2F). Count-only
                 passthrough of the live B3B2E `manualResolution` aggregate —
@@ -1716,6 +1835,23 @@ export default function StudentDetailPage() {
               matching adminCan's anyOf). Super Admin roles carry every
               permission true in their role.permissions map, so `can()`
               already resolves true for them with no special-case here. */}
+          {d.user.accountStatus === "deleted" && (
+            <Card className="mt-6 border-red-500/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm text-red-400">
+                  <AlertTriangle className="h-4 w-4" /> Account Permanently Deleted
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  This account was permanently deleted. Login, profile, and social-provider identity data have
+                  been anonymized. Historical financial and booking records were retained unchanged. This is a
+                  terminal state — there is no Reactivate action.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {(can(lifecycleModule, "edit") || can("users", "edit")) && d.user.accountStatus !== "deleted" && (
             <Card className="mt-6 border-red-500/40">
               <CardHeader className="pb-3">
@@ -1898,6 +2034,16 @@ export default function StudentDetailPage() {
             open={impactDialogOpen}
             onOpenChange={(open) => setImpactDialogOpen(open)}
             query={impactQuery}
+            studentId={studentId}
+            canDelete={can("users", "delete")}
+            onDeleted={async () => {
+              await Promise.all([
+                impactQuery.refetch(),
+                attributionPlanQuery.isFetched ? attributionPlanQuery.refetch() : Promise.resolve(),
+                prepStatusQuery.refetch(),
+                invalidateAfterLifecycleChange(),
+              ]);
+            }}
           />
 
           <AttributionPlanDialog

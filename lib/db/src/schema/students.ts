@@ -37,16 +37,21 @@ export const studentsTable = pgTable("students", {
   // version 1 — deployment alone (every row starts at 1) never logs anyone
   // out; only an explicit reset/change/logout bump does.
   tokenVersion: integer("token_version").notNull().default(1),
-  // Account lifecycle (Phase B1B). Only "active"/"deactivated" are
-  // reachable via any route this phase — "deleted" exists solely so the
-  // CHECK constraint and downstream fail-closed logic already account for
-  // it ahead of the future tombstone phase. deactivated_at/by_admin_id are
-  // set together on deactivation and cleared together on reactivation;
-  // there is deliberately no persisted deactivation-reason column — a
-  // reason (if supplied) lives only in the audit log payload.
+  // Account lifecycle (Phase B1B, terminal state added Phase B3B4).
+  // "deleted" is reachable via POST /students/:id/permanent-delete only,
+  // and is terminal — no route transitions out of it. deactivated_at/
+  // by_admin_id are set together on deactivation and cleared together on
+  // reactivation; there is deliberately no persisted deactivation-reason
+  // column — a reason (if supplied) lives only in the audit log payload.
   accountStatus: text("account_status").notNull().default("active"),
   deactivatedAt: timestamp("deactivated_at", { withTimezone: true, mode: "string" }),
   deactivatedByAdminId: integer("deactivated_by_admin_id").references(() => systemUsersTable.id, { onDelete: "set null" }),
+  // Permanent tombstone (Phase B3B4). Mirrors deactivatedAt/deactivatedByAdminId
+  // exactly. Set together, once, when account_status transitions to "deleted";
+  // never cleared — deletion is terminal, there is no route that reactivates
+  // a deleted account.
+  deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
+  deletedByAdminId: integer("deleted_by_admin_id").references(() => systemUsersTable.id, { onDelete: "set null" }),
   emailVerified: boolean("email_verified").notNull().default(false),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true, mode: "string" }),
   // Which mechanism last authenticated this account: "local" | "google" | "apple" | "facebook".

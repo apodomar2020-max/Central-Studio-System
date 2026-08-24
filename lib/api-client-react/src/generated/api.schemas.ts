@@ -1372,6 +1372,11 @@ export type StudentDeletionImpactResponseDeletionPreparation = {
   readonly startedAt: string | null;
   /** @nullable */
   readonly status: StudentDeletionImpactResponseDeletionPreparationStatus;
+  /**
+   * Phase B3B4 additive extension. The active workflow id, for submitting POST /permanent-delete's required workflowId. null when no preparation is active.
+   * @nullable
+   */
+  readonly workflowId: number | null;
 };
 
 export type StudentDeletionImpactResponseSummaryBookings = {
@@ -1648,6 +1653,32 @@ export interface StudentDeletionOwnershipBackfillResponse {
   readonly appliedCount: number;
   readonly alreadyAppliedCount: number;
   readonly results: StudentDeletionOwnershipBackfillResult[];
+}
+
+/**
+ * Phase B3B4. Carries no PII and no eligibility claim — only the workflow id, used for staleness matching against the Student's currently active deletion preparation. The full blocker set is re-derived server-side inside the applying transaction.
+ */
+export interface ApplyStudentPermanentDeleteRequest {
+  workflowId: number;
+}
+
+export type StudentPermanentDeleteResponseAccountStatus =
+  (typeof StudentPermanentDeleteResponseAccountStatus)[keyof typeof StudentPermanentDeleteResponseAccountStatus];
+
+export const StudentPermanentDeleteResponseAccountStatus = {
+  deleted: "deleted",
+} as const;
+
+/**
+ * Outcome of the terminal tombstone transition. The Student row still exists; account_status is now "deleted".
+ */
+export interface StudentPermanentDeleteResponse {
+  readonly id: number;
+  readonly accountStatus: StudentPermanentDeleteResponseAccountStatus;
+  /** @nullable */
+  readonly deletedAt: string | null;
+  /** true if this call found the Student already deleted (idempotent, no new mutation performed); false if this call performed the real transition. */
+  readonly alreadyDeleted: boolean;
 }
 
 export interface ListStudentsResponse {

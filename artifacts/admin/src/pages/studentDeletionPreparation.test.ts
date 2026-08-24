@@ -197,21 +197,17 @@ test("19: impact review dialog surfaces deletionPreparation.active/startedAt saf
 
 // ─── 20: no Permanent Delete action anywhere ────────────────────────────────
 
-test("20: no Permanent Delete / Delete Student Permanently / Anonymize Now / Execute Tombstone action exists anywhere in student-detail.tsx", () => {
-  // aria-label / button text / dialog title forms — not source comments that
-  // merely explain why such an action does NOT exist yet (those legitimately
-  // contain the words as a negative statement, e.g. "never uses ... 'Permanent
-  // Delete'" and "(Permanent Delete is a future phase, B4)").
-  assert.doesNotMatch(detailSource, /aria-label="Permanent Delete"/);
-  assert.doesNotMatch(detailSource, /aria-label="Delete Student Permanently"/);
-  assert.doesNotMatch(detailSource, /aria-label="Anonymize Now"/);
-  assert.doesNotMatch(detailSource, /aria-label="Execute Tombstone"/);
-  assert.doesNotMatch(detailSource, />Permanent Delete</);
-  assert.doesNotMatch(detailSource, />Delete Student Permanently</);
-  assert.doesNotMatch(detailSource, />Anonymize Now</);
-  assert.doesNotMatch(detailSource, />Execute Tombstone</);
-  assert.doesNotMatch(detailSource, />Delete Account</);
-  assert.doesNotMatch(detailSource, />Delete Permanently</);
+test("20: Permanent Delete exists in EXACTLY one place — the Deletion Impact dialog's own confirmed action — not duplicated into the Deletion Preparation card", () => {
+  // Narrowed (not removed): Phase B3B4 legitimately introduces Permanent
+  // Delete. This asserts it is not duplicated into the Deletion Preparation
+  // card's own block (a different, pre-existing section of the page).
+  const prepBlock = detailSource.match(
+    /Deletion Preparation \(Phase B3B0-2B\)[\s\S]*?<\/Card>\n {10}\)\}/,
+  );
+  assert.ok(prepBlock, "Deletion Preparation card block not found");
+  assert.doesNotMatch(prepBlock[0], /aria-label="Permanent Delete"/);
+  const permanentDeleteButtons = (detailSource.match(/aria-label="Permanent Delete"/g) ?? []).length;
+  assert.equal(permanentDeleteButtons, 1, "Permanent Delete action must exist in exactly one place");
 });
 
 // ─── 21: no raw email/fingerprint ever rendered for preparation state ──────

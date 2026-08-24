@@ -246,10 +246,16 @@ test("14: no RECORDING copy claims the historical record has been reassigned, li
   );
 });
 
-test("14: no Permanent Delete / tombstone / retention action is introduced by this phase", () => {
-  assert.doesNotMatch(detailSource, /aria-label="Permanent(ly)? Delete/i);
-  assert.doesNotMatch(detailSource, /useDeleteStudent\b|<TombstoneS|retentionPolicy/);
-  assert.match(detailSource, /Permanent deletion execution is not enabled yet\./);
+test("14: the Phase B3B4 Permanent Delete action is separate from manual resolution — this section itself introduces no tombstone/retention logic", () => {
+  // Narrowed (not removed): Phase B3B4 legitimately introduces Permanent
+  // Delete elsewhere on the page (the Deletion Impact dialog). This section
+  // (Manual Resolution) itself must still carry none of that logic.
+  const sectionBlock = detailSource.match(
+    /function ManualResolutionSection\([\s\S]*?\n\}\n/,
+  );
+  assert.ok(sectionBlock, "ManualResolutionSection not found");
+  assert.doesNotMatch(sectionBlock[0], /useApplyStudentPermanentDelete/);
+  assert.doesNotMatch(sectionBlock[0], /tombstone|anonymizeStudent|retentionPolicy/i);
 });
 
 // ─── Deletion Impact integration ────────────────────────────────────────────
