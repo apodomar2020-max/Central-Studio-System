@@ -1051,7 +1051,7 @@ export default function ProfileScreen() {
               <PIcon name="privacy" size={19} stroke={2.1} color="#9CA3AF" />
             </View>
             <View style={styles.menuTextCol}>
-              <Text style={styles.menuLabel}>Privacy & Permissions</Text>
+              <Text style={styles.menuLabel}>Privacy and Policies</Text>
               <Text style={styles.menuSubtitle}>Policy, terms, data usage</Text>
             </View>
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />

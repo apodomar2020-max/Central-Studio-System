@@ -306,21 +306,21 @@ export interface ResolvedBalletSchedule {
   room: { id: number; branchId: number; name: string; code: string } | null;
 }
 
-/**
- * C4: current-month attendance-hours summary for an active, subscribed student.
- * Present on an application only when there IS an active monthly subscription
- * for the current calendar month; null otherwise (same null-when-not-applicable
- * convention as resolvedSchedules/resolvedInstructors). When present,
- * hasActiveSubscription is always true and monthly/remaining are non-null.
- */
+/** Current paid-plan attendance and entitlement summary. */
 export interface BalletAttendanceSummary {
-  billingMonth: string;        // "YYYY-MM"
+  /** Compatibility/reporting month; the Application screen uses the exact expiry date. */
+  billingMonth: string;
   hasActiveSubscription: boolean;
   attendedHours: number;
   absentHours: number;
   consumedHours: number;
   monthlyHours: number | null;
   remainingHours: number | null;
+  subscriptionId: number | null;
+  subscriptionStatus: string;
+  subscriptionStartDate: string | null;
+  subscriptionExpiresAt: string | null;
+  daysRemaining: number | null;
 }
 
 /**

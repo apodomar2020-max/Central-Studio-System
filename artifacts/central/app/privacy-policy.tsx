@@ -1,9 +1,10 @@
-import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -12,12 +13,13 @@ import {
   View,
 } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
+import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 
-import colors from "@/constants/colors";
+const LOGO = require("@/assets/images/privacy-policy-hero-logo.png");
 
 const FALLBACK_PAGE = {
   title: "Privacy & Policy",
-  subtitle: "Last updated: June 2026",
+  subtitle: "Last Updated: June 2026",
   content: `Central Studio is committed to protecting your privacy. This policy explains how we collect, use, and safeguard your personal information when you use our app and services.
 
 1. Information We Collect
@@ -57,91 +59,64 @@ Email: privacy@centralstudio.eg
 Phone: +20 2 XXXX XXXX`,
 };
 
-type ContentPage = {
-  title: string;
-  subtitle?: string | null;
-  content: string;
-  isActive?: boolean;
-};
+type ContentPage = { title: string; subtitle?: string | null; content: string };
 
 export default function PrivacyPolicyScreen() {
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState<ContentPage>(FALLBACK_PAGE);
   const [loading, setLoading] = useState(true);
-  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     let active = true;
     customFetch<ContentPage>("/api/content/pages/privacy-policy")
-      .then((data) => {
-        if (!active) return;
-        setPage(data);
-        setUnavailable(false);
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        const status =
-          err !== null && typeof err === "object" && "status" in err
-            ? (err as { status: number }).status
-            : 0;
-        if (status === 404) {
-          setUnavailable(true);
-          setPage({
-            title: "Privacy & Policy",
-            subtitle: null,
-            content: "Privacy & Policy is currently unavailable. Please contact the studio if you need a copy.",
-          });
-        } else {
-          setPage(FALLBACK_PAGE);
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
+      .then((data) => active && setPage(data))
+      .catch(() => active && setPage(FALLBACK_PAGE))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
   }, []);
+
+  const topInset = Platform.OS === "web" ? 18 : insets.top + 10;
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{page.title}</Text>
-        <View style={styles.headerButtonPlaceholder} />
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 60 : 40 }]}
+      <LinearGradient
+        colors={["#111315", "#151515", "#101112"]}
+        locations={[0, 0.54, 1]}
+        style={[styles.fixedHero, { paddingTop: topInset }]}
       >
-        <View style={[styles.heroBadge, { backgroundColor: colors.studio.primary + "15", borderColor: colors.studio.primary + "30" }]}>
-          {loading ? (
-            <ActivityIndicator size="small" color={colors.studio.primary} />
-          ) : (
-            <Ionicons
-              name={unavailable ? "alert-circle-outline" : "shield-checkmark"}
-              size={20}
-              color={colors.studio.primary}
-            />
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.heroBadgeTitle, { color: colors.studio.primary }]}>{page.title}</Text>
-            {page.subtitle ? <Text style={styles.heroBadgeSub}>{page.subtitle}</Text> : null}
-          </View>
+        <Svg style={styles.heroGlow} pointerEvents="none">
+          <Defs>
+            <RadialGradient id="privacyHeroGlow" cx="50%" cy="-10%" rx="120%" ry="90%">
+              <Stop offset="0%" stopColor="#00B6D7" stopOpacity={0.16} />
+              <Stop offset="60%" stopColor="#00B6D7" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#privacyHeroGlow)" />
+        </Svg>
+        <View style={styles.navRow}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backButton}>
+            <Svg width={34} height={34} viewBox="0 0 34 34" fill="none">
+              <Path d="M19.0839 12.1125L14.4968 16.6607L19.0839 21.2089" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+              <Path d="M32.0806 16.6607C32.0806 23.8075 32.0806 27.381 29.8413 29.6012C27.6022 31.8214 23.9981 31.8214 16.7903 31.8214C9.58238 31.8214 5.97842 31.8214 3.73922 29.6012C1.5 27.381 1.5 23.8075 1.5 16.6607C1.5 9.51388 1.5 5.94047 3.73922 3.72024C5.97842 1.5 9.58238 1.5 16.7903 1.5C23.9981 1.5 27.6022 1.5 29.8413 3.72024C31.3303 5.1965 31.8292 7.271 31.9964 10.5964" stroke="white" strokeWidth={3} strokeLinecap="round" />
+            </Svg>
+          </TouchableOpacity>
+          <Text style={styles.title}>{page.title}</Text>
+          <View style={styles.navSpacer} />
         </View>
 
+        <View style={styles.logoWrap}>
+          <Image source={LOGO} resizeMode="contain" style={styles.logo} />
+        </View>
+      </LinearGradient>
+
+      <ScrollView style={styles.contentScroll} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {loading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="small" color={colors.studio.primary} />
-            <Text style={styles.loadingText}>Loading privacy content...</Text>
-          </View>
+          <View style={styles.loadingBox}><ActivityIndicator size="small" color="#03BFE9" /></View>
         ) : (
-          <Text style={styles.content}>{page.content}</Text>
+          <>
+            {page.subtitle ? <Text style={styles.updated}>{page.subtitle}</Text> : null}
+            <Text style={styles.content}>{page.content}</Text>
+          </>
         )}
       </ScrollView>
     </View>
@@ -149,28 +124,18 @@ export default function PrivacyPolicyScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0B0D" },
-  header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
-  },
-  headerButton: {
-    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
-  },
-  headerButtonText: {
-    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
-  },
-  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  headerButtonPlaceholder: { minWidth: 54 },
-  scroll: { paddingHorizontal: 20, paddingTop: 16, gap: 24 },
-  heroBadge: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    padding: 16, borderRadius: 16, borderWidth: 1,
-  },
-  heroBadgeTitle: { fontSize: 16, fontFamily: "Archivo_800ExtraBold" },
-  heroBadgeSub: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 2 },
-  loadingBox: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 24 },
-  loadingText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
-  content: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", lineHeight: 22 },
+  container: { flex: 1, backgroundColor: "#0E1010" },
+  fixedHero: { height: 304, overflow: "hidden", backgroundColor: "#131414" },
+  heroGlow: { position: "absolute", top: 0, left: 0, right: 0, height: 304 },
+  navRow: { height: 44, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  backButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
+  navSpacer: { width: 34 },
+  title: { flex: 1, textAlign: "center", color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 22, lineHeight: 25, textTransform: "uppercase" },
+  logoWrap: { position: "absolute", top: 118, alignSelf: "center", width: 284, height: 154, alignItems: "center", justifyContent: "center" },
+  logo: { width: 284, height: 154 },
+  contentScroll: { flex: 1, backgroundColor: "#0E1010" },
+  contentContainer: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: Platform.OS === "web" ? 44 : 32 },
+  loadingBox: { minHeight: 120, alignItems: "center", justifyContent: "center" },
+  updated: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 10, lineHeight: 13, marginBottom: 12 },
+  content: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 10, lineHeight: 12, letterSpacing: 0.03 },
 });

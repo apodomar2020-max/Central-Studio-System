@@ -1,22 +1,15 @@
-/**
- * app/ballet/application-status.tsx
- *
- * Shows the authenticated parent's most recent ballet application status.
- * Navigated to from:
- *  - assessment.tsx after a successful POST /api/ballet/applications (201)
- *  - assessment.tsx when the server returns 409 DUPLICATE_APPLICATION
- *  - assessment.tsx on mount if an active application already exists
- *
- * Allows cancellation (status-gated) and surfaces what each status means
- * in plain language so parents always know where they stand.
- */
-
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
+import { Image as ExpoImage } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -24,226 +17,214 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator,
-  Modal,
-  KeyboardAvoidingView,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
 
-import {
-  fetchMyApplications,
-  fetchBalletApplicationDetail,
-  cancelBalletApplication,
-  requestBalletEnrollmentCancellation,
-  withdrawBalletEnrollmentCancellationRequest,
-  fetchBalletLevels,
-  fetchBalletGroups,
-  fetchBalletClasses,
-  groupBalletSchedulesByGroupId,
-  CANCELLABLE_APPLICATION_STATUSES,
-  EDITABLE_APPLICATION_STATUSES,
-  ACTIVE_APPLICATION_STATUSES,
-  type BalletApplication,
-  type BalletApplicationDetail,
-  type BalletClassSchedule,
-  isOfflineError,
-} from "@/services/balletAssessmentService";
-import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import OfflineState from "@/components/OfflineState";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import {
+  ACTIVE_APPLICATION_STATUSES,
+  CANCELLABLE_APPLICATION_STATUSES,
+  cancelBalletApplication,
+  fetchBalletApplicationDetail,
+  fetchBalletClasses,
+  fetchBalletGroups,
+  fetchBalletLevels,
+  fetchMyApplications,
+  groupBalletSchedulesByGroupId,
+  isOfflineError,
+  requestBalletEnrollmentCancellation,
+  withdrawBalletEnrollmentCancellationRequest,
+  type BalletApplication,
+  type BalletApplicationDetail,
+  type BalletClassSchedule,
+  type ResolvedBalletSchedule,
+} from "@/services/balletAssessmentService";
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 
-const BALLET_COLOR = "#00B6D6";
-
+const CYAN = "#03B6D7";
+const TEAL = "#002F33";
+const GREEN = "#20C65A";
+const AMBER = "#FFBE00";
+const HERO_ART = require("@/assets/images/ballerina-card.png");
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** "18:00" → "6:00 PM", "09:30" → "9:30 AM" */
-function formatTime(timeStr: string): string {
-  const [hoursStr = "0", minsStr = "00"] = timeStr.split(":");
-  const hours = parseInt(hoursStr, 10);
-  const ampm = hours >= 12 ? "PM" : "AM";
-  const h = hours % 12 || 12;
-  return `${h}:${minsStr} ${ampm}`;
-}
-
-// ─── Status meta ──────────────────────────────────────────────────────────────
+type TabKey = "status" | "application" | "attendance";
 
 interface StatusMeta {
   label: string;
   description: string;
-  icon: React.ComponentProps<typeof Ionicons>["name"];
   color: string;
 }
 
-function getStatusMeta(status: string, levelName?: string | null, groupName?: string | null, groupSchedules?: BalletClassSchedule[]): StatusMeta {
-  const groupPart = groupName ? ` in group "${groupName}"` : "";
-  const schedulePart = groupSchedules && groupSchedules.length > 0
-    ? ` (meets ${groupSchedules.map((s) => `${DAY_SHORT[s.dayOfWeek] ?? "?"} ${formatTime(s.startTime)}`).join(", ")})`
-    : "";
+function BackIcon() {
+  return (
+    <Svg width={34} height={34} viewBox="0 0 34 34" fill="none">
+      <Path d="M19.0839 12.1125L14.4968 16.6607L19.0839 21.2089" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M32.0806 16.6607C32.0806 23.8075 32.0806 27.381 29.8413 29.6012C27.6022 31.8214 23.9981 31.8214 16.7903 31.8214C9.58238 31.8214 5.97842 31.8214 3.73922 29.6012C1.5 27.381 1.5 23.8075 1.5 16.6607C1.5 9.51388 1.5 5.94047 3.73922 3.72024C5.97842 1.5 9.58238 1.5 16.7903 1.5C23.9981 1.5 27.6022 1.5 29.8413 3.72024C31.3303 5.1965 31.8292 7.271 31.9964 10.5964" stroke="white" strokeWidth={3} strokeLinecap="round" />
+    </Svg>
+  );
+}
 
+function formatTime(value: string): string {
+  const [hourText = "0", minuteText = "00"] = value.split(":");
+  const hour = Number(hourText);
+  if (!Number.isFinite(hour)) return value;
+  return `${hour % 12 || 12}:${minuteText.slice(0, 2)} ${hour >= 12 ? "PM" : "AM"}`;
+}
+
+function parseDateValue(value: string | null | undefined): Date | null {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (isoDate) {
+    const parsed = new Date(Date.UTC(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3]), 12));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const slashDate = /^(\d{1,2})[\/]([0-9]{1,2})[\/](\d{4})$/.exec(raw);
+  if (slashDate) {
+    const parsed = new Date(Date.UTC(Number(slashDate[3]), Number(slashDate[2]) - 1, Number(slashDate[1]), 12));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const numeric = /^\d{10,13}$/.test(raw) ? Number(raw) : Number.NaN;
+  const parsed = new Date(Number.isFinite(numeric) ? (raw.length === 10 ? numeric * 1000 : numeric) : raw.replace(" ", "T"));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDateValue(value: string | null | undefined): string {
+  const date = parseDateValue(value);
+  if (!date) return "Not Set";
+  return `${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function calculateAge(birthday: string | null): number | null {
+  const date = parseDateValue(birthday);
+  if (!date) return null;
+  const today = new Date();
+  let age = today.getFullYear() - date.getUTCFullYear();
+  if (today.getMonth() < date.getUTCMonth() || (today.getMonth() === date.getUTCMonth() && today.getDate() < date.getUTCDate())) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+function getStatusMeta(status: string, levelName?: string | null, groupName?: string | null, schedules?: Array<BalletClassSchedule | ResolvedBalletSchedule>): StatusMeta {
+  const groupPart = groupName ? ` in group “${groupName}”` : "";
+  const schedulePart = schedules?.length
+    ? ` (meets ${schedules.map((schedule) => `${DAY_SHORT[schedule.dayOfWeek] ?? ""} ${formatTime(schedule.startTime)}`).join(", ")})`
+    : "";
   switch (status) {
     case "pending":
-      return {
-        label: "Under Review",
-        description:
-          "Your application and assessment appointment are on file. Our team is reviewing your application and will confirm next steps soon.",
-        icon: "time-outline",
-        color: "#F59E0B",
-      };
+      return { label: "Under Review", color: AMBER, description: "Your application and assessment appointment are on file. Our team is reviewing your application and will confirm next step soon" };
     case "needsFollowUp":
-      return {
-        label: "Follow-up Required",
-        description:
-          "Our team needs to gather a bit more information. Please expect a call or email from us shortly.",
-        icon: "chatbubble-ellipses-outline",
-        color: "#F59E0B",
-      };
+      return { label: "Follow-up Required", color: AMBER, description: "Our team needs a little more information and will contact you shortly." };
     case "accepted":
-      return {
-        label: "Accepted!",
-        description:
-          "Your child has been accepted into our ballet programme. Our team will contact you with enrolment details.",
-        icon: "checkmark-circle",
-        color: "#22C55E",
-      };
+      return { label: "Accepted", color: GREEN, description: "Your child has been accepted into our Ballet program. Our team will contact you with the next enrollment step." };
     case "assignedToLevel":
-      return {
-        label: "Level Assigned",
-        description: levelName
-          ? `Your child has been assessed and assigned to ${levelName}${groupPart}${schedulePart}. Enrolment can now be completed.`
-          : "Your child has been assessed and assigned to a ballet level. Enrolment can now be completed.",
-        icon: "ribbon-outline",
-        color: BALLET_COLOR,
-      };
+      return { label: "Level Assigned", color: CYAN, description: levelName ? `Your child has been assigned to ${levelName}${groupPart}.` : "Your child has been assigned to a Ballet level." };
     case "active":
-      return {
-        label: "Active Student",
-        description: levelName
-          ? `Your child is currently an active ballet student in ${levelName}${groupPart}${schedulePart} at Central Studio.`
-          : "Your child is currently an active ballet student at Central Studio.",
-        icon: "star-outline",
-        color: BALLET_COLOR,
-      };
+      return { label: "Active Student", color: GREEN, description: levelName ? `Your child is currently an active ballet student in ${levelName}${groupPart}${schedulePart} at Central Studio` : "Your child is currently an active Ballet student at Central Studio." };
     case "rejected":
-      return {
-        label: "Not Accepted",
-        description:
-          "Unfortunately, we were not able to accept your child at this time. You are welcome to reapply in a future cycle.",
-        icon: "close-circle-outline",
-        color: "#EF4444",
-      };
+      return { label: "Not Accepted", color: "#F04444", description: "This application was not accepted. You may contact the studio for more information." };
     case "cancelled":
-      return {
-        label: "Cancelled",
-        description:
-          "This application has been cancelled. You may submit a new application at any time.",
-        icon: "ban-outline",
-        color: "#6B7280",
-      };
+      return { label: "Cancelled", color: "#A7A7A7", description: "This application has been cancelled." };
     case "withdrawn":
-      return {
-        label: "Enrollment Ended",
-        description:
-          "This Ballet enrollment has ended. You may submit a new application when you are ready.",
-        icon: "exit-outline",
-        color: "#6B7280",
-      };
+      return { label: "Enrollment Ended", color: "#A7A7A7", description: "This Ballet enrollment has ended." };
     default:
-      return {
-        label: status,
-        description: "Please contact the studio for more information.",
-        icon: "information-circle-outline",
-        color: "#9CA3AF",
-      };
+      return { label: status, color: "#A7A7A7", description: "Please contact the studio for more information." };
   }
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+function StatCard({ label, value, empty }: { label: string; value: string; empty?: boolean }) {
+  return (
+    <GlassView
+      glassEffectStyle="clear"
+      tintColor="rgba(185,244,255,0.10)"
+      colorScheme="dark"
+      style={styles.statGlassShell}
+    >
+      <BlurView
+        intensity={10}
+        tint="dark"
+        experimentalBlurMethod="dimezisBlurView"
+        blurReductionFactor={3}
+        style={styles.statCard}
+      >
+        <LinearGradient
+          colors={["rgba(255,255,255,0.11)", "rgba(212,250,255,0.018)", "rgba(123,222,237,0.045)"]}
+          locations={[0, 0.48, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <Text style={styles.statLabel}>{label}</Text>
+        <View style={styles.statRule} />
+        <Text style={[styles.statValue, empty && styles.statValueEmpty]} numberOfLines={2}>{value}</Text>
+      </BlurView>
+    </GlassView>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
+}
 
 export default function ApplicationStatusScreen() {
   const insets = useSafeAreaInsets();
   const alert = useCentralAlert();
-  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
-  const requestedApplicationIdParam = Array.isArray(id) ? id[0] : id;
+  const params = useLocalSearchParams<{ id?: string | string[]; action?: string | string[] }>();
+  const requestedApplicationIdParam = Array.isArray(params.id) ? params.id[0] : params.id;
+  const actionParam = Array.isArray(params.action) ? params.action[0] : params.action;
   const requestedApplicationId = Number(requestedApplicationIdParam);
+  const autoActionHandled = useRef(false);
 
   const [loadState, setLoadState] = useState<"loading" | "success" | "empty" | "offline" | "error">("loading");
   const [application, setApplication] = useState<BalletApplication | null>(null);
   const [applicationDetail, setApplicationDetail] = useState<BalletApplicationDetail | null>(null);
   const [hasExplicitApplicationContext, setHasExplicitApplicationContext] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [requestingCancellation, setRequestingCancellation] = useState(false);
-  const [reasonModal, setReasonModal] = useState<null | {
-    kind: "cancelApplication" | "requestEnrollmentCancellation";
-    requestedTiming?: "immediate" | "endOfPeriod";
-    requestRefund?: boolean;
-  }>(null);
-  const [reasonText, setReasonText] = useState("");
-  const trimmedReason = reasonText.trim();
-  const reasonError = trimmedReason.length === 0
-    ? "Reason is required."
-    : trimmedReason.length < 5
-      ? "Reason must be at least 5 characters."
-      : trimmedReason.length > 500
-        ? "Reason must be at most 500 characters."
-        : null;
-
-  // Level id → name lookup (mirrors the levelNameById pattern in
-  // app/ballet/classes.tsx) so "assignedToLevel"/"active" cards can show the
-  // real level name instead of a generic phrase. Best-effort — if this fetch
-  // fails, getStatusMeta simply falls back to its generic copy.
+  const [activeTab, setActiveTab] = useState<TabKey>("status");
   const [levelNameById, setLevelNameById] = useState<Map<number, string>>(new Map());
-
-  useFocusEffect(useCallback(() => {
-    const ctrl = new AbortController();
-    fetchBalletLevels(ctrl.signal)
-      .then((levels) => {
-        if (ctrl.signal.aborted) return;
-        setLevelNameById(new Map(levels.map((l) => [l.id, l.name])));
-      })
-      .catch(() => {
-        // Best-effort — keep the generic status copy on failure.
-      });
-    return () => ctrl.abort();
-  }, []));
-
-  // Group id → name lookup, and group id → aggregated (deduped) weekly
-  // schedules, built client-side from the two existing public catalogue
-  // endpoints (no new endpoint needed — GET /api/ballet/groups has no
-  // schedule data, but GET /api/ballet/classes does, keyed by groupId).
-  // Best-effort — if either fetch fails, the group/schedule line is simply
-  // omitted from the status card.
   const [groupNameById, setGroupNameById] = useState<Map<number, string>>(new Map());
   const [schedulesByGroupId, setSchedulesByGroupId] = useState<Map<number, BalletClassSchedule[]>>(new Map());
+  const [cancelling, setCancelling] = useState(false);
+  const [requestingCancellation, setRequestingCancellation] = useState(false);
+  const [reasonModal, setReasonModal] = useState<null | { kind: "cancelApplication" | "requestEnrollmentCancellation"; requestedTiming?: "immediate" | "endOfPeriod"; requestRefund?: boolean }>(null);
+  const [reasonText, setReasonText] = useState("");
+  const trimmedReason = reasonText.trim();
+  const reasonError = trimmedReason.length === 0 ? "Reason is required." : trimmedReason.length < 5 ? "Reason must be at least 5 characters." : trimmedReason.length > 500 ? "Reason must be at most 500 characters." : null;
 
   useFocusEffect(useCallback(() => {
-    const ctrl = new AbortController();
-    Promise.all([fetchBalletGroups(ctrl.signal), fetchBalletClasses(ctrl.signal)])
-      .then(([groups, classes]) => {
-        if (ctrl.signal.aborted) return;
-        setGroupNameById(new Map(groups.map((g) => [g.id, g.name])));
-
+    const controller = new AbortController();
+    Promise.all([fetchBalletLevels(controller.signal), fetchBalletGroups(controller.signal), fetchBalletClasses(controller.signal)])
+      .then(([levels, groups, classes]) => {
+        if (controller.signal.aborted) return;
+        setLevelNameById(new Map(levels.map((level) => [level.id, level.name])));
+        setGroupNameById(new Map(groups.map((group) => [group.id, group.name])));
         setSchedulesByGroupId(groupBalletSchedulesByGroupId(classes));
       })
-      .catch(() => {
-        // Best-effort — keep the generic status copy on failure.
-      });
-    return () => ctrl.abort();
+      .catch(() => undefined);
+    return () => controller.abort();
   }, []));
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoadState("loading");
     try {
-      const apps = await fetchMyApplications(signal);
+      const applications = await fetchMyApplications(signal);
       if (signal?.aborted) return;
-
-      if (apps.length === 0) {
+      if (applications.length === 0) {
+        setApplication(null);
+        setApplicationDetail(null);
         setLoadState("empty");
         return;
       }
-
       const requested = Number.isInteger(requestedApplicationId) && requestedApplicationId > 0
-        ? apps.find((candidate) => candidate.id === requestedApplicationId) ?? null
+        ? applications.find((candidate) => candidate.id === requestedApplicationId) ?? null
         : null;
       if (requestedApplicationIdParam != null && requested == null) {
         setApplication(null);
@@ -252,14 +233,12 @@ export default function ApplicationStatusScreen() {
         setLoadState("error");
         return;
       }
-      const onlyApplication = apps.length === 1 ? apps.at(0) ?? null : null;
-      const selected = requested ?? onlyApplication ?? apps.at(0) ?? null;
+      const onlyApplication = applications.length === 1 ? applications[0] ?? null : null;
+      const selected = requested ?? onlyApplication ?? applications[0] ?? null;
       if (!selected) {
         setLoadState("empty");
         return;
       }
-      // Multiple applications may still show the newest read-only history,
-      // but destructive actions require an exact route-selected application.
       setHasExplicitApplicationContext(requested != null || onlyApplication != null);
       setApplication(selected);
       try {
@@ -268,37 +247,18 @@ export default function ApplicationStatusScreen() {
       } catch {
         if (!signal?.aborted) setApplicationDetail(null);
       }
-      setLoadState("success");
-    } catch (e) {
-      if ((e as any)?.name === "AbortError") return;
-      setLoadState(isOfflineError(e) ? "offline" : "error");
+      if (!signal?.aborted) setLoadState("success");
+    } catch (error) {
+      if ((error as { name?: string })?.name === "AbortError") return;
+      setLoadState(isOfflineError(error) ? "offline" : "error");
     }
   }, [requestedApplicationId, requestedApplicationIdParam]);
 
   useEffect(() => {
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
-
-  // ── Cancel handler ─────────────────────────────────────────────────────────
-
-  function promptCancel() {
-    if (!application || !hasExplicitApplicationContext) return;
-    alert.show({
-      tone: "destructive",
-      title: `Cancel ${application.childName}'s Application?`,
-      message: `This cancels only ${application.childName}'s Ballet application. You will be able to submit a new application afterwards.`,
-      actions: [
-        { label: "Keep Application", tone: "neutral" },
-        {
-          label: "Yes, Cancel",
-          tone: "danger",
-          onPress: () => openReasonModal({ kind: "cancelApplication" }),
-        },
-      ],
-    });
-  }
 
   function openReasonModal(next: NonNullable<typeof reasonModal>) {
     setReasonText("");
@@ -311,53 +271,23 @@ export default function ApplicationStatusScreen() {
     setReasonText("");
   }
 
-  async function submitReasonModal() {
-    if (!reasonModal || reasonError) return;
-    if (reasonModal.kind === "cancelApplication") {
-      await doCancel(trimmedReason);
-      return;
-    }
-    if (!reasonModal.requestedTiming) return;
-    await submitCancellationRequest(reasonModal.requestedTiming, reasonModal.requestRefund === true, trimmedReason);
-  }
-
-  async function doCancel(reason: string) {
-    if (!application || !hasExplicitApplicationContext || cancelling) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setCancelling(true);
-    try {
-      const fresh = await fetchBalletApplicationDetail(application.id);
-      if (!CANCELLABLE_APPLICATION_STATUSES.has(fresh.application.status)) {
-        await load();
-        alert.show({
-          tone: "warning",
-          title: "Application Changed",
-          message: `${application.childName}'s application is no longer eligible for cancellation. Nothing was cancelled.`,
-        });
-        return;
-      }
-      await cancelBalletApplication(fresh.application.id, { reason });
-      // Refresh to show updated status
-      await load();
-      closeReasonModal();
-    } catch (err) {
-      if (isOfflineError(err)) {
-        alert.show({ tone: "error", title: "No Connection", message: "Please check your internet connection and try again." });
-      } else {
-        const msg =
-          (err as any)?.data?.error ??
-          (err as any)?.message ??
-          "Unable to cancel. Please try again.";
-        alert.show({ tone: "error", title: "Error", message: msg });
-      }
-    } finally {
-      setCancelling(false);
-    }
+  function promptCancel() {
+    if (!application || !hasExplicitApplicationContext) return;
+    alert.show({
+      tone: "destructive",
+      title: `Cancel ${application.childName}'s Application?`,
+      message: `This will cancel only ${application.childName}'s Ballet application. You can submit a new application afterwards.`,
+      actions: [
+        { label: "Keep Application", tone: "neutral" },
+        { label: "Yes, Cancel", tone: "danger", onPress: () => openReasonModal({ kind: "cancelApplication" }) },
+      ],
+    });
   }
 
   function requestCancellationFlow() {
     if (!application || !hasExplicitApplicationContext || !applicationDetail?.activeAssignment || requestingCancellation) return;
     alert.show({
+      tone: "destructive",
       title: `Cancel ${application.childName}'s Ballet Program?`,
       message: `When should ${application.childName}'s enrollment cancellation take effect?`,
       actions: [
@@ -369,64 +299,66 @@ export default function ApplicationStatusScreen() {
   }
 
   function confirmCancellationRefund(requestedTiming: "immediate" | "endOfPeriod") {
-    const eligiblePayment = applicationDetail?.currentPayment;
-    const canRequestRefund =
-      eligiblePayment?.status === "paid" &&
-      eligiblePayment.paymentMethod === "inPerson" &&
-      Boolean(eligiblePayment.paidAt);
-
+    const payment = applicationDetail?.currentPayment;
+    const canRequestRefund = payment?.status === "paid" && payment.paymentMethod === "inPerson" && Boolean(payment.paidAt);
     if (!canRequestRefund) {
       openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false });
       return;
     }
-
-    // Neither option here is a "safe/cancel" choice — both proceed with the
-    // cancellation, just with a different refund request — so unlike a
-    // standard confirm/cancel pair this alert requires an explicit tap
-    // (matches how it behaved on iOS, which has no backdrop-dismiss).
     alert.show({
       title: "Request Cash Refund?",
-      message: "This will ask the studio to review a cash refund. You cannot choose or approve the amount from the app.",
+      message: "You may ask the studio to review a cash refund. The studio confirms the eligible amount.",
       actions: [
         { label: "No Refund", tone: "primary", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false }) },
-        { label: "Request Cash Refund", tone: "primary", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: true }) },
+        { label: "Request Refund", tone: "primary", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: true }) },
       ],
     });
   }
 
+  async function doCancel(reason: string) {
+    if (!application || !hasExplicitApplicationContext || cancelling) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setCancelling(true);
+    try {
+      const fresh = await fetchBalletApplicationDetail(application.id);
+      if (!CANCELLABLE_APPLICATION_STATUSES.has(fresh.application.status)) {
+        await load();
+        alert.show({ tone: "warning", title: "Application Changed", message: `${application.childName}'s application is no longer eligible for cancellation. Nothing was cancelled.` });
+        return;
+      }
+      await cancelBalletApplication(fresh.application.id, { reason });
+      setReasonModal(null);
+      setReasonText("");
+      await load();
+      alert.show({ tone: "success", title: "Application Cancelled", message: `${application.childName}'s Ballet application has been cancelled.` });
+    } catch (error) {
+      const message = (error as { data?: { error?: string }; message?: string })?.data?.error ?? (error as { message?: string })?.message ?? "Unable to cancel. Please try again.";
+      alert.show({ tone: "error", title: isOfflineError(error) ? "No Connection" : "Error", message });
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   async function submitCancellationRequest(requestedTiming: "immediate" | "endOfPeriod", requestRefund: boolean, reason: string) {
-    if (!application || !hasExplicitApplicationContext) return;
+    if (!application || !hasExplicitApplicationContext || requestingCancellation) return;
     const expectedAssignmentId = applicationDetail?.activeAssignment?.id;
     if (!expectedAssignmentId) return;
     setRequestingCancellation(true);
     try {
       const fresh = await fetchBalletApplicationDetail(application.id);
-      const assignmentId = fresh.activeAssignment?.id;
-      if (
-        fresh.application.status !== "active"
-        || fresh.activeAssignment?.status !== "active"
-        || assignmentId !== expectedAssignmentId
-        || fresh.openCancellationRequest != null
-      ) {
+      if (fresh.application.status !== "active" || fresh.activeAssignment?.status !== "active" || fresh.activeAssignment.id !== expectedAssignmentId || fresh.openCancellationRequest) {
         await load();
-        alert.show({
-          tone: "warning",
-          title: "Enrollment Changed",
-          message: `${application.childName}'s enrollment is no longer eligible for this request. Nothing was cancelled.`,
-        });
+        alert.show({ tone: "warning", title: "Enrollment Changed", message: `${application.childName}'s enrollment is no longer eligible for this request. Nothing was cancelled.` });
         return;
       }
-      await requestBalletEnrollmentCancellation(assignmentId, {
-        requestedTiming,
-        requestRefund,
-        reason,
-      });
-      alert.show({ tone: "success", title: "Request Submitted", message: "Your Ballet cancellation request has been sent to the studio." });
+      await requestBalletEnrollmentCancellation(expectedAssignmentId, { requestedTiming, requestRefund, reason });
+      setReasonModal(null);
+      setReasonText("");
       await load();
-      closeReasonModal();
-    } catch (err) {
-      const msg = (err as any)?.data?.error ?? (err as any)?.message ?? "Unable to submit cancellation request.";
-      alert.show({ tone: "error", title: isOfflineError(err) ? "No Connection" : "Error", message: msg });
+      alert.show({ tone: "success", title: "Request Submitted", message: "Your Ballet cancellation request has been sent to the studio." });
+    } catch (error) {
+      const message = (error as { data?: { error?: string }; message?: string })?.data?.error ?? (error as { message?: string })?.message ?? "Unable to submit cancellation request.";
+      alert.show({ tone: "error", title: isOfflineError(error) ? "No Connection" : "Error", message });
     } finally {
       setRequestingCancellation(false);
     }
@@ -438,322 +370,178 @@ export default function ApplicationStatusScreen() {
     setRequestingCancellation(true);
     try {
       await withdrawBalletEnrollmentCancellationRequest(requestId);
-      alert.show({ tone: "success", title: "Request Withdrawn", message: "Your cancellation request has been withdrawn." });
       await load();
-    } catch (err) {
-      const msg = (err as any)?.data?.error ?? (err as any)?.message ?? "Unable to withdraw cancellation request.";
-      alert.show({ tone: "error", title: isOfflineError(err) ? "No Connection" : "Error", message: msg });
+      alert.show({ tone: "success", title: "Request Withdrawn", message: "Your cancellation request has been withdrawn." });
+    } catch (error) {
+      const message = (error as { data?: { error?: string }; message?: string })?.data?.error ?? (error as { message?: string })?.message ?? "Unable to withdraw cancellation request.";
+      alert.show({ tone: "error", title: isOfflineError(error) ? "No Connection" : "Error", message });
     } finally {
       setRequestingCancellation(false);
     }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  async function submitReasonModal() {
+    if (!reasonModal || reasonError) return;
+    if (reasonModal.kind === "cancelApplication") {
+      await doCancel(trimmedReason);
+    } else if (reasonModal.requestedTiming) {
+      await submitCancellationRequest(reasonModal.requestedTiming, reasonModal.requestRefund === true, trimmedReason);
+    }
+  }
 
-  const paddingTop = Platform.OS === "web" ? 67 : insets.top;
+  useEffect(() => {
+    if (actionParam !== "cancel" || loadState !== "success" || !application || !hasExplicitApplicationContext || autoActionHandled.current) return;
+    if (application.status === "active" && !applicationDetail) return;
+    autoActionHandled.current = true;
+    const timer = setTimeout(() => {
+      if (application.status === "active") requestCancellationFlow();
+      else if (CANCELLABLE_APPLICATION_STATUSES.has(application.status)) promptCancel();
+      else alert.show({ tone: "warning", title: "Cancellation unavailable", message: "This application can no longer be cancelled." });
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [actionParam, application, applicationDetail, hasExplicitApplicationContext, loadState]);
+
+  const paddingTop = Platform.OS === "web" ? 18 : insets.top;
+
+  if (loadState === "loading") return <View style={styles.stateScreen}><ActivityIndicator size="large" color={CYAN} /><Text style={styles.stateText}>Loading application…</Text></View>;
+  if (loadState === "offline") return <View style={styles.stateScreen}><OfflineState onRetry={() => void load()} /></View>;
+  if (loadState === "error") return <View style={styles.stateScreen}><Ionicons name="alert-circle-outline" size={42} color="#EF4444" /><Text style={styles.stateText}>Failed to load this application.</Text><AppButton title="Retry" onPress={() => void load()} /></View>;
+  if (loadState === "empty") return <View style={styles.stateScreen}><Ionicons name="document-outline" size={48} color="#64717A" /><Text style={styles.stateText}>No Ballet applications found.</Text><AppButton title="Start Application" onPress={() => router.replace("/ballet/assessment" as never)} /></View>;
+  if (!application) return null;
+
+  const levelName = application.assignedLevelId == null ? null : levelNameById.get(application.assignedLevelId) ?? null;
+  const groupName = application.assignedGroupId == null ? null : groupNameById.get(application.assignedGroupId) ?? null;
+  const fallbackSchedules = application.assignedGroupId == null ? [] : schedulesByGroupId.get(application.assignedGroupId) ?? [];
+  const schedules: Array<BalletClassSchedule | ResolvedBalletSchedule> = application.resolvedSchedules?.length ? application.resolvedSchedules : fallbackSchedules;
+  const meta = getStatusMeta(application.status, levelName, groupName, schedules);
+  const age = application.childAge ?? calculateAge(application.childBirthday);
+  const ageValue = age == null ? "NOT SET" : `${age} YEAR${age === 1 ? "" : "S"}`;
+  const levelValue = levelName?.toUpperCase() ?? "NOT SET";
+  const groupValue = groupName?.toUpperCase() ?? "NOT SET";
+  const locations = [...new Set(schedules.map((schedule) => scheduleLocationLabel({ branch: schedule.branch, room: schedule.room })).filter((value): value is string => Boolean(value)))];
+  const attendance = application.attendanceSummary;
+  const openCancellationRequest = applicationDetail?.openCancellationRequest;
+  const canCancelApplication = hasExplicitApplicationContext && CANCELLABLE_APPLICATION_STATUSES.has(application.status);
+  const canCancelProgram = hasExplicitApplicationContext && application.status === "active" && applicationDetail?.activeAssignment?.status === "active" && !openCancellationRequest;
+  const isTerminal = !ACTIVE_APPLICATION_STATUSES.has(application.status);
+  const attendanceAvailable = application.status === "active";
 
   return (
-    <View style={[styles.container, { paddingTop }]}>
-      {/* Header */}
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Ballet Application</Text>
-        <TouchableOpacity
-          onPress={() => router.replace("/(tabs)/" as any)}
-          style={styles.iconBtn}
-        >
-          <Ionicons name="home-outline" size={20} color="#9CA3AF" />
-        </TouchableOpacity>
-      </View>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.applicationChrome}>
+          <View pointerEvents="none" style={styles.pageBackgroundCrop}>
+            <ExpoImage
+              source={HERO_ART}
+              style={styles.pageBackgroundImage}
+              contentFit="cover"
+              contentPosition="top center"
+            />
+          </View>
+          <View style={[styles.hero, { paddingTop }]}>
+            <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { top: paddingTop + 20 }]}><BackIcon /></TouchableOpacity>
+            <Text style={[styles.headerTitle, { top: paddingTop + 24 }]}>Ballet Application</Text>
+          </View>
 
-      {/* Loading */}
-      {loadState === "loading" && (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={BALLET_COLOR} />
-          <Text style={styles.loadingText}>Loading your application…</Text>
-        </View>
-      )}
-
-      {/* Offline */}
-      {loadState === "offline" && (
-        <OfflineState onRetry={() => load()} />
-      )}
-
-      {/* Error */}
-      {loadState === "error" && (
-        <View style={styles.centered}>
-          <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
-          <Text style={styles.errorText}>Failed to load your application.</Text>
-          <AppButton title="Retry" variant="ghost" onPress={() => load()} style={{ marginTop: 16 }} />
-        </View>
-      )}
-
-      {/* No applications */}
-      {loadState === "empty" && (
-        <View style={styles.centered}>
-          <Ionicons name="document-outline" size={48} color="#4B5563" />
-          <Text style={[styles.loadingText, { color: "#9CA3AF" }]}>
-            No applications found.
-          </Text>
-          <AppButton
-            title="Apply for Ballet Assessment"
-            onPress={() => router.replace("/ballet/assessment" as any)}
-            style={{ marginTop: 20, backgroundColor: BALLET_COLOR }}
-          />
-        </View>
-      )}
-
-      {/* Application detail */}
-      {loadState === "success" && application && (() => {
-        const levelName = application.assignedLevelId != null ? levelNameById.get(application.assignedLevelId) : null;
-        const groupName = application.assignedGroupId != null ? groupNameById.get(application.assignedGroupId) : null;
-        const groupSchedules = application.assignedGroupId != null ? schedulesByGroupId.get(application.assignedGroupId) : undefined;
-        const groupLocations = [...new Set((groupSchedules ?? [])
-          .map((schedule) => scheduleLocationLabel({ branch: schedule.branch, room: schedule.room }))
-          .filter((value): value is string => value != null))];
-        const meta = getStatusMeta(application.status, levelName, groupName, groupSchedules);
-        const isCancellable = hasExplicitApplicationContext && CANCELLABLE_APPLICATION_STATUSES.has(application.status);
-        const isEditable    = EDITABLE_APPLICATION_STATUSES.has(application.status);
-        const isTerminal    = !ACTIVE_APPLICATION_STATUSES.has(application.status);
-        const activeAssignment = applicationDetail?.activeAssignment;
-        const openCancellationRequest = applicationDetail?.openCancellationRequest;
-        const canRequestEnrollmentCancellation = hasExplicitApplicationContext && application.status === "active" && activeAssignment?.status === "active" && !openCancellationRequest;
-        const canWithdrawCancellationRequest = hasExplicitApplicationContext && openCancellationRequest?.status === "pendingReview";
-
-        return (
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Status card */}
-            <View style={[styles.statusCard, { borderColor: meta.color + "40" }]}>
-              <View style={[styles.statusIcon, { backgroundColor: meta.color + "20" }]}>
-                <Ionicons name={meta.icon} size={40} color={meta.color} />
-              </View>
-              <View style={[styles.statusBadge, { backgroundColor: meta.color + "20" }]}>
-                <Text style={[styles.statusBadgeText, { color: meta.color }]}>
-                  {meta.label}
-                </Text>
-              </View>
-              <Text style={styles.statusDesc}>{meta.description}</Text>
+          <View style={styles.applicationPanel}>
+            <View style={styles.tabs}>
+              {(["status", "application", "attendance"] as TabKey[]).map((tab) => {
+                const disabled = tab === "attendance" && !attendanceAvailable;
+                return (
+                  <TouchableOpacity key={tab} disabled={disabled} onPress={() => setActiveTab(tab)} style={[styles.tab, activeTab === tab && styles.tabActive, disabled && styles.tabDisabled]}>
+                    <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab === "status" ? "Status" : tab === "application" ? "Application" : "Attendance"}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
-            {/* Application info */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Application Details</Text>
+            <View style={styles.contentArea}>
+              <Text style={styles.childName}>{application.childName}</Text>
+              <Text style={[styles.statusName, { color: meta.color }]}>{meta.label}</Text>
 
-              <InfoRow label="Child" value={application.childName} />
-              {application.assessmentDate && (
-                <InfoRow label="Assessment Date" value={application.assessmentDate} />
-              )}
-              <InfoRow
-                label="Submitted"
-                value={new Date(application.createdAt).toLocaleDateString("en-GB", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              />
-              <InfoRow label="Application ID" value={`#${application.id}`} />
-              {groupLocations.length > 0 && <InfoRow label="Location" value={groupLocations.join(", ")} />}
-            </View>
-
-            {/* D3: full monthly attendance section for an active Ballet
-                student. attendanceSummary is populated whenever there's an
-                active level assignment, whether or not there's a paid
-                package for the current billing month — the distinct
-                "no active monthly subscription" case is rendered explicitly
-                below rather than hiding the section or showing zero hours. */}
-            {application.status === "active" && application.attendanceSummary && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Monthly Attendance</Text>
-                <InfoRow label="Billing Month" value={application.attendanceSummary.billingMonth} />
-                {application.attendanceSummary.hasActiveSubscription ? (
-                  <>
-                    <InfoRow label="Monthly Hours" value={`${application.attendanceSummary.monthlyHours}h`} />
-                    <InfoRow label="Attended" value={`${application.attendanceSummary.attendedHours}h`} />
-                    <InfoRow label="Absent" value={`${application.attendanceSummary.absentHours}h`} />
-                    <InfoRow label="Consumed" value={`${application.attendanceSummary.consumedHours}h`} />
-                    <InfoRow label="Remaining" value={`${application.attendanceSummary.remainingHours}h`} />
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.adminNote}>
-                      No active monthly subscription for {application.attendanceSummary.billingMonth}.
-                    </Text>
-                    <InfoRow label="Attended" value={`${application.attendanceSummary.attendedHours}h`} />
-                    <InfoRow label="Absent" value={`${application.attendanceSummary.absentHours}h`} />
-                  </>
-                )}
-              </View>
-            )}
-
-            {/* Admin notes (shown if present) */}
-            {application.adminNotes ? (
-              <View style={[styles.section, { borderColor: BALLET_COLOR + "30" }]}>
-                <Text style={[styles.sectionTitle, { color: BALLET_COLOR }]}>
-                  Note from Studio
-                </Text>
-                <Text style={styles.adminNote}>{application.adminNotes}</Text>
+            {!hasExplicitApplicationContext ? (
+              <View style={styles.contextWarning}>
+                <Text style={styles.contextWarningTitle}>Choose the child first</Text>
+                <Text style={styles.contextWarningText}>Use Manage Enrollment on the Ballet Program page to select the exact child before cancelling.</Text>
               </View>
             ) : null}
 
-            {/* Next steps */}
-            {application.status === "pending" && (
-              <View style={styles.nextSteps}>
-                <Text style={styles.nextStepsTitle}>What happens next?</Text>
-                {[
-                  "Our team reviews your application",
-                  "We contact you to confirm your assessment appointment",
-                  "Your child attends the 30-minute assessment session",
-                  "You receive the result within 48 hours",
-                ].map((s, i) => (
-                  <View key={i} style={styles.nextStep}>
-                    <View style={[styles.stepNum, { backgroundColor: BALLET_COLOR + "20" }]}>
-                      <Text style={[styles.stepNumText, { color: BALLET_COLOR }]}>{i + 1}</Text>
-                    </View>
-                    <Text style={styles.stepText}>{s}</Text>
-                  </View>
+            {activeTab === "status" ? (
+              <View style={styles.tabContent}>
+                <Text style={styles.description}>{meta.description}</Text>
+                {application.status === "active" && schedules.map((schedule, index) => (
+                  <InfoRow key={`${schedule.dayOfWeek}-${schedule.startTime}-${index}`} label={`Class Date ${index + 1}`} value={`${DAY_SHORT[schedule.dayOfWeek] ?? ""} ${formatTime(schedule.startTime)}`} />
                 ))}
+                {application.status === "active" && locations.length > 0 ? <InfoRow label="Location" value={locations.join(", ")} /> : null}
+                {application.adminNotes ? <View style={styles.noteBox}><Text style={styles.noteTitle}>Note from Studio</Text><Text style={styles.noteText}>{application.adminNotes}</Text></View> : null}
               </View>
-            )}
+            ) : null}
 
-            {/* Actions */}
-            <View style={styles.actions}>
-              {!hasExplicitApplicationContext && (
-                <View style={styles.contextWarning}>
-                  <Text style={styles.contextWarningTitle}>Choose the child first</Text>
-                  <Text style={styles.contextWarningText}>
-                    This account has multiple Ballet applications. Use Manage Enrollment on the Ballet Program page to select the exact child before cancelling.
-                  </Text>
-                  <AppButton
-                    title="Open Ballet Program"
-                    variant="ghost"
-                    onPress={() => router.replace("/ballet" as any)}
-                    fullWidth
-                  />
+            {activeTab === "application" ? (
+              application.status === "pending" || application.status === "needsFollowUp" ? (
+                <View style={styles.tabContent}>
+                  <Text style={styles.nextTitle}>Under What Happens Next?</Text>
+                  {["Our Team Review Your Application", "We Contact You To Confirm Your Assessment Appointment", "Your Child Attends The 30-Min Assessment Session", "You Receive The Result Within 48hours"].map((step, index) => <Text key={step} style={styles.nextStep}>{index + 1}. {step}</Text>)}
                 </View>
-              )}
-              {isEditable && (
-                <AppButton
-                  title="Edit Application"
-                  variant="ghost"
-                  onPress={() =>
-                    router.push({
-                      pathname: "/ballet/edit-application" as any,
-                      params: { id: String(application.id) },
-                    })
-                  }
-                  fullWidth
-                  style={{ borderColor: BALLET_COLOR + "60", borderWidth: 1 }}
-                />
-              )}
-
-              {isCancellable && (
-                <AppButton
-                  title={cancelling ? "Cancelling…" : "Cancel Application"}
-                  variant="ghost"
-                  onPress={promptCancel}
-                  disabled={cancelling}
-                  fullWidth
-                  style={{ borderColor: "#EF444440", borderWidth: 1 }}
-                />
-              )}
-
-              {canRequestEnrollmentCancellation && (
-                <AppButton
-                  title={requestingCancellation ? "Submitting…" : "Request Ballet Cancellation"}
-                  variant="ghost"
-                  onPress={requestCancellationFlow}
-                  disabled={requestingCancellation}
-                  fullWidth
-                  style={{ borderColor: "#EF444440", borderWidth: 1 }}
-                />
-              )}
-
-              {openCancellationRequest && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>
-                    {openCancellationRequest.status === "approved" ? "Cancellation Scheduled" : "Cancellation Request"}
-                  </Text>
-                  <InfoRow label="Status" value={openCancellationRequest.status} />
-                  <InfoRow label="Timing" value={openCancellationRequest.approvedTiming ?? openCancellationRequest.requestedTiming} />
-                  {openCancellationRequest.approvedEffectiveDate ? <InfoRow label="Effective Date" value={openCancellationRequest.approvedEffectiveDate} /> : null}
-                  {canWithdrawCancellationRequest && (
-                    <AppButton
-                      title={requestingCancellation ? "Withdrawing…" : "Withdraw Cancellation Request"}
-                      variant="ghost"
-                      onPress={withdrawCancellationRequest}
-                      disabled={requestingCancellation}
-                      fullWidth
-                      style={{ borderColor: "#EF444440", borderWidth: 1, marginTop: 12 }}
-                    />
-                  )}
+              ) : (
+                <View style={styles.tabContent}>
+                  <InfoRow label="Assessment Date" value={formatDateValue(application.assessmentDate)} />
+                  <InfoRow label="Submitted" value={formatDateValue(application.createdAt)} />
+                  <InfoRow label="Application ID" value={`#${application.id}`} />
                 </View>
-              )}
+              )
+            ) : null}
 
-              {isTerminal && (
-                <AppButton
-                  title="Submit New Application"
-                  onPress={() => router.replace("/ballet/assessment" as any)}
-                  fullWidth
-                  style={{ backgroundColor: BALLET_COLOR }}
-                />
-              )}
+            {activeTab === "attendance" ? (
+              <View style={styles.tabContent}>
+                {attendance ? (
+                  <>
+                    <InfoRow label="Expiration Date" value={formatDateValue(attendance.subscriptionExpiresAt)} />
+                    {attendance.hasActiveSubscription ? <InfoRow label="Monthly Hours" value={`${attendance.monthlyHours ?? 0}h`} /> : null}
+                    <InfoRow label="Attended" value={`${attendance.attendedHours}h`} />
+                    <InfoRow label="Absent" value={`${attendance.absentHours}h`} />
+                    {attendance.hasActiveSubscription ? <InfoRow label="Consumed" value={`${attendance.consumedHours}h`} /> : null}
+                    {attendance.hasActiveSubscription ? <InfoRow label="Remaining" value={`${attendance.remainingHours ?? 0}h`} /> : null}
+                    {!attendance.hasActiveSubscription ? <Text style={styles.description}>No active paid plan is available.</Text> : null}
+                  </>
+                ) : <Text style={styles.description}>Attendance details are not available for the current plan.</Text>}
+              </View>
+            ) : null}
 
-              <AppButton
-                title="Back to Home"
-                variant="ghost"
-                onPress={() => router.replace("/(tabs)/" as any)}
-                fullWidth
-              />
+              {openCancellationRequest ? (
+                <View style={styles.requestBox}>
+                  <Text style={styles.requestTitle}>Cancellation Request: {openCancellationRequest.status}</Text>
+                  <Text style={styles.requestCopy}>Timing: {openCancellationRequest.approvedTiming ?? openCancellationRequest.requestedTiming}</Text>
+                  {openCancellationRequest.status === "pendingReview" ? <TouchableOpacity disabled={requestingCancellation} onPress={() => void withdrawCancellationRequest()}><Text style={styles.withdrawText}>{requestingCancellation ? "Withdrawing…" : "Withdraw request"}</Text></TouchableOpacity> : null}
+                </View>
+              ) : null}
             </View>
-          </ScrollView>
-        );
-      })()}
+          </View>
+
+          <View style={styles.statsRow}>
+            <StatCard label="Age" value={ageValue} empty={age == null} />
+            <StatCard label="Level" value={levelValue} empty={!levelName} />
+            <StatCard label="Group" value={groupValue} empty={!groupName} />
+          </View>
+        </View>
+
+        {canCancelApplication || canCancelProgram ? (
+          <TouchableOpacity disabled={cancelling || requestingCancellation} onPress={canCancelProgram ? requestCancellationFlow : promptCancel} style={styles.cancelButton} activeOpacity={0.84}>
+            <Text style={styles.cancelText}>{cancelling || requestingCancellation ? "Please Wait…" : canCancelProgram ? "Cancel Program" : "Cancel Application"}</Text>
+          </TouchableOpacity>
+        ) : null}
+        {isTerminal ? <TouchableOpacity onPress={() => router.replace("/ballet/assessment" as never)} style={[styles.cancelButton, styles.newApplicationButton]}><Text style={styles.cancelText}>Submit New Application</Text></TouchableOpacity> : null}
+      </ScrollView>
 
       <Modal visible={reasonModal != null} transparent animationType="fade" onRequestClose={closeReasonModal}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
           <View style={styles.reasonSheet}>
-            <Text style={styles.reasonTitle}>
-              {reasonModal?.kind === "cancelApplication"
-                ? `Cancel ${application?.childName ?? "Child"}'s Application`
-                : `Cancel ${application?.childName ?? "Child"}'s Ballet Program`}
-            </Text>
-            <Text style={styles.reasonSubtitle}>
-              Please tell the studio why you are making this request. This reason is shared with the Ballet admin team.
-            </Text>
-            <Text style={styles.reasonLabel}>
-              Reason <Text style={styles.required}>*</Text>
-            </Text>
-            <TextInput
-              value={reasonText}
-              onChangeText={(value) => setReasonText(value.slice(0, 500))}
-              placeholder="Write your reason…"
-              placeholderTextColor="#6B7280"
-              multiline
-              textAlignVertical="top"
-              style={[styles.reasonInput, reasonError && trimmedReason.length > 0 ? styles.reasonInputError : null]}
-              editable={!cancelling && !requestingCancellation}
-              maxLength={500}
-            />
-            <View style={styles.reasonMetaRow}>
-              <Text style={[styles.reasonError, !reasonError || trimmedReason.length === 0 ? styles.reasonHint : null]}>
-                {trimmedReason.length === 0 ? "Minimum 5 characters." : reasonError ?? "Looks good."}
-              </Text>
-              <Text style={styles.reasonCount}>{reasonText.length}/500</Text>
-            </View>
-            <View style={styles.reasonActions}>
-              <AppButton title="Close" variant="ghost" onPress={closeReasonModal} disabled={cancelling || requestingCancellation} style={{ flex: 1 }} />
-              <AppButton
-                title={cancelling || requestingCancellation ? "Submitting…" : "Submit"}
-                onPress={submitReasonModal}
-                disabled={Boolean(reasonError) || cancelling || requestingCancellation}
-                style={{ flex: 1, backgroundColor: BALLET_COLOR }}
-              />
-            </View>
+            <Text style={styles.reasonTitle}>{reasonModal?.kind === "cancelApplication" ? `Cancel ${application.childName}'s Application` : `Cancel ${application.childName}'s Ballet Program`}</Text>
+            <Text style={styles.reasonSubtitle}>Please tell the studio why you are making this request.</Text>
+            <Text style={styles.reasonLabel}>Reason <Text style={{ color: "#EF4444" }}>*</Text></Text>
+            <TextInput value={reasonText} onChangeText={(value) => setReasonText(value.slice(0, 500))} placeholder="Write your reason…" placeholderTextColor="#64717A" multiline textAlignVertical="top" style={styles.reasonInput} editable={!cancelling && !requestingCancellation} maxLength={500} />
+            <View style={styles.reasonMeta}><Text style={[styles.reasonHint, reasonError && trimmedReason.length > 0 && styles.reasonError]}>{trimmedReason.length === 0 ? "Minimum 5 characters." : reasonError ?? "Looks good."}</Text><Text style={styles.reasonHint}>{reasonText.length}/500</Text></View>
+            <View style={styles.reasonActions}><AppButton title="Close" variant="ghost" onPress={closeReasonModal} disabled={cancelling || requestingCancellation} style={{ flex: 1 }} /><AppButton title={cancelling || requestingCancellation ? "Submitting…" : "Submit"} onPress={() => void submitReasonModal()} disabled={Boolean(reasonError) || cancelling || requestingCancellation} style={{ flex: 1, backgroundColor: CYAN }} /></View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -761,241 +549,62 @@ export default function ApplicationStatusScreen() {
   );
 }
 
-// ─── Helper component ─────────────────────────────────────────────────────────
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
-    </View>
-  );
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.studio.background },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  topBarTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#1E1E26",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scroll: { padding: 20, gap: 16, paddingBottom: 60 },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    padding: 24,
-  },
-  loadingText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: BALLET_COLOR,
-    textAlign: "center",
-  },
-  errorText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: "#EF4444",
-    textAlign: "center",
-  },
-
-  // Status card
-  statusCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 24,
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: colors.studio.card,
-  },
-  statusIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statusBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusBadgeText: {
-    fontSize: 14,
-    fontFamily: "Inter_700Bold",
-  },
-  statusDesc: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: "#9CA3AF",
-    textAlign: "center",
-    lineHeight: 19,
-  },
-
-  // Section
-  section: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1E2E38",
-    padding: 16,
-    gap: 10,
-    backgroundColor: colors.studio.card,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontFamily: "Inter_700Bold",
-    color: "#9CA3AF",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1E2E38",
-    gap: 12,
-  },
-  infoLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#6B7280", flex: 1 },
-  infoValue: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#FFFFFF", flex: 2, textAlign: "right" },
-  adminNote: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: "#E2E8F0",
-    lineHeight: 20,
-  },
-
-  // Next steps
-  nextSteps: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1E2E38",
-    padding: 16,
-    gap: 12,
-    backgroundColor: "#0A1014",
-  },
-  nextStepsTitle: {
-    fontSize: 13,
-    fontFamily: "Inter_700Bold",
-    color: "#FFFFFF",
-    marginBottom: 2,
-  },
-  nextStep: { flexDirection: "row", alignItems: "center", gap: 10 },
-  stepNum: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepNumText: { fontSize: 12, fontFamily: "Inter_700Bold" },
-  stepText: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: "#9CA3AF",
-    flex: 1,
-    lineHeight: 18,
-  },
-
-  // Actions
-  actions: { gap: 10, marginTop: 4 },
-  contextWarning: {
-    gap: 9,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(0,182,214,0.28)",
-    backgroundColor: "rgba(0,182,214,0.07)",
-    padding: 14,
-  },
-  contextWarningTitle: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 14 },
-  contextWarningText: { color: "#9CA3AF", fontFamily: "Inter_400Regular", fontSize: 12.5, lineHeight: 18 },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.72)",
-    padding: 16,
-  },
-  reasonSheet: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "#1E2E38",
-    backgroundColor: colors.studio.card,
-    padding: 20,
-    gap: 12,
-  },
-  reasonTitle: {
-    fontSize: 20,
-    fontFamily: "Inter_700Bold",
-    color: "#FFFFFF",
-  },
-  reasonSubtitle: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: "#9CA3AF",
-    lineHeight: 19,
-  },
-  reasonLabel: {
-    fontSize: 12,
-    fontFamily: "Inter_700Bold",
-    color: "#E5E7EB",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  required: { color: "#EF4444" },
-  reasonInput: {
-    minHeight: 132,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#243645",
-    backgroundColor: "#080C11",
-    padding: 14,
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
-  },
-  reasonInputError: {
-    borderColor: "#EF4444",
-  },
-  reasonMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  reasonError: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: "#EF4444",
-  },
-  reasonHint: {
-    color: "#9CA3AF",
-  },
-  reasonCount: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: "#6B7280",
-  },
-  reasonActions: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 4,
-  },
+  screen: { flex: 1, backgroundColor: "#000000" },
+  stateScreen: { flex: 1, backgroundColor: "#000000", alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
+  stateText: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 14, textAlign: "center" },
+  scrollContent: { paddingBottom: Platform.OS === "web" ? 54 : 30, backgroundColor: "#000000" },
+  applicationChrome: { position: "relative", overflow: "hidden", backgroundColor: "#000000" },
+  pageBackgroundCrop: { position: "absolute", top: 0, right: 0, bottom: 36, left: 0, overflow: "hidden" },
+  pageBackgroundImage: { position: "absolute", top: 0, right: 0, bottom: -36, left: 0 },
+  hero: { height: 317, position: "relative", zIndex: 1, backgroundColor: "transparent" },
+  backButton: { position: "absolute", left: 15, width: 34, height: 34, zIndex: 4 },
+  headerTitle: { position: "absolute", left: 58, right: 18, color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 25, lineHeight: 30, textAlign: "center", textTransform: "uppercase", zIndex: 3 },
+  statsRow: { position: "absolute", left: 33, right: 33, top: 240, flexDirection: "row", gap: 10, zIndex: 3 },
+  statGlassShell: { flex: 1, height: 140, borderRadius: 17, overflow: "hidden", borderWidth: 1, borderColor: "rgba(231,253,255,0.24)", backgroundColor: "rgba(164,225,233,0.012)" },
+  statCard: { flex: 1, width: "100%", alignItems: "center", paddingHorizontal: 7, paddingTop: 31, backgroundColor: "transparent" },
+  statLabel: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 22, textTransform: "uppercase" },
+  statRule: { width: "72%", height: 1, backgroundColor: "rgba(255,255,255,0.75)", marginTop: 16, marginBottom: 16 },
+  statValue: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 15, lineHeight: 18, textAlign: "center", textTransform: "uppercase" },
+  statValueEmpty: { color: AMBER },
+  applicationPanel: { marginTop: -12, minHeight: 455, zIndex: 1, borderTopLeftRadius: 50, borderTopRightRadius: 50, borderBottomLeftRadius: 50, borderBottomRightRadius: 50, backgroundColor: TEAL, paddingTop: 91, paddingHorizontal: 34, paddingBottom: 30 },
+  tabs: { height: 47, marginTop: 16, borderRadius: 23.5, backgroundColor: "#003E45", flexDirection: "row", alignItems: "center", padding: 7, gap: 3 },
+  tab: { flex: 1, height: 33, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  tabActive: { backgroundColor: "#048BA4" },
+  tabDisabled: { opacity: 0.27 },
+  tabText: { color: "#087788", fontFamily: "Archivo_400Regular", fontSize: 13 },
+  tabTextActive: { color: "#FFFFFF" },
+  contentArea: { paddingTop: 40, minHeight: 280 },
+  childName: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 39, lineHeight: 43 },
+  statusName: { fontFamily: "Archivo_700Bold", fontSize: 15, lineHeight: 20, marginTop: 1 },
+  tabContent: { marginTop: 18, gap: 3 },
+  description: { color: "#DCE5E6", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 18, marginBottom: 5 },
+  infoRow: { minHeight: 36, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 14, paddingVertical: 7 },
+  infoLabel: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 14.5, lineHeight: 20 },
+  infoValue: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 14.5, lineHeight: 20, textAlign: "right" },
+  nextTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 14.5, lineHeight: 19, marginBottom: 6 },
+  nextStep: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 11.5, lineHeight: 19, marginBottom: 8 },
+  noteBox: { borderRadius: 14, backgroundColor: "rgba(0,182,214,0.12)", padding: 12, marginTop: 10 },
+  noteTitle: { color: CYAN, fontFamily: "Archivo_700Bold", fontSize: 12, marginBottom: 4 },
+  noteText: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 12, lineHeight: 17 },
+  requestBox: { borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,190,0,0.35)", backgroundColor: "rgba(255,190,0,0.07)", padding: 12, marginTop: 15 },
+  contextWarning: { borderRadius: 14, borderWidth: 1, borderColor: "rgba(3,182,215,0.35)", backgroundColor: "rgba(3,182,215,0.09)", padding: 12, marginTop: 14 },
+  contextWarningTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 12.5 },
+  contextWarningText: { color: "#C7D4D6", fontFamily: "Archivo_400Regular", fontSize: 11.5, lineHeight: 17, marginTop: 4 },
+  requestTitle: { color: AMBER, fontFamily: "Archivo_700Bold", fontSize: 12.5, textTransform: "capitalize" },
+  requestCopy: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 12, marginTop: 5 },
+  withdrawText: { color: "#FF7A7A", fontFamily: "Archivo_700Bold", fontSize: 12, marginTop: 9 },
+  cancelButton: { height: 51, borderRadius: 10, marginHorizontal: 20, marginTop: 14, backgroundColor: "#B40006", alignItems: "center", justifyContent: "center" },
+  cancelText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 15 },
+  newApplicationButton: { backgroundColor: CYAN },
+  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.74)", padding: 16 },
+  reasonSheet: { borderRadius: 24, borderWidth: 1, borderColor: "#16434A", backgroundColor: "#071416", padding: 20, gap: 12 },
+  reasonTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 20 },
+  reasonSubtitle: { color: "#AEBFC1", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 19 },
+  reasonLabel: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 12, textTransform: "uppercase" },
+  reasonInput: { minHeight: 125, borderRadius: 16, borderWidth: 1, borderColor: "#23444A", backgroundColor: "#02090A", padding: 14, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20 },
+  reasonMeta: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  reasonHint: { color: "#7E9497", fontFamily: "Archivo_400Regular", fontSize: 11.5 },
+  reasonError: { color: "#EF4444" },
+  reasonActions: { flexDirection: "row", gap: 10, marginTop: 4 },
 });

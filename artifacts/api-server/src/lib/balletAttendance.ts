@@ -29,13 +29,14 @@
  * never fall back to another month's package.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import {
   db,
   attendanceTable,
   balletPackagesTable,
 } from "@workspace/db";
-import { getCurrentSubscriptionForApplication } from "./balletSubscriptions";
+import { findPaidCycleActiveOn, todayDateOnly } from "./balletRefundEligibilityMath";
+import { getCurrentSubscriptionForApplication, getPaymentCyclesForApplication } from "./balletSubscriptions";
 
 export interface BalletMonthlyAttendanceSummary {
   billingMonth: string;
@@ -80,6 +81,46 @@ function subscriptionOverlapsMonth(startDate: string | null, expiresAt: string |
   if (!startDate || !expiresAt) return false;
   const range = monthRange(month);
   return startDate <= range.end && expiresAt >= range.start;
+}
+
+interface BalletAttendanceHours {
+  attendedHours: number;
+  absentHours: number;
+  consumedHours: number;
+}
+
+async function computeBalletAttendanceHoursForRange(
+  levelAssignmentId: number,
+  startDate: string,
+  endDate: string,
+): Promise<BalletAttendanceHours> {
+  const rows = await db
+    .select({
+      status: attendanceTable.status,
+      durationMinutes: attendanceTable.durationMinutes,
+    })
+    .from(attendanceTable)
+    .where(and(
+      eq(attendanceTable.balletLevelAssignmentId, levelAssignmentId),
+      gte(attendanceTable.classDate, startDate),
+      lte(attendanceTable.classDate, endDate),
+    ));
+
+  let attendedMins = 0;
+  let absentMins = 0;
+  for (const row of rows) {
+    const mins = row.durationMinutes ?? 0;
+    if (row.status === "checked_in" || row.status === "late") attendedMins += mins;
+    else if (row.status === "absent") absentMins += mins;
+  }
+
+  const attendedHours = attendedMins / 60;
+  const absentHours = absentMins / 60;
+  return {
+    attendedHours,
+    absentHours,
+    consumedHours: attendedHours + absentHours,
+  };
 }
 
 /**
@@ -179,6 +220,88 @@ export async function computeBalletMonthlyAttendanceSummary(
     consumedHours,
     monthlyHours,
     remainingHours: Math.max(monthlyHours - consumedHours, 0),
+    subscriptionId: paid.id,
+    subscriptionStatus: paid.subscriptionStatus,
+    subscriptionStartDate: paid.subscriptionStartDate,
+    subscriptionExpiresAt: paid.subscriptionExpiresAt,
+    daysRemaining: paid.daysRemaining,
+  };
+}
+
+/**
+ * Parent-facing summary for the latest paid Ballet plan. Unlike the admin's
+ * historical calendar-month report above, this resets usage at the plan's
+ * subscriptionStartDate and includes attendance only through its
+ * subscriptionExpiresAt. A paid renewal therefore starts with the renewed
+ * package's hours and cannot inherit attendance from the expired plan.
+ */
+export async function computeBalletCurrentSubscriptionAttendanceSummary(
+  levelAssignmentId: number,
+  applicationId: number,
+): Promise<BalletMonthlyAttendanceSummary> {
+  const paid = findPaidCycleActiveOn(
+    await getPaymentCyclesForApplication(applicationId),
+    todayDateOnly(),
+  );
+  const reportingMonth = paid?.subscriptionExpiresAt?.slice(0, 7) ?? currentBillingMonth();
+
+  if (
+    !paid
+    || !paid.subscriptionStartDate
+    || !paid.subscriptionExpiresAt
+    || paid.packageId == null
+  ) {
+    return {
+      billingMonth: reportingMonth,
+      hasActiveSubscription: false,
+      attendedHours: 0,
+      absentHours: 0,
+      consumedHours: 0,
+      monthlyHours: null,
+      remainingHours: null,
+      subscriptionId: paid?.id ?? null,
+      subscriptionStatus: paid?.subscriptionStatus ?? "pending",
+      subscriptionStartDate: paid?.subscriptionStartDate ?? null,
+      subscriptionExpiresAt: paid?.subscriptionExpiresAt ?? null,
+      daysRemaining: paid?.daysRemaining ?? null,
+    };
+  }
+
+  const [hours, packageRow] = await Promise.all([
+    computeBalletAttendanceHoursForRange(
+      levelAssignmentId,
+      paid.subscriptionStartDate,
+      paid.subscriptionExpiresAt,
+    ),
+    db
+      .select({ monthlyHours: balletPackagesTable.monthlyHours })
+      .from(balletPackagesTable)
+      .where(eq(balletPackagesTable.id, paid.packageId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+  ]);
+
+  if (!packageRow) {
+    return {
+      billingMonth: reportingMonth,
+      hasActiveSubscription: false,
+      ...hours,
+      monthlyHours: null,
+      remainingHours: null,
+      subscriptionId: paid.id,
+      subscriptionStatus: paid.subscriptionStatus,
+      subscriptionStartDate: paid.subscriptionStartDate,
+      subscriptionExpiresAt: paid.subscriptionExpiresAt,
+      daysRemaining: paid.daysRemaining,
+    };
+  }
+
+  return {
+    billingMonth: reportingMonth,
+    hasActiveSubscription: true,
+    ...hours,
+    monthlyHours: packageRow.monthlyHours,
+    remainingHours: Math.max(packageRow.monthlyHours - hours.consumedHours, 0),
     subscriptionId: paid.id,
     subscriptionStatus: paid.subscriptionStatus,
     subscriptionStartDate: paid.subscriptionStartDate,

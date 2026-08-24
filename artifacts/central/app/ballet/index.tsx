@@ -1,623 +1,192 @@
-/**
- * app/ballet/index.tsx — Ballet Program landing page
- *
- * Replaces the former redirect-gate with the full program overview screen.
- * Apply routing still respects existing application status (assessment vs. status page).
- */
-
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ImageBackground,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Image, ImageBackground, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
 
-import {
-  fetchMyApplications,
-  fetchBalletSettings,
-  fetchBalletSummary,
-  fetchBalletApplicationDetail,
-  fetchBalletGroups,
-  fetchBalletLevels,
-  fetchBalletPackages,
-  ACTIVE_APPLICATION_STATUSES,
-  type BalletApplicationDetail,
-  type BalletSummary,
-} from "@/services/balletAssessmentService";
-import { useAppContext } from "@/contexts/AppContext";
-import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
-import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
-import { BalletProgramLockup, BallerinaShoesIcon } from "@/components/ballet/BalletProgramLockup";
-import BalletProgramDangerZone from "@/components/ballet/BalletProgramDangerZone";
 import { BalletStudentPreviewSection } from "@/components/ballet/BalletStudentPreviewCard";
-import {
-  selectAuthoritativeBalletApplications,
-  selectCurrentBalletStudents,
-  selectEligibleBalletChildren,
-  type BalletStudentPreview,
-} from "@/components/ballet/balletStudentPreviewModel";
+import { selectAuthoritativeBalletApplications, selectCurrentBalletStudents, selectEligibleBalletChildren, type BalletStudentPreview } from "@/components/ballet/balletStudentPreviewModel";
+import { useAppContext } from "@/contexts/AppContext";
+import { ACTIVE_APPLICATION_STATUSES, fetchBalletApplicationDetail, fetchBalletGroups, fetchBalletLevels, fetchBalletPackages, fetchBalletSettings, fetchMyApplications, type BalletApplicationDetail } from "@/services/balletAssessmentService";
+import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
 
-/* ─── Design tokens ─────────────────────────────────────────────── */
-// Base/card/border values taken from the explicit task spec (override the
-// design-source ink-800/0.15 variants).
-const BASE    = "#000000"; // true black page background
-const CARD    = "#15171B"; // nav card surface
-const NAV_BORDER = "rgba(0,182,215,0.35)";
-const INK_400 = "#4B5563";
-const INK_200 = "#D1D5DB";
-const CYAN    = "#00B6D7";
-const R_MD    = 12;
-const R_LG    = 16;
+const CYAN = "#03B6D7";
+const BALLET_LOGO = require("@/assets/images/central-ballet-logo.png");
+const MENU_ART = {
+  classes: require("@/assets/images/ballet-menu-classes.png"),
+  levels: require("@/assets/images/ballet-menu-levels.png"),
+  instructors: require("@/assets/images/ballet-menu-instructors.png"),
+  requirements: require("@/assets/images/ballet-menu-requirements.png"),
+  performance: require("@/assets/images/ballet-menu-performance.png"),
+  faq: require("@/assets/images/ballet-menu-faq.png"),
+};
 
-/* ─── Nav card data ──────────────────────────────────────────────── */
-const NAV_CARDS = [
-  {
-    icon: "ballerina-shoes" as const,
-    title: "Ballet Levels",
-    sub: "Pre Ballet → Professional — 6 levels",
-    route: "/ballet/levels",
-  },
-  {
-    icon: "calendar-outline" as const,
-    title: "Ballet Classes",
-    sub: "Browse active ballet classes",
-    route: "/ballet/classes",
-  },
-  {
-    icon: "people-outline" as const,
-    title: "Instructors",
-    sub: "Meet our ballet faculty",
-    route: "/ballet/instructors",
-  },
-  {
-    icon: "ribbon-outline" as const,
-    title: "Performance Opportunities",
-    sub: "Showcases, recitals & competitions",
-    route: "/ballet/performances",
-  },
-  {
-    icon: "list-outline" as const,
-    title: "Program Requirements",
-    sub: "Dress code, attendance & progression",
-    route: "/ballet/requirements",
-  },
-  {
-    icon: "help-circle-outline" as const,
-    title: "FAQ",
-    sub: "Common questions answered",
-    route: "/ballet/faq",
-  },
-  {
-    icon: "call-outline" as const,
-    title: "Contact Ballet Department",
-    sub: "ballet@centralstudio.eg",
-    route: "/ballet/contact",
-  },
-] as const;
+type MenuKey = keyof typeof MENU_ART;
+type MenuTileProps = { kind: MenuKey; title: string; route: string; width: number; height: number };
 
-/* ─── BStat atom ─────────────────────────────────────────────────── */
-function BStat({ value, label }: { value: string; label: string }) {
-  return (
-    <View style={s.statCol}>
-      <Text style={s.statValue}>{value}</Text>
-      <Text style={s.statLabel}>{label}</Text>
+function BackIcon() {
+  return <Svg width={34} height={34} viewBox="0 0 34 34" fill="none"><Path d="M19.0839 12.1125L14.4968 16.6607L19.0839 21.2089" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /><Path d="M32.0806 16.6607C32.0806 23.8075 32.0806 27.381 29.8413 29.6012C27.6022 31.8214 23.9981 31.8214 16.7903 31.8214C9.58238 31.8214 5.97842 31.8214 3.73922 29.6012C1.5 27.381 1.5 23.8075 1.5 16.6607C1.5 9.51388 1.5 5.94047 3.73922 3.72024C5.97842 1.5 9.58238 1.5 16.7903 1.5C23.9981 1.5 27.6022 1.5 29.8413 3.72024C31.3303 5.1965 31.8292 7.271 31.9964 10.5964" stroke="white" strokeWidth={3} strokeLinecap="round" /></Svg>;
+}
+
+function MenuArrow({ down = false }: { down?: boolean }) {
+  return <Svg width={44} height={31} viewBox="0 0 42 29" fill="none" style={down ? styles.menuArrowDown : undefined}><Path d="M40.147 20.9887L20.8235 1.5L1.5 20.9887M20.8235 1.5V26.8353" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
+}
+
+function MenuTile({ kind, title, route, width, height }: MenuTileProps) {
+  const [firstLine, secondLine] = title.split("\n");
+  const isCentered = kind === "levels" || kind === "instructors" || kind === "faq";
+  const isBottom = kind === "levels" || kind === "faq" || kind === "requirements";
+  return <TouchableOpacity onPress={() => { void Haptics.selectionAsync(); router.push(route as never); }} style={[styles.menuTile, { width, height }]} activeOpacity={0.85}>
+    <View pointerEvents="none" style={styles.menuClip}>
+      <Image source={MENU_ART[kind]} style={styles.menuBackground} resizeMode="stretch" />
+      <View style={[styles.menuTitleBlock, isCentered && styles.menuTitleCentered, isBottom && styles.menuTitleBottom, kind === "instructors" && styles.menuTitleInstructors, kind === "requirements" && styles.menuTitleRequirements]}>
+        <Text numberOfLines={1} style={[styles.menuTitleLine, styles.menuTitleCyan, kind === "instructors" && styles.menuTitleNarrowLine]}>{firstLine}</Text>
+        <Text numberOfLines={1} style={[styles.menuTitleLine, styles.menuTitleWhite, kind === "instructors" && styles.menuTitleNarrowLine]}>{secondLine}</Text>
+      </View>
+      {(kind === "classes" || kind === "performance") ? <View style={styles.menuArrowBox}><MenuArrow /></View> : null}
+      {kind === "requirements" ? <View style={styles.requirementsArrowBox}><MenuArrow down /></View> : null}
     </View>
-  );
+  </TouchableOpacity>;
 }
 
-/* ─── BNavCard atom ──────────────────────────────────────────────── */
-function BNavCard({
-  icon,
-  title,
-  sub,
-  onPress,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>["name"] | "ballerina-shoes";
-  title: string;
-  sub?: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity onPress={onPress} style={s.navCard} activeOpacity={0.82}>
-      <View style={s.navCardIcon}>
-        {icon === "ballerina-shoes"
-          ? <BallerinaShoesIcon size={22} color={CYAN} />
-          : <Ionicons name={icon} size={22} color={CYAN} />}
-      </View>
-      <View style={s.navCardText}>
-        <Text style={s.navCardTitle}>{title}</Text>
-        {!!sub && <Text style={s.navCardSub}>{sub}</Text>}
-      </View>
-      <Ionicons name="chevron-forward" size={17} color={CYAN} style={{ opacity: 0.5 }} />
-    </TouchableOpacity>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   MAIN SCREEN
-═══════════════════════════════════════════════════════════════════ */
 export default function BalletProgramScreen() {
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const { width: viewportWidth } = useWindowDimensions();
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
+  const heroHeight = topPad + 202;
   const { user, children } = useAppContext();
-
-  /* Fetch ballet status for apply-routing (non-blocking — page shows immediately) */
   const [hasActiveApplication, setHasActiveApplication] = useState<boolean | null>(null);
   const [balletStudents, setBalletStudents] = useState<BalletStudentPreview[]>([]);
   const [eligibleBalletChildIds, setEligibleBalletChildIds] = useState<number[]>([]);
   const [balletStudentsLoading, setBalletStudentsLoading] = useState(false);
-  const [balletEnrollmentRevision, setBalletEnrollmentRevision] = useState(0);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!user) {
-        setHasActiveApplication(false);
-        setBalletStudents([]);
-        setEligibleBalletChildIds([]);
-        setBalletStudentsLoading(false);
-        return undefined;
-      }
-
-      const ctrl = new AbortController();
-      setHasActiveApplication(null);
-      setBalletStudents([]);
-      setBalletStudentsLoading(user.accountType === "parent");
-
-      fetchMyApplications(ctrl.signal)
-        .then(async (apps) => {
-          if (ctrl.signal.aborted) return;
-          setHasActiveApplication(apps.some((application) => ACTIVE_APPLICATION_STATUSES.has(application.status)));
-          setEligibleBalletChildIds(selectEligibleBalletChildren({
-            children,
-            applications: apps,
-            blockingStatuses: ACTIVE_APPLICATION_STATUSES,
-          })
-            .map((child) => Number(child.id))
-            .filter((childId) => Number.isInteger(childId) && childId > 0));
-
-          const currentApplications = selectAuthoritativeBalletApplications(apps);
-          if (user.accountType !== "parent" || currentApplications.length === 0) {
-            setBalletStudents([]);
-            return;
-          }
-
-          const [detailResults, levelsResult, groupsResult, packagesResult] = await Promise.all([
-            Promise.allSettled(currentApplications.map((application) => fetchBalletApplicationDetail(application.id, ctrl.signal))),
-            fetchBalletLevels(ctrl.signal).then((levels) => levels).catch(() => []),
-            fetchBalletGroups(ctrl.signal).then((groups) => groups).catch(() => []),
-            fetchBalletPackages(ctrl.signal).then((packages) => packages).catch(() => []),
-          ]);
-          if (ctrl.signal.aborted) return;
-
-          const detailsByApplicationId = new Map<number, BalletApplicationDetail | null>();
-          detailResults.forEach((result, index) => {
-            detailsByApplicationId.set(
-              currentApplications[index]!.id,
-              result.status === "fulfilled" ? result.value : null,
-            );
-          });
-
-          setBalletStudents(selectCurrentBalletStudents({
-            applications: currentApplications,
-            detailsByApplicationId,
-            levelNameById: new Map(levelsResult.map((level) => [level.id, level.name])),
-            groupNameById: new Map(groupsResult.map((group) => [group.id, group.name])),
-            packageNameById: new Map(packagesResult.map((pkg) => [pkg.id, pkg.name])),
-          }));
-        })
-        .catch(() => {
-          if (ctrl.signal.aborted) return;
-          setHasActiveApplication(null);
-          setBalletStudents([]);
-          setEligibleBalletChildIds([]);
-        })
-        .finally(() => {
-          if (!ctrl.signal.aborted) setBalletStudentsLoading(false);
-        });
-
-      return () => ctrl.abort();
-    }, [balletEnrollmentRevision, children, user]),
-  );
-
-  const [summary, setSummary] = useState<BalletSummary | null>(null);
-
-  // Refetch the summary on every focus, not just first mount. This screen is a
-  // Stack route: pushing to a sub-route (/ballet/instructors, …) keeps it
-  // mounted underneath, so returning pops back WITHOUT remounting and a plain
-  // useEffect([]) would never re-run. useFocusEffect fires once on first focus
-  // (== first mount, so no duplicate initial request) and again on each return,
-  // so an instructor added/activated/deactivated/deleted in Admin is reflected
-  // when the user comes back. Cleanup aborts the in-flight request on blur/
-  // unmount to avoid setting state after unmount. Loading/error behavior is
-  // unchanged (shows "—" until resolved; clears to null on error).
-  useFocusEffect(
-    useCallback(() => {
-      const ctrl = new AbortController();
-      fetchBalletSummary(ctrl.signal)
-        .then((data) => {
-          if (ctrl.signal.aborted) return;
-          setSummary(data);
-        })
-        .catch(() => {
-          if (ctrl.signal.aborted) return;
-          setSummary(null);
-        });
-      return () => ctrl.abort();
-    }, []),
-  );
-
-  const stats = useMemo(() => [
-    { value: summary ? String(summary.activeStudents) : "—", label: "Active students" },
-    { value: summary ? String(summary.instructors) : "—", label: "Instructors" },
-    { value: summary ? String(summary.levels) : "—", label: "Levels" },
-    { value: summary ? String(summary.weeklySchedules) : "—", label: "Classes/week" },
-  ], [summary]);
-
   const [homeCardImageUrl, setHomeCardImageUrl] = useState<string | null>(null);
   const [heroImageFailed, setHeroImageFailed] = useState(false);
 
+  useFocusEffect(useCallback(() => {
+    if (!user) { setHasActiveApplication(false); setBalletStudents([]); setEligibleBalletChildIds([]); setBalletStudentsLoading(false); return undefined; }
+    const controller = new AbortController();
+    setBalletStudentsLoading(user.accountType === "parent");
+    fetchMyApplications(controller.signal).then(async (applications) => {
+      if (controller.signal.aborted) return;
+      setHasActiveApplication(applications.some((application) => ACTIVE_APPLICATION_STATUSES.has(application.status)));
+      setEligibleBalletChildIds(selectEligibleBalletChildren({ children, applications, blockingStatuses: ACTIVE_APPLICATION_STATUSES }).map((child) => Number(child.id)).filter((id) => Number.isInteger(id) && id > 0));
+      const currentApplications = selectAuthoritativeBalletApplications(applications);
+      if (user.accountType !== "parent" || currentApplications.length === 0) { setBalletStudents([]); return; }
+      const [detailResults, levels, groups, packages] = await Promise.all([
+        Promise.allSettled(currentApplications.map((application) => fetchBalletApplicationDetail(application.id, controller.signal))),
+        fetchBalletLevels(controller.signal).catch(() => []),
+        fetchBalletGroups(controller.signal).catch(() => []),
+        fetchBalletPackages(controller.signal).catch(() => []),
+      ]);
+      if (controller.signal.aborted) return;
+      const detailsByApplicationId = new Map<number, BalletApplicationDetail | null>();
+      detailResults.forEach((result, index) => detailsByApplicationId.set(currentApplications[index]!.id, result.status === "fulfilled" ? result.value : null));
+      setBalletStudents(selectCurrentBalletStudents({ applications: currentApplications, detailsByApplicationId, levelNameById: new Map(levels.map((level) => [level.id, level.name])), groupNameById: new Map(groups.map((group) => [group.id, group.name])), packageNameById: new Map(packages.map((pkg) => [pkg.id, pkg.name])) }));
+    }).catch(() => { if (!controller.signal.aborted) { setHasActiveApplication(null); setBalletStudents([]); setEligibleBalletChildIds([]); } }).finally(() => { if (!controller.signal.aborted) setBalletStudentsLoading(false); });
+    return () => controller.abort();
+  }, [children, user]));
+
   useEffect(() => {
-    const ctrl = new AbortController();
-    fetchBalletSettings(ctrl.signal)
-      .then((settings) => {
-        if (ctrl.signal.aborted) return;
-        setHomeCardImageUrl(settings.homeCardImageUrl);
-      })
-      .catch(() => {
-        if (ctrl.signal.aborted) return;
-        setHomeCardImageUrl(null);
-      });
-    return () => ctrl.abort();
+    const controller = new AbortController();
+    fetchBalletSettings(controller.signal).then((settings) => setHomeCardImageUrl(settings.homeCardImageUrl)).catch(() => setHomeCardImageUrl(null));
+    return () => controller.abort();
   }, []);
 
-  const heroImageUri = homeCardImageUrl?.trim() || null;
-
-  useEffect(() => {
-    setHeroImageFailed(false);
-  }, [heroImageUri]);
-
-  const heroImageSource = useMemo(
-    () => heroImageUri && !heroImageFailed
-      ? { uri: heroImageUri }
-      : require("@/assets/images/ballet_hero.png"),
-    [heroImageUri, heroImageFailed],
-  );
-
-  const activeWeeklySessionsCount = summary?.weeklySchedules ?? 0;
-  const balletClassesSub =
-    summary && activeWeeklySessionsCount > 0
-      ? `${activeWeeklySessionsCount} weekly session${activeWeeklySessionsCount === 1 ? "" : "s"} available`
-      : "Browse active ballet classes";
+  const heroImageSource = useMemo(() => homeCardImageUrl?.trim() && !heroImageFailed ? { uri: homeCardImageUrl.trim() } : require("@/assets/images/ballet_hero.png"), [heroImageFailed, homeCardImageUrl]);
+  const menuContentWidth = Math.max(0, viewportWidth - 32);
+  const menuRowWidth = Math.max(0, menuContentWidth - 9);
+  const primaryWideWidth = menuRowWidth * 464 / (464 + 227);
+  const primaryNarrowWidth = menuRowWidth - primaryWideWidth;
+  const primaryRowHeight = primaryWideWidth * 349 / 464;
+  const instructorWidth = menuRowWidth * 199 / (199 + 491);
+  const requirementsWidth = menuRowWidth - instructorWidth;
+  const secondaryRowHeight = instructorWidth * 349 / 199;
 
   function handleApply() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (!user) {
-      showAuthRequiredPrompt();
-      return;
-    }
-    if (user.accountType !== "parent") {
-      showParentAccountRequiredPrompt();
-      return;
-    }
-    if (hasActiveApplication) {
-      router.push("/ballet/application-status" as any);
-    } else {
-      router.push("/ballet/assessment" as any);
-    }
-  }
-
-  function handleNavCard(route: string | null) {
-    Haptics.selectionAsync();
-    if (route) router.push(route as any);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (!user) return showAuthRequiredPrompt();
+    if (user.accountType !== "parent") return showParentAccountRequiredPrompt();
+    router.push((hasActiveApplication ? "/ballet/application-status" : "/ballet/assessment") as never);
   }
 
   function handleAddAnotherChild() {
-    if (eligibleBalletChildIds.length === 0) return;
-    Haptics.selectionAsync();
-    router.push({
-      pathname: "/ballet/assessment" as any,
-      params: { eligibleChildIds: eligibleBalletChildIds.join(",") },
-    });
+    router.push(eligibleBalletChildIds.length
+      ? { pathname: "/ballet/assessment" as never, params: { eligibleChildIds: eligibleBalletChildIds.join(",") } }
+      : "/ballet/assessment" as never);
   }
 
-  return (
-    <View style={s.screen}>
-      {/* ── Ambient cyan atmospheric glow (behind hero) ── */}
-      <LinearGradient
-        colors={["rgba(0,182,215,0.22)", "rgba(0,182,215,0.08)", "transparent"]}
-        locations={[0, 0.35, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={[s.atmosphericGlow, { height: topPad + 380 }]}
-        pointerEvents="none"
-      />
+  function handleOpenStudent(student: BalletStudentPreview) {
+    void Haptics.selectionAsync();
+    router.push({ pathname: "/ballet/application-status" as never, params: { id: String(student.applicationId) } });
+  }
 
-      {/* ── Sticky Header ── */}
-      <View style={s.headerWrap}>
-        <LinearGradient
-          colors={["rgba(0,0,0,0.92)", "rgba(0,0,0,0.58)", "rgba(0,0,0,0)"]}
-          locations={[0, 0.58, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <View style={[s.header, { paddingTop: topPad + 14 }]}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={s.backBtn}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={s.backText}>Back</Text>
-          </TouchableOpacity>
+  function handleCancelStudent(student: BalletStudentPreview) {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push({ pathname: "/ballet/application-status" as never, params: { id: String(student.applicationId), action: "cancel" } });
+  }
 
+  return <View style={styles.screen}>
+    <View style={[styles.fixedHero, { height: heroHeight }]}>
+      <ImageBackground source={heroImageSource} style={StyleSheet.absoluteFill} imageStyle={styles.heroImage} onError={() => setHeroImageFailed(true)} />
+      <LinearGradient colors={["rgba(0,0,0,0.72)", "rgba(0,0,0,0.18)", "rgba(0,0,0,0.88)", "#000000"]} locations={[0, 0.35, 0.82, 1]} style={StyleSheet.absoluteFill} />
+      <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { top: topPad + 10 }]}><BackIcon /></TouchableOpacity>
+      <View style={[styles.heroCopy, { top: topPad + 56 }]}>
+        <View style={styles.balletLockup}>
+          <View style={styles.balletLogoFrame}><Image source={BALLET_LOGO} style={styles.balletLogo} resizeMode="contain" /></View>
+          <View style={styles.balletLockupDivider} />
+          <Text style={styles.balletProgramTitle}>Ballet{"\n"}Program</Text>
         </View>
+        <Text style={styles.description}>A world-class ballet education program developing technique, artistry, and confidence in dancers of all ages from pre ballet to professional level.</Text>
       </View>
-
-      {/* ── Scrollable content ── */}
-      <ScrollView showsVerticalScrollIndicator={false} bounces>
-        {/* ── Hero section ── */}
-        <View style={[s.heroSection, { minHeight: topPad + 370 }]}>
-          <ImageBackground
-            source={heroImageSource}
-            style={StyleSheet.absoluteFill}
-            imageStyle={{ resizeMode: "cover" }}
-            onError={() => setHeroImageFailed(true)}
-          />
-          {/* 4-stop gradient overlay matching design */}
-          <LinearGradient
-            colors={[
-              "rgba(5,6,8,0.38)",
-              "rgba(5,6,8,0.22)",
-              "rgba(5,6,8,0.82)",
-              "rgba(5,6,8,0.97)",
-            ]}
-            locations={[0, 0.3, 0.75, 1]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-
-          <View style={[s.heroContent, { paddingTop: topPad + 76 }]}>
-            {/* Eyebrow */}
-            <Text style={s.heroEyebrow}>Central Studio</Text>
-
-            {/* Display title lockup */}
-            <BalletProgramLockup variant="hero" style={s.heroLockup} />
-
-            {/* Description */}
-            <Text style={s.heroDesc}>
-              A world-class ballet education program developing technique, artistry, and
-              confidence in dancers of all ages — from Pre Ballet to Professional level.
-            </Text>
-
-            {/* Stats card */}
-            <View style={s.statsCard}>
-              {stats.map((st, i) => (
-                <React.Fragment key={st.label}>
-                  {i > 0 && <View style={s.statDivider} />}
-                  <BStat value={st.value} label={st.label} />
-                </React.Fragment>
-              ))}
-            </View>
-
-            {/* Apply CTA */}
-            {(!user || hasActiveApplication === false) && (
-              <TouchableOpacity onPress={handleApply} style={s.applyCTA} activeOpacity={0.88}>
-                <Text style={s.applyCTAText}>✦ Apply Now</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {user?.accountType === "parent" && (
-          <BalletStudentPreviewSection
-            students={balletStudents}
-            loading={balletStudentsLoading}
-            eligibleChildCount={eligibleBalletChildIds.length}
-            onAddAnotherChild={handleAddAnotherChild}
-          />
-        )}
-
-        {/* ── Navigation cards ── */}
-        <View style={s.navSection}>
-          {NAV_CARDS.map((card) => (
-            <BNavCard
-              key={card.title}
-              icon={card.icon}
-              title={card.title}
-              sub={card.route === "/ballet/classes" ? balletClassesSub : card.sub}
-              onPress={() => handleNavCard(card.route)}
-            />
-          ))}
-        </View>
-
-        {/* Danger zone — full-width destructive cancellation action, gated on
-            authoritative server state. Only meaningful for a signed-in parent
-            who has a Ballet application; renders nothing otherwise. Placed
-            after the normal program sections, before the final safe-area pad. */}
-        {user?.accountType === "parent" && (
-          <BalletProgramDangerZone
-            onChanged={() => setBalletEnrollmentRevision((revision) => revision + 1)}
-          />
-        )}
-
-        {/* Footer spacing */}
-        <View style={{ height: Platform.OS === "web" ? 120 : 80 }} />
-      </ScrollView>
     </View>
-  );
+
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {user?.accountType === "parent" ? <BalletStudentPreviewSection students={balletStudents} loading={balletStudentsLoading} eligibleChildCount={eligibleBalletChildIds.length} onAddAnotherChild={handleAddAnotherChild} onOpenStudent={handleOpenStudent} onCancelStudent={handleCancelStudent} /> : <TouchableOpacity style={styles.applyButton} onPress={handleApply}><Text style={styles.applyText}>Apply Now</Text></TouchableOpacity>}
+      <View style={styles.menuSection}>
+        <Text style={styles.menuHeading}>Ballet Menu</Text>
+        <View style={[styles.menuRow, { height: primaryRowHeight }]}><MenuTile kind="classes" title={"Ballet\nClasses"} route="/ballet/classes" width={primaryWideWidth} height={primaryRowHeight} /><MenuTile kind="levels" title={"Ballet\nLevels"} route="/ballet/levels" width={primaryNarrowWidth} height={primaryRowHeight} /></View>
+        <View style={[styles.menuRow, { height: secondaryRowHeight }]}><MenuTile kind="instructors" title={"Ballet\nInstructors"} route="/ballet/instructors" width={instructorWidth} height={secondaryRowHeight} /><MenuTile kind="requirements" title={"Program\nRequirements"} route="/ballet/requirements" width={requirementsWidth} height={secondaryRowHeight} /></View>
+        <View style={[styles.menuRow, { height: primaryRowHeight }]}><MenuTile kind="performance" title={"Ballet\nPerformance"} route="/ballet/performances" width={primaryWideWidth} height={primaryRowHeight} /><MenuTile kind="faq" title={"Ballet\nFAQ"} route="/ballet/faq" width={primaryNarrowWidth} height={primaryRowHeight} /></View>
+      </View>
+      <View style={{ height: Platform.OS === "web" ? 80 : 40 }} />
+    </ScrollView>
+  </View>;
 }
 
-/* ─── Styles ─────────────────────────────────────────────────────── */
-const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: BASE },
-
-  /* atmospheric glow */
-  atmosphericGlow: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-
-  /* header */
-  headerWrap: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    backgroundColor: "transparent",
-  },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  backText: {
-    fontSize: 14,
-    fontFamily: "Archivo_600SemiBold",
-    color: CYAN,
-    textShadowColor: "rgba(0,0,0,0.85)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  /* hero */
-  heroSection: {
-    overflow: "hidden",
-  },
-  heroContent: {
-    paddingHorizontal: 20,
-    paddingTop: 26,
-    paddingBottom: 8,
-  },
-  heroEyebrow: {
-    fontSize: 10,
-    fontFamily: "SpaceMono_700Bold",
-    letterSpacing: 1.8,
-    textTransform: "uppercase",
-    color: CYAN,
-    marginBottom: 8,
-  },
-  heroLockup: { marginBottom: 12 },
-  heroDesc: {
-    fontSize: 15,
-    fontFamily: "Archivo_400Regular",
-    color: INK_200,
-    lineHeight: 24,
-    marginBottom: 22,
-  },
-
-  /* stats card */
-  statsCard: {
-    flexDirection: "row",
-    padding: 16,
-    backgroundColor: "rgba(0,0,0,0.42)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: R_LG,
-    marginBottom: 10,
-  },
-  statCol: {
-    flex: 1,
-    alignItems: "center",
-  },
-  statValue: {
-    fontSize: 30,
-    fontFamily: "Anton_400Regular",
-    color: "#fff",
-    lineHeight: 27,
-    ...iosDisplayTextStyle(30, 27),
-    marginTop: -iosCapGuard(30, 27),
-  },
-  statLabel: {
-    fontSize: 11,
-    fontFamily: "Archivo_400Regular",
-    color: INK_400,
-    marginTop: 5,
-    textAlign: "center",
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-
-  /* apply CTA */
-  applyCTA: {
-    width: "100%",
-    paddingVertical: 15,
-    backgroundColor: CYAN,
-    borderRadius: R_MD,
-    alignItems: "center",
-    shadowColor: CYAN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  applyCTAText: {
-    fontSize: 15,
-    fontFamily: "Archivo_800ExtraBold",
-    color: "#fff",
-    letterSpacing: 0.3,
-  },
-
-  /* nav section */
-  navSection: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 20,
-    gap: 10,
-    backgroundColor: BASE,
-  },
-  navCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 13,
-    paddingHorizontal: 16,
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: NAV_BORDER,
-    borderRadius: R_LG,
-  },
-  navCardIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: R_MD,
-    backgroundColor: "rgba(0,182,215,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  navCardText: { flex: 1 },
-  navCardTitle: {
-    fontSize: 15,
-    fontFamily: "Archivo_700Bold",
-    color: "#fff",
-  },
-  navCardSub: {
-    fontSize: 12.5,
-    fontFamily: "Archivo_400Regular",
-    color: INK_400,
-    marginTop: 1,
-  },
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: "#000000" },
+  fixedHero: { overflow: "hidden", backgroundColor: "#000000" },
+  heroImage: { resizeMode: "cover" },
+  backButton: { position: "absolute", left: 15, width: 34, height: 34, zIndex: 3 },
+  heroCopy: { position: "absolute", left: 15, right: 15 },
+  balletLockup: { height: 78, flexDirection: "row", alignItems: "center", marginBottom: 3 },
+  balletLogoFrame: { width: 120, height: 78, overflow: "hidden" },
+  balletLogo: { position: "absolute", width: 140, height: 140, left: -10, top: -32 },
+  balletLockupDivider: { width: 1, height: 68, marginHorizontal: 10, backgroundColor: "rgba(255,255,255,0.82)" },
+  balletProgramTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 36, lineHeight: 35, textTransform: "uppercase", includeFontPadding: false },
+  description: { color: "#D6D6D6", fontFamily: "Archivo_400Regular", fontSize: 12.5, lineHeight: 17, maxWidth: 355 },
+  scroll: { flex: 1, backgroundColor: "#000000" },
+  scrollContent: { paddingTop: 0 },
+  applyButton: { marginHorizontal: 16, marginTop: 12, height: 42, borderRadius: 21, backgroundColor: CYAN, alignItems: "center", justifyContent: "center" },
+  applyText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 14 },
+  menuSection: { paddingHorizontal: 16, paddingTop: 2, gap: 8 },
+  menuHeading: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 16, lineHeight: 20, marginBottom: 1 },
+  menuRow: { flexDirection: "row", gap: 9 },
+  menuTile: { borderRadius: 10, overflow: "hidden", position: "relative", backgroundColor: "transparent", flexGrow: 0, flexShrink: 0 },
+  menuClip: { ...StyleSheet.absoluteFillObject, borderRadius: 10, overflow: "hidden" },
+  menuBackground: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" },
+  menuTitleBlock: { position: "absolute", left: 15, top: 25, zIndex: 2, alignItems: "flex-start" },
+  menuTitleCentered: { left: 0, right: 0, alignItems: "center" },
+  menuTitleBottom: { top: undefined, bottom: 17 },
+  menuTitleInstructors: { top: 26, bottom: undefined },
+  menuTitleRequirements: { left: 15, right: undefined, alignItems: "flex-start" },
+  menuTitleLine: { fontFamily: "Anton_400Regular", fontSize: 25, lineHeight: 25, textTransform: "uppercase", includeFontPadding: false },
+  menuTitleNarrowLine: { fontSize: 20, lineHeight: 21 },
+  menuTitleCyan: { color: CYAN },
+  menuTitleWhite: { color: "#FFFFFF" },
+  menuArrowBox: { position: "absolute", left: 15, bottom: 15, width: 44, height: 31, overflow: "hidden" },
+  requirementsArrowBox: { position: "absolute", left: 15, top: 17, width: 44, height: 31, overflow: "hidden" },
+  menuArrowDown: { transform: [{ rotate: "180deg" }] },
 });

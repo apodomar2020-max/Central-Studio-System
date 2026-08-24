@@ -15,8 +15,8 @@ function inlineStyle(source: string, name: string): string {
   return match[1];
 }
 
-test("landing uses the authoritative weekly Schedule metric, not Class-card length", () => {
-  assert.match(landing, /activeWeeklySessionsCount/);
+test("landing omits the retired Ballet summary metrics", () => {
+  assert.doesNotMatch(landing, /activeWeeklySessionsCount|activeStudentsCount|Classes\/week/);
   assert.doesNotMatch(landing, /balletClasses\.length|balletClassCount/);
 });
 
@@ -89,6 +89,14 @@ test("Application Status uses normalized Group schedule aggregation without sing
 
 test("Application Status schedule catalogue refreshes on focus", () => {
   assert.match(status, /useFocusEffect/);
+});
+
+test("Application Status shows the paid plan expiry and resets its background crop only at the bottom", () => {
+  assert.match(status, /label="Expiration Date" value=\{formatDateValue\(attendance\.subscriptionExpiresAt\)\}/);
+  assert.doesNotMatch(status, /label="Billing Month"/);
+  assert.match(inlineStyle(status, "applicationChrome"), /backgroundColor: "#000000"/);
+  assert.match(inlineStyle(status, "pageBackgroundCrop"), /bottom: 36/);
+  assert.match(inlineStyle(status, "pageBackgroundImage"), /bottom: -36/);
 });
 
 test("child-specific cancellation and lifecycle safeguards remain present", () => {

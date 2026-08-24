@@ -75,7 +75,7 @@ import {
 import { BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS } from "@workspace/api-zod";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
-import { computeBalletMonthlyAttendanceSummary, currentBillingMonth } from "../lib/balletAttendance";
+import { computeBalletCurrentSubscriptionAttendanceSummary } from "../lib/balletAttendance";
 import { normalizeInstructorPhotoUrlForResponse } from "../lib/instructorPhotoUrl";
 import { buildActiveBalletInstructorCountQuery } from "../lib/balletInstructorCountQuery";
 import { isAssignmentReadyClass, isOperationalBalletClass, isOperationalBalletSchedule, scheduleShapeCondition } from "../lib/balletClassEntitlement";
@@ -1334,27 +1334,26 @@ router.get(
         }
       }
 
-      // ── Attendance-hours summary for the current calendar month (C4 / D3) ────
+      // ── Attendance-hours summary for the current paid subscription cycle ────
       // Only active applications with an active level assignment can have a
-      // monthly subscription. We compute per-assignment and surface the FULL
+      // paid plan. We compute per-assignment and surface the FULL
       // summary object (including hasActiveSubscription: false) whenever
       // there's an active assignment — null only when there's no active
       // assignment at all — mirroring the admin detail route's behaviour.
       // D3: this is deliberately NOT collapsed to null just because
       // hasActiveSubscription is false, so the parent-facing full attendance
       // screen (application-status.tsx) can render the distinct "No active
-      // monthly subscription for this month" state instead of hiding the
+      // paid plan" state instead of hiding the
       // section or silently showing zero hours. The compact card in
       // bookings.tsx explicitly checks attendanceSummary?.hasActiveSubscription
       // so its own display is unaffected by this change. Await count == number
       // of the parent's active applications (typically 1, at most a handful).
-      const month = currentBillingMonth();
-      const attendanceSummaryByApplicationId = new Map<number, Awaited<ReturnType<typeof computeBalletMonthlyAttendanceSummary>>>();
+      const attendanceSummaryByApplicationId = new Map<number, Awaited<ReturnType<typeof computeBalletCurrentSubscriptionAttendanceSummary>>>();
       await Promise.all(
         applications
           .filter((a) => a.status === "active" && assignmentIdByApplicationId.has(a.id))
           .map(async (a) => {
-            const summary = await computeBalletMonthlyAttendanceSummary(assignmentIdByApplicationId.get(a.id)!, a.id, month);
+            const summary = await computeBalletCurrentSubscriptionAttendanceSummary(assignmentIdByApplicationId.get(a.id)!, a.id);
             attendanceSummaryByApplicationId.set(a.id, summary);
           }),
       );

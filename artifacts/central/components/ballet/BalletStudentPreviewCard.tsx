@@ -1,9 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import { Image as ExpoImage } from "expo-image";
 import React, { useMemo, useState } from "react";
 import {
   FlatList,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -12,148 +11,91 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
 
 import { SkeletonBox } from "@/components/SkeletonLoader";
-import { BA, BA_RADIUS } from "./assessmentTokens";
-import {
-  shouldShowAddBalletChildCard,
-  type BalletStudentPreview,
-  type BalletStudentPreviewDetailKind,
-} from "./balletStudentPreviewModel";
+import { shouldShowAddBalletChildCard, type BalletStudentPreview } from "./balletStudentPreviewModel";
 
-const CARD_GAP = 12;
+const CYAN = "#03B6D7";
+const CARD_GAP = 8;
+const CARD_HEIGHT = 84;
 const BALLERINA_ARTWORK = require("../../assets/images/ballerina-card.png");
-
-const STATUS_TONE_COLORS = {
-  pending: BA.ink300,
-  warning: BA.amber,
-  accepted: BA.success,
-  progress: BA.cyan400,
-  active: BA.cyan400,
+const STATUS_COLORS = {
+  pending: "#F1B40B",
+  warning: "#F1B40B",
+  accepted: "#22C55E",
+  progress: CYAN,
+  active: "#22C55E",
 } as const;
-
-const DETAIL_ICONS: Record<BalletStudentPreviewDetailKind, React.ComponentProps<typeof Ionicons>["name"]> = {
-  assessment: "calendar-outline",
-  package: "cube-outline",
-  payment: "wallet-outline",
-  level: "ribbon-outline",
-  group: "people-outline",
-  classes: "calendar-outline",
-  subscription: "checkmark-circle-outline",
-};
 
 type CarouselItem =
   | { kind: "student"; key: string; student: BalletStudentPreview }
   | { kind: "addChild"; key: "add-child" };
 
-function DetailRow({
-  icon,
-  label,
-  value,
-  last,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  label: string;
-  value: string;
-  last?: boolean;
-}) {
+function AddIcon() {
   return (
-    <View style={[styles.detailRow, last && styles.detailRowLast]}>
-      <Ionicons name={icon} size={14} color={BA.cyan400} style={styles.detailIcon} />
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
-    </View>
+    <Svg width={34} height={34} viewBox="0 0 32 32" fill="none">
+      <Path d="M20.209 15.7902H11.1125M15.6608 11.2031V20.3773" stroke="#FFFFFF" strokeLinecap="round" />
+      <Path d="M8.08036 2.54557C10.3103 1.24459 12.8993.5 15.6607.5C24.0337.5 30.8214 7.3457 30.8214 15.7903C30.8214 24.2348 24.0337 31.0806 15.6607 31.0806C7.28768 31.0806.5 24.2348.5 15.7903C.5 13.0053 1.23828 10.3942 2.52823 8.14515" stroke="#FFFFFF" strokeLinecap="round" />
+    </Svg>
   );
 }
 
-export function BalletStudentPreviewCard({
-  student,
-  width,
-}: {
+function StudentCard({ student, width, onOpen, onCancel }: {
   student: BalletStudentPreview;
   width: number;
+  onOpen?: (student: BalletStudentPreview) => void;
+  onCancel?: (student: BalletStudentPreview) => void;
 }) {
-  const statusColor = STATUS_TONE_COLORS[student.statusTone];
-  const detailSummary = student.detailRows.map((row) => `${row.label} ${row.value}`).join(". ");
+  const statusColor = STATUS_COLORS[student.statusTone];
+  const isPending = student.applicationStatus !== "active";
+  const content = (
+    <>
+      <ExpoImage source={BALLERINA_ARTWORK} style={styles.avatar} contentFit="cover" contentPosition="top" />
+      <View style={styles.identityCopy}>
+        <Text style={styles.studentName} numberOfLines={1}>{student.childName}</Text>
+        <View style={[styles.statusPill, { backgroundColor: `${statusColor}28` }]}>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={1}>{student.statusLabel.replace("Application ", "")}</Text>
+        </View>
+      </View>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={isPending ? `Cancel ${student.childName}'s application` : `Cancel ${student.childName}'s program`}
+        activeOpacity={0.82}
+        onPress={(event) => {
+          event.stopPropagation();
+          onCancel?.(student);
+        }}
+        style={styles.deleteButton}
+      >
+        <Ionicons name="trash-outline" color="#FFFFFF" size={24} />
+      </TouchableOpacity>
+    </>
+  );
 
   return (
-    <View
-      style={[styles.card, { width }]}
-      accessibilityLabel={`${student.childName}, ${student.statusLabel}. ${detailSummary}`}
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${student.childName}'s Ballet application`}
+      activeOpacity={0.86}
+      onPress={() => onOpen?.(student)}
+      style={[styles.studentCardShadow, { width, height: CARD_HEIGHT }]}
     >
-      <View style={styles.cardMain}>
-        <View style={styles.visualPanel}>
-          <Image
-            source={BALLERINA_ARTWORK}
-            style={styles.artworkImage}
-            resizeMode="cover"
-            accessibilityLabel="Ballerina artwork"
-          />
-        </View>
-
-        <View style={styles.informationPanel}>
-          <View style={styles.identity}>
-            <Text style={styles.name}>{student.childName}</Text>
-            <View style={styles.statusRow}>
-              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-              <Text style={[styles.statusText, { color: statusColor }]}>{student.statusLabel}</Text>
-            </View>
-            <Text style={styles.identitySubtitle}>Central Studio Ballet Program</Text>
-          </View>
-
-          <View style={styles.details}>
-            {student.detailRows.map((row, index) => (
-              <DetailRow
-                key={`${row.kind}:${row.label}`}
-                icon={DETAIL_ICONS[row.kind]}
-                label={row.label}
-                value={row.value}
-                last={index === student.detailRows.length - 1}
-              />
-            ))}
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.footerDivider} />
-      <View style={styles.comingSoon}>
-        <Ionicons name="information-circle-outline" size={13} color={BA.ink300} />
-        <Text style={styles.comingSoonText}>Dedicated child profile coming soon.</Text>
-      </View>
-    </View>
+      <View style={styles.studentCard}>{content}</View>
+    </TouchableOpacity>
   );
 }
 
-export function AddBalletChildCard({
-  width,
-  onPress,
-}: {
-  width: number;
-  onPress: () => void;
-}) {
+function AddChildCard({ width, onPress }: { width: number; onPress: () => void }) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.84}
-      accessibilityRole="button"
-      accessibilityLabel="Add Another Child. Start a Ballet application for another child."
-      style={[styles.card, styles.addCard, { width }]}
-    >
-      <LinearGradient
-        colors={["rgba(0,182,215,0.19)", "rgba(21,23,27,0.96)", BA.ink800]}
-        locations={[0, 0.55, 1]}
-        style={styles.addCardGradient}
-      >
-        <View style={styles.addIconWrap}>
-          <Ionicons name="add" size={38} color={BA.cyan400} />
-        </View>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={[styles.addCard, { width }]}>
+      <AddIcon />
+      <View style={styles.addCopy}>
         <Text style={styles.addTitle}>Add Another Child</Text>
-        <Text style={styles.addSubtitle}>Start a Ballet application for another child</Text>
-        <View style={styles.addAction}>
-          <Text style={styles.addActionText}>Start application</Text>
-          <Ionicons name="arrow-forward" size={15} color={BA.cyan400} />
-        </View>
-      </LinearGradient>
+        <Text style={styles.addSubtitle} numberOfLines={1}>Start a ballet application for another child</Text>
+      </View>
+      <Ionicons name="arrow-forward" color="#FFFFFF" size={30} />
     </TouchableOpacity>
   );
 }
@@ -163,49 +105,36 @@ export function BalletStudentPreviewSection({
   loading,
   eligibleChildCount,
   onAddAnotherChild,
+  onOpenStudent,
+  onCancelStudent,
 }: {
   students: BalletStudentPreview[];
   loading: boolean;
   eligibleChildCount: number;
   onAddAnotherChild: () => void;
+  onOpenStudent?: (student: BalletStudentPreview) => void;
+  onCancelStudent?: (student: BalletStudentPreview) => void;
 }) {
   const { width: viewportWidth } = useWindowDimensions();
-  const cardWidth = Math.min(Math.max(viewportWidth - 52, 286), 360);
+  const cardWidth = Math.min(Math.max(viewportWidth * 0.68, 264), 300);
   const [activeIndex, setActiveIndex] = useState(0);
   const items = useMemo<CarouselItem[]>(() => {
-    const studentItems: CarouselItem[] = students.map((student) => ({
-      kind: "student",
-      key: student.key,
-      student,
-    }));
-    if (shouldShowAddBalletChildCard(students.length, eligibleChildCount)) {
-      studentItems.push({ kind: "addChild", key: "add-child" });
-    }
-    return studentItems;
+    const list: CarouselItem[] = students.map((student) => ({ kind: "student", key: student.key, student }));
+    if (students.length === 0 || shouldShowAddBalletChildCard(students.length, eligibleChildCount)) list.push({ kind: "addChild", key: "add-child" });
+    return list;
   }, [eligibleChildCount, students]);
 
   if (!loading && items.length === 0) return null;
 
   function handleMomentumEnd(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    const nextIndex = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + CARD_GAP));
-    setActiveIndex(Math.max(0, Math.min(nextIndex, items.length - 1)));
+    setActiveIndex(Math.max(0, Math.min(Math.round(event.nativeEvent.contentOffset.x / (cardWidth + CARD_GAP)), items.length - 1)));
   }
 
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeading}>
-        <Text style={styles.eyebrow}>ENROLLED DANCERS</Text>
-        <Text style={styles.sectionTitle}>Your Ballet Students</Text>
-      </View>
+      <Text style={styles.sectionTitle}>Your Ballet Students</Text>
       {loading ? (
-        <View style={[styles.skeletonCard, { width: cardWidth }]} accessibilityLabel="Loading Ballet students">
-          <SkeletonBox width="36%" height={190} borderRadius={14} />
-          <View style={styles.skeletonInformation}>
-            <SkeletonBox width="86%" height={20} borderRadius={10} />
-            <SkeletonBox width="56%" height={12} borderRadius={6} />
-            <SkeletonBox width="100%" height={126} borderRadius={10} />
-          </View>
-        </View>
+        <View style={[styles.skeletonCard, { width: cardWidth }]}><SkeletonBox width="100%" height={CARD_HEIGHT} borderRadius={20} /></View>
       ) : (
         <>
           <FlatList
@@ -213,29 +142,20 @@ export function BalletStudentPreviewSection({
             data={items}
             keyExtractor={(item) => item.key}
             renderItem={({ item }) => item.kind === "student"
-              ? <BalletStudentPreviewCard student={item.student} width={cardWidth} />
-              : <AddBalletChildCard width={cardWidth} onPress={onAddAnotherChild} />}
-            showsHorizontalScrollIndicator={false}
+              ? <StudentCard student={item.student} width={cardWidth} onOpen={onOpenStudent} onCancel={onCancelStudent} />
+              : <AddChildCard width={cardWidth} onPress={onAddAnotherChild} />}
             contentContainerStyle={styles.carouselContent}
             ItemSeparatorComponent={() => <View style={{ width: CARD_GAP }} />}
+            showsHorizontalScrollIndicator={false}
             snapToInterval={cardWidth + CARD_GAP}
-            snapToAlignment="start"
             decelerationRate="fast"
-            disableIntervalMomentum
             onMomentumScrollEnd={handleMomentumEnd}
-            getItemLayout={(_, index) => ({
-              length: cardWidth + CARD_GAP,
-              offset: (cardWidth + CARD_GAP) * index,
-              index,
-            })}
           />
           {items.length > 1 ? (
-            <View style={styles.pagination} accessibilityLabel={`Carousel page ${activeIndex + 1} of ${items.length}`}>
-              {items.map((item, index) => (
-                <View key={item.key} style={[styles.paginationDot, index === activeIndex && styles.paginationDotActive]} />
-              ))}
+            <View style={styles.pagination}>
+              {items.map((item, index) => <View key={item.key} style={[styles.paginationDot, index === activeIndex && styles.paginationDotActive]} />)}
             </View>
-          ) : null}
+          ) : <View style={styles.singleCardSpace} />}
         </>
       )}
     </View>
@@ -243,198 +163,25 @@ export function BalletStudentPreviewSection({
 }
 
 const styles = StyleSheet.create({
-  section: {
-    paddingTop: 22,
-    paddingBottom: 14,
-    backgroundColor: "#000000",
-  },
-  sectionHeading: { marginBottom: 12, paddingHorizontal: 20 },
-  eyebrow: {
-    color: BA.cyan400,
-    fontFamily: "SpaceMono_700Bold",
-    fontSize: 10,
-    letterSpacing: 1.3,
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 21,
-    lineHeight: 26,
-  },
-  carouselContent: { paddingHorizontal: 20 },
-  card: {
-    minWidth: 0,
-    alignSelf: "flex-start",
-    overflow: "hidden",
-    borderRadius: BA_RADIUS.xl,
-    borderWidth: 1,
-    borderColor: "rgba(45,205,236,0.42)",
-    backgroundColor: BA.ink800,
-    shadowColor: BA.cyan500,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    elevation: 3,
-  },
-  cardMain: { flexDirection: "row", alignItems: "stretch", minWidth: 0 },
-  visualPanel: {
-    position: "relative",
-    width: "36%",
-    minWidth: 0,
-    alignSelf: "stretch",
-    overflow: "hidden",
-    backgroundColor: "rgba(2,11,15,0.88)",
-  },
-  artworkImage: { flex: 1, width: "100%", height: "100%" },
-  informationPanel: {
-    flex: 1,
-    minWidth: 0,
-    // Sized for the normal 4-row Active layout (identity block + 4 detail
-    // rows) so pending/shorter-content cards match Active card height via
-    // visualPanel's alignSelf: "stretch" instead of the card growing to fit
-    // fabricated content. The footer stays outside this region.
-    minHeight: 200,
-    paddingTop: 12,
-    paddingRight: 12,
-    paddingBottom: 10,
-    paddingLeft: 12,
-  },
-  identity: { minWidth: 0, marginBottom: 8 },
-  name: {
-    color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 18,
-    lineHeight: 21,
-    flexShrink: 1,
-  },
-  statusRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
-  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: BA.cyan400 },
-  statusText: {
-    color: BA.cyan400,
-    fontFamily: "SpaceMono_700Bold",
-    fontSize: 9,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-  },
-  identitySubtitle: {
-    color: BA.ink300,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 9.5,
-    lineHeight: 13,
-    marginTop: 3,
-  },
-  details: {},
-  detailRow: {
-    minWidth: 0,
-    minHeight: 29,
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.09)",
-    paddingVertical: 5,
-  },
-  detailRowLast: { borderBottomWidth: 0 },
-  detailIcon: { width: 19, flexShrink: 0 },
-  detailLabel: {
-    color: BA.ink300,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 9.5,
-    lineHeight: 13,
-    flexShrink: 0,
-  },
-  detailValue: {
-    color: BA.white,
-    fontFamily: "Archivo_600SemiBold",
-    fontSize: 10.5,
-    lineHeight: 13,
-    marginLeft: "auto",
-    paddingLeft: 6,
-    textAlign: "right",
-    minWidth: 0,
-    flex: 1,
-    flexShrink: 1,
-  },
-  footerDivider: { height: 1, backgroundColor: "rgba(45,205,236,0.16)" },
-  comingSoon: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  comingSoonText: {
-    color: BA.ink300,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 10,
-    lineHeight: 14,
-    textAlign: "center",
-    flexShrink: 1,
-  },
-  addCard: { padding: 0 },
-  addCardGradient: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  addIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: BA.cyan400,
-    backgroundColor: "rgba(0,182,215,0.10)",
-    marginBottom: 16,
-  },
-  addTitle: {
-    color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 21,
-    lineHeight: 26,
-    textAlign: "center",
-  },
-  addSubtitle: {
-    color: BA.ink300,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 12.5,
-    lineHeight: 18,
-    textAlign: "center",
-    marginTop: 5,
-  },
-  addAction: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 16 },
-  addActionText: {
-    color: BA.cyan400,
-    fontFamily: "Archivo_700Bold",
-    fontSize: 12,
-  },
-  pagination: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    marginTop: 10,
-  },
-  paginationDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "rgba(255,255,255,0.20)",
-  },
-  paginationDotActive: { width: 18, backgroundColor: BA.cyan400 },
-  skeletonCard: {
-    height: 266,
-    marginHorizontal: 20,
-    padding: 12,
-    flexDirection: "row",
-    gap: 12,
-    borderRadius: BA_RADIUS.xl,
-    borderWidth: 1,
-    borderColor: "rgba(45,205,236,0.20)",
-    backgroundColor: BA.ink800,
-  },
-  skeletonInformation: { flex: 1, gap: 10, paddingVertical: 8 },
+  section: { backgroundColor: "#000000", paddingTop: 8, paddingBottom: 1 },
+  sectionTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 17, lineHeight: 21, marginBottom: 8, paddingHorizontal: 16 },
+  carouselContent: { paddingLeft: 16, paddingRight: 3 },
+  studentCardShadow: { borderRadius: 20, backgroundColor: "#031416", shadowColor: CYAN, shadowOpacity: 0.2, shadowRadius: 7, shadowOffset: { width: 0, height: 1 }, elevation: 3 },
+  studentCard: { height: CARD_HEIGHT, borderRadius: 20, backgroundColor: "#031416", paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 9 },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#08343E", borderWidth: 1, borderColor: "rgba(3,182,215,0.34)" },
+  identityCopy: { flex: 1, minWidth: 0 },
+  studentName: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 22 },
+  statusPill: { alignSelf: "flex-start", maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginTop: 2 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { flexShrink: 1, fontFamily: "Archivo_600SemiBold", fontSize: 8.5, lineHeight: 11 },
+  deleteButton: { width: 42, height: 42, borderRadius: 12, backgroundColor: "#FF0A13", alignItems: "center", justifyContent: "center", marginLeft: 3 },
+  addCard: { height: CARD_HEIGHT, borderRadius: 20, borderWidth: 1.25, borderColor: CYAN, backgroundColor: "#042F34", paddingHorizontal: 18, flexDirection: "row", alignItems: "center", gap: 10 },
+  addCopy: { flex: 1, minWidth: 0 },
+  addTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 17, lineHeight: 22 },
+  addSubtitle: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 7, lineHeight: 9, opacity: 0.92 },
+  pagination: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 9, height: 26 },
+  paginationDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: "#D9D9D9" },
+  paginationDotActive: { width: 26, backgroundColor: CYAN },
+  singleCardSpace: { height: 10 },
+  skeletonCard: { marginLeft: 16, marginBottom: 18 },
 });

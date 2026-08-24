@@ -1,557 +1,87 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import Svg, { Path } from "react-native-svg";
 import { customFetch } from "@workspace/api-client-react";
 import type { Notification as ApiNotification } from "@workspace/api-client-react";
 
-import { useAppContext } from "@/contexts/AppContext";
-import colors from "@/constants/colors";
-import { NotifCardSkeleton } from "@/components/SkeletonLoader";
-import OfflineState from "@/components/OfflineState";
-import ErrorState from "@/components/ErrorState";
-import { isOfflineError } from "@/services/connectivity";
+import { ChildProfile, useAppContext } from "@/contexts/AppContext";
 import { formatRelativeOrCalendarTime, parseApiDate } from "@/utils/dateTime";
+import { registerPushNotificationsForCurrentUser } from "@/services/pushNotifications";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+const HERO_IMAGE = require("@/assets/images/notifications-hero.png");
 
-type NotifType =
-  | "booking_created"
-  | "booking_confirmed"
-  | "booking_cancelled"
-  | "booking_rejected"
-  | "payment_paid"
-  | "payment_failed"
-  | "payment_refunded"
-  | "package_created"
-  | "package_activated"
-  | "package_cancelled"
-  | "package_credits_updated"
-  | "credits_exhausted"
-  | "attendance_checked_in"
-  | "offer_published"
-  | "schedule_changed"
-  | "schedule_cancelled"
-  | "booking"
-  | "class_reminder"
-  | "package"
-  | "ballet"
-  | "offer"
-  | "system";
+type NotifType = "booking_created" | "booking_confirmed" | "booking_cancelled" | "booking_rejected" | "payment_paid" | "payment_failed" | "payment_refunded" | "package_created" | "package_activated" | "package_cancelled" | "package_credits_updated" | "credits_exhausted" | "attendance_checked_in" | "offer_published" | "schedule_changed" | "schedule_cancelled" | "booking" | "class_reminder" | "package" | "ballet" | "offer" | "system";
+type ApiItem = ApiNotification & { type?: string | null; metadata?: Record<string, unknown> | null; isRead?: boolean; readAt?: string | null; sent_at?: string | null; created_at?: string | null };
+type DisplayNotif = { id: string; title: string; body: string; type: NotifType; isRead: boolean; timestamp: number | null; source: "api" | "local"; metadata?: Record<string, unknown> | null };
 
-interface DisplayNotif {
-  id: string;
-  title: string;
-  body: string;
-  type: NotifType;
-  isRead: boolean;
-  createdAt: string | null;
-  timestamp: number | null;
-  metadata?: Record<string, unknown> | null;
-  /** "local" = generated in-app (AppContext); "api" = admin broadcast */
-  source: "local" | "api";
-}
-
-type TypeConfig = {
-  icon: string;
-  color: string;
-  badge: string;
+const TYPE_STYLE: Record<NotifType, { color: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  booking_confirmed: { color: "#22C55E", icon: "checkmark" }, payment_paid: { color: "#22C55E", icon: "checkmark" }, package_activated: { color: "#22C55E", icon: "checkmark" }, attendance_checked_in: { color: "#22C55E", icon: "checkmark" },
+  booking_cancelled: { color: "#FF3030", icon: "close" }, booking_rejected: { color: "#FF3030", icon: "close" }, payment_failed: { color: "#FF3030", icon: "close" }, package_cancelled: { color: "#FF3030", icon: "close" }, schedule_cancelled: { color: "#FF3030", icon: "close" },
+  class_reminder: { color: "#FFB800", icon: "warning" }, credits_exhausted: { color: "#FFB800", icon: "warning" }, schedule_changed: { color: "#FFB800", icon: "warning" }, package_credits_updated: { color: "#FFB800", icon: "warning" },
+  booking_created: { color: "#03B6D7", icon: "information" }, payment_refunded: { color: "#03B6D7", icon: "information" }, package_created: { color: "#03B6D7", icon: "information" }, offer_published: { color: "#03B6D7", icon: "information" }, booking: { color: "#03B6D7", icon: "information" }, package: { color: "#03B6D7", icon: "information" }, ballet: { color: "#03B6D7", icon: "information" }, offer: { color: "#03B6D7", icon: "information" }, system: { color: "#03B6D7", icon: "information" },
 };
 
-type TypedApiNotification = ApiNotification & {
-  type?: string | null;
-  metadata?: Record<string, unknown> | null;
-  isRead?: boolean;
-  readAt?: string | null;
-  sent_at?: string | null;
-  created_at?: string | null;
-};
+function BackIcon() { return <Svg width={34} height={34} viewBox="0 0 34 34" fill="none"><Path d="M19.0839 12.1125L14.4968 16.6607L19.0839 21.2089" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /><Path d="M32.0806 16.6607C32.0806 23.8075 32.0806 27.381 29.8413 29.6012C27.6022 31.8214 23.9981 31.8214 16.7903 31.8214C9.58238 31.8214 5.97842 31.8214 3.73922 29.6012C1.5 27.381 1.5 23.8075 1.5 16.6607C1.5 9.51388 1.5 5.94047 3.73922 3.72024C5.97842 1.5 9.58238 1.5 16.7903 1.5C23.9981 1.5 27.6022 1.5 29.8413 3.72024C31.3303 5.1965 31.8292 7.271 31.9964 10.5964" stroke="white" strokeWidth={3} strokeLinecap="round" /></Svg>; }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+function isKnownType(value: unknown): value is NotifType { return typeof value === "string" && value in TYPE_STYLE; }
+function timestamp(...values: Array<string | null | undefined>) { for (const value of values) { const parsed = parseApiDate(value)?.getTime(); if (parsed != null) return parsed; } return null; }
+function inferType(item: Pick<ApiItem, "title" | "body" | "type">): NotifType { if (isKnownType(item.type)) return item.type; const text = `${item.title} ${item.body}`.toLowerCase(); if (text.includes("cancel") || text.includes("reject") || text.includes("fail") || text.includes("absent")) return "booking_cancelled"; if (text.includes("confirm") || text.includes("accept") || text.includes("approved") || text.includes("checked")) return "booking_confirmed"; if (text.includes("remind") || text.includes("credit")) return "class_reminder"; return "system"; }
+function groupFor(time: number | null) { if (!time) return "earlier"; const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); const day = new Date(new Date(time).getFullYear(), new Date(time).getMonth(), new Date(time).getDate()).getTime(); return day === today ? "today" : day === today - 86400000 ? "yesterday" : "earlier"; }
 
-function parseDateValue(value?: string | null): number | null {
-  return parseApiDate(value)?.getTime() ?? null;
-}
-
-function resolveTimestamp(...values: Array<string | null | undefined>): number | null {
-  for (const value of values) {
-    const parsed = parseDateValue(value);
-    if (parsed != null) return parsed;
-  }
+function metadataString(metadata: Record<string, unknown> | null | undefined, ...keys: string[]) {
+  for (const key of keys) { const value = metadata?.[key]; if (typeof value === "string" && value.trim()) return value.trim(); }
   return null;
 }
 
-function startOfDay(time: number): number {
-  const date = new Date(time);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
+function notificationRecipient(notif: DisplayNotif, children: ChildProfile[], accountAvatar?: string) {
+  const childId = metadataString(notif.metadata, "childId", "participantChildId", "studentId");
+  const childName = metadataString(notif.metadata, "childName", "participantName", "studentName");
+  const child = children.find((item) => (childId && item.id === childId) || (childName && item.fullName.trim().toLowerCase() === childName.toLowerCase()));
+  const photoUrl = metadataString(notif.metadata, "childPhotoUrl", "childAvatarUrl", "photoUrl", "avatarUrl");
+  if (child || childName) return { imageUrl: photoUrl, initial: (child?.fullName ?? childName ?? "?").trim().charAt(0).toUpperCase(), isChild: true };
+  return { imageUrl: accountAvatar, initial: "", isChild: false };
 }
 
-function timelineGroup(timestamp: number | null): "today" | "yesterday" | "earlier" {
-  if (timestamp == null) return "earlier";
-  const today = startOfDay(Date.now());
-  const itemDay = startOfDay(timestamp);
-  if (itemDay === today) return "today";
-  if (itemDay === today - 86_400_000) return "yesterday";
-  return "earlier";
+function NotificationCard({ notif, avatarUrl, children, onRead }: { notif: DisplayNotif; avatarUrl?: string | null; children: ChildProfile[]; onRead: (item: DisplayNotif) => void }) {
+  const [expanded, setExpanded] = useState(false); const state = TYPE_STYLE[notif.type] ?? TYPE_STYLE.system;
+  const recipient = notificationRecipient(notif, children, avatarUrl ?? undefined);
+  const toggle = () => { if (!notif.isRead) onRead(notif); setExpanded((current) => !current); };
+  return <TouchableOpacity style={[styles.card, !notif.isRead && styles.cardUnread]} activeOpacity={0.85} onPress={toggle}>
+    <View style={styles.avatarWrap}>{recipient.imageUrl ? <Image source={{ uri: recipient.imageUrl }} style={styles.avatar} contentFit="cover" /> : recipient.isChild ? <Text style={styles.childInitial}>{recipient.initial}</Text> : <Ionicons name="person" color="#9BA4A5" size={25} />}<View style={[styles.statusIcon, { backgroundColor: state.color }]}><Ionicons name={state.icon} color="#FFFFFF" size={11} /></View></View>
+    <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: state.color }]} numberOfLines={expanded ? undefined : 1}>{notif.title}</Text><Text style={[styles.cardBody, expanded && styles.cardBodyExpanded]} numberOfLines={expanded ? undefined : 2}>{notif.body}</Text><Text style={styles.cardTime}>{formatRelativeOrCalendarTime(notif.timestamp, "")}</Text></View>
+    <View style={[styles.cardChevron, expanded && styles.cardChevronOpen]}><Ionicons name="chevron-down" color="#FFFFFF" size={22} /></View>
+  </TouchableOpacity>;
 }
-
-/** Best-effort type inference from notification title/body for API broadcasts */
-function inferType(n: Pick<TypedApiNotification, "title" | "body" | "type">): NotifType {
-  if (isKnownType(n.type)) return n.type;
-  const text = (n.title + " " + n.body).toLowerCase();
-  if (text.includes("payment") && text.includes("confirm")) return "payment_paid";
-  if (text.includes("payment") && text.includes("refund")) return "payment_refunded";
-  if (text.includes("payment") && text.includes("fail")) return "payment_failed";
-  if (text.includes("cancel")) {
-    if (text.includes("package")) return "package_cancelled";
-    if (text.includes("schedule") || text.includes("class")) return "schedule_cancelled";
-    return "booking_cancelled";
-  }
-  if (text.includes("reject")) return "booking_rejected";
-  if (text.includes("confirm") || text.includes("approved")) return "booking_confirmed";
-  if (text.includes("checked in") || text.includes("attendance")) return "attendance_checked_in";
-  if (text.includes("active") && text.includes("package")) return "package_activated";
-  if (text.includes("used") && text.includes("credit")) return "credits_exhausted";
-  if (text.includes("offer") || text.includes("discount") || text.includes("%")) return "offer_published";
-  if (text.includes("schedule") && text.includes("changed")) return "schedule_changed";
-  if (text.includes("book") || text.includes("reserv")) return "booking";
-  if (text.includes("class") || text.includes("reminder")) return "class_reminder";
-  if (text.includes("package") || text.includes("credit")) return "package";
-  if (text.includes("ballet")) return "ballet";
-  if (text.includes("offer") || text.includes("discount") || text.includes("%")) return "offer";
-  return "system";
-}
-
-function isKnownType(value: unknown): value is NotifType {
-  return typeof value === "string" && value in TYPE_CONFIG;
-}
-
-function asMetadata(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function metadataText(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return null;
-}
-
-function metadataRows(metadata?: Record<string, unknown> | null): Array<{ label: string; value: string }> {
-  if (!metadata) return [];
-  const rows: Array<{ label: string; value: string }> = [];
-  const className = metadataText(metadata.className);
-  const instructorName = metadataText(metadata.instructorName);
-  const branch = metadataText(metadata.branch);
-  const scheduleLabel = metadataText(metadata.scheduleLabel);
-  const packageName = metadataText(metadata.packageName);
-  const remainingCredits = metadataText(metadata.remainingCredits);
-  const amount = metadataText(metadata.amount);
-  const currency = metadataText(metadata.currency);
-
-  if (className) rows.push({ label: "Class", value: className });
-  if (instructorName) rows.push({ label: "Instructor", value: instructorName });
-  if (branch) rows.push({ label: "Branch", value: branch });
-  if (scheduleLabel) rows.push({ label: "Time", value: scheduleLabel });
-  if (packageName) rows.push({ label: "Package", value: packageName });
-  if (remainingCredits) rows.push({ label: "Credits", value: `${remainingCredits} remaining` });
-  if (amount) rows.push({ label: "Amount", value: currency ? `${amount} ${currency}` : amount });
-
-  return rows;
-}
-
-// ─── Icon/colour maps ─────────────────────────────────────────────────────────
-
-const TYPE_CONFIG: Record<NotifType, TypeConfig> = {
-  booking_created: { icon: "calendar-outline", color: colors.studio.primary, badge: "Booking" },
-  booking_confirmed: { icon: "checkmark-circle", color: "#22C55E", badge: "Confirmed" },
-  booking_cancelled: { icon: "close-circle", color: "#EF4444", badge: "Cancelled" },
-  booking_rejected: { icon: "ban", color: "#EF4444", badge: "Rejected" },
-  payment_paid: { icon: "card", color: "#22C55E", badge: "Paid" },
-  payment_failed: { icon: "alert-circle", color: "#EF4444", badge: "Payment Failed" },
-  payment_refunded: { icon: "return-down-back", color: "#38BDF8", badge: "Refunded" },
-  package_created: { icon: "albums", color: "#38BDF8", badge: "Package" },
-  package_activated: { icon: "ribbon", color: "#10B981", badge: "Package Active" },
-  package_cancelled: { icon: "close-circle", color: "#EF4444", badge: "Package Cancelled" },
-  package_credits_updated: { icon: "swap-horizontal", color: "#F59E0B", badge: "Credits Updated" },
-  credits_exhausted: { icon: "alert-circle", color: "#F59E0B", badge: "Credits Used" },
-  attendance_checked_in: { icon: "log-in", color: colors.studio.primary, badge: "Checked In" },
-  offer_published: { icon: "gift", color: "#A855F7", badge: "Offer" },
-  schedule_changed: { icon: "calendar", color: "#F59E0B", badge: "Schedule Changed" },
-  schedule_cancelled: { icon: "calendar-clear", color: "#EF4444", badge: "Schedule Cancelled" },
-  booking: { icon: "calendar-outline", color: colors.studio.primary, badge: "Booking" },
-  class_reminder: { icon: "time", color: "#F59E0B", badge: "Class" },
-  package: { icon: "card", color: "#22C55E", badge: "Package" },
-  ballet: { icon: "diamond", color: "#00B6D6", badge: "Ballet" },
-  offer: { icon: "pricetag", color: "#EC4899", badge: "Offer" },
-  system: { icon: "information-circle", color: "#6B7280", badge: "Info" },
-};
-
-// ─── NotifItem ────────────────────────────────────────────────────────────────
-
-function NotifItem({
-  notif,
-  onPress,
-}: {
-  notif: DisplayNotif;
-  onPress: (n: DisplayNotif) => void;
-}) {
-  const config = TYPE_CONFIG[notif.type] ?? TYPE_CONFIG.system;
-  const rows = metadataRows(notif.metadata);
-
-  return (
-    <TouchableOpacity
-      style={[styles.notifCard, !notif.isRead && styles.notifCardUnread]}
-      activeOpacity={0.8}
-      onPress={() => onPress(notif)}
-    >
-      {!notif.isRead && <View style={[styles.unreadDot, { backgroundColor: colors.studio.primary }]} />}
-      <View style={[styles.notifIconWrap, { backgroundColor: config.color + "20" }]}>
-        <Ionicons name={config.icon as any} size={21} color={config.color} />
-      </View>
-      <View style={styles.notifContent}>
-        <View style={styles.notifTopRow}>
-          <Text style={styles.notifTitle} numberOfLines={1}>{notif.title}</Text>
-          <Text style={styles.notifTime}>{formatRelativeOrCalendarTime(notif.timestamp, "Time unavailable")}</Text>
-        </View>
-        <View style={[styles.eventBadge, { backgroundColor: config.color + "18", borderColor: config.color + "45" }]}>
-          <Text style={[styles.eventBadgeText, { color: config.color }]}>{config.badge}</Text>
-        </View>
-        <Text style={styles.notifBody} numberOfLines={3}>{notif.body}</Text>
-        {rows.length > 0 && (
-          <View style={styles.metadataWrap}>
-            {rows.map((row) => (
-              <View key={`${row.label}-${row.value}`} style={styles.metadataRow}>
-                <Text style={styles.metadataLabel}>{row.label}</Text>
-                <Text style={styles.metadataValue} numberOfLines={1}>{row.value}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function NotificationsScreen() {
-  const insets = useSafeAreaInsets();
-  const { notifications: localNotifs, markNotificationRead } = useAppContext();
+  const insets = useSafeAreaInsets(); const { notifications: localNotifs, markNotificationRead, user, children } = useAppContext();
+  const [apiNotifs, setApiNotifs] = useState<ApiItem[]>([]); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [permissionGranted, setPermissionGranted] = useState(true); const [askingPermission, setAskingPermission] = useState(false);
+  const load = useCallback(async (refresh = false) => { refresh ? setRefreshing(true) : setLoading(true); try { setApiNotifs(await customFetch<ApiItem[]>("/api/notifications/my?limit=50&offset=0")); } catch { /* local notifications remain available */ } finally { setLoading(false); setRefreshing(false); } }, []);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (Platform.OS === "web") return; Notifications.getPermissionsAsync().then((result) => setPermissionGranted(result.granted)).catch(() => setPermissionGranted(true)); }, []);
+  const all = useMemo<DisplayNotif[]>(() => [...apiNotifs.filter((item) => !item.isDraft).map((item) => ({ id: `api-${item.id}`, title: item.title, body: item.body, type: inferType(item), isRead: Boolean(item.isRead), timestamp: timestamp(item.sentAt, item.createdAt, item.sent_at, item.created_at), metadata: item.metadata, source: "api" as const })), ...localNotifs.map((item) => ({ id: item.id, title: item.title, body: item.body, type: isKnownType(item.type) ? item.type : "system", isRead: item.isRead, timestamp: timestamp(item.createdAt), source: "local" as const }))].sort((a, b) => Number(a.isRead) - Number(b.isRead) || (b.timestamp ?? 0) - (a.timestamp ?? 0)), [apiNotifs, localNotifs]);
+  const groups = useMemo(() => ({ today: all.filter((item) => groupFor(item.timestamp) === "today"), yesterday: all.filter((item) => groupFor(item.timestamp) === "yesterday"), earlier: all.filter((item) => groupFor(item.timestamp) === "earlier") }), [all]);
+  const markRead = useCallback(async (item: DisplayNotif) => { if (item.isRead) return; if (item.source === "local") { markNotificationRead(item.id); return; } const id = Number(item.id.replace("api-", "")); setApiNotifs((items) => items.map((entry) => entry.id === id ? { ...entry, isRead: true } : entry)); try { await customFetch(`/api/notifications/${id}/read`, { method: "POST" }); } catch { void load(true); } }, [load, markNotificationRead]);
+  const markAll = async () => { await Promise.all(all.filter((item) => !item.isRead).map(markRead)); };
+  const enableNotifications = async () => { setAskingPermission(true); try { const result = await Notifications.requestPermissionsAsync(); setPermissionGranted(result.granted); if (result.granted) await registerPushNotificationsForCurrentUser(); } finally { setAskingPermission(false); } };
+  const renderGroup = (label: string, items: DisplayNotif[]) => items.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>{label}</Text><TouchableOpacity onPress={() => void markAll()}><Text style={styles.markAll}>Mark All As Read</Text></TouchableOpacity></View>{items.map((item) => <NotificationCard key={item.id} notif={item} avatarUrl={user?.avatarUrl} children={children} onRead={markRead} />)}</View> : null;
 
-  // Per-student + broadcast API notifications (fetched from /api/notifications/my)
-  const [apiNotifs, setApiNotifs] = useState<TypedApiNotification[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefetching, setIsRefetching] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [apiHasMore, setApiHasMore] = useState(false);
-  const [isApiError, setIsApiError] = useState(false);
-  const [apiError, setApiError] = useState<unknown>(null);
-
-  const loadApiNotifs = useCallback(async (refreshing = false, append = false) => {
-    if (append) setIsLoadingMore(true);
-    else if (refreshing) setIsRefetching(true);
-    else setIsLoading(true);
-    setIsApiError(false);
-    try {
-      const offset = append ? apiNotifs.length : 0;
-      const data = await customFetch<TypedApiNotification[]>(`/api/notifications/my?limit=50&offset=${offset}`);
-      setApiHasMore(data.length === 50);
-      setApiNotifs((prev) => append ? [...prev, ...data] : data);
-    } catch (e) {
-      setIsApiError(true);
-      setApiError(e);
-    } finally {
-      setIsLoading(false);
-      setIsRefetching(false);
-      setIsLoadingMore(false);
-    }
-  }, [apiNotifs.length]);
-
-  useEffect(() => { loadApiNotifs(); }, [loadApiNotifs]);
-
-  const refetch = useCallback(() => loadApiNotifs(true), [loadApiNotifs]);
-  const onRefresh = refetch;
-
-  const markApiRead = useCallback(async (id: string) => {
-    const rawId = Number(id.replace(/^api-/, ""));
-    if (!Number.isFinite(rawId)) return;
-    setApiNotifs((prev) => prev.map((n) => n.id === rawId ? {
-      ...n,
-      isRead: true,
-      readAt: n.readAt ?? new Date().toISOString(),
-    } : n));
-    try {
-      await customFetch(`/api/notifications/${rawId}/read`, { method: "POST" });
-    } catch {
-      void loadApiNotifs(true);
-    }
-  }, [loadApiNotifs]);
-
-  // Build merged, sorted notification list
-	  const all: DisplayNotif[] = React.useMemo(() => {
-	    const apiItems: DisplayNotif[] = (apiNotifs ?? [])
-	      .filter((n) => !n.isDraft)
-	      .map((n) => {
-		        const timestamp = resolveTimestamp(n.sentAt, n.createdAt, n.sent_at, n.created_at);
-		        const createdAt = n.sentAt ?? n.createdAt ?? n.sent_at ?? n.created_at ?? null;
-		        return {
-		          id: `api-${n.id}`,
-	          title: n.title,
-	          body: n.body,
-	          type: inferType(n),
-	          isRead: Boolean(n.isRead),
-		          createdAt,
-		          timestamp,
-		          metadata: asMetadata(n.metadata),
-		          source: "api" as const,
-	        };
-	      });
-
-	    const localItems: DisplayNotif[] = localNotifs.map((n) => {
-		      const timestamp = resolveTimestamp(n.createdAt);
-	      return {
-	        id: n.id,
-	        title: n.title,
-	        body: n.body,
-	        type: isKnownType(n.type) ? n.type : "system",
-	        isRead: n.isRead,
-	        createdAt: n.createdAt ?? null,
-	        timestamp,
-	        source: "local" as const,
-	      };
-	    });
-
-	    // Merge and sort newest first as a baseline; each group later puts unread
-	    // items before read items while preserving recency.
-	    return [...apiItems, ...localItems].sort(
-		      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
-	    );
-	  }, [apiNotifs, localNotifs]);
-
-	  const grouped = React.useMemo(() => {
-	    const sortGroup = (items: DisplayNotif[]) => [...items].sort((a, b) => {
-	      if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
-		      return (b.timestamp ?? 0) - (a.timestamp ?? 0);
-	    });
-
-	    return {
-	      today: sortGroup(all.filter((n) => timelineGroup(n.timestamp) === "today")),
-	      yesterday: sortGroup(all.filter((n) => timelineGroup(n.timestamp) === "yesterday")),
-	      earlier: sortGroup(all.filter((n) => timelineGroup(n.timestamp) === "earlier")),
-	    };
-	  }, [all]);
-
-	  const unreadCount = all.filter((n) => !n.isRead).length;
-
-  const handlePress = useCallback((notif: DisplayNotif) => {
-    if (notif.isRead) return;
-    if (notif.source === "api") {
-      markApiRead(notif.id);
-    } else {
-      markNotificationRead(notif.id);
-    }
-  }, [markApiRead, markNotificationRead]);
-
-  return (
-    <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={styles.headerRight}>
-          {unreadCount > 0 && (
-            <View style={[styles.countBadge, { backgroundColor: colors.studio.primary + "20" }]}>
-              <Text style={[styles.countText, { color: colors.studio.primary }]}>{unreadCount} new</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {isLoading && all.length === 0 ? (
-        <View style={{ paddingTop: 8 }}>
-          {[1, 2, 3, 4, 5].map((i) => <NotifCardSkeleton key={i} />)}
-        </View>
-      ) : isApiError && all.length === 0 ? (
-        // Offline with no local notifications to show
-        isOfflineError(apiError) ? (
-          <OfflineState onRetry={refetch} />
-        ) : (
-          <ErrorState onRetry={refetch} message="Couldn't load notifications. Please try again." />
-        )
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 60 : 40 }]}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={onRefresh}
-              tintColor={colors.studio.primary}
-              colors={[colors.studio.primary]}
-            />
-          }
-        >
-          {all.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="notifications-off-outline" size={48} color="#4B5563" />
-              <Text style={styles.emptyTitle}>No notifications yet</Text>
-              <Text style={styles.emptyDesc}>
-                You'll be notified about bookings, class reminders, and special offers here.
-              </Text>
-            </View>
-          ) : (
-            <>
-	              {grouped.today.length > 0 && (
-	                <View style={styles.group}>
-	                  <Text style={styles.groupLabel}>Today</Text>
-	                  {grouped.today.map((n) => (
-	                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
-	                  ))}
-	                </View>
-	              )}
-	              {grouped.yesterday.length > 0 && (
-	                <View style={styles.group}>
-	                  <Text style={styles.groupLabel}>Yesterday</Text>
-	                  {grouped.yesterday.map((n) => (
-	                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
-	                  ))}
-	                </View>
-	              )}
-	              {grouped.earlier.length > 0 && (
-	                <View style={styles.group}>
-	                  <Text style={styles.groupLabel}>Earlier</Text>
-	                  {grouped.earlier.map((n) => (
-	                    <NotifItem key={n.id} notif={n} onPress={handlePress} />
-	                  ))}
-	                </View>
-              )}
-              {apiHasMore && (
-                <TouchableOpacity
-                  style={styles.loadMoreButton}
-                  activeOpacity={0.8}
-                  disabled={isLoadingMore}
-                  onPress={() => loadApiNotifs(false, true)}
-                >
-                  <Text style={styles.loadMoreText}>{isLoadingMore ? "Loading..." : "Load more"}</Text>
-                </TouchableOpacity>
-              )}
-            </>
-          )}
-        </ScrollView>
-      )}
-    </View>
-  );
+  return <View style={styles.container}>
+    <View style={[styles.hero, { paddingTop: Platform.OS === "web" ? 18 : insets.top + 10 }]}><TouchableOpacity style={styles.backButton} onPress={() => router.back()}><BackIcon /></TouchableOpacity><Text style={styles.heroTitle}>Notifications</Text><Image source={HERO_IMAGE} style={styles.heroImage} contentFit="contain" /></View>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor="#03B6D7" />}>
+      {!permissionGranted ? <View style={styles.permissionCard}><View style={styles.bell}><Ionicons name="notifications" size={31} color="#03B6D7" /></View><View style={styles.permissionCopy}><Text style={styles.permissionTitle}>Turn On The Notification</Text><Text style={styles.permissionText}>Get notification working to remind you the classes and more our updates of the app and the offers</Text></View><TouchableOpacity style={styles.setNow} onPress={() => void enableNotifications()} disabled={askingPermission}><Text style={styles.setNowText}>{askingPermission ? "Setting..." : "Set Now"}</Text></TouchableOpacity></View> : null}
+      {loading && all.length === 0 ? <View style={styles.loading}><ActivityIndicator color="#03B6D7" /></View> : all.length === 0 ? <View style={styles.empty}><Ionicons name="notifications-off-outline" color="#718080" size={46} /><Text style={styles.emptyText}>No notifications yet</Text></View> : <>{renderGroup("Today", groups.today)}{renderGroup("Yesterday", groups.yesterday)}{renderGroup("Earlier", groups.earlier)}</>}
+    </ScrollView>
+  </View>;
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0B0D" },
-  header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
-  },
-  headerButton: {
-    flexDirection: "row", alignItems: "center", gap: 4, minWidth: 54,
-  },
-  headerButtonText: {
-    fontSize: 14, fontFamily: "Archivo_600SemiBold", color: colors.studio.primary,
-  },
-  headerTitle: { fontSize: 17, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  headerRight: { width: 60, alignItems: "flex-end" },
-  countBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  countText: { fontSize: 12, fontFamily: "Archivo_600SemiBold" },
-  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-  scroll: { paddingHorizontal: 20, paddingTop: 16 },
-  empty: { alignItems: "center", paddingTop: 80, gap: 12 },
-  emptyTitle: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  emptyDesc: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
-  group: { marginBottom: 24, gap: 12 },
-  groupLabel: {
-    fontSize: 11, fontFamily: "SpaceMono_700Bold", color: "#6B747F",
-    letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 0,
-  },
-  notifCard: {
-    flexDirection: "row", alignItems: "flex-start", gap: 12,
-    backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)", padding: 16,
-  },
-  notifCardUnread: { borderColor: "rgba(0,182,215,0.38)", backgroundColor: "rgba(0,182,215,0.06)" },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, position: "absolute", top: 18, left: 10 },
-  notifIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  notifContent: { flex: 1, gap: 6, minWidth: 0 },
-  notifTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
-  notifTitle: { flex: 1, fontSize: 15, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  notifTime: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "#6B747F", flexShrink: 0 },
-  notifBody: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", lineHeight: 20 },
-  eventBadge: {
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  eventBadgeText: {
-    fontSize: 10,
-    fontFamily: "SpaceMono_700Bold",
-    textTransform: "uppercase",
-  },
-  metadataWrap: {
-    marginTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.06)",
-    paddingTop: 10,
-    gap: 6,
-  },
-  metadataRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  metadataLabel: {
-    fontSize: 11,
-    fontFamily: "SpaceMono_700Bold",
-    color: "#6B747F",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  metadataValue: {
-    flex: 1,
-    textAlign: "right",
-    fontSize: 13,
-    fontFamily: "Archivo_500Medium",
-    color: "#FFFFFF",
-  },
-  loadMoreButton: {
-    alignSelf: "center",
-    marginTop: 4,
-    marginBottom: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.35)",
-    backgroundColor: "rgba(0,182,215,0.1)",
-  },
-  loadMoreText: {
-    fontSize: 13,
-    fontFamily: "Archivo_700Bold",
-    color: colors.studio.primary,
-  },
+  container: { flex: 1, backgroundColor: "#0D1110" }, hero: { height: 127, backgroundColor: "#08B4D3", borderBottomLeftRadius: 31, borderBottomRightRadius: 31, position: "relative" }, backButton: { position: "absolute", left: 16, top: Platform.OS === "web" ? 19 : 54, zIndex: 2 }, heroTitle: { textAlign: "center", color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 29, textTransform: "uppercase" }, heroImage: { position: "absolute", right: 22, bottom: -13, width: 112, height: 95 },
+  scroll: { paddingHorizontal: 19, paddingTop: 18, paddingBottom: Platform.OS === "web" ? 45 : 32 }, permissionCard: { minHeight: 126, borderRadius: 10, backgroundColor: "#FFFFFF", padding: 15, flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: 4, marginBottom: 16 }, bell: { width: 65, alignItems: "center" }, permissionCopy: { flex: 1, paddingRight: 4 }, permissionTitle: { color: "#03B6D7", fontFamily: "Anton_400Regular", fontSize: 14, lineHeight: 17, textTransform: "uppercase" }, permissionText: { color: "#03B6D7", fontFamily: "Archivo_400Regular", fontSize: 10, lineHeight: 11, marginTop: 4 }, setNow: { width: "100%", height: 28, marginTop: 9, borderRadius: 16, backgroundColor: "#03B6D7", alignItems: "center", justifyContent: "center" }, setNowText: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 11 },
+  group: { gap: 6, marginBottom: 21 }, groupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }, groupTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 16 }, markAll: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 10, textDecorationLine: "underline" }, card: { minHeight: 87, flexDirection: "row", alignItems: "center", paddingHorizontal: 13, paddingVertical: 10, borderRadius: 15, gap: 10 }, cardUnread: { backgroundColor: "#093438" }, avatarWrap: { width: 49, height: 49, borderRadius: 25, backgroundColor: "#172020", alignItems: "center", justifyContent: "center" }, avatar: { width: 49, height: 49, borderRadius: 25 }, childInitial: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 28 }, statusIcon: { width: 21, height: 21, borderRadius: 11, position: "absolute", right: -4, bottom: -2, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "#0D1110" }, cardCopy: { flex: 1, minWidth: 0 }, cardTitle: { fontFamily: "Archivo_700Bold", fontSize: 16, lineHeight: 19 }, cardBody: { color: "#A9B3B3", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 15, marginTop: 3 }, cardBodyExpanded: { marginTop: 7 }, cardTime: { color: "#CFD5D5", fontFamily: "Archivo_400Regular", fontSize: 11, lineHeight: 13, marginTop: 1 }, cardChevron: { width: 20, alignItems: "center" }, cardChevronOpen: { transform: [{ rotate: "180deg" }] }, loading: { height: 190, alignItems: "center", justifyContent: "center" }, empty: { alignItems: "center", paddingTop: 120, gap: 12 }, emptyText: { color: "#FFFFFF", fontFamily: "Archivo_600SemiBold", fontSize: 15 },
 });
