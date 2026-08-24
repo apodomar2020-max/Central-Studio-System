@@ -54,10 +54,16 @@ import {
   useGetStudentDeletionImpact,
   useStartStudentDeletionPreparation,
   useCancelStudentDeletionPreparation,
+  useGetStudentDeletionAttributionPlan,
+  useRecordStudentDeletionManualResolution,
   getListStudentsQueryKey,
   getGetStudentDeletionImpactQueryKey,
+  getGetStudentDeletionAttributionPlanQueryKey,
 } from "@workspace/api-client-react";
-import type { StudentDeletionImpactResponse } from "@workspace/api-client-react";
+import type {
+  StudentDeletionImpactResponse,
+  StudentDeletionAttributionPlanResponse,
+} from "@workspace/api-client-react";
 import "./admin2-operations.css";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
@@ -481,11 +487,44 @@ function DeletionImpactDialog({
                 {data.canDelete ? "No current blockers detected." : "Not eligible for permanent deletion."}
               </p>
               <p className="text-xs text-muted-foreground">Permanent deletion execution is not enabled yet.</p>
+              {!data.canDelete && (
+                <p className="text-xs text-muted-foreground">
+                  Clearing historical ownership resolution does not by itself make this account deletable — other
+                  blockers listed above must also be resolved.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 This analysis reflects the current account state and will be revalidated before any future
                 permanent deletion.
               </p>
             </section>
+
+            {/* Historical ownership resolution (Phase B3B2F). Count-only
+                passthrough of the live B3B2E `manualResolution` aggregate —
+                never recomputed client-side, and never presented as a
+                statement that any record ownership has been changed. */}
+            {data.manualResolution.requiredCount > 0 && (
+              <section aria-labelledby="impact-manual-resolution-heading" className="rounded-lg border p-4 space-y-1">
+                <h3 id="impact-manual-resolution-heading" className="text-sm font-semibold text-white">
+                  Historical ownership resolution
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {data.manualResolution.unresolvedCount > 0
+                    ? `${data.manualResolution.unresolvedCount} historical record${data.manualResolution.unresolvedCount === 1 ? "" : "s"} still require an Admin decision and block permanent deletion.`
+                    : "All historical records requiring an Admin decision have been decided."}
+                </p>
+                {data.manualResolution.conflictCount > 0 && (
+                  <p className="text-xs text-red-400">
+                    {data.manualResolution.conflictCount} of these are in evidence conflict — system signals
+                    disagree and no decision can be recorded for them yet.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Decisions are reviewed and recorded in the Historical Attribution Plan. Recording a decision does
+                  not change the historical record ownership.
+                </p>
+              </section>
+            )}
 
             {(summary && (summary.legacyAttribution.emailOnlyRows > 0 || summary.legacyAttribution.ambiguousRows > 0)) && (
               <section aria-labelledby="impact-legacy-heading" className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 space-y-2">
@@ -607,6 +646,567 @@ function DeletionImpactDialog({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Permanent Account Deletion — Historical Attribution Planner (Phase B3B1B)
+//
+// Pure read-only consumption of the already-live B3B1 contract
+// (GET /api/students/:id/deletion-attribution-plan). This component performs
+// ZERO writes: no mutation is ever called from here, and nothing from the
+// response (summary/domains/classification/reasonCode/executionEligible) is
+// ever submitted back to the server. Display copy for each classification is
+// a pure passthrough mapping of the backend's `domains[].classification` —
+// never reinterpreted or upgraded in certainty client-side. This is
+// deliberately a SEPARATE dialog/action from DeletionImpactDialog above:
+// Review Deletion Impact answers "what blocks/changes during deletion";
+// Review Attribution Plan answers "how legacy identity ownership can/cannot
+// be proven" — the two must never be merged into one screen.
+// ---------------------------------------------------------------------------
+
+const ATTRIBUTION_CLASSIFICATION_COPY: Record<
+  StudentDeletionAttributionPlanResponse["domains"][number]["classification"],
+  string
+> = {
+  ALREADY_ATTRIBUTED: "Already linked to this Student.",
+  SAFE_TO_ATTRIBUTE: "Historical evidence is sufficient to attribute safely.",
+  UNPROVEN_PRE_T0: "Historical ownership cannot be proven before provenance tracking began.",
+  AMBIGUOUS_PROVENANCE: "Conflicting identity evidence prevents automatic attribution.",
+  NO_MATCH: "Relevant identity exists, but no valid ownership interval covers this record.",
+  SEMANTICALLY_NOT_STUDENT_OWNERSHIP: "Matching contact information does not prove Student ownership.",
+  MISSING_REQUIRED_TIMESTAMP: "Ownership cannot be evaluated without a reliable timestamp.",
+  MALFORMED_LEGACY_IDENTITY: "Legacy identity data is insufficient for safe attribution.",
+  INDEPENDENT_LEVEL_B_EVIDENCE:
+    "Independent system evidence supports this Student, but an Admin decision is required before deletion can proceed.",
+  EVIDENCE_CONFLICT:
+    "System evidence signals disagree about who owns these records. No decision can be recorded while they disagree.",
+};
+
+const ATTRIBUTION_CLASSIFICATION_STYLE: Record<
+  StudentDeletionAttributionPlanResponse["domains"][number]["classification"],
+  string
+> = {
+  ALREADY_ATTRIBUTED: "border-transparent bg-emerald-500/15 text-emerald-400",
+  SAFE_TO_ATTRIBUTE: "border-transparent bg-cyan-500/15 text-cyan-400",
+  UNPROVEN_PRE_T0: "border-transparent bg-amber-500/15 text-amber-400",
+  AMBIGUOUS_PROVENANCE: "border-transparent bg-red-500/15 text-red-400",
+  NO_MATCH: "text-muted-foreground",
+  SEMANTICALLY_NOT_STUDENT_OWNERSHIP: "text-muted-foreground",
+  MISSING_REQUIRED_TIMESTAMP: "text-muted-foreground",
+  MALFORMED_LEGACY_IDENTITY: "text-muted-foreground",
+  INDEPENDENT_LEVEL_B_EVIDENCE: "border-transparent bg-amber-500/15 text-amber-400",
+  EVIDENCE_CONFLICT: "border-transparent bg-red-500/15 text-red-400",
+};
+
+const ATTRIBUTION_DOMAIN_LABEL: Record<
+  StudentDeletionAttributionPlanResponse["domains"][number]["domain"],
+  string
+> = {
+  bookings: "Bookings",
+  package_orders: "Package Orders",
+  feedback: "Feedback",
+};
+
+function attributionPlanErrorCode(error: unknown): string | null {
+  if (error && typeof error === "object" && "data" in error) {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === "object" && "code" in data) {
+      const code = (data as { code?: unknown }).code;
+      return typeof code === "string" ? code : null;
+    }
+  }
+  return null;
+}
+
+function attributionPlanErrorStatus(error: unknown): number | null {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === "number" ? status : null;
+  }
+  return null;
+}
+
+function AttributionPlanErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = attributionPlanErrorStatus(error);
+  const code = attributionPlanErrorCode(error);
+  let message: string;
+  if (status === 401) {
+    message = "Your admin session has expired. Please log in again.";
+  } else if (status === 403) {
+    message = "You don't have permission to review the attribution plan for this account.";
+  } else if (status === 404) {
+    message = "This student no longer exists.";
+  } else if (status === 409 && code === "STUDENT_DELETION_PREPARATION_REQUIRED") {
+    message = "The attribution plan is no longer available — deletion preparation is not currently active. Start deletion preparation again to review it.";
+  } else if (status === 409) {
+    message = "This account is already permanently deleted, or is no longer eligible for attribution review.";
+  } else {
+    message = "Could not load the attribution plan. Please try again.";
+  }
+  return (
+    <div role="alert" className="space-y-3 rounded-lg border border-red-500/40 bg-red-500/5 p-4">
+      <p className="text-sm text-red-400">{message}</p>
+      {status !== 403 && status !== 404 && status !== 409 && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function AttributionSummaryCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div className="mt-1 text-xl font-bold text-white">{value}</div>
+        {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Level-B Manual Resolution (Phase B3B2F)
+//
+// Admin-facing surface for the already-live B3B2E contract. Scope is strictly
+// LEVEL-B ONLY: no Level C/D review, no ownership backfill, no Permanent
+// Delete, no tombstone/retention UI is built here. Everything shown is
+// non-sensitive system-derived metadata already exposed by the live contract
+// (domain, internal record id, resolution status) — no provenance
+// fingerprint, no pepper, no payment detail, no child PII, no raw email is
+// rendered anywhere in this section.
+//
+// The backend remains the sole authority: eligibility is never computed
+// client-side, EVIDENCE_CONFLICT is fail-closed server-side (every decision,
+// including "Keep Unresolved", is rejected while signals disagree), and
+// permission is enforced by requireAdminPermission("users","delete") on the
+// route. The UI gate below is UX only, never the security boundary.
+//
+// Recording a decision writes an append-only authorization/evidence record.
+// It does NOT rewrite any canonical ownership column — no historical record
+// ownership is changed by this phase, and no copy here may imply otherwise.
+// ---------------------------------------------------------------------------
+
+type LevelBDecision = "PROVEN_OWNER" | "NOT_THIS_STUDENT" | "UNRESOLVED";
+
+type LevelBResolutionEntry =
+  StudentDeletionAttributionPlanResponse["levelBResolutions"][number];
+
+const LEVEL_B_DECISION_LABEL: Record<LevelBDecision, string> = {
+  PROVEN_OWNER: "Confirm Ownership",
+  NOT_THIS_STUDENT: "Not This Student",
+  UNRESOLVED: "Keep Unresolved",
+};
+
+const LEVEL_B_STATUS_LABEL: Record<LevelBResolutionEntry["resolutionStatus"], string> = {
+  NONE: "Awaiting decision",
+  PROVEN_OWNER: "Ownership confirmed",
+  NOT_THIS_STUDENT: "Marked not this Student",
+  UNRESOLVED: "Kept unresolved",
+};
+
+const LEVEL_B_STATUS_STYLE: Record<LevelBResolutionEntry["resolutionStatus"], string> = {
+  NONE: "border-transparent bg-amber-500/15 text-amber-400",
+  PROVEN_OWNER: "border-transparent bg-emerald-500/15 text-emerald-400",
+  NOT_THIS_STUDENT: "border-transparent bg-emerald-500/15 text-emerald-400",
+  UNRESOLVED: "border-transparent bg-amber-500/15 text-amber-400",
+};
+
+const LEVEL_B_DOMAIN_LABEL: Record<LevelBResolutionEntry["domain"], string> = {
+  package_orders: "Package Order",
+};
+
+// A decision only clears the deletion blocker when it is an actual decision —
+// NONE and UNRESOLVED both keep the record blocking, exactly as the backend
+// blocker aggregation does.
+function levelBStillBlocks(status: LevelBResolutionEntry["resolutionStatus"]): boolean {
+  return status === "NONE" || status === "UNRESOLVED";
+}
+
+const LEVEL_B_CONFIRM_COPY: Record<LevelBDecision, { title: string; body: string; action: string }> = {
+  PROVEN_OWNER: {
+    title: "Confirm ownership of this record?",
+    action: "Confirm Ownership",
+    body:
+      "This records an ownership decision only. It does not yet change the historical record ownership. " +
+      "The record stays exactly as it is today; a separate, future step would be required to act on this decision.",
+  },
+  NOT_THIS_STUDENT: {
+    title: "Mark this record as not this Student?",
+    action: "Mark Not This Student",
+    body:
+      "This records a decision that the record does not belong to this Student. It does not change or remove the " +
+      "record, and it does not change the historical record ownership.",
+  },
+  UNRESOLVED: {
+    title: "Keep this record unresolved?",
+    action: "Keep Unresolved",
+    body:
+      "This records that ownership could not be determined. The record continues to block permanent deletion, " +
+      "and no historical record ownership is changed.",
+  },
+};
+
+function manualResolutionErrorMessage(error: unknown): string {
+  const status = attributionPlanErrorStatus(error);
+  const code = attributionPlanErrorCode(error);
+  if (status === 401) return "Your admin session has expired. Please log in again.";
+  if (status === 403) return "You don't have permission to record resolution decisions for this account.";
+  if (status === 404) return "This student no longer exists.";
+  if (code === "LEGACY_IDENTITY_RESOLUTION_EVIDENCE_CONFLICT") {
+    return "System evidence signals disagree for this record, so no decision can be recorded. Deletion remains blocked.";
+  }
+  if (code === "LEGACY_IDENTITY_RESOLUTION_STALE") {
+    return "The deletion preparation changed while you were reviewing. The plan has been refreshed — please review it again.";
+  }
+  if (code === "LEGACY_IDENTITY_RESOLUTION_NOT_A_CANDIDATE" || code === "LEGACY_IDENTITY_RESOLUTION_NOT_LEVEL_B") {
+    return "This record no longer qualifies for manual resolution. The plan has been refreshed.";
+  }
+  if (code === "STUDENT_NOT_DEACTIVATED") {
+    return "The account must be deactivated before a resolution decision can be recorded.";
+  }
+  if (code === "STUDENT_DELETION_PREPARATION_REQUIRED") {
+    return "Deletion preparation is no longer active. Start deletion preparation again to continue.";
+  }
+  if (code === "STUDENT_ALREADY_DELETED") return "This account has already been permanently deleted.";
+  return "Could not record the decision. Please try again.";
+}
+
+function ManualResolutionSection({
+  studentId,
+  plan,
+  canResolve,
+  conflictCount,
+  onResolved,
+}: {
+  studentId: number;
+  plan: StudentDeletionAttributionPlanResponse;
+  canResolve: boolean;
+  conflictCount: number;
+  onResolved: () => void;
+}) {
+  const [pending, setPending] = useState<{ entry: LevelBResolutionEntry; decision: LevelBDecision } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const mutation = useRecordStudentDeletionManualResolution({
+    mutation: {
+      onSuccess: () => {
+        setPending(null);
+        setError(null);
+        setSuccess("Decision recorded. The historical record itself is unchanged.");
+        // Always re-read authoritative state from the server rather than
+        // patching local state — a stale/409 path must never leave the UI
+        // showing a decision the backend did not accept.
+        onResolved();
+      },
+      onError: (err) => {
+        setPending(null);
+        setSuccess(null);
+        setError(manualResolutionErrorMessage(err));
+        // Any rejection may mean our view of the plan is stale; re-read it.
+        onResolved();
+      },
+    },
+  });
+
+  const entries = plan.levelBResolutions;
+  const unresolvedCount = entries.filter((e) => levelBStillBlocks(e.resolutionStatus)).length;
+
+  return (
+    <section aria-labelledby="level-b-resolution-heading" className="rounded-lg border p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 id="level-b-resolution-heading" className="text-sm font-semibold text-white">
+          Manual Resolution
+        </h3>
+        <span className="text-xs text-muted-foreground">
+          {unresolvedCount} awaiting a decision
+          {conflictCount > 0 ? ` · ${conflictCount} in evidence conflict` : ""}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Records below have independent system evidence pointing at this Student but are not linked to the account.
+        Recording a decision stores an Admin decision only — it does not change the historical record ownership.
+      </p>
+
+      {conflictCount > 0 && (
+        <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 space-y-1">
+          <div className="text-sm font-semibold text-red-400">Evidence Conflict</div>
+          <p className="text-xs text-muted-foreground">
+            {conflictCount} record{conflictCount === 1 ? "" : "s"} produced system evidence signals that disagree
+            about who owns them. No decision of any kind can be recorded for those records, and permanent deletion
+            remains blocked until this is resolved by a future review policy.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
+      {success && !error && (
+        <div role="status" aria-live="polite" className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-400">
+          {success}
+        </div>
+      )}
+
+      {!canResolve && (
+        <p className="text-xs text-muted-foreground">
+          You have read-only access to this review. Recording a resolution decision requires the user deletion
+          permission.
+        </p>
+      )}
+
+      {entries.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No records currently require manual resolution for this Student.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {entries.map((entry) => {
+            const blocking = levelBStillBlocks(entry.resolutionStatus);
+            return (
+              <li
+                key={`${entry.domain}-${entry.targetRecordId}`}
+                className="rounded-lg border p-3 space-y-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-white">
+                      {LEVEL_B_DOMAIN_LABEL[entry.domain]} #{entry.targetRecordId}
+                    </span>
+                    <Badge variant="outline" className="border-transparent bg-cyan-500/15 text-cyan-400">
+                      Evidence Level B
+                    </Badge>
+                  </div>
+                  <Badge variant="outline" className={LEVEL_B_STATUS_STYLE[entry.resolutionStatus]}>
+                    {LEVEL_B_STATUS_LABEL[entry.resolutionStatus]}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  System evidence: independent credit and attendance activity for this record agree on this Student.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {blocking
+                    ? "Currently blocks permanent deletion."
+                    : "No longer blocks permanent deletion on its own."}
+                </p>
+                {canResolve && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {(["PROVEN_OWNER", "NOT_THIS_STUDENT", "UNRESOLVED"] as LevelBDecision[]).map((decision) => (
+                      <Button
+                        key={decision}
+                        variant="outline"
+                        size="sm"
+                        aria-label={`${LEVEL_B_DECISION_LABEL[decision]} for record ${entry.targetRecordId}`}
+                        disabled={mutation.isPending}
+                        onClick={() => { setSuccess(null); setError(null); setPending({ entry, decision }); }}
+                      >
+                        {LEVEL_B_DECISION_LABEL[decision]}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <AlertDialog open={pending !== null} onOpenChange={(open) => { if (!open) setPending(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pending ? LEVEL_B_CONFIRM_COPY[pending.decision].title : ""}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pending ? LEVEL_B_CONFIRM_COPY[pending.decision].body : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={mutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!pending) return;
+                mutation.mutate({
+                  id: studentId,
+                  data: {
+                    workflowId: plan.workflowId,
+                    domain: pending.entry.domain,
+                    targetRecordId: pending.entry.targetRecordId,
+                    decision: pending.decision,
+                  },
+                });
+              }}
+            >
+              {mutation.isPending ? "Recording…" : pending ? LEVEL_B_CONFIRM_COPY[pending.decision].action : ""}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
+  );
+}
+
+function AttributionPlanDialog({
+  open,
+  onOpenChange,
+  query,
+  studentId,
+  canResolve,
+  conflictCount,
+  onResolved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  query: ReturnType<typeof useGetStudentDeletionAttributionPlan<StudentDeletionAttributionPlanResponse>>;
+  studentId: number;
+  canResolve: boolean;
+  conflictCount: number;
+  onResolved: () => void;
+}) {
+  const data = query.data;
+  const hasError = query.isError;
+
+  // Group the flat domains[] array by domain, preserving only domains the
+  // backend actually returned (never hardcoded — attendance/credit_transactions/
+  // finance are never present per the documented response shape, and this
+  // component never assumes any of bookings/package_orders/feedback exists).
+  const domainGroups = new Map<
+    StudentDeletionAttributionPlanResponse["domains"][number]["domain"],
+    StudentDeletionAttributionPlanResponse["domains"]
+  >();
+  if (data) {
+    for (const entry of data.domains) {
+      const list = domainGroups.get(entry.domain) ?? [];
+      list.push(entry);
+      domainGroups.set(entry.domain, list);
+    }
+  }
+
+  const isEmptyPlan =
+    !!data &&
+    data.summary.alreadyAttributed === 0 &&
+    data.summary.safeToAttribute === 0 &&
+    data.summary.ambiguous === 0 &&
+    data.summary.unproven === 0 &&
+    data.summary.nonAttributable === 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[85vh]">
+        <DialogHeader>
+          <DialogTitle>Historical Attribution Plan</DialogTitle>
+          <DialogDescription>
+            Read-only review of whether legacy (pre-account) historical records can be safely attributed to this
+            Student. This is inspection only — no records are attributed, linked, or modified by this review.
+          </DialogDescription>
+        </DialogHeader>
+
+        {query.isLoading || (query.isFetching && !data && !hasError) ? (
+          <div role="status" aria-live="polite" className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading attribution plan…
+          </div>
+        ) : hasError || !data ? (
+          <div role="status" aria-live="polite">
+            <AttributionPlanErrorState error={query.error} onRetry={() => void query.refetch()} />
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>Generated: {formatDateTime(data.generatedAt)}</span>
+              <span>Policy version: {data.policyVersion}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Refresh Plan"
+                disabled={query.isFetching}
+                onClick={() => void query.refetch()}
+              >
+                {query.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh Plan
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              This review reflects the current deletion-preparation and historical data state.
+            </p>
+
+            <ManualResolutionSection
+              studentId={studentId}
+              plan={data}
+              canResolve={canResolve}
+              conflictCount={conflictCount}
+              onResolved={onResolved}
+            />
+
+            {isEmptyPlan ? (
+              <section className="rounded-lg border p-4">
+                <p className="text-sm text-muted-foreground">
+                  No legacy attribution records require review for this Student.
+                </p>
+              </section>
+            ) : (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                  <AttributionSummaryCard label="Already Attributed" value={data.summary.alreadyAttributed} />
+                  <AttributionSummaryCard label="Safe to Attribute" value={data.summary.safeToAttribute} />
+                  <AttributionSummaryCard label="Ambiguous" value={data.summary.ambiguous} />
+                  <AttributionSummaryCard label="Unproven" value={data.summary.unproven} />
+                  <AttributionSummaryCard label="Non-Attributable" value={data.summary.nonAttributable} />
+                </div>
+
+                <div className="space-y-4">
+                  {Array.from(domainGroups.entries()).map(([domain, entries]) => {
+                    const total = entries.reduce((sum, e) => sum + e.count, 0);
+                    return (
+                      <section key={domain} aria-labelledby={`attribution-domain-${domain}`} className="rounded-lg border p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h3 id={`attribution-domain-${domain}`} className="text-sm font-semibold text-white">
+                            {ATTRIBUTION_DOMAIN_LABEL[domain]}
+                          </h3>
+                          <span className="text-xs text-muted-foreground">{total} record{total === 1 ? "" : "s"}</span>
+                        </div>
+                        <ul className="space-y-2">
+                          {entries.map((entry) => (
+                            <li key={`${entry.domain}-${entry.classification}`} className="flex items-start justify-between gap-3 text-sm">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className={ATTRIBUTION_CLASSIFICATION_STYLE[entry.classification]}>
+                                    {entry.classification}
+                                  </Badge>
+                                  {entry.executionEligible && (
+                                    <span className="text-xs text-cyan-400">Eligible for future safe attribution</span>
+                                  )}
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {ATTRIBUTION_CLASSIFICATION_COPY[entry.classification]}
+                                </p>
+                              </div>
+                              <span className="font-medium text-white">{entry.count}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const studentId = Number(id);
@@ -636,6 +1236,26 @@ export default function StudentDetailPage() {
     query: {
       queryKey: getGetStudentDeletionImpactQueryKey(studentId),
       enabled: impactDialogOpen && Number.isInteger(studentId) && studentId > 0,
+      staleTime: 0,
+      gcTime: 0,
+      retry: false,
+    },
+  });
+
+  // Historical Attribution Planner (Phase B3B1B). Read-only, advisory
+  // analysis fetched from the already-live B3B1 contract
+  // (GET /api/students/:id/deletion-attribution-plan). Lazy: this hook does
+  // not fire until the Admin explicitly opens the planner dialog (enabled
+  // gate below) — matching the impactQuery lazy-fetch pattern exactly. Only
+  // authoritative while deletion preparation is active; a fresh GET is
+  // issued every time the dialog is (re)opened or Refresh Plan is clicked —
+  // nothing here is cached as authoritative across a Start/Cancel
+  // Preparation mutation elsewhere on the page.
+  const [attributionDialogOpen, setAttributionDialogOpen] = useState(false);
+  const attributionPlanQuery = useGetStudentDeletionAttributionPlan<StudentDeletionAttributionPlanResponse>(studentId, {
+    query: {
+      queryKey: getGetStudentDeletionAttributionPlanQueryKey(studentId),
+      enabled: attributionDialogOpen && Number.isInteger(studentId) && studentId > 0,
       staleTime: 0,
       gcTime: 0,
       retry: false,
@@ -1145,6 +1765,33 @@ export default function StudentDetailPage() {
                   ) : null}
                   Review Deletion Impact
                 </Button>
+
+                {/* Historical Attribution Planner (Phase B3B1B) — a distinct,
+                    read-only action from Review Deletion Impact above.
+                    Impact review answers "what blocks/changes during
+                    deletion"; this answers "how legacy identity ownership
+                    can/cannot be proven". Only authoritative while an active
+                    (PREPARING) deletion preparation exists — the backend
+                    409s STUDENT_DELETION_PREPARATION_REQUIRED otherwise, so
+                    this is never presented as authoritative before that. */}
+                {preparationActive ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Review Attribution Plan"
+                    disabled={attributionDialogOpen && attributionPlanQuery.isFetching}
+                    onClick={() => { setAttributionDialogOpen(true); void attributionPlanQuery.refetch(); }}
+                  >
+                    {attributionDialogOpen && attributionPlanQuery.isFetching ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Review Attribution Plan
+                  </Button>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Start Deletion Preparation before reviewing historical attribution.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1153,6 +1800,28 @@ export default function StudentDetailPage() {
             open={impactDialogOpen}
             onOpenChange={(open) => setImpactDialogOpen(open)}
             query={impactQuery}
+          />
+
+          <AttributionPlanDialog
+            open={attributionDialogOpen}
+            onOpenChange={(open) => setAttributionDialogOpen(open)}
+            query={attributionPlanQuery}
+            studentId={studentId}
+            /* UX gate only — the route itself enforces users.delete. A
+               users.view / users.edit admin never reaches this dialog, and
+               would still be rejected server-side if they did. */
+            canResolve={can("users", "delete") && preparationActive && d.user.accountStatus === "deactivated"}
+            conflictCount={prepStatusQuery.data?.manualResolution.conflictCount ?? 0}
+            onResolved={() => {
+              // Re-read the authoritative server state after every decision
+              // attempt: the plan (per-candidate status) and the deletion
+              // impact (blocker set + aggregate counts). Nothing is patched
+              // optimistically — a PROVEN_OWNER decision must never make the
+              // UI claim the historical record has been rewritten.
+              void attributionPlanQuery.refetch();
+              void impactQuery.refetch();
+              void prepStatusQuery.refetch();
+            }}
           />
 
           <AlertDialog open={dangerDialog === "deactivate"} onOpenChange={(open) => { if (!open) setDangerDialog(null); }}>

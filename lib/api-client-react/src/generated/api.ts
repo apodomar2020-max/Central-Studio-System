@@ -97,6 +97,7 @@ import type {
   PublicWebsitePerformanceDetail,
   PublicWebsitePerformanceFeatured,
   PublicWebsitePerformanceListItem,
+  RecordStudentDeletionManualResolutionRequest,
   Room,
   RoomListResponse,
   RoomReservation,
@@ -105,7 +106,9 @@ import type {
   ScheduleRoom,
   SendCampaignResponse,
   Student,
+  StudentDeletionAttributionPlanResponse,
   StudentDeletionImpactResponse,
+  StudentDeletionManualResolutionRecord,
   StudentDeletionPreparationResponse,
   StudentLifecycleResponse,
   UpdateAdminClassCapacitySettings409,
@@ -4240,6 +4243,195 @@ export function useGetStudentDeletionImpact<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getGetStudentDeletionAttributionPlanUrl = (id: number) => {
+  return `/api/students/${id}/deletion-attribution-plan`;
+};
+
+/**
+ * Phase B3B1: read-only historical attribution planner for permanent Student account deletion. Requires users.delete. Zero writes — a plain, transactional SELECT. Only produces an authoritative plan while the Student has an active (PREPARING) deletion-preparation workflow; otherwise returns 409 STUDENT_DELETION_PREPARATION_REQUIRED. There is no preview/execution mode — this endpoint never mutates ownership or identity data.
+ */
+export const getStudentDeletionAttributionPlan = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StudentDeletionAttributionPlanResponse> => {
+  return customFetch<StudentDeletionAttributionPlanResponse>(
+    getGetStudentDeletionAttributionPlanUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetStudentDeletionAttributionPlanQueryKey = (id: number) => {
+  return [`/api/students/${id}/deletion-attribution-plan`] as const;
+};
+
+export const getGetStudentDeletionAttributionPlanQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStudentDeletionAttributionPlan>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStudentDeletionAttributionPlan>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStudentDeletionAttributionPlanQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStudentDeletionAttributionPlan>>
+  > = ({ signal }) =>
+    getStudentDeletionAttributionPlan(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStudentDeletionAttributionPlan>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStudentDeletionAttributionPlanQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStudentDeletionAttributionPlan>>
+>;
+export type GetStudentDeletionAttributionPlanQueryError =
+  ErrorType<ErrorResponse>;
+
+export function useGetStudentDeletionAttributionPlan<
+  TData = Awaited<ReturnType<typeof getStudentDeletionAttributionPlan>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStudentDeletionAttributionPlan>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStudentDeletionAttributionPlanQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getRecordStudentDeletionManualResolutionUrl = (id: number) => {
+  return `/api/students/${id}/deletion-attribution-resolutions`;
+};
+
+/**
+ * Phase B3B2E: records a durable, append-only Level-B manual resolution decision for one unattributed package_orders candidate. Requires users.delete. LEVEL-B ONLY — the server independently re-derives Level-B evidence inside the same transaction as the insert and never trusts any client evidence claim. This writes an authorization/evidence decision row ONLY; it never writes any canonical ownership column, so no historical record ownership is changed. Requires the Student to be deactivated with an active deletion preparation. A candidate in EVIDENCE_CONFLICT is fail-closed and rejects every decision, including UNRESOLVED.
+ */
+export const recordStudentDeletionManualResolution = async (
+  id: number,
+  recordStudentDeletionManualResolutionRequest: RecordStudentDeletionManualResolutionRequest,
+  options?: RequestInit,
+): Promise<StudentDeletionManualResolutionRecord> => {
+  return customFetch<StudentDeletionManualResolutionRecord>(
+    getRecordStudentDeletionManualResolutionUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(recordStudentDeletionManualResolutionRequest),
+    },
+  );
+};
+
+export const getRecordStudentDeletionManualResolutionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordStudentDeletionManualResolution>>,
+    TError,
+    {
+      id: number;
+      data: BodyType<RecordStudentDeletionManualResolutionRequest>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordStudentDeletionManualResolution>>,
+  TError,
+  { id: number; data: BodyType<RecordStudentDeletionManualResolutionRequest> },
+  TContext
+> => {
+  const mutationKey = ["recordStudentDeletionManualResolution"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordStudentDeletionManualResolution>>,
+    { id: number; data: BodyType<RecordStudentDeletionManualResolutionRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return recordStudentDeletionManualResolution(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordStudentDeletionManualResolutionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordStudentDeletionManualResolution>>
+>;
+export type RecordStudentDeletionManualResolutionMutationBody =
+  BodyType<RecordStudentDeletionManualResolutionRequest>;
+export type RecordStudentDeletionManualResolutionMutationError =
+  ErrorType<ErrorResponse>;
+
+export const useRecordStudentDeletionManualResolution = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordStudentDeletionManualResolution>>,
+    TError,
+    {
+      id: number;
+      data: BodyType<RecordStudentDeletionManualResolutionRequest>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordStudentDeletionManualResolution>>,
+  TError,
+  { id: number; data: BodyType<RecordStudentDeletionManualResolutionRequest> },
+  TContext
+> => {
+  return useMutation(
+    getRecordStudentDeletionManualResolutionMutationOptions(options),
+  );
+};
 
 export const getListBookingsUrl = (params?: ListBookingsParams) => {
   const normalizedParams = new URLSearchParams();

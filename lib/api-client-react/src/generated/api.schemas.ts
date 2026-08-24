@@ -1428,6 +1428,18 @@ export type StudentDeletionImpactResponseSummary = {
 };
 
 /**
+ * Phase B3B2E aggregate block summary for Level-B manual resolution. Counts only — no row identifiers or evidence detail. Any candidate counted in `unresolvedCount` blocks permanent deletion.
+ */
+export interface StudentDeletionManualResolutionSummary {
+  readonly requiredCount: number;
+  readonly resolvedOwnerCount: number;
+  readonly resolvedNotThisStudentCount: number;
+  readonly unresolvedCount: number;
+  /** Candidates whose channel-B provenance and channel-C independent evidence point at different students. These are fail-closed: they are ALSO included in requiredCount and unresolvedCount, and no decision of any kind can be recorded for them. */
+  readonly conflictCount: number;
+}
+
+/**
  * Advisory-only deletion impact analysis. Not a concurrency token, not a signed confirmation token — see policyVersion/generatedAt notes on the parent operation.
  */
 export interface StudentDeletionImpactResponse {
@@ -1440,7 +1452,157 @@ export interface StudentDeletionImpactResponse {
   readonly categories: StudentDeletionImpactCategory[];
   /** Phase B3B0-2 additive extension. Read-only status surface — this GET performs no writes. Does not add a Permanent Delete capability; canDelete/blockers semantics above are unchanged. */
   readonly deletionPreparation: StudentDeletionImpactResponseDeletionPreparation;
+  readonly manualResolution: StudentDeletionManualResolutionSummary;
   readonly summary: StudentDeletionImpactResponseSummary;
+}
+
+export type StudentDeletionAttributionPlanResponsePreparationStatus =
+  (typeof StudentDeletionAttributionPlanResponsePreparationStatus)[keyof typeof StudentDeletionAttributionPlanResponsePreparationStatus];
+
+export const StudentDeletionAttributionPlanResponsePreparationStatus = {
+  PREPARING: "PREPARING",
+} as const;
+
+export type StudentDeletionAttributionPlanResponseSummary = {
+  alreadyAttributed: number;
+  safeToAttribute: number;
+  ambiguous: number;
+  unproven: number;
+  nonAttributable: number;
+};
+
+export type StudentDeletionAttributionDomainEntryDomain =
+  (typeof StudentDeletionAttributionDomainEntryDomain)[keyof typeof StudentDeletionAttributionDomainEntryDomain];
+
+export const StudentDeletionAttributionDomainEntryDomain = {
+  bookings: "bookings",
+  package_orders: "package_orders",
+  feedback: "feedback",
+} as const;
+
+export type StudentDeletionAttributionDomainEntryClassification =
+  (typeof StudentDeletionAttributionDomainEntryClassification)[keyof typeof StudentDeletionAttributionDomainEntryClassification];
+
+export const StudentDeletionAttributionDomainEntryClassification = {
+  ALREADY_ATTRIBUTED: "ALREADY_ATTRIBUTED",
+  SAFE_TO_ATTRIBUTE: "SAFE_TO_ATTRIBUTE",
+  UNPROVEN_PRE_T0: "UNPROVEN_PRE_T0",
+  AMBIGUOUS_PROVENANCE: "AMBIGUOUS_PROVENANCE",
+  NO_MATCH: "NO_MATCH",
+  SEMANTICALLY_NOT_STUDENT_OWNERSHIP: "SEMANTICALLY_NOT_STUDENT_OWNERSHIP",
+  MISSING_REQUIRED_TIMESTAMP: "MISSING_REQUIRED_TIMESTAMP",
+  MALFORMED_LEGACY_IDENTITY: "MALFORMED_LEGACY_IDENTITY",
+  INDEPENDENT_LEVEL_B_EVIDENCE: "INDEPENDENT_LEVEL_B_EVIDENCE",
+  EVIDENCE_CONFLICT: "EVIDENCE_CONFLICT",
+} as const;
+
+export interface StudentDeletionAttributionDomainEntry {
+  domain: StudentDeletionAttributionDomainEntryDomain;
+  classification: StudentDeletionAttributionDomainEntryClassification;
+  count: number;
+  reasonCode: string;
+  executionEligible: boolean;
+}
+
+export type StudentDeletionLevelBResolutionEntryDomain =
+  (typeof StudentDeletionLevelBResolutionEntryDomain)[keyof typeof StudentDeletionLevelBResolutionEntryDomain];
+
+export const StudentDeletionLevelBResolutionEntryDomain = {
+  package_orders: "package_orders",
+} as const;
+
+/**
+ * Latest durable append-only decision for this candidate. NONE means no decision has ever been recorded. NONE and UNRESOLVED both block permanent deletion.
+ */
+export type StudentDeletionLevelBResolutionEntryResolutionStatus =
+  (typeof StudentDeletionLevelBResolutionEntryResolutionStatus)[keyof typeof StudentDeletionLevelBResolutionEntryResolutionStatus];
+
+export const StudentDeletionLevelBResolutionEntryResolutionStatus = {
+  NONE: "NONE",
+  PROVEN_OWNER: "PROVEN_OWNER",
+  NOT_THIS_STUDENT: "NOT_THIS_STUDENT",
+  UNRESOLVED: "UNRESOLVED",
+} as const;
+
+export interface StudentDeletionLevelBResolutionEntry {
+  readonly domain: StudentDeletionLevelBResolutionEntryDomain;
+  readonly targetRecordId: number;
+  /** Latest durable append-only decision for this candidate. NONE means no decision has ever been recorded. NONE and UNRESOLVED both block permanent deletion. */
+  readonly resolutionStatus: StudentDeletionLevelBResolutionEntryResolutionStatus;
+}
+
+/**
+ * Phase B3B1: read-only historical attribution plan. Zero writes. Aggregate/count-only — no row-level identifiers, no raw email, no fingerprint ever appear here. Only produced while an active (PREPARING) deletion-preparation workflow exists for this Student.
+ */
+export interface StudentDeletionAttributionPlanResponse {
+  readonly studentId: number;
+  readonly workflowId: number;
+  readonly preparationStatus: StudentDeletionAttributionPlanResponsePreparationStatus;
+  readonly generatedAt: string;
+  readonly policyVersion: string;
+  /** @nullable */
+  readonly provenanceActivationReference: string | null;
+  readonly summary: StudentDeletionAttributionPlanResponseSummary;
+  readonly domains: StudentDeletionAttributionDomainEntry[];
+  /** Phase B3B2E additive extension. Per-candidate Level-B manual resolution status for the resolvable subset of the canonical package_orders candidate universe. A candidate whose channel-B provenance and channel-C independent evidence disagree (EVIDENCE_CONFLICT) is deliberately NOT listed here — it is not resolvable, and is visible only as an aggregate count in `domains` and in the deletion-impact `manualResolution` summary. Contains internal record ids only — no raw email, no provenance fingerprint, no payment detail, no child PII. */
+  readonly levelBResolutions: StudentDeletionLevelBResolutionEntry[];
+}
+
+export type RecordStudentDeletionManualResolutionRequestDomain =
+  (typeof RecordStudentDeletionManualResolutionRequestDomain)[keyof typeof RecordStudentDeletionManualResolutionRequestDomain];
+
+export const RecordStudentDeletionManualResolutionRequestDomain = {
+  package_orders: "package_orders",
+} as const;
+
+export type RecordStudentDeletionManualResolutionRequestDecision =
+  (typeof RecordStudentDeletionManualResolutionRequestDecision)[keyof typeof RecordStudentDeletionManualResolutionRequestDecision];
+
+export const RecordStudentDeletionManualResolutionRequestDecision = {
+  PROVEN_OWNER: "PROVEN_OWNER",
+  NOT_THIS_STUDENT: "NOT_THIS_STUDENT",
+  UNRESOLVED: "UNRESOLVED",
+} as const;
+
+/**
+ * No free-text field is accepted by design — the server derives and stores the evidence reason code itself and never persists an admin-authored evidence narrative.
+ */
+export interface RecordStudentDeletionManualResolutionRequest {
+  workflowId: number;
+  domain: RecordStudentDeletionManualResolutionRequestDomain;
+  targetRecordId: number;
+  decision: RecordStudentDeletionManualResolutionRequestDecision;
+}
+
+export type StudentDeletionManualResolutionRecordDomain =
+  (typeof StudentDeletionManualResolutionRecordDomain)[keyof typeof StudentDeletionManualResolutionRecordDomain];
+
+export const StudentDeletionManualResolutionRecordDomain = {
+  package_orders: "package_orders",
+} as const;
+
+export type StudentDeletionManualResolutionRecordDecision =
+  (typeof StudentDeletionManualResolutionRecordDecision)[keyof typeof StudentDeletionManualResolutionRecordDecision];
+
+export const StudentDeletionManualResolutionRecordDecision = {
+  PROVEN_OWNER: "PROVEN_OWNER",
+  NOT_THIS_STUDENT: "NOT_THIS_STUDENT",
+  UNRESOLVED: "UNRESOLVED",
+} as const;
+
+/**
+ * The durable, append-only decision row that was created. Recording a PROVEN_OWNER decision does NOT rewrite any canonical ownership column — no historical record ownership is changed by this call.
+ */
+export interface StudentDeletionManualResolutionRecord {
+  readonly id: number;
+  readonly studentId: number;
+  readonly domain: StudentDeletionManualResolutionRecordDomain;
+  readonly targetRecordId: number;
+  readonly deletionWorkflowId: number;
+  readonly evidenceLevel: string;
+  readonly decision: StudentDeletionManualResolutionRecordDecision;
+  readonly evidenceReasonCode: string;
+  readonly resolvedAt: string;
 }
 
 export interface ListStudentsResponse {

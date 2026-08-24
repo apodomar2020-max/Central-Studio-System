@@ -971,6 +971,123 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /students/{id}/deletion-attribution-plan:
+    get:
+      operationId: getStudentDeletionAttributionPlan
+      tags: [students]
+      description: >-
+        Phase B3B1: read-only historical attribution planner for permanent
+        Student account deletion. Requires users.delete. Zero writes — a
+        plain, transactional SELECT. Only produces an authoritative plan
+        while the Student has an active (PREPARING) deletion-preparation
+        workflow; otherwise returns 409 STUDENT_DELETION_PREPARATION_REQUIRED.
+        There is no preview/execution mode — this endpoint never mutates
+        ownership or identity data.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Read-only attribution plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDeletionAttributionPlanResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >-
+            Student account has already been permanently deleted, or no
+            active deletion preparation exists (code
+            STUDENT_DELETION_PREPARATION_REQUIRED in the latter case)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /students/{id}/deletion-attribution-resolutions:
+    post:
+      operationId: recordStudentDeletionManualResolution
+      tags: [students]
+      description: >-
+        Phase B3B2E: records a durable, append-only Level-B manual
+        resolution decision for one unattributed package_orders candidate.
+        Requires users.delete. LEVEL-B ONLY — the server independently
+        re-derives Level-B evidence inside the same transaction as the
+        insert and never trusts any client evidence claim. This writes an
+        authorization/evidence decision row ONLY; it never writes any
+        canonical ownership column, so no historical record ownership is
+        changed. Requires the Student to be deactivated with an active
+        deletion preparation. A candidate in EVIDENCE_CONFLICT is
+        fail-closed and rejects every decision, including UNRESOLVED.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordStudentDeletionManualResolutionRequest"
+      responses:
+        "201":
+          description: Manual resolution decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDeletionManualResolutionRecord"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >-
+            Not recordable in the current state. `code` is one of
+            STUDENT_ALREADY_DELETED, STUDENT_NOT_DEACTIVATED,
+            STUDENT_DELETION_PREPARATION_REQUIRED,
+            LEGACY_IDENTITY_RESOLUTION_STALE,
+            LEGACY_IDENTITY_RESOLUTION_NOT_A_CANDIDATE,
+            LEGACY_IDENTITY_RESOLUTION_NOT_LEVEL_B or
+            LEGACY_IDENTITY_RESOLUTION_EVIDENCE_CONFLICT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /bookings:
     get:
       operationId: listBookings
@@ -3271,7 +3388,7 @@ components:
         Advisory-only deletion impact analysis. Not a concurrency token, not
         a signed confirmation token — see policyVersion/generatedAt notes on
         the parent operation.
-      required: [studentId, lifecycleStatus, canDelete, generatedAt, policyVersion, blockers, summary, categories, deletionPreparation]
+      required: [studentId, lifecycleStatus, canDelete, generatedAt, policyVersion, blockers, summary, categories, deletionPreparation, manualResolution]
       properties:
         studentId: { type: integer }
         lifecycleStatus: { type: string, enum: [active, deactivated, deleted] }
@@ -3296,6 +3413,8 @@ components:
             active: { type: boolean }
             startedAt: { type: ["string", "null"], format: date-time }
             status: { type: ["string", "null"], enum: [PREPARING, CANCELLED, null] }
+        manualResolution:
+          $ref: "#/components/schemas/StudentDeletionManualResolutionSummary"
         summary:
           type: object
           required: [bookings, payments, packages, children, ballet, security, legacyAttribution]
@@ -3350,6 +3469,138 @@ components:
               properties:
                 emailOnlyRows: { type: integer }
                 ambiguousRows: { type: integer }
+
+    StudentDeletionAttributionPlanResponse:
+      type: object
+      readOnly: true
+      description: >-
+        Phase B3B1: read-only historical attribution plan. Zero writes.
+        Aggregate/count-only — no row-level identifiers, no raw email, no
+        fingerprint ever appear here. Only produced while an active
+        (PREPARING) deletion-preparation workflow exists for this Student.
+      required: [studentId, workflowId, preparationStatus, generatedAt, policyVersion, provenanceActivationReference, summary, domains, levelBResolutions]
+      properties:
+        studentId: { type: integer }
+        workflowId: { type: integer }
+        preparationStatus: { type: string, enum: [PREPARING] }
+        generatedAt: { type: string, format: date-time }
+        policyVersion: { type: string }
+        provenanceActivationReference: { type: ["string", "null"], format: date-time }
+        summary:
+          type: object
+          required: [alreadyAttributed, safeToAttribute, ambiguous, unproven, nonAttributable]
+          properties:
+            alreadyAttributed: { type: integer }
+            safeToAttribute: { type: integer }
+            ambiguous: { type: integer }
+            unproven: { type: integer }
+            nonAttributable: { type: integer }
+        domains:
+          type: array
+          items: { $ref: "#/components/schemas/StudentDeletionAttributionDomainEntry" }
+        levelBResolutions:
+          type: array
+          description: >-
+            Phase B3B2E additive extension. Per-candidate Level-B manual
+            resolution status for the resolvable subset of the canonical
+            package_orders candidate universe. A candidate whose channel-B
+            provenance and channel-C independent evidence disagree
+            (EVIDENCE_CONFLICT) is deliberately NOT listed here — it is not
+            resolvable, and is visible only as an aggregate count in
+            `domains` and in the deletion-impact `manualResolution`
+            summary. Contains internal record ids only — no raw email, no
+            provenance fingerprint, no payment detail, no child PII.
+          items: { $ref: "#/components/schemas/StudentDeletionLevelBResolutionEntry" }
+
+    StudentDeletionAttributionDomainEntry:
+      type: object
+      required: [domain, classification, count, reasonCode, executionEligible]
+      properties:
+        domain: { type: string, enum: [bookings, package_orders, feedback] }
+        classification:
+          type: string
+          enum:
+            - ALREADY_ATTRIBUTED
+            - SAFE_TO_ATTRIBUTE
+            - UNPROVEN_PRE_T0
+            - AMBIGUOUS_PROVENANCE
+            - NO_MATCH
+            - SEMANTICALLY_NOT_STUDENT_OWNERSHIP
+            - MISSING_REQUIRED_TIMESTAMP
+            - MALFORMED_LEGACY_IDENTITY
+            - INDEPENDENT_LEVEL_B_EVIDENCE
+            - EVIDENCE_CONFLICT
+        count: { type: integer }
+        reasonCode: { type: string }
+        executionEligible: { type: boolean }
+
+    StudentDeletionLevelBResolutionEntry:
+      type: object
+      readOnly: true
+      required: [domain, targetRecordId, resolutionStatus]
+      properties:
+        domain: { type: string, enum: [package_orders] }
+        targetRecordId: { type: integer }
+        resolutionStatus:
+          type: string
+          description: >-
+            Latest durable append-only decision for this candidate. NONE
+            means no decision has ever been recorded. NONE and UNRESOLVED
+            both block permanent deletion.
+          enum: [NONE, PROVEN_OWNER, NOT_THIS_STUDENT, UNRESOLVED]
+
+    StudentDeletionManualResolutionSummary:
+      type: object
+      readOnly: true
+      description: >-
+        Phase B3B2E aggregate block summary for Level-B manual resolution.
+        Counts only — no row identifiers or evidence detail. Any candidate
+        counted in `unresolvedCount` blocks permanent deletion.
+      required: [requiredCount, resolvedOwnerCount, resolvedNotThisStudentCount, unresolvedCount, conflictCount]
+      properties:
+        requiredCount: { type: integer }
+        resolvedOwnerCount: { type: integer }
+        resolvedNotThisStudentCount: { type: integer }
+        unresolvedCount: { type: integer }
+        conflictCount:
+          type: integer
+          description: >-
+            Candidates whose channel-B provenance and channel-C independent
+            evidence point at different students. These are fail-closed:
+            they are ALSO included in requiredCount and unresolvedCount, and
+            no decision of any kind can be recorded for them.
+
+    RecordStudentDeletionManualResolutionRequest:
+      type: object
+      description: >-
+        No free-text field is accepted by design — the server derives and
+        stores the evidence reason code itself and never persists an
+        admin-authored evidence narrative.
+      required: [workflowId, domain, targetRecordId, decision]
+      properties:
+        workflowId: { type: integer }
+        domain: { type: string, enum: [package_orders] }
+        targetRecordId: { type: integer }
+        decision: { type: string, enum: [PROVEN_OWNER, NOT_THIS_STUDENT, UNRESOLVED] }
+
+    StudentDeletionManualResolutionRecord:
+      type: object
+      readOnly: true
+      description: >-
+        The durable, append-only decision row that was created. Recording a
+        PROVEN_OWNER decision does NOT rewrite any canonical ownership
+        column — no historical record ownership is changed by this call.
+      required: [id, studentId, domain, targetRecordId, deletionWorkflowId, evidenceLevel, decision, evidenceReasonCode, resolvedAt]
+      properties:
+        id: { type: integer }
+        studentId: { type: integer }
+        domain: { type: string, enum: [package_orders] }
+        targetRecordId: { type: integer }
+        deletionWorkflowId: { type: integer }
+        evidenceLevel: { type: string }
+        decision: { type: string, enum: [PROVEN_OWNER, NOT_THIS_STUDENT, UNRESOLVED] }
+        evidenceReasonCode: { type: string }
+        resolvedAt: { type: string, format: date-time }
 
     GetStudentChildItem:
       type: object

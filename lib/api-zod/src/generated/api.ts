@@ -1927,6 +1927,21 @@ export const GetStudentDeletionImpactResponse = zod
       .describe(
         "Phase B3B0-2 additive extension. Read-only status surface — this GET performs no writes. Does not add a Permanent Delete capability; canDelete\/blockers semantics above are unchanged.",
       ),
+    manualResolution: zod
+      .object({
+        requiredCount: zod.number(),
+        resolvedOwnerCount: zod.number(),
+        resolvedNotThisStudentCount: zod.number(),
+        unresolvedCount: zod.number(),
+        conflictCount: zod
+          .number()
+          .describe(
+            "Candidates whose channel-B provenance and channel-C independent evidence point at different students. These are fail-closed: they are ALSO included in requiredCount and unresolvedCount, and no decision of any kind can be recorded for them.",
+          ),
+      })
+      .describe(
+        "Phase B3B2E aggregate block summary for Level-B manual resolution. Counts only — no row identifiers or evidence detail. Any candidate counted in `unresolvedCount` blocks permanent deletion.",
+      ),
     summary: zod.object({
       bookings: zod.object({
         historical: zod.number(),
@@ -1968,6 +1983,102 @@ export const GetStudentDeletionImpactResponse = zod
   })
   .describe(
     "Advisory-only deletion impact analysis. Not a concurrency token, not a signed confirmation token — see policyVersion\/generatedAt notes on the parent operation.",
+  );
+
+/**
+ * Phase B3B1: read-only historical attribution planner for permanent Student account deletion. Requires users.delete. Zero writes — a plain, transactional SELECT. Only produces an authoritative plan while the Student has an active (PREPARING) deletion-preparation workflow; otherwise returns 409 STUDENT_DELETION_PREPARATION_REQUIRED. There is no preview/execution mode — this endpoint never mutates ownership or identity data.
+ */
+export const GetStudentDeletionAttributionPlanParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetStudentDeletionAttributionPlanResponse = zod
+  .object({
+    studentId: zod.number(),
+    workflowId: zod.number(),
+    preparationStatus: zod.enum(["PREPARING"]),
+    generatedAt: zod.coerce.date(),
+    policyVersion: zod.string(),
+    provenanceActivationReference: zod.coerce.date().nullable(),
+    summary: zod.object({
+      alreadyAttributed: zod.number(),
+      safeToAttribute: zod.number(),
+      ambiguous: zod.number(),
+      unproven: zod.number(),
+      nonAttributable: zod.number(),
+    }),
+    domains: zod.array(
+      zod.object({
+        domain: zod.enum(["bookings", "package_orders", "feedback"]),
+        classification: zod.enum([
+          "ALREADY_ATTRIBUTED",
+          "SAFE_TO_ATTRIBUTE",
+          "UNPROVEN_PRE_T0",
+          "AMBIGUOUS_PROVENANCE",
+          "NO_MATCH",
+          "SEMANTICALLY_NOT_STUDENT_OWNERSHIP",
+          "MISSING_REQUIRED_TIMESTAMP",
+          "MALFORMED_LEGACY_IDENTITY",
+          "INDEPENDENT_LEVEL_B_EVIDENCE",
+          "EVIDENCE_CONFLICT",
+        ]),
+        count: zod.number(),
+        reasonCode: zod.string(),
+        executionEligible: zod.boolean(),
+      }),
+    ),
+    levelBResolutions: zod
+      .array(
+        zod.object({
+          domain: zod.enum(["package_orders"]),
+          targetRecordId: zod.number(),
+          resolutionStatus: zod
+            .enum(["NONE", "PROVEN_OWNER", "NOT_THIS_STUDENT", "UNRESOLVED"])
+            .describe(
+              "Latest durable append-only decision for this candidate. NONE means no decision has ever been recorded. NONE and UNRESOLVED both block permanent deletion.",
+            ),
+        }),
+      )
+      .describe(
+        "Phase B3B2E additive extension. Per-candidate Level-B manual resolution status for the resolvable subset of the canonical package_orders candidate universe. A candidate whose channel-B provenance and channel-C independent evidence disagree (EVIDENCE_CONFLICT) is deliberately NOT listed here — it is not resolvable, and is visible only as an aggregate count in `domains` and in the deletion-impact `manualResolution` summary. Contains internal record ids only — no raw email, no provenance fingerprint, no payment detail, no child PII.",
+      ),
+  })
+  .describe(
+    "Phase B3B1: read-only historical attribution plan. Zero writes. Aggregate\/count-only — no row-level identifiers, no raw email, no fingerprint ever appear here. Only produced while an active (PREPARING) deletion-preparation workflow exists for this Student.",
+  );
+
+/**
+ * Phase B3B2E: records a durable, append-only Level-B manual resolution decision for one unattributed package_orders candidate. Requires users.delete. LEVEL-B ONLY — the server independently re-derives Level-B evidence inside the same transaction as the insert and never trusts any client evidence claim. This writes an authorization/evidence decision row ONLY; it never writes any canonical ownership column, so no historical record ownership is changed. Requires the Student to be deactivated with an active deletion preparation. A candidate in EVIDENCE_CONFLICT is fail-closed and rejects every decision, including UNRESOLVED.
+ */
+export const RecordStudentDeletionManualResolutionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RecordStudentDeletionManualResolutionBody = zod
+  .object({
+    workflowId: zod.number(),
+    domain: zod.enum(["package_orders"]),
+    targetRecordId: zod.number(),
+    decision: zod.enum(["PROVEN_OWNER", "NOT_THIS_STUDENT", "UNRESOLVED"]),
+  })
+  .describe(
+    "No free-text field is accepted by design — the server derives and stores the evidence reason code itself and never persists an admin-authored evidence narrative.",
+  );
+
+export const RecordStudentDeletionManualResolutionResponse = zod
+  .object({
+    id: zod.number(),
+    studentId: zod.number(),
+    domain: zod.enum(["package_orders"]),
+    targetRecordId: zod.number(),
+    deletionWorkflowId: zod.number(),
+    evidenceLevel: zod.string(),
+    decision: zod.enum(["PROVEN_OWNER", "NOT_THIS_STUDENT", "UNRESOLVED"]),
+    evidenceReasonCode: zod.string(),
+    resolvedAt: zod.coerce.date(),
+  })
+  .describe(
+    "The durable, append-only decision row that was created. Recording a PROVEN_OWNER decision does NOT rewrite any canonical ownership column — no historical record ownership is changed by this call.",
   );
 
 export const listBookingsQueryDateRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
