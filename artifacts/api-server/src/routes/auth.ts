@@ -55,6 +55,7 @@ import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfi
 import { validateProfileAge } from "../lib/eligibility/profileAgeValidation";
 import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middlewares/authRateLimit";
+import { requireBotToken } from "../middlewares/botProtection";
 
 const router: IRouter = Router();
 
@@ -144,98 +145,138 @@ const ProfileBody = z.object({
 });
 
 // POST /api/auth/register
-router.post("/auth/register", registerIpLimiter, registerAccountLimiter, async (req, res): Promise<void> => {
-  const parsed = RegisterBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
-    return;
-  }
-
-  const { name, email, phone, accountType, dateOfBirth, password } = parsed.data;
-
-  if (dateOfBirth != null) {
-    const ageValidation = validateProfileAge({
-      accountType: accountType ?? null,
-      dateOfBirth,
-    });
-    if (!ageValidation.eligible) {
-      const reason = ageValidation.reasons[0]!;
-      res.status(400).json({ error: reason.message, code: reason.code });
+// Security Wave — Bot Protection + Register Enumeration Closure. The
+// pre-existing 409 "email already exists" response was the last remaining
+// account-enumeration leak in the auth flow. It is now closed: register
+// returns the exact same generic acceptance body whether
+// the email is new or already registered, and — critically — never issues
+// an access token itself (a token for an EXISTING account would be a
+// takeover primitive if returned to whoever merely knows that email). A
+// genuinely new account is created exactly as before; an existing email
+// triggers ZERO mutation. The client's next step for either branch is the
+// same: call POST /auth/login with the email/password it just submitted.
+//   - Genuinely new account -> login succeeds (the password is the one
+//     just set), returns the same limited/unverified token the old
+//     register response used to hand back directly.
+//   - Existing account, attacker-submitted email -> login fails with the
+//     SAME generic 401 an ordinary wrong-password attempt gets. No signal
+//     distinguishes "just registered" from "tried to register an email
+//     you don't own".
+//   - Existing account, genuinely re-submitted by its real owner (e.g. a
+//     confused user re-registering) -> login succeeds normally, exactly as
+//     if they had used the login screen directly.
+// A constant-shape bcrypt hash runs on EVERY request (even when the result
+// is discarded for the existing-email branch) so response timing does not
+// itself become a side channel.
+router.post(
+  "/auth/register",
+  registerIpLimiter,
+  requireBotToken("register"),
+  registerAccountLimiter,
+  async (req, res): Promise<void> => {
+    const parsed = RegisterBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
       return;
     }
-  }
 
-  // Check if email is already taken
-  const [existing] = await db
-    .select({ id: studentsTable.id })
-    .from(studentsTable)
-    .where(eq(studentsTable.email, normalizeEmail(email)));
+    const { name, email, phone, accountType, dateOfBirth, password } = parsed.data;
 
-  if (existing) {
-    // Account-enumeration policy decision (Security Wave — Auth Abuse
-    // Foundation): registration keeps its existing 409 + explicit message.
-    // Fully collapsing this into a generic response would be a materially
-    // larger UX change (the mobile client's "this email is taken, log in
-    // instead" flow depends on it) than this focused pass should make
-    // silently. Enumeration risk here is instead mitigated by the new
-    // registerIpLimiter/registerAccountLimiter above, which bound how many
-    // distinct addresses one caller can probe per window.
-    res.status(409).json({ error: "An account with this email already exists" });
-    return;
-  }
+    if (dateOfBirth != null) {
+      const ageValidation = validateProfileAge({
+        accountType: accountType ?? null,
+        dateOfBirth,
+      });
+      if (!ageValidation.eligible) {
+        const reason = ageValidation.reasons[0]!;
+        res.status(400).json({ error: reason.message, code: reason.code });
+        return;
+      }
+    }
 
-  const passwordHash = await bcrypt.hash(password, 12);
+    const normalizedEmail = normalizeEmail(email);
+    const GENERIC_ACCEPTED = { ok: true as const };
 
-  const profileInput = {
-    name: name.trim(),
-    phone: phone?.trim() || null,
-    accountType: accountType ?? null,
-    dateOfBirth: dateOfBirth ?? null,
-  };
-  const completion = legacyProfileCompletionPatch(profileInput);
+    // Constant-shape work regardless of branch — see the module comment above.
+    const [existing, passwordHash] = await Promise.all([
+      db.select({ id: studentsTable.id }).from(studentsTable).where(eq(studentsTable.email, normalizedEmail)),
+      bcrypt.hash(password, 12),
+    ]);
 
-  // Phase B3B0-1A completion (Section F): student creation and the initial
-  // provenance interval are atomic — if either write fails, both roll back
-  // (natural db.transaction behavior). This does NOT change trust/
-  // verification semantics: the email is already what the pre-existing
-  // logic trusts enough to store as students.email, so provenance simply
-  // mirrors that same trust boundary at the same insert point.
-  const student = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(studentsTable)
-      .values({
-        name: profileInput.name,
-        email: normalizeEmail(email),
-        phone: profileInput.phone,
-        accountType: profileInput.accountType,
-        dateOfBirth: profileInput.dateOfBirth,
-        ...completion,
-        passwordHash,
-        authProvider: "local",
-        // emailVerified defaults to false — the account must pass OTP before
-        // it can reach any verified-only route.
-      })
-      .returning();
-    const created = row!;
-    // validFrom reuses the student row's own server-generated createdAt
-    // (defaultNow(), never client input) — never a second independent
-    // `new Date()` reading, so the two writes can never diverge.
-    await openInitialProvenanceInterval(tx, {
-      studentId: created.id,
-      email: created.email,
-      source: "registration",
-      validFrom: created.createdAt,
-    });
-    return created;
-  });
+    if (existing.length > 0) {
+      logger.info({ event: "register_existing_email" }, "Registration submitted for an already-registered email — no account created, generic response returned");
+      res.status(200).json(GENERIC_ACCEPTED);
+      return;
+    }
 
-  // Limited token (emailVerified=false): unlocks OTP + /auth/me only.
-  const accessToken = signStudentToken(student.id, student.email, false, student.tokenVersion);
+    const profileInput = {
+      name: name.trim(),
+      phone: phone?.trim() || null,
+      accountType: accountType ?? null,
+      dateOfBirth: dateOfBirth ?? null,
+    };
+    const completion = legacyProfileCompletionPatch(profileInput);
 
-  logger.info({ studentId: student.id }, "New student registered (pending verification)");
+    // Phase B3B0-1A completion (Section F): student creation and the initial
+    // provenance interval are atomic — if either write fails, both roll back
+    // (natural db.transaction behavior). This does NOT change trust/
+    // verification semantics: the email is already what the pre-existing
+    // logic trusts enough to store as students.email, so provenance simply
+    // mirrors that same trust boundary at the same insert point.
+    //
+    // Race guard: two concurrent registrations for the same email could both
+    // pass the SELECT above before either INSERTs. students.email has a
+    // UNIQUE constraint, so the loser fails here with a unique-violation —
+    // caught below and answered with the SAME generic accepted body (never
+    // a 500, never a distinguishable error), matching the response the
+    // request would have gotten had it simply arrived a moment later.
+    let student: typeof studentsTable.$inferSelect;
+    try {
+      student = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(studentsTable)
+          .values({
+            name: profileInput.name,
+            email: normalizedEmail,
+            phone: profileInput.phone,
+            accountType: profileInput.accountType,
+            dateOfBirth: profileInput.dateOfBirth,
+            ...completion,
+            passwordHash,
+            authProvider: "local",
+            // emailVerified defaults to false — the account must pass OTP before
+            // it can reach any verified-only route.
+          })
+          .returning();
+        const created = row!;
+        // validFrom reuses the student row's own server-generated createdAt
+        // (defaultNow(), never client input) — never a second independent
+        // reading, so the two writes can never diverge.
+        await openInitialProvenanceInterval(tx, {
+          studentId: created.id,
+          email: created.email,
+          source: "registration",
+          validFrom: created.createdAt,
+        });
+        return created;
+      });
+    } catch (err) {
+      const isUniqueViolation = typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
+      if (isUniqueViolation) {
+        logger.info({ event: "register_race_lost" }, "Concurrent registration for the same email — generic response returned, no duplicate created");
+        res.status(200).json(GENERIC_ACCEPTED);
+        return;
+      }
+      throw err;
+    }
 
-  res.status(201).json({ student: await publicStudent(student), accessToken, requiresOtp: true });
-});
+    logger.info({ studentId: student.id }, "New student registered (pending verification)");
+
+    // No accessToken, no student object — see the module comment above for
+    // why. The client obtains its token via a follow-up POST /auth/login.
+    res.status(200).json(GENERIC_ACCEPTED);
+  },
+);
 
 // POST /api/auth/login
 //
@@ -479,7 +520,7 @@ const ForgotPasswordBody = z.object({
   email: z.string().email("Invalid email address"),
 });
 
-router.post("/auth/forgot-password", forgotPasswordIpLimiter, forgotPasswordAccountLimiter, async (req, res): Promise<void> => {
+router.post("/auth/forgot-password", forgotPasswordIpLimiter, requireBotToken("forgot_password"), forgotPasswordAccountLimiter, async (req, res): Promise<void> => {
   const parsed = ForgotPasswordBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });

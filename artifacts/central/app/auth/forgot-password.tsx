@@ -19,6 +19,7 @@ import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { forgotPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
+import BotChallenge from "@/components/BotChallenge";
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
@@ -26,11 +27,18 @@ export default function ForgotPasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
+  // Security Wave — Bot Protection. In-memory only.
+  const [botToken, setBotToken] = useState<string | null>(null);
+  const [challengeResetKey, setChallengeResetKey] = useState(0);
 
   async function handleSend() {
     if (loading) return; // prevent duplicate submissions
     if (!email.trim()) {
       setError("Please enter your email address.");
+      return;
+    }
+    if (!botToken) {
+      setError("Please complete verification below before continuing.");
       return;
     }
     setError("");
@@ -45,7 +53,7 @@ export default function ForgotPasswordScreen() {
       // forgotPasswordOutcome()'s doc comment.
       await customFetch("/api/auth/forgot-password", {
         method: "POST",
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), botToken }),
       });
 
       forgotPasswordOutcome();
@@ -55,6 +63,13 @@ export default function ForgotPasswordScreen() {
       setLoading(false);
       const apiError = toApiErrorLike(err);
       const data = apiError?.data;
+      const code = data && typeof data === "object" && "code" in data
+        ? String((data as { code?: unknown }).code ?? "")
+        : "";
+      if (code === "BOT_VERIFICATION_FAILED" || code === "BOT_VERIFICATION_UNAVAILABLE") {
+        setBotToken(null);
+        setChallengeResetKey((k) => k + 1);
+      }
       const message = data && typeof data === "object" && "error" in data
         ? String((data as { error?: unknown }).error ?? "")
         : "";
@@ -158,6 +173,8 @@ export default function ForgotPasswordScreen() {
               />
             </View>
           </View>
+
+          <BotChallenge action="forgot_password" resetKey={challengeResetKey} onToken={(token) => setBotToken(token)} />
 
           <AppButton
             title="Send Reset Code"

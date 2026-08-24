@@ -40,6 +40,17 @@ process.env.API_SECRET_KEY = "test-api-secret-key";
 process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-permanent-delete-identity-provenance-pepper".padEnd(64, "0");
+process.env.TURNSTILE_SECRET_KEY = "test-permanent-delete-turnstile-secret";
+const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input: any, init?: any) => {
+  const url = typeof input === "string" ? input : input?.url;
+  if (url === TURNSTILE_URL) {
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  return originalFetch(input, init);
+}) as typeof fetch;
+const VALID_BOT_TOKEN = "valid-test-token";
 
 let app: import("express").Express;
 let server: import("node:http").Server;
@@ -455,7 +466,7 @@ test("13: password reset cannot restore login access to a permanently deleted ac
   // forgot-password against the OLD (now-anonymized) email finds no student
   // row and always returns the generic non-leaking response — never an OTP
   // that could reach a real address.
-  const forgot = await post("/api/auth/forgot-password", { email: f.email }, undefined);
+  const forgot = await post("/api/auth/forgot-password", { email: f.email, botToken: VALID_BOT_TOKEN }, undefined);
   assert.equal(forgot.status, 200); // generic response either way, by design
   const otpRows = await pool.query(`SELECT count(*) FROM email_otps WHERE email = $1`, [f.email.toLowerCase()]);
   assert.equal(Number(otpRows.rows[0].count), 0, "no OTP may be issued for an email that no longer belongs to any account");

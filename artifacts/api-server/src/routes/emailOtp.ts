@@ -23,6 +23,7 @@ import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { requireStudentAuth } from "../middlewares/studentAuth";
 import { idRateLimiter, resetIdLimiter } from "../middlewares/authRateLimit";
+import { requireBotToken } from "../middlewares/botProtection";
 import {
   invalidateOtpCodes,
   issueOtp,
@@ -133,8 +134,8 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
   }
 }
 
-router.post("/auth/send-otp", requireStudentAuth, otpSendLimiter, handleSendOtp);
-router.post("/auth/resend-otp", requireStudentAuth, otpSendLimiter, handleSendOtp);
+router.post("/auth/send-otp", requireStudentAuth, requireBotToken("otp_send"), otpSendLimiter, handleSendOtp);
+router.post("/auth/resend-otp", requireStudentAuth, requireBotToken("otp_send"), otpSendLimiter, handleSendOtp);
 
 // ─── POST /api/auth/verify-otp ───────────────────────────────────────────────
 const VerifyOtpBody = z.object({
@@ -172,7 +173,7 @@ router.post("/auth/verify-otp", requireStudentAuth, otpVerifyLimiter, async (req
 // ─── Legacy studentId-keyed endpoints (backward compatibility) ───────────────
 const SendEmailOtpBody = z.object({ studentId: z.coerce.number().int().positive() });
 
-router.post("/auth/send-email-otp", requireStudentAuth, otpSendLimiter, async (req, res): Promise<void> => {
+router.post("/auth/send-email-otp", requireStudentAuth, requireBotToken("otp_send"), otpSendLimiter, async (req, res): Promise<void> => {
   const parsed = SendEmailOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });

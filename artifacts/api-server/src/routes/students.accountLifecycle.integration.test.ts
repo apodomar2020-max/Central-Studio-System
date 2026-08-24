@@ -45,6 +45,17 @@ process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 process.env.OTP_PEPPER = "test-lifecycle-otp-pepper".padEnd(64, "0");
 delete process.env.REDIS_URL;
+process.env.TURNSTILE_SECRET_KEY = "test-account-lifecycle-turnstile-secret";
+const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input: any, init?: any) => {
+  const url = typeof input === "string" ? input : input?.url;
+  if (url === TURNSTILE_URL) {
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  return originalFetch(input, init);
+}) as typeof fetch;
+const VALID_BOT_TOKEN = "valid-test-token";
 delete process.env.BREVO_API_KEY;
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
@@ -143,9 +154,11 @@ function freshEmail(tag: string): string {
 
 async function makeVerifiedStudent(tag: string, password = "OriginalPass123") {
   const email = freshEmail(tag);
-  const reg = await post("/api/auth/register", { name: "Lifecycle Test User", email, password });
-  assert.equal(reg.status, 201);
-  const studentId: number = reg.json.student.id;
+  const reg = await post("/api/auth/register", { name: "Lifecycle Test User", email, password, botToken: VALID_BOT_TOKEN });
+  assert.equal(reg.status, 200);
+  assert.equal(reg.json.accessToken, undefined, "register no longer issues a token directly — see auth.ts's module comment");
+  const row = await pool.query(`SELECT id FROM students WHERE email = $1`, [email]);
+  const studentId: number = row.rows[0].id;
   await pool.query(`UPDATE students SET email_verified = true, email_verified_at = now() WHERE id = $1`, [studentId]);
   const login = await post("/api/auth/login", { email, password });
   assert.equal(login.status, 200);
@@ -320,7 +333,7 @@ test("G1: forgot-password/reset-password completes for a deactivated account, is
   const admin = await makeAdminWithPermission({ students: { edit: true } });
   assert.equal((await deactivate(studentId, admin.token)).status, 200);
 
-  const forgot = await post("/api/auth/forgot-password", { email });
+  const forgot = await post("/api/auth/forgot-password", { email, botToken: VALID_BOT_TOKEN });
   assert.equal(forgot.status, 200);
   assert.equal(forgot.json.accessToken, undefined, "forgot-password must never issue a token");
 

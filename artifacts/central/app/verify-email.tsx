@@ -24,6 +24,7 @@ import { enterApp, fetchCurrentUser, nextStepRoute } from "@/services/authProfil
 import { clearSignupDrafts } from "./auth/register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import BotChallenge from "@/components/BotChallenge";
 
 const VerifyGlow = React.memo(function VerifyGlow() {
   return (
@@ -45,6 +46,7 @@ const CODE_LENGTH = 6;
 
 type OtpErrorData = {
   error?: string;
+  code?: string;
   attemptsLeft?: number;
   requiresResend?: boolean;
   retryAfter?: number;
@@ -65,6 +67,11 @@ export default function VerifyEmailScreen() {
   const [resendCountdown, setResendCountdown] = useState(0);
   const [sent, setSent] = useState(false);
   const [sendError, setSendError] = useState("");
+  // Security Wave — Bot Protection. send-email-otp is a protected action;
+  // this screen sends automatically on mount, so the challenge must
+  // complete before that first send fires. Kept in-memory only.
+  const [botToken, setBotToken] = useState<string | null>(null);
+  const [challengeResetKey, setChallengeResetKey] = useState(0);
   const refs = useRef<(TextInput | null)[]>([]);
 
   async function leaveVerification(destination: "/auth/register" | "/auth/login") {
@@ -114,12 +121,14 @@ export default function VerifyEmailScreen() {
     router.replace(nextStepRoute(nextStep) as never);
   }, [user?.emailVerified, user?.profileCompletion?.nextStep]);
 
-  // Auto-send OTP as soon as the screen opens (if not already verified)
+  // Auto-send OTP as soon as the screen opens AND verification is ready
+  // (if not already verified). Gated on botToken — send-email-otp is now a
+  // protected action.
   useEffect(() => {
-    if (!user?.id || user.emailVerified || sent) return;
+    if (!user?.id || user.emailVerified || sent || !botToken) return;
     customFetch("/api/auth/send-email-otp", {
       method: "POST",
-      body: JSON.stringify({ studentId: user.id }),
+      body: JSON.stringify({ studentId: user.id, botToken }),
     })
       .then(() => {
         setSent(true);
@@ -128,11 +137,15 @@ export default function VerifyEmailScreen() {
       })
       .catch((error: unknown) => {
         const data = otpErrorData(error);
+        if (data.code === "BOT_VERIFICATION_FAILED" || data.code === "BOT_VERIFICATION_UNAVAILABLE") {
+          setBotToken(null);
+          setChallengeResetKey((k) => k + 1);
+        }
         const retryAfter = typeof data.retryAfter === "number" ? data.retryAfter : 0;
         if (retryAfter > 0) setResendCountdown(retryAfter);
         setSendError(data.error ?? "We couldn't send the verification code. Please try again.");
       });
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, botToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (resendCountdown <= 0) return;
@@ -213,18 +226,30 @@ export default function VerifyEmailScreen() {
 
   async function handleResend() {
     if (resendCountdown > 0 || !user?.id) return;
+    if (!botToken) {
+      alert.show({ tone: "error", title: "Verification Needed", message: "Please complete the verification check above, then try resending." });
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await customFetch("/api/auth/send-email-otp", {
         method: "POST",
-        body: JSON.stringify({ studentId: user.id }),
+        body: JSON.stringify({ studentId: user.id, botToken }),
       });
       setResendCountdown(60);
       setSent(true);
       setSendError("");
+      // Turnstile tokens are single-use — force a fresh challenge before
+      // the NEXT resend can proceed.
+      setBotToken(null);
+      setChallengeResetKey((k) => k + 1);
       alert.show({ tone: "success", title: "Email Sent", message: `A new verification code has been sent to ${user?.email}.` });
     } catch (err: unknown) {
       const data = otpErrorData(err);
+      if (data.code === "BOT_VERIFICATION_FAILED" || data.code === "BOT_VERIFICATION_UNAVAILABLE") {
+        setBotToken(null);
+        setChallengeResetKey((k) => k + 1);
+      }
       const retryAfter = typeof data.retryAfter === "number" ? data.retryAfter : 0;
       if (retryAfter > 0) setResendCountdown(retryAfter);
       alert.show({ tone: "error", title: "Failed to Send", message: data.error ?? "We couldn't resend the code. Please try again in a few moments." });
@@ -251,6 +276,10 @@ export default function VerifyEmailScreen() {
         </Text>
 
         {sendError ? <Text style={styles.sendError}>{sendError}</Text> : null}
+
+        {!botToken && !user?.emailVerified && (
+          <BotChallenge action="otp_send" resetKey={challengeResetKey} onToken={(token) => setBotToken(token)} />
+        )}
 
         <View style={styles.codeRow}>
           {code.map((digit, i) => (

@@ -49,6 +49,17 @@ process.env.OTP_PEPPER = "test-session-revocation-otp-pepper".padEnd(64, "0");
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY; // dev-mode no-op path for OTP/security emails
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
+process.env.TURNSTILE_SECRET_KEY = "test-session-revocation-turnstile-secret";
+const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input: any, init?: any) => {
+  const url = typeof input === "string" ? input : input?.url;
+  if (url === TURNSTILE_URL) {
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  return originalFetch(input, init);
+}) as typeof fetch;
+const VALID_BOT_TOKEN = "valid-test-token";
 
 type Identity = {
   provider: "google" | "apple" | "facebook";
@@ -157,9 +168,11 @@ function decodeJwt(token: string): any {
 /** Registers, verifies, and returns { studentId, token, email } for a fresh account. */
 async function makeVerifiedStudent(tag: string, password = "OriginalPass123") {
   const email = freshEmail(tag);
-  const reg = await post("/api/auth/register", { name: "Session Test User", email, password });
-  assert.equal(reg.status, 201);
-  const studentId: number = reg.json.student.id;
+  const reg = await post("/api/auth/register", { name: "Session Test User", email, password, botToken: VALID_BOT_TOKEN });
+  assert.equal(reg.status, 200);
+  assert.equal(reg.json.accessToken, undefined, "register no longer issues a token directly — see auth.ts's module comment");
+  const row = await pool.query(`SELECT id FROM students WHERE email = $1`, [email]);
+  const studentId: number = row.rows[0].id;
   await pool.query(`UPDATE students SET email_verified = true, email_verified_at = now() WHERE id = $1`, [studentId]);
   // Re-login to obtain a FULL token reflecting the verified state (register's
   // token is deliberately limited).
@@ -425,9 +438,13 @@ test("E2: Security-01B1 social-linking containment is unaffected by the revocati
 
 test("F1: requireVerifiedStudent still rejects a limited (unverified) token, independent of revocation", async () => {
   const email = freshEmail("unverified");
-  const reg = await post("/api/auth/register", { name: "Unverified User", email, password: "SomePass123" });
-  assert.equal(reg.status, 201);
-  const limitedToken: string = reg.json.accessToken;
+  const password = "SomePass123";
+  const reg = await post("/api/auth/register", { name: "Unverified User", email, password, botToken: VALID_BOT_TOKEN });
+  assert.equal(reg.status, 200);
+  assert.equal(reg.json.accessToken, undefined);
+  const login = await post("/api/auth/login", { email, password });
+  assert.equal(login.status, 200);
+  const limitedToken: string = login.json.accessToken;
   assert.equal(decodeJwt(limitedToken).emailVerified, false);
   assert.equal(decodeJwt(limitedToken).tokenVersion, 1);
 

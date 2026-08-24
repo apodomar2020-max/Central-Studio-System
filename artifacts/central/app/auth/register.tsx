@@ -38,6 +38,7 @@ import {
 } from "@/components/signup/SignupKit";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
+import BotChallenge from "@/components/BotChallenge";
 
 // Stable social icon elements.
 const FACEBOOK_ICON = <FacebookLogo />;
@@ -150,6 +151,12 @@ export default function RegisterScreen() {
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
+  // Security Wave — Bot Protection. The token is kept ONLY in this
+  // component's in-memory state — never AsyncStorage, never logged.
+  // `challengeResetKey` is bumped to force the widget to remount and issue
+  // a fresh single-use token after any failed submission.
+  const [botToken, setBotToken] = useState<string | null>(null);
+  const [challengeResetKey, setChallengeResetKey] = useState(0);
 
   async function submit() {
     if (
@@ -216,34 +223,70 @@ export default function RegisterScreen() {
       }
     }
 
+    if (!botToken) {
+      setApiError("Please complete verification below before continuing.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
       const name = `${firstName.trim()} ${lastName.trim()}`.trim();
+      const trimmedEmail = email.trim();
+
+      // Account-enumeration hardening (Security Wave — Auth Abuse
+      // Foundation): register no longer distinguishes "email already
+      // exists" from "new account created" — both return the same generic
+      // { ok: true } body and no token. The UX no longer branches on that
+      // distinction either; the next step is always the same: try to sign
+      // in with the credentials just submitted.
       const response = await fetch(`${apiUrl}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email: email.trim(), accountType: "student", password }),
+        body: JSON.stringify({ name, email: trimmedEmail, accountType: "student", password, botToken }),
       });
       const data = await response.json();
+
       if (!response.ok) {
-        if (response.status === 409 || data.error?.toLowerCase().includes("exists")) {
+        if (data.code === "BOT_VERIFICATION_FAILED" || data.code === "BOT_VERIFICATION_UNAVAILABLE") {
+          setBotToken(null);
+          setChallengeResetKey((k) => k + 1);
+          setApiError(
+            data.code === "BOT_VERIFICATION_UNAVAILABLE"
+              ? "Verification is temporarily unavailable. Please try again shortly."
+              : "Verification failed — please complete the check again.",
+          );
           setLoading(false);
-          alert.show({
-            tone: "warning",
-            title: "Email Registered",
-            message: "This email is already registered. Please sign in or use another email.",
-            actions: [
-              { label: "Sign In", tone: "primary", onPress: () => router.replace("/auth/login") },
-              { label: "Cancel", tone: "neutral" },
-            ],
-          });
+          return;
+        }
+        if (data.code === "RATE_LIMITED") {
+          setApiError("Too many attempts. Please wait a bit before trying again.");
+          setLoading(false);
           return;
         }
         setApiError(data.error ?? "Registration failed. Please try again.");
         setLoading(false);
         return;
       }
-      await continueAfterAuth(data.accessToken, setUser, { guidedOnboarding: true, source: "email-signup" });
+
+      // Generic acceptance — obtain the actual access token via a
+      // follow-up login using the same credentials just submitted. If this
+      // email already belonged to someone else, login fails with the SAME
+      // generic message an ordinary wrong-password attempt gets, and we
+      // surface that without ever confirming the email was already taken.
+      const loginResponse = await fetch(`${apiUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail, password }),
+      });
+      const loginData = await loginResponse.json();
+      if (!loginResponse.ok) {
+        setApiError("Couldn't sign you in. Please check your details or try signing in instead.");
+        setLoading(false);
+        return;
+      }
+
+      await continueAfterAuth(loginData.accessToken, setUser, { guidedOnboarding: true, source: "email-signup" });
       setLoading(false);
     } catch {
       setApiError("Network error. Please check your connection.");
@@ -313,6 +356,12 @@ export default function RegisterScreen() {
                   <Icon name={showPwd ? "eyeOff" : "eye"} size={17} stroke={2} color="rgba(255,255,255,0.38)" />
                 </TouchableOpacity>
               }
+            />
+
+            <BotChallenge
+              action="register"
+              resetKey={challengeResetKey}
+              onToken={(token) => setBotToken(token)}
             />
 
             <Divider label="or sign up with" />

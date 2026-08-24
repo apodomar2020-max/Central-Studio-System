@@ -47,6 +47,32 @@ process.env.OTP_PEPPER = "test-auth-abuse-otp-pepper".padEnd(64, "0");
 process.env.AUTH_ABUSE_PEPPER = "test-auth-abuse-pepper".padEnd(64, "0");
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-auth-abuse-identity-provenance-pepper".padEnd(64, "0");
 delete process.env.BREVO_API_KEY; // dev-mode no-op path for OTP/security emails
+process.env.TURNSTILE_SECRET_KEY = "test-turnstile-secret";
+
+// Bot-protected routes (register, forgot-password, OTP send/resend) now
+// require a valid Turnstile token. Real network calls to Cloudflare are
+// never made in tests — this intercepts only the Turnstile verify URL and
+// simulates its response based on the submitted token, leaving every other
+// fetch call (there are none in this app's dev-mode/no-BREVO code paths)
+// untouched. A dedicated file (students... no — botProtection.integration.test.ts)
+// covers the provider-failure-mode matrix in depth; this file just needs a
+// stable "always succeeds for a normal test token" default so its
+// pre-existing register/OTP-flow tests keep working unmodified in spirit.
+const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const REJECTED_TEST_TOKENS = new Set(["invalid-token-for-test"]);
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input: any, init?: any) => {
+  const url = typeof input === "string" ? input : input?.url;
+  if (url === TURNSTILE_URL) {
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    const token = body.get("response");
+    const success = !!token && !REJECTED_TEST_TOKENS.has(token);
+    return new Response(JSON.stringify({ success }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  return originalFetch(input, init);
+}) as typeof fetch;
+
+const VALID_BOT_TOKEN = "valid-test-token";
 
 type Identity = {
   provider: "google" | "apple" | "facebook";
@@ -241,19 +267,103 @@ test("5: social-only account never reveals provider type in the response body", 
   assert.ok(!body.includes("passwordHash"));
 });
 
-test("6: register — documented policy: existing email returns 409, new email returns 201 (see auth.ts comment for rationale)", async () => {
-  const s = await makeStudent("reg-existing");
-  const existingRes = await post("/api/auth/register", { name: "Existing User", email: s.email, password: "NewPass123!" });
-  assert.equal(existingRes.status, 409);
+// ═══════════════════════════════════════════════════════════════════════
+// Bot Protection — route-level wiring (provider-behavior matrix lives in
+// lib/botProtection.test.ts; these confirm the middleware is actually on
+// the routes and composes correctly with the existing Redis limiters).
+// ═══════════════════════════════════════════════════════════════════════
 
-  const newRes = await post("/api/auth/register", { name: "New User", email: freshEmail("reg-new"), password: "NewPass123!" });
-  assert.equal(newRes.status, 201);
+test("1: register requires a valid bot token — missing token rejected", async () => {
+  const res = await post("/api/auth/register", { name: "No Token", email: freshEmail("notoken-reg"), password: "NewPass123!" });
+  assert.equal(res.status, 403);
+  assert.equal(res.json.code, "BOT_VERIFICATION_FAILED");
+  assert.equal(res.json.error.toLowerCase().includes("provider") || res.json.error.toLowerCase().includes("secret"), false);
+});
+
+test("2: forgot-password requires a valid bot token — missing token rejected", async () => {
+  const res = await post("/api/auth/forgot-password", { email: freshEmail("notoken-forgot") });
+  assert.equal(res.status, 403);
+  assert.equal(res.json.code, "BOT_VERIFICATION_FAILED");
+});
+
+test("3/4: OTP send and resend require a valid bot token — missing token rejected", async () => {
+  const s = await makeStudent("notoken-otp");
+  // Register bypasses OTP requirement in this check by using a direct
+  // student fixture + a hand-signed limited token via login, since the
+  // OTP routes need requireStudentAuth first regardless of bot protection.
+  const loginRes = await post("/api/auth/login", { email: s.email, password: s.password });
+  assert.equal(loginRes.status, 200);
+  const token = loginRes.json.accessToken as string;
+
+  const sendRes = await post("/api/auth/send-otp", { email: s.email }, undefined, token);
+  assert.equal(sendRes.status, 403);
+  assert.equal(sendRes.json.code, "BOT_VERIFICATION_FAILED");
+
+  const resendRes = await post("/api/auth/resend-otp", { email: s.email }, undefined, token);
+  assert.equal(resendRes.status, 403);
+  assert.equal(resendRes.json.code, "BOT_VERIFICATION_FAILED");
+});
+
+test("6: an invalid bot token is rejected the same way as a missing one (generic 403, no provider detail)", async () => {
+  const res = await post("/api/auth/register", { name: "Bad Token", email: freshEmail("badtoken-reg"), password: "NewPass123!", botToken: "invalid-token-for-test" });
+  assert.equal(res.status, 403);
+  assert.equal(res.json.code, "BOT_VERIFICATION_FAILED");
+});
+
+test("9/10: a valid bot token permits the request, and the Redis account/IP limiter still applies underneath it", async () => {
+  // Valid token lets a normal registration through...
+  const email = freshEmail("validtoken-reg");
+  const ok = await post("/api/auth/register", { name: "Valid Token", email, password: "NewPass123!", botToken: VALID_BOT_TOKEN });
+  assert.equal(ok.status, 200);
+
+  // ...but the account-scoped Redis limiter (5/hour by default) still
+  // engages on repeated attempts against the SAME normalized email, bot
+  // token or not — bot protection is additive, never a replacement.
+  let last: ApiResult | null = null;
+  for (let i = 0; i < 6; i += 1) {
+    last = await post("/api/auth/register", { name: "Valid Token", email, password: "NewPass123!", botToken: VALID_BOT_TOKEN });
+  }
+  assert.equal(last!.status, 429, "the Redis account limiter must still trigger even with every request carrying a valid bot token");
+});
+
+test("14: bot verification failure never leaks provider/account-status details in the response body", async () => {
+  const res = await post("/api/auth/register", { name: "Leak Check", email: freshEmail("leakcheck"), password: "NewPass123!" });
+  const body = JSON.stringify(res.json);
+  assert.ok(!body.toLowerCase().includes("turnstile"));
+  assert.ok(!body.includes(process.env.TURNSTILE_SECRET_KEY!));
+});
+
+test("16: the bot token itself is never written to the audit/activity log for a successful registration", async () => {
+  const email = freshEmail("tokennotlogged");
+  const res = await post("/api/auth/register", { name: "Log Check", email, password: "NewPass123!", botToken: VALID_BOT_TOKEN });
+  assert.equal(res.status, 200);
+  const rows = await pool.query(`SELECT * FROM admin_activity_logs WHERE summary ILIKE $1`, [`%${VALID_BOT_TOKEN}%`]);
+  assert.equal(rows.rows.length, 0, "the raw bot token must never appear in any audit log row");
+});
+
+test("6a: existing-email register response is IDENTICAL in shape to a new-email response (no enumeration leak)", async () => {
+  const s = await makeStudent("reg-existing");
+  const existingRes = await post("/api/auth/register", { name: "Existing User", email: s.email, password: "NewPass123!", botToken: VALID_BOT_TOKEN });
+  const newRes = await post("/api/auth/register", { name: "New User", email: freshEmail("reg-new"), password: "NewPass123!", botToken: VALID_BOT_TOKEN });
+  assert.equal(existingRes.status, 200);
+  assert.equal(newRes.status, 200);
+  assert.deepEqual(existingRes.json, newRes.json, "both branches must return the exact same generic body");
+  assert.equal(existingRes.json.accessToken, undefined, "no token may be issued for the existing-email branch");
+});
+
+test("6b: no duplicate Student row is created when registering an already-used email", async () => {
+  const s = await makeStudent("reg-nodup");
+  const before = await pool.query(`SELECT count(*) FROM students WHERE email = $1`, [s.email]);
+  const res = await post("/api/auth/register", { name: "Dup Attempt", email: s.email, password: "NewPass123!", botToken: VALID_BOT_TOKEN });
+  assert.equal(res.status, 200);
+  const after = await pool.query(`SELECT count(*) FROM students WHERE email = $1`, [s.email]);
+  assert.equal(Number(after.rows[0].count), Number(before.rows[0].count), "existing-email registration must never mutate the students table");
 });
 
 test("7: forgot-password response is identical for an existing account vs an unknown email", async () => {
   const s = await makeStudent("forgot-known");
-  const known = await post("/api/auth/forgot-password", { email: s.email });
-  const unknown = await post("/api/auth/forgot-password", { email: freshEmail("forgot-unknown") });
+  const known = await post("/api/auth/forgot-password", { email: s.email, botToken: VALID_BOT_TOKEN });
+  const unknown = await post("/api/auth/forgot-password", { email: freshEmail("forgot-unknown"), botToken: VALID_BOT_TOKEN });
   assert.equal(known.status, 200);
   assert.equal(unknown.status, 200);
   assert.deepEqual(known.json, unknown.json);
@@ -317,38 +427,42 @@ test("3: a successful login resets the account's accumulated failure state", asy
 
 async function registerAndGetLimitedToken(tag: string): Promise<{ studentId: number; token: string; email: string }> {
   const email = freshEmail(tag);
-  const res = await post("/api/auth/register", { name: "OTP Test", email, password: "OriginalPass123!" });
-  assert.equal(res.status, 201);
-  return { studentId: res.json.student.id, token: res.json.accessToken, email };
+  const password = "OriginalPass123!";
+  const res = await post("/api/auth/register", { name: "OTP Test", email, password, botToken: VALID_BOT_TOKEN });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.accessToken, undefined, "register no longer issues a token directly");
+  const loginRes = await post("/api/auth/login", { email, password });
+  assert.equal(loginRes.status, 200);
+  return { studentId: 0, token: loginRes.json.accessToken, email };
 }
 
 test("8: OTP send is throttled per already-authenticated account (Redis layer) — additive to the existing DB cooldown/budget", async () => {
   const { token } = await registerAndGetLimitedToken("otpsend");
   // First send succeeds (or is DB-cooldown-limited on retries — either way
   // every subsequent request within the window must never exceed a 429).
-  const first = await post("/api/auth/send-otp", { email: "unused@example.com" }, undefined, token);
+  const first = await post("/api/auth/send-otp", { email: "unused@example.com", botToken: VALID_BOT_TOKEN }, undefined, token);
   assert.ok([200, 429].includes(first.status));
   // Drive well past both the DB cooldown (60s) and this module's own 10/15min
   // budget using rapid resend calls — every response must be a defined,
   // safe outcome (200 success/no-op or 429 rate-limited), never a crash.
   for (let i = 0; i < 12; i += 1) {
-    const r = await post("/api/auth/resend-otp", { email: "unused@example.com" }, undefined, token);
+    const r = await post("/api/auth/resend-otp", { email: "unused@example.com", botToken: VALID_BOT_TOKEN }, undefined, token);
     assert.ok([200, 429].includes(r.status), `unexpected status ${r.status} on attempt ${i}`);
   }
 });
 
 test("9: OTP resend cooldown (existing DB-based logic) is preserved — a second immediate resend is rejected", async () => {
   const { token } = await registerAndGetLimitedToken("otpcooldown");
-  const first = await post("/api/auth/send-otp", { email: "unused@example.com" }, undefined, token);
+  const first = await post("/api/auth/send-otp", { email: "unused@example.com", botToken: VALID_BOT_TOKEN }, undefined, token);
   assert.equal(first.status, 200);
-  const second = await post("/api/auth/resend-otp", { email: "unused@example.com" }, undefined, token);
+  const second = await post("/api/auth/resend-otp", { email: "unused@example.com", botToken: VALID_BOT_TOKEN }, undefined, token);
   assert.equal(second.status, 429);
   assert.ok(typeof second.json.retryAfterSeconds === "number");
 });
 
 test("10: OTP verify attempt protection (existing DB-based attempts counter) is preserved", async () => {
   const { token, email } = await registerAndGetLimitedToken("otpverify");
-  const sendRes = await post("/api/auth/send-otp", { email }, undefined, token);
+  const sendRes = await post("/api/auth/send-otp", { email, botToken: VALID_BOT_TOKEN }, undefined, token);
   assert.equal(sendRes.status, 200);
   const wrong = await post("/api/auth/verify-otp", { email, code: "000000" }, undefined, token);
   assert.equal(wrong.status, 400);
@@ -359,7 +473,7 @@ test("11: password reset security preserved — a bogus code is rejected, a corr
   const s = await makeStudent("resetsecurity");
   const oldLoginToken = (await post("/api/auth/login", { email: s.email, password: s.password })).json.accessToken;
 
-  const forgot = await post("/api/auth/forgot-password", { email: s.email });
+  const forgot = await post("/api/auth/forgot-password", { email: s.email, botToken: VALID_BOT_TOKEN });
   assert.equal(forgot.status, 200);
 
   const bogus = await post("/api/auth/reset-password", { email: s.email, code: "000000", newPassword: "NewPass123!" });
