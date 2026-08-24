@@ -52,6 +52,8 @@ import {
   useDeactivateStudent,
   useReactivateStudent,
   useGetStudentDeletionImpact,
+  useStartStudentDeletionPreparation,
+  useCancelStudentDeletionPreparation,
   getListStudentsQueryKey,
   getGetStudentDeletionImpactQueryKey,
 } from "@workspace/api-client-react";
@@ -440,6 +442,13 @@ function DeletionImpactDialog({
               </Button>
             </div>
 
+            {data.deletionPreparation.active && (
+              <p className="text-xs font-medium text-amber-400">
+                Deletion preparation is currently active
+                {data.deletionPreparation.startedAt ? ` (started ${formatDateTime(data.deletionPreparation.startedAt)})` : ""}.
+              </p>
+            )}
+
             {data.blockers.length > 0 && (
               <section aria-labelledby="impact-blockers-heading" className="rounded-lg border border-red-500/40 bg-red-500/5 p-4 space-y-3">
                 <h3 id="impact-blockers-heading" className="text-sm font-semibold text-red-400">
@@ -607,10 +616,16 @@ export default function StudentDetailPage() {
   const [exportPdfError, setExportPdfError] = useState<string | null>(null);
 
   // Danger Zone (Phase B1D) ------------------------------------------------
-  const [dangerDialog, setDangerDialog] = useState<"deactivate" | "reactivate" | null>(null);
+  const [dangerDialog, setDangerDialog] = useState<"deactivate" | "reactivate" | "start-prep" | "cancel-prep" | null>(null);
   const [deactivateReason, setDeactivateReason] = useState("");
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleSuccess, setLifecycleSuccess] = useState<string | null>(null);
+
+  // Deletion Preparation (Phase B3B0-2B) — start/cancel feedback state, kept
+  // separate from lifecycle (deactivate/reactivate) success/error state so
+  // the two workflows never bleed messages into each other.
+  const [prepError, setPrepError] = useState<string | null>(null);
+  const [prepSuccess, setPrepSuccess] = useState<string | null>(null);
 
   // Permanent Account Deletion — Impact Review (Phase B2C). Read-only,
   // advisory analysis fetched from the already-live B2B contract
@@ -623,6 +638,26 @@ export default function StudentDetailPage() {
       enabled: impactDialogOpen && Number.isInteger(studentId) && studentId > 0,
       staleTime: 0,
       gcTime: 0,
+      retry: false,
+    },
+  });
+
+  // Deletion Preparation status (Phase B3B0-2B). The only place this
+  // non-sensitive workflow status (active/startedAt/status) is exposed is
+  // the additive `deletionPreparation` field on the already-live B2B/B2C
+  // contract (GET /students/:id/deletion-impact) — there is no separate
+  // status endpoint. This is a second, independently-enabled subscription
+  // to the exact same query (identical queryKey to impactQuery below), so
+  // it shares the react-query cache: it loads the Danger Zone's current
+  // preparation state up front (gated only on users.delete, not on the
+  // impact-review dialog being open) without duplicating network calls
+  // once the dialog is also opened. impactQuery's own `enabled` condition
+  // is untouched by this addition.
+  const prepStatusQuery = useGetStudentDeletionImpact<StudentDeletionImpactResponse>(studentId, {
+    query: {
+      queryKey: getGetStudentDeletionImpactQueryKey(studentId),
+      enabled: can("users", "delete") && Number.isInteger(studentId) && studentId > 0,
+      staleTime: 0,
       retry: false,
     },
   });
@@ -692,6 +727,63 @@ export default function StudentDetailPage() {
     reactivateMutation.mutate({ id: studentId });
   }
 
+  // Extracts a meaningful conflict/error message from an ApiError-shaped
+  // rejection (see custom-fetch.ts's buildErrorMessage — status + body
+  // title/detail/message/error, e.g. real 409 STUDENT_DELETION_PREPARATION_ACTIVE
+  // text) without ever falling back to a hand-rolled generic string.
+  function preparationErrorMessage(err: unknown): string | undefined {
+    return (err as { message?: string } | undefined)?.message;
+  }
+
+  async function invalidateAfterPreparationChange() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["student-overview", studentId] }),
+      queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getGetStudentDeletionImpactQueryKey(studentId) }),
+    ]);
+  }
+
+  const startPrepMutation = useStartStudentDeletionPreparation({
+    mutation: {
+      onSuccess: async () => {
+        setPrepError(null);
+        setPrepSuccess("Deletion preparation started.");
+        setDangerDialog(null);
+        await invalidateAfterPreparationChange();
+      },
+      onError: (err) => {
+        setPrepSuccess(null);
+        setPrepError(preparationErrorMessage(err) || "Failed to start deletion preparation. Please try again.");
+      },
+    },
+  });
+
+  const cancelPrepMutation = useCancelStudentDeletionPreparation({
+    mutation: {
+      onSuccess: async () => {
+        setPrepError(null);
+        setPrepSuccess("Deletion preparation cancelled.");
+        setDangerDialog(null);
+        await invalidateAfterPreparationChange();
+      },
+      onError: (err) => {
+        setPrepSuccess(null);
+        setPrepError(preparationErrorMessage(err) || "Failed to cancel deletion preparation. Please try again.");
+      },
+    },
+  });
+
+  const prepPending = startPrepMutation.isPending || cancelPrepMutation.isPending;
+
+  function confirmStartPrep() {
+    if (startPrepMutation.isPending) return;
+    startPrepMutation.mutate({ id: studentId });
+  }
+  function confirmCancelPrep() {
+    if (cancelPrepMutation.isPending) return;
+    cancelPrepMutation.mutate({ id: studentId });
+  }
+
   if (query.isLoading) {
     return (
       <div className="admin2-detail-page">
@@ -708,6 +800,12 @@ export default function StudentDetailPage() {
   }
 
   const d = query.data;
+  // Deletion Preparation (Phase B3B0-2B) — derived purely from the additive,
+  // non-sensitive `deletionPreparation` field on the shared deletion-impact
+  // cache entry (prepStatusQuery / impactQuery). Never reinterpreted beyond
+  // this passthrough; no email/fingerprint/secret field exists on this shape.
+  const deletionPrep = prepStatusQuery.data?.deletionPreparation ?? null;
+  const preparationActive = deletionPrep?.active === true;
   const isParent = d.user.accountType === "parent";
   // Mirrors accountModule() in artifacts/api-server/src/routes/students.ts —
   // the same module the backend deactivate/reactivate routes check.
@@ -928,7 +1026,7 @@ export default function StudentDetailPage() {
                       <ShieldOff className="h-4 w-4" /> Deactivate Account
                     </Button>
                   </>
-                ) : (
+                ) : !preparationActive ? (
                   <>
                     <p className="text-sm text-muted-foreground">
                       Reactivating lets this user log in again. Old sessions remain invalid — a fresh login is
@@ -945,6 +1043,74 @@ export default function StudentDetailPage() {
                       Reactivate Account
                     </Button>
                   </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Reactivate Account is unavailable while deletion preparation is active. Cancel deletion
+                    preparation first, then reactivate.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Deletion Preparation (Phase B3B0-2B). Distinct workflow from
+              Deactivation above: DEACTIVATED means access is disabled and
+              reversible; DELETION PREPARATION means identity is frozen while
+              deletion work is being prepared. No destructive delete exists
+              yet, so this never uses "Deleted"/"Deleting"/"Permanent Delete"
+              language. Reuses users.delete — the same permission the
+              Permanent Account Deletion (Review Impact) card below already
+              requires — rather than introducing a new permission. */}
+          {can("users", "delete") && d.user.accountStatus !== "deleted" && (
+            <Card className="mt-6 border-red-500/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm text-red-400">
+                  <AlertTriangle className="h-4 w-4" /> Deletion Preparation
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {prepSuccess && <p role="status" className="text-sm text-emerald-400">{prepSuccess}</p>}
+                {prepError && <p role="alert" className="text-sm text-destructive">{prepError}</p>}
+
+                <p className="text-sm text-muted-foreground">
+                  Deletion preparation freezes identity-sensitive changes (especially email) while permanent
+                  deletion is being prepared. This is separate from deactivation: it does not disable login by
+                  itself, and it does not permanently delete the account.
+                </p>
+
+                {preparationActive ? (
+                  <>
+                    <p className="text-sm text-white">
+                      Deletion Preparation Active
+                      {deletionPrep?.startedAt ? ` · Started ${formatDateTime(deletionPrep.startedAt)}` : ""}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label="Cancel Deletion Preparation"
+                      disabled={prepPending}
+                      onClick={() => { setPrepError(null); setPrepSuccess(null); setDangerDialog("cancel-prep"); }}
+                    >
+                      Cancel Deletion Preparation
+                    </Button>
+                  </>
+                ) : d.user.accountStatus === "deactivated" ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">Deletion preparation has not started.</p>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      aria-label="Start Deletion Preparation"
+                      disabled={prepPending}
+                      onClick={() => { setPrepError(null); setPrepSuccess(null); setDangerDialog("start-prep"); }}
+                    >
+                      Start Deletion Preparation
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    The Student must be deactivated before deletion preparation can start.
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -1033,6 +1199,50 @@ export default function StudentDetailPage() {
                   onClick={(e) => { e.preventDefault(); confirmReactivate(); }}
                 >
                   {reactivateMutation.isPending ? "Reactivating…" : "Reactivate Account"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog open={dangerDialog === "start-prep"} onOpenChange={(open) => { if (!open) setDangerDialog(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Start deletion preparation?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {d.user.name} will remain deactivated — this does not permanently delete the account, and no
+                  data is removed. Identity-sensitive changes, especially email, will be frozen while
+                  preparation is active. Reactivation will require cancelling deletion preparation first. No
+                  financial or history data is deleted at this step.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={startPrepMutation.isPending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={startPrepMutation.isPending}
+                  onClick={(e) => { e.preventDefault(); confirmStartPrep(); }}
+                >
+                  {startPrepMutation.isPending ? "Starting…" : "Start Deletion Preparation"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog open={dangerDialog === "cancel-prep"} onOpenChange={(open) => { if (!open) setDangerDialog(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancel deletion preparation?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes the identity freeze. {d.user.name} remains deactivated — cancelling deletion
+                  preparation does not reactivate the account. Reactivation is a separate action afterward.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={cancelPrepMutation.isPending}>Keep Preparing</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={cancelPrepMutation.isPending}
+                  onClick={(e) => { e.preventDefault(); confirmCancelPrep(); }}
+                >
+                  {cancelPrepMutation.isPending ? "Cancelling…" : "Cancel Deletion Preparation"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
