@@ -37,6 +37,7 @@ import { computeProfileCompletion } from "../lib/profileCompletion";
 import { buildStudentProfilePdfBuffer, studentProfilePdfFilename } from "./studentProfilePdf";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { computeStudentDeletionImpact } from "../lib/studentDeletionImpact";
+import { computeStudentDeletionAttributionPlan } from "../lib/studentDeletionAttributionPlanner";
 import { computeAgeAsOf } from "../lib/balletAgeEligibility";
 import { applyStudentEmailChange, openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import {
@@ -1611,6 +1612,45 @@ router.get(
         status: activePreparation?.status ?? null,
       },
     });
+  },
+);
+
+// ── Deletion attribution planner (Phase B3B1) ───────────────────────────
+// Read-only. Requires an ACTIVE (PREPARING) deletion-preparation workflow —
+// see studentDeletionAttributionPlanner.ts's module doc for the full
+// time-aware provenance matching model. No preview mode: an unfrozen plan
+// (identity could still change) is never returned as authoritative, per the
+// brief's default recommendation. Same auth chain / permission as B2B and
+// B3B0-2 (users.delete) since this is squarely part of "manage account
+// deletion".
+router.get(
+  "/students/:id/deletion-attribution-plan",
+  blockStudentJwt,
+  requireAdminAuth,
+  requireAdminPermission("users", "delete"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = UpdateStudentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const outcome = await computeStudentDeletionAttributionPlan(params.data.id);
+    if (outcome.kind === "notFound") {
+      res.status(404).json({ error: "Student not found" });
+      return;
+    }
+    if (outcome.kind === "alreadyDeleted") {
+      res.status(409).json({ error: "Student account has already been permanently deleted." });
+      return;
+    }
+    if (outcome.kind === "preparationRequired") {
+      res.status(409).json({
+        error: "An active deletion preparation is required before an attribution plan can be generated.",
+        code: "STUDENT_DELETION_PREPARATION_REQUIRED",
+      });
+      return;
+    }
+    res.status(200).json(outcome.plan);
   },
 );
 
