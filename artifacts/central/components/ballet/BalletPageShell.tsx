@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import CentralBackButton from "@/components/CentralBackButton";
 
 /* ─── Shared design tokens ───────────────────────────────────────── */
 export const BAL = {
@@ -67,14 +68,7 @@ export function BalletPageShell({
 
       {/* sticky header */}
       <View style={[styles.header, { paddingTop: topPad + 14 }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="chevron-back" size={20} color={BAL.CYAN} />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
+        <CentralBackButton style={styles.backBtn} activeOpacity={0.7} />
         <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
         <View style={styles.headerSpacer} />
       </View>

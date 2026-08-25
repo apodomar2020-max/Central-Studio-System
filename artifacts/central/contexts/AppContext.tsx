@@ -81,6 +81,7 @@ export interface Booking {
    *  resolve the 2-hour self-cancellation cutoff. UI mirror only. */
   scheduleStartTime?: string | null;
   className: string;
+  classPhotoUrl?: string;
   danceType: string;
   instructorName: string;
   instructorImage?: string;
@@ -213,6 +214,7 @@ interface ApiMyBooking {
   occurrenceDate: string | null;
   scheduleStartTime?: string | null;
   className: string;
+  classPhotoUrl?: string | null;
   danceType: string;
   instructorName: string;
   instructorImage: string | null;
@@ -246,6 +248,7 @@ function mapMyBookingToLocal(r: ApiMyBooking): Booking {
     occurrenceDate: r.occurrenceDate ?? undefined,
     scheduleStartTime: r.scheduleStartTime ?? null,
     className: r.sourceUnavailable ? "Class details unavailable" : (r.className || "Class"),
+    classPhotoUrl: r.sourceUnavailable || !r.classPhotoUrl ? undefined : normalizeMediaUrl(r.classPhotoUrl, "image"),
     danceType: r.danceType || "",
     instructorName: r.sourceUnavailable ? "" : (r.instructorName || "Instructor"),
     instructorImage: r.instructorImage ? normalizeMediaUrl(r.instructorImage, "image") : undefined,

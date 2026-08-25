@@ -36,6 +36,16 @@ function cairoDateTimeToUtcMs(dateOnly: string, time: string): number {
   return approxUtc.getTime() - offsetMinutes * 60_000;
 }
 
+/** Resolves the booking occurrence to a real instant for read-only UI such as
+ * countdowns. It deliberately shares the cancellation window's Cairo/DST
+ * conversion so the two surfaces can never disagree about class start time. */
+export function bookingOccurrenceStartMs(
+  params: { occurrenceDate: string | null | undefined; startTime: string | null | undefined },
+): number | null {
+  if (!params.occurrenceDate || !params.startTime) return null;
+  return cairoDateTimeToUtcMs(params.occurrenceDate, params.startTime);
+}
+
 /**
  * Mirrors the server's isBookingSelfCancellable exactly: eligible only when
  * time-until-class-start >= 2 hours. Missing occurrenceDate/startTime is
@@ -47,7 +57,8 @@ export function isBookingSelfCancellableClientSide(
   now: Date = new Date(),
 ): boolean {
   if (!params.occurrenceDate || !params.startTime) return false;
-  const occurrenceStartMs = cairoDateTimeToUtcMs(params.occurrenceDate, params.startTime);
+  const occurrenceStartMs = bookingOccurrenceStartMs(params);
+  if (occurrenceStartMs == null) return false;
   const cutoffMs = occurrenceStartMs - SELF_CANCEL_CUTOFF_MINUTES * 60_000;
   return now.getTime() <= cutoffMs;
 }

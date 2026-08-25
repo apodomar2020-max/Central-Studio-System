@@ -17,6 +17,7 @@ import {
 import { customFetch } from "@workspace/api-client-react";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import CentralBackButton from "@/components/CentralBackButton";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { forgotPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
 import BotChallenge from "@/components/BotChallenge";
@@ -185,13 +186,10 @@ export default function ForgotPasswordScreen() {
           />
         </View>
 
-        <TouchableOpacity
+        <CentralBackButton
           onPress={() => router.replace("/auth/login")}
           style={styles.backBtn}
-        >
-          <Ionicons name="arrow-back-outline" size={16} color="#6B7280" />
-          <Text style={styles.backText}>Back to Sign In</Text>
-        </TouchableOpacity>
+        />
       </KeyboardAwareScrollView>
     </View>
   );

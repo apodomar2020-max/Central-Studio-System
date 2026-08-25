@@ -40,6 +40,7 @@ import {
 } from "@/services/balletAssessmentService";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import CentralBackButton from "@/components/CentralBackButton";
 import OfflineState from "@/components/OfflineState";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 
@@ -233,9 +234,7 @@ export default function EditApplicationScreen() {
     <View style={[styles.container, { paddingTop }]}>
       {/* Header */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-        </TouchableOpacity>
+        <CentralBackButton style={styles.iconBtn} />
         <Text style={styles.topBarTitle}>Edit Application</Text>
         <View style={{ width: 40 }} />
       </View>

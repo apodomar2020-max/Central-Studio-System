@@ -9,7 +9,6 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { normalizeMediaUrl } from "@workspace/api-client-react";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
@@ -24,8 +23,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import BalletScheduleCard from "@/components/ballet/BalletScheduleCard";
+import CentralBackButton from "@/components/CentralBackButton";
 
-import ClassCard from "@/components/ClassCard";
 import { useAppContext } from "@/contexts/AppContext";
 import {
   fetchMyBalletClasses,
@@ -35,9 +35,7 @@ import {
   type BalletMyClassesChild,
   type BalletMyClassesEntitlementState,
 } from "@/services/balletAssessmentService";
-import type { DanceClass, Instructor } from "@/data/mockData";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
-import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 
 const BASE = "#0A0B0D";
 const CYAN = "#00B6D7";
@@ -45,75 +43,6 @@ const INK_200 = "#D1D5DB";
 const INK_400 = "#6B7280";
 const R_MD = 12;
 
-const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-function formatTime(timeStr: string): string {
-  const [hoursStr = "0", minsStr = "00"] = timeStr.split(":");
-  const hours = parseInt(hoursStr, 10);
-  const ampm = hours >= 12 ? "PM" : "AM";
-  const h = hours % 12 || 12;
-  return `${h}:${minsStr} ${ampm}`;
-}
-
-function scheduleSummary(item: BalletClass): string {
-  const schedules = item.schedules;
-  if (schedules.length === 0) return "Schedule TBC";
-  return schedules
-    .map((schedule) => `${DAY_NAMES[schedule.dayOfWeek] ?? "Weekly"} · ${formatTime(schedule.startTime)} - ${formatTime(schedule.endTime)}`)
-    .join("\n");
-}
-
-function durationLabel(item: BalletClass): string {
-  const schedules = item.schedules;
-  if (schedules.length === 0) return "";
-  const uniqueDurations = [...new Set(schedules.map((schedule) => schedule.durationMins).filter((mins): mins is number => mins != null))];
-  if (uniqueDurations.length === 1) return `${uniqueDurations[0]} min`;
-  return schedules.length === 1 ? "" : `${schedules.length} weekly sessions`;
-}
-
-function levelLabelForClass(item: BalletClass, child: BalletMyClassesChild): string {
-  const levelName = item.level?.name ?? child.level?.name ?? "Ballet";
-  const groupName = item.group?.name ?? child.group?.name;
-  return groupName ? `${levelName} · ${groupName}` : levelName;
-}
-
-function toDanceClass(item: BalletClass, child: BalletMyClassesChild): DanceClass {
-  const firstScheduleForCard = item.schedules[0];
-  return {
-    id: `ballet-${item.id}`,
-    scheduleId: firstScheduleForCard?.id != null ? `ballet-schedule-${firstScheduleForCard.id}` : undefined,
-    scheduleType: "weekly",
-    scheduleStatus: firstScheduleForCard ? "active" : undefined,
-    packageEligible: false,
-    categoryId: "ballet",
-    categoryName: levelLabelForClass(item, child),
-    instructorId: item.instructor ? `ballet-instructor-${item.instructor.id}` : "",
-    title: item.title,
-    description: "",
-    photoUrl: normalizeMediaUrl(item.classImageUrl, "image"),
-    classVideoUrl: normalizeMediaUrl(item.classVideoUrl, "video"),
-    date: "",
-    dayOfWeek: firstScheduleForCard ? DAY_NAMES[firstScheduleForCard.dayOfWeek] ?? "" : "",
-    startTime: firstScheduleForCard ? formatTime(firstScheduleForCard.startTime) : "",
-    endTime: firstScheduleForCard ? formatTime(firstScheduleForCard.endTime) : "",
-    scheduleLabel: scheduleSummary(item),
-    duration: durationLabel(item),
-    location: firstScheduleForCard
-      ? scheduleLocationLabel({ branch: firstScheduleForCard.branch, room: firstScheduleForCard.room }) ?? ""
-      : "",
-    room: "",
-    price: 0,
-    capacity: 0,
-    bookedCount: 0,
-    classCapacityEnabled: false,
-    level: "All Levels",
-    ageGroup: "Kids",
-    status: firstScheduleForCard ? "available" : "unavailable",
-    policy: "",
-    featured: false,
-    isBallet: true,
-  };
-}
 
 type EmptyStateCopy = { title: string; body: string; actionLabel?: string; action: "login" | "apply" | "status" | null };
 
@@ -147,29 +76,6 @@ function lifecycleCopy(state: BalletMyClassesEntitlementState): EmptyStateCopy {
     case "active":
       return { title: "Schedule Not Assigned Yet", body: "No active weekly Ballet schedule is currently available for this child.", action: null };
   }
-}
-
-function toInstructor(item: BalletClass): Instructor | undefined {
-  if (!item.instructor) return undefined;
-  const name = item.instructor.name;
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("") || "?";
-  return {
-    id: `ballet-instructor-${item.instructor.id}`,
-    name,
-    title: "Ballet Instructor",
-    bio: "",
-    danceStyles: ["Ballet"],
-    rating: 0,
-    totalClasses: 0,
-    photoColor: CYAN,
-    initials,
-    photoUrl: normalizeMediaUrl(item.instructor.photoUrl, "image"),
-  };
 }
 
 export default function BalletClassesScreen() {
@@ -230,6 +136,10 @@ export default function BalletClassesScreen() {
   );
   const visibleClasses = selectedChild?.entitlementState === "active" ? selectedChild.classes : [];
   const visibleWeeklyScheduleCount = selectedChild?.entitlementState === "active" ? selectedChild.weeklyScheduleCount : 0;
+  const visibleSchedules = useMemo(
+    () => visibleClasses.flatMap((item) => item.schedules.map((schedule) => ({ item, schedule }))),
+    [visibleClasses],
+  );
 
   const runEmptyAction = useCallback((copy: EmptyStateCopy, child: BalletMyClassesChild | null) => {
     if (copy.action === "login") router.push("/auth/login");
@@ -266,10 +176,7 @@ export default function BalletClassesScreen() {
           pointerEvents="none"
         />
         <View style={[s.header, { paddingTop: topPad + 14 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={s.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={s.backBtn} activeOpacity={0.7} />
         </View>
       </View>
 
@@ -304,9 +211,7 @@ export default function BalletClassesScreen() {
           <View style={[s.heroContent, { paddingTop: topPad + 54 }]}>
             <Text style={s.heroEyebrow}>Central Studio</Text>
             <Text style={s.heroTitle}>{"MY BALLET\nCLASSES"}</Text>
-            <Text style={s.heroDesc}>
-              Weekly classes and schedules for each child on your account.
-            </Text>
+            <Text style={s.heroDesc}>Weekly classes and schedules for each child on your account.</Text>
           </View>
         </View>
 
@@ -365,7 +270,7 @@ export default function BalletClassesScreen() {
                 <Text style={s.retryText}>Retry</Text>
               </TouchableOpacity>
             </View>
-          ) : visibleClasses.length === 0 ? (
+          ) : visibleSchedules.length === 0 ? (
             <View style={s.empty}>
               <View style={s.emptyIcon}>
                 <Ionicons name="calendar-outline" size={28} color={INK_400} />
@@ -379,21 +284,15 @@ export default function BalletClassesScreen() {
               ) : null}
             </View>
           ) : (
-            visibleClasses.map((item) => {
-              const mappedClass = toDanceClass(item, selectedChild!);
-              return (
-                <ClassCard
-                  key={item.id}
-                  item={mappedClass}
-                  instructor={toInstructor(item)}
-                  variant="ballet"
-                  displayOnly
-                  imageUrl={mappedClass.photoUrl}
-                  levelLabel={levelLabelForClass(item, selectedChild!)}
-                  scheduleLabelOverride={scheduleSummary(item)}
+            <View style={s.classList}>
+              {visibleSchedules.map(({ item, schedule }) => (
+                <BalletScheduleCard
+                  key={schedule.id != null ? `${item.id}-${schedule.id}` : `${item.id}-${schedule.dayOfWeek}-${schedule.startTime}`}
+                  item={item}
+                  schedule={schedule}
                 />
-              );
-            })
+              ))}
+            </View>
           )}
         </View>
 
@@ -405,20 +304,8 @@ export default function BalletClassesScreen() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BASE },
-  weeklySessionCount: { color: INK_200, fontSize: 13, marginBottom: 14 },
-  atmosphericGlow: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-  headerWrap: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
+  atmosphericGlow: { position: "absolute", top: 0, left: 0, right: 0 },
+  headerWrap: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -427,28 +314,14 @@ const s = StyleSheet.create({
     paddingBottom: 16,
     backgroundColor: "transparent",
   },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  backText: {
-    fontSize: 14,
-    fontFamily: "Archivo_600SemiBold",
-    color: CYAN,
-    textShadowColor: "rgba(0,0,0,0.85)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
+  backBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  weeklySessionCount: { color: INK_200, fontFamily: "Archivo_500Medium", fontSize: 14, marginBottom: 14 },
   heroSection: {
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,182,215,0.12)",
     overflow: "hidden",
   },
-  heroContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
+  heroContent: { paddingHorizontal: 20, paddingBottom: 8 },
   heroEyebrow: {
     fontSize: 10,
     fontFamily: "SpaceMono_700Bold",
@@ -459,10 +332,10 @@ const s = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 44,
-    fontFamily: "Anton_400Regular",
-    textTransform: "uppercase",
     lineHeight: 40,
+    fontFamily: "Anton_400Regular",
     letterSpacing: 0.5,
+    textTransform: "uppercase",
     color: "#FFFFFF",
     marginBottom: 8,
     ...iosDisplayTextStyle(44, 40),
@@ -470,26 +343,24 @@ const s = StyleSheet.create({
   },
   heroDesc: {
     fontSize: 14,
+    lineHeight: 21,
     fontFamily: "Archivo_400Regular",
     color: INK_200,
-    lineHeight: 21,
     maxWidth: 320,
   },
-  heroDivider: {
-    height: 1,
-    backgroundColor: "rgba(0,182,215,0.12)",
-  },
+  heroDivider: { height: 1, backgroundColor: "rgba(0,182,215,0.12)" },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 14,
     paddingBottom: 16,
   },
+  classList: { marginHorizontal: 14 },
   filterScroll: { gap: 8, paddingBottom: 20 },
   filterChip: { flexDirection: "row", alignItems: "center", gap: 7, paddingRight: 13, paddingLeft: 7, paddingVertical: 7, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", marginRight: 8 },
   filterChipActive: { backgroundColor: "#0A0B0D", borderColor: "rgba(0,182,215,0.5)" },
   filterAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
-  filterAvatarText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10, color: "#FFFFFF" },
-  filterChipText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" },
+  filterAvatarText: { fontFamily: "Archivo_800ExtraBold", fontSize: 11, color: "#FFFFFF" },
+  filterChipText: { fontFamily: "Archivo_700Bold", fontSize: 14, color: "#6B747F" },
   filterChipTextActive: { color: "#FFFFFF" },
   center: {
     paddingVertical: 54,

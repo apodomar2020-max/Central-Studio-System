@@ -23,6 +23,7 @@ import { useGetMyCredits, useGetMyPackages } from "@workspace/api-client-react";
 import type { CreditTransaction, PackageOrder } from "@workspace/api-client-react";
 import { formatApiDate, parseApiDate } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
+import CentralBackButton from "@/components/CentralBackButton";
 
 // Design tokens
 const CYAN = "#00B6D7";
@@ -164,10 +165,7 @@ export default function CreditHistoryScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 12 : insets.top) + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={CYAN} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
+        <CentralBackButton style={styles.headerButton} />
         <Text style={styles.headerTitle}>Credit History</Text>
         <View style={styles.headerButtonPlaceholder} />
       </View>

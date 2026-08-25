@@ -36,6 +36,7 @@ import {
 import BookingCard from "@/components/BookingCard";
 import ClassCard from "@/components/ClassCard";
 import AppButton from "@/components/AppButton";
+import CentralBackButton from "@/components/CentralBackButton";
 import colors from "@/constants/colors";
 import { Booking } from "@/contexts/AppContext";
 import { type DanceClass, type Instructor } from "@/data/mockData";
@@ -406,9 +407,7 @@ export default function DesignLabScreen() {
     <View style={[styles.root, { backgroundColor: colors.studio.background }]}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color="#9CA3AF" />
-        </TouchableOpacity>
+        <CentralBackButton style={styles.backBtn} />
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>🔬 Design Lab</Text>
           <Text style={styles.headerSub}>Mobile component preview · DEV ONLY</Text>

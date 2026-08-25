@@ -600,6 +600,9 @@ export interface BalletInstructor {
   achievements: string[];
   teachingPhilosophy: string | null;
   professionalExperience: string[];
+  /** Detail-only live aggregates. List responses may omit them. */
+  classCount?: number;
+  studentCount?: number;
 }
 
 export async function fetchBalletInstructors(signal?: AbortSignal): Promise<BalletInstructor[]> {

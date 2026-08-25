@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
 import { BalletStudentPreviewSection } from "@/components/ballet/BalletStudentPreviewCard";
+import CentralBackButton from "@/components/CentralBackButton";
 import { selectAuthoritativeBalletApplications, selectCurrentBalletStudents, selectEligibleBalletChildren, type BalletStudentPreview } from "@/components/ballet/balletStudentPreviewModel";
 import { useAppContext } from "@/contexts/AppContext";
 import { ACTIVE_APPLICATION_STATUSES, fetchBalletApplicationDetail, fetchBalletGroups, fetchBalletLevels, fetchBalletPackages, fetchBalletSettings, fetchMyApplications, type BalletApplicationDetail } from "@/services/balletAssessmentService";
@@ -25,10 +26,6 @@ const MENU_ART = {
 
 type MenuKey = keyof typeof MENU_ART;
 type MenuTileProps = { kind: MenuKey; title: string; route: string; width: number; height: number };
-
-function BackIcon() {
-  return <Svg width={34} height={34} viewBox="0 0 34 34" fill="none"><Path d="M19.0839 12.1125L14.4968 16.6607L19.0839 21.2089" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /><Path d="M32.0806 16.6607C32.0806 23.8075 32.0806 27.381 29.8413 29.6012C27.6022 31.8214 23.9981 31.8214 16.7903 31.8214C9.58238 31.8214 5.97842 31.8214 3.73922 29.6012C1.5 27.381 1.5 23.8075 1.5 16.6607C1.5 9.51388 1.5 5.94047 3.73922 3.72024C5.97842 1.5 9.58238 1.5 16.7903 1.5C23.9981 1.5 27.6022 1.5 29.8413 3.72024C31.3303 5.1965 31.8292 7.271 31.9964 10.5964" stroke="white" strokeWidth={3} strokeLinecap="round" /></Svg>;
-}
 
 function MenuArrow({ down = false }: { down?: boolean }) {
   return <Svg width={44} height={31} viewBox="0 0 42 29" fill="none" style={down ? styles.menuArrowDown : undefined}><Path d="M40.147 20.9887L20.8235 1.5L1.5 20.9887M20.8235 1.5V26.8353" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
@@ -131,7 +128,7 @@ export default function BalletProgramScreen() {
     <View style={[styles.fixedHero, { height: heroHeight }]}>
       <ImageBackground source={heroImageSource} style={StyleSheet.absoluteFill} imageStyle={styles.heroImage} onError={() => setHeroImageFailed(true)} />
       <LinearGradient colors={["rgba(0,0,0,0.72)", "rgba(0,0,0,0.18)", "rgba(0,0,0,0.88)", "#000000"]} locations={[0, 0.35, 0.82, 1]} style={StyleSheet.absoluteFill} />
-      <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { top: topPad + 10 }]}><BackIcon /></TouchableOpacity>
+      <CentralBackButton style={[styles.backButton, { top: topPad + 10 }]} />
       <View style={[styles.heroCopy, { top: topPad + 56 }]}>
         <View style={styles.balletLockup}>
           <View style={styles.balletLogoFrame}><Image source={BALLET_LOGO} style={styles.balletLogo} resizeMode="contain" /></View>

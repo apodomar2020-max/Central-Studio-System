@@ -18,6 +18,7 @@ import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
+import CentralBackButton from "@/components/CentralBackButton";
 import { iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { passwordPolicyError } from "@/utils/passwordPolicy";
@@ -123,10 +124,7 @@ export default function ChangePasswordScreen() {
     return (
       <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
         <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-            <Text style={styles.headerButtonText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={styles.headerButton} />
           <Text style={styles.headerTitle}>Verify Identity</Text>
           <View style={styles.headerButtonPlaceholder} />
         </View>
@@ -154,10 +152,7 @@ export default function ChangePasswordScreen() {
     return (
       <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
         <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-            <Text style={styles.headerButtonText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={styles.headerButton} />
           <Text style={styles.headerTitle}>Change Password</Text>
           <View style={styles.headerButtonPlaceholder} />
         </View>
@@ -178,10 +173,7 @@ export default function ChangePasswordScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
+        <CentralBackButton style={styles.headerButton} />
         <Text style={styles.headerTitle}>Change Password</Text>
         <View style={styles.headerButtonPlaceholder} />
       </View>

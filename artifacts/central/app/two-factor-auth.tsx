@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AppButton from "@/components/AppButton";
+import CentralBackButton from "@/components/CentralBackButton";
 import colors from "@/constants/colors";
 import { iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
@@ -79,10 +80,7 @@ export default function TwoFactorAuthScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
+        <CentralBackButton style={styles.headerButton} />
         <Text style={styles.headerTitle}>Two-Factor Auth</Text>
         <View style={{ width: 60 }} />
       </View>

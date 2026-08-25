@@ -35,14 +35,13 @@ import {
   useListInstructors,
   useListSchedules,
   useListClasses,
-  useListPricePackages,
+  useListDanceTypes,
   customFetch,
   normalizeMediaUrl,
 } from "@workspace/api-client-react";
 import type {
   HeroItem,
   Notification as ApiNotification,
-  PricePackage,
 } from "@workspace/api-client-react";
 import {
   compareSchedulesByNextOccurrence,
@@ -53,10 +52,9 @@ import {
 } from "@/data/apiAdapters";
 import { formatCairoDateKey, getCairoTomorrowDateKey } from "@/utils/cairoDate";
 import colors from "@/constants/colors";
-import PackageVisualCard, { PACKAGE_CARD_HEIGHT, PACKAGE_CARD_WIDTH } from "@/components/PackageVisualCard";
-import PackageDetailsSheet from "@/components/PackageDetailsSheet";
-import type { PackageParticipantSelection } from "@/contexts/AppContext";
+import AvailablePackagesSection from "@/components/AvailablePackagesSection";
 import BalletFeaturedProgramCard from "@/components/BalletFeaturedProgramCard";
+import DiscoveryClassCard from "@/components/DiscoveryClassCard";
 import ProfileCompletionBanner from "@/components/ProfileCompletionBanner";
 import { nextStepRoute } from "@/services/authProfile";
 import { InstructorCardSkeleton, ClassListCardSkeleton } from "@/components/SkeletonLoader";
@@ -103,6 +101,10 @@ const HERO_SNAP = HERO_W + HERO_GAP;
 /** Derive compact style label: "Hip Hop & Afro Instructor" → "Hip Hop & Afro" */
 function styleLabel(title: string): string {
   return title.replace(/\s*Instructor\s*$/i, "").trim() || title;
+}
+
+function normalizeStyleName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 /** Map ageGroup to design colour token */
@@ -608,123 +610,7 @@ function ClassCard({
 // ─── Package cards ────────────────────────────────────────────────────────────
 
 function PackagesSection() {
-  const { user, purchasePackage } = useAppContext();
-  const alert = useCentralAlert();
-  const { data: raw, isLoading, isError } = useListPricePackages();
-  const [detailsPkg, setDetailsPkg] = useState<PricePackage | null>(null);
-  const [purchasing, setPurchasing] = useState(false);
-  const pkgs = React.useMemo(
-    () => (raw ?? []).filter((p: PricePackage) => p.isActive !== false),
-    [raw],
-  );
-
-  const handleOpenDetails = useCallback((pkg: PricePackage) => {
-    if (!user) {
-      showAuthRequiredPrompt();
-      return;
-    }
-    setDetailsPkg(pkg);
-  }, [user]);
-
-  const confirmPurchase = useCallback(async (participant: PackageParticipantSelection) => {
-    if (!detailsPkg) return;
-    setPurchasing(true);
-    try {
-      await purchasePackage({
-        id: detailsPkg.id,
-        name: detailsPkg.name,
-        sessions: detailsPkg.sessions ?? 1,
-        validityMonths: 0,
-        participant,
-        // Online Payment is disabled in this UI (Coming Soon) — Pay at
-        // Studio / Cash is the only enabled path today.
-        paymentMode: "pay_at_studio",
-      });
-      const packageName = detailsPkg.name;
-      setDetailsPkg(null);
-      router.push("/package-center");
-      alert.show({
-        tone: "success",
-        title: "Request Submitted!",
-        message: `Your ${packageName} request has been submitted. Our team will confirm payment and activate it shortly.`,
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      alert.show({
-        tone: "error",
-        title: "Request Failed",
-        message: `Could not submit your request.\n\n${msg}\n\nPlease check your connection and try again.`,
-      });
-    } finally {
-      setPurchasing(false);
-    }
-  }, [detailsPkg, purchasePackage, alert]);
-
-  if (isError || (!isLoading && pkgs.length === 0)) {
-    return (
-      <View style={[s.section, { paddingHorizontal: 20 }]}>
-        <LinearGradient colors={["#003A47", "#001828"]} style={s.pkgPromo}>
-          <View style={s.pkgPromoIcon}>
-            <CsIcon name="ticket" size={24} stroke={2.2} color={CYAN} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.pkgPromoTitle}>Save with Class Packages</Text>
-            <Text style={s.pkgPromoDesc}>4, 8, or 12 classes — any style, 6-month validity</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/package-center"); }}
-            style={s.pkgPromoBtn}
-          >
-            <Text style={s.pkgPromoBtnText}>View</Text>
-          </TouchableOpacity>
-        </LinearGradient>
-      </View>
-    );
-  }
-
-  return (
-    <View style={s.section}>
-      <View style={s.sectionHeader}>
-        <View>
-          <Text style={s.eyebrow}>SAVE MORE, DANCE MORE</Text>
-          <Text style={s.sectionTitle}>Packages</Text>
-        </View>
-        <TouchableOpacity onPress={() => router.push("/package-center")} style={s.seeAllRow}>
-          <Text style={s.seeAllText}>Manage</Text>
-          <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
-        </TouchableOpacity>
-      </View>
-      {isLoading ? (
-        <View style={{ paddingLeft: 20, flexDirection: "row", gap: 12 }}>
-          {[1, 2].map((i) => (
-            <View
-              key={i}
-              style={{
-                width: PACKAGE_CARD_WIDTH, height: PACKAGE_CARD_HEIGHT,
-                borderRadius: R_LG, backgroundColor: INK_800,
-                borderWidth: 1, borderColor: BORDER, opacity: 0.3,
-              }}
-            />
-          ))}
-        </View>
-      ) : (
-        <FlatList
-          data={pkgs}
-          keyExtractor={(p) => String(p.id)}
-          renderItem={({ item }) => <PackageVisualCard pkg={item} onPress={handleOpenDetails} />}
-          horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingLeft: 20, gap: 12, paddingRight: 20 }}
-        />
-      )}
-      <PackageDetailsSheet
-        pkg={detailsPkg}
-        visible={!!detailsPkg}
-        submitting={purchasing}
-        onClose={() => setDetailsPkg(null)}
-        onContinue={confirmPurchase}
-      />
-    </View>
-  );
+  return <AvailablePackagesSection mode="home" />;
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -845,6 +731,18 @@ export default function StudioHomeScreen() {
     instructors.forEach((i) => m.set(i.id, i));
     return m;
   }, [instructors]);
+
+  const { data: danceTypesRaw } = useListDanceTypes();
+  const danceTypeIcons = React.useMemo(() => {
+    const byId = new Map<number, NonNullable<typeof danceTypesRaw>[number]>();
+    const byName = new Map<string, NonNullable<typeof danceTypesRaw>[number]>();
+    (danceTypesRaw ?? []).forEach((danceType) => {
+      byId.set(danceType.id, danceType);
+      byName.set(normalizeStyleName(danceType.name), danceType);
+      byName.set(normalizeStyleName(danceType.slug), danceType);
+    });
+    return { byId, byName };
+  }, [danceTypesRaw]);
 
   // ── Schedules + classes ───────────────────────────────────────────────────
   const { data: apiScheds, refetch: refetchScheds, isRefetching: refetchingScheds, isLoading: schedsLoading, isError: schedsError, error: schedsErr } = useListSchedules();
@@ -1022,13 +920,23 @@ export default function StudioHomeScreen() {
             </View>
           ) : (
             <View style={{ paddingHorizontal: 20, gap: 12 }}>
-              {weekClasses.map((cls) => (
-                <ClassCard
-                  key={`${cls.id}-${cls.date}`}
-                  item={cls}
-                  instructorMap={instructorMap}
-                />
-              ))}
+              {weekClasses.map((cls) => {
+                const danceType = cls.danceTypeId != null
+                  ? danceTypeIcons.byId.get(cls.danceTypeId)
+                  : danceTypeIcons.byName.get(normalizeStyleName(cls.categoryName));
+                return (
+                  <DiscoveryClassCard
+                    key={`${cls.id}-${cls.date}`}
+                    item={cls}
+                    instructor={instructorMap.get(cls.instructorId)}
+                    styleIcon={danceType ? {
+                      iconSvg: danceType.iconSvg,
+                      iconUrl: danceType.iconUrl,
+                      color: danceType.color || CYAN,
+                    } : undefined}
+                  />
+                );
+              })}
             </View>
           )}
         </View>

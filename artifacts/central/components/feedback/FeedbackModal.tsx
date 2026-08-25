@@ -20,6 +20,7 @@ import colors from "@/constants/colors";
 import type { RequiredFeedbackItem } from "@/services/feedbackService";
 import { formatApiDate, formatApiTime } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import CentralBackButton from "@/components/CentralBackButton";
 
 const RATING_LABELS: Record<number, string> = {
   0: "Tap a star to rate",
@@ -132,10 +133,7 @@ export default function FeedbackModal({
           {stage === "comment" && (
             <View style={styles.fill}>
               <View style={styles.content}>
-                <TouchableOpacity onPress={resetForBack} style={styles.backButton}>
-                  <Ionicons name="arrow-back" size={18} color={colors.cyan} />
-                  <Text style={styles.backText}>Back</Text>
-                </TouchableOpacity>
+                <CentralBackButton onPress={resetForBack} style={styles.backButton} />
 
                 <View style={styles.recap}>
                   <MiniStars rating={rating} />

@@ -26,6 +26,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import CentralBackButton from "@/components/CentralBackButton";
 
 import { fetchBalletInstructors, type BalletInstructor } from "@/services/balletAssessmentService";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
@@ -155,10 +156,7 @@ export default function BalletInstructorsScreen() {
           pointerEvents="none"
         />
         <View style={[s.header, { paddingTop: topPad + 14 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={s.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={s.backBtn} activeOpacity={0.7} />
         </View>
       </View>
 

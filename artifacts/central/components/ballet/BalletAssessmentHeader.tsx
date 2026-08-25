@@ -3,6 +3,7 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BA } from "./assessmentTokens";
+import CentralBackButton from "@/components/CentralBackButton";
 
 export default function BalletAssessmentHeader({
   title = "Ballet Assessment",
@@ -19,10 +20,14 @@ export default function BalletAssessmentHeader({
   const isHome = homeAction != null;
   return (
     <View style={styles.header}>
-      <TouchableOpacity onPress={isHome ? homeAction : onBack} style={styles.backButton} activeOpacity={0.75}>
-        <Ionicons name={isHome ? "home-outline" : "chevron-back"} size={20} color={BA.cyan500} />
-        <Text style={styles.backText}>{isHome ? "Home" : "Back"}</Text>
-      </TouchableOpacity>
+      {isHome ? (
+        <TouchableOpacity onPress={homeAction} style={styles.backButton} activeOpacity={0.75}>
+          <Ionicons name="home-outline" size={20} color={BA.cyan500} />
+          <Text style={styles.backText}>Home</Text>
+        </TouchableOpacity>
+      ) : (
+        <CentralBackButton onPress={onBack} style={styles.backButton} />
+      )}
       <Text style={styles.title}>{title}</Text>
       <View style={styles.spacer} />
     </View>

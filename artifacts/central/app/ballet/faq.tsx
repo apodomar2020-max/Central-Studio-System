@@ -10,79 +10,32 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   LayoutAnimation,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   UIManager,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import CentralBackButton from "@/components/CentralBackButton";
 
 import { fetchBalletFaqs, type BalletFaq, type BalletFaqCategory } from "@/services/balletAssessmentService";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
-// UI-only fallback bucket for FAQs with no active category — never a
-// persisted DB category (locked decision: client-only, never persisted).
-const OTHER_QUESTIONS_LABEL = "Other Questions";
-
-type FaqGroup = { key: string; title: string; items: BalletFaq[] };
-
-/**
- * Group the flat, server-sorted `faqs` array by category, in a single pass
- * that preserves each item's existing relative order (no client-side
- * re-sort — the server's sortOrder,id order is trusted, exactly as
- * before). Categories are ordered per `faqCategories` (already
- * sortOrder,id from the server); "Other Questions" — uncategorized, or
- * pointing at an inactive category (server already nulls that out) —
- * always renders last.
- */
-function groupFaqsByCategory(faqs: BalletFaq[], faqCategories: BalletFaqCategory[]): FaqGroup[] {
-  const byCategoryId = new Map<number, BalletFaq[]>();
-  const uncategorized: BalletFaq[] = [];
-
-  for (const item of faqs) {
-    if (item.category != null) {
-      const bucket = byCategoryId.get(item.category.id);
-      if (bucket) bucket.push(item);
-      else byCategoryId.set(item.category.id, [item]);
-    } else {
-      uncategorized.push(item);
-    }
-  }
-
-  const groups: FaqGroup[] = [];
-  for (const category of faqCategories) {
-    const items = byCategoryId.get(category.id);
-    // Categories with zero matching FAQs render no section at all.
-    if (items && items.length > 0) {
-      groups.push({ key: `category-${category.id}`, title: category.name, items });
-    }
-  }
-  if (uncategorized.length > 0) {
-    groups.push({ key: "other-questions", title: OTHER_QUESTIONS_LABEL, items: uncategorized });
-  }
-  return groups;
-}
-
-if (
-  Platform.OS === "android" &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 const BASE = "#0A0B0D";
 const CYAN = "#00B6D7";
 const INK_200 = "#D1D5DB";
-const INK_300 = "#9CA3AF";
 const INK_400 = "#6B7280";
 const R_MD = 12;
 
@@ -90,26 +43,16 @@ function FaqRow({
   item,
   open,
   onToggle,
-  isLast,
 }: {
   item: BalletFaq;
   open: boolean;
   onToggle: () => void;
-  isLast: boolean;
 }) {
-  const rot = useRef(new Animated.Value(open ? 1 : 0)).current;
-  useEffect(() => {
-    Animated.timing(rot, { toValue: open ? 1 : 0, duration: 200, useNativeDriver: true }).start();
-  }, [open, rot]);
-  const rotate = rot.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "90deg"] });
-
   return (
-    <View style={[s.faqRow, !isLast && s.faqRowBorder]}>
+    <View style={[s.faqRow, open && s.faqRowOpen]}>
       <TouchableOpacity onPress={onToggle} style={s.faqQBtn} activeOpacity={0.7}>
         <Text style={s.faqQ}>{item.question}</Text>
-        <Animated.View style={{ transform: [{ rotate }] }}>
-          <Ionicons name="chevron-forward" size={17} color={CYAN} />
-        </Animated.View>
+        <Ionicons name={open ? "chevron-up-outline" : "chevron-down-outline"} size={18} color={CYAN} />
       </TouchableOpacity>
       {open && <Text style={s.faqA}>{item.answer}</Text>}
     </View>
@@ -123,6 +66,8 @@ export default function BalletFaqScreen() {
   const [faqs, setFaqs] = useState<BalletFaq[]>([]);
   const [faqCategories, setFaqCategories] = useState<BalletFaqCategory[]>([]);
   const [open, setOpen] = useState<number | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -134,6 +79,7 @@ export default function BalletFaqScreen() {
       if (signal?.aborted) return;
       setFaqs(data.faqs);
       setFaqCategories(data.faqCategories);
+      setOpen((current) => current ?? data.faqs[0]?.id ?? null);
     } catch (err) {
       if ((err as any)?.name === "AbortError") return;
       setFaqs([]);
@@ -156,7 +102,14 @@ export default function BalletFaqScreen() {
     setOpen((cur) => (cur === id ? null : id));
   }
 
-  const faqGroups = groupFaqsByCategory(faqs, faqCategories);
+  const visibleFaqs = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return faqs.filter((faq) => {
+      const matchesCategory = selectedCategory == null || faq.category?.id === selectedCategory;
+      const matchesSearch = !term || `${faq.question} ${faq.answer}`.toLowerCase().includes(term);
+      return matchesCategory && matchesSearch;
+    });
+  }, [faqs, search, selectedCategory]);
 
   return (
     <View style={s.screen}>
@@ -179,10 +132,7 @@ export default function BalletFaqScreen() {
           pointerEvents="none"
         />
         <View style={[s.header, { paddingTop: topPad + 14 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={s.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={s.backBtn} activeOpacity={0.7} />
         </View>
       </View>
 
@@ -222,6 +172,42 @@ export default function BalletFaqScreen() {
         <View style={s.heroDivider} />
 
         <View style={s.content}>
+          <View style={s.searchBox}>
+            <Ionicons name="search-outline" size={19} color={CYAN} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search Topics..."
+              placeholderTextColor={CYAN}
+              style={s.searchInput}
+              returnKeyType="search"
+            />
+          </View>
+
+          <Text style={s.topicsTitle}>Topics</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.topicList}
+            style={s.topicScroller}
+          >
+            <TouchableOpacity
+              onPress={() => setSelectedCategory(null)}
+              style={[s.topic, selectedCategory == null && s.topicActive]}
+            >
+              <Text style={[s.topicText, selectedCategory == null && s.topicTextActive]}>All Topics</Text>
+            </TouchableOpacity>
+            {faqCategories.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                onPress={() => setSelectedCategory(category.id)}
+                style={[s.topic, selectedCategory === category.id && s.topicActive]}
+              >
+                <Text style={[s.topicText, selectedCategory === category.id && s.topicTextActive]}>{category.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
           {isLoading ? (
             <View style={s.center}>
               <ActivityIndicator color={CYAN} />
@@ -252,44 +238,14 @@ export default function BalletFaqScreen() {
               <Text style={s.emptyTitle}>No FAQs listed yet</Text>
               <Text style={s.emptyDesc}>Ballet FAQs will appear here soon.</Text>
             </View>
+          ) : visibleFaqs.length === 0 ? (
+            <Text style={s.noResults}>No topics found.</Text>
           ) : (
-            <>
-              <View style={s.groupList}>
-                {faqGroups.map((group) => (
-                  <View key={group.key} style={s.group}>
-                    {/* Only shown when there's more than one group — a
-                        single group (e.g. no categories configured yet)
-                        renders exactly as the flat list did before this
-                        change. */}
-                    {faqGroups.length > 1 && (
-                      <Text style={s.groupTitle}>{group.title}</Text>
-                    )}
-                    <View style={s.accordion}>
-                      {group.items.map((faq, i) => (
-                        <FaqRow
-                          key={faq.id}
-                          item={faq}
-                          open={open === faq.id}
-                          onToggle={() => toggle(faq.id)}
-                          isLast={i === group.items.length - 1}
-                        />
-                      ))}
-                    </View>
-                  </View>
-                ))}
-              </View>
-
-              <TouchableOpacity
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push("/ballet/contact" as any);
-                }}
-                style={s.contactBtn}
-                activeOpacity={0.85}
-              >
-                <Text style={s.contactBtnText}>Contact Ballet Department</Text>
-              </TouchableOpacity>
-            </>
+            <View style={s.faqList}>
+              {visibleFaqs.map((faq) => (
+                <FaqRow key={faq.id} item={faq} open={open === faq.id} onToggle={() => toggle(faq.id)} />
+              ))}
+            </View>
           )}
         </View>
 
@@ -376,47 +332,74 @@ const s = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 20,
     paddingBottom: 16,
-    gap: 12,
   },
-  groupList: { gap: 20 },
-  group: { gap: 8 },
-  groupTitle: {
-    fontSize: 12,
+  searchBox: {
+    height: 43,
+    marginHorizontal: 33,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 13,
+    gap: 9,
+  },
+  searchInput: {
+    flex: 1,
+    height: 43,
+    padding: 0,
+    color: "#151515",
+    fontFamily: "Archivo_400Regular",
+    fontSize: 13,
+  },
+  topicsTitle: {
+    marginTop: 22,
+    color: "#FFFFFF",
     fontFamily: "Archivo_700Bold",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    color: INK_300,
-    paddingHorizontal: 2,
+    fontSize: 18,
+    lineHeight: 22,
   },
-  accordion: {
-    backgroundColor: "#15171B",
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.18)",
+  topicScroller: { marginTop: 7, marginHorizontal: -16 },
+  topicList: { paddingHorizontal: 16, paddingRight: 34, gap: 5 },
+  topic: {
+    minHeight: 34,
+    paddingHorizontal: 14,
     borderRadius: 18,
-    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  faqRow: { paddingHorizontal: 16 },
-  faqRowBorder: { borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)" },
+  topicActive: { backgroundColor: CYAN },
+  topicText: { color: CYAN, fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 16 },
+  topicTextActive: { color: "#FFFFFF" },
+  faqList: { gap: 12, marginTop: 24 },
+  faqRow: {
+    minHeight: 58,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    justifyContent: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#D1D1D1",
+    backgroundColor: "#FFFFFF",
+  },
+  faqRowOpen: { paddingBottom: 16 },
   faqQBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 15,
     gap: 10,
   },
-  faqQ: { flex: 1, fontSize: 14, fontFamily: "Archivo_700Bold", color: "#fff", lineHeight: 20 },
-  faqA: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_300, lineHeight: 21, paddingBottom: 15 },
-  contactBtn: {
-    paddingVertical: 13,
-    borderRadius: R_MD,
-    backgroundColor: "rgba(0,182,215,0.12)",
-    borderWidth: 1.5,
-    borderColor: "rgba(0,182,215,0.30)",
-    alignItems: "center",
+  faqQ: {
+    flex: 1,
+    color: CYAN,
+    fontFamily: "Archivo_600SemiBold",
+    fontSize: 16,
+    lineHeight: 20,
   },
-  contactBtnText: { fontSize: 14, fontFamily: "Archivo_700Bold", color: CYAN },
+  faqA: { color: "#626262", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 18, marginTop: 12, paddingRight: 8 },
+  noResults: { marginTop: 32, color: "#8A9191", fontFamily: "Archivo_400Regular", fontSize: 13, textAlign: "center" },
   center: {
     paddingVertical: 54,
     alignItems: "center",

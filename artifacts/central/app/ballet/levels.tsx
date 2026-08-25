@@ -26,6 +26,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import CentralBackButton from "@/components/CentralBackButton";
 
 import {
   ACTIVE_APPLICATION_STATUSES,
@@ -40,7 +41,6 @@ import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 const BASE = "#0A0B0D";
 const CYAN = "#00B6D7";
 const INK_200 = "#D1D5DB";
-const INK_300 = "#9CA3AF";
 const INK_400 = "#6B7280";
 const R_MD = 12;
 
@@ -59,6 +59,7 @@ function levelImageUri(level: BalletLevel): string | null {
 
 function BalletLevelCard({ level }: { level: BalletLevel }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const remoteImageUri = levelImageUri(level);
 
   useEffect(() => {
@@ -70,7 +71,16 @@ function BalletLevelCard({ level }: { level: BalletLevel }) {
   const description = level.description?.trim() || "Level details coming soon.";
 
   return (
-    <View style={s.levelCard}>
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      activeOpacity={0.9}
+      onPress={() => {
+        void Haptics.selectionAsync();
+        setExpanded((current) => !current);
+      }}
+      style={[s.levelCard, expanded && s.levelCardExpanded]}
+    >
       <ImageBackground
         source={imageSource}
         style={StyleSheet.absoluteFill}
@@ -78,16 +88,16 @@ function BalletLevelCard({ level }: { level: BalletLevel }) {
         onError={() => setImageFailed(true)}
       />
       <LinearGradient
-        colors={["rgba(5,6,8,0.96)", "rgba(5,6,8,0.78)", "rgba(5,6,8,0.24)"]}
-        locations={[0, 0.58, 1]}
+        colors={["rgba(0,0,0,0.99)", "rgba(0,0,0,0.90)", "rgba(0,0,0,0.12)"]}
+        locations={[0, 0.48, 1]}
         start={{ x: 0, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
       <LinearGradient
-        colors={["rgba(5,6,8,0)", "rgba(5,6,8,0.72)", "rgba(5,6,8,0.96)"]}
-        locations={[0, 0.55, 1]}
+        colors={["rgba(0,0,0,0.04)", "rgba(0,0,0,0.18)", "rgba(0,0,0,0.84)"]}
+        locations={[0, 0.62, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -96,30 +106,31 @@ function BalletLevelCard({ level }: { level: BalletLevel }) {
 
       <View style={s.levelContent}>
         <View style={s.levelTopRow}>
-          <Text style={s.levelName} numberOfLines={2}>{level.name}</Text>
-          <View style={[s.statusBadge, level.isActive ? s.statusActive : s.statusInactive]}>
-            <Text style={[s.statusText, level.isActive ? s.statusTextActive : s.statusTextInactive]}>
-              {level.isActive ? "Active" : "Inactive"}
-            </Text>
-          </View>
+          <Ionicons
+            name={expanded ? "chevron-up-outline" : "chevron-down-outline"}
+            size={25}
+            color="#FFFFFF"
+          />
+          <Text style={s.levelName} numberOfLines={1}>{level.name}</Text>
         </View>
 
-        <Text style={s.levelDescription} numberOfLines={2}>
-          {description}
-        </Text>
-
-        <View style={s.levelInfo}>
-          <View style={s.infoRow}>
-            <Ionicons name="person-outline" size={15} color={CYAN} />
-            <Text style={s.infoText} numberOfLines={1}>Age: {formatAgeRange(level)}</Text>
+        {expanded ? (
+          <View style={s.expandedLevelContent}>
+            <Text style={s.levelDescription}>{description}</Text>
+            <View style={s.levelInfo}>
+              <View style={s.infoRow}>
+                <Ionicons name="person-outline" size={16} color={CYAN} />
+                <Text style={s.infoText}>Age: {formatAgeRange(level)}</Text>
+              </View>
+              <View style={s.infoRow}>
+                <Ionicons name="ribbon-outline" size={16} color={CYAN} />
+                <Text style={s.infoText}>Requirements: {requirements}</Text>
+              </View>
+            </View>
           </View>
-          <View style={s.infoRow}>
-            <Ionicons name="ribbon-outline" size={15} color={CYAN} />
-            <Text style={s.infoText} numberOfLines={2}>Requirements: {requirements}</Text>
-          </View>
-        </View>
+        ) : null}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -224,10 +235,7 @@ export default function BalletLevelsScreen() {
           pointerEvents="none"
         />
         <View style={[s.header, { paddingTop: topPad + 14 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={s.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={s.backBtn} activeOpacity={0.7} />
         </View>
       </View>
 
@@ -406,74 +414,52 @@ const s = StyleSheet.create({
     gap: 10,
   },
   levelCard: {
-    minHeight: 166,
-    borderRadius: R_MD,
+    minHeight: 72,
+    borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.26)",
-    backgroundColor: "#111827",
+    borderColor: "rgba(0,182,215,0.42)",
+    backgroundColor: "#050607",
+  },
+  levelCardExpanded: {
+    minHeight: 220,
   },
   levelCardImage: {
     resizeMode: "cover",
-    borderRadius: R_MD,
+    borderRadius: 18,
   },
   levelContent: {
     flex: 1,
-    padding: 13,
-    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingVertical: 20,
   },
   levelTopRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 10,
+    alignItems: "center",
+    gap: 8,
   },
   levelName: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 17,
     lineHeight: 21,
-    fontFamily: "Archivo_800ExtraBold",
-    letterSpacing: 0.9,
-    textTransform: "uppercase",
-    color: CYAN,
+    fontFamily: "Archivo_700Bold",
+    color: "#FFFFFF",
     textShadowColor: "rgba(0,0,0,0.75)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  statusBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-  },
-  statusActive: {
-    backgroundColor: "rgba(0,182,215,0.18)",
-    borderColor: "rgba(0,182,215,0.45)",
-  },
-  statusInactive: {
-    backgroundColor: "rgba(107,114,128,0.18)",
-    borderColor: "rgba(156,163,175,0.24)",
-  },
-  statusText: {
-    fontSize: 9,
-    fontFamily: "Archivo_800ExtraBold",
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-  },
-  statusTextActive: { color: CYAN },
-  statusTextInactive: { color: INK_300 },
+  expandedLevelContent: { flex: 1, marginTop: 14, justifyContent: "space-between" },
   levelDescription: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "Archivo_400Regular",
     color: INK_200,
-    lineHeight: 18,
-    maxWidth: "82%",
-    marginTop: 10,
-    marginBottom: 10,
+    lineHeight: 20,
+    maxWidth: "88%",
   },
   levelInfo: {
-    gap: 5,
-    maxWidth: "92%",
+    gap: 7,
+    maxWidth: "94%",
+    marginTop: 16,
   },
   infoRow: {
     flexDirection: "row",
@@ -482,10 +468,10 @@ const s = StyleSheet.create({
   },
   infoText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Archivo_600SemiBold",
     color: INK_200,
-    lineHeight: 16,
+    lineHeight: 18,
     textShadowColor: "rgba(0,0,0,0.8)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,

@@ -25,6 +25,7 @@ import {
 } from "@workspace/api-client-react";
 
 import XI from "@/components/XiIcon";
+import CentralBackButton from "@/components/CentralBackButton";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import {
   classCapacityDisplay,
@@ -227,9 +228,7 @@ export default function ClassDetailScreen() {
   if ((classQuery.isError && isOfflineError(classQuery.error)) || (schedulesQuery.isError && isOfflineError(schedulesQuery.error))) {
     return (
       <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
-          <XI name="back" size={22} stroke={2.2} color="#FFFFFF" />
-        </TouchableOpacity>
+        <CentralBackButton style={styles.backBtnAbsolute} />
         <OfflineState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} />
       </View>
     );
@@ -238,9 +237,7 @@ export default function ClassDetailScreen() {
   if (classQuery.isError || schedulesQuery.isError || !cls) {
     return (
       <View style={[styles.container, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnAbsolute}>
-          <XI name="back" size={22} stroke={2.2} color="#FFFFFF" />
-        </TouchableOpacity>
+        <CentralBackButton style={styles.backBtnAbsolute} />
         {classQuery.isError || schedulesQuery.isError ? (
           <ErrorState onRetry={() => { classQuery.refetch(); schedulesQuery.refetch(); }} message="Couldn't load class details." />
         ) : (
@@ -305,13 +302,7 @@ export default function ClassDetailScreen() {
             locations={[0, 0.38, 1]}
             style={StyleSheet.absoluteFill}
           />
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={[styles.backBtn, { top: topPad + 14 }]}
-            activeOpacity={0.85}
-          >
-            <XI name="back" size={22} stroke={2.2} color="#fff" />
-          </TouchableOpacity>
+          <CentralBackButton style={[styles.backBtn, { top: topPad + 14 }]} />
           {youtubeVideo && cls.classVideoUrl && (
             <TouchableOpacity
               onPress={() => Linking.openURL(cls.classVideoUrl!)}

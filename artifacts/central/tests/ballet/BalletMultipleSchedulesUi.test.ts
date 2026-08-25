@@ -26,10 +26,12 @@ test("My Ballet Classes derives the counter from the selected child's entitled S
   assert.doesNotMatch(classes, /visibleClasses\.length[^\n]*counter|balletClasses\.length/);
 });
 
-test("Classes page renders one card per normalized Class while preserving all schedule rows", () => {
-  assert.match(classes, /visibleClasses\.map/);
-  assert.match(classes, /key=\{item\.id\}/);
-  assert.match(classes, /scheduleSummary\(item\)/);
+test("Classes page renders one card per entitled weekly schedule", () => {
+  assert.match(classes, /visibleClasses\.flatMap/);
+  assert.match(classes, /item\.schedules\.map/);
+  assert.match(classes, /visibleSchedules\.map/);
+  assert.match(classes, /<BalletScheduleCard/);
+  assert.doesNotMatch(classes, /scheduleSummary\(item\)/);
 });
 
 test("Classes page refreshes on focus and supports pull-to-refresh", () => {

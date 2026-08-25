@@ -10,6 +10,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
+import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -25,6 +26,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import CentralBackButton from "@/components/CentralBackButton";
 
 import { fetchBalletPerformances, type BalletPerformance } from "@/services/balletAssessmentService";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
@@ -32,9 +34,7 @@ import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 const BASE = "#0A0B0D";
 const CYAN = "#00B6D7";
 const INK_200 = "#D1D5DB";
-const INK_300 = "#9CA3AF";
 const INK_400 = "#6B7280";
-const SUCCESS = "#10B981";
 const R_MD = 12;
 
 const FALLBACK_IMAGE = require("@/assets/images/ballet_hero.png");
@@ -43,10 +43,14 @@ function performanceImageUri(performance: BalletPerformance): string | null {
   return normalizeMediaUrl(performance.imageUrl, "image")?.trim() || null;
 }
 
-function formatEventDate(isoDate: string): string {
+function eventDateParts(isoDate: string) {
   const date = new Date(`${isoDate}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return isoDate;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  if (Number.isNaN(date.getTime())) return { weekday: "DATE", day: "--", month: "TBC" };
+  return {
+    weekday: date.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase(),
+    day: String(date.getDate()).padStart(2, "0"),
+    month: date.toLocaleDateString("en-US", { month: "long" }).toUpperCase(),
+  };
 }
 
 function formatTime(timeStr: string): string {
@@ -72,82 +76,70 @@ function BalletPerformanceCard({ performance }: { performance: BalletPerformance
 
   const imageSource = remoteImageUri && !imageFailed ? { uri: remoteImageUri } : FALLBACK_IMAGE;
   const description = performance.description?.trim();
-  const requirements = performance.requirements.map((item) => item.trim()).filter(Boolean).join(", ");
   const hasCta = Boolean(performance.externalCtaUrl?.trim());
+  const date = eventDateParts(performance.eventDate);
 
   return (
     <View style={s.performanceCard}>
-      <ImageBackground
-        source={imageSource}
-        style={StyleSheet.absoluteFill}
-        imageStyle={s.performanceCardImage}
-        onError={() => setImageFailed(true)}
-      />
-      <LinearGradient
-        colors={["rgba(5,6,8,0.96)", "rgba(5,6,8,0.72)", "rgba(5,6,8,0.18)"]}
-        locations={[0, 0.58, 1]}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      <LinearGradient
-        colors={["rgba(5,6,8,0.08)", "rgba(5,6,8,0.58)", "rgba(5,6,8,0.95)"]}
-        locations={[0, 0.55, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
+      <View style={s.performanceImageArea}>
+        <ImageBackground
+          source={imageSource}
+          style={StyleSheet.absoluteFill}
+          imageStyle={s.performanceCardImage}
+          onError={() => setImageFailed(true)}
+        />
+        <LinearGradient
+          colors={["rgba(0,0,0,0.02)", "rgba(0,0,0,0.18)", "rgba(5,6,7,0.98)"]}
+          locations={[0, 0.55, 1]}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+      </View>
 
-      <View style={s.performanceContent}>
-        <View style={s.performanceTopRow}>
-          <View style={s.typePill}>
-            <Ionicons name="sparkles-outline" size={13} color={CYAN} />
-            <Text style={s.typePillText} numberOfLines={1}>{performance.eventType}</Text>
-          </View>
-        </View>
+      <View style={s.performanceStatusPill}>
+        <View style={s.performanceStatusDot} />
+        <Text style={s.performanceStatusText} numberOfLines={1}>{performance.eventType}</Text>
+      </View>
 
-        <View style={s.performanceBody}>
-          <Text style={s.performanceTitle} numberOfLines={2}>{performance.eventTitle}</Text>
-          {!!description && (
-            <Text style={s.performanceDescription} numberOfLines={2}>
-              {description}
-            </Text>
-          )}
-
-          <View style={s.metaList}>
-            <View style={s.metaItem}>
-              <Ionicons name="calendar-outline" size={15} color={CYAN} />
-              <Text style={s.metaText} numberOfLines={1}>{formatEventDate(performance.eventDate)}</Text>
+      <View style={s.performancePanelShell}>
+        <GlassView
+          glassEffectStyle="clear"
+          tintColor="rgba(255,255,255,0.08)"
+          colorScheme="dark"
+          pointerEvents="none"
+          style={s.performanceGlassBackdrop}
+        />
+        <View style={s.performancePanelContent}>
+          <View style={s.performanceDetailsRow}>
+            <View style={s.performanceCopyColumn}>
+              <Text style={s.performanceTitle} numberOfLines={1}>{performance.eventTitle}</Text>
+              {!!description && <Text style={s.performanceDescription} numberOfLines={3}>{description}</Text>}
+              {!!performance.locationName && (
+                <View style={s.performanceLocationRow}>
+                  <Ionicons name="location-outline" size={17} color="#FFFFFF" />
+                  <Text style={s.performanceLocationText} numberOfLines={1}>{performance.locationName}</Text>
+                </View>
+              )}
             </View>
-            <View style={s.metaItem}>
-              <Ionicons name="time-outline" size={15} color={INK_300} />
-              <Text style={s.metaText} numberOfLines={1}>{formatTimeRange(performance)}</Text>
+
+            <View style={s.performanceDateColumn}>
+              <Text style={s.performanceWeekday} numberOfLines={1}>{date.weekday}</Text>
+              <View style={s.performanceDayRow}>
+                <Text style={s.performanceDay}>{date.day}</Text>
+                <Text style={s.performanceMonth}>{date.month}</Text>
+              </View>
+              <Text style={s.performanceTimeRange} numberOfLines={1}>{formatTimeRange(performance)}</Text>
             </View>
-            {!!performance.locationName && (
-              <View style={s.metaItem}>
-                <Ionicons name="location-outline" size={15} color={INK_300} />
-                <Text style={s.metaText} numberOfLines={1}>{performance.locationName}</Text>
-              </View>
-            )}
-            {!!requirements && (
-              <View style={s.metaItem}>
-                <Ionicons name="checkmark-circle-outline" size={15} color={SUCCESS} />
-                <Text style={s.metaText} numberOfLines={2}>Requirements: {requirements}</Text>
-              </View>
-            )}
           </View>
 
-          {hasCta && (
-            <TouchableOpacity
-              style={s.ctaButton}
-              activeOpacity={0.84}
-              onPress={() => Linking.openURL(performance.externalCtaUrl!.trim())}
-            >
-              <Text style={s.ctaText}>View Details →</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[s.ctaButton, !hasCta && s.ctaButtonDisabled]}
+            activeOpacity={0.84}
+            disabled={!hasCta}
+            onPress={() => void Linking.openURL(performance.externalCtaUrl!.trim())}
+          >
+            <Text style={s.ctaText}>View Details</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -205,10 +197,7 @@ export default function BalletPerformancesScreen() {
           pointerEvents="none"
         />
         <View style={[s.header, { paddingTop: topPad + 14 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={s.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={s.backBtn} activeOpacity={0.7} />
         </View>
       </View>
 
@@ -377,93 +366,103 @@ const s = StyleSheet.create({
     gap: 14,
   },
   performanceCard: {
-    minHeight: 310,
-    borderRadius: 18,
+    height: 348,
+    position: "relative",
+    borderRadius: 16,
     overflow: "hidden",
-    backgroundColor: "#15171B",
+    backgroundColor: "#050607",
     borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.18)",
+    borderColor: "rgba(0,182,215,0.58)",
+    shadowColor: CYAN,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 4,
   },
+  performanceImageArea: { width: "100%", height: 238, backgroundColor: "#17191D" },
   performanceCardImage: {
-    borderRadius: 18,
+    resizeMode: "cover",
+    borderRadius: 16,
   },
-  performanceContent: {
-    flex: 1,
-    justifyContent: "space-between",
-    padding: 14,
-  },
-  performanceTopRow: {
+  performanceStatusPill: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 8,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
-  },
-  typePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    maxWidth: "82%",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 7,
+    maxWidth: "44%",
     borderRadius: 999,
-    backgroundColor: "rgba(0,182,215,0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.3)",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: "rgba(39,198,63,0.25)",
   },
-  typePillText: {
-    flexShrink: 1,
-    fontSize: 10,
-    fontFamily: "Archivo_800ExtraBold",
-    color: "#FFFFFF",
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
+  performanceStatusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#27C63F" },
+  performanceStatusText: { flexShrink: 1, color: "#27C63F", fontFamily: "Archivo_700Bold", fontSize: 15, lineHeight: 18 },
+  performancePanelShell: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 16,
+    height: 192,
+    borderRadius: 15,
+    overflow: "hidden",
+    backgroundColor: "transparent",
   },
-  performanceBody: {
-    gap: 9,
+  performanceGlassBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(1,8,10,0.40)",
   },
+  performancePanelContent: { flex: 1, paddingHorizontal: 14, paddingTop: 15, paddingBottom: 11 },
+  performanceDetailsRow: { flex: 1, minHeight: 0, flexDirection: "row", gap: 6 },
+  performanceCopyColumn: { width: "59%", minWidth: 0 },
   performanceTitle: {
-    fontSize: 22,
-    fontFamily: "Archivo_800ExtraBold",
+    fontSize: 27,
+    lineHeight: 31,
+    fontFamily: "Anton_400Regular",
     color: "#FFFFFF",
-    lineHeight: 27,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
   },
   performanceDescription: {
-    fontSize: 13,
-    fontFamily: "Archivo_400Regular",
-    color: INK_200,
-    lineHeight: 19,
-    maxWidth: "92%",
-  },
-  metaList: {
-    gap: 6,
-  },
-  metaItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 7,
-  },
-  metaText: {
-    flex: 1,
-    fontSize: 12.5,
-    fontFamily: "Archivo_600SemiBold",
-    color: INK_200,
-    lineHeight: 18,
-  },
-  ctaButton: {
-    alignSelf: "flex-start",
     marginTop: 3,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: R_MD,
-    backgroundColor: "rgba(0,182,215,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.45)",
+    fontSize: 14,
+    fontFamily: "Archivo_400Regular",
+    color: "rgba(255,255,255,0.86)",
+    lineHeight: 17,
   },
-  ctaText: {
+  performanceLocationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 5,
+  },
+  performanceLocationText: {
+    flex: 1,
     fontSize: 13,
-    fontFamily: "Archivo_800ExtraBold",
+    fontFamily: "Archivo_600SemiBold",
+    color: "#FFFFFF",
+    lineHeight: 16,
+  },
+  performanceDateColumn: { flex: 1, minWidth: 0, alignItems: "flex-end" },
+  performanceWeekday: { width: "100%", color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 20, lineHeight: 23, textAlign: "right" },
+  performanceDayRow: { width: "100%", flexDirection: "row", alignItems: "flex-end", justifyContent: "flex-end", gap: 4 },
+  performanceDay: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 64, lineHeight: 66 },
+  performanceMonth: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 29 },
+  performanceTimeRange: { width: "100%", color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 13, lineHeight: 16, textAlign: "right" },
+  ctaButton: {
+    width: "100%",
+    minHeight: 46,
+    marginTop: 7,
+    borderRadius: 9,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ctaButtonDisabled: { opacity: 0.55 },
+  ctaText: {
+    fontSize: 24,
+    lineHeight: 28,
+    fontFamily: "Anton_400Regular",
     color: CYAN,
   },
   center: {

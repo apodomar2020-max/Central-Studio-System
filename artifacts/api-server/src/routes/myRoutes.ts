@@ -377,6 +377,7 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
     .select({
       booking: bookingsTable,
       classTitle: classesTable.title,
+      classPhotoUrl: classesTable.photoUrl,
       classCategory: classesTable.category,
       classDurationMins: classesTable.durationMins,
       instructorName: instructorsTable.name,
@@ -473,6 +474,8 @@ router.get("/my/bookings", async (req, res): Promise<void> => {
       // authoritative in any race/boundary case.
       scheduleStartTime: r.scheduleStartTime ?? null,
       className: r.classTitle ?? "Class details unavailable",
+      // Raw stored URL — the mobile app normalizes it to an absolute media URL.
+      classPhotoUrl: r.classPhotoUrl ?? null,
       danceType: r.classCategory ?? "",
       instructorName: r.instructorName ?? "",
       // Raw stored URL — the app normalizes it to an absolute media URL.

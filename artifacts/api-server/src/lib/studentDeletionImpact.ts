@@ -32,11 +32,31 @@
  *     reject / complete / fail), not a dark table.
  * This module therefore treats payment_records and payment_refunds as live
  * financial state and includes them in blocker computation (see
- * queryPaymentImpact below). package_credit_lots remains genuinely dark
- * (no writer anywhere in the repo) and is NOT queried — active/unused
- * package value is derived from packageOrders.status/remainingCredits,
- * which IS the live operational balance per creditTransactions.ts's own
- * doc comment ("packageOrders.remainingCredits is the fast read path").
+ * queryPaymentImpact below).
+ *
+ * PACKAGE CREDIT LOTS CORRECTION (Phase B3 prep, closing a B2B gap): the
+ * previous version of this comment claimed package_credit_lots has "no
+ * writer anywhere in the repo". That was stale. Live writers exist:
+ *   - artifacts/api-server/src/routes/adminCredits.ts (manual admin credit
+ *     adjustments — inserts/updates packageCreditLotsTable rows)
+ *   - artifacts/api-server/src/lib/attendanceReversalService.ts (restores a
+ *     lot on booking/attendance reversal)
+ *   - artifacts/api-server/src/lib/packageCreditExpiration.ts (expires lots)
+ *   - artifacts/api-server/src/routes/packageOrders.ts (creates the initial
+ *     lot on activation)
+ * This module still does NOT query package_credit_lots directly, and that
+ * remains correct: every one of the writers above updates
+ * packageOrders.remainingCredits in the SAME db.transaction as the
+ * packageCreditLots write (verified by reading each writer), and
+ * packageCreditExpiration.ts/attendanceReversalService.ts additionally
+ * assert `lotCredits === order.remainingCredits` as an integrity check
+ * before writing. packageOrders.ts's bare status-flip path is explicitly
+ * guarded to reject cancelling anything but a never-activated
+ * (pendingPayment) order specifically to avoid a credit-lot desync — see
+ * the comment above that guard. So packageOrders.status/remainingCredits
+ * remains a reliable proxy for package_credit_lots state, and this module's
+ * decision to derive its blocker from remainingCredits rather than
+ * package_credit_lots directly is still correct.
  */
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";

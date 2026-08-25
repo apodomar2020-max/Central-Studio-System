@@ -23,6 +23,7 @@ import { compareSchedulesByNextOccurrence, getScheduleLabel, isBookableScheduleS
 import colors from "@/constants/colors";
 import StepIndicator from "@/components/StepIndicator";
 import AppButton from "@/components/AppButton";
+import CentralBackButton from "@/components/CentralBackButton";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import ParticipantAvatar from "@/components/ParticipantAvatar";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
@@ -539,15 +540,13 @@ export default function BookingFlowScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
-        <TouchableOpacity
+        <CentralBackButton
           onPress={() => {
             if (step > 1) setStep(step - 1);
             else router.back();
           }}
           style={styles.backBtn}
-        >
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+        />
         <Text style={styles.headerTitle}>Book Class</Text>
         <View style={{ width: 40 }} />
       </View>

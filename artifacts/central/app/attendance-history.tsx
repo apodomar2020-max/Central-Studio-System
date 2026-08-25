@@ -22,6 +22,7 @@ import {
 import { useGetMyAttendance } from "@workspace/api-client-react";
 import type { MyAttendanceRecord } from "@workspace/api-client-react";
 import colors from "@/constants/colors";
+import CentralBackButton from "@/components/CentralBackButton";
 import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -149,10 +150,7 @@ export default function AttendanceHistoryScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
+        <CentralBackButton style={styles.headerButton} />
         <Text style={styles.headerTitle}>Attendance History</Text>
         <View style={styles.headerButtonPlaceholder} />
       </View>

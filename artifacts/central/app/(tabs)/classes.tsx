@@ -12,6 +12,7 @@ import {
   Animated,
   FlatList,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -21,12 +22,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-svg";
+import Svg, { Circle, Defs, Line, RadialGradient, Rect as SvgRect, Stop } from "react-native-svg";
 
 import XI from "@/components/XiIcon";
 import CategoryIcon from "@/components/CategoryIcon";
+import DiscoveryClassCard from "@/components/DiscoveryClassCard";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
-import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes, getListSchedulesQueryKey } from "@workspace/api-client-react";
+import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes, getListSchedulesQueryKey, normalizeMediaUrl } from "@workspace/api-client-react";
 
 import {
   DANCE_CATEGORIES,
@@ -105,6 +107,7 @@ type CategoryVM = {
   rgb: string;                // "r,g,b" — feeds the existing rgba(...) styling unchanged
   iconSvg: string | null;
   iconUrl: string | null;
+  coverImageUrl: string | null;
   legacyIcon: string | null;  // Ionicons name — set ONLY on the legacy fallback path
   matchesClass: (c: DanceClass) => boolean;
 };
@@ -181,7 +184,7 @@ function XStars({ rating }: { rating: number }) {
 /* ═══════════════════════════════════════════════════════════════════
    EXPLORE HERO
 ═══════════════════════════════════════════════════════════════════ */
-function ExploreHero({ count, topPad }: { count: number; topPad: number }) {
+function ExploreHero({ topPad }: { topPad: number }) {
   return (
     <View style={[s.heroWrap, { paddingTop: topPad + 22 }]}>
       <Text style={s.heroEyebrow}>Explore</Text>
@@ -189,10 +192,6 @@ function ExploreHero({ count, topPad }: { count: number; topPad: number }) {
       <Text style={s.heroDesc}>
         Discover dance styles, instructors, and programs designed for every level.
       </Text>
-      <View style={s.heroCountBadge}>
-        <View style={s.heroCountDot} />
-        <Text style={s.heroCountText}>{count} Active Classes</Text>
-      </View>
     </View>
   );
 }
@@ -203,9 +202,13 @@ function ExploreHero({ count, topPad }: { count: number; topPad: number }) {
 function ExploreSearch({
   query,
   onChange,
+  onFilter,
+  filterActive,
 }: {
   query: string;
   onChange: (v: string) => void;
+  onFilter: () => void;
+  filterActive: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -227,6 +230,21 @@ function ExploreSearch({
           </TouchableOpacity>
         )}
       </View>
+      <TouchableOpacity
+        onPress={() => { Haptics.selectionAsync(); onFilter(); }}
+        activeOpacity={0.82}
+        style={[s.filterButton, filterActive && s.filterButtonActive]}
+      >
+        <Svg width={22} height={20} viewBox="0 0 17 15" fill="none">
+          <Line x1="0.9" y1="3.75" x2="8.5" y2="3.75" stroke={CYAN} strokeWidth="1.8" strokeLinecap="round" />
+          <Circle cx="11.25" cy="3.75" r="2.25" stroke={CYAN} strokeWidth="1.8" />
+          <Line x1="13.5" y1="3.75" x2="16" y2="3.75" stroke={CYAN} strokeWidth="1.8" strokeLinecap="round" />
+          <Line x1="0.9" y1="11.25" x2="2.9" y2="11.25" stroke={CYAN} strokeWidth="1.8" strokeLinecap="round" />
+          <Circle cx="5.65" cy="11.25" r="2.25" stroke={CYAN} strokeWidth="1.8" />
+          <Line x1="7.9" y1="11.25" x2="16" y2="11.25" stroke={CYAN} strokeWidth="1.8" strokeLinecap="round" />
+        </Svg>
+        {filterActive && <View style={s.filterActiveDot} />}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -277,6 +295,96 @@ function ExploreFilters({
         })}
       </ScrollView>
     </View>
+  );
+}
+
+function FilterSheet({
+  visible,
+  age,
+  level,
+  onClose,
+  onApply,
+}: {
+  visible: boolean;
+  age: string;
+  level: string;
+  onClose: () => void;
+  onApply: (age: string, level: string) => void;
+}) {
+  const [draftAge, setDraftAge] = useState(age);
+  const [draftLevel, setDraftLevel] = useState(level);
+
+  useEffect(() => {
+    if (visible) {
+      setDraftAge(age);
+      setDraftLevel(level);
+    }
+  }, [visible, age, level]);
+
+  const choice = (label: string, value: string, selected: string, onPress: (value: string) => void) => {
+    const active = selected === value;
+    return (
+      <TouchableOpacity
+        key={value}
+        onPress={() => { Haptics.selectionAsync(); onPress(value); }}
+        style={[s.sheetChoice, active && s.sheetChoiceActive]}
+        activeOpacity={0.82}
+      >
+        <View style={[s.sheetRadio, active && s.sheetRadioActive]}>
+          {active && <View style={s.sheetRadioDot} />}
+        </View>
+        <Text style={[s.sheetChoiceText, active && s.sheetChoiceTextActive]}>{label}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.sheetModal}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+        <View style={s.sheet}>
+          <View style={s.sheetHeader}>
+            <Text style={s.sheetTitle}>Filter</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={12} activeOpacity={0.75}>
+              <XI name="x" size={24} stroke={1.8} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={s.sheetRule} />
+
+          <Text style={s.sheetLabel}>Ages</Text>
+          <View style={s.sheetChoices}>
+            {choice("All", "all", draftAge, setDraftAge)}
+            {choice("Kids", "kids", draftAge, setDraftAge)}
+            {choice("Teens", "teens", draftAge, setDraftAge)}
+            {choice("Adults", "adults", draftAge, setDraftAge)}
+          </View>
+
+          <Text style={[s.sheetLabel, { marginTop: 10 }]}>Level</Text>
+          <View style={s.sheetChoices}>
+            {choice("All Levels", "all", draftLevel, setDraftLevel)}
+            {choice("Beginner", "beginner", draftLevel, setDraftLevel)}
+            {choice("Intermediate", "intermediate", draftLevel, setDraftLevel)}
+            {choice("Advanced", "advanced", draftLevel, setDraftLevel)}
+          </View>
+
+          <View style={s.sheetActions}>
+            <TouchableOpacity
+              onPress={() => { setDraftAge("all"); setDraftLevel("all"); }}
+              activeOpacity={0.75}
+            >
+              <Text style={s.sheetClear}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { Haptics.selectionAsync(); onApply(draftAge, draftLevel); }}
+              style={s.sheetApply}
+              activeOpacity={0.84}
+            >
+              <Text style={s.sheetApplyText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -683,6 +791,68 @@ function CategorySection({
   );
 }
 
+function StyleCarousel({
+  categories,
+  selectedId,
+  classCount,
+  onSelect,
+}: {
+  categories: CategoryVM[];
+  selectedId: string | null;
+  classCount: number;
+  onSelect: (id: string | null) => void;
+}) {
+  if (categories.length === 0) return null;
+
+  return (
+    <View style={s.styleSection}>
+      <View style={s.catsSectionHeader}>
+        <Text style={s.catsSectionTitle}>By Style</Text>
+        <Text style={s.catsSectionCount}>{classCount} classes</Text>
+      </View>
+      <FlatList
+        horizontal
+        data={categories}
+        keyExtractor={(item) => item.id}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.styleList}
+        renderItem={({ item }) => {
+          const selected = selectedId === item.id;
+          return (
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.selectionAsync();
+                onSelect(selected ? null : item.id);
+              }}
+              activeOpacity={0.86}
+              style={[s.styleCard, selected && s.styleCardSelected]}
+            >
+              {item.coverImageUrl ? (
+                <Image source={{ uri: item.coverImageUrl }} style={[StyleSheet.absoluteFill, s.styleCardImage]} resizeMode="cover" />
+              ) : (
+                <View style={StyleSheet.absoluteFill} />
+              )}
+              <Text style={[s.styleCardName, selected && s.styleCardNameSelected]} numberOfLines={1} adjustsFontSizeToFit>{item.name}</Text>
+              {!item.coverImageUrl && (
+                <View style={s.styleFallbackIcon}>
+                  <CategoryIcon
+                    iconSvg={item.iconSvg}
+                    iconUrl={item.iconUrl}
+                    legacyIcon={item.legacyIcon}
+                    name={item.name}
+                    color={`rgba(${item.rgb},1)`}
+                    size={29}
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    MAIN SCREEN
 ═══════════════════════════════════════════════════════════════════ */
@@ -694,6 +864,8 @@ export default function ClassesScreen() {
   const [search, setSearch]     = useState("");
   const [ageFilter, setAge]     = useState("all");
   const [levelFilter, setLevel] = useState("all");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
 
   const classesQuery      = useListClasses();
@@ -790,6 +962,7 @@ export default function ClassesScreen() {
           rgb: hexToRgb(dt.color) ?? "45,205,236",
           iconSvg: dt.iconSvg ?? null,
           iconUrl: dt.iconUrl ?? null,
+          coverImageUrl: normalizeMediaUrl(dt.coverImageUrl, "image") ?? null,
           legacyIcon: null,
           matchesClass: (c) => {
             if (c.danceTypeId != null) return c.danceTypeId === dt.id; // prefer ID when present
@@ -805,10 +978,22 @@ export default function ClassesScreen() {
       rgb: catRgb(cat.id),
       iconSvg: null,
       iconUrl: null,
+      coverImageUrl: null,
       legacyIcon: catIcon(cat.id),
       matchesClass: (c) => c.categoryId === cat.id,
     }));
   }, [danceTypesRaw]);
+
+  const styleCategories = useMemo(
+    () => nonBalletCats.filter((cat) => nonBalletClasses.some((c) => cat.matchesClass(c))),
+    [nonBalletCats, nonBalletClasses],
+  );
+
+  const displayedClasses = useMemo(() => {
+    if (!selectedStyleId) return filtered;
+    const selected = nonBalletCats.find((cat) => cat.id === selectedStyleId);
+    return selected ? filtered.filter((c) => selected.matchesClass(c)) : filtered;
+  }, [filtered, selectedStyleId, nonBalletCats]);
 
   /* Auto-expand first category on initial load */
   useEffect(() => {
@@ -818,8 +1003,7 @@ export default function ClassesScreen() {
     }
   }, [isLoading, filtered.length]);
 
-  const showFeatures = !search && ageFilter === "all" && levelFilter === "all";
-  const visibleCats  = nonBalletCats.filter((cat) => filtered.some((c) => cat.matchesClass(c)));
+  const filtersActive = ageFilter !== "all" || levelFilter !== "all";
 
   function handleSelectClass(c: DanceClass) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -871,68 +1055,87 @@ export default function ClassesScreen() {
           {isOffline ? <OfflineState onRetry={onRefresh} /> : <ErrorState onRetry={onRefresh} />}
         </View>
       ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={CYAN} colors={[CYAN]} />
-          }
-          contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 100 }}
-        >
-          <ExploreHero count={nonBalletClasses.length} topPad={topPad} />
-          <ExploreSearch query={search} onChange={setSearch} />
-          <ExploreFilters age={ageFilter} level={levelFilter} onAge={setAge} onLevel={setLevel} />
+        <View style={s.loadedLayout}>
+          <View style={s.fixedHeader}>
+            <ExploreHero topPad={topPad} />
+            <ExploreSearch
+              query={search}
+              onChange={setSearch}
+              onFilter={() => setFilterOpen(true)}
+              filterActive={filtersActive}
+            />
 
-          {showFeatures && filtered.length > 0 && (
-            <FeaturedCarousel classes={filtered} onSelect={handleSelectClass} />
-          )}
-
-          {/* By Style categories */}
-          <View style={s.catsSection}>
-            <View style={s.catsSectionHeader}>
-              <Text style={s.catsSectionTitle}>By Style</Text>
-              <Text style={s.catsSectionCount}>{filtered.length} classes</Text>
-            </View>
-            {visibleCats.length === 0 ? (
-              <View style={s.emptyState}>
-                <View style={s.emptyIcon}>
-                  <XI name="search" size={30} stroke={1.6} color="#4C545E" />
-                </View>
-                <Text style={s.emptyTitle}>No classes found</Text>
-                <Text style={s.emptyDesc}>Try different keywords or clear your filters.</Text>
-                <TouchableOpacity
-                  onPress={() => { setSearch(""); setAge("all"); setLevel("all"); }}
-                  style={s.clearBtn}
-                  activeOpacity={0.8}
-                >
-                  <Text style={s.clearBtnText}>Clear Filters</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={{ gap: 12 }}>
-                {visibleCats.map((cat) => (
-                  <CategorySection
-                    key={cat.id}
-                    cat={cat}
-                    classes={filtered.filter((c) => cat.matchesClass(c))}
-                    expanded={expandedCats.has(cat.id)}
-                    onToggle={() => {
-                      setExpandedCats((prev) => {
-                        const n = new Set(prev);
-                        n.has(cat.id) ? n.delete(cat.id) : n.add(cat.id);
-                        return n;
-                      });
-                    }}
-                    instructorById={instructorById}
-                    packageCreditsRemaining={packageCreditsRemaining}
-                    onSelect={handleSelectClass}
-                    onBook={handleBook}
-                  />
-                ))}
-              </View>
-            )}
+            <StyleCarousel
+              categories={styleCategories}
+              selectedId={selectedStyleId}
+              classCount={displayedClasses.length}
+              onSelect={setSelectedStyleId}
+            />
           </View>
-        </ScrollView>
+
+          <ScrollView
+            style={s.classesScroll}
+            showsVerticalScrollIndicator={false}
+            alwaysBounceVertical
+            refreshControl={
+              <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={CYAN} colors={[CYAN]} />
+            }
+            contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 100 }}
+          >
+            <View style={s.classListSection}>
+              {displayedClasses.length === 0 ? (
+                <View style={s.emptyState}>
+                  <View style={s.emptyIcon}>
+                    <XI name="search" size={30} stroke={1.6} color="#4C545E" />
+                  </View>
+                  <Text style={s.emptyTitle}>No classes found</Text>
+                  <Text style={s.emptyDesc}>Try different keywords or clear your filters.</Text>
+                  <TouchableOpacity
+                    onPress={() => { setSearch(""); setAge("all"); setLevel("all"); setSelectedStyleId(null); }}
+                    style={s.clearBtn}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.clearBtnText}>Clear Filters</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={s.classList}>
+                  {displayedClasses.map((item) => {
+                    const styleCategory = nonBalletCats.find((cat) => cat.matchesClass(item));
+                    return (
+                      <DiscoveryClassCard
+                        key={`${item.id}-${item.scheduleId ?? item.date}`}
+                        item={item}
+                        instructor={instructorById.get(item.instructorId)}
+                        styleIcon={styleCategory ? {
+                          iconSvg: styleCategory.iconSvg,
+                          iconUrl: styleCategory.iconUrl,
+                          legacyIcon: styleCategory.legacyIcon,
+                          color: `rgba(${styleCategory.rgb},1)`,
+                        } : undefined}
+                        onSelect={handleSelectClass}
+                        onBook={(classItem) => handleBook(classItem, "cash")}
+                      />
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          </ScrollView>
+        </View>
       )}
+
+      <FilterSheet
+        visible={filterOpen}
+        age={ageFilter}
+        level={levelFilter}
+        onClose={() => setFilterOpen(false)}
+        onApply={(age, level) => {
+          setAge(age);
+          setLevel(level);
+          setFilterOpen(false);
+        }}
+      />
 
     </View>
   );
@@ -944,9 +1147,12 @@ export default function ClassesScreen() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: INK_900 },
   bgGlow: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 0, pointerEvents: "none" as any },
+  loadedLayout: { flex: 1 },
+  fixedHeader: { flexShrink: 0, zIndex: 2 },
+  classesScroll: { flex: 1, zIndex: 1 },
 
   /* hero */
-  heroWrap: { paddingHorizontal: 22, paddingBottom: 22 },
+  heroWrap: { paddingHorizontal: 22, paddingBottom: 18 },
   heroEyebrow: {
     fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
     textTransform: "uppercase", color: CYAN, marginBottom: 8,
@@ -973,9 +1179,9 @@ const s = StyleSheet.create({
   heroCountText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
 
   /* search */
-  searchWrap: { paddingHorizontal: 20, marginBottom: 16 },
+  searchWrap: { paddingHorizontal: 20, marginBottom: 18, flexDirection: "row", alignItems: "center", gap: 10 },
   searchContainer: {
-    flexDirection: "row", alignItems: "center",
+    flex: 1, flexDirection: "row", alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1.5, borderColor: "rgba(255,255,255,0.10)", borderRadius: R_PILL,
   },
@@ -994,6 +1200,26 @@ const s = StyleSheet.create({
   searchClear: {
     position: "absolute", right: 12, width: 28, height: 28, borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center",
+  },
+  filterButton: {
+    width: 58,
+    height: 49,
+    borderRadius: R_PILL,
+    borderWidth: 1.5,
+    borderColor: "rgba(0,182,215,0.75)",
+    backgroundColor: "rgba(0,182,215,0.07)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterButtonActive: { backgroundColor: "rgba(0,182,215,0.15)", borderColor: CYAN },
+  filterActiveDot: {
+    position: "absolute",
+    top: 8,
+    right: 10,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: CYAN,
   },
 
   /* filters */
@@ -1020,6 +1246,73 @@ const s = StyleSheet.create({
   levelChipActive: { backgroundColor: INK_900, borderColor: "rgba(255,255,255,0.28)" },
   levelChipText: { fontSize: 12.5, fontFamily: "Archivo_700Bold", color: INK_400 },
   levelChipTextActive: { color: "#fff" },
+
+  /* filter sheet */
+  sheetModal: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" },
+  sheet: {
+    minHeight: 390,
+    paddingHorizontal: 28,
+    paddingTop: 28,
+    paddingBottom: 32,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    backgroundColor: "#00363A",
+  },
+  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sheetTitle: { color: "#fff", fontSize: 16, fontFamily: "Archivo_700Bold" },
+  sheetRule: { height: 1, backgroundColor: "rgba(255,255,255,0.72)", marginTop: 18, marginBottom: 10 },
+  sheetLabel: { color: "#fff", fontSize: 13, fontFamily: "Archivo_400Regular", marginBottom: 8 },
+  sheetChoices: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  sheetChoice: {
+    minWidth: 83,
+    minHeight: 29,
+    paddingHorizontal: 12,
+    borderRadius: R_PILL,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.82)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sheetChoiceActive: { borderColor: "#fff", backgroundColor: "rgba(255,255,255,0.04)" },
+  sheetRadio: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.2, borderColor: "#fff", alignItems: "center", justifyContent: "center" },
+  sheetRadioActive: { borderColor: "#19E350" },
+  sheetRadioDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#19E350" },
+  sheetChoiceText: { color: "#fff", fontSize: 10.5, fontFamily: "Archivo_400Regular" },
+  sheetChoiceTextActive: { fontFamily: "Archivo_600SemiBold" },
+  sheetActions: { marginTop: 62, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sheetClear: { color: "rgba(255,255,255,0.72)", fontSize: 13, fontFamily: "Archivo_400Regular", textDecorationLine: "underline" },
+  sheetApply: { width: "52%", minHeight: 42, borderRadius: R_PILL, backgroundColor: CYAN, alignItems: "center", justifyContent: "center" },
+  sheetApplyText: { color: "#fff", fontSize: 20, lineHeight: 23, fontFamily: "Anton_400Regular" },
+
+  /* style carousel */
+  styleSection: { marginBottom: 12 },
+  styleList: { paddingHorizontal: 20, paddingVertical: 12, gap: 10 },
+  styleCard: {
+    width: 176,
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: "transparent",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  styleCardSelected: {
+    transform: [{ scale: 1.06 }],
+  },
+  styleCardImage: { borderRadius: 14 },
+  styleCardName: {
+    maxWidth: "62%",
+    color: CYAN,
+    fontSize: 20,
+    lineHeight: 23,
+    fontFamily: "Anton_400Regular",
+    textTransform: "uppercase",
+    zIndex: 2,
+  },
+  styleCardNameSelected: { fontSize: 22, lineHeight: 25 },
+  styleFallbackIcon: { position: "absolute", right: 17, top: 12 },
+  classListSection: { paddingHorizontal: 30, marginTop: 0, marginBottom: 28 },
+  classList: { gap: 14 },
 
   /* trending carousel */
   carouselSection: { marginBottom: 26 },
@@ -1059,7 +1352,7 @@ const s = StyleSheet.create({
 
   /* categories */
   catsSection: { paddingHorizontal: 20, marginBottom: 24 },
-  catsSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  catsSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 20, marginBottom: 14 },
   catsSectionTitle: { fontSize: 22, fontFamily: "Archivo_700Bold", color: "#fff", letterSpacing: -0.3 },
   catsSectionCount: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_400 },
   catHeader: {

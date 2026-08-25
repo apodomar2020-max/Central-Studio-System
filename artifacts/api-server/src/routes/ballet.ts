@@ -764,10 +764,30 @@ router.get("/ballet/instructors/:id", async (req, res): Promise<void> => {
       return;
     }
 
+    const [profileStats] = await db
+      .select({
+        classCount: sql<number>`count(distinct ${balletClassesTable.id})::int`,
+        studentCount: sql<number>`count(distinct coalesce(${balletLevelAssignmentsTable.childId}::text, 'application:' || ${balletLevelAssignmentsTable.applicationId}::text))::int`,
+      })
+      .from(balletClassesTable)
+      .leftJoin(
+        balletLevelAssignmentsTable,
+        and(
+          eq(balletLevelAssignmentsTable.groupId, balletClassesTable.groupId),
+          eq(balletLevelAssignmentsTable.status, "active"),
+        ),
+      )
+      .where(and(
+        eq(balletClassesTable.instructorId, id),
+        isOperationalBalletClass(),
+      ));
+
     res.json({
       instructor: {
         ...instructor,
         photoUrl: normalizeInstructorPhotoUrlForResponse(instructor.photoUrl),
+        classCount: Number(profileStats?.classCount ?? 0),
+        studentCount: Number(profileStats?.studentCount ?? 0),
       },
     });
   } catch (err) {

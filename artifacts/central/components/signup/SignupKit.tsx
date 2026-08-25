@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import CentralBackButton from "@/components/CentralBackButton";
 
 // ── Tokens (from the design's color/typography CSS variables) ────────────────
 export const CS = {
@@ -222,18 +223,13 @@ export const BackBtn = React.memo(function BackBtn({ onPress }: { onPress?: () =
   };
 
   return (
-    <Pressable
+    <CentralBackButton
       onPress={handlePress}
-      hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-      android_ripple={{ color: "rgba(255,255,255,0.1)", borderless: true }}
-      style={({ pressed }) => [
+      style={[
         kit.back,
         { zIndex: 50, elevation: 10 },
-        pressed && { opacity: 0.72 },
       ]}
-    >
-      <Icon name="back" size={22} stroke={2.4} color="#B6BDC6" />
-    </Pressable>
+    />
   );
 });
 

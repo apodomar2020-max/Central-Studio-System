@@ -17,7 +17,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import QRCode from "react-native-qrcode-svg";
 
 import { useAppContext } from "@/contexts/AppContext";
-import SBI from "@/components/SbIcon";
+import CentralBackButton from "@/components/CentralBackButton";
 import { formatApiDate, parseApiDate } from "@/utils/dateTime";
 import { nextStepRoute } from "@/services/authProfile";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
@@ -39,10 +39,7 @@ export default function MyQRScreen() {
     return (
       <View style={styles.container}>
         <View style={{ paddingTop: topPad, paddingHorizontal: 20, paddingBottom: 16 }}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtnStatic} activeOpacity={0.85}>
-            <SBI name="back" size={16} stroke={2.2} color="#B6BDC6" />
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={styles.backBtnStatic} />
         </View>
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Not signed in</Text>
@@ -58,10 +55,7 @@ export default function MyQRScreen() {
     return (
       <View style={styles.container}>
         <View style={{ paddingTop: topPad, paddingHorizontal: 20, paddingBottom: 16 }}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtnStatic} activeOpacity={0.85}>
-            <SBI name="back" size={16} stroke={2.2} color="#B6BDC6" />
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={styles.backBtnStatic} />
         </View>
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Complete your profile first</Text>
@@ -133,10 +127,7 @@ export default function MyQRScreen() {
             <Rect x="0" y="0" width="100%" height="100%" fill="url(#passGlow)" />
           </Svg>
 
-          <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { top: topPad }]} activeOpacity={0.85}>
-            <SBI name="back" size={16} stroke={2.2} color="#B6BDC6" />
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton style={[styles.backBtn, { top: topPad }]} />
 
           <Text style={styles.eyebrow}>MEMBER PASS</Text>
 

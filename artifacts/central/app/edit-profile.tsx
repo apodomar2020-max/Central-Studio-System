@@ -15,6 +15,7 @@ import {
 import { customFetch } from "@workspace/api-client-react";
 
 import AppButton from "@/components/AppButton";
+import CentralBackButton from "@/components/CentralBackButton";
 import colors from "@/constants/colors";
 import { useAppContext, type User } from "@/contexts/AppContext";
 import { iosTextInputStyle } from "@/utils/iosTypography";
@@ -121,15 +122,7 @@ export default function EditProfileScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 12 }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.headerButton}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Ionicons name="chevron-back" size={20} color={colors.studio.primary} />
-          <Text style={styles.headerButtonText}>Back</Text>
-        </TouchableOpacity>
+        <CentralBackButton style={styles.headerButton} />
         <Text style={styles.headerTitle}>Edit Profile</Text>
         <View style={styles.headerButtonPlaceholder} />
       </View>

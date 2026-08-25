@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -14,40 +14,29 @@ import {
   View,
   ScrollView,
   Animated,
-  Modal,
   TextInput,
   Image
 } from "react-native";
 
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
+import { normalizeMediaUrl, useListClasses } from "@workspace/api-client-react";
 
 import { useAppContext } from "@/contexts/AppContext";
 import { Booking } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import BookingCard from "@/components/BookingCard";
+import BookingDetailsView from "@/components/BookingDetailsView";
+import CentralBackButton from "@/components/CentralBackButton";
 import SBI from "@/components/SbIcon";
 import EmptyState from "@/components/EmptyState";
-import OfflineState from "@/components/OfflineState";
-import ErrorState from "@/components/ErrorState";
 import { ListSkeleton } from "@/components/SkeletonLoader";
 import {
-  fetchMyApplications,
-  ACTIVE_APPLICATION_STATUSES,
   type BalletApplication,
 } from "@/services/balletAssessmentService";
-import { isOfflineError } from "@/services/connectivity";
-import { BALLET_APPLICATION_STATUSES, type BalletApplicationStatus } from "@workspace/api-zod";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
-import { isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
-
-// Terminal statuses (assessment concluded) — derived from the canonical enum
-// rather than hand-typed, so the Upcoming/Past/Cancelled tab partition below
-// can never drift from the values @workspace/api-zod actually defines.
-const BALLET_ENDED_STATUSES: readonly BalletApplicationStatus[] = BALLET_APPLICATION_STATUSES.filter(
-  (status) => status === "rejected" || status === "cancelled",
-);
+import { bookingOccurrenceStartMs, isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
 
 const BALLET_COLOR = "#A78BFA";
 type BalletStatusInfo = { label: string; color: string; icon: any };
@@ -105,8 +94,6 @@ function getBalletActiveDisplay(app: BalletApplication): BalletActiveDisplay {
     locationLabel: locations.join(", "),
   };
 }
-
-const TABS = ["Upcoming", "Past", "Cancelled"] as const;
 
 type ListItem =
   | { kind: "ballet"; data: BalletApplication; timestamp: number }
@@ -342,10 +329,7 @@ function BookingDetailOverlay({
           colors={[`rgba(${tc.rgb},0.18)`, "rgba(10,11,13,0)"]}
           style={{ paddingTop: topPad + 10, paddingHorizontal: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)" }}
         >
-          <TouchableOpacity onPress={onClose} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16 }}>
-            <SBI name="back" size={20} stroke={2.2} color="#8E97A2" />
-            <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: "#8E97A2" }}>Back</Text>
-          </TouchableOpacity>
+          <CentralBackButton onPress={onClose} style={{ marginBottom: 16 }} />
 
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <View style={{ backgroundColor: `rgba(${tc.rgb},0.16)`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
@@ -468,12 +452,20 @@ function BookingDetailOverlay({
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function BookingsScreen() {
   const { user, bookings: localBookings, refreshUserPackages, refreshBookings, children: childProfiles, cancelBooking } = useAppContext();
+  const { data: bookingClasses, refetch: refetchBookingClasses } = useListClasses();
   const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Upcoming");
   const [studentFilter, setStudentFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItem, setSelectedItem] = useState<ListItem | null>(null);
+  const classPhotoById = useMemo(() => {
+    const photos = new Map<string, string>();
+    (bookingClasses ?? []).forEach((danceClass) => {
+      const normalized = normalizeMediaUrl(danceClass.photoUrl, "image");
+      if (normalized) photos.set(String(danceClass.id), normalized);
+    });
+    return photos;
+  }, [bookingClasses]);
 
   // Single shared cancel operation for a general (non-Ballet) booking —
   // used identically from the list card and from the detail overlay, so
@@ -506,37 +498,17 @@ export default function BookingsScreen() {
     });
   }, [alert, cancelBooking]);
 
-  const [balletApps, setBalletApps] = useState<BalletApplication[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [isOffline, setIsOffline] = useState(false);
-
-  const loadBalletApps = useCallback(async () => {
-    if (!user) return;
-    try {
-      setErrorMsg("");
-      setIsOffline(false);
-      const apps = await fetchMyApplications();
-      setBalletApps(apps);
-    } catch (err: any) {
-      if (isOfflineError(err)) {
-        setIsOffline(true);
-      } else {
-        setErrorMsg(err.message || "Failed to load assessments");
-      }
-    }
-  }, [user]);
 
   const onRefresh = useCallback(async () => {
     if (!user) return;
     setRefreshing(true);
-    await Promise.all([loadBalletApps(), refreshUserPackages?.(), refreshBookings?.()]);
-    setRefreshing(false);
-  }, [user, loadBalletApps, refreshUserPackages, refreshBookings]);
-
-  useEffect(() => {
-    loadBalletApps();
-  }, [loadBalletApps]);
+    try {
+      await Promise.all([refetchBookingClasses(), refreshUserPackages?.(), refreshBookings?.()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, refetchBookingClasses, refreshUserPackages, refreshBookings]);
 
   // Backend is the source of truth for booking status — re-sync every time the
   // Schedule comes into focus so admin changes (confirm / reject / cancel /
@@ -547,16 +519,16 @@ export default function BookingsScreen() {
     }, [user, refreshBookings]),
   );
 
-  useEffect(() => {
-    if (user && isOffline) {
-      // Offline sync logic typically goes here if supported
-    }
-  }, [user, isOffline]);
-
   const mergedBookings = useMemo(() => {
     return localBookings.map((b) => {
       let isPast = false;
-      if (b.date) {
+      const occurrenceStart = bookingOccurrenceStartMs({
+        occurrenceDate: b.occurrenceDate ?? b.date,
+        startTime: b.scheduleStartTime,
+      });
+      if (occurrenceStart != null) {
+        isPast = occurrenceStart < Date.now();
+      } else if (b.date) {
         const bd = new Date(b.date);
         bd.setHours(23, 59, 59, 999);
         isPast = bd.getTime() < Date.now();
@@ -572,6 +544,28 @@ export default function BookingsScreen() {
     });
   }, [localBookings]);
 
+  const visibleGeneralBookings = useMemo(() => mergedBookings.filter((booking) => {
+    const allowedStatus = booking.bookingStatus === "pending"
+      || booking.bookingStatus === "confirmed"
+      || booking.bookingStatus === "cancelled"
+      || booking.bookingStatus === "rejected";
+    const rawDate = booking.occurrenceDate || booking.date;
+    const rawTime = booking.scheduleStartTime || booking.time;
+    const hasValidDate = /^\d{4}-\d{2}-\d{2}/.test(rawDate || "");
+    const hasValidTime = /\d{1,2}:\d{2}/.test(rawTime || "");
+    const isBallet = booking.bookingType === "ballet"
+      || /\bballet\b/i.test(booking.danceType || "")
+      || /\bballet\b/i.test(booking.className || "");
+
+    return !booking._isPast
+      && !booking.sourceUnavailable
+      && Boolean(booking.classId)
+      && allowedStatus
+      && hasValidDate
+      && hasValidTime
+      && !isBallet;
+  }), [mergedBookings]);
+
 
   // Student selector, grouped in a stable order:
   //   1) "All Students" (default overview filter, first)
@@ -581,8 +575,7 @@ export default function BookingsScreen() {
   // Only names with activity show.
   const students = useMemo(() => {
     const names = new Set<string>();
-    mergedBookings.forEach(b => b.participantName && names.add(b.participantName));
-    balletApps.forEach(a => a.childName && names.add(a.childName));
+    visibleGeneralBookings.forEach(b => b.participantName && names.add(b.participantName));
 
     const ordered: string[] = [];
     // 2) Owner account
@@ -595,47 +588,25 @@ export default function BookingsScreen() {
     // 4) Any remaining participant names, alphabetical
     for (const n of Array.from(names).sort((a, b) => a.localeCompare(b))) ordered.push(n);
     // 1) "All Students" stays first (default overview)
-    return ["All", ...ordered];
-  }, [mergedBookings, balletApps, user, childProfiles]);
+    return [
+      { key: "All", name: "All Students", image: undefined },
+      ...ordered.map((name) => ({
+        key: name,
+        name,
+        image: name === user?.fullName || visibleGeneralBookings.some((booking) => booking.participantType === "self" && booking.participantName === name)
+          ? user?.avatarUrl
+          : undefined,
+      })),
+    ];
+  }, [visibleGeneralBookings, user, childProfiles]);
 
-  function filterItems(tab: (typeof TABS)[number]): ListItem[] {
-    let bookingItems: ListItem[] = [];
-    switch (tab) {
-      case "Upcoming":
-        bookingItems = mergedBookings.filter((b) => !b._isPast && b.bookingStatus !== "cancelled" && b.bookingStatus !== "rejected").map((b) => ({ kind: "booking", data: b, timestamp: new Date(b.date || 0).getTime() }));
-        break;
-      case "Past":
-        bookingItems = mergedBookings.filter((b) => b._isPast && b.bookingStatus !== "cancelled" && b.bookingStatus !== "rejected").map((b) => ({ kind: "booking", data: b, timestamp: new Date(b.date || 0).getTime() }));
-        break;
-      case "Cancelled":
-        bookingItems = mergedBookings.filter((b) => b.bookingStatus === "cancelled" || b.bookingStatus === "rejected").map((b) => ({ kind: "booking", data: b, timestamp: new Date(b.date || 0).getTime() }));
-        break;
-    }
-
-    let balletItems: ListItem[] = [];
-    switch (tab) {
-      case "Upcoming":
-        balletItems = balletApps
-          .filter((a) => {
-            const hasSchedules = a.resolvedSchedules != null && a.resolvedSchedules.length > 0;
-            return a.status === "active" && a.assignedGroupId != null && hasSchedules;
-          })
-          .map((a) => ({ kind: "ballet", data: a, timestamp: new Date(a.createdAt).getTime() }));
-        break;
-      case "Past":
-        balletItems = [];
-        break;
-      case "Cancelled":
-        balletItems = [];
-        break;
-    }
-
-    let allItems = [...balletItems, ...bookingItems];
+  function filterUpcomingItems(): ListItem[] {
+    let allItems: ListItem[] = visibleGeneralBookings
+      .map((b) => ({ kind: "booking", data: b, timestamp: new Date(b.date || 0).getTime() }));
 
     if (studentFilter !== "All") {
       allItems = allItems.filter((i) => {
         if (i.kind === "booking") return i.data.participantName === studentFilter;
-        if (i.kind === "ballet") return i.data.childName === studentFilter;
         return false;
       });
     }
@@ -646,9 +617,6 @@ export default function BookingsScreen() {
         if (i.kind === "booking") {
           return [i.data.className, i.data.danceType, i.data.bookingNumber, i.data.instructorName, i.data.participantName].some(s => s?.toLowerCase().includes(q));
         }
-        if (i.kind === "ballet") {
-          return [i.data.childName, "Ballet Assessment"].some(s => s?.toLowerCase().includes(q));
-        }
         return false;
       });
     }
@@ -656,17 +624,7 @@ export default function BookingsScreen() {
     return allItems;
   }
 
-  // Build all three tab lists from the SAME filterItems() used for rendering, so
-  // each tab's count is exactly the length of the list shown when it's selected
-  // (ballet + bookings, with the active student/search filters applied). A
-  // booking falls into exactly one of upcoming/past/cancelled, so nothing is
-  // double-counted.
-  const itemsByTab = {
-    Upcoming: filterItems("Upcoming"),
-    Past: filterItems("Past"),
-    Cancelled: filterItems("Cancelled"),
-  } as const;
-  const filtered = itemsByTab[activeTab];
+  const filtered = filterUpcomingItems();
 
   if (!user) {
     return (
@@ -714,14 +672,8 @@ export default function BookingsScreen() {
           <View style={{ paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 20, zIndex: 1 }}>
             {/* Hero Section */}
             <View style={styles.heroRow}>
-              <View>
-                <Text style={styles.heroEyebrow}>My Account</Text>
-                <Text style={styles.heroTitle}>MY{"\n"}BOOKINGS</Text>
-              </View>
-              <TouchableOpacity style={styles.newBtn} onPress={() => router.push("/(tabs)/classes")}>
-                <SBI name="plus" size={16} stroke={2.6} color="#0A0B0D" />
-                <Text style={styles.newBtnText}>New</Text>
-              </TouchableOpacity>
+              <Text style={styles.heroEyebrow}>My Account</Text>
+              <Text style={styles.heroTitle}>MY{"\n"}BOOKINGS</Text>
             </View>
 
             {/* Search Bar */}
@@ -729,7 +681,7 @@ export default function BookingsScreen() {
               <View style={styles.searchIcon}><SBI name="search" size={17} stroke={2.2} color="#6B747F" /></View>
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search bookings, classes, refs…"
+                placeholder="Search Classes, Instructors, Styles..."
                 placeholderTextColor="#6B747F"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -741,48 +693,33 @@ export default function BookingsScreen() {
               )}
             </View>
 
-            {/* Phase Tabs (Segmented Container) */}
-            <View style={styles.tabContainer}>
-              {TABS.map((tab) => {
-                const isActive = activeTab === tab;
-                // Count = length of that tab's rendered list (same source array).
-                const count = itemsByTab[tab].length;
-                return (
-                  <TouchableOpacity key={tab} style={[styles.tabBtn, isActive && styles.tabBtnActive]} onPress={() => setActiveTab(tab)}>
-                    <Text style={[styles.tabBtnText, isActive && styles.tabBtnTextActive]}>{tab}</Text>
-                    <View style={[styles.tabBtnCounter, isActive ? { backgroundColor: "#00B6D7" } : { backgroundColor: "rgba(255,255,255,0.08)" }]}>
-                      <Text style={[styles.tabBtnCounterText, isActive ? { color: "#0A0B0D" } : { color: "#6B747F" }]}>{count}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
             {/* Student Filter Chips */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
               {students.map((st) => {
-                const isActive = studentFilter === st;
+                const isActive = studentFilter === st.key;
                 return (
                   <TouchableOpacity
-                    key={st}
-                    style={[styles.filterChip, st === "All" && styles.filterChipAll, isActive && styles.filterChipActive]}
-                    onPress={() => setStudentFilter(st)}
+                    key={st.key}
+                    style={[styles.filterChip, st.key === "All" && styles.filterChipAll, isActive && styles.filterChipActive]}
+                    onPress={() => setStudentFilter(st.key)}
                   >
-                    {st !== "All" && (
+                    {st.key !== "All" && (
                       <View style={styles.filterAvatar}>
-                        <Text style={styles.filterAvatarText}>{st.slice(0, 2).toUpperCase()}</Text>
+                        {st.image ? (
+                          <Image source={{ uri: st.image }} style={styles.filterAvatarImage} />
+                        ) : (
+                          <Text style={styles.filterAvatarText}>{st.name.trim().charAt(0).toUpperCase()}</Text>
+                        )}
                       </View>
                     )}
                     <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
-                      {st === "All" ? "All Students" : st}
+                      {st.name}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
-            {isOffline && <OfflineState />}
-            {errorMsg ? <ErrorState message={errorMsg} onRetry={loadBalletApps} /> : null}
           </View>
         }
         renderItem={({ item }) =>
@@ -793,13 +730,8 @@ export default function BookingsScreen() {
               item={item.data}
               onPress={() => setSelectedItem(item)}
               onCancel={() => confirmCancelBooking(item.data)}
-              onPayNow={() => {
-                alert.show({
-                  tone: "info",
-                  title: "Pay at the studio",
-                  message: "Your booking is pending. Please complete payment at the studio — your booking is confirmed once payment is received.",
-                });
-              }}
+              participantImage={item.data.participantType === "self" ? user.avatarUrl : undefined}
+              classPhotoUrl={item.data.classPhotoUrl ?? classPhotoById.get(item.data.classId)}
             />
           )
         }
@@ -809,36 +741,26 @@ export default function BookingsScreen() {
               <View style={styles.emptyIconWrap}>
                 <SBI name="cal" size={34} stroke={1.6} color="#00B6D7" />
               </View>
-              <Text style={styles.emptyTitle}>
-                {activeTab === "Upcoming" ? "No upcoming bookings" : activeTab === "Past" ? "No booking history yet" : "No cancelled bookings"}
-              </Text>
-              <Text style={styles.emptySub}>
-                {activeTab === "Upcoming" ? "Your next dance adventure is waiting for you." : activeTab === "Past" ? "Completed bookings and attendance will show up here." : "Looks like you've kept every appointment."}
-              </Text>
-              {activeTab === "Upcoming" && (
-                <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push("/(tabs)/classes")}>
-                  <Text style={styles.emptyBtnText}>Book a Class</Text>
-                </TouchableOpacity>
-              )}
+              <Text style={styles.emptyTitle}>No upcoming bookings</Text>
+              <Text style={styles.emptySub}>Your next dance adventure is waiting for you.</Text>
+              <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push("/(tabs)/classes")}>
+                <Text style={styles.emptyBtnText}>Book a Class</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <ListSkeleton count={4} />
           )
         }
       />
-      {selectedItem && (
-        <BookingDetailOverlay
-          item={selectedItem}
+      {selectedItem?.kind === "booking" && (
+        <BookingDetailsView
+          booking={selectedItem.data}
           onClose={() => setSelectedItem(null)}
-          topPad={Platform.OS === "web" ? 67 : insets.top}
-          onCancel={
-            selectedItem.kind === "booking"
-              ? () => {
-                  setSelectedItem(null);
-                  confirmCancelBooking(selectedItem.data);
-                }
-              : undefined
-          }
+          participantImage={selectedItem.data.participantType === "self" ? user.avatarUrl : undefined}
+          onCancel={() => {
+            setSelectedItem(null);
+            confirmCancelBooking(selectedItem.data);
+          }}
         />
       )}
     </View>
@@ -849,33 +771,24 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0A0B0D" },
   headerSimple: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
   simpleTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  list: { paddingHorizontal: 20 },
-  heroRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18 },
+  list: { paddingHorizontal: 17 },
+  heroRow: { alignItems: "flex-start", marginBottom: 12 },
   heroEyebrow: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "#00B6D7", marginBottom: 6 },
-  // marginBottom cancels the iOS cap-guard inset from the block footprint so the
-  // hero row stays bottom-aligned with the "+ New" button as on Android. No-op on Android.
+  // marginBottom cancels the iOS cap-guard inset from the block footprint.
   heroTitle: { fontFamily: "Anton_400Regular", fontSize: 52, lineHeight: 46, ...iosDisplayTextStyle(52, 46), marginBottom: -iosCapGuard(52, 46), textTransform: "uppercase", color: "#FFFFFF" },
-  newBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 20, backgroundColor: "#00B6D7", width: 134, marginBottom: 6 },
-  newBtnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 13, color: "#0A0B0D" },
   searchWrap: { position: "relative", flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.10)", borderRadius: 24, marginBottom: 14 },
   searchIcon: { position: "absolute", left: 14 },
   // paddingTop/Bottom come AFTER the input-style spread so they override its
   // paddingTop:0/paddingBottom:0 on iOS and keep the field's original height.
   searchInput: { flex: 1, paddingLeft: 42, paddingRight: 42, fontSize: 14.5, fontFamily: "Archivo_400Regular", color: "#FFFFFF", ...iosTextInputStyle(14.5, 18), paddingTop: 12, paddingBottom: 12 },
   clearSearch: { position: "absolute", right: 10, width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
-  tabContainer: { flexDirection: "row", padding: 4, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.07)", borderRadius: 24, marginBottom: 14 },
-  tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 10, borderRadius: 20 },
-  tabBtnActive: { backgroundColor: "#0A0B0D" },
-  tabBtnText: { fontFamily: "Archivo_700Bold", fontSize: 12.5, color: "#6B747F" },
-  tabBtnTextActive: { color: "#FFFFFF" },
-  tabBtnCounter: { width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  tabBtnCounterText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10 },
-  filterScroll: { gap: 8, paddingBottom: 20 },
+  filterScroll: { gap: 8, paddingBottom: 18 },
   filterChip: { flexDirection: "row", alignItems: "center", gap: 7, paddingRight: 13, paddingLeft: 7, paddingVertical: 7, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.08)", marginRight: 8 },
   // "All Students" has no avatar → symmetric padding + centered text.
   filterChipAll: { paddingLeft: 16, paddingRight: 16, justifyContent: "center" },
   filterChipActive: { backgroundColor: "#0A0B0D", borderColor: "rgba(0,182,215,0.5)" },
-  filterAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
+  filterAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  filterAvatarImage: { width: "100%", height: "100%" },
   filterAvatarText: { fontFamily: "Archivo_800ExtraBold", fontSize: 10, color: "#FFFFFF" },
   filterChipText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" },
   filterChipTextActive: { color: "#FFFFFF" },

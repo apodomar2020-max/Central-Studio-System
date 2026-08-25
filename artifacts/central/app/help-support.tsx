@@ -4,6 +4,7 @@ import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, T
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { customFetch } from "@workspace/api-client-react";
+import CentralBackButton from "@/components/CentralBackButton";
 
 type ContentPage = { title: string; subtitle?: string | null; content: string };
 type FaqCategory = { id: number; name: string; sortOrder: number; isActive: boolean };
@@ -14,10 +15,6 @@ const FALLBACK_PAGE: ContentPage = { title: "Help & Support", content: "" };
 
 function SearchIcon() {
   return <Svg width={17} height={16} viewBox="0 0 17 16" fill="none"><Path d="M12.9685 12.8628L15.6133 15.4852" stroke="#03B6D7" strokeLinecap="round" /><Path d="M4.0894 1.45226C5.1453 0.846622 6.37123 0.5 7.6788 0.5C11.6435 0.5 14.8576 3.68682 14.8576 7.61796C14.8576 11.5491 11.6435 14.7359 7.6788 14.7359C3.71406 14.7359 0.5 11.5491 0.5 7.61796C0.5 6.32148 0.849585 5.10594 1.4604 4.05898" stroke="#03B6D7" strokeLinecap="round" /></Svg>;
-}
-
-function BackIcon() {
-  return <Svg width={34} height={34} viewBox="0 0 34 34" fill="none"><Path d="M19.0839 12.1125L14.4968 16.6607L19.0839 21.2089" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /><Path d="M32.0806 16.6607C32.0806 23.8075 32.0806 27.381 29.8413 29.6012C27.6022 31.8214 23.9981 31.8214 16.7903 31.8214C9.58238 31.8214 5.97842 31.8214 3.73922 29.6012C1.5 27.381 1.5 23.8075 1.5 16.6607C1.5 9.51388 1.5 5.94047 3.73922 3.72024C5.97842 1.5 9.58238 1.5 16.7903 1.5C23.9981 1.5 27.6022 1.5 29.8413 3.72024C31.3303 5.1965 31.8292 7.271 31.9964 10.5964" stroke="white" strokeWidth={3} strokeLinecap="round" /></Svg>;
 }
 
 function Chevron({ open }: { open: boolean }) {
@@ -57,7 +54,7 @@ export default function HelpSupportScreen() {
 
   return <View style={styles.container}>
     <View style={[styles.hero, { paddingTop: Platform.OS === "web" ? 18 : insets.top + 10 }]}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backButton}><BackIcon /></TouchableOpacity>
+      <CentralBackButton style={styles.backButton} />
       <View style={styles.heroTitleWrap}><Text style={styles.heroKicker}>How Can We</Text><Text style={styles.heroTitle}>Help You?</Text></View>
       <View style={styles.searchBox}><SearchIcon /><TextInput value={search} onChangeText={setSearch} placeholder="Search Topics..." placeholderTextColor="#03B6D7" style={styles.searchInput} returnKeyType="search" /></View>
     </View>

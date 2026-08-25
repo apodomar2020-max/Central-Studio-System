@@ -1,15 +1,12 @@
 /**
- * app/ballet/requirements.tsx — Program Requirements
+ * app/ballet/requirements.tsx — Ballet program requirements.
  *
- * Source of truth:
- *   GET /api/ballet/program-requirements → active admin-managed sections/items.
- *
- * No hardcoded production requirement records are rendered here.
+ * Requirement copy remains admin-managed through
+ * GET /api/ballet/program-requirements. This screen only owns presentation.
  */
 
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,6 +19,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import CentralBackButton from "@/components/CentralBackButton";
 import {
   fetchBalletProgramRequirements,
   type BalletProgramRequirementSection,
@@ -29,47 +27,51 @@ import {
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 const BASE = "#0A0B0D";
-const CYAN = "#00B6D7";
-const INK_200 = "#D1D5DB";
-const INK_300 = "#9CA3AF";
-const INK_400 = "#6B7280";
-const R_MD = 12;
+const CYAN = "#08B8D6";
+const WHITE = "#FFFFFF";
 
-function RequirementSectionCard({ section }: { section: BalletProgramRequirementSection }) {
+function RequirementAccordion({
+  section,
+  isExpanded,
+  onPress,
+}: {
+  section: BalletProgramRequirementSection;
+  isExpanded: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View style={s.reqCard}>
-      <LinearGradient
-        colors={["rgba(0,182,215,0.12)", "rgba(255,255,255,0.03)", "rgba(255,255,255,0.015)"]}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      <View style={s.reqHeader}>
-        <View style={s.reqIcon}>
-          <Ionicons name="ribbon-outline" size={18} color={CYAN} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={s.reqTitle}>{section.title}</Text>
-          {!!section.description?.trim() && (
-            <Text style={s.reqDescription} numberOfLines={3}>{section.description.trim()}</Text>
-          )}
-        </View>
-      </View>
+    <View style={styles.accordionItem}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isExpanded }}
+        activeOpacity={0.88}
+        onPress={onPress}
+        style={styles.accordionHeader}
+      >
+        <Text numberOfLines={2} style={styles.accordionTitle}>{section.title}</Text>
+        <Ionicons name="chevron-down-outline" size={24} color={CYAN} />
+      </TouchableOpacity>
 
-      {section.items.length === 0 ? (
-        <Text style={s.emptySectionText}>No active items in this section.</Text>
-      ) : (
-        <View style={s.itemList}>
-          {section.items.map((item) => (
-            <View key={item.id} style={s.itemRow}>
-              <Ionicons name="checkmark" size={15} color={CYAN} style={s.itemBullet} />
-              <Text style={s.itemText}>{item.text}</Text>
+      {isExpanded ? (
+        <View style={styles.expandedPanel}>
+          {!!section.description?.trim() ? (
+            <Text style={styles.sectionDescription}>{section.description.trim()}</Text>
+          ) : null}
+
+          {section.items.length > 0 ? (
+            <View style={styles.itemList}>
+              {section.items.map((item) => (
+                <View key={item.id} style={styles.itemRow}>
+                  <Text style={styles.bullet}>•</Text>
+                  <Text style={styles.itemText}>{item.text}</Text>
+                </View>
+              ))}
             </View>
-          ))}
+          ) : !section.description?.trim() ? (
+            <Text style={styles.noItemsText}>Details will be added soon.</Text>
+          ) : null}
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -79,6 +81,7 @@ export default function BalletRequirementsScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [sections, setSections] = useState<BalletProgramRequirementSection[]>([]);
+  const [expandedSectionId, setExpandedSectionId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -89,8 +92,9 @@ export default function BalletRequirementsScreen() {
       const data = await fetchBalletProgramRequirements(signal);
       if (signal?.aborted) return;
       setSections(data);
-    } catch (err) {
-      if ((err as any)?.name === "AbortError") return;
+      setExpandedSectionId((current) => current ?? data[0]?.id ?? null);
+    } catch (error) {
+      if ((error as { name?: string })?.name === "AbortError") return;
       setSections([]);
       setErrorMessage("Unable to load Ballet requirements right now.");
     } finally {
@@ -99,23 +103,23 @@ export default function BalletRequirementsScreen() {
   }, []);
 
   useEffect(() => {
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   return (
-    <View style={s.screen}>
+    <View style={styles.screen}>
       <LinearGradient
         colors={["rgba(0,182,215,0.22)", "rgba(0,182,215,0.08)", "transparent"]}
         locations={[0, 0.35, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-        style={[s.atmosphericGlow, { height: topPad + 240 }]}
+        style={[styles.atmosphericGlow, { height: topPad + 240 }]}
         pointerEvents="none"
       />
 
-      <View style={s.headerWrap}>
+      <View style={styles.headerWrap}>
         <LinearGradient
           colors={["rgba(0,0,0,0.92)", "rgba(0,0,0,0.58)", "rgba(0,0,0,0)"]}
           locations={[0, 0.58, 1]}
@@ -124,16 +128,17 @@ export default function BalletRequirementsScreen() {
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        <View style={[s.header, { paddingTop: topPad + 14 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={CYAN} />
-            <Text style={s.backText}>Back</Text>
-          </TouchableOpacity>
+        <View style={[styles.header, { paddingTop: topPad + 14 }]}>
+          <CentralBackButton style={styles.backBtn} activeOpacity={0.7} />
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} bounces>
-        <View style={[s.heroSection, { minHeight: topPad + 222 }]}>
+      <ScrollView
+        bounces
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 36, 54) }]}
+      >
+        <View style={[styles.heroSection, { minHeight: topPad + 222 }]}>
           <LinearGradient
             colors={[BASE, "rgba(0,182,215,0.12)", BASE]}
             locations={[0, 0.48, 1]}
@@ -156,78 +161,67 @@ export default function BalletRequirementsScreen() {
             pointerEvents="none"
           />
 
-          <View style={[s.heroContent, { paddingTop: topPad + 54 }]}>
-            <Text style={s.heroEyebrow}>Central Studio</Text>
-            <Text style={s.heroTitle}>{"BALLET\nREQUIREMENTS"}</Text>
-            <Text style={s.heroDesc}>
+          <View style={[styles.heroContent, { paddingTop: topPad + 54 }]}>
+            <Text style={styles.heroEyebrow}>Central Studio</Text>
+            <Text style={styles.heroTitle}>{"BALLET\nREQUIREMENTS"}</Text>
+            <Text style={styles.heroDescription}>
               Review program expectations, preparation notes, and participation guidelines.
             </Text>
           </View>
         </View>
 
-        <View style={s.heroDivider} />
+        <View style={styles.heroDivider} />
 
-        <View style={s.content}>
-          {isLoading ? (
-            <View style={s.center}>
-              <ActivityIndicator color={CYAN} />
-            </View>
-          ) : errorMessage ? (
-            <View style={s.empty}>
-              <View style={s.emptyIcon}>
-                <Ionicons name="alert-circle-outline" size={28} color={INK_400} />
+        <View style={styles.content}>
+          <View style={styles.requirementsList}>
+            {isLoading ? (
+              <View style={styles.loadingState}>
+                <ActivityIndicator size="small" color={CYAN} />
               </View>
-              <Text style={s.emptyTitle}>Requirements unavailable</Text>
-              <Text style={s.emptyDesc}>{errorMessage}</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  const ctrl = new AbortController();
-                  load(ctrl.signal);
-                }}
-                style={s.retryButton}
-                activeOpacity={0.82}
-              >
-                <Text style={s.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : sections.length === 0 ? (
-            <View style={s.empty}>
-              <View style={s.emptyIcon}>
-                <Ionicons name="list-outline" size={28} color={INK_400} />
+            ) : errorMessage ? (
+              <View style={styles.messageState}>
+                <Text style={styles.messageTitle}>Requirements unavailable</Text>
+                <Text style={styles.messageBody}>{errorMessage}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => void load()}
+                  style={styles.retryButton}
+                >
+                  <Text style={styles.retryText}>Retry</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={s.emptyTitle}>No requirements listed yet</Text>
-              <Text style={s.emptyDesc}>Ballet program requirements will appear here soon.</Text>
-            </View>
-          ) : (
-            <View style={s.sectionList}>
-              {sections.map((section) => (
-                <RequirementSectionCard key={section.id} section={section} />
-              ))}
-            </View>
-          )}
+            ) : sections.length === 0 ? (
+              <View style={styles.messageState}>
+                <Text style={styles.messageTitle}>No requirements listed yet</Text>
+                <Text style={styles.messageBody}>Ballet program requirements will appear here soon.</Text>
+              </View>
+            ) : (
+              sections.map((section) => (
+                <RequirementAccordion
+                  key={section.id}
+                  section={section}
+                  isExpanded={expandedSectionId === section.id}
+                  onPress={() => setExpandedSectionId((current) => current === section.id ? null : section.id)}
+                />
+              ))
+            )}
+          </View>
         </View>
-
-        <View style={{ height: Platform.OS === "web" ? 120 : 80 }} />
       </ScrollView>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: BASE },
-  atmosphericGlow: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: BASE,
   },
-  headerWrap: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
+  scrollContent: {
+    flexGrow: 1,
   },
+  atmosphericGlow: { position: "absolute", top: 0, left: 0, right: 0 },
+  headerWrap: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -236,28 +230,13 @@ const s = StyleSheet.create({
     paddingBottom: 16,
     backgroundColor: "transparent",
   },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  backText: {
-    fontSize: 14,
-    fontFamily: "Archivo_600SemiBold",
-    color: CYAN,
-    textShadowColor: "rgba(0,0,0,0.85)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
+  backBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
   heroSection: {
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,182,215,0.12)",
     overflow: "hidden",
   },
-  heroContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
+  heroContent: { paddingHorizontal: 20, paddingBottom: 8 },
   heroEyebrow: {
     fontSize: 10,
     fontFamily: "SpaceMono_700Bold",
@@ -268,139 +247,135 @@ const s = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 44,
-    fontFamily: "Anton_400Regular",
-    textTransform: "uppercase",
     lineHeight: 40,
+    fontFamily: "Anton_400Regular",
     letterSpacing: 0.5,
-    color: "#FFFFFF",
+    textTransform: "uppercase",
+    color: WHITE,
     marginBottom: 8,
     ...iosDisplayTextStyle(44, 40),
     marginTop: -iosCapGuard(44, 40),
   },
-  heroDesc: {
+  heroDescription: {
+    maxWidth: 320,
     fontSize: 14,
-    fontFamily: "Archivo_400Regular",
-    color: INK_200,
     lineHeight: 21,
-    maxWidth: 330,
-  },
-  heroDivider: {
-    height: 1,
-    backgroundColor: "rgba(0,182,215,0.12)",
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 16,
-  },
-  sectionList: {
-    gap: 14,
-  },
-  reqCard: {
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: 18,
-    padding: 16,
-    backgroundColor: "#15171B",
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.18)",
-  },
-  reqHeader: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 14,
-  },
-  reqIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(0,182,215,0.14)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.24)",
-  },
-  reqTitle: {
-    fontSize: 17,
-    fontFamily: "Archivo_800ExtraBold",
-    color: "#FFFFFF",
-    textTransform: "uppercase",
-    letterSpacing: 0.35,
-  },
-  reqDescription: {
-    marginTop: 4,
-    fontSize: 13,
     fontFamily: "Archivo_400Regular",
-    color: INK_300,
-    lineHeight: 19,
+    color: "#D1D5DB",
+  },
+  heroDivider: { height: 1, backgroundColor: "rgba(0,182,215,0.12)" },
+  content: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16 },
+  requirementsList: {
+    marginTop: 0,
+    marginHorizontal: 14,
+    gap: 10,
+  },
+  accordionItem: {
+    width: "100%",
+  },
+  accordionHeader: {
+    minHeight: 58,
+    zIndex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 26,
+    paddingVertical: 14,
+    borderRadius: 15,
+    backgroundColor: WHITE,
+  },
+  accordionTitle: {
+    flex: 1,
+    color: CYAN,
+    fontFamily: "Anton_400Regular",
+    fontSize: 21,
+    lineHeight: 24,
+    ...iosDisplayTextStyle(21, 24),
+    marginTop: -iosCapGuard(21, 24),
+  },
+  expandedPanel: {
+    zIndex: 1,
+    marginTop: -8,
+    marginHorizontal: 16,
+    paddingTop: 21,
+    paddingHorizontal: 19,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
+    backgroundColor: CYAN,
+  },
+  sectionDescription: {
+    color: WHITE,
+    fontFamily: "Archivo_700Bold",
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 3,
   },
   itemList: {
-    gap: 9,
+    gap: 1,
   },
   itemRow: {
     flexDirection: "row",
-    gap: 9,
+    alignItems: "flex-start",
+    gap: 5,
   },
-  itemBullet: {
-    marginTop: 2,
+  bullet: {
+    color: WHITE,
+    fontFamily: "Archivo_700Bold",
+    fontSize: 12,
+    lineHeight: 16,
   },
   itemText: {
     flex: 1,
-    fontSize: 13.5,
+    color: WHITE,
     fontFamily: "Archivo_400Regular",
-    color: INK_200,
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 16,
   },
-  emptySectionText: {
-    fontSize: 13,
+  noItemsText: {
+    color: WHITE,
     fontFamily: "Archivo_400Regular",
-    color: INK_400,
-    fontStyle: "italic",
+    fontSize: 12,
+    lineHeight: 16,
   },
-  center: {
-    paddingVertical: 54,
-    alignItems: "center",
-  },
-  empty: {
-    alignItems: "center",
-    paddingVertical: 50,
-    paddingHorizontal: 24,
-  },
-  emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "rgba(255,255,255,0.05)",
+  loadingState: {
+    minHeight: 160,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
   },
-  emptyTitle: {
-    fontSize: 18,
+  messageState: {
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 36,
+  },
+  messageTitle: {
+    color: WHITE,
     fontFamily: "Archivo_700Bold",
-    color: "#fff",
-    marginBottom: 8,
+    fontSize: 17,
     textAlign: "center",
   },
-  emptyDesc: {
-    fontSize: 13,
+  messageBody: {
+    marginTop: 7,
+    color: "rgba(255,255,255,0.62)",
     fontFamily: "Archivo_400Regular",
-    color: INK_400,
+    fontSize: 13,
+    lineHeight: 18,
     textAlign: "center",
-    lineHeight: 19,
   },
   retryButton: {
-    marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: R_MD,
-    backgroundColor: "rgba(0,182,215,0.14)",
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.35)",
+    marginTop: 16,
+    minWidth: 90,
+    height: 42,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: WHITE,
   },
   retryText: {
-    fontSize: 13,
-    fontFamily: "Archivo_700Bold",
     color: CYAN,
+    fontFamily: "Archivo_700Bold",
+    fontSize: 14,
   },
 });
