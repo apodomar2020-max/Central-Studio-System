@@ -17,7 +17,6 @@ import {
 import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/space-mono";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { router, Stack, usePathname, useRootNavigationState, useSegments } from "expo-router";
@@ -44,6 +43,7 @@ import { CentralAlertProvider } from "@/providers/CentralAlertProvider";
 import { NotificationRoute, resolveNotificationRoute } from "@/services/notificationNavigation";
 import { useAndroidHardwareBackGuard } from "@/hooks/useAndroidHardwareBackGuard";
 import { useOAuthFlowState } from "@/services/oauthFlowState";
+import { getStudentToken } from "@/services/secureTokenStorage";
 
 type ExpoManifestWithUpdateMetadata = {
   extra?: {
@@ -112,15 +112,11 @@ setBaseUrl(process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000");
 //   The server verifies the JWT signature — the mobile app never trusted.
 //   Otherwise return null so no Authorization header is sent — unauthenticated
 //   class listings, packages, etc. are public routes and need no credential.
-setAuthTokenGetter(async () => {
-  try {
-    const studentToken = await AsyncStorage.getItem("studentToken");
-    if (studentToken) return studentToken;
-  } catch {
-    // AsyncStorage failure — fall through to guest (no token)
-  }
-  return null;
-});
+// Security Wave — Mobile SecureStore / Privacy Hardening: the token now
+// lives in SecureStore (Keychain/Keystore), not AsyncStorage — see
+// services/secureTokenStorage.ts, the single source of truth for this
+// value (read/write/clear/legacy-migration all live there).
+setAuthTokenGetter(async () => getStudentToken());
 
 const queryClient = new QueryClient();
 

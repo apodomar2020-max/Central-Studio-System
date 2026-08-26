@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +24,7 @@ import { clearSignupDrafts } from "./auth/register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import BotChallenge from "@/components/BotChallenge";
+import { setStudentToken } from "@/services/secureTokenStorage";
 
 const VerifyGlow = React.memo(function VerifyGlow() {
   return (
@@ -185,7 +185,8 @@ export default function VerifyEmailScreen() {
         body: JSON.stringify({ studentId: user.id, code: full }),
       });
       if (verification.accessToken) {
-        await AsyncStorage.setItem("studentToken", verification.accessToken);
+        // Security Wave — Mobile SecureStore / Privacy Hardening.
+        await setStudentToken(verification.accessToken);
       }
       const refreshed = await fetchCurrentUser();
       await setUser(refreshed.user);

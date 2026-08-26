@@ -14,6 +14,8 @@ import {
   unregisterPushDeviceForLogout,
 } from "@/services/pushNotifications";
 import { createLogoutCoordinator } from "@/services/logoutCoordinator";
+import { getStudentToken, setStudentToken, clearStudentToken } from "@/services/secureTokenStorage";
+import { stripSensitiveChildFields } from "@/services/childProfilePrivacy";
 
 /** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
 export type ProfileCompletionStep = "email" | "profile" | "children" | "medical" | "styles";
@@ -283,17 +285,24 @@ function mapMyBookingToLocal(r: ApiMyBooking): Booking {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+// Security Wave — Mobile SecureStore / Privacy Hardening: "studentToken" is
+// deliberately NOT in this list — it no longer lives in AsyncStorage at all
+// (see services/secureTokenStorage.ts). clearAuthScopedStorage() clears it
+// separately, through that module, alongside the AsyncStorage keys below.
 const AUTH_SCOPED_STORAGE_KEYS = [
   "user",
-  "studentToken",
   "bookings",
   "children",
   "notifications",
 ];
 
 async function clearAuthScopedStorage() {
-  await AsyncStorage.multiRemove(AUTH_SCOPED_STORAGE_KEYS);
+  await Promise.all([
+    AsyncStorage.multiRemove(AUTH_SCOPED_STORAGE_KEYS),
+    clearStudentToken(),
+  ]);
 }
+
 
 export function AppContextProvider({ children: childrenNodes }: { children: React.ReactNode }) {
   const alert = useCentralAlert();
@@ -341,7 +350,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
   async function loadPersistedState() {
     try {
-      const [lang, onboarded, usr, bks, chldrn, notifs] =
+      const [lang, onboarded, usr, bks, chldrn, notifs, studentToken] =
         await Promise.all([
           AsyncStorage.getItem("language"),
           AsyncStorage.getItem("isOnboarded"),
@@ -349,6 +358,10 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           AsyncStorage.getItem("bookings"),
           AsyncStorage.getItem("children"),
           AsyncStorage.getItem("notifications"),
+          // Security Wave — Mobile SecureStore / Privacy Hardening: reads
+          // (and, for a legacy install, one-time migrates) the token from
+          // SecureStore — see services/secureTokenStorage.ts.
+          getStudentToken(),
         ]);
 
       if (lang) setLanguageState(lang as "en" | "ar");
@@ -359,7 +372,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         // Security check: if a user session is persisted but there is no
         // student JWT, the session pre-dates the JWT auth upgrade. Clear it
         // so the user is prompted to log in and receive a proper signed token.
-        const studentToken = await AsyncStorage.getItem("studentToken");
         if (!studentToken) {
           await clearAuthScopedStorage();
           // parsedUser is intentionally not set in state — session is invalidated.
@@ -488,7 +500,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
 
       if (isMountedRef.current) {
         setChildren(mapped);
-        await AsyncStorage.setItem("children", JSON.stringify(mapped));
+        await AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(mapped)));
       }
     } catch {
       // Best-effort cache restore if offline
@@ -653,7 +665,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       };
       setChildren((prev) => {
         const next = [...prev, mappedChild];
-        AsyncStorage.setItem("children", JSON.stringify(next));
+        AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(next)));
         return next;
       });
       return mappedChild;
@@ -709,7 +721,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       };
       setChildren((prev) => {
         const next = prev.map((item) => (item.id === mappedChild.id ? mappedChild : item));
-        AsyncStorage.setItem("children", JSON.stringify(next));
+        AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(next)));
         return next;
       });
     } catch (err) {
@@ -734,7 +746,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       });
       setChildren((prev) => {
         const next = prev.filter((c) => c.id !== childId);
-        AsyncStorage.setItem("children", JSON.stringify(next));
+        AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(next)));
         return next;
       });
     } catch (err) {

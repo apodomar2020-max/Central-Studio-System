@@ -1,8 +1,8 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { customFetch } from "@workspace/api-client-react";
 
 import type { ProfileCompletion, ProfileCompletionStep, User } from "@/contexts/AppContext";
+import { setStudentToken } from "@/services/secureTokenStorage";
 
 /**
  * Profile Completion Engine (Phase 4) — registration flow:
@@ -161,7 +161,9 @@ export async function continueAfterAuth(
   }
 
   if (accessToken) {
-    await AsyncStorage.setItem("studentToken", accessToken);
+    // Security Wave — Mobile SecureStore / Privacy Hardening: the Student
+    // JWT lives only in SecureStore now — see services/secureTokenStorage.ts.
+    await setStudentToken(accessToken);
   }
 
   const { user } = await fetchCurrentUser();

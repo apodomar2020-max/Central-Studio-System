@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { customFetch } from "@workspace/api-client-react";
 import { useAppContext } from "@/contexts/AppContext";
@@ -22,6 +21,7 @@ import CentralBackButton from "@/components/CentralBackButton";
 import { iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { passwordPolicyError } from "@/utils/passwordPolicy";
+import { secureTokenStorageAdapter } from "@/services/secureTokenStorage";
 import {
   buildChangePasswordPayload,
   changePasswordOutcome,
@@ -101,10 +101,12 @@ export default function ChangePasswordScreen() {
         "/api/auth/change-password",
         { method: "POST", body: JSON.stringify(buildChangePasswordPayload(current, next)) },
       );
-      // The token getter (app/_layout.tsx) reads AsyncStorage fresh on every
+      // The token getter (app/_layout.tsx) reads SecureStore fresh on every
       // request — no separate in-memory copy to update, and no re-fetch of
-      // the user/session is needed to pick this up.
-      await persistChangePasswordToken(result, AsyncStorage);
+      // the user/session is needed to pick this up. Security Wave — Mobile
+      // SecureStore / Privacy Hardening: writes through to SecureStore, not
+      // AsyncStorage — see services/secureTokenStorage.ts.
+      await persistChangePasswordToken(result, secureTokenStorageAdapter);
       setLoading(false);
       setSuccess(true);
     } catch (err: unknown) {
