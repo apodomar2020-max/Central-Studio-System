@@ -841,6 +841,13 @@
       "when": 1788019200001,
       "tag": "0119_student_permanent_delete_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1788019200001,
+      "tag": "0120_social_link_challenges",
+      "breakpoints": true
     }
   ]
 }

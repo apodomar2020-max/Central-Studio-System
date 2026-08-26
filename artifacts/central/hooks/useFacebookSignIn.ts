@@ -27,6 +27,7 @@ import { FACEBOOK_APP_ID } from "@/constants/facebook";
 import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
 import { setOAuthFlowState } from "@/services/oauthFlowState";
 import { deriveAuthErrorMessage } from "@/services/accountDeactivation";
+import type { SocialLinkChallenge } from "./useGoogleSignIn";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
@@ -34,6 +35,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
   const { setUser } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [linkChallenge, setLinkChallenge] = useState<SocialLinkChallenge | null>(null);
   const authInFlightRef = useRef(false);
   const exchangingRef = useRef(false);
 
@@ -67,6 +69,14 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
       if (!res.ok) {
         if (__DEV__) {
           console.log("[AUTH_NAV] facebook exchange failure", { source, status: res.status });
+        }
+        // Security-01B2: this Facebook identity's email matches an existing
+        // account, but Facebook never attests ownership — no token, no link.
+        // Hand the opaque challenge to the caller so it can show the OTP
+        // ownership-verification modal.
+        if (data?.requiresLinkVerification && typeof data?.linkChallengeId === "string") {
+          setLinkChallenge({ challengeId: data.linkChallengeId, provider: "facebook", expiresIn: data.expiresIn ?? 600 });
+          return;
         }
         // Student Account Lifecycle (Phase B1C): a deactivated account
         // rejecting a fresh social-login attempt — no session to tear down,
@@ -127,6 +137,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
       console.log("[AUTH_NAV] facebook auth start", { source });
     }
     setError("");
+    setLinkChallenge(null);
     setLoading(true);
     try {
       // Native Facebook login (FB app if installed, else in-app browser).
@@ -170,5 +181,12 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
 
   // No async request to prepare anymore — the button is ready as long as the
   // App ID is configured for this build.
-  return { signIn, loading: loading || authInFlightRef.current, error, ready: !!FACEBOOK_APP_ID };
+  return {
+    signIn,
+    loading: loading || authInFlightRef.current,
+    error,
+    ready: !!FACEBOOK_APP_ID,
+    linkChallenge,
+    clearLinkChallenge: () => setLinkChallenge(null),
+  };
 }

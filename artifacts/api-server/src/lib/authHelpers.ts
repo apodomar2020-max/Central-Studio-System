@@ -67,7 +67,12 @@ export const PasswordSchema = z.string()
   .regex(/[A-Za-z]/, "Password must include at least one letter")
   .regex(/[0-9]/, "Password must include at least one number");
 
-export type OtpPurpose = "verify" | "reset";
+// "social_link" (Security-01B2): ownership-verification OTP sent to an
+// EXISTING account's email before a verified-but-unattested provider
+// identity may attach to it. Shares all the same hashing/pepper/cooldown/
+// attempt-limit/single-use infrastructure as "verify"/"reset" — see
+// routes/socialAuth.ts and lib/socialLinkChallenge.ts.
+export type OtpPurpose = "verify" | "reset" | "social_link";
 
 // ─── OTP pepper (CS-SEC-M-01 / Security-06B) ───────────────────────────────
 //
@@ -161,13 +166,22 @@ function escapeHtml(value: string): string {
 function otpEmailContent(code: string, purpose: OtpPurpose): Omit<EmailPayload, "to"> {
   const escapedCode = escapeHtml(code);
   const isReset = purpose === "reset";
-  const title = isReset ? "Reset your Central Studio password" : "Verify your Central Studio email";
+  const isSocialLink = purpose === "social_link";
+  const title = isReset
+    ? "Reset your Central Studio password"
+    : isSocialLink
+      ? "Confirm linking a sign-in method to your Central Studio account"
+      : "Verify your Central Studio email";
   const intro = isReset
     ? "Use this code to reset your Central Studio password."
-    : "Use this code to verify your Central Studio account.";
+    : isSocialLink
+      ? "Someone requested to link a Google or Facebook sign-in to your Central Studio account. Use this code to confirm it's you."
+      : "Use this code to verify your Central Studio account.";
   const safety = isReset
     ? "If you did not request a password reset, you can ignore this email."
-    : "If you did not create a Central Studio account, you can ignore this email.";
+    : isSocialLink
+      ? "If you did not request this, you can ignore this email — nothing will be linked without this code."
+      : "If you did not create a Central Studio account, you can ignore this email.";
 
   return {
     subject: title,

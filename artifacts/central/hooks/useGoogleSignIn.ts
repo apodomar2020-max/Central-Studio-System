@@ -22,10 +22,18 @@ import { deriveAuthErrorMessage } from "@/services/accountDeactivation";
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const GOOGLE_NATIVE_REDIRECT_URI = "com.centralstudio.app:/oauthredirect";
 
+// Security-01B2: a verified Google identity's email matched an EXISTING
+// account, but Google did not attest ownership of it — the backend opened a
+// short-lived OTP ownership challenge instead of linking silently. The
+// actual linking decision stays entirely server-side, keyed by `challengeId`
+// — this is only enough for the UI to render the verification modal.
+export type SocialLinkChallenge = { challengeId: string; provider: "google" | "facebook"; expiresIn: number };
+
 export function useGoogleSignIn(source: AuthSource = "social-login") {
   const { setUser } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [linkChallenge, setLinkChallenge] = useState<SocialLinkChallenge | null>(null);
   const authInFlightRef = useRef(false);
   const exchangingRef = useRef(false);
 
@@ -111,6 +119,15 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
         if (__DEV__) {
           console.log("[AUTH_NAV] google exchange failure", { source, status: res.status });
         }
+        // Security-01B2: this Google identity's email matches an existing
+        // account, but Google did not attest ownership — no token, no link.
+        // Hand the opaque challenge to the caller so it can show the OTP
+        // ownership-verification modal; nothing else about the account is
+        // ever surfaced here.
+        if (data?.requiresLinkVerification && typeof data?.linkChallengeId === "string") {
+          setLinkChallenge({ challengeId: data.linkChallengeId, provider: "google", expiresIn: data.expiresIn ?? 600 });
+          return;
+        }
         // Student Account Lifecycle (Phase B1C): a deactivated account
         // rejecting a fresh social-login attempt — no session to tear down,
         // no partial auth state to persist, no auto-retry.
@@ -150,6 +167,7 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
       console.log("[AUTH_NAV] google auth start", { source, ready: !!request });
     }
     setError("");
+    setLinkChallenge(null);
     setLoading(true);
     try {
       setOAuthFlowState("pending");
@@ -162,5 +180,12 @@ export function useGoogleSignIn(source: AuthSource = "social-login") {
     }
   }
 
-  return { signIn, loading: loading || authInFlightRef.current, error, ready: !!request };
+  return {
+    signIn,
+    loading: loading || authInFlightRef.current,
+    error,
+    ready: !!request,
+    linkChallenge,
+    clearLinkChallenge: () => setLinkChallenge(null),
+  };
 }

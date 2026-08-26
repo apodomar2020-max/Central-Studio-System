@@ -99,3 +99,5 @@ export * from "./provenanceActivation";
 export * from "./studentDeletionWorkflows";
 // Phase B3B2E — Level-B manual resolution decision layer (migration 0118)
 export * from "./studentLegacyIdentityResolutions";
+// Security-01B2 — social account linking OTP-ownership challenges (migration 0120)
+export * from "./socialLinkChallenges";

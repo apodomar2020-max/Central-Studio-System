@@ -39,6 +39,7 @@ import {
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 import BotChallenge from "@/components/BotChallenge";
+import SocialLinkVerifyModal from "@/components/SocialLinkVerifyModal";
 
 // Stable social icon elements.
 const FACEBOOK_ICON = <FacebookLogo />;
@@ -379,6 +380,11 @@ export default function RegisterScreen() {
           <PrimaryCTA label="Continue" icon="arrow" onPress={submit} loading={loading} disabled={!canSubmit} />
         </View>
       </KeyboardAvoidingView>
+
+      <SocialLinkVerifyModal
+        challenge={google.linkChallenge ?? facebook.linkChallenge}
+        onClose={() => { google.clearLinkChallenge(); facebook.clearLinkChallenge(); }}
+      />
     </View>
   );
 }

@@ -28,10 +28,14 @@
  *   Branch 4  provider email matches an EXISTING account
  *             → this is the branch CS-SEC-C-01 lived in.
  *               • "provider_attested"  → link (atomically) and sign in.
- *               • anything else        → 409 PROVIDER_LINK_VERIFICATION_REQUIRED.
- *                 NOTHING is written: no provider id, no auth_provider, no
- *                 display name, no avatar, no email_verified_at. NO token of
- *                 any kind is issued.
+ *               • anything else        → 409 PROVIDER_LINK_VERIFICATION_REQUIRED,
+ *                 PLUS (Security-01B2) a short-lived opaque `linkChallengeId`
+ *                 and an OTP sent to the EXISTING account's email. NOTHING is
+ *                 written yet: no provider id, no auth_provider, no display
+ *                 name, no avatar, no email_verified_at. NO token of any kind
+ *                 is issued. The provider identity may only attach once the
+ *                 account owner proves control by completing that OTP via
+ *                 POST /auth/social-link/verify (see below).
  *
  * ─── The bug this replaces ───────────────────────────────────────────────────
  *
@@ -44,9 +48,18 @@
  * that the party authenticating right now controls the address. It is no
  * longer consulted when deciding whether a link may occur.
  *
- * Security-01B2 will replace the 409 in branch 4 with a real OTP link
- * challenge. The response already carries `requiresLinkVerification` so that
- * change is additive for clients.
+ * ─── Security-01B2 — OTP ownership-verification linking ─────────────────────
+ *
+ * Branch 4's non-attested case no longer dead-ends at a bare 409: it opens a
+ * server-authoritative `social_link_challenges` row (lib/socialLinkChallenge.ts)
+ * binding exactly {studentId, provider, providerId} as verified moments ago —
+ * never anything the client supplies — and sends an OTP to the EXISTING
+ * account's own email (never a client-supplied address). The client's only
+ * job from there is to hand back the opaque challenge id plus the code the
+ * account owner received. Completion re-validates every precondition inside
+ * one transaction (challenge live, account still active/not mid-deletion-
+ * prep, provider subject still unlinked) before atomically attaching the
+ * provider id and issuing a token — see /auth/social-link/verify below.
  *
  * Apple stays fail-closed (socialProviders.ts throws before any of this runs).
  */
@@ -56,9 +69,23 @@ import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { isActiveAccountStatus } from "../lib/studentAccountStatus";
-import { signStudentToken, issueOtp, OtpRateLimitError } from "../lib/authHelpers";
+import {
+  signStudentToken,
+  issueOtp,
+  invalidateOtpCodes,
+  verifyOtpCode,
+  OtpRateLimitError,
+} from "../lib/authHelpers";
 import { publicStudent } from "../lib/studentProfileResponse";
 import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
+import { getActivePreparation } from "../lib/studentDeletionPreparation";
+import {
+  createSocialLinkChallenge,
+  findPendingChallenge,
+  consumeChallenge,
+  invalidateChallenge,
+} from "../lib/socialLinkChallenge";
+import { createStudentNotification } from "../lib/notifications";
 import { ipRateLimiter } from "../middlewares/authRateLimit";
 import {
   verifyProviderToken,
@@ -156,7 +183,7 @@ function avatarPatch(
 type SocialLoginOutcome =
   | { kind: "ok"; student: StudentRow; verified: boolean }
   | { kind: "needsEmail" }
-  | { kind: "linkVerificationRequired"; maskedEmail: string; targetStudentId: number }
+  | { kind: "linkVerificationRequired"; maskedEmail: string; targetStudentId: number; provider: ProviderName; providerId: string }
   | { kind: "providerAlreadyLinked" }
   | { kind: "accountDeactivated" };
 
@@ -271,6 +298,8 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
       kind: "linkVerificationRequired",
       maskedEmail: maskEmail(existing.email),
       targetStudentId: existing.id,
+      provider,
+      providerId,
     };
   }
 
@@ -396,23 +425,55 @@ function makeHandler(provider: ProviderName) {
 
     if (result.kind === "linkVerificationRequired") {
       // An account already exists for the address this provider returned, but
-      // the provider does not attest ownership of it. Refuse — without writing
-      // anything and without issuing a token of any kind.
+      // the provider does not attest ownership of it. Still write NOTHING to
+      // the account and issue NO token — instead open a short-lived
+      // server-authoritative challenge and send an OTP to the EXISTING
+      // account's own email (never the provider-supplied one) so its real
+      // owner, not this caller, must prove control before anything attaches.
+      let challenge: { challengeId: string; expiresIn: number } | null = null;
+      try {
+        challenge = await createSocialLinkChallenge({
+          studentId: result.targetStudentId,
+          provider: result.provider,
+          providerId: result.providerId,
+        });
+        const [target] = await db
+          .select({ email: studentsTable.email })
+          .from(studentsTable)
+          .where(eq(studentsTable.id, result.targetStudentId));
+        if (target) {
+          await issueOtp(target.email, { studentId: result.targetStudentId, purpose: "social_link" });
+        }
+      } catch (err) {
+        // A recent code already exists (cooldown) — the challenge itself was
+        // still created, so completion can proceed against the still-live code.
+        if (!(err instanceof OtpRateLimitError)) {
+          logger.error({ err, provider }, "Failed to open social-link challenge / send OTP");
+          // Fail closed: no challenge id is disclosed if we cannot be sure an
+          // OTP is actually on its way, or if the challenge itself never got
+          // created (provider-unavailable style outage — additive, does not
+          // relax any other check).
+          res.status(503).json({ error: "Verification is temporarily unavailable. Please try again later." });
+          return;
+        }
+      }
+
       logger.warn(
         { provider, emailTrust: identity.emailTrust, targetStudentId: result.targetStudentId },
-        "Social login refused: provider email is not attested for an existing account",
+        "Social login refused: provider email is not attested for an existing account — OTP link challenge issued",
       );
       res.status(409).json({
         error:
           "An account already exists for the email this provider returned. " +
           "Additional verification is required before it can be linked.",
         code: "PROVIDER_LINK_VERIFICATION_REQUIRED",
-        // Forward-compatible flag: Security-01B2 keeps this key and adds the
-        // OTP challenge handle alongside it, so clients written against this
-        // shape keep working.
         requiresLinkVerification: true,
         provider,
         maskedEmail: result.maskedEmail,
+        // Security-01B2: opaque, single-use, short-lived handle for
+        // POST /auth/social-link/verify. Carries no account metadata itself.
+        linkChallengeId: challenge?.challengeId,
+        expiresIn: challenge?.expiresIn,
       });
       return;
     }
@@ -472,5 +533,219 @@ const socialAuthIpLimiter = ipRateLimiter("social-auth", { limit: limitEnv("AUTH
 router.post("/auth/google", socialAuthIpLimiter, makeHandler("google"));
 router.post("/auth/apple", socialAuthIpLimiter, makeHandler("apple"));
 router.post("/auth/facebook", socialAuthIpLimiter, makeHandler("facebook"));
+
+// ─── Security-01B2 — social-link OTP completion / resend ─────────────────────
+//
+// These are the ONLY endpoints that may act on a social_link_challenges row.
+// The client authenticates itself purely by possession of the opaque
+// challenge id (findPendingChallenge hashes it and looks up by digest) —
+// there is no student JWT yet at this point in the flow, by design (no token
+// has been issued; issuing one is exactly what completion is gating). A
+// forged/guessed studentId or providerId in the request body is impossible
+// to exploit because neither is ever read from the body — every fact used to
+// perform the link comes from the challenge row itself, re-validated fresh
+// inside the completion transaction.
+const socialLinkIpLimiter = ipRateLimiter("social-link", { limit: limitEnv("AUTH_SOCIAL_LINK_IP_LIMIT", 30), windowSeconds: 15 * 60 });
+
+const SocialLinkVerifyBody = z.object({
+  challengeId: z.string().min(1),
+  code: z.string().length(6, "Code must be exactly 6 digits"),
+});
+
+router.post("/auth/social-link/verify", socialLinkIpLimiter, async (req, res): Promise<void> => {
+  const parsed = SocialLinkVerifyBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  const { challengeId, code } = parsed.data;
+
+  // Generic, single-shape rejection for every "this can't proceed" case, so
+  // an attacker probing challenge ids/codes cannot distinguish "wrong code"
+  // from "challenge doesn't exist" from "challenge already used" from
+  // "account no longer eligible" — all collapse to the same 400.
+  const REJECTED = {
+    status: 400 as const,
+    body: { error: "This verification code is invalid or has expired.", code: "SOCIAL_LINK_INVALID_CHALLENGE" as const },
+  };
+
+  const outcome = await db.transaction(async (tx) => {
+    const challenge = await findPendingChallenge(tx, challengeId, { lock: true });
+    if (!challenge) return { kind: "rejected" as const };
+
+    const [student] = await tx
+      .select()
+      .from(studentsTable)
+      .where(eq(studentsTable.id, challenge.studentId))
+      .for("update")
+      .limit(1);
+    if (!student) {
+      await invalidateChallenge(tx, challenge.id);
+      return { kind: "rejected" as const };
+    }
+
+    // Re-check every precondition fresh, inside the lock — never trust
+    // anything captured at challenge-creation time to still hold.
+    if (!isActiveAccountStatus(student.accountStatus)) {
+      await invalidateChallenge(tx, challenge.id);
+      return { kind: "rejected" as const };
+    }
+    const activePreparation = await getActivePreparation(tx, student.id);
+    if (activePreparation) {
+      await invalidateChallenge(tx, challenge.id);
+      return { kind: "rejected" as const };
+    }
+    const provider = challenge.provider as ProviderName;
+    const challengeProviderId = challenge.providerId;
+    const challengeRowId = challenge.id;
+
+    // "Still unlinked" must be checked against the ENTIRE table, not just
+    // this row: the provider subject could have been claimed by a DIFFERENT
+    // account since the challenge was issued (its own attested sign-in, or
+    // another concurrent link-completion elsewhere). Locking this row alone
+    // would not see that.
+    async function providerSubjectConflict(): Promise<boolean> {
+      const [claimedBy] = await tx
+        .select({ id: studentsTable.id })
+        .from(studentsTable)
+        .where(eq(providerColumn[provider], challengeProviderId))
+        .for("update")
+        .limit(1);
+      return !!claimedBy && claimedBy.id !== student.id;
+    }
+
+    if (await providerSubjectConflict()) {
+      await invalidateChallenge(tx, challenge.id);
+      return { kind: "rejected" as const };
+    }
+
+    const verifyResult = await verifyOtpCode(student.email, code, "social_link");
+    if (verifyResult.status !== "ok") {
+      // Do NOT invalidate the challenge itself on a wrong/expired code — the
+      // OTP's own attempt-limit/expiry governs retries, exactly like every
+      // other OTP purpose. Only state changes that make the challenge itself
+      // stale invalidate it.
+      return { kind: "otpFailed" as const, verifyResult };
+    }
+
+    // Re-check one more time immediately before the write — the OTP verify
+    // step itself took time, and a lock-free window opened between the
+    // conflict check above and here.
+    if (await providerSubjectConflict()) {
+      await invalidateChallenge(tx, challenge.id);
+      return { kind: "rejected" as const };
+    }
+
+    const [locked] = await tx
+      .select()
+      .from(studentsTable)
+      .where(eq(studentsTable.id, student.id))
+      .for("update")
+      .limit(1);
+    if (!locked) {
+      await invalidateChallenge(tx, challenge.id);
+      return { kind: "rejected" as const };
+    }
+
+    const [updated] = await tx
+      .update(studentsTable)
+      .set({
+        ...providerPatch(provider, challenge.providerId),
+        authProvider: provider,
+        lastLoginAt: new Date().toISOString(),
+        // OTP delivered to and verified against the account's OWN email is
+        // itself an ownership proof — promote unverified accounts exactly as
+        // the direct-attested path does.
+        ...(locked.emailVerified ? {} : { emailVerified: true, emailVerifiedAt: new Date().toISOString() }),
+      })
+      .where(eq(studentsTable.id, locked.id))
+      .returning();
+
+    await consumeChallenge(tx, challenge.id);
+    return { kind: "linked" as const, student: updated!, provider };
+  });
+
+  if (outcome.kind === "rejected") {
+    res.status(REJECTED.status).json(REJECTED.body);
+    return;
+  }
+  if (outcome.kind === "otpFailed") {
+    switch (outcome.verifyResult.status) {
+      case "invalid":
+        res.status(400).json({ error: "Incorrect code. Please try again.", attemptsLeft: outcome.verifyResult.attemptsLeft });
+        return;
+      case "expired":
+        res.status(400).json({ error: "Code expired. Please request a new one.", requiresResend: true });
+        return;
+      case "locked":
+        res.status(429).json({ error: "Too many incorrect attempts. Please request a new code.", requiresResend: true });
+        return;
+    }
+    return;
+  }
+
+  const { student, provider } = outcome;
+  const accessToken = signStudentToken(student.id, student.email, student.emailVerified, student.tokenVersion);
+
+  logger.info({ studentId: student.id, provider, action: "social_link_completed" }, "Social account linked after OTP ownership verification");
+
+  // Best-effort: a notification-delivery failure must never undo or block an
+  // already-successful, already-committed link.
+  try {
+    await createStudentNotification(db, {
+      studentId: student.id,
+      title: "Sign-in method linked",
+      body: `A ${provider === "google" ? "Google" : "Facebook"} account was linked to your Central Studio account.`,
+      type: "security",
+      source: "system",
+    });
+  } catch (err) {
+    logger.warn({ err, studentId: student.id }, "Social-link security notification failed to send (link itself succeeded)");
+  }
+
+  res.json({ student: await publicStudent(student), accessToken, requiresOtp: !student.emailVerified });
+});
+
+const SocialLinkResendBody = z.object({ challengeId: z.string().min(1) });
+
+router.post("/auth/social-link/resend", socialLinkIpLimiter, async (req, res): Promise<void> => {
+  const parsed = SocialLinkResendBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+
+  const challenge = await findPendingChallenge(db, parsed.data.challengeId);
+  // Generic response regardless of whether the challenge is live — never an
+  // existence oracle for challenge ids.
+  const GENERIC = { ok: true };
+  if (!challenge) {
+    res.json(GENERIC);
+    return;
+  }
+
+  const [student] = await db
+    .select({ email: studentsTable.email, accountStatus: studentsTable.accountStatus })
+    .from(studentsTable)
+    .where(eq(studentsTable.id, challenge.studentId));
+  if (!student || !isActiveAccountStatus(student.accountStatus)) {
+    res.json(GENERIC);
+    return;
+  }
+
+  try {
+    await issueOtp(student.email, { studentId: challenge.studentId, purpose: "social_link" });
+  } catch (err) {
+    if (err instanceof OtpRateLimitError) {
+      res.status(429).json({ error: err.message, retryAfter: err.retryAfterSeconds, retryAfterSeconds: err.retryAfterSeconds });
+      return;
+    }
+    await invalidateOtpCodes(student.email, "social_link");
+    logger.error({ err }, "Social-link OTP resend failed");
+    res.status(503).json({ error: "Verification is temporarily unavailable. Please try again later." });
+    return;
+  }
+  res.json(GENERIC);
+});
 
 export default router;

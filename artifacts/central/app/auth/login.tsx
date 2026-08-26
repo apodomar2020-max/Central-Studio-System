@@ -25,6 +25,7 @@ import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 import AppleSignInButton from "@/components/AppleSignInButton";
 import { BackBtn, GhostBtn, FacebookLogo, GoogleLogo } from "@/components/signup/SignupKit";
+import SocialLinkVerifyModal from "@/components/SocialLinkVerifyModal";
 import { continueAfterAuth, postAuthDestination } from "@/services/authProfile";
 import { clearSignupDrafts } from "./register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
@@ -210,6 +211,11 @@ export default function LoginScreen() {
           <Text style={styles.guestText}>Continue browsing as guest</Text>
         </TouchableOpacity>
       </KeyboardAwareScrollView>
+
+      <SocialLinkVerifyModal
+        challenge={google.linkChallenge ?? facebook.linkChallenge}
+        onClose={() => { google.clearLinkChallenge(); facebook.clearLinkChallenge(); }}
+      />
     </View>
   );
 }
