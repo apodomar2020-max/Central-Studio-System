@@ -298,6 +298,67 @@ test("requireAdminAuth rejects a token for a user id that no longer exists (401)
   assert.equal(res.status, 401);
 });
 
+// ─── Security Wave — Admin Session / Browser Security Hardening: token_version revocation ──
+
+test("a token whose tokenVersion claim doesn't match the DB-current value is rejected (401), even for an active account with a correctly-signed token", async () => {
+  const staleAdminId = await makeAdmin("stale-version", { roleId: await makeRole("stale-version", { adminUsers: { view: true } }) });
+  const staleToken = jwtSign({ sub: staleAdminId, username: `admin-rbac-stale-version-${staleAdminId}`, isSuperAdmin: false, roleId: null, tokenVersion: 99 }, ADMIN_JWT_SECRET);
+  const res = await asToken("/api/admin/users", staleToken);
+  assert.equal(res.status, 401, "row's real token_version is 1 (DEFAULT), not 99 — must be rejected");
+});
+
+test("a token with NO tokenVersion claim at all (pre-migration/legacy shape) is treated as version 1 and still works against a freshly-created (token_version=1) row", async () => {
+  const legacyAdminId = await makeAdmin("legacy-claim", { roleId: await makeRole("legacy-claim", { adminUsers: { view: true } }) });
+  const legacyToken = jwtSign({ sub: legacyAdminId, username: `admin-rbac-legacy-claim-${legacyAdminId}`, isSuperAdmin: false, roleId: null }, ADMIN_JWT_SECRET);
+  const res = await asToken("/api/admin/users", legacyToken);
+  assert.equal(res.status, 200, "deploying token_version support must not itself force-logout already-issued tokens");
+});
+
+test("4/5: a password change via PATCH bumps token_version and invalidates every already-issued token for that account", async () => {
+  const targetPassword = "Initial-Password-1";
+  const targetHash = await bcryptHash(targetPassword, 10);
+  const targetId = await makeAdmin("pw-rotate", { passwordHash: targetHash, roleId: await makeRole("pw-rotate", { adminUsers: { view: true } }) });
+  const preChangeToken = tokenFor(targetId);
+
+  // Token works before the password change.
+  const before = await asToken("/api/admin/auth/me", preChangeToken);
+  assert.equal(before.status, 200);
+
+  // A permission-holding admin changes the target's password.
+  const patchRes = await asAdmin(`/api/admin/users/${targetId}`, fullAdminUsersAdminId, {
+    method: "PATCH",
+    body: JSON.stringify({ password: "Rotated-Password-2" }),
+  });
+  assert.equal(patchRes.status, 200);
+
+  // The pre-change token is now rejected — DB-authoritative, not JWT-cached.
+  const after = await asToken("/api/admin/auth/me", preChangeToken);
+  assert.equal(after.status, 401, "a password change must invalidate every already-issued token for the account");
+
+  // A fresh login (new password, new token) works normally.
+  const login = await fetch(apiUrl("/api/admin/auth/login"), {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": "test-api-secret-key" },
+    body: JSON.stringify({ username: `admin-rbac-pw-rotate-${run}`, password: "Rotated-Password-2" }),
+  });
+  assert.equal(login.status, 200);
+  const loginBody = await login.json() as { token: string };
+  const postChange = await asToken("/api/admin/auth/me", loginBody.token);
+  assert.equal(postChange.status, 200, "the newly-issued token (carrying the bumped tokenVersion) must work");
+});
+
+test("6b: a non-password PATCH (e.g. fullName only) does NOT bump token_version — the pre-existing token keeps working", async () => {
+  const targetId = await makeAdmin("no-pw-change", { roleId: await makeRole("no-pw-change", { adminUsers: { view: true, edit: true } }) });
+  const token = tokenFor(targetId);
+  const patchRes = await asAdmin(`/api/admin/users/${targetId}`, fullAdminUsersAdminId, {
+    method: "PATCH",
+    body: JSON.stringify({ fullName: "Renamed Admin" }),
+  });
+  assert.equal(patchRes.status, 200);
+  const stillWorks = await asToken("/api/admin/auth/me", token);
+  assert.equal(stillWorks.status, 200, "an unrelated field update must not revoke existing sessions");
+});
+
 test("JWT claims are cosmetic — a forged isSuperAdmin:true claim for a non-Super-Admin DB user is ignored (403, not 200)", async () => {
   const forgedToken = tokenFor(noPermAdminId, { isSuperAdmin: true });
   const res = await asToken("/api/admin/users", forgedToken);

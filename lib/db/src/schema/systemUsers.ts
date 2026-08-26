@@ -16,6 +16,14 @@ export const systemUsersTable = pgTable("system_users", {
   roleId: integer("role_id"),
   isSuperAdmin: boolean("is_super_admin").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
+  // Security Wave — Admin Session / Browser Security Hardening (migration
+  // 0121). Embedded in the admin JWT at sign time; requireAdminAuth rejects
+  // any token whose embedded version doesn't match this current value.
+  // Incremented on password change so a still-active admin's already-issued
+  // JWTs stop working the moment their password changes — deactivation
+  // already invalidates instantly via the isActive check, independent of
+  // this column.
+  tokenVersion: integer("token_version").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 });

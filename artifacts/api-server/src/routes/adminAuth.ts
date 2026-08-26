@@ -10,6 +10,46 @@
  * it identifies the app, not a person. Admin JWTs identify individual admin
  * users and carry their role/permissions, enabling per-user access control.
  *
+ * ─── Session revocation (Security Wave — Admin Session / Browser Hardening) ──
+ *
+ * requireAdminAuth is already DB-authoritative for account state and RBAC on
+ * every single request: loadAdminIdentity re-reads is_active and re-fetches
+ * the role's current permissions fresh each time, so deactivating an admin
+ * or changing their role/permissions takes effect on their very next
+ * request — no waiting for the 8h JWT to expire, no separate revocation
+ * mechanism needed for those two cases.
+ *
+ * The one gap that left an already-issued JWT usable was a password change:
+ * nothing about the token becomes "wrong" when only the password changes.
+ * system_users.token_version (migration 0121) closes it, mirroring
+ * students.token_version — embedded in the JWT at sign time, incremented
+ * atomically whenever PATCH /admin/users/:id changes a password, and
+ * rejected by requireAdminAuth on mismatch. A token minted before this
+ * column existed carries no claim and is treated as version 1 (matching
+ * every row's DEFAULT 1), so deploying this does not itself force-logout
+ * already-signed-in admins — only an actual password change does.
+ *
+ * ─── Token storage / CSRF (browser posture) ──────────────────────────────────
+ *
+ * The Admin dashboard is a static SPA that stores the JWT in localStorage
+ * and sends it as a custom `X-Admin-Token` header (see
+ * artifacts/admin/src/contexts/AdminAuthContext.tsx) — deliberately NOT a
+ * cookie. CSRF is not this auth mode's primary risk: a cross-site request
+ * (form POST, `<img>`, simple cross-origin fetch) cannot set a custom
+ * header or read localStorage from another origin, so there is no ambient
+ * credential a forged cross-site request could ride on the way a cookie
+ * would provide. The residual risk this mode carries instead is XSS-based
+ * token theft (any script-injection vulnerability in the SPA can read
+ * localStorage) — mitigated by the CSP shipped alongside this change
+ * (artifacts/admin/vercel.json / SECURITY_HEADERS.md), not by a CSRF token.
+ * Migrating to an httpOnly cookie was evaluated and NOT done in this pass:
+ * the API (Railway) and Admin SPA (Vercel) are different origins, so a
+ * cookie-based redesign would require SameSite=None+Secure, `credentials:
+ * true` on every one of dozens of existing fetch call sites, and a real
+ * CSRF-token scheme — a materially riskier rewrite than this single-wave
+ * scope should attempt. Do not introduce a half-cookie/half-bearer scheme
+ * later without doing that migration properly and completely.
+ *
  * Routes:
  *   POST /api/admin/auth/login        — exchange username+password for JWT
  *   GET  /api/admin/auth/me           — return current admin user from JWT
@@ -60,6 +100,15 @@ interface AdminTokenPayload {
   username: string;
   isSuperAdmin: boolean;
   roleId: number | null;
+  // Security Wave — Admin Session / Browser Security Hardening: revocation
+  // check, not an authorization claim. isSuperAdmin/roleId above are only
+  // ever used to shape the initial /login response — every subsequent
+  // request re-derives role/permissions/isActive fresh from the DB via
+  // loadAdminIdentity, so those two fields are already harmless if stale.
+  // tokenVersion is the one payload field requireAdminAuth actually
+  // compares against current DB state to decide whether this token may
+  // still be used at all.
+  tokenVersion: number;
 }
 
 interface AdminRoleIdentity {
@@ -85,6 +134,10 @@ export interface AdminIdentity {
   isActive: true;
   role: AdminRoleIdentity | null;
   permissions: RolePermissions;
+  /** Current DB tokenVersion — requireAdminAuth compares this against the
+   *  value embedded in the presented JWT; loadAdminIdentity itself does not
+   *  know what token (if any) it was called on behalf of. */
+  tokenVersion: number;
 }
 
 function signAdminToken(payload: AdminTokenPayload): string {
@@ -109,6 +162,7 @@ export async function loadAdminIdentity(userId: number): Promise<AdminIdentity |
       roleId: systemUsersTable.roleId,
       isSuperAdmin: systemUsersTable.isSuperAdmin,
       isActive: systemUsersTable.isActive,
+      tokenVersion: systemUsersTable.tokenVersion,
     })
     .from(systemUsersTable)
     .where(eq(systemUsersTable.id, userId))
@@ -148,7 +202,21 @@ export async function loadAdminIdentity(userId: number): Promise<AdminIdentity |
     isActive: true,
     role,
     permissions: role?.permissions ?? {},
+    tokenVersion: user.tokenVersion,
   };
+}
+
+// A token minted before this migration carries no tokenVersion claim at
+// all — treated as version 1, matching every existing row's DEFAULT 1, so
+// deploying this change does not itself mass-log-out every currently
+// signed-in admin. Only an ACTUAL password change (which bumps the DB
+// value past 1) invalidates such a token going forward — same pattern as
+// middlewares/auth.ts's LEGACY_TOKEN_VERSION for Student JWTs.
+const LEGACY_ADMIN_TOKEN_VERSION = 1;
+
+function adminTokenVersionMatches(payload: AdminTokenPayload, identity: AdminIdentity): boolean {
+  const claimed = payload.tokenVersion ?? LEGACY_ADMIN_TOKEN_VERSION;
+  return claimed === identity.tokenVersion;
 }
 
 export async function resolveOptionalAdminIdentity(req: Request): Promise<AdminIdentity | null> {
@@ -156,7 +224,9 @@ export async function resolveOptionalAdminIdentity(req: Request): Promise<AdminI
   if (typeof token !== "string" || token.length === 0) return null;
   try {
     const payload = verifyAdminToken(token);
-    return await loadAdminIdentity(payload.sub);
+    const identity = await loadAdminIdentity(payload.sub);
+    if (!identity || !adminTokenVersionMatches(payload, identity)) return null;
+    return identity;
   } catch {
     return null;
   }
@@ -188,6 +258,15 @@ export async function requireAdminAuth(req: AdminRequest, res: Response, next: N
     const identity = await loadAdminIdentity(payload.sub);
     if (!identity) {
       res.status(401).json({ error: "Admin account not found or inactive" });
+      return;
+    }
+    if (!adminTokenVersionMatches(payload, identity)) {
+      // Security Wave — Admin Session / Browser Security Hardening: the
+      // account itself is fine (active, DB-loadable) but THIS token was
+      // minted before a security-sensitive event (a password change) —
+      // generic 401, same status/shape as every other rejection here so a
+      // client cannot distinguish "revoked" from "expired" from "invalid".
+      res.status(401).json({ error: "Invalid or expired admin token" });
       return;
     }
 
@@ -360,6 +439,7 @@ router.post("/admin/auth/login", adminLoginIpLimiter, adminLoginAccountLimiter, 
     username: user.username,
     isSuperAdmin: user.isSuperAdmin,
     roleId: user.roleId,
+    tokenVersion: user.tokenVersion,
   });
 
   // Load role permissions for the response
@@ -554,6 +634,15 @@ router.patch("/admin/users/:id", requireAdminAuth, async (req: AdminRequest, res
   if (parsed.data.roleId !== undefined) updates.roleId = parsed.data.roleId;
   if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
   if (parsed.data.password !== undefined) updates.passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  // Security Wave — Admin Session / Browser Security Hardening: a password
+  // change must invalidate every already-issued JWT for this account, not
+  // just future logins. Kept out of the plain `updates` object (typed as
+  // Partial<$inferInsert>, i.e. plain column values) since this is a SQL
+  // atomic-increment expression, not a value — merged in at the `.set()`
+  // call site below, matching the existing tokenVersion-bump pattern in
+  // routes/auth.ts / routes/students.ts. Atomic (not read-then-write) so a
+  // concurrent password change can never clobber another one's bump.
+  const passwordChanged = parsed.data.password !== undefined;
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No user fields provided to update." });
     return;
@@ -639,7 +728,10 @@ router.patch("/admin/users/:id", requireAdminAuth, async (req: AdminRequest, res
 
       const [row] = await tx
         .update(systemUsersTable)
-        .set(updates)
+        .set({
+          ...updates,
+          ...(passwordChanged ? { tokenVersion: sql`${systemUsersTable.tokenVersion} + 1` } : {}),
+        })
         .where(eq(systemUsersTable.id, id))
         .returning({ id: systemUsersTable.id, username: systemUsersTable.username, isActive: systemUsersTable.isActive });
       return row;

@@ -44,6 +44,7 @@ test("admin background music view requires the existing settings view permission
       roleId: 1,
       isActive: true,
       role: null,
+      tokenVersion: 1,
       permissions: { settings: { edit: true } },
     },
   }, "settings", "view");
@@ -61,6 +62,7 @@ test("admin background music view requires the existing settings view permission
       roleId: 1,
       isActive: true,
       role: null,
+      tokenVersion: 1,
       permissions: { settings: { view: true } },
     },
   }, "settings", "view");
@@ -79,6 +81,7 @@ test("admin background music update and URL test require settings edit permissio
       roleId: 1,
       isActive: true,
       role: null,
+      tokenVersion: 1,
       permissions: { settings: { view: true } },
     },
   }, "settings", "edit");
@@ -96,6 +99,7 @@ test("admin background music update and URL test require settings edit permissio
       roleId: 1,
       isActive: true,
       role: null,
+      tokenVersion: 1,
       permissions: { settings: { edit: true } },
     },
   }, "settings", "edit");

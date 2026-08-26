@@ -43,6 +43,7 @@ function admin(permissions: AdminIdentity["permissions"]): AdminIdentity {
     roleId: 1,
     isActive: true,
     role: null,
+    tokenVersion: 1,
     permissions,
   };
 }
