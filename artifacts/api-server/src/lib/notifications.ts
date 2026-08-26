@@ -61,7 +61,7 @@ export async function resolveStudentTarget(
     .limit(1);
 
   if (!student) {
-    logger.warn({ studentEmail: normalizeEmail(studentEmail) }, "Student notification skipped: student not found");
+    logger.warn({ reason: "student_not_found" }, "Student notification skipped");
     return null;
   }
 

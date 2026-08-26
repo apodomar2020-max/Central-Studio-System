@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { captureError, initErrorMonitoring } from "./lib/errorMonitoring";
 import {
   defaultJobOptions,
+  queueConcurrency,
   getQueue,
   getQueueConnection,
   BALLET_CANCELLATION_FINALIZATION_SCHEDULES,
@@ -55,7 +56,7 @@ const whatsappWorker = new Worker<WhatsAppCampaignSendJob>(
     logger.info({ jobId: job.id, campaignId: job.data.campaignId }, "Processing WhatsApp campaign job");
     return processWhatsAppCampaignBatch(job.data);
   },
-  { connection, concurrency: Number.parseInt(process.env["WHATSAPP_QUEUE_CONCURRENCY"] ?? "1", 10) },
+  { connection, concurrency: queueConcurrency("WHATSAPP_QUEUE_CONCURRENCY") },
 );
 
 const reportsWorker = new Worker<ReportJob>(
@@ -64,7 +65,7 @@ const reportsWorker = new Worker<ReportJob>(
     logger.info({ jobId: job.id, reportJobId: job.data.reportJobId }, "Processing report job");
     await processReportJob(job.data.reportJobId);
   },
-  { connection, concurrency: Number.parseInt(process.env["REPORT_QUEUE_CONCURRENCY"] ?? "1", 10) },
+  { connection, concurrency: queueConcurrency("REPORT_QUEUE_CONCURRENCY") },
 );
 
 const notificationAutomationWorker = new Worker<NotificationAutomationJob>(
@@ -95,7 +96,7 @@ const notificationAutomationWorker = new Worker<NotificationAutomationJob>(
       await recordReminderWorkerRun({
         ...heartbeatBase,
         status: "error",
-        summary: { jobType: job.data.type, error: err instanceof Error ? err.message : "unknown error" },
+        summary: { jobType: job.data.type, errorCode: "worker_execution_failed" },
       }).catch((heartbeatErr) => captureError(heartbeatErr, { component: "queue-worker", phase: "reminder-heartbeat-after-failure" }));
       throw err;
     }
@@ -106,7 +107,7 @@ const notificationAutomationWorker = new Worker<NotificationAutomationJob>(
     }).catch((heartbeatErr) => captureError(heartbeatErr, { component: "queue-worker", phase: "reminder-heartbeat-after-success" }));
     return result;
   },
-  { connection, concurrency: Number.parseInt(process.env["NOTIFICATION_AUTOMATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
+  { connection, concurrency: queueConcurrency("NOTIFICATION_AUTOMATION_QUEUE_CONCURRENCY") },
 );
 
 const balletCancellationFinalizationWorker = new Worker<BalletCancellationFinalizationJob>(
@@ -115,7 +116,7 @@ const balletCancellationFinalizationWorker = new Worker<BalletCancellationFinali
     logger.info({ jobId: job.id, type: job.data.type }, "Processing Ballet cancellation finalization job");
     return processBalletCancellationFinalizationJob(job.data);
   },
-  { connection, concurrency: Number.parseInt(process.env["BALLET_CANCELLATION_FINALIZATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
+  { connection, concurrency: queueConcurrency("BALLET_CANCELLATION_FINALIZATION_QUEUE_CONCURRENCY") },
 );
 
 const balletAutoAbsenceWorker = new Worker<BalletAutoAbsenceJob>(
@@ -130,7 +131,7 @@ const balletAutoAbsenceWorker = new Worker<BalletAutoAbsenceJob>(
       },
     });
   },
-  { connection, concurrency: Number.parseInt(process.env["BALLET_AUTO_ABSENCE_QUEUE_CONCURRENCY"] ?? "1", 10) },
+  { connection, concurrency: queueConcurrency("BALLET_AUTO_ABSENCE_QUEUE_CONCURRENCY") },
 );
 
 const packageCreditExpirationWorker = new Worker<PackageCreditExpirationJob>(
@@ -140,7 +141,7 @@ const packageCreditExpirationWorker = new Worker<PackageCreditExpirationJob>(
     if (job.data.type !== "expire_due_packages") throw new Error(`Unsupported package credit expiration job type: ${job.data.type}`);
     return runPackageCreditExpirationBatch({ batchSize: job.data.batchSize });
   },
-  { connection, concurrency: Number.parseInt(process.env["PACKAGE_CREDIT_EXPIRATION_QUEUE_CONCURRENCY"] ?? "1", 10) },
+  { connection, concurrency: queueConcurrency("PACKAGE_CREDIT_EXPIRATION_QUEUE_CONCURRENCY") },
 );
 
 for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker, packageCreditExpirationWorker]) {

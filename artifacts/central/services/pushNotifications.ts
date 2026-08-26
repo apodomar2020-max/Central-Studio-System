@@ -26,10 +26,6 @@ function pushDiag(message: string, data?: Record<string, unknown>): void {
   console.log(`[PUSH_DIAG] ${message}`, data ?? {});
 }
 
-function tokenPrefix(token: string): string {
-  return token.slice(0, 12);
-}
-
 function redactForLog(value: unknown, key = ""): unknown {
   if (SENSITIVE_KEY_PATTERN.test(key)) return REDACTED;
   if (Array.isArray(value)) return value.map((item) => redactForLog(item));
@@ -356,7 +352,6 @@ async function registerPushNotifications(): Promise<void> {
   const pushToken = tokenResponse.data;
   pushDiag("token received", {
     received: Boolean(pushToken),
-    tokenPrefix: pushToken ? tokenPrefix(pushToken) : null,
   });
   if (!pushToken) {
     pushDiag("register skipped", { reason: "empty_token" });
@@ -372,7 +367,6 @@ async function registerPushNotifications(): Promise<void> {
     }
     if (logoutInProgress) return;
     pushDiag("register API request", {
-      tokenPrefix: tokenPrefix(pushToken),
       platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "unknown",
     });
     const deviceId = await getDeviceId();
@@ -400,14 +394,12 @@ async function registerPushNotifications(): Promise<void> {
       ok: response?.ok === true,
       id: response?.id ?? null,
       isActive: response?.isActive ?? null,
-      tokenPrefix: tokenPrefix(pushToken),
     });
-    pushDiag("register final success", { tokenPrefix: tokenPrefix(pushToken) });
+    pushDiag("register final success");
     if (response.unregisterSecret) await setUnregisterSecret(response.unregisterSecret);
     await clearPendingUnregister();
   } catch (error) {
     pushDiag("register API failure", {
-      tokenPrefix: tokenPrefix(pushToken),
       error: error instanceof Error ? error.message : "unknown",
     });
     throw error;

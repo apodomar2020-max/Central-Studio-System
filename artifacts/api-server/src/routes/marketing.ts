@@ -901,8 +901,6 @@ router.post("/marketing/campaigns/:id/send", requireAdminAuth, requireAdminPermi
     "send-campaign-batch",
     {
       campaignId: params.data.id,
-      actorEmail: req.adminUser?.email ?? null,
-      ipAddress: req.ip ?? null,
     },
   );
 

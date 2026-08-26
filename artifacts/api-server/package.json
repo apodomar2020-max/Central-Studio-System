@@ -24,6 +24,7 @@
     "@swc/helpers": "^0.5.23",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@xmldom/xmldom": "^0.9.12",
     "bcryptjs": "^2.4.3",
     "bidi-js": "^1.0.3",
     "bullmq": "^5.79.2",

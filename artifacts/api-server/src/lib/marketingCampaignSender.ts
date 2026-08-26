@@ -13,8 +13,6 @@ import { enqueueJob, QUEUE_NAMES, type WhatsAppCampaignSendJob } from "./queue";
 
 export type SendCampaignBatchInput = {
   campaignId: number;
-  actorEmail?: string | null;
-  ipAddress?: string | null;
 };
 
 export type SendCampaignBatchResult = {
@@ -171,7 +169,7 @@ export async function processWhatsAppCampaignBatch(input: SendCampaignBatchInput
 
       batchSentCount++;
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "WhatsApp Cloud API request failed.";
+      const errorMsg = "WhatsApp delivery failed.";
       let errorCode = undefined;
       let providerStatus = undefined;
       if (err instanceof WhatsAppCloudError) {
@@ -191,7 +189,7 @@ export async function processWhatsAppCampaignBatch(input: SendCampaignBatchInput
         status: "failed",
         errorCode,
         errorMessage: errorMsg,
-        payload: { error: err instanceof Error ? err.stack : err, providerStatus },
+        payload: { errorCode: errorCode ?? null, providerStatus: providerStatus ?? null },
       });
     }
   }

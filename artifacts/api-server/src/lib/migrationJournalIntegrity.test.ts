@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Future collision guard (Phase A — ballet_schedules.capacity corrective
@@ -28,13 +29,23 @@ interface JournalEntry {
   breakpoints: boolean;
 }
 
-const KNOWN_HISTORICAL_WHEN_COLLISION = {
-  when: 1784462414000,
-  tags: ["0059_drop_ballet_assessment_slots", "0060_ballet_schedule_capacity"],
-};
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+
+const KNOWN_HISTORICAL_WHEN_COLLISIONS = [
+  {
+    when: 1784462414000,
+    tags: ["0059_drop_ballet_assessment_slots", "0060_ballet_schedule_capacity"],
+  },
+  {
+    // 0123 is the forward-only reconciliation for the independently shipped
+    // 0119/0120 collision. Historical journal entries must not be rewritten.
+    when: 1788019200001,
+    tags: ["0119_student_permanent_delete_fields", "0120_social_link_challenges"],
+  },
+];
 
 function loadJournal(): JournalEntry[] {
-  const journalPath = resolve(process.cwd(), "lib/db/migrations/meta/_journal.json");
+  const journalPath = resolve(REPO_ROOT, "lib/db/migrations/meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8"));
   return journal.entries;
 }
@@ -49,7 +60,7 @@ test("no two journal entries share a tag", () => {
   }
 });
 
-test("no two journal entries share a `when` value, except the documented historical 0059/0060 collision", () => {
+test("no two journal entries share a `when` value, except documented historical collisions with forward repairs", () => {
   const entries = loadJournal();
   const byWhen = new Map<number, JournalEntry[]>();
   for (const entry of entries) {
@@ -60,16 +71,29 @@ test("no two journal entries share a `when` value, except the documented histori
 
   const duplicateGroups = [...byWhen.values()].filter((group) => group.length > 1);
 
-  assert.equal(duplicateGroups.length, 1, `expected exactly one duplicated \`when\` value (the documented 0059/0060 collision); found ${duplicateGroups.length}`);
-
-  const [group] = duplicateGroups;
-  assert.equal(group!.length, 2, "the documented collision must involve exactly two entries, not more");
-  assert.equal(group![0]!.when, KNOWN_HISTORICAL_WHEN_COLLISION.when);
-  assert.deepEqual(
-    group!.map((e) => e.tag).sort(),
-    [...KNOWN_HISTORICAL_WHEN_COLLISION.tags].sort(),
-    "the only permitted duplicate `when` is the documented 0059/0060 pair — any other pair is a new, unpermitted collision",
+  assert.equal(
+    duplicateGroups.length,
+    KNOWN_HISTORICAL_WHEN_COLLISIONS.length,
+    `expected only the ${KNOWN_HISTORICAL_WHEN_COLLISIONS.length} documented collisions; found ${duplicateGroups.length}`,
   );
+
+  for (const expected of KNOWN_HISTORICAL_WHEN_COLLISIONS) {
+    const group = duplicateGroups.find((candidate) => candidate[0]!.when === expected.when);
+    assert.ok(group, `missing documented collision at ${expected.when}`);
+    assert.equal(group.length, 2, "a documented collision must involve exactly two entries, not more");
+    assert.deepEqual(
+      group.map((entry) => entry.tag).sort(),
+      [...expected.tags].sort(),
+      `unexpected migration pair at duplicated when=${expected.when}`,
+    );
+  }
+});
+
+test("the 0119/0120 collision has a forward-only social-link table reconciliation", () => {
+  const repairPath = resolve(REPO_ROOT, "lib/db/migrations/0123_social_link_challenges_reconciliation.sql");
+  const repair = readFileSync(repairPath, "utf8");
+  assert.match(repair, /CREATE TABLE IF NOT EXISTS "social_link_challenges"/);
+  assert.match(repair, /CREATE UNIQUE INDEX IF NOT EXISTS "social_link_challenges_token_hash_unique"/);
 });
 
 test("the newest journal entry has a strictly greater idx than the entry before it", () => {
@@ -90,6 +114,6 @@ test("the newest journal entry's `when` is strictly greater than every other ent
 test("the newest journal entry's referenced SQL migration file exists on disk", () => {
   const entries = loadJournal();
   const newest = entries[entries.length - 1]!;
-  const migrationPath = resolve(process.cwd(), `lib/db/migrations/${newest.tag}.sql`);
+  const migrationPath = resolve(REPO_ROOT, `lib/db/migrations/${newest.tag}.sql`);
   assert.ok(existsSync(migrationPath), `expected migration file to exist: ${migrationPath}`);
 });

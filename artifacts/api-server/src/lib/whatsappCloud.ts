@@ -18,7 +18,6 @@ export interface SendTemplateMessageResult {
   raw: {
     messagingProduct?: string;
     messaging_product?: string;
-    contacts?: Array<{ input?: string; wa_id?: string }>;
     messages?: Array<{ id?: string; message_status?: string }>;
   };
 }
@@ -194,7 +193,6 @@ export async function sendTemplateMessage(input: SendTemplateMessageInput): Prom
     providerMessageId: raw.messages?.[0]?.id ?? null,
     raw: {
       messagingProduct: raw.messagingProduct ?? raw.messaging_product,
-      contacts: raw.contacts,
       messages: raw.messages,
     },
   };

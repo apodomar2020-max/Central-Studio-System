@@ -58,8 +58,6 @@ export function routeAfterAuth(user: User) {
   if (__DEV__) {
     console.log("[AUTH_NAV] routeAfterAuth", {
       userId: user.id,
-      email: user.email,
-      authProvider: user.authProvider,
       emailVerified: user.emailVerified,
       nextStep: user.profileCompletion?.nextStep ?? null,
       destination,
@@ -170,8 +168,6 @@ export async function continueAfterAuth(
   if (__DEV__) {
     console.log("[AUTH_NAV] continueAfterAuth fetchedUser", {
       userId: user.id,
-      email: user.email,
-      authProvider: user.authProvider,
       emailVerified: user.emailVerified,
       nextStep: user.profileCompletion?.nextStep ?? null,
       destination: postAuthDestination(user),

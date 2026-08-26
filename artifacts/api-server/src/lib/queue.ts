@@ -15,15 +15,10 @@ export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];
 
 export type WhatsAppCampaignSendJob = {
   campaignId: number;
-  actorEmail?: string | null;
-  ipAddress?: string | null;
 };
 
 export type ReportJob = {
   reportJobId: number;
-  entity: string;
-  filters?: Record<string, unknown>;
-  format?: "json" | "xlsx" | "pdf";
 };
 
 export type NotificationAutomationJob = {
@@ -121,10 +116,20 @@ export const PACKAGE_CREDIT_EXPIRATION_SCHEDULES: readonly { schedulerId: string
  * `enqueueJob` path and the startup schedulers register jobs with identical
  * resilience settings.
  */
+function boundedIntegerEnv(name: string, fallback: number, minimum: number, maximum: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(maximum, Math.max(minimum, parsed));
+}
+
+export function queueConcurrency(name: string, fallback = 1): number {
+  return boundedIntegerEnv(name, fallback, 1, 20);
+}
+
 export function defaultJobOptions(): JobsOptions {
   return {
-    attempts: Number.parseInt(process.env["QUEUE_JOB_ATTEMPTS"] ?? "3", 10),
-    backoff: { type: "exponential", delay: Number.parseInt(process.env["QUEUE_JOB_BACKOFF_MS"] ?? "5000", 10) },
+    attempts: boundedIntegerEnv("QUEUE_JOB_ATTEMPTS", 3, 1, 10),
+    backoff: { type: "exponential", delay: boundedIntegerEnv("QUEUE_JOB_BACKOFF_MS", 5_000, 100, 300_000) },
     removeOnComplete: 100,
     removeOnFail: 500,
   };

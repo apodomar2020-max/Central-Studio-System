@@ -28,10 +28,14 @@ const DANCE_TYPE_ACTIVITY_FIELDS = ["name", "slug", "description", "iconUrl", "c
  * `iconSvgUrl` (the serve endpoint) for admin/web consumers.
  */
 function shapeDanceType(row: typeof danceTypesTable.$inferSelect) {
+  const safeIcon = row.iconSvg ? sanitizeSvg(row.iconSvg) : null;
+  const iconSvg = safeIcon && "svg" in safeIcon ? safeIcon.svg : null;
   return {
     ...row,
-    hasIconSvg: !!row.iconSvg,
-    iconSvgUrl: row.iconSvg ? `/api/dance-types/${row.id}/icon.svg` : null,
+    iconSvg,
+    iconMime: iconSvg ? "image/svg+xml" : null,
+    hasIconSvg: !!iconSvg,
+    iconSvgUrl: iconSvg ? `/api/dance-types/${row.id}/icon.svg` : null,
   };
 }
 
@@ -416,9 +420,20 @@ router.get("/dance-types/:id/icon.svg", async (req, res) => {
       res.status(404).end();
       return;
     }
+    const safeIcon = sanitizeSvg(row.iconSvg);
+    if ("error" in safeIcon) {
+      res.status(404).end();
+      return;
+    }
     res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Disposition", 'inline; filename="dance-type-icon.svg"');
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'none'; script-src 'none'; style-src 'none'; object-src 'none'; frame-ancestors 'none'; sandbox",
+    );
     res.setHeader("Cache-Control", "public, max-age=86400");
-    res.send(row.iconSvg);
+    res.send(safeIcon.svg);
   } catch (err) {
     console.error("[dance-types] serve icon error:", err);
     res.status(500).end();

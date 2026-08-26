@@ -214,7 +214,7 @@ async function sendEmail(payload: EmailPayload): Promise<void> {
   const config = getEmailConfig();
   if (!config) {
     if (process.env["NODE_ENV"] !== "production") {
-      logger.info({ to: payload.to, subject: payload.subject }, "DEV MODE — email not sent; provider not configured");
+      logger.info({ event: "email_provider_unconfigured_dev" }, "DEV MODE — email not sent; provider not configured");
       return;
     }
     throw new EmailProviderConfigurationError("Email provider not configured. Set BREVO_API_KEY and EMAIL_FROM.");
@@ -274,7 +274,7 @@ export function __setOtpEmailTestListener(fn: typeof otpEmailTestListener): void
 export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose): Promise<void> {
   otpEmailTestListener?.(to, code, purpose);
   await sendEmail({ to, ...otpEmailContent(code, purpose) });
-  logger.info({ to, purpose }, "OTP email sent");
+  logger.info({ purpose }, "OTP email sent");
 }
 
 export async function sendSecurityNotificationEmail(
@@ -282,7 +282,7 @@ export async function sendSecurityNotificationEmail(
   event: "password_reset" | "password_changed",
 ): Promise<void> {
   await sendEmail({ to, ...securityEmailContent(event) });
-  logger.info({ to, event }, "Password security notification email sent");
+  logger.info({ event }, "Password security notification email sent");
 }
 
 export class OtpRateLimitError extends Error {
@@ -448,7 +448,7 @@ export async function issueOtp(
     await db.delete(emailOtpsTable).where(eq(emailOtpsTable.id, otpId));
     throw error;
   }
-  logger.info({ email: normalizedEmail, purpose }, "OTP issued");
+  logger.info({ studentId: opts.studentId ?? null, purpose }, "OTP issued");
 
   return { expiresIn: OTP_TTL_SECONDS };
 }

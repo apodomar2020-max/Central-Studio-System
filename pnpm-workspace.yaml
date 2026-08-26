@@ -173,14 +173,19 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
-  # Security: fix vulnerable transitive dependencies (pinned to minimum safe versions)
-  picomatch: "4.0.4"
-  path-to-regexp: "8.4.2"
-  lodash: "4.18.1"
-  brace-expansion: "5.0.6"
-  yaml: "2.8.4"
-  postcss: "8.5.13"
-  uuid: "14.0.0"
-  fast-uri: "3.1.2"
-  ws: "8.21.0"
-  qs: "6.15.2"
+  # Security: patch transitive dependencies without crossing consumer majors.
+  # Range-scoped selectors are deliberate: bare overrides previously risked
+  # forcing incompatible major versions into Expo and other build tooling.
+  "brace-expansion@>=2 <3": "2.1.4"
+  "fast-uri@>=3 <4": "3.1.5"
+  "ip-address@>=10 <11": "10.3.1"
+  "js-yaml@>=3 <4": "3.15.1"
+  "js-yaml@>=4 <5": "4.3.1"
+  "lodash@>=4 <5": "4.18.1"
+  "minimatch@>=9 <10": "9.0.9"
+  "nanoid@>=3 <4": "3.3.18"
+  "postcss@>=8 <9": "8.5.23"
+  "qs@>=6 <7": "6.15.2"
+  "shell-quote@>=1 <2": "1.9.0"
+  "tar@>=7 <8": "7.5.21"
+  "undici@>=6 <7": "6.28.0"
