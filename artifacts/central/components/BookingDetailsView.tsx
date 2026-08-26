@@ -38,7 +38,7 @@ import {
 
 const CYAN = "#03B6D7";
 const INK = "#050607";
-const CARD = "#003438";
+const CARD = "#012329";
 const MUTED = "#B6BDC6";
 const GREEN = "#24C65A";
 const AMBER = "#FFC400";
