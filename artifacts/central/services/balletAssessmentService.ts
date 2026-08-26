@@ -126,6 +126,7 @@ export interface BalletPackageOption {
   monthlyClasses: number;
   monthlyHours: number;
   priceEgp: number;
+  imageUrl?: string | null;
   levelIds: number[];
 }
 

@@ -23,7 +23,7 @@ import { diffFields, logActivity } from "../lib/activityLog";
 import type { DbClient } from "../lib/dbTypes";
 
 const router: IRouter = Router();
-const BALLET_PACKAGE_ACTIVITY_FIELDS = ["name", "monthlyClasses", "monthlyHours", "priceEgp", "isActive"] as const;
+const BALLET_PACKAGE_ACTIVITY_FIELDS = ["name", "monthlyClasses", "monthlyHours", "priceEgp", "imageUrl", "isActive"] as const;
 
 function arraysEqualAsSets(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
@@ -91,6 +91,7 @@ const CreatePackageBody = z.object({
   monthlyClasses: z.number({ required_error: "monthlyClasses is required" }).int().positive(),
   monthlyHours:   z.number({ required_error: "monthlyHours is required" }).int().positive(),
   priceEgp:       z.number({ required_error: "priceEgp is required" }).int().positive(),
+  imageUrl:       z.string().trim().url("Image URL must be a valid URL").nullable().optional(),
   levelIds:       z.array(z.number().int().positive()).optional(),
   isActive:       z.boolean().optional(),
 });

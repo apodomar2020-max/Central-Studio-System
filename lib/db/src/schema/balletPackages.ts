@@ -14,6 +14,7 @@ export const balletPackagesTable = pgTable("ballet_packages", {
   monthlyClasses: integer("monthly_classes").notNull(),
   monthlyHours:   integer("monthly_hours").notNull(),
   priceEgp:       integer("price_egp").notNull(),
+  imageUrl:       text("image_url"),
   isActive:       boolean("is_active").notNull().default(true),
   createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),

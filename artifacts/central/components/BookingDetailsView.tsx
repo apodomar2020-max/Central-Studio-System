@@ -8,7 +8,6 @@ import {
   Image,
   Linking,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -232,11 +231,11 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
   }
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = (Platform.OS === "web" ? 24 : insets.bottom) + 28;
+  const bottomPad = Platform.OS === "web" ? 20 : Math.max(insets.bottom, 12);
 
   return (
     <View style={styles.screen}>
-      <ScrollView showsVerticalScrollIndicator={false} bounces={false} contentContainerStyle={{ paddingBottom: bottomPad }}>
+      <View style={styles.fixedContent}>
         <View style={styles.hero}>
           {heroImage && !heroFailed ? (
             <Image source={{ uri: heroImage }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setHeroFailed(true)} />
@@ -255,7 +254,7 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
               <Text style={styles.paymentText}>{payment.label}</Text>
             </View>
           </View>
-          <Text style={styles.description}>{description}</Text>
+          <Text style={styles.description} numberOfLines={3}>{description}</Text>
 
           <View style={styles.schedulePanel}>
             <GlassView glassEffectStyle="clear" tintColor="rgba(255,255,255,0.08)" colorScheme="dark" pointerEvents="none" style={StyleSheet.absoluteFill} />
@@ -289,24 +288,25 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
 
         <View style={styles.instructorAndTags}>
           <TouchableOpacity style={styles.instructor} onPress={openInstructor} disabled={!instructorId} activeOpacity={0.82}>
-            <PersonAvatar image={instructorPhoto} name={instructorName} size={38} />
+            <PersonAvatar image={instructorPhoto} name={instructorName} size={42} />
             <View style={styles.instructorCopy}>
               <Text style={styles.instructorLabel}>Instructor</Text>
               <Text style={styles.instructorName} numberOfLines={1}>{instructorName}</Text>
             </View>
           </TouchableOpacity>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tags}>
+          <View style={styles.tags}>
             <View style={[styles.tag, styles.styleTag]}>
-              <CategoryIcon iconSvg={danceType?.iconSvg} iconUrl={danceType?.iconUrl} name={classType} color={danceType?.color || CYAN} size={13} />
-              <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1}>{classType}</Text>
+              <CategoryIcon iconSvg={danceType?.iconSvg} iconUrl={danceType?.iconUrl} name={classType} color={danceType?.color || CYAN} size={15} />
+              <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{classType}</Text>
             </View>
-            <View style={[styles.tag, { backgroundColor: levelColor(level) }]}><Text style={styles.tagText}>{level}</Text></View>
-            <View style={[styles.tag, { backgroundColor: ageColor(age) }]}><Text style={styles.tagText}>{age}</Text></View>
-          </ScrollView>
+            <View style={[styles.tag, { backgroundColor: levelColor(level) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{level}</Text></View>
+            <View style={[styles.tag, { backgroundColor: ageColor(age) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{age}</Text></View>
+          </View>
         </View>
+      </View>
 
-        <View style={styles.actionCard}>
+        <View style={[styles.actionCard, { paddingBottom: bottomPad }]}>
           <Text style={styles.actionTitle}>Before Your Class</Text>
           <Text style={styles.actionDescription}>
             Come ready to move in comfortable clothing, bring water, and follow any class-specific guidance shared by your instructor.
@@ -336,22 +336,22 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
             <Text style={styles.cancelText}>{isCancelled ? "Booking Cancelled" : canCancel ? "Cancel Booking" : "Cancellation Closed"}</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { ...StyleSheet.absoluteFillObject, zIndex: 100, backgroundColor: INK },
-  hero: { height: 246, position: "relative", backgroundColor: "#17191D" },
+  fixedContent: { flex: 1, minHeight: 0 },
+  hero: { height: 210, position: "relative", backgroundColor: "#17191D" },
   back: { position: "absolute", left: 16, zIndex: 10 },
-  mainCard: { marginTop: -35, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 30, paddingBottom: 38, zIndex: 3 },
+  mainCard: { flexShrink: 0, marginTop: -35, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 26, paddingBottom: 26, zIndex: 3 },
   titleRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
   title: { flex: 1, color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, textTransform: "uppercase" },
   paymentPill: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 30, paddingHorizontal: 13, borderRadius: 999, marginTop: 2 },
   paymentText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 11.5 },
   description: { marginTop: 4, color: "#D2D7DC", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20 },
-  schedulePanel: { height: 80, borderRadius: 15, overflow: "hidden", marginTop: 20, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
+  schedulePanel: { height: 80, borderRadius: 15, overflow: "hidden", marginTop: 16, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
   scheduleContent: { flex: 1, flexDirection: "row", paddingHorizontal: 7, paddingVertical: 9 },
   scheduleCell: { flex: 1, minWidth: 0, alignItems: "center", justifyContent: "center", gap: 2 },
   separator: { width: 1, marginVertical: 3, backgroundColor: "rgba(255,255,255,0.28)" },
@@ -359,19 +359,19 @@ const styles = StyleSheet.create({
   scheduleLabel: { width: "100%", textAlign: "center", color: "#AEB5BE", fontFamily: "Archivo_400Regular", fontSize: 9.5, lineHeight: 11 },
   avatar: { overflow: "hidden", backgroundColor: "rgba(0,182,215,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.52)", alignItems: "center", justifyContent: "center" },
   avatarInitial: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 11 },
-  instructorAndTags: { minHeight: 68, paddingHorizontal: 19, flexDirection: "row", alignItems: "center", gap: 12 },
-  instructor: { flexDirection: "row", alignItems: "center", flexShrink: 1, minWidth: 120 },
-  instructorCopy: { marginLeft: 8, flexShrink: 1 },
-  instructorLabel: { color: "#7F8892", fontFamily: "Archivo_400Regular", fontSize: 9, lineHeight: 11 },
-  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 17, lineHeight: 20 },
-  tags: { alignItems: "center", gap: 5, paddingRight: 4 },
-  tag: { height: 28, minWidth: 58, paddingHorizontal: 12, borderRadius: 999, alignItems: "center", justifyContent: "center" },
-  styleTag: { backgroundColor: "#FFFFFF", flexDirection: "row", gap: 4 },
-  tagText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 9.5 },
+  instructorAndTags: { flex: 1, minHeight: 72, width: "100%", paddingHorizontal: 19, flexDirection: "row", alignItems: "center", gap: 7, overflow: "hidden" },
+  instructor: { width: 122, flexDirection: "row", alignItems: "center", flexShrink: 0 },
+  instructorCopy: { flex: 1, minWidth: 0, marginLeft: 7 },
+  instructorLabel: { color: "#7F8892", fontFamily: "Archivo_400Regular", fontSize: 10.5, lineHeight: 13 },
+  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 19, lineHeight: 22 },
+  tags: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 },
+  tag: { height: 32, minWidth: 0, maxWidth: "32%", paddingHorizontal: 9, borderRadius: 999, alignItems: "center", justifyContent: "center", flexShrink: 1 },
+  styleTag: { maxWidth: "40%", backgroundColor: "#FFFFFF", flexDirection: "row", gap: 4 },
+  tagText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 10.5 },
   styleTagText: { color: CYAN },
-  actionCard: { borderTopLeftRadius: 46, borderTopRightRadius: 46, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 36, paddingBottom: 22 },
+  actionCard: { flexShrink: 0, borderTopLeftRadius: 46, borderTopRightRadius: 46, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 30 },
   actionTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 16, lineHeight: 21 },
-  actionDescription: { color: "#D2D7DC", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20, marginTop: 7, marginBottom: 28 },
+  actionDescription: { color: "#D2D7DC", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20, marginTop: 7, marginBottom: 20 },
   actionRow: { flexDirection: "row", gap: 12 },
   outlineButton: { flex: 1, height: 52, borderRadius: 26, borderWidth: 1.3, borderColor: CYAN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   outlineText: { color: CYAN, fontFamily: "Archivo_700Bold", fontSize: 14 },

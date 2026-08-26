@@ -26,7 +26,6 @@ import { Booking } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import BookingCard from "@/components/BookingCard";
-import BookingDetailsView from "@/components/BookingDetailsView";
 import CentralBackButton from "@/components/CentralBackButton";
 import SBI from "@/components/SbIcon";
 import EmptyState from "@/components/EmptyState";
@@ -457,7 +456,6 @@ export default function BookingsScreen() {
   const insets = useSafeAreaInsets();
   const [studentFilter, setStudentFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedItem, setSelectedItem] = useState<ListItem | null>(null);
   const classPhotoById = useMemo(() => {
     const photos = new Map<string, string>();
     (bookingClasses ?? []).forEach((danceClass) => {
@@ -724,11 +722,11 @@ export default function BookingsScreen() {
         }
         renderItem={({ item }) =>
           item.kind === "ballet" ? (
-            <AssessmentCard app={item.data} onPress={() => setSelectedItem(item)} />
+            <AssessmentCard app={item.data} />
           ) : (
             <BookingCard
               item={item.data}
-              onPress={() => setSelectedItem(item)}
+              onPress={() => router.push({ pathname: "/booking/[id]", params: { id: String(item.data.id) } })}
               onCancel={() => confirmCancelBooking(item.data)}
               participantImage={item.data.participantType === "self" ? user.avatarUrl : undefined}
               classPhotoUrl={item.data.classPhotoUrl ?? classPhotoById.get(item.data.classId)}
@@ -752,17 +750,6 @@ export default function BookingsScreen() {
           )
         }
       />
-      {selectedItem?.kind === "booking" && (
-        <BookingDetailsView
-          booking={selectedItem.data}
-          onClose={() => setSelectedItem(null)}
-          participantImage={selectedItem.data.participantType === "self" ? user.avatarUrl : undefined}
-          onCancel={() => {
-            setSelectedItem(null);
-            confirmCancelBooking(selectedItem.data);
-          }}
-        />
-      )}
     </View>
   );
 }

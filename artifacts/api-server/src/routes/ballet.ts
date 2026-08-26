@@ -856,7 +856,7 @@ router.get("/ballet/groups", async (_req, res): Promise<void> => {
 // ─── GET /api/ballet/packages ─────────────────────────────────────────────────
 //
 // Public read-only monthly Ballet package catalogue. Active packages only.
-// Response: { packages: { id, name, monthlyClasses, monthlyHours, priceEgp, levelIds }[] }
+// Response: { packages: { id, name, monthlyClasses, monthlyHours, priceEgp, imageUrl, levelIds }[] }
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/ballet/packages", async (_req, res): Promise<void> => {
@@ -868,6 +868,7 @@ router.get("/ballet/packages", async (_req, res): Promise<void> => {
         monthlyClasses: balletPackagesTable.monthlyClasses,
         monthlyHours:   balletPackagesTable.monthlyHours,
         priceEgp:       balletPackagesTable.priceEgp,
+        imageUrl:       balletPackagesTable.imageUrl,
       })
       .from(balletPackagesTable)
       .where(eq(balletPackagesTable.isActive, true))

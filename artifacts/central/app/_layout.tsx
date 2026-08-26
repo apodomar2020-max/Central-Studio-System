@@ -222,7 +222,7 @@ function AndroidHardwareBackGuard() {
 
 function RootLayoutNav() {
   const pathname = usePathname();
-  const hideBottomTabs = pathname.startsWith("/class/");
+  const hideBottomTabs = pathname.startsWith("/class/") || pathname.startsWith("/booking/");
 
   return (
     <TabVisibilityProvider hideBottomTabs={hideBottomTabs}>
@@ -257,6 +257,7 @@ function RootLayoutNav() {
         <Stack.Screen name="onboarding/success" options={{ animation: "fade", gestureEnabled: false }} />
         <Stack.Screen name="class/[id]" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="instructor/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="booking/[id]" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="booking/flow" options={{ animation: "slide_from_right" }} />
         <Stack.Screen
           name="booking/confirmation"

@@ -61,6 +61,7 @@ interface BalletPackage {
   monthlyClasses: number;
   monthlyHours: number;
   priceEgp: number;
+  imageUrl: string | null;
   levelIds: number[];
   isActive: boolean;
 }
@@ -73,6 +74,7 @@ const formSchema = z.object({
   monthlyClasses: z.coerce.number().int().positive("Must be at least 1"),
   monthlyHours: z.coerce.number().int().positive("Must be at least 1"),
   priceEgp: z.coerce.number().int().positive("Price required"),
+  imageUrl: z.string().trim().url("Enter a valid image URL").or(z.literal("")),
   levelIds: z.array(z.number().int().positive()).default([]),
   isActive: z.boolean().default(true),
 });
@@ -80,7 +82,7 @@ const formSchema = z.object({
 type FormValues = z.input<typeof formSchema>;
 
 const EMPTY_VALUES: FormValues = {
-  name: "", monthlyClasses: 8, monthlyHours: 8, priceEgp: 0, levelIds: [], isActive: true,
+  name: "", monthlyClasses: 8, monthlyHours: 8, priceEgp: 0, imageUrl: "", levelIds: [], isActive: true,
 };
 
 export default function BalletPackagesPage() {
@@ -137,6 +139,7 @@ export default function BalletPackagesPage() {
       monthlyClasses: pkg.monthlyClasses,
       monthlyHours: pkg.monthlyHours,
       priceEgp: pkg.priceEgp,
+      imageUrl: pkg.imageUrl ?? "",
       levelIds: pkg.levelIds ?? [],
       isActive: pkg.isActive,
     });
@@ -145,10 +148,14 @@ export default function BalletPackagesPage() {
 
   const onSubmit = (values: FormValues) => {
     const parsed = formSchema.parse(values);
+    const body = {
+      ...parsed,
+      imageUrl: parsed.imageUrl.trim() || null,
+    };
     if (editing) {
-      updateMutation.mutate({ id: editing.id, body: parsed });
+      updateMutation.mutate({ id: editing.id, body });
     } else {
-      createMutation.mutate(parsed);
+      createMutation.mutate(body);
     }
   };
 
@@ -237,6 +244,21 @@ export default function BalletPackagesPage() {
                 <FormItem>
                   <FormLabel>Package Name</FormLabel>
                   <FormControl><Input data-testid="input-ballet-package-name" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="imageUrl" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Package Image URL (optional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="url"
+                      placeholder="https://..."
+                      data-testid="input-ballet-package-image-url"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

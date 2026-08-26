@@ -15,8 +15,6 @@ import Svg, { Path } from "react-native-svg";
 
 import type { DanceClass, Instructor } from "@/data/mockData";
 import CategoryIcon from "@/components/CategoryIcon";
-import { useAppContext } from "@/contexts/AppContext";
-import { showAuthRequiredPrompt } from "@/utils/authRequired";
 
 const CYAN = "#00B6D7";
 const INK = "#050607";
@@ -98,14 +96,9 @@ function ageColor(ageGroup: DanceClass["ageGroup"]) {
   }
 }
 
-export default function DiscoveryClassCard({ item, instructor, styleIcon, onSelect, onBook, style }: Props) {
-  const { user } = useAppContext();
+export default function DiscoveryClassCard({ item, instructor, styleIcon, onSelect, style }: Props) {
   const date = useMemo(() => dateParts(item), [item.date, item.dayOfWeek]);
   const status = classStatus(item);
-  const isBookable = Boolean(item.scheduleId && item.dayOfWeek && item.startTime)
-    && item.status !== "full"
-    && item.status !== "cancelled"
-    && item.status !== "unavailable";
 
   const openDetails = () => {
     if (onSelect) {
@@ -114,20 +107,6 @@ export default function DiscoveryClassCard({ item, instructor, styleIcon, onSele
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
-  };
-
-  const book = () => {
-    if (!isBookable) return;
-    if (onBook) {
-      onBook(item);
-      return;
-    }
-    if (!user) {
-      showAuthRequiredPrompt();
-      return;
-    }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
   };
 
   const ageLabel = item.ageRangeLabel || item.ageGroup;
@@ -169,30 +148,12 @@ export default function DiscoveryClassCard({ item, instructor, styleIcon, onSele
             </View>
 
             <View style={styles.dateColumn}>
-              <Text style={styles.weekday} numberOfLines={1} adjustsFontSizeToFit>{date.weekday}</Text>
-              <View style={styles.dateRow}>
-                <Text style={styles.day}>{date.day}</Text>
-                <Text style={styles.month}>{date.month}</Text>
-              </View>
-            </View>
-
-            <View style={styles.tags}>
-              <View style={[styles.tag, styles.styleTag]}>
-                <CategoryIcon
-                  iconSvg={styleIcon?.iconSvg}
-                  iconUrl={styleIcon?.iconUrl}
-                  legacyIcon={styleIcon?.legacyIcon}
-                  name={item.categoryName}
-                  color={styleIcon?.color || CYAN}
-                  size={12}
-                />
-                <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1}>{item.categoryName}</Text>
-              </View>
-              <View style={[styles.tag, { backgroundColor: levelColor(item.level) }]}>
-                <Text style={styles.tagText} numberOfLines={1}>{item.level}</Text>
-              </View>
-              <View style={[styles.tag, { backgroundColor: ageColor(item.ageGroup) }]}>
-                <Text style={styles.tagText} numberOfLines={1}>{ageLabel}</Text>
+              <View style={styles.dateBlock}>
+                <Text style={styles.weekday} numberOfLines={1} adjustsFontSizeToFit>{date.weekday}</Text>
+                <View style={styles.dateRow}>
+                  <Text style={styles.day}>{date.day}</Text>
+                  <Text style={styles.month}>{date.month}</Text>
+                </View>
               </View>
             </View>
 
@@ -211,16 +172,25 @@ export default function DiscoveryClassCard({ item, instructor, styleIcon, onSele
                 </View>
               </View>
 
-              <TouchableOpacity
-                onPress={book}
-                disabled={!isBookable}
-                activeOpacity={0.84}
-                style={[styles.bookButton, !isBookable && styles.bookButtonDisabled]}
-              >
-                <Text style={[styles.bookText, !isBookable && styles.bookTextDisabled]}>
-                  {item.status === "cancelled" ? "Cancelled" : item.status === "full" ? "Full" : item.status === "unavailable" ? "Unavailable" : isBookable ? "Book Now" : "N/A"}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.tags}>
+                <View style={[styles.tag, styles.styleTag]}>
+                  <CategoryIcon
+                    iconSvg={styleIcon?.iconSvg}
+                    iconUrl={styleIcon?.iconUrl}
+                    legacyIcon={styleIcon?.legacyIcon}
+                    name={item.categoryName}
+                    color={styleIcon?.color || CYAN}
+                    size={13}
+                  />
+                  <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1}>{item.categoryName}</Text>
+                </View>
+                <View style={[styles.tag, { backgroundColor: levelColor(item.level) }]}>
+                  <Text style={styles.tagText} numberOfLines={1}>{item.level}</Text>
+                </View>
+                <View style={[styles.tag, { backgroundColor: ageColor(item.ageGroup) }]}>
+                  <Text style={styles.tagText} numberOfLines={1}>{ageLabel}</Text>
+                </View>
+              </View>
             </View>
           </View>
         </View>
@@ -245,7 +215,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   card: {
-    height: 346,
+    height: 280,
     backgroundColor: INK,
     borderRadius: 18,
     overflow: "hidden",
@@ -256,7 +226,7 @@ const styles = StyleSheet.create({
     elevation: 7,
     zIndex: 2,
   },
-  imageArea: { height: 210, width: "100%", backgroundColor: "#17191D" },
+  imageArea: { height: 174, width: "100%", backgroundColor: "#17191D" },
   status: {
     position: "absolute",
     top: 10,
@@ -274,8 +244,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 12,
     right: 12,
-    bottom: 12,
-    height: 194,
+    bottom: 10,
+    height: 140,
     borderRadius: 16,
     overflow: "hidden",
     backgroundColor: "transparent",
@@ -283,14 +253,15 @@ const styles = StyleSheet.create({
   infoPanelContent: {
     flex: 1,
     width: "100%",
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     backgroundColor: "transparent",
   },
   glassBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(1,8,10,0.48)",
   },
-  copyColumn: { width: "62%", minHeight: 84 },
+  copyColumn: { width: "62%", minHeight: 82 },
   title: {
     color: "#fff",
     fontSize: 24,
@@ -307,34 +278,38 @@ const styles = StyleSheet.create({
   dateColumn: {
     position: "absolute",
     right: 12,
-    top: 12,
+    top: 10,
     width: "36%",
-    alignItems: "flex-start",
+    alignItems: "flex-end",
   },
+  dateBlock: { alignItems: "flex-start" },
   weekday: { color: "#fff", fontSize: 14, lineHeight: 17, letterSpacing: 0.35, fontFamily: "Anton_400Regular", textAlign: "left" },
   dateRow: { flexDirection: "row", alignItems: "flex-end", marginTop: -2 },
   day: { color: CYAN, fontSize: 66, lineHeight: 68, fontFamily: "Anton_400Regular" },
   month: { color: "#fff", fontSize: 18, lineHeight: 24, fontFamily: "Anton_400Regular", marginLeft: 3, marginBottom: 6 },
   tags: {
+    flex: 1,
     flexDirection: "row",
-    gap: 5,
-    marginTop: 5,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+    minWidth: 0,
   },
-  tag: { maxWidth: "34%", minWidth: 58, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, alignItems: "center", justifyContent: "center", flexShrink: 1 },
-  styleTag: { maxWidth: "38%", backgroundColor: "#fff", flexDirection: "row", gap: 4 },
-  tagText: { color: "#fff", fontSize: 9.5, fontFamily: "Archivo_600SemiBold" },
+  tag: { maxWidth: "34%", paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999, alignItems: "center", justifyContent: "center", flexShrink: 1 },
+  styleTag: { maxWidth: "42%", backgroundColor: "#fff", flexDirection: "row", gap: 4 },
+  tagText: { color: "#fff", fontSize: 10, fontFamily: "Archivo_600SemiBold" },
   styleTagText: { color: CYAN },
   footer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 7,
+    gap: 4,
+    marginTop: 2,
   },
-  instructor: { flex: 1, flexDirection: "row", alignItems: "center", minWidth: 0 },
+  instructor: { width: "38%", flexDirection: "row", alignItems: "center", minWidth: 0 },
   avatar: {
-    width: 29,
-    height: 29,
-    borderRadius: 15,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
@@ -342,22 +317,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.38)",
   },
-  initials: { color: CYAN, fontSize: 10, fontFamily: "Archivo_700Bold" },
+  initials: { color: CYAN, fontSize: 12, fontFamily: "Archivo_700Bold" },
   instructorCopy: { flex: 1, minWidth: 0, marginLeft: 6 },
-  instructorName: { color: "#fff", fontSize: 10.5, lineHeight: 12, fontFamily: "Archivo_600SemiBold" },
-  instructorRole: { color: "#A9B2BB", fontSize: 9, lineHeight: 11, fontFamily: "Archivo_400Regular" },
-  bookButton: {
-    width: "48%",
-    minHeight: 40,
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 8,
-  },
-  bookButtonDisabled: { backgroundColor: "rgba(255,255,255,0.10)" },
-  bookText: { color: CYAN, fontSize: 19, lineHeight: 22, fontFamily: "Anton_400Regular" },
-  bookTextDisabled: { color: "#737982", fontSize: 14 },
+  instructorName: { color: "#fff", fontSize: 12.5, lineHeight: 15, fontFamily: "Archivo_600SemiBold" },
+  instructorRole: { color: "#A9B2BB", fontSize: 10.5, lineHeight: 13, fontFamily: "Archivo_400Regular" },
   priceRail: {
     position: "absolute",
     left: 0,

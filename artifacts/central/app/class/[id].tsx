@@ -20,7 +20,6 @@ import {
   Image,
   Linking,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -401,21 +400,21 @@ export default function ClassDetailScreen() {
 
         <View style={styles.instructorAndTags}>
           <TouchableOpacity style={styles.instructor} onPress={openInstructor} disabled={!instructorId} activeOpacity={0.82}>
-            <PersonAvatar image={instructorImage} name={instructorName} />
+            <PersonAvatar image={instructorImage} name={instructorName} size={38} />
             <View style={styles.instructorCopy}>
               <Text style={styles.instructorLabel}>Instructor</Text>
               <Text style={styles.instructorName} numberOfLines={1}>{instructorName}</Text>
             </View>
           </TouchableOpacity>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tags}>
+          <View style={styles.tags}>
             <View style={[styles.tag, styles.styleTag]}>
               <CategoryIcon iconSvg={danceType?.iconSvg} iconUrl={danceType?.iconUrl} name={classType} color={danceType?.color || CYAN} size={13} />
-              <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1}>{classType}</Text>
+              <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{classType}</Text>
             </View>
-            <View style={[styles.tag, { backgroundColor: levelColor(level) }]}><Text style={styles.tagText}>{level}</Text></View>
-            <View style={[styles.tag, { backgroundColor: ageColor(age) }]}><Text style={styles.tagText}>{age}</Text></View>
-          </ScrollView>
+            <View style={[styles.tag, { backgroundColor: levelColor(level) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{level}</Text></View>
+            <View style={[styles.tag, { backgroundColor: ageColor(age) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{age}</Text></View>
+          </View>
         </View>
 
       </View>
@@ -469,14 +468,14 @@ const styles = StyleSheet.create({
   youtubeButton: { width: 57, height: 40, borderRadius: 10, backgroundColor: "#FF101B", alignItems: "center", justifyContent: "center", paddingLeft: 3 },
   avatar: { overflow: "hidden", backgroundColor: "rgba(0,182,215,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.52)", alignItems: "center", justifyContent: "center" },
   avatarInitial: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 13 },
-  instructorAndTags: { height: 64, paddingHorizontal: 19, flexDirection: "row", alignItems: "center", gap: 12 },
-  instructor: { flexDirection: "row", alignItems: "center", flexShrink: 1, minWidth: 125 },
-  instructorCopy: { marginLeft: 8, flexShrink: 1 },
-  instructorLabel: { color: "#7F8892", fontFamily: "Archivo_400Regular", fontSize: 9, lineHeight: 11 },
-  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 17, lineHeight: 20 },
-  tags: { alignItems: "center", gap: 5, paddingRight: 4 },
-  tag: { height: 30, minWidth: 62, paddingHorizontal: 12, borderRadius: 999, alignItems: "center", justifyContent: "center" },
-  styleTag: { backgroundColor: "#FFFFFF", flexDirection: "row", gap: 4 },
+  instructorAndTags: { width: "100%", height: 64, paddingHorizontal: 19, flexDirection: "row", alignItems: "center", gap: 7, overflow: "hidden" },
+  instructor: { width: 116, flexDirection: "row", alignItems: "center", flexShrink: 0 },
+  instructorCopy: { flex: 1, minWidth: 0, marginLeft: 6 },
+  instructorLabel: { color: "#7F8892", fontFamily: "Archivo_400Regular", fontSize: 10, lineHeight: 12 },
+  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 21 },
+  tags: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 },
+  tag: { height: 30, minWidth: 0, maxWidth: "32%", paddingHorizontal: 9, borderRadius: 999, alignItems: "center", justifyContent: "center", flexShrink: 1 },
+  styleTag: { maxWidth: "40%", backgroundColor: "#FFFFFF", flexDirection: "row", gap: 4 },
   tagText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 10 },
   styleTagText: { color: CYAN },
   actionCard: { flexShrink: 0, borderTopLeftRadius: 46, borderTopRightRadius: 46, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 24 },
