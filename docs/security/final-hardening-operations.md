@@ -103,6 +103,30 @@ Production owner checklist:
 5. Never rely on a same-volume backup alone: deleting/wiping that volume can
    remove its snapshots. Never run a production restore simply as a test.
 
+### Encrypted offsite logical backup
+
+The `central-studio-backup-cron` Railway service is the portable offsite layer.
+It has no domain, runs at `0 2 * * *` UTC, and must exit after every run. The
+owner checks its latest deployment and status-only runtime log in Railway under
+**central-studio-backup-cron → Deployments/Logs**. Railway skips a scheduled
+execution while the prior execution remains active, so an active prior run is
+an operational alert rather than permission to start a concurrent dump.
+
+The service receives only the dedicated read-only PostgreSQL URL, the public
+age recipient, and the Google Drive OAuth/folder variables. The age identity is
+owner-held offline and must never be entered into Railway, Git, Drive, tickets,
+or logs. The job verifies the custom archive, encrypts before upload, verifies
+remote size and checksums, and only then applies the union of seven daily and
+four Sunday weekly restore points. A failed dump, integrity check, encryption,
+upload, or remote verification exits nonzero and performs no retention delete.
+
+For restore drills, download one encrypted object to an operator-controlled
+temporary directory, decrypt only with the offline identity, and restore with
+`pg_restore --no-owner --exit-on-error` into an isolated temporary database.
+Remove the local plaintext after validation. Do not connect any production
+application to the restore database, and do not delete the restore resource
+until the owner approves cleanup.
+
 Quarterly non-production restore drill:
 
 1. Select a recent logical dump and provision an isolated disposable database.
