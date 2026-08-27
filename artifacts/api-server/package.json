@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "start:worker": "node --enable-source-maps ./dist/worker.mjs",
     "migrate": "node --enable-source-maps ./dist/migrate.mjs",
+    "test:database-boundaries": "node --test ./scripts/database-role-boundaries.test.mjs",
     "test:financial": "../../lib/db/node_modules/.bin/tsx --test src/lib/financialAggregates.test.ts",
     "finance:backfill:dry-run": "../../lib/db/node_modules/.bin/tsx src/cli/financeBackfillDryRunCli.entry.ts",
     "finance:backfill:execute": "../../lib/db/node_modules/.bin/tsx src/cli/financeBackfillExecuteCli.entry.ts",

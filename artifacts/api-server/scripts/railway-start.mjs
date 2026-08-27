@@ -1,13 +1,16 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import http from "node:http";
+import { createRuntimeEnvironment } from "./database-role-boundaries.mjs";
 
 const isWorker = process.env.QUEUE_WORKER_ENABLED === "true";
 const scriptPath = isWorker
   ? path.resolve(import.meta.dirname, "../dist/worker.mjs")
   : path.resolve(import.meta.dirname, "../dist/index.mjs");
 
-console.log(`[Railway Start Router] Starting ${isWorker ? "Queue Worker" : "API Server"}...`);
+console.log(
+  `[Railway Start Router] Starting ${isWorker ? "Queue Worker" : "API Server"}...`,
+);
 
 if (isWorker) {
   // Start dummy healthcheck server for Railway on PORT
@@ -23,14 +26,21 @@ if (isWorker) {
   });
 
   server.listen(port, () => {
-    console.log(`[Railway Start Router] Dummy healthcheck server listening on port ${port}`);
+    console.log(
+      `[Railway Start Router] Dummy healthcheck server listening on port ${port}`,
+    );
   });
 }
+
+// The migration credential is deploy-time-only. Remove it before application
+// code starts so an API/worker runtime compromise cannot read it from env.
+const runtimeEnv = createRuntimeEnvironment(process.env);
+delete process.env.MIGRATION_DATABASE_URL;
 
 // Spawn the target script as a child process
 const child = spawn("node", ["--enable-source-maps", scriptPath], {
   stdio: "inherit",
-  env: process.env,
+  env: runtimeEnv,
 });
 
 child.on("exit", (code, signal) => {

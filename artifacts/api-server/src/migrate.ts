@@ -3,7 +3,7 @@
  *
  * Runs as an explicit deployment step (Railway `preDeployCommand`) or manually:
  *
- *   DATABASE_URL=postgres://... node artifacts/api-server/dist/migrate.mjs
+ *   MIGRATION_DATABASE_URL=postgres://... node artifacts/api-server/dist/migrate.mjs
  *
  * The API server and queue worker never run migrations at startup; this
  * script is the only production path that mutates the database schema.
@@ -16,21 +16,18 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import path from "path";
 import { fileURLToPath } from "url";
+import { assertDatabaseUrlSafeOutsideRailway } from "../../../lib/db/src/guard";
+import { createPostgresPool } from "../../../lib/db/src/pool";
+import { resolveMigrationDatabaseUrl } from "../scripts/database-role-boundaries.mjs";
 
 // railway.toml is shared by the API and worker services, so the worker would
 // also run this pre-deploy step. Schema changes must have exactly one owner
-// (the API service), so the worker exits immediately — before @workspace/db
-// is loaded, since that module requires DATABASE_URL and opens a pool.
+// (the API service), so the worker exits immediately without opening a pool.
 if (process.env["QUEUE_WORKER_ENABLED"] === "true") {
   console.log(
     "[migrate] QUEUE_WORKER_ENABLED=true — worker service never runs migrations, skipping.",
   );
   process.exit(0);
-}
-
-if (!process.env["DATABASE_URL"]) {
-  console.error("[migrate] DATABASE_URL must be set before running migrations.");
-  process.exit(1);
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,13 +41,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //   ../../../ → /app  (workspace root)
 const migrationsFolder = path.resolve(__dirname, "../../../lib/db/migrations");
 
-// Imported dynamically so failures load-time checks in @workspace/db (missing
-// DATABASE_URL, the local-vs-Railway safety guard in lib/db/src/guard.ts) are
-// caught here and reported cleanly instead of as an unhandled rejection.
-let pool: (typeof import("@workspace/db"))["pool"] | undefined;
+let pool: ReturnType<typeof createPostgresPool> | undefined;
 
 try {
-  ({ pool } = await import("@workspace/db"));
+  const migrationDatabaseUrl = resolveMigrationDatabaseUrl(process.env);
+  assertDatabaseUrlSafeOutsideRailway(migrationDatabaseUrl);
+  pool = createPostgresPool(migrationDatabaseUrl);
   console.log(`[migrate] Applying pending migrations from ${migrationsFolder}`);
   await migrate(drizzle(pool), { migrationsFolder });
   console.log("[migrate] Migrations complete.");
