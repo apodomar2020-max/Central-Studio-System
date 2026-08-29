@@ -1,7 +1,7 @@
 /**
- * R3 / F-09 correction: a booking must not be presented as cancellable
- * from the list card while its own detail overlay shows a disabled
- * "Cancel (Soon)" placeholder for the same booking.
+ * My Bookings keeps cancellation out of the compact list card. The action
+ * remains available from the booking details surface, where the customer has
+ * the full class context before confirming a destructive action.
  *
  * The fix reuses the SAME cancellation operation (cancelBooking / PATCH
  * /api/bookings/:id/cancel) from both surfaces via one shared
@@ -25,6 +25,8 @@ import test from "node:test";
 
 const SCREEN = "artifacts/central/app/(tabs)/bookings.tsx";
 const source = readFileSync(resolve(process.cwd(), SCREEN), "utf8");
+const detailRoute = readFileSync(resolve(process.cwd(), "artifacts/central/app/booking/[id].tsx"), "utf8");
+const detailView = readFileSync(resolve(process.cwd(), "artifacts/central/components/BookingDetailsView.tsx"), "utf8");
 
 test("a single shared confirmCancelBooking() operation exists, calling the same cancelBooking() the card always used", () => {
   assert.match(
@@ -35,20 +37,18 @@ test("a single shared confirmCancelBooking() operation exists, calling the same 
   assert.match(source, /await cancelBooking\(booking\.id\);/);
 });
 
-test("the list card's Cancel action calls the shared operation (no separate inline implementation remains)", () => {
-  assert.match(
-    source,
-    /onCancel=\{\(\) => confirmCancelBooking\(item\.data\)\}/,
-    "BookingCard's onCancel must delegate to the shared confirmCancelBooking, not duplicate the confirm dialog inline",
+test("the compact list card does not expose cancellation or the removed participant row", () => {
+  const listCardCall = source.slice(
+    source.indexOf("<BookingCard"),
+    source.indexOf("</TouchableOpacity>", source.indexOf("<BookingCard")),
   );
+  assert.doesNotMatch(listCardCall, /onCancel=/);
+  assert.doesNotMatch(listCardCall, /participantImage=/);
 });
 
-test("the detail overlay's Cancel button is wired to the same shared operation for a non-Ballet booking", () => {
-  assert.match(
-    source,
-    /selectedItem\.kind === "booking"[\s\S]{0,120}confirmCancelBooking\(selectedItem\.data\)/,
-    "the overlay must only offer cancellation for kind === 'booking' items, wired to the same shared operation",
-  );
+test("the standalone booking details route keeps the cancellation action", () => {
+  assert.match(detailRoute, /onCancel=\{confirmCancel\}/);
+  assert.match(detailView, /onPress=\{\(\) => \{[\s\S]{0,120}onCancel\?\.\(\)/);
 });
 
 test("the overlay's cancellability check mirrors BookingCard's isUpcomingActive gate exactly", () => {
@@ -79,9 +79,9 @@ test("the working Cancel Booking button is present and reuses onCancel, not a ne
 // SHARED isBookingSelfCancellableClientSide utility — never a second,
 // locally-invented window/fee/refund rule duplicated inline in this file.
 test("the 2-hour cutoff is applied via the shared utility, not a locally re-invented window/fee rule", () => {
-  assert.match(source, /import \{ isBookingSelfCancellableClientSide \} from "@\/utils\/bookingCancellationEligibility";/);
-  assert.equal(/\b(cancellationWindow|cancelWindow|refundRule|cancellationFee)\b/i.test(source), false);
+  assert.match(detailView, /import \{ isBookingSelfCancellableClientSide \} from "@\/utils\/bookingCancellationEligibility";/);
+  assert.equal(/\b(cancellationWindow|cancelWindow|refundRule|cancellationFee)\b/i.test(detailView), false);
   // No ad-hoc hour-based constant (e.g. a bare "2", "120", "hours") is
   // computed inline here — the only cutoff math lives in the shared utility.
-  assert.equal(/const canCancel[\s\S]{0,400}\b(hours?|hrs)\b/i.test(source), false);
+  assert.equal(/const canCancel[\s\S]{0,400}\b(hours?|hrs)\b/i.test(detailView), false);
 });

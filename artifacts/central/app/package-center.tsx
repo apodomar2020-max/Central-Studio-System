@@ -31,7 +31,7 @@ const CYAN = "#00B6D7";
 const GREEN = "#20D65A";
 const RED = "#FF0004";
 const YELLOW = "#FFC400";
-const CARD_BG = "#002D30";
+const CARD_BG = "#012329";
 const CARD_WIDTH = Math.min(322, SCREEN_WIDTH - 68);
 const CARD_HEIGHT = 392;
 const CARD_GAP = 12;
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
   singleCardWrap: { alignItems: "center", paddingBottom: 8 },
   statusCard: {
     width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 28, backgroundColor: CARD_BG,
-    paddingHorizontal: 16, paddingTop: 18, paddingBottom: 18,
+    paddingVertical: 18, paddingHorizontal: 22,
   },
   ownerRow: { flexDirection: "row", alignItems: "center", minHeight: 60 },
   avatar: {
@@ -504,17 +504,17 @@ const styles = StyleSheet.create({
   progressFill: { height: "100%", borderRadius: 11 },
   progressMeta: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
   progressText: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 11 },
-  cardFooter: { flexDirection: "row", gap: 8, height: 48, marginTop: 16 },
+  cardFooter: { flexDirection: "row", gap: 8, height: 54, marginTop: 12 },
   expirationBox: {
-    flex: 1, height: 48, borderRadius: 7, backgroundColor: "#3A3A3A", flexDirection: "row",
+    flex: 1, height: 54, borderRadius: 7, backgroundColor: "#3A3A3A", flexDirection: "row",
     alignItems: "center", paddingHorizontal: 11,
   },
   expirationCopy: { marginLeft: 8, flex: 1 },
-  expirationNote: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 10, lineHeight: 11 },
-  expirationHelper: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 6.5, lineHeight: 8 },
-  expirationDate: { color: RED, fontFamily: "Anton_400Regular", fontSize: 21, lineHeight: 22 },
+  expirationNote: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 11, lineHeight: 12 },
+  expirationHelper: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 8, lineHeight: 9 },
+  expirationDate: { color: RED, fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 25 },
   trashButton: {
-    width: 48, height: 48, borderRadius: 7, backgroundColor: "#E6ECEE", alignItems: "center", justifyContent: "center",
+    width: 54, height: 54, borderRadius: 7, backgroundColor: "#E6ECEE", alignItems: "center", justifyContent: "center",
   },
   trashButtonExpired: { backgroundColor: "#46585A", borderWidth: 1, borderColor: RED },
   trashButtonDisabled: { backgroundColor: "#D8DEDF", opacity: 0.52 },

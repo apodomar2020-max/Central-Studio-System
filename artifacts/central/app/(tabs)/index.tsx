@@ -98,11 +98,6 @@ const HERO_GAP  = 14;      // matches design gap: 14
 const HERO_SNAP = HERO_W + HERO_GAP;
 
 // ─── Presentation helpers ──────────────────────────────────────────────────────
-/** Derive compact style label: "Hip Hop & Afro Instructor" → "Hip Hop & Afro" */
-function styleLabel(title: string): string {
-  return title.replace(/\s*Instructor\s*$/i, "").trim() || title;
-}
-
 function normalizeStyleName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -295,9 +290,10 @@ function HeroCarousel({
 
 // ─── Instagram Reels ──────────────────────────────────────────────────────────
 
-// Reel cards: 9:16 aspect ratio — design spec
-const REEL_W = 120;
-const REEL_H = 213; // 120 × (16/9) ≈ 213
+// The home reel rail intentionally uses a larger 9:16 preview so motion is
+// readable without opening Instagram.
+const REEL_W = 240;
+const REEL_H = 426;
 
 interface InstagramReel {
   id: string;
@@ -405,13 +401,11 @@ function ReelsSection() {
 }
 
 // ─── Instructor Card ──────────────────────────────────────────────────────────
-// Matches design: width=132, height=168, style badge top-left, name overlay bottom
+// Large portrait card with the instructor name over the photo.
 
 function InstructorCard({ instructor }: { instructor: Instructor }) {
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => setImgFailed(false), [instructor.photoUrl]);
-
-  const label = styleLabel(instructor.title);
 
   return (
     <TouchableOpacity
@@ -439,13 +433,6 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
             <Text style={s.instInitials}>{instructor.initials}</Text>
           </View>
         </LinearGradient>
-      )}
-
-      {/* Style badge at top-left */}
-      {!!label && (
-        <View style={s.instBadge}>
-          <Text style={s.instBadgeText} numberOfLines={1}>{label}</Text>
-        </View>
       )}
 
       {/* Name overlay at bottom */}
@@ -951,10 +938,6 @@ export default function StudioHomeScreen() {
               <Text style={s.eyebrow}>LEARN FROM THE BEST</Text>
               <Text style={s.sectionTitle}>Instructors</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/classes")} style={s.seeAllRow}>
-              <Text style={s.seeAllText}>See all</Text>
-              <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
-            </TouchableOpacity>
           </View>
           {instLoading ? (
             <FlatList
@@ -1083,16 +1066,7 @@ const s = StyleSheet.create({
   heroDot: { height: 6, borderRadius: 3 },
 
   // ── Instructor cards ───────────────────────────────────────────────────────
-  // Design: width=132, height=168
-  instCard: { width: 132, height: 168, borderRadius: R_MD, overflow: "hidden", backgroundColor: INK_800 },
-  // Fix Pack 2: badge position top 8→9, left 8→9; letterSpacing 1→0.8
-  instBadge: {
-    position: "absolute", top: 9, left: 9,
-    backgroundColor: "rgba(0,182,215,0.92)",
-    borderRadius: R_PILL, paddingHorizontal: 7, paddingVertical: 3,
-    maxWidth: 90,
-  },
-  instBadgeText: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", color: INK_900, textTransform: "uppercase", letterSpacing: 0.8 },
+  instCard: { width: 176, height: 224, borderRadius: R_MD, overflow: "hidden", backgroundColor: INK_800 },
   instInitialsBg: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: "center", justifyContent: "center",
@@ -1193,7 +1167,7 @@ const s = StyleSheet.create({
   pkgPromoBtn: { backgroundColor: CYAN, paddingHorizontal: 14, paddingVertical: 8, borderRadius: R_MD },
   pkgPromoBtnText: { fontSize: 12, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
 
-  // ── Reels — Fix Pack 2: 9:16 aspect ratio (120×213); play button 36→30 ───
+  // ── Reels — enlarged 9:16 preview rail ────────────────────────────────────
   reelCard: {
     width: REEL_W, height: REEL_H, borderRadius: R_MD, overflow: "hidden",
     backgroundColor: INK_700, alignItems: "center", justifyContent: "center",

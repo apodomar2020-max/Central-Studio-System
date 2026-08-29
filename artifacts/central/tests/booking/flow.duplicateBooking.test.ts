@@ -66,12 +66,13 @@ test("each child in the picker is independently disabled and labeled — an unre
   assert.match(source, /const isAlreadyBooked = childAlreadyBooked\(child\);/);
   assert.match(source, /const disabled = isAlreadyBooked \|\| !candidate\?\.eligible/);
   assert.match(source, /disabled=\{disabled\}/);
-  assert.match(source, /isAlreadyBooked \? \(\s*<Text style=\{styles\.alreadyBookedBadge\}>Already booked<\/Text>/);
+  assert.match(source, /disabled \? \(\s*<View style=\{styles\.ineligibleBadge\}>/);
+  assert.match(source, /candidateReason\(candidate\)/);
 });
 
 test("pressing an already-booked card is a no-op — it never calls setParticipantType/setSelectedChildId", () => {
   assert.match(source, /if \(selfDisabled\) return;\s*\n\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\);\s*\n\s*setParticipantType\("self"\);/);
-  assert.match(source, /if \(disabled\) return;\s*\n\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\);\s*\n\s*setSelectedChildId\(child\.id\);/);
+  assert.match(source, /if \(disabled\) return;\s*\n\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\);[\s\S]{0,100}?setSelectedChildId\(child\.id\);/);
 });
 
 test("Booking type and the API->local mapper carry a stable participantChildId (Blocker 1, mobile Booking model)", () => {
@@ -96,8 +97,8 @@ test("historical bookings with missing class or schedule relations are visibly u
   assert.match(cardSource, /sourceUnavailable/);
   assert.match(myBookingsSource, /Class details unavailable/);
   assert.match(myBookingsSource, /CLASS_OR_SCHEDULE_REMOVED/);
-  assert.match(cardSource, /historical booking references a class or schedule that is no longer available/i);
-  assert.match(cardSource, /const isUpcomingActive =\s*!item\.sourceUnavailable/);
+  assert.match(cardSource, /\? \{ label: "Unavailable"/);
+  assert.match(cardSource, /&& !item\.sourceUnavailable/);
 });
 
 // ─── Behavioral re-implementation: exercises real scenarios 1-7 ────────────

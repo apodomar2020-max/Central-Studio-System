@@ -31,7 +31,6 @@ const KNOWN_ROOT_SEGMENTS = new Set([
   "notifications",
   "package-center",
   "privacy-policy",
-  "two-factor-auth",
   "verify-email",
   "index",
 ]);

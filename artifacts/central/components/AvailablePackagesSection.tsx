@@ -204,14 +204,15 @@ const styles = StyleSheet.create({
   centerTitle: {
     color: CYAN,
     fontFamily: "Anton_400Regular",
-    fontSize: 24,
-    lineHeight: 27,
+    fontSize: 28,
+    lineHeight: 31,
     letterSpacing: 0.3,
   },
   centerSubtitle: {
     color: "#FFFFFF",
     fontFamily: "Archivo_400Regular",
-    fontSize: 12,
+    fontSize: 14,
+    lineHeight: 18,
     marginTop: 1,
   },
   listContent: { paddingLeft: 20, paddingRight: 20, gap: 12 },

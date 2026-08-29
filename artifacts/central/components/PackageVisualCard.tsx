@@ -171,7 +171,7 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: "46%",
+    height: "55%",
     justifyContent: "flex-end",
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -180,7 +180,7 @@ const s = StyleSheet.create({
   overlayRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8 },
   overlayLeft: { flex: 1, gap: 7 },
   name: {
-    fontSize: 19, fontFamily: "Archivo_800ExtraBold", color: "#fff", lineHeight: 21,
+    fontSize: 27, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 29,
     textTransform: "uppercase", letterSpacing: -0.2,
   },
   ageChip: {
@@ -195,10 +195,10 @@ const s = StyleSheet.create({
   ageChipText: { fontSize: 10, fontFamily: "Archivo_700Bold", color: INK_300, textTransform: "uppercase", letterSpacing: 0.4 },
   priceRow: { flexDirection: "row", alignItems: "baseline", gap: 4 },
   priceNum: {
-    fontSize: 22, fontFamily: "Anton_400Regular", color: CYAN_400, lineHeight: 22,
-    ...iosDisplayTextStyle(22, 22),
+    fontSize: 32, fontFamily: "Anton_400Regular", color: CYAN_400, lineHeight: 32,
+    ...iosDisplayTextStyle(32, 32),
   },
-  priceUnit: { fontSize: 11, fontFamily: "Archivo_700Bold", color: INK_300, letterSpacing: 0.4 },
+  priceUnit: { fontSize: 13, fontFamily: "Archivo_700Bold", color: INK_300, letterSpacing: 0.4 },
   // No maxWidth cap — the sessions number is the card's hero element now
   // (~2x its previous size) and should claim the room it needs.
   overlayRight: { alignItems: "center", flexShrink: 0 },

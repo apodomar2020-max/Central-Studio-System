@@ -36,6 +36,7 @@ import {
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 import { bookingOccurrenceStartMs, isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
+import { isVisibleUpcomingMyBooking } from "@/utils/myBookingsVisibility";
 
 const BALLET_COLOR = "#A78BFA";
 type BalletStatusInfo = { label: string; color: string; icon: any };
@@ -542,27 +543,10 @@ export default function BookingsScreen() {
     });
   }, [localBookings]);
 
-  const visibleGeneralBookings = useMemo(() => mergedBookings.filter((booking) => {
-    const allowedStatus = booking.bookingStatus === "pending"
-      || booking.bookingStatus === "confirmed"
-      || booking.bookingStatus === "cancelled"
-      || booking.bookingStatus === "rejected";
-    const rawDate = booking.occurrenceDate || booking.date;
-    const rawTime = booking.scheduleStartTime || booking.time;
-    const hasValidDate = /^\d{4}-\d{2}-\d{2}/.test(rawDate || "");
-    const hasValidTime = /\d{1,2}:\d{2}/.test(rawTime || "");
-    const isBallet = booking.bookingType === "ballet"
-      || /\bballet\b/i.test(booking.danceType || "")
-      || /\bballet\b/i.test(booking.className || "");
-
-    return !booking._isPast
-      && !booking.sourceUnavailable
-      && Boolean(booking.classId)
-      && allowedStatus
-      && hasValidDate
-      && hasValidTime
-      && !isBallet;
-  }), [mergedBookings]);
+  const visibleGeneralBookings = useMemo(
+    () => mergedBookings.filter((booking) => isVisibleUpcomingMyBooking(booking)),
+    [mergedBookings],
+  );
 
 
   // Student selector, grouped in a stable order:
@@ -727,8 +711,6 @@ export default function BookingsScreen() {
             <BookingCard
               item={item.data}
               onPress={() => router.push({ pathname: "/booking/[id]", params: { id: String(item.data.id) } })}
-              onCancel={() => confirmCancelBooking(item.data)}
-              participantImage={item.data.participantType === "self" ? user.avatarUrl : undefined}
               classPhotoUrl={item.data.classPhotoUrl ?? classPhotoById.get(item.data.classId)}
             />
           )

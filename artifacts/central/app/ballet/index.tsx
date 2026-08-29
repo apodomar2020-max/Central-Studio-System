@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
   menuTitleRequirements: { left: 15, right: undefined, alignItems: "flex-start" },
   menuTitleLine: { fontFamily: "Anton_400Regular", fontSize: 25, lineHeight: 25, textTransform: "uppercase", includeFontPadding: false },
   menuTitleNarrowLine: { fontSize: 20, lineHeight: 21 },
-  menuTitleCyan: { color: CYAN },
+  menuTitleCyan: { color: "#006578" },
   menuTitleWhite: { color: "#FFFFFF" },
   menuArrowBox: { position: "absolute", left: 15, bottom: 15, width: 44, height: 31, overflow: "hidden" },
   requirementsArrowBox: { position: "absolute", left: 15, top: 17, width: 44, height: 31, overflow: "hidden" },

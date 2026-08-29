@@ -1,234 +1,178 @@
-/**
- * Booking Request Submitted — redesigned to match the Claude Design "SuccessScreen"
- * (home-booking.jsx). Adapted for the real booking policy: a new booking is
- * PENDING (Admin confirms), so the copy says "Booking Request Submitted" unless the
- * returned status is actually "confirmed".
- *
- * Layout: a scrollable details area (icon + title + message + details card) with a
- * FIXED bottom action bar (two equal-width buttons, safe-area aware).
- */
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View, Animated } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useEffect, useRef } from "react";
-import {
-  Animated,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import Svg, { Path } from "react-native-svg";
+import React from "react";
 
+import BookingFlowIcon from "@/components/booking/BookingFlowIcon";
+import BookingSuccessActionIcon from "@/components/booking/BookingSuccessActionIcon";
+import CategoryIcon from "@/components/CategoryIcon";
+import ParticipantAvatar from "@/components/ParticipantAvatar";
+import { BookingWatchIcon } from "@/components/BookingDetailsIcons";
+import { SuccessConfetti, useSuccessPopHaptic } from "@/components/success/SuccessCelebration";
 import { useAppContext } from "@/contexts/AppContext";
-import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
+import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 
-// Design tokens (Claude Design CSS variables)
-const CYAN = "#00B6D7"; // --cs-cyan-500
-const CYAN_400 = "#2DCDEC"; // --cs-cyan-400
-const INK_900 = "#0A0B0D"; // --cs-ink-900
-const INK_800 = "#15171B"; // --cs-ink-800
-const INK_300 = "#8E97A2"; // --cs-ink-300
-const INK_400 = "#6B747F"; // --cs-ink-400
-const SUCCESS = "#1FB871"; // --cs-success-500
-const AMBER = "#FFB02E"; // --cs-amber-500
+const CYAN = "#00B6D7";
+const BLACK = "#050607";
+const CARD = "#012C31";
+const SUMMARY_GRADIENT = ["#026071", "#03B6D7"] as const;
 
-function Row({ label, value, accent, mono }: { label: string; value: string; accent?: string; mono?: boolean }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text
-        style={[
-          styles.rowValue,
-          accent ? { color: accent } : null,
-          mono ? { fontFamily: "SpaceMono_700Bold" } : null,
-        ]}
-        numberOfLines={1}
-      >
-        {value}
-      </Text>
-    </View>
-  );
+function dateLabel(raw?: string): string {
+  const match = raw?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "Date TBC";
+  const value = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return value.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", timeZone: "UTC" });
 }
 
-export default function ConfirmationScreen() {
-  const { bookingNumber } = useLocalSearchParams<{ bookingNumber: string; classId: string }>();
-  const { bookings } = useAppContext();
+function calendarStamp(date: string, time: string): string {
+  return `${date.replaceAll("-", "")}T${time.replace(":", "")}00`;
+}
+
+function addMinutes(date: string, time: string, minutes: number): { date: string; time: string } {
+  const value = new Date(`${date}T${time}:00Z`);
+  if (Number.isNaN(value.getTime())) return { date, time };
+  value.setUTCMinutes(value.getUTCMinutes() + minutes);
+  return { date: value.toISOString().slice(0, 10), time: value.toISOString().slice(11, 16) };
+}
+
+function MiniTag({ label, color }: { label: string; color: string }): React.ReactElement {
+  return <View style={[styles.tag, { backgroundColor: color }]}><Text style={styles.tagText}>{label}</Text></View>;
+}
+
+export default function ConfirmationScreen(): React.ReactElement {
+  const params = useLocalSearchParams<{
+    bookingNumber: string; className?: string; categoryName?: string; level?: string; ageLabel?: string;
+    participantName?: string; participantType?: "self" | "child"; paymentMethod?: "cash" | "packageCredit";
+    scheduleDate?: string; startTime?: string; endTime?: string; duration?: string;
+    location?: string; instructorName?: string; finalPrice?: string; creditsBefore?: string; creditsUsed?: string;
+  }>();
+  const { bookings, user, children } = useAppContext();
+  const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
+  const pop = useSuccessPopHaptic();
+  const booking = bookings.find((item) => item.bookingNumber === params.bookingNumber);
 
-  const booking = bookings.find((b) => b.bookingNumber === bookingNumber);
-  const isConfirmed = booking?.bookingStatus === "confirmed";
+  const participantName = params.participantName || booking?.participantName || "Student";
+  const participantType = params.participantType || booking?.participantType || "self";
+  const selectedChild = participantType === "child"
+    ? children.find((child) => String(child.id) === String(booking?.participantChildId ?? ""))
+    : undefined;
+  const scheduleDate = params.scheduleDate || booking?.occurrenceDate || booking?.date || "";
+  const startTime = params.startTime || booking?.scheduleStartTime || booking?.time?.match(/\d{1,2}:\d{2}/)?.[0] || "";
+  const endTime = params.endTime || booking?.time?.match(/\d{1,2}:\d{2}/g)?.[1] || "";
+  const durationMinutes = Number.parseInt(params.duration || booking?.duration || "60", 10) || 60;
+  const paymentMethod = params.paymentMethod || booking?.paymentMethod || "cash";
+  const isCredit = paymentMethod === "packageCredit";
+  const finalPrice = Number(params.finalPrice ?? booking?.price ?? 0);
+  const location = params.location || booking?.location || "Central Studio";
+  const category = params.categoryName || booking?.danceType || "Class";
+  const className = params.className || booking?.className || "Class Booking";
 
-  const scheduleLabel = booking?.scheduleLabel ?? (
-    booking?.date || booking?.time ? `${booking.date}${booking.time ? ` • ${booking.time}` : ""}` : "Schedule not set"
-  );
-  const paymentLabel = booking?.bookingType === "package"
-    ? "Package Credit"
-    : booking?.paymentStatus === "not_required"
-      ? "No payment required"
-    : booking?.paymentStatus === "paid"
-      ? `EGP ${booking.price} · Paid`
-      : `EGP ${booking?.price ?? 0} · Pay at Studio`;
-
-  const firstName = (booking?.participantName ?? "").trim().split(/\s+/)[0] || "there";
-
-  // Pending-aware copy: only say "Confirmed" when the booking actually is.
-  const title = isConfirmed ? "Booking\nConfirmed!" : "Booking Request\nSubmitted";
-  const message = isConfirmed
-    ? "You're all set!"
-    : "Your booking request has been sent to the studio team. You will be notified once it is confirmed.";
-  const statusLabel = isConfirmed ? "Confirmed" : "Pending confirmation";
-  const statusColor = isConfirmed ? SUCCESS : AMBER;
-
-  // ── Entrance animation (design: circle pop + glow pulse) ──────────────────
-  const pop = useRef(new Animated.Value(0)).current;
-  const glow = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Animated.spring(pop, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, { toValue: 1, duration: 1100, useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 0, duration: 1100, useNativeDriver: true }),
-      ]),
-    ).start();
-  }, [glow, pop]);
-
-  const popScale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] });
-  const glowOpacity = glow.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0.95] });
-  const glowScale = glow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] });
+  async function addReminder(): Promise<void> {
+    if (!scheduleDate || !startTime) {
+      alert.show({ tone: "warning", title: "Schedule unavailable", message: "This class does not have a valid date and time yet." });
+      return;
+    }
+    const fallbackEnd = addMinutes(scheduleDate, startTime, durationMinutes);
+    const end = endTime || fallbackEnd.time;
+    const calendarUrl = new URLSearchParams({
+      action: "TEMPLATE", text: className,
+      dates: `${calendarStamp(scheduleDate, startTime)}/${calendarStamp(fallbackEnd.date, end)}`,
+      details: `Central Studio booking ${params.bookingNumber}`, location, ctz: "Africa/Cairo",
+    });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Linking.openURL(`https://calendar.google.com/calendar/render?${calendarUrl.toString()}`);
+    } catch {
+      alert.show({ tone: "error", title: "Couldn't open your calendar", message: "Please add this class to your calendar manually." });
+    }
+  }
 
   return (
-    <View style={styles.container}>
-      <LinearGradient colors={["#04161B", "#0A0B0D"]} style={StyleSheet.absoluteFill} />
+    <View style={styles.screen}>
+      <LinearGradient colors={["#17191B", BLACK]} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={["rgba(0,182,215,0.50)", "rgba(0,182,215,0.03)", "transparent"]} start={{ x: 1, y: 0 }} end={{ x: 0.05, y: 0.75 }} style={styles.topGlow} />
+      <SuccessConfetti />
+      <View style={[styles.canvas, { paddingTop: (Platform.OS === "web" ? 42 : insets.top) + 6, paddingBottom: Math.max(insets.bottom, 10) }]}>
+        <Animated.View style={[styles.successIcon, { transform: [{ scale: pop }] }]}><Ionicons name="checkmark" size={28} color={BLACK} /></Animated.View>
+        <Text style={styles.titleWhite}>BOOKING</Text>
+        <Text style={styles.titleCyan}>SUBMITTED</Text>
 
-      {/* Scrollable content */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingTop: (Platform.OS === "web" ? 40 : insets.top) + 30 }]}
-      >
-        {/* Animated success icon */}
-        <View style={styles.iconWrap}>
-          <Animated.View style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
-          <Animated.View style={[styles.iconCircle, { transform: [{ scale: popScale }] }]}>
-            {/* Bold check (design stroke width 3.5) */}
-            <Svg width={42} height={42} viewBox="0 0 24 24" fill="none">
-              <Path d="M20 6 9 17l-5-5" stroke={INK_900} strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" />
-            </Svg>
-          </Animated.View>
+        <View style={styles.referenceRow}>
+          <View style={styles.referenceCopy}><Text style={styles.referenceLabel}>Class</Text><Text style={styles.referenceValue}>{className}</Text></View>
+          <View style={[styles.referenceCopy, styles.referenceCopyRight]}><Text style={[styles.referenceLabel, styles.referenceTextRight]}>Booking Ref</Text><Text style={[styles.referenceValue, styles.referenceTextRight]}>{params.bookingNumber || "—"}</Text></View>
         </View>
 
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.message}>{message}</Text>
-        <Text style={styles.seeYou}>
-          See you on the floor, <Text style={styles.seeYouName}>{firstName}</Text>!
-        </Text>
+        <View style={styles.summaryCard}>
+          <LinearGradient colors={SUMMARY_GRADIENT} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.typeRow}>
+            <View style={styles.typeCopy}>
+              <CategoryIcon name={category} color="#FFFFFF" size={29} />
+              <View><Text style={styles.typeTitle}>{category.toUpperCase()}</Text><Text style={styles.typeSub}>Dance Type</Text></View>
+            </View>
+            <View style={styles.tags}><MiniTag label={params.level || "All Levels"} color="#D800D8" /><MiniTag label={params.ageLabel || "All Ages"} color="#075CE5" /></View>
+          </LinearGradient>
 
-        {/* Details card */}
-        <View style={styles.card}>
-          <Row label="Booking Ref" value={bookingNumber ?? "—"} accent={CYAN_400} mono />
-          <Row label="Status" value={statusLabel} accent={statusColor} />
-          {booking && (
-            <>
-              <Row label="Class" value={booking.className || "—"} />
-              <Row label="Schedule" value={scheduleLabel} />
-              <Row label="Teacher" value={booking.instructorName || "—"} />
-              <Row label="For" value={booking.participantName || "—"} />
-              <Row label="Where" value={booking.location || "Central Studio"} />
-              <Row label="Payment" value={paymentLabel} />
-            </>
-          )}
+          <View style={styles.primaryGrid}>
+            <LinearGradient colors={SUMMARY_GRADIENT} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.timeTile}>
+              <View style={styles.tileHeading}><BookingWatchIcon size={26} /><Text style={styles.tileTitle}>Time</Text></View>
+              <Text style={styles.tileDate}>{dateLabel(scheduleDate)}</Text>
+              <Text style={styles.tileTime}>{startTime || "TBC"}</Text>
+              <Text style={styles.tileMeta}>{durationMinutes} Min</Text>
+            </LinearGradient>
+            <LinearGradient colors={SUMMARY_GRADIENT} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.studentTile}>
+              <View style={styles.tileHeading}>
+                {participantType === "self" ? <ParticipantAvatar type="self" name={participantName} avatarUrl={user?.avatarUrl} size={27} /> : <ParticipantAvatar type="child" name={participantName} gender={selectedChild?.gender} size={27} />}
+                <Text style={styles.tileTitle}>Student</Text>
+              </View>
+              <Text style={styles.studentName}>{participantName.toUpperCase()}</Text>
+            </LinearGradient>
+          </View>
+
+          <View style={styles.secondaryGrid}>
+            <LinearGradient colors={SUMMARY_GRADIENT} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.smallTile}><BookingFlowIcon name={isCredit ? "credit" : "cash"} size={34} /><Text style={styles.smallLabel}>Payment Method</Text><Text style={styles.smallValue}>{isCredit ? "CREDIT" : "CASH"}</Text></LinearGradient>
+            <LinearGradient colors={SUMMARY_GRADIENT} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.smallTile}><BookingFlowIcon name="location" size={34} /><Text style={styles.smallLabel}>Location</Text><Text style={styles.smallValue}>{location.toUpperCase()}</Text></LinearGradient>
+            <LinearGradient colors={SUMMARY_GRADIENT} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.smallTile}><Ionicons name="pricetag" size={29} color="#FFFFFF" /><Text style={styles.smallLabel}>Price</Text><Text style={styles.smallValue}>{isCredit ? "1 CREDIT" : `${finalPrice} EGP`}</Text></LinearGradient>
+          </View>
         </View>
-      </ScrollView>
 
-      {/* Fixed bottom action bar — two equal-width buttons, safe-area aware */}
-      <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnPrimary]}
-          activeOpacity={0.88}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.replace("/(tabs)/bookings");
-          }}
-        >
-          <Ionicons name="calendar-outline" size={17} color={INK_900} />
-          <Text style={[styles.btnText, { color: INK_900 }]}>View My Bookings</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnGhost]}
-          activeOpacity={0.88}
-          onPress={() => router.replace("/(tabs)/" as never)}
-        >
-          <Ionicons name="home-outline" size={17} color="#FFFFFF" />
-          <Text style={[styles.btnText, { color: "#FFFFFF" }]}>Back to Home</Text>
-        </TouchableOpacity>
+        <View style={styles.closingCard}>
+          <Text style={styles.closingTitle}>See You On The Floor,</Text>
+          <Text style={styles.closingText}>Your booking request has been sent to the studio team.{"\n"}You will be notified once it is confirmed.</Text>
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.outlineButton} onPress={() => { void addReminder(); }}><BookingSuccessActionIcon name="bell" size={23} /><Text style={styles.outlineText}>Remind Me</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.outlineButton} onPress={() => router.replace("/(tabs)/bookings")}><BookingSuccessActionIcon name="calendar" size={23} /><Text style={styles.outlineText}>My Bookings</Text></TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.homeButton} onPress={() => router.replace("/(tabs)/" as never)}><BookingSuccessActionIcon name="home" size={23} /><Text style={styles.homeText}>Back to home</Text></TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: INK_900 },
-  scroll: { paddingHorizontal: 20, paddingBottom: 28, alignItems: "center" },
-
-  // Icon (design: 80px cyan circle + radial glow halo)
-  iconWrap: { width: 80, height: 80, alignItems: "center", justifyContent: "center", marginBottom: 20 },
-  glow: {
-    position: "absolute", width: 108, height: 108, borderRadius: 54,
-    backgroundColor: "rgba(0,182,215,0.22)",
-  },
-  iconCircle: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: CYAN,
-    alignItems: "center", justifyContent: "center",
-  },
-
-  // Title (design: font-display 44 / lineHeight 0.88 / uppercase / white)
-  title: {
-    fontFamily: "Anton_400Regular", fontSize: 40, lineHeight: 38,
-    ...iosDisplayTextStyle(40, 38),
-    textTransform: "uppercase", color: "#FFFFFF", textAlign: "center", letterSpacing: 0.5,
-    marginBottom: 12 - iosCapGuard(40, 38),
-  },
-  message: {
-    fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 21,
-    color: INK_300, textAlign: "center", marginBottom: 8, maxWidth: 320,
-  },
-  seeYou: {
-    fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 21,
-    color: INK_300, textAlign: "center", marginBottom: 24,
-  },
-  seeYouName: { color: "#FFFFFF", fontFamily: "Archivo_700Bold" },
-
-  // Details card (design: ink-800 + cyan/0.28 border, radius-lg)
-  card: {
-    width: "100%", backgroundColor: INK_800,
-    borderWidth: 1, borderColor: "rgba(0,182,215,0.28)", borderRadius: 16,
-    paddingHorizontal: 14, paddingVertical: 2,
-  },
-  row: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)",
-  },
-  rowLabel: { fontFamily: "Archivo_600SemiBold", fontSize: 13, color: INK_400 },
-  rowValue: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "#FFFFFF", textAlign: "right", maxWidth: "58%" },
-
-  // Fixed bottom action bar
-  bottomBar: {
-    flexDirection: "row", gap: 10,
-    paddingHorizontal: 20, paddingTop: 12,
-    borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.07)",
-    backgroundColor: "rgba(10,11,13,0.92)",
-  },
-  btn: {
-    flex: 1, height: 50, borderRadius: 12,
-    flexDirection: "row", gap: 8,
-    alignItems: "center", justifyContent: "center",
-  },
-  btnPrimary: { backgroundColor: CYAN },
-  btnGhost: { backgroundColor: "rgba(255,255,255,0.07)", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)" },
-  btnText: { fontFamily: "Archivo_800ExtraBold", fontSize: 14 },
+  screen: { flex: 1, backgroundColor: BLACK },
+  topGlow: { position: "absolute", top: -45, right: -10, width: "90%", height: 180, transform: [{ rotate: "-9deg" }] },
+  canvas: { flex: 1, paddingHorizontal: 15 },
+  successIcon: { alignSelf: "center", width: 50, height: 50, borderRadius: 25, backgroundColor: CYAN, alignItems: "center", justifyContent: "center", marginBottom: 7 },
+  titleWhite: { alignSelf: "center", fontSize: 36, lineHeight: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", ...iosDisplayTextStyle(36, 36) },
+  titleCyan: { alignSelf: "center", marginTop: -3, fontSize: 36, lineHeight: 36, fontFamily: "Anton_400Regular", color: CYAN, ...iosDisplayTextStyle(36, 36) },
+  referenceRow: { marginTop: 14, marginBottom: 8, flexDirection: "row", justifyContent: "space-between", gap: 16, paddingHorizontal: 12 },
+  referenceCopy: { flex: 1 },
+  referenceCopyRight: { alignItems: "flex-end" },
+  referenceTextRight: { textAlign: "right" },
+  referenceLabel: { fontSize: 15, lineHeight: 18, fontFamily: "Archivo_500Medium", color: "#FFFFFF" },
+  referenceValue: { fontSize: 20, lineHeight: 23, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+  summaryCard: { flex: 1, minHeight: 0, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.55)", padding: 9, backgroundColor: "rgba(1,35,41,0.62)" },
+  typeRow: { minHeight: 70, borderRadius: 12, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  typeCopy: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }, typeTitle: { fontSize: 22, fontFamily: "Anton_400Regular", color: "#FFFFFF" }, typeSub: { fontSize: 11, fontFamily: "Archivo_500Medium", color: "#FFFFFF" },
+  tags: { flexDirection: "row", alignItems: "center", gap: 5 }, tag: { paddingHorizontal: 12, height: 28, borderRadius: 14, justifyContent: "center" }, tagText: { fontSize: 11, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
+  primaryGrid: { marginTop: 6, flex: 1.08, minHeight: 0, flexDirection: "row", gap: 6 }, timeTile: { flex: 1.08, minHeight: 0, borderRadius: 13, padding: 13 }, studentTile: { flex: 1, minHeight: 0, borderRadius: 13, padding: 13 },
+  tileHeading: { flexDirection: "row", alignItems: "center", gap: 8 }, tileTitle: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#FFFFFF" }, tileDate: { marginTop: 12, fontSize: 14, fontFamily: "Archivo_500Medium", color: "#FFFFFF" }, tileTime: { fontSize: 34, lineHeight: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", ...iosDisplayTextStyle(34, 36) }, tileMeta: { fontSize: 13, fontFamily: "Archivo_500Medium", color: "#FFFFFF" }, studentName: { marginTop: 18, fontSize: 32, lineHeight: 31, fontFamily: "Anton_400Regular", color: "#FFFFFF", ...iosDisplayTextStyle(32, 31) },
+  secondaryGrid: { marginTop: 6, flex: 1, minHeight: 0, flexDirection: "row", gap: 6 }, smallTile: { flex: 1, minHeight: 0, borderRadius: 13, paddingVertical: 12, paddingHorizontal: 6, alignItems: "center", justifyContent: "space-between" }, smallLabel: { fontSize: 11, lineHeight: 13, fontFamily: "Archivo_700Bold", color: "#FFFFFF", textAlign: "center" }, smallValue: { fontSize: 20, lineHeight: 22, fontFamily: "Anton_400Regular", color: "#FFFFFF", textAlign: "center", ...iosDisplayTextStyle(20, 22) },
+  closingCard: { marginTop: 8, borderRadius: 40, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14, backgroundColor: CARD }, closingTitle: { fontSize: 28, fontFamily: "Anton_400Regular", color: "#FFFFFF", textAlign: "center", ...iosDisplayTextStyle(28, 32) }, closingText: { marginTop: 3, marginBottom: 12, fontSize: 13, lineHeight: 17, fontFamily: "Archivo_400Regular", color: "#FFFFFF", textAlign: "center" },
+  actionRow: { flexDirection: "row", gap: 10 }, outlineButton: { flex: 1, height: 50, borderRadius: 25, borderWidth: 1, borderColor: CYAN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, outlineText: { fontSize: 15, fontFamily: "Archivo_600SemiBold", color: CYAN }, homeButton: { marginTop: 10, height: 52, borderRadius: 26, backgroundColor: CYAN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, homeText: { fontSize: 16, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
 });

@@ -28,6 +28,7 @@ import { useBackgroundMusic } from "@/components/BackgroundMusicProvider";
 import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { isVisibleUpcomingMyBooking } from "@/utils/myBookingsVisibility";
 
 /**
  * PIcon — exact replica of the design's `PIcon` (home-profile.jsx) rendered
@@ -647,9 +648,7 @@ export default function ProfileScreen() {
     }, [user, refreshUserPackages]),
   );
 
-  const upcoming = bookings.filter(
-    (b) => b.bookingStatus === "confirmed" || b.bookingStatus === "pending"
-  ).length;
+  const upcoming = bookings.filter((booking) => isVisibleUpcomingMyBooking(booking)).length;
   const activeUserPackages = userPackages.filter((p) => {
     const expiryDate = parseApiDate(p.expiryDate);
     return p.status === "active" && Boolean(expiryDate && expiryDate >= new Date());
@@ -1033,17 +1032,6 @@ export default function ProfileScreen() {
             <View style={styles.menuTextCol}>
               <Text style={styles.menuLabel}>Change Password</Text>
             </View>
-            <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/two-factor-auth")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
-            <View style={[styles.menuIcon, { backgroundColor: "#FFB02E15" }]}>
-              <PIcon name="shield" size={19} stroke={2.1} color="#FFB02E" />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuLabel}>Two-Factor Auth</Text>
-              <Text style={styles.menuSubtitle}>Add an extra layer</Text>
-            </View>
-            <Text style={styles.menuTrailingText}>Off</Text>
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push("/privacy-policy")} style={styles.menuItem} activeOpacity={0.7}>

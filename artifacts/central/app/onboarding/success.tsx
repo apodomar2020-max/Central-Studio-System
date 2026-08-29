@@ -9,87 +9,33 @@
  * Completion Engine — the engine can change where `enterApp()`/index.tsx
  * send the user without this screen needing to change.
  */
-import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Platform, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Animated, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { STORAGE_KEYS } from "@/constants/danceStyles";
 import { useAppContext } from "@/contexts/AppContext";
 import { enterApp } from "@/services/authProfile";
 import { CS, Eyebrow, Icon, PrimaryCTA, StageVideo } from "@/components/signup/SignupKit";
+import { SuccessConfetti, useSuccessPopHaptic } from "@/components/success/SuccessCelebration";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
-
-const CONFETTI_COLORS = [CS.cyan400, "#FF2E7E", CS.amber, "#B6E80A"];
-
-function Confetti() {
-  const pieces = useRef(
-    Array.from({ length: 24 }).map((_, i) => ({
-      left: `${(i * 4.2 + (i % 3) * 7) % 96}%`,
-      color: CONFETTI_COLORS[i % 4],
-      size: 6 + (i % 3) * 4,
-      delay: (i % 7) * 110,
-      dur: 1500 + (i % 5) * 280,
-      v: new Animated.Value(0),
-    })),
-  ).current;
-
-  useEffect(() => {
-    const loops = pieces.map((p) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(p.delay),
-          Animated.timing(p.v, { toValue: 1, duration: p.dur, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-        ]),
-      ),
-    );
-    loops.forEach((l) => l.start());
-    return () => loops.forEach((l) => l.stop());
-  }, [pieces]);
-
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {pieces.map((p, i) => (
-        <Animated.View
-          key={i}
-          style={{
-            position: "absolute",
-            top: "-6%",
-            left: p.left as any,
-            width: p.size,
-            height: p.size * 0.6,
-            backgroundColor: p.color,
-            borderRadius: 1,
-            opacity: p.v.interpolate({ inputRange: [0, 0.08, 1], outputRange: [0, 1, 0] }),
-            transform: [
-              { translateY: p.v.interpolate({ inputRange: [0, 1], outputRange: [0, 860] }) },
-              { rotate: p.v.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "400deg"] }) },
-            ],
-          }}
-        />
-      ))}
-    </View>
-  );
-}
 
 export default function OnboardingSuccessScreen() {
   const insets = useSafeAreaInsets();
   const { user, setIsOnboarded } = useAppContext();
   const [styleCount, setStyleCount] = useState(0);
-  const pop = useRef(new Animated.Value(0)).current;
+  const pop = useSuccessPopHaptic();
 
   const firstName =
     (user?.fullName?.trim().split(/\s+/)[0] || user?.email?.split("@")[0] || "dancer").replace(/[^a-z0-9 ]/gi, "") || "dancer";
 
   useEffect(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Animated.spring(pop, { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }).start();
     (async () => {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.danceStyles);
       if (raw) { try { const a = JSON.parse(raw); setStyleCount(Array.isArray(a) ? a.length : 0); } catch { setStyleCount(0); } }
     })();
-  }, [pop]);
+  }, []);
 
   async function handleEnterApp() {
     await setIsOnboarded(true);
@@ -101,7 +47,7 @@ export default function OnboardingSuccessScreen() {
   return (
     <View style={styles.screen}>
       <StageVideo />
-      <Confetti />
+      <SuccessConfetti />
 
       <View style={styles.body}>
         <Animated.View style={[styles.ring, { transform: [{ scale: pop }] }]}>

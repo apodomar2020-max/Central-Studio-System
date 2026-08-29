@@ -7,9 +7,9 @@
  *      PATCH /package-orders/:id that a student JWT could never reach —
  *      the pre-existing bug this correction fixes.
  *   2. cancelPackage no longer silently swallows a failed cancellation.
- *   3. Package Center only ever offers Cancel on the pendingRequests list
- *      (pendingPayment) — never on the active/past lists, and never on
- *      rejectedRequests (already terminal).
+ *   3. Package Center disables removal for active packages, cancels pending
+ *      requests through the backend, and only hides expired/history packages
+ *      from this device without deleting studio records.
  *
  * package-center.tsx / AppContext.tsx are Expo Router / React Context
  * files (JSX, react-native imports) that cannot be imported into a plain
@@ -38,28 +38,21 @@ test("cancelPackage no longer swallows a failed cancellation silently", () => {
   assert.equal(/catch/.test(body), false, "cancelPackage must let a failed cancellation propagate to its caller, not swallow it");
 });
 
-test("Cancel Request is offered only on the pendingRequests list", () => {
-  assert.match(screenSource, /onCancel=\{\(\) => confirmCancelPackage\(pkg\)\}/);
-  const pendingBlockStart = screenSource.indexOf("{pendingRequests.map(");
-  const pendingBlockEnd = screenSource.indexOf("))}", pendingBlockStart);
-  const pendingBlock = screenSource.slice(pendingBlockStart, pendingBlockEnd);
-  assert.match(pendingBlock, /onCancel=/);
+test("active packages are protected from the status-card removal action", () => {
+  assert.match(screenSource, /if \(kind === "active"\) return;/);
+  assert.match(screenSource, /disabled=\{cancelling \|\| kind === "active"\}/);
 });
 
-test("the rejected/history and active/past lists never receive onCancel — only pendingRequests does", () => {
-  const rejectedBlockStart = screenSource.indexOf("{rejectedRequests.map(");
-  const rejectedBlockEnd = screenSource.indexOf(")}", rejectedBlockStart);
-  const rejectedBlock = screenSource.slice(rejectedBlockStart, rejectedBlockEnd);
-  assert.equal(/onCancel=/.test(rejectedBlock), false);
-
-  const listBlockStart = screenSource.indexOf("{list.map(");
-  const listBlockEnd = screenSource.indexOf(")}", listBlockStart);
-  const listBlock = screenSource.slice(listBlockStart, listBlockEnd);
-  assert.equal(/onCancel=/.test(listBlock), false, "the Active/Past tab list (active or paid packages) must never render a self-cancel action");
+test("expired packages are hidden locally and not cancelled in the backend", () => {
+  const expiredStart = screenSource.indexOf('if (kind === "expired")');
+  const expiredEnd = screenSource.indexOf("return;", expiredStart);
+  const expiredBlock = screenSource.slice(expiredStart, expiredEnd);
+  assert.match(expiredBlock, /hidePackageLocally\(String\(pkg\.id\)\)/);
+  assert.doesNotMatch(expiredBlock, /cancelPackage/);
 });
 
-test("PackageCard only renders the Cancel affordance when onCancel is actually supplied", () => {
-  assert.match(screenSource, /\{onCancel && \(/);
+test("pending packages use the real cancellation operation before being hidden locally", () => {
+  assert.match(screenSource, /await cancelPackage\(String\(pkg\.id\)\);\s*await hidePackageLocally\(String\(pkg\.id\)\);/);
 });
 
 test("cancellation goes through the existing useCentralAlert confirmation pattern, not a bespoke dialog", () => {

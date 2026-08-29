@@ -6,22 +6,17 @@ import Svg, { Circle, Path } from "react-native-svg";
 
 import { PriceTagIcon } from "@/components/DiscoveryClassCard";
 import type { Booking } from "@/contexts/AppContext";
-import SBI from "@/components/SbIcon";
-import {
-  bookingOccurrenceStartMs,
-  isBookingSelfCancellableClientSide,
-} from "@/utils/bookingCancellationEligibility";
+import { bookingOccurrenceStartMs } from "@/utils/bookingCancellationEligibility";
 
 interface BookingCardProps {
   item: Booking;
   onPress?: () => void;
-  onCancel?: () => void;
-  participantImage?: string;
   classPhotoUrl?: string;
 }
 
 const GREEN = "#27C63F";
-const AMBER = "#FFC400";
+const PAYMENT_GREEN = "#269134";
+const PAYMENT_AMBER = "#E2AA00";
 const RED = "#FF101B";
 const CYAN = "#00B6D7";
 
@@ -69,13 +64,13 @@ function LocationIcon() {
 
 function paymentState(status: Booking["paymentStatus"]) {
   switch (status) {
-    case "pending_payment": return { label: "Pending Payment", color: AMBER };
+    case "pending_payment": return { label: "Pending Payment", color: PAYMENT_AMBER };
     case "failed": return { label: "Payment Failed", color: RED };
     case "refunded": return { label: "Refunded", color: CYAN };
     case "paid":
     case "not_required":
     default:
-      return { label: "Paid", color: GREEN };
+      return { label: "Paid", color: PAYMENT_GREEN };
   }
 }
 
@@ -148,7 +143,7 @@ export function paymentStatusConfig(status: Booking["paymentStatus"]) {
   return { label: state.label, c: state.color, ic: status === "pending_payment" ? "!" : "✓" };
 }
 
-export default function BookingCard({ item, onPress, onCancel, participantImage, classPhotoUrl }: BookingCardProps) {
+export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCardProps) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
@@ -162,14 +157,6 @@ export default function BookingCard({ item, onPress, onCancel, participantImage,
   const date = useMemo(() => dateParts(item.occurrenceDate ?? item.date), [item.occurrenceDate, item.date]);
   const countdown = useMemo(() => countdownLabel(item, now), [item.occurrenceDate, item.date, item.scheduleStartTime, now]);
   const time = twentyFourHourTime(item.scheduleStartTime, item.time);
-  const isActive = item.bookingStatus !== "cancelled" && item.bookingStatus !== "rejected";
-  const canCancel = isActive
-    && !item.sourceUnavailable
-    && isBookingSelfCancellableClientSide({
-      occurrenceDate: item.occurrenceDate ?? item.date,
-      startTime: item.scheduleStartTime,
-    });
-
   return (
     <View style={[styles.rail, { backgroundColor: payment.color }]}>
       <View pointerEvents="none" style={styles.paymentRailContent}>
@@ -231,17 +218,6 @@ export default function BookingCard({ item, onPress, onCancel, participantImage,
               </View>
             </View>
 
-            <View style={styles.lowerRow}>
-              <View style={styles.studentCell}>
-                <PersonRow label="Student" name={item.participantName} image={participantImage} />
-              </View>
-              {canCancel ? (
-                <TouchableOpacity style={styles.cancelButton} onPress={onCancel} activeOpacity={0.84}>
-                  <SBI name="x" size={18} stroke={2} color="#FFFFFF" />
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -250,24 +226,22 @@ export default function BookingCard({ item, onPress, onCancel, participantImage,
 }
 
 const styles = StyleSheet.create({
-  rail: { width: "100%", height: 356, borderRadius: 17, marginBottom: 12, position: "relative", overflow: "hidden" },
+  rail: { width: "100%", height: 270, borderRadius: 17, marginBottom: 12, position: "relative", overflow: "hidden" },
   paymentRailContent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 31, alignItems: "center", justifyContent: "center" },
   paymentRailInner: { width: 176, height: 24, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, transform: [{ rotate: "-90deg" }] },
   paymentRailText: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 10.5, textTransform: "uppercase" },
   card: { position: "absolute", top: 0, right: 0, bottom: 0, left: 27, borderRadius: 17, overflow: "hidden", backgroundColor: "#050607", borderWidth: 1, borderColor: "rgba(255,255,255,0.88)", shadowColor: "#000", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.38, shadowRadius: 9, elevation: 6 },
-  imageArea: { width: "100%", height: 210, backgroundColor: "#17191D" },
+  imageArea: { width: "100%", height: 160, backgroundColor: "#17191D" },
   statusPill: { position: "absolute", top: 10, right: 10, zIndex: 8, flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontFamily: "Archivo_700Bold", fontSize: 10.5 },
-  countdownPill: { position: "absolute", top: 144, left: "50%", width: 246, height: 26, marginLeft: -123, zIndex: 6, borderTopLeftRadius: 10, borderTopRightRadius: 10, borderBottomLeftRadius: 4, borderBottomRightRadius: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 16, shadowColor: "#000000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 5, elevation: 3 },
+  countdownPill: { position: "absolute", top: 118, left: "50%", width: 246, height: 26, marginLeft: -123, zIndex: 6, borderTopLeftRadius: 10, borderTopRightRadius: 10, borderBottomLeftRadius: 4, borderBottomRightRadius: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 16, shadowColor: "#000000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 5, elevation: 3 },
   countdownText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 11, lineHeight: 14 },
-  panelShell: { position: "absolute", left: 12, right: 12, bottom: 12, height: 174, zIndex: 7, borderRadius: 15, overflow: "hidden", backgroundColor: "transparent" },
+  panelShell: { position: "absolute", left: 12, right: 12, bottom: 10, height: 116, zIndex: 7, borderRadius: 15, overflow: "hidden", backgroundColor: "transparent" },
   glassBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(1,8,10,0.48)" },
-  panelContent: { flex: 1, paddingHorizontal: 12, paddingTop: 16, paddingBottom: 10 },
+  panelContent: { flex: 1, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
   upperRow: { flex: 1, minHeight: 0, flexDirection: "row" },
   classInfoColumn: { width: "54%", minWidth: 0, paddingRight: 7 },
-  lowerRow: { height: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 4 },
-  studentCell: { flex: 1, minWidth: 0 },
   className: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 28, marginBottom: 3 },
   personRow: { flexDirection: "row", alignItems: "center", minHeight: 32 },
   venueRow: { flexDirection: "row", alignItems: "center", minHeight: 32 },
@@ -280,6 +254,4 @@ const styles = StyleSheet.create({
   timeColumn: { flex: 1, minWidth: 0, alignItems: "flex-end", justifyContent: "flex-start", paddingLeft: 5 },
   classDate: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 15, lineHeight: 19, textAlign: "right", width: "100%" },
   classTime: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 57, lineHeight: 61, textAlign: "right", width: "100%" },
-  cancelButton: { width: "48%", height: 44, borderRadius: 11, backgroundColor: RED, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  cancelText: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 21, lineHeight: 24, textTransform: "uppercase" },
 });

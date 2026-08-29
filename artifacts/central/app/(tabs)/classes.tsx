@@ -343,15 +343,19 @@ function FilterSheet({
       <View style={s.sheetModal}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
         <View style={s.sheet}>
+          <View style={s.sheetHandle} />
           <View style={s.sheetHeader}>
-            <Text style={s.sheetTitle}>Filter</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={12} activeOpacity={0.75}>
-              <XI name="x" size={24} stroke={1.8} color="#fff" />
+            <View style={s.sheetHeadingCopy}>
+              <Text style={s.sheetEyebrow}>Discover your class</Text>
+              <Text style={s.sheetTitle}>FILTER CLASSES</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={12} activeOpacity={0.75} style={s.sheetClose}>
+              <XI name="x" size={20} stroke={2.2} color="#fff" />
             </TouchableOpacity>
           </View>
           <View style={s.sheetRule} />
 
-          <Text style={s.sheetLabel}>Ages</Text>
+          <Text style={s.sheetLabel}>Choose age group</Text>
           <View style={s.sheetChoices}>
             {choice("All", "all", draftAge, setDraftAge)}
             {choice("Kids", "kids", draftAge, setDraftAge)}
@@ -359,7 +363,7 @@ function FilterSheet({
             {choice("Adults", "adults", draftAge, setDraftAge)}
           </View>
 
-          <Text style={[s.sheetLabel, { marginTop: 10 }]}>Level</Text>
+          <Text style={[s.sheetLabel, { marginTop: 18 }]}>Choose level</Text>
           <View style={s.sheetChoices}>
             {choice("All Levels", "all", draftLevel, setDraftLevel)}
             {choice("Beginner", "beginner", draftLevel, setDraftLevel)}
@@ -372,7 +376,7 @@ function FilterSheet({
               onPress={() => { setDraftAge("all"); setDraftLevel("all"); }}
               activeOpacity={0.75}
             >
-              <Text style={s.sheetClear}>Clear</Text>
+              <Text style={s.sheetClear}>Reset all</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => { Haptics.selectionAsync(); onApply(draftAge, draftLevel); }}
@@ -1152,7 +1156,7 @@ const s = StyleSheet.create({
   classesScroll: { flex: 1, zIndex: 1 },
 
   /* hero */
-  heroWrap: { paddingHorizontal: 22, paddingBottom: 18 },
+  heroWrap: { paddingHorizontal: 22, paddingBottom: 10 },
   heroEyebrow: {
     fontSize: 10, fontFamily: "SpaceMono_700Bold", letterSpacing: 1.8,
     textTransform: "uppercase", color: CYAN, marginBottom: 8,
@@ -1167,7 +1171,7 @@ const s = StyleSheet.create({
   },
   heroDesc: {
     fontSize: 14, fontFamily: "Archivo_400Regular", color: INK_300,
-    marginTop: 12, maxWidth: 210, lineHeight: 21,
+    marginTop: 8, maxWidth: 210, lineHeight: 21,
   },
   heroCountBadge: {
     flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14,
@@ -1179,7 +1183,7 @@ const s = StyleSheet.create({
   heroCountText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
 
   /* search */
-  searchWrap: { paddingHorizontal: 20, marginBottom: 18, flexDirection: "row", alignItems: "center", gap: 10 },
+  searchWrap: { paddingHorizontal: 20, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 10 },
   searchContainer: {
     flex: 1, flexDirection: "row", alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.06)",
@@ -1248,46 +1252,58 @@ const s = StyleSheet.create({
   levelChipTextActive: { color: "#fff" },
 
   /* filter sheet */
-  sheetModal: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" },
+  sheetModal: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.76)" },
   sheet: {
-    minHeight: 390,
-    paddingHorizontal: 28,
-    paddingTop: 28,
-    paddingBottom: 32,
+    minHeight: 410,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 26,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    backgroundColor: "#00363A",
+    borderTopWidth: 1,
+    borderColor: "rgba(0,182,215,0.48)",
+    backgroundColor: "#012329",
+    shadowColor: CYAN,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 18,
   },
+  sheetHandle: { alignSelf: "center", width: 48, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.24)", marginBottom: 15 },
   sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sheetTitle: { color: "#fff", fontSize: 16, fontFamily: "Archivo_700Bold" },
-  sheetRule: { height: 1, backgroundColor: "rgba(255,255,255,0.72)", marginTop: 18, marginBottom: 10 },
-  sheetLabel: { color: "#fff", fontSize: 13, fontFamily: "Archivo_400Regular", marginBottom: 8 },
-  sheetChoices: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  sheetHeadingCopy: { flex: 1, minWidth: 0 },
+  sheetEyebrow: { color: CYAN, fontSize: 9.5, lineHeight: 12, letterSpacing: 1.4, textTransform: "uppercase", fontFamily: "SpaceMono_700Bold", marginBottom: 2 },
+  sheetTitle: { color: "#fff", fontSize: 25, lineHeight: 30, fontFamily: "Anton_400Regular" },
+  sheetClose: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#003741", borderWidth: 1, borderColor: "rgba(0,182,215,0.34)" },
+  sheetRule: { height: 1, backgroundColor: "rgba(0,182,215,0.22)", marginTop: 14, marginBottom: 18 },
+  sheetLabel: { color: "#FFFFFF", fontSize: 14.5, fontFamily: "Archivo_700Bold", marginBottom: 10 },
+  sheetChoices: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   sheetChoice: {
-    minWidth: 83,
-    minHeight: 29,
-    paddingHorizontal: 12,
+    minWidth: 88,
+    minHeight: 40,
+    paddingHorizontal: 13,
     borderRadius: R_PILL,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.82)",
+    borderColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "#003741",
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  sheetChoiceActive: { borderColor: "#fff", backgroundColor: "rgba(255,255,255,0.04)" },
-  sheetRadio: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.2, borderColor: "#fff", alignItems: "center", justifyContent: "center" },
-  sheetRadioActive: { borderColor: "#19E350" },
-  sheetRadioDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#19E350" },
-  sheetChoiceText: { color: "#fff", fontSize: 10.5, fontFamily: "Archivo_400Regular" },
-  sheetChoiceTextActive: { fontFamily: "Archivo_600SemiBold" },
-  sheetActions: { marginTop: 62, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sheetClear: { color: "rgba(255,255,255,0.72)", fontSize: 13, fontFamily: "Archivo_400Regular", textDecorationLine: "underline" },
-  sheetApply: { width: "52%", minHeight: 42, borderRadius: R_PILL, backgroundColor: CYAN, alignItems: "center", justifyContent: "center" },
-  sheetApplyText: { color: "#fff", fontSize: 20, lineHeight: 23, fontFamily: "Anton_400Regular" },
+  sheetChoiceActive: { borderColor: CYAN, backgroundColor: CYAN },
+  sheetRadio: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.4, borderColor: "rgba(255,255,255,0.72)", alignItems: "center", justifyContent: "center" },
+  sheetRadioActive: { borderColor: "#012329" },
+  sheetRadioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#012329" },
+  sheetChoiceText: { color: "#FFFFFF", fontSize: 12.5, fontFamily: "Archivo_600SemiBold" },
+  sheetChoiceTextActive: { color: "#012329", fontFamily: "Archivo_700Bold" },
+  sheetActions: { marginTop: 26, flexDirection: "row", alignItems: "center", gap: 12 },
+  sheetClear: { color: "#B6BDC6", fontSize: 13.5, fontFamily: "Archivo_600SemiBold", paddingHorizontal: 6, paddingVertical: 12 },
+  sheetApply: { flex: 1, minHeight: 50, borderRadius: R_PILL, backgroundColor: CYAN, alignItems: "center", justifyContent: "center" },
+  sheetApplyText: { color: "#012329", fontSize: 20, lineHeight: 24, fontFamily: "Anton_400Regular" },
 
   /* style carousel */
-  styleSection: { marginBottom: 12 },
-  styleList: { paddingHorizontal: 20, paddingVertical: 12, gap: 10 },
+  styleSection: { marginBottom: 8 },
+  styleList: { paddingHorizontal: 20, paddingVertical: 6, gap: 10 },
   styleCard: {
     width: 176,
     height: 54,
@@ -1352,7 +1368,7 @@ const s = StyleSheet.create({
 
   /* categories */
   catsSection: { paddingHorizontal: 20, marginBottom: 24 },
-  catsSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 20, marginBottom: 14 },
+  catsSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 20, marginBottom: 4 },
   catsSectionTitle: { fontSize: 22, fontFamily: "Archivo_700Bold", color: "#fff", letterSpacing: -0.3 },
   catsSectionCount: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_400 },
   catHeader: {

@@ -128,11 +128,11 @@ test("bookings.ts: the resolved price is computed exactly once per request and r
 
 // ─── Mobile (Fix 1) ─────────────────────────────────────────────────────────
 
-test("booking flow: expectedPriceEgp is sent for a direct-payment (pay_at_studio) booking, sourced from the same displayed price", () => {
+test("booking flow: expectedPriceEgp sends the undiscounted server-priced amount for a direct-payment booking", () => {
   assert.match(
     flowScreen,
-    /expectedPriceEgp:\s*apiPaymentMode === "pay_at_studio"\s*\n?\s*\?\s*finalPrice/,
-    "expectedPriceEgp must be the exact same value already displayed as finalPrice, not a separately-computed number",
+    /expectedPriceEgp:\s*apiPaymentMode === "pay_at_studio"\s*\n?\s*\?\s*grossPrice/,
+    "expectedPriceEgp must carry the undiscounted class price; promo-adjusted totals are bound separately by expectedFinalPriceEgp",
   );
 });
 

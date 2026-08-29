@@ -424,15 +424,15 @@ const s = StyleSheet.create({
   },
   typeChipText: { fontSize: 10, fontFamily: "Archivo_700Bold", color: CYAN_400, textTransform: "uppercase", letterSpacing: 0.6 },
   heroName: {
-    fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#fff", lineHeight: 26,
+    fontSize: 30, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 32,
     textTransform: "uppercase", letterSpacing: -0.3,
-    ...iosDisplayTextStyle(24, 26, "inter"),
+    ...iosDisplayTextStyle(30, 32, "anton"),
   },
   heroDesc: { fontSize: 12, fontFamily: "Archivo_400Regular", color: "rgba(255,255,255,0.72)", lineHeight: 17, marginTop: 2 },
   heroRight: { flexDirection: "row", alignItems: "baseline", gap: 4, flexShrink: 0 },
   heroPriceNum: {
-    fontSize: 56, fontFamily: "Anton_400Regular", color: CYAN_400, lineHeight: 52,
-    ...iosDisplayTextStyle(56, 52),
+    fontSize: 64, fontFamily: "Anton_400Regular", color: CYAN_400, lineHeight: 60,
+    ...iosDisplayTextStyle(64, 60),
   },
   heroPriceUnit: { fontSize: 20, fontFamily: "Anton_400Regular", color: "#FFFFFF", letterSpacing: 0.5 },
 

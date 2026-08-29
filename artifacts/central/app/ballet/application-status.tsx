@@ -46,7 +46,7 @@ import {
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 
 const CYAN = "#03B6D7";
-const TEAL = "#002F33";
+const TEAL = "#012329";
 const GREEN = "#20C65A";
 const AMBER = "#FFBE00";
 const HERO_ART = require("@/assets/images/ballerina-card.png");
@@ -555,12 +555,12 @@ const styles = StyleSheet.create({
   statsRow: { position: "absolute", left: 33, right: 33, top: 240, flexDirection: "row", gap: 10, zIndex: 3 },
   statGlassShell: { flex: 1, height: 140, borderRadius: 17, overflow: "hidden", borderWidth: 1, borderColor: "rgba(231,253,255,0.24)", backgroundColor: "rgba(164,225,233,0.012)" },
   statCard: { flex: 1, width: "100%", alignItems: "center", paddingHorizontal: 7, paddingTop: 31, backgroundColor: "transparent" },
-  statLabel: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 22, textTransform: "uppercase" },
+  statLabel: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 22, textTransform: "uppercase", textShadowColor: "transparent", textShadowRadius: 0, textShadowOffset: { width: 0, height: 0 } },
   statRule: { width: "72%", height: 1, backgroundColor: "rgba(255,255,255,0.75)", marginTop: 16, marginBottom: 16 },
-  statValue: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 15, lineHeight: 18, textAlign: "center", textTransform: "uppercase" },
+  statValue: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 15, lineHeight: 18, textAlign: "center", textTransform: "uppercase", textShadowColor: "transparent", textShadowRadius: 0, textShadowOffset: { width: 0, height: 0 } },
   statValueEmpty: { color: AMBER },
   applicationPanel: { marginTop: -12, minHeight: 455, zIndex: 1, borderTopLeftRadius: 50, borderTopRightRadius: 50, borderBottomLeftRadius: 50, borderBottomRightRadius: 50, backgroundColor: TEAL, paddingTop: 91, paddingHorizontal: 34, paddingBottom: 30 },
-  tabs: { height: 47, marginTop: 16, borderRadius: 23.5, backgroundColor: "#003E45", flexDirection: "row", alignItems: "center", padding: 7, gap: 3 },
+  tabs: { height: 47, marginTop: 16, borderRadius: 23.5, backgroundColor: "#003741", flexDirection: "row", alignItems: "center", padding: 7, gap: 3 },
   tab: { flex: 1, height: 33, borderRadius: 17, alignItems: "center", justifyContent: "center" },
   tabActive: { backgroundColor: "#048BA4" },
   tabDisabled: { opacity: 0.27 },
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
   requestTitle: { color: AMBER, fontFamily: "Archivo_700Bold", fontSize: 12.5, textTransform: "capitalize" },
   requestCopy: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 12, marginTop: 5 },
   withdrawText: { color: "#FF7A7A", fontFamily: "Archivo_700Bold", fontSize: 12, marginTop: 9 },
-  cancelButton: { height: 51, borderRadius: 10, marginHorizontal: 20, marginTop: 14, backgroundColor: "#B40006", alignItems: "center", justifyContent: "center" },
+  cancelButton: { height: 51, borderRadius: 999, marginHorizontal: 20, marginTop: 14, backgroundColor: "#B40006", alignItems: "center", justifyContent: "center" },
   cancelText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 15 },
   newApplicationButton: { backgroundColor: CYAN },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.74)", padding: 16 },

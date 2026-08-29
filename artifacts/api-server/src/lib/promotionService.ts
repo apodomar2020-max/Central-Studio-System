@@ -1,6 +1,7 @@
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import {
   db,
+  classesTable,
   packageOrdersTable,
   pricePackagesTable,
   promotionAuditLogsTable,
@@ -8,6 +9,7 @@ import {
   promotionRedemptionsTable,
   promotionRulesConfigSchema,
   promotionsTable,
+  schedulesTable,
   studentsTable,
   type Promotion,
   type PromotionCode,
@@ -15,6 +17,7 @@ import {
 } from "@workspace/db";
 
 import { DbClient } from "./dbTypes";
+import { resolveSingleClassPriceEgp } from "./singleClassPricing";
 
 type StudentForPromotion = Pick<typeof studentsTable.$inferSelect, "id" | "emailVerified">;
 type PackageForPromotion = Pick<typeof pricePackagesTable.$inferSelect, "id" | "name" | "priceEgp" | "isActive">;
@@ -27,7 +30,7 @@ export type CheckoutContext = {
   subtotal: number;
   branch?: string | null;
   package?: PackageForPromotion;
-  booking?: { id: number; classId?: number | null; scheduleId?: number | null };
+  booking?: { id?: number | null; classId?: number | null; scheduleId?: number | null };
   paymentMethod?: string | null;
   verified?: boolean;
 };
@@ -136,6 +139,9 @@ async function evaluateCandidate(
     if (!branch || !allowed.includes(branch)) {
       return { eligible: false, reason: "Promotion is not available for this branch." };
     }
+  }
+  if (rules.firstPackagePurchaseOnly && !context.package) {
+    return { eligible: false, reason: "Promotion is only available for package purchases." };
   }
   if (rules.firstPackagePurchaseOnly) {
     const [existing] = await client
@@ -260,6 +266,46 @@ export async function resolvePackagePromotionContext(studentId: number, packageI
   };
 }
 
+/**
+ * Resolves the same server-owned class price and branch used by booking
+ * creation. Promo validation never accepts a subtotal or branch from the app.
+ */
+export async function resolveClassPromotionContext(studentId: number, scheduleId: number): Promise<CheckoutContext | null> {
+  const [[student], [schedule]] = await Promise.all([
+    db
+      .select({ id: studentsTable.id, emailVerified: studentsTable.emailVerified })
+      .from(studentsTable)
+      .where(eq(studentsTable.id, studentId))
+      .limit(1),
+    db
+      .select({
+        id: schedulesTable.id,
+        classId: schedulesTable.classId,
+        status: schedulesTable.status,
+        location: schedulesTable.location,
+        classActive: classesTable.isActive,
+      })
+      .from(schedulesTable)
+      .innerJoin(classesTable, eq(classesTable.id, schedulesTable.classId))
+      .where(eq(schedulesTable.id, scheduleId))
+      .limit(1),
+  ]);
+  if (!student || !schedule || schedule.status !== "active" || !schedule.classActive) return null;
+
+  const subtotal = roundMoney(await resolveSingleClassPriceEgp(db, {
+    scheduleId: schedule.id,
+    classId: schedule.classId,
+  }));
+  return {
+    student,
+    booking: { classId: schedule.classId, scheduleId: schedule.id },
+    basket: { items: [{ type: "booking", id: schedule.classId, amount: subtotal }] },
+    subtotal,
+    branch: schedule.location,
+    verified: student.emailVerified,
+  };
+}
+
 export async function validateCheckoutPromotion(
   context: CheckoutContext,
   promoCode?: string | null,
@@ -337,6 +383,7 @@ export async function validateCheckoutPromotion(
 }
 
 export const validatePackagePromotion = validateCheckoutPromotion;
+export const validateClassPromotion = validateCheckoutPromotion;
 
 export async function createPromotionRedemptions(
   client: DbClient,
@@ -348,13 +395,16 @@ export async function createPromotionRedemptions(
     const proportional = evaluation.discountAmount === candidate.discountAmount
       ? candidate.discountAmount
       : roundMoney(Math.min(candidate.discountAmount, evaluation.discountAmount));
-    if (input.packageOrderId != null) {
+    if (input.packageOrderId != null || input.bookingId != null) {
+      const targetCondition = input.packageOrderId != null
+        ? eq(promotionRedemptionsTable.packageOrderId, input.packageOrderId)
+        : eq(promotionRedemptionsTable.bookingId, input.bookingId!);
       const [existing] = await client
         .select({ total: count() })
         .from(promotionRedemptionsTable)
         .where(and(
           eq(promotionRedemptionsTable.promotionId, candidate.promotion.id),
-          eq(promotionRedemptionsTable.packageOrderId, input.packageOrderId),
+          targetCondition,
         ));
       if ((existing?.total ?? 0) > 0) continue;
     }

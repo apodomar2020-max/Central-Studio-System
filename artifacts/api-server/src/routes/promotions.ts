@@ -14,7 +14,9 @@ import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./a
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import {
   createPromotionRedemptions,
+  resolveClassPromotionContext,
   resolvePackagePromotionContext,
+  validateClassPromotion,
   validatePackagePromotion,
   writePromotionAuditLog,
 } from "../lib/promotionService";
@@ -73,8 +75,18 @@ function validatePromotionData(value: z.infer<typeof PromotionBodySchema>): stri
 
 const PromotionParams = z.object({ id: z.coerce.number().int().positive() });
 const ValidatePromotionBody = z.object({
-  packageId: z.coerce.number().int().positive(),
-  promoCode: z.string().trim().optional().nullable(),
+  packageId: z.coerce.number().int().positive().optional(),
+  scheduleId: z.coerce.number().int().positive().optional(),
+  promoCode: z.string().trim().min(1).optional().nullable(),
+}).superRefine((value, ctx) => {
+  const contextCount = Number(value.packageId != null) + Number(value.scheduleId != null);
+  if (contextCount !== 1) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Choose exactly one package or class schedule.",
+      path: ["context"],
+    });
+  }
 });
 type StudentRequest = Request & { studentId?: number };
 
@@ -370,15 +382,25 @@ router.delete("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdmin
 router.post("/promotions/validate", requireStudentAuth, requireVerifiedStudent, async (req: StudentRequest, res): Promise<void> => {
   const parsed = ValidatePromotionBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({
+      code: "invalid_promotion_context",
+      message: "This promo code cannot be checked for the selected class or package.",
+    });
     return;
   }
-  const context = await resolvePackagePromotionContext(req.studentId!, parsed.data.packageId);
+  const isClassBooking = parsed.data.scheduleId != null;
+  const context = isClassBooking
+    ? await resolveClassPromotionContext(req.studentId!, parsed.data.scheduleId!)
+    : await resolvePackagePromotionContext(req.studentId!, parsed.data.packageId!);
   if (!context) {
-    res.status(404).json({ error: "Active package not found." });
+    res.status(404).json({
+      error: isClassBooking ? "Active class schedule not found." : "Active package not found.",
+    });
     return;
   }
-  const result = await validatePackagePromotion(context, parsed.data.promoCode);
+  const result = isClassBooking
+    ? await validateClassPromotion(context, parsed.data.promoCode)
+    : await validatePackagePromotion(context, parsed.data.promoCode);
   res.json({
     eligible: result.eligible,
     reason: result.reason,
@@ -390,5 +412,11 @@ router.post("/promotions/validate", requireStudentAuth, requireVerifiedStudent, 
   });
 });
 
-export { createPromotionRedemptions, resolvePackagePromotionContext, validatePackagePromotion };
+export {
+  createPromotionRedemptions,
+  resolveClassPromotionContext,
+  resolvePackagePromotionContext,
+  validateClassPromotion,
+  validatePackagePromotion,
+};
 export default router;

@@ -24,6 +24,7 @@ import { egpToMinor, minorToEgp } from "../lib/money";
 import { canViewFinanceAmounts } from "../lib/financialVisibility";
 import { logger } from "../lib/logger";
 import { resolveSingleClassPriceEgp } from "../lib/singleClassPricing";
+import { createPromotionRedemptions, validateClassPromotion } from "../lib/promotionService";
 import { createStudentNotification } from "../lib/notifications";
 import { sendPushNotification } from "../lib/pushNotifications";
 import { requireAdminAuth, requireAdminPermission, requireSuperAdmin, type AdminRequest } from "./adminAuth";
@@ -886,6 +887,8 @@ router.post(
   // it is permission-gated and not part of this boundary.
   const {
     expectedPriceEgp,
+    expectedFinalPriceEgp,
+    promoCode,
     bookingStatus: submittedBookingStatus,
     status: submittedStatus,
     paymentStatus: submittedPaymentStatus,
@@ -1109,6 +1112,8 @@ router.post(
     createResult = await db.transaction(async (tx) => {
     const classCapacityEnabled = await isClassCapacityEnabled();
     let creditOrder: typeof packageOrdersTable.$inferSelect | null = null;
+    let promotionBranch: string | null = null;
+    let promotionClassId: number | null = normalized.classId ?? null;
     let eligibilitySnapshot: Pick<typeof bookingsTable.$inferInsert,
       "participantDateOfBirthSnapshot" | "participantAgeOnOccurrence" | "eligibilityEvaluatedOn"
       | "classAllowAllAgesSnapshot" | "classMinAgeSnapshot" | "classMaxAgeSnapshot"
@@ -1124,6 +1129,7 @@ router.post(
           date: schedulesTable.date,
           dayOfWeek: schedulesTable.dayOfWeek,
           startTime: schedulesTable.startTime,
+          location: schedulesTable.location,
         })
         .from(schedulesTable)
         .where(eq(schedulesTable.id, normalized.scheduleId))
@@ -1151,6 +1157,8 @@ router.post(
       if (!lockedClass?.isActive) {
         return { kind: "class_inactive" as const };
       }
+      promotionBranch = lockedSchedule.location;
+      promotionClassId = lockedSchedule.classId;
 
       const parsedDob = parseIsoDate(participantResolution.participant.dateOfBirth, {
         today: occurrenceDate as never,
@@ -1253,6 +1261,7 @@ router.post(
     // (schedule override -> category price -> legacy fallback) — this is
     // not a separate price calculation.
     let priceEgp: number | null = null;
+    let promotionEvaluation: Awaited<ReturnType<typeof validateClassPromotion>> | null = null;
     if (isDirectPaymentBooking) {
       priceEgp = await resolveSingleClassPriceEgp(tx, {
         scheduleId: normalized.scheduleId ?? null,
@@ -1263,6 +1272,49 @@ router.post(
         egpToMinor(expectedPriceEgp) !== egpToMinor(priceEgp)
       ) {
         return { kind: "price_changed" as const, currentPriceEgp: priceEgp };
+      }
+
+      const normalizedPromoCode = promoCode?.trim() || null;
+      if (normalizedPromoCode) {
+        const [promotionStudent] = await tx
+          .select({ id: studentsTable.id, emailVerified: studentsTable.emailVerified })
+          .from(studentsTable)
+          .where(eq(studentsTable.id, accountOwnerStudentId))
+          .limit(1);
+        if (!promotionStudent || promotionClassId == null || normalized.scheduleId == null) {
+          return { kind: "promotion_not_eligible" as const, reason: "Class promotion context is unavailable." };
+        }
+
+        promotionEvaluation = await validateClassPromotion({
+          student: promotionStudent,
+          booking: {
+            classId: promotionClassId,
+            scheduleId: normalized.scheduleId,
+          },
+          basket: {
+            items: [{ type: "booking" as const, id: promotionClassId, amount: priceEgp }],
+          },
+          subtotal: priceEgp,
+          branch: promotionBranch,
+          verified: promotionStudent.emailVerified,
+          paymentMethod: normalized.paymentMode,
+        }, normalizedPromoCode, tx, { lockRedemptionScope: true });
+
+        if (!promotionEvaluation.eligible) {
+          return {
+            kind: "promotion_not_eligible" as const,
+            reason: promotionEvaluation.reason ?? "Promo code is not eligible.",
+          };
+        }
+        if (
+          expectedFinalPriceEgp != null
+          && egpToMinor(expectedFinalPriceEgp) !== egpToMinor(promotionEvaluation.finalSubtotal)
+        ) {
+          return {
+            kind: "promotion_changed" as const,
+            currentPriceEgp: promotionEvaluation.finalSubtotal,
+          };
+        }
       }
     }
 
@@ -1290,10 +1342,7 @@ router.post(
     // (and stale-price-checked) above, before the booking row was inserted.
     if (isDirectPaymentBooking) {
       const grossAmountMinor = egpToMinor(priceEgp!);
-      // No real, server-validated discount mechanism exists on this booking
-      // flow today (no promotion service is wired into POST /bookings) —
-      // per the locked spec, discount is 0 rather than inventing support.
-      const discountAmountMinor = 0;
+      const discountAmountMinor = egpToMinor(promotionEvaluation?.discountAmount ?? 0);
       const finalPayableAmountMinor = grossAmountMinor - discountAmountMinor;
 
       const requestedPaymentChannel: PaymentRecordRequestedChannel =
@@ -1361,6 +1410,21 @@ router.post(
         userAgent: null,
         idempotencyKey: null,
       });
+
+      if (promotionEvaluation) {
+        await createPromotionRedemptions(tx, promotionEvaluation, {
+          studentId: accountOwnerStudentId,
+          bookingId: inserted.id,
+          metadata: {
+            flowType: "single_class_booking",
+            classId: promotionClassId,
+            scheduleId: normalized.scheduleId ?? null,
+            participantType: participantResolution.participant.participantType,
+            participantChildId,
+            promoCode: promotionEvaluation.promotionCode,
+          },
+        });
+      }
     }
 
     // The notification ROW is inserted here, on the transaction client, so
@@ -1480,6 +1544,23 @@ router.post(
         error: "booking_price_changed",
         code: "booking_price_changed",
         message: "The class price changed since it was displayed — please review the updated price and confirm again.",
+        currentPriceEgp: createResult.currentPriceEgp,
+      });
+      return;
+    }
+    if (createResult.kind === "promotion_not_eligible") {
+      res.status(409).json({
+        error: "promotion_not_eligible",
+        code: "promotion_not_eligible",
+        message: createResult.reason,
+      });
+      return;
+    }
+    if (createResult.kind === "promotion_changed") {
+      res.status(409).json({
+        error: "promotion_changed",
+        code: "promotion_changed",
+        message: "The promotion changed since it was reviewed. Please check the updated total and confirm again.",
         currentPriceEgp: createResult.currentPriceEgp,
       });
       return;

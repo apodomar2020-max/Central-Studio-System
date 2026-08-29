@@ -63,10 +63,10 @@ test("no dead isFirstBooking flag or First Class Free UI/copy remains in the boo
   assert.equal(/-100%/.test(flow), false);
 });
 
-test("the real payment-method selection UI (Pay at Studio / package credit / coming-soon card) is still present and unconditional", () => {
-  assert.match(flow, /Pay at Studio/);
-  assert.match(flow, /Take From My Credits/);
-  assert.match(flow, /Pay Now - Coming Soon/);
+test("the redesigned payment-method selection UI (cash / package credit / coming-soon online) is still present", () => {
+  assert.match(flow, /Pay In Cash When You Arrive At The Studio/);
+  assert.match(flow, />USE CREDIT</);
+  assert.match(flow, />Coming Soon</);
 });
 
 test("the NewStudentBanner component file no longer exists", () => {
