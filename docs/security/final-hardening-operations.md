@@ -224,9 +224,14 @@ Manually verify in Google Cloud/Firebase:
   idempotent repair for the historical 0119/0120 journal timestamp collision.
   Verify after deployment that `social_link_challenges` and both intended
   indexes exist; never rewrite already-shipped journal timestamps.
-- Approve and document an audit retention period before implementing purge.
-  Any future purge must be a named maintenance operation with before/after
-  counts and backup evidence, never a general Admin endpoint.
+- Audit retention is now approved and documented in
+  [audit-log-retention-policy.md](./audit-log-retention-policy.md): 24 months
+  searchable for `admin_activity_logs` and `promotion_audit_logs`, 90 days
+  detailed for `notification_delivery_logs`. No purge job exists yet and
+  nothing has been deleted. Any future purge must be a named maintenance
+  operation using a separate maintenance credential, with before/after counts,
+  a logged cutoff, legal-hold handling, and backup evidence — never a general
+  Admin endpoint, and never by restoring DELETE to `central_runtime`.
 - Quarterly checks: Railway backup/PITR status and restore drill; Vercel/Railway
   owners and variable scopes; Expo signing/channel state; Firebase restrictions;
   provider scopes; failed-job alerts; and secret-rotation dates.
