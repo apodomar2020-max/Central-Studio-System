@@ -254,11 +254,55 @@ Manually verify in Google Cloud/Firebase:
   reachable. Do not force these transitive consumers across UUID majors; update
   them through their owners.
 
+## Google Play App Signing release gate
+
+Status: OPEN. Future release gate, not a current blocker. Play App Signing is
+unavailable until Google Play enrollment/payment completes, so no Play signing
+certificate exists to register yet.
+
+Today's Android API key restriction is correct and complete for current
+distribution: with no Play-signed artifact in existence, the EAS upload
+certificate is the actual signing certificate for every installed build.
+
+The gate opens the moment Play enrollment completes. Production builds are
+`app-bundle` with `distribution: "store"`, so Google Play strips the upload
+signature and re-signs with its own key. From the first Play release onward,
+Play-installed users run under a SHA certificate that is not registered, and
+the current Android-apps key restriction will reject them — breaking the
+Firebase Installations call and silently killing push-notification
+registration. Sideloaded APKs keep the EAS signature and will continue to work,
+which is why they are not valid evidence here.
+
+**Before the first Google Play release, in this order:**
+
+1. Obtain the Play App Signing SHA-1 and SHA-256 from Play Console:
+   Test and release -> Setup -> App integrity -> App signing -> "App signing key
+   certificate". Confirm the "Upload key certificate" on the same screen still
+   matches the EAS upload certificate.
+2. Add both Play fingerprints to the Firebase Android app for
+   `com.centralstudio.app` (Firebase console -> Project settings -> General ->
+   Your apps). Adding a fingerprint never invalidates an existing one; keep the
+   EAS upload fingerprints in place.
+3. Add the Play App Signing SHA-1 to the Android API key's Android-apps
+   restriction alongside the existing EAS SHA-1. Do not remove the EAS entry —
+   internal and preview builds still ship under it.
+4. Verify push registration on a real Play-track install (internal testing track
+   or later), not a sideloaded APK. Confirm the device obtains a push token and
+   receives a test notification.
+
+Also add the Play App Signing SHA to the Android OAuth client in Google Auth
+project `158773571940` at the same time, so Google Sign-In keeps working for
+Play-signed builds.
+
 ## Final Security QA carryover
 
 - Configure and real-device test owner-controlled Expo Updates code signing.
 - Move Preview builds to a non-production API/data environment.
 - Verify live Firebase/Google key and OAuth restrictions in console.
+  (Completed 2026-08-30: Android key restricted to Android apps +
+  `com.centralstudio.app` + EAS upload SHA with API restrictions enabled;
+  OAuth Android/iOS bindings correct; Web client carries no origins and no
+  redirect URIs. See the Play release gate below.)
 - Confirm Railway schedules/PITR and execute a non-production restore drill.
 - Confirm alert routing for retained BullMQ failures and provider failures.
 - Exercise one signed update rollback, one synthetic provider-token rotation,
