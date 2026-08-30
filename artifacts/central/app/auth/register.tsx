@@ -367,7 +367,7 @@ export default function RegisterScreen() {
 
             <Divider label="or sign up with" />
             <View style={{ flexDirection: "row", gap: 10 }}>
-              <GhostBtn label="Facebook" icon={FACEBOOK_ICON} onPress={() => facebook.signIn()} disabled={facebook.loading} />
+              <GhostBtn label="Facebook" icon={FACEBOOK_ICON} onPress={() => facebook.signIn()} disabled={facebook.loading || !facebook.available} />
               <GhostBtn label="Google" icon={GOOGLE_ICON} onPress={() => google.signIn()} disabled={google.loading} />
             </View>
             <Text style={styles.terms}>

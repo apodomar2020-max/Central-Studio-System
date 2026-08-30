@@ -20,10 +20,10 @@
  * — surfaced here as a clear message (full email-collection UI is a follow-up).
  */
 import { useEffect, useRef, useState } from "react";
-import { LoginManager, AccessToken } from "react-native-fbsdk-next";
 
 import { useAppContext } from "@/contexts/AppContext";
 import { FACEBOOK_APP_ID } from "@/constants/facebook";
+import { isFacebookSdkAvailable, loadFacebookSdk } from "@/services/facebookSdk";
 import { continueAfterAuth, type AuthSource } from "@/services/authProfile";
 import { setOAuthFlowState } from "@/services/oauthFlowState";
 import { deriveAuthErrorMessage } from "@/services/accountDeactivation";
@@ -36,6 +36,8 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [linkChallenge, setLinkChallenge] = useState<SocialLinkChallenge | null>(null);
+  // Resolved once per mount, never at module scope — see services/facebookSdk.ts.
+  const sdkAvailable = isFacebookSdkAvailable();
   const authInFlightRef = useRef(false);
   const exchangingRef = useRef(false);
 
@@ -125,6 +127,19 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
       }
       return;
     }
+    // Expo Go (and any runtime without the native SDK) cannot do Facebook
+    // login at all. The button is already disabled via `ready` below, so
+    // this is only reachable if something calls signIn() directly — fail
+    // clearly instead of throwing on a missing native module.
+    const sdk = loadFacebookSdk();
+    if (!sdk) {
+      setError(
+        __DEV__
+          ? "Facebook sign-in needs a development or preview build — it isn't available in Expo Go."
+          : "Facebook sign-in isn't available right now. Please use your email and password.",
+      );
+      return;
+    }
     if (!FACEBOOK_APP_ID) {
       // Fail loud: the button stays pressable so a misconfigured build surfaces
       // this message instead of looking like a dead, unresponsive control.
@@ -142,7 +157,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
     try {
       // Native Facebook login (FB app if installed, else in-app browser).
       setOAuthFlowState("pending");
-      const result = await LoginManager.logInWithPermissions(["public_profile", "email"]);
+      const result = await sdk.LoginManager.logInWithPermissions(["public_profile", "email"]);
       if (__DEV__) {
         console.log("[AUTH_NAV] facebook response", {
           source,
@@ -158,7 +173,7 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
         return;
       }
 
-      const tokenData = await AccessToken.getCurrentAccessToken();
+      const tokenData = await sdk.AccessToken.getCurrentAccessToken();
       if (!tokenData?.accessToken) {
         if (__DEV__) {
           console.log("[AUTH_NAV] facebook response missing access token", { source });
@@ -179,13 +194,16 @@ export function useFacebookSignIn(source: AuthSource = "social-login") {
     }
   }
 
-  // No async request to prepare anymore — the button is ready as long as the
-  // App ID is configured for this build.
+  // Ready only when the App ID is configured AND this runtime actually has
+  // the native SDK. `available` is surfaced separately so the auth screens
+  // can explain WHY the button is disabled under Expo Go without having to
+  // know anything about native modules themselves.
   return {
     signIn,
     loading: loading || authInFlightRef.current,
     error,
-    ready: !!FACEBOOK_APP_ID,
+    available: sdkAvailable,
+    ready: !!FACEBOOK_APP_ID && sdkAvailable,
     linkChallenge,
     clearLinkChallenge: () => setLinkChallenge(null),
   };

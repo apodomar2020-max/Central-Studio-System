@@ -196,7 +196,7 @@ export default function LoginScreen() {
           <AppleSignInButton />
           <View style={{ flexDirection: "row", gap: 10 }}>
             <GhostBtn label="Google" icon={<GoogleLogo />} onPress={google.signIn} disabled={google.loading} />
-            <GhostBtn label="Facebook" icon={<FacebookLogo />} onPress={facebook.signIn} disabled={facebook.loading} />
+            <GhostBtn label="Facebook" icon={<FacebookLogo />} onPress={facebook.signIn} disabled={facebook.loading || !facebook.available} />
           </View>
         </View>
 
