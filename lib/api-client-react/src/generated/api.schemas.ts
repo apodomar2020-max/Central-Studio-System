@@ -1256,7 +1256,10 @@ export interface Student {
   id: number;
   name: string;
   email: string;
-  /** @nullable */
+  /**
+   * Canonical Egyptian mobile number, digits-only international form "20XXXXXXXXXX" (e.g. "201012345678") — never "+"-prefixed, never the local "01..." form. Unique per account when non-null. See @workspace/api-zod's phoneDomain.ts for the shared parse/normalize/validate authority every write path uses.
+   * @nullable
+   */
   phone?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -1702,7 +1705,10 @@ export interface ListStudentsResponse {
 export interface CreateStudentBody {
   name: string;
   email: string;
-  /** @nullable */
+  /**
+   * Accepts local "01...", "+20...", "0020...", or bare "20..." input — normalized and validated server-side to the canonical "20XXXXXXXXXX" form before persisting. Rejected (400) if it is not a real Egyptian mobile number; rejected (409, PHONE_ALREADY_IN_USE) if another account already holds it.
+   * @nullable
+   */
   phone?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -1711,7 +1717,10 @@ export interface CreateStudentBody {
 export interface UpdateStudentBody {
   name?: string;
   email?: string;
-  /** @nullable */
+  /**
+   * Same canonical Account Phone Domain as CreateStudentBody. `null` explicitly clears the phone; omitted leaves it unchanged.
+   * @nullable
+   */
   phone?: string | null;
   /** @nullable */
   notes?: string | null;

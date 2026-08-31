@@ -7,5 +7,12 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Node-test-runner files (node:test/node:assert) are not part of this
+  // package's published TypeScript project — they are executed directly by
+  // Node via the shared tsx binary, not compiled here. This project has no
+  // @types/node (nor should it: this package is consumed by an Expo/React
+  // Native app too, where adding Node globals would be wrong for the
+  // opposite reason). Mirrors artifacts/central/tsconfig.json's exclusion.
+  "exclude": ["node_modules", "**/*.test.ts"]
 }

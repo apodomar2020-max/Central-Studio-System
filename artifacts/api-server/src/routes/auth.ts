@@ -39,6 +39,7 @@ import bcrypt from "bcryptjs";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
+import { validateAccountPhone } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentAccountStatus";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
@@ -182,6 +183,20 @@ router.post(
 
     const { name, email, phone, accountType, dateOfBirth, password } = parsed.data;
 
+    // Canonical Account Phone Domain: phone is optional at registration
+    // (usually collected later via Complete Profile), but if it IS supplied
+    // here it must already be a legitimate Egyptian mobile number — never a
+    // silently-stored malformed value. See lib/api-zod/src/phoneDomain.ts.
+    let canonicalPhone: string | null = null;
+    if (phone != null && phone.trim() !== "") {
+      const phoneValidation = validateAccountPhone(phone);
+      if (!phoneValidation.ok) {
+        res.status(400).json({ error: "Please enter a valid Egyptian mobile number.", code: "PHONE_INVALID" });
+        return;
+      }
+      canonicalPhone = phoneValidation.canonical;
+    }
+
     if (dateOfBirth != null) {
       const ageValidation = validateProfileAge({
         accountType: accountType ?? null,
@@ -211,7 +226,7 @@ router.post(
 
     const profileInput = {
       name: name.trim(),
-      phone: phone?.trim() || null,
+      phone: canonicalPhone,
       accountType: accountType ?? null,
       dateOfBirth: dateOfBirth ?? null,
     };
@@ -397,7 +412,21 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
   const nextName = parsed.data.useProviderName && existing.providerDisplayName
     ? existing.providerDisplayName
     : parsed.data.name?.trim() ?? existing.name;
-  const nextPhone = parsed.data.phone?.trim() ?? existing.phone;
+
+  // Canonical Account Phone Domain: a supplied phone must be a legitimate
+  // Egyptian mobile number, normalized to canonical "20XXXXXXXXXX" before
+  // it is ever compared against another account's phone or persisted. See
+  // lib/api-zod/src/phoneDomain.ts — the same authority Registration,
+  // Admin's PATCH /students/:id, and Attendance's phone search all use.
+  let nextPhone = existing.phone;
+  if (parsed.data.phone !== undefined) {
+    const phoneValidation = validateAccountPhone(parsed.data.phone);
+    if (!phoneValidation.ok) {
+      res.status(400).json({ error: "Please enter a valid Egyptian mobile number.", code: "PHONE_INVALID" });
+      return;
+    }
+    nextPhone = phoneValidation.canonical;
+  }
   const nextAccountType = parsed.data.accountType ?? existing.accountType;
   const nextGender = parsed.data.gender ?? existing.gender;
   const nextDateOfBirth = parsed.data.dateOfBirth?.trim() ?? existing.dateOfBirth;
@@ -441,24 +470,44 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
     accountType: nextAccountType,
   });
 
-  const [student] = await db
-    .update(studentsTable)
-    .set({
-      name: nextName,
-      phone: nextPhone,
-      accountType: nextAccountType,
-      gender: nextGender,
-      dateOfBirth: nextDateOfBirth,
-      city: nextCity,
-      nationality: nextNationality,
-      howDidYouHearAboutUs: nextHowDidYouHearAboutUs,
-      policiesAcceptedAt: nextPoliciesAcceptedAt,
-      ...legacyCompletion,
-      lastCompletionStep: "profile",
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(studentsTable.id, req.studentId!))
-    .returning();
+  let student: typeof studentsTable.$inferSelect;
+  try {
+    [student] = await db
+      .update(studentsTable)
+      .set({
+        name: nextName,
+        phone: nextPhone,
+        accountType: nextAccountType,
+        gender: nextGender,
+        dateOfBirth: nextDateOfBirth,
+        city: nextCity,
+        nationality: nextNationality,
+        howDidYouHearAboutUs: nextHowDidYouHearAboutUs,
+        policiesAcceptedAt: nextPoliciesAcceptedAt,
+        ...legacyCompletion,
+        lastCompletionStep: "profile",
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(studentsTable.id, req.studentId!))
+      .returning();
+  } catch (err) {
+    // PostgreSQL is the final race-condition authority (uniq_students_phone,
+    // migration 0125) — this catches both an ordinary duplicate submission
+    // and two concurrent requests racing for the same phone. Never leaks
+    // which other account holds the number.
+    const isPhoneUniqueViolation =
+      typeof err === "object" && err !== null &&
+      (err as { code?: string }).code === "23505" &&
+      (err as { constraint?: string }).constraint === "uniq_students_phone";
+    if (isPhoneUniqueViolation) {
+      res.status(409).json({
+        error: "This phone number is already associated with another account.",
+        code: "PHONE_ALREADY_IN_USE",
+      });
+      return;
+    }
+    throw err;
+  }
 
   res.json({ student: await publicStudent(student!), requiresOtp: !student!.emailVerified });
 });

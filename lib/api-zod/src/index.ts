@@ -7,3 +7,4 @@ export * from './notifications';
 export * from './notificationCampaigns';
 export * from './permissions';
 export * from './qr-attendance';
+export * from './phoneDomain';

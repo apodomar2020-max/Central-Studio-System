@@ -3473,7 +3473,14 @@ components:
         id: { type: integer }
         name: { type: string }
         email: { type: string }
-        phone: { type: ["string", "null"] }
+        phone:
+          type: ["string", "null"]
+          description: >-
+            Canonical Egyptian mobile number, digits-only international form
+            "20XXXXXXXXXX" (e.g. "201012345678") — never "+"-prefixed, never
+            the local "01..." form. Unique per account when non-null. See
+            @workspace/api-zod's phoneDomain.ts for the shared
+            parse/normalize/validate authority every write path uses.
         notes: { type: ["string", "null"] }
         avatarUrl: { type: ["string", "null"] }
         totalBookings: { type: integer }
@@ -3887,7 +3894,14 @@ components:
       properties:
         name: { type: string }
         email: { type: string }
-        phone: { type: ["string", "null"] }
+        phone:
+          type: ["string", "null"]
+          description: >-
+            Accepts local "01...", "+20...", "0020...", or bare "20..." input
+            — normalized and validated server-side to the canonical
+            "20XXXXXXXXXX" form before persisting. Rejected (400) if it is
+            not a real Egyptian mobile number; rejected (409,
+            PHONE_ALREADY_IN_USE) if another account already holds it.
         notes: { type: ["string", "null"] }
 
     UpdateStudentBody:
@@ -3895,7 +3909,11 @@ components:
       properties:
         name: { type: string }
         email: { type: string }
-        phone: { type: ["string", "null"] }
+        phone:
+          type: ["string", "null"]
+          description: >-
+            Same canonical Account Phone Domain as CreateStudentBody. `null`
+            explicitly clears the phone; omitted leaves it unchanged.
         notes: { type: ["string", "null"] }
         totalBookings: { type: integer }
 

@@ -2561,7 +2561,12 @@ export const ListStudentsResponse = zod.object({
       id: zod.number(),
       name: zod.string(),
       email: zod.string(),
-      phone: zod.string().nullish(),
+      phone: zod
+        .string()
+        .nullish()
+        .describe(
+          'Canonical Egyptian mobile number, digits-only international form \"20XXXXXXXXXX\" (e.g. \"201012345678\") — never \"+\"-prefixed, never the local \"01...\" form. Unique per account when non-null. See @workspace\/api-zod\'s phoneDomain.ts for the shared parse\/normalize\/validate authority every write path uses.',
+        ),
       notes: zod.string().nullish(),
       avatarUrl: zod.string().nullish(),
       totalBookings: zod.number(),
@@ -2597,7 +2602,12 @@ export const ListStudentsResponse = zod.object({
 export const CreateStudentBody = zod.object({
   name: zod.string(),
   email: zod.string(),
-  phone: zod.string().nullish(),
+  phone: zod
+    .string()
+    .nullish()
+    .describe(
+      'Accepts local \"01...\", \"+20...\", \"0020...\", or bare \"20...\" input — normalized and validated server-side to the canonical \"20XXXXXXXXXX\" form before persisting. Rejected (400) if it is not a real Egyptian mobile number; rejected (409, PHONE_ALREADY_IN_USE) if another account already holds it.',
+    ),
   notes: zod.string().nullish(),
 });
 
@@ -2605,7 +2615,12 @@ export const CreateStudentResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   email: zod.string(),
-  phone: zod.string().nullish(),
+  phone: zod
+    .string()
+    .nullish()
+    .describe(
+      'Canonical Egyptian mobile number, digits-only international form \"20XXXXXXXXXX\" (e.g. \"201012345678\") — never \"+\"-prefixed, never the local \"01...\" form. Unique per account when non-null. See @workspace\/api-zod\'s phoneDomain.ts for the shared parse\/normalize\/validate authority every write path uses.',
+    ),
   notes: zod.string().nullish(),
   avatarUrl: zod.string().nullish(),
   totalBookings: zod.number(),
@@ -2640,7 +2655,12 @@ export const GetStudentResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   email: zod.string(),
-  phone: zod.string().nullish(),
+  phone: zod
+    .string()
+    .nullish()
+    .describe(
+      'Canonical Egyptian mobile number, digits-only international form \"20XXXXXXXXXX\" (e.g. \"201012345678\") — never \"+\"-prefixed, never the local \"01...\" form. Unique per account when non-null. See @workspace\/api-zod\'s phoneDomain.ts for the shared parse\/normalize\/validate authority every write path uses.',
+    ),
   notes: zod.string().nullish(),
   avatarUrl: zod.string().nullish(),
   totalBookings: zod.number(),
@@ -2674,7 +2694,12 @@ export const UpdateStudentParams = zod.object({
 export const UpdateStudentBody = zod.object({
   name: zod.string().optional(),
   email: zod.string().optional(),
-  phone: zod.string().nullish(),
+  phone: zod
+    .string()
+    .nullish()
+    .describe(
+      "Same canonical Account Phone Domain as CreateStudentBody. `null` explicitly clears the phone; omitted leaves it unchanged.",
+    ),
   notes: zod.string().nullish(),
   totalBookings: zod.number().optional(),
 });
@@ -2683,7 +2708,12 @@ export const UpdateStudentResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   email: zod.string(),
-  phone: zod.string().nullish(),
+  phone: zod
+    .string()
+    .nullish()
+    .describe(
+      'Canonical Egyptian mobile number, digits-only international form \"20XXXXXXXXXX\" (e.g. \"201012345678\") — never \"+\"-prefixed, never the local \"01...\" form. Unique per account when non-null. See @workspace\/api-zod\'s phoneDomain.ts for the shared parse\/normalize\/validate authority every write path uses.',
+    ),
   notes: zod.string().nullish(),
   avatarUrl: zod.string().nullish(),
   totalBookings: zod.number(),

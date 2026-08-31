@@ -49,6 +49,7 @@ import {
   STUDENT_DELETION_PREPARATION_ACTIVE_CODE,
 } from "../lib/studentDeletionPreparation";
 import * as zod from "zod";
+import { validateAccountPhone } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -1147,27 +1148,59 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
   // (Phase B3B0-1A) inside the SAME transaction so a provenance-write
   // failure rolls back any other field changes in this request too.
   const { email: rawEmailInput, ...nonEmailData } = parsed.data;
-  const txResult = await db.transaction(async (tx) => {
-    const emailOutcome = await applyStudentEmailChange(tx, {
-      studentId: params.data.id,
-      rawEmail: rawEmailInput,
-      source: "admin_update",
-      changedByAdminId: req.adminUser?.id ?? null,
-    });
-    if (emailOutcome.kind === "notFound") return { kind: "notFound" as const };
-    if (emailOutcome.kind === "deletionPreparationActive") return { kind: "deletionPreparationActive" as const };
 
-    if (Object.keys(nonEmailData).length > 0) {
-      await tx.update(studentsTable).set(nonEmailData).where(eq(studentsTable.id, params.data.id));
+  // Canonical Account Phone Domain: Admin follows the exact same authority
+  // as Mobile (Registration/Edit Profile) — see lib/api-zod/src/phoneDomain.ts.
+  // `null` explicitly clears the phone (legitimate); omitted leaves it
+  // untouched; any other value must be a real Egyptian mobile number.
+  if (nonEmailData.phone != null) {
+    const phoneValidation = validateAccountPhone(nonEmailData.phone);
+    if (!phoneValidation.ok) {
+      res.status(400).json({ error: "Please enter a valid Egyptian mobile number.", code: "PHONE_INVALID" });
+      return;
     }
+    nonEmailData.phone = phoneValidation.canonical;
+  }
 
-    const [updated] = await tx
-      .select()
-      .from(studentsTable)
-      .where(eq(studentsTable.id, params.data.id))
-      .limit(1);
-    return { kind: "ok" as const, row: updated };
-  });
+  let txResult: { kind: "notFound" } | { kind: "deletionPreparationActive" } | { kind: "ok"; row: typeof studentsTable.$inferSelect };
+  try {
+    txResult = await db.transaction(async (tx) => {
+      const emailOutcome = await applyStudentEmailChange(tx, {
+        studentId: params.data.id,
+        rawEmail: rawEmailInput,
+        source: "admin_update",
+        changedByAdminId: req.adminUser?.id ?? null,
+      });
+      if (emailOutcome.kind === "notFound") return { kind: "notFound" as const };
+      if (emailOutcome.kind === "deletionPreparationActive") return { kind: "deletionPreparationActive" as const };
+
+      if (Object.keys(nonEmailData).length > 0) {
+        await tx.update(studentsTable).set(nonEmailData).where(eq(studentsTable.id, params.data.id));
+      }
+
+      const [updated] = await tx
+        .select()
+        .from(studentsTable)
+        .where(eq(studentsTable.id, params.data.id))
+        .limit(1);
+      return { kind: "ok" as const, row: updated! };
+    });
+  } catch (err) {
+    // PostgreSQL is the final race-condition authority (uniq_students_phone,
+    // migration 0125). Never leaks which other account holds the number.
+    const isPhoneUniqueViolation =
+      typeof err === "object" && err !== null &&
+      (err as { code?: string }).code === "23505" &&
+      (err as { constraint?: string }).constraint === "uniq_students_phone";
+    if (isPhoneUniqueViolation) {
+      res.status(409).json({
+        error: "This phone number is already associated with another account.",
+        code: "PHONE_ALREADY_IN_USE",
+      });
+      return;
+    }
+    throw err;
+  }
   if (txResult.kind === "notFound") {
     res.status(404).json({ error: "Student not found" });
     return;
