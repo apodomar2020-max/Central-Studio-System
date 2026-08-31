@@ -22,6 +22,7 @@ import {
   View,
 } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
+import { validateAccountPhone } from "@workspace/api-zod";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import ProgressDots from "@/components/ProgressDots";
@@ -165,11 +166,19 @@ export default function CompleteProfileScreen() {
   }
 
   async function submit() {
-    if (!phone.trim()) { setApiError("Phone number is required."); return; }
-    if (!/^\d+$/.test(phone.trim())) { setApiError("Phone number must contain digits only."); return; }
-    if (!/^01/.test(phone.trim())) { setApiError("Phone number must start with 01."); return; }
-    if (phone.trim().length !== 11) { setApiError("Phone number must be exactly 11 digits."); return; }
-    if (!/^01[0125][0-9]{8}$/.test(phone.trim())) { setApiError("Please enter a valid Egyptian mobile number."); return; }
+    // Canonical Account Phone Domain — shared authority with Edit Profile,
+    // Admin, and the backend (see lib/api-zod/src/phoneDomain.ts). Accepts
+    // local/+20/0020/bare-international input; only a real Egyptian mobile
+    // number passes.
+    const phoneValidation = validateAccountPhone(phone);
+    if (!phoneValidation.ok) {
+      setApiError(
+        phoneValidation.reason === "empty"
+          ? "Phone number is required."
+          : "Please enter a valid Egyptian mobile number.",
+      );
+      return;
+    }
     if (!accountType) { setApiError("Please choose your account type."); return; }
     if (!gender) { setApiError("Please select your gender."); return; }
     if (!dob) { setApiError("Please select your date of birth."); return; }
@@ -184,7 +193,7 @@ export default function CompleteProfileScreen() {
       const data = await customFetch<ProfileResponse>("/api/auth/profile", {
         method: "PATCH",
         body: JSON.stringify({
-          phone: phone.trim(),
+          phone: phoneValidation.canonical,
           accountType,
           gender,
           dateOfBirth: dob,
@@ -214,7 +223,12 @@ export default function CompleteProfileScreen() {
       }
       router.replace(destination as never);
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : "Could not save your profile.");
+      const errorData = (err as { data?: { code?: string } })?.data;
+      if (errorData?.code === "PHONE_ALREADY_IN_USE") {
+        setApiError("This phone number is already associated with another account.");
+      } else {
+        setApiError(err instanceof Error ? err.message : "Could not save your profile.");
+      }
     } finally {
       setLoading(false);
     }

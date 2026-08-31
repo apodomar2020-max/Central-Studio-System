@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
+import { formatAccountPhoneLocal, validateAccountPhone } from "@workspace/api-zod";
 
 import AppButton from "@/components/AppButton";
 import CentralBackButton from "@/components/CentralBackButton";
@@ -42,16 +43,15 @@ function providerIcon(provider?: string | null): React.ComponentProps<typeof Ion
   return "mail-outline";
 }
 
-function validPhone(phone: string) {
-  return phone.replace(/\D/g, "").length >= 7;
-}
-
 export default function EditProfileScreen() {
   const { user, setUser } = useAppContext();
   const alert = useCentralAlert();
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(user?.fullName ?? "");
-  const [phone, setPhone] = useState(user?.phone ?? "");
+  // The API returns the canonical "20XXXXXXXXXX" form (Canonical Account
+  // Phone Domain) — display the familiar local "01..." form instead; users
+  // should never have to read or type the canonical representation.
+  const [phone, setPhone] = useState(formatAccountPhoneLocal(user?.phone));
   const [accountType, setAccountType] = useState<AccountType | null>(user?.accountType ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -79,12 +79,16 @@ export default function EditProfileScreen() {
       setError("Name is required.");
       return;
     }
-    if (!phone.trim()) {
-      setError("Phone number is required.");
-      return;
-    }
-    if (!validPhone(phone)) {
-      setError("Please enter a valid phone number.");
+    // Canonical Account Phone Domain — the SAME authority as Complete
+    // Profile (see lib/api-zod/src/phoneDomain.ts). No more separate,
+    // weaker >=7-digit rule.
+    const phoneValidation = validateAccountPhone(phone);
+    if (!phoneValidation.ok) {
+      setError(
+        phoneValidation.reason === "empty"
+          ? "Phone number is required."
+          : "Please enter a valid Egyptian mobile number.",
+      );
       return;
     }
     if (!accountType) {
@@ -100,7 +104,7 @@ export default function EditProfileScreen() {
         method: "PATCH",
         body: JSON.stringify({
           name: name.trim(),
-          phone: phone.trim(),
+          phone: phoneValidation.canonical,
           accountType,
         }),
       });
@@ -113,7 +117,12 @@ export default function EditProfileScreen() {
         actions: [{ label: "OK", tone: "primary", onPress: () => router.replace("/(tabs)/profile" as never) }],
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save your profile.");
+      const errorData = (err as { data?: { code?: string } })?.data;
+      if (errorData?.code === "PHONE_ALREADY_IN_USE") {
+        setError("This phone number is already associated with another account.");
+      } else {
+        setError(err instanceof Error ? err.message : "Could not save your profile.");
+      }
     } finally {
       setLoading(false);
     }
