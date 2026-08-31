@@ -81,6 +81,17 @@ export const studentsTable = pgTable("students", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 }, (table) => [
   check("students_account_status_check", sql`${table.accountStatus} IN ('active', 'deactivated', 'deleted')`),
+  // Canonical Account Phone Domain (migration 0125). Canonical stored form
+  // is "20XXXXXXXXXX" (digits only, no "+", no leading local "0", exactly
+  // 12 digits) — see lib/api-zod/src/phoneDomain.ts for the shared
+  // parse/normalize/validate authority every write path calls before this
+  // row is ever written. NULL remains legitimate (pre-completion profile).
+  // The partial UNIQUE index (one real phone per account, mirroring
+  // uniq_students_google_id/apple_id/facebook_id) lives only in the raw
+  // migration SQL, matching this table's existing convention for those
+  // three columns — Drizzle's table builder has no first-class partial
+  // unique index API used elsewhere in this schema.
+  check("students_phone_canonical_check", sql`${table.phone} IS NULL OR ${table.phone} ~ '^20(10|11|12|15)[0-9]{8}$'`),
 ]);
 
 // qrToken is excluded from the insert schema — it is always auto-generated
