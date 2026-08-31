@@ -7,6 +7,8 @@ import {
   useUpdateStudent,
   getListStudentsQueryKey,
 } from "@workspace/api-client-react";
+import { formatAccountPhoneLocal, validateAccountPhone } from "@workspace/api-zod";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -27,10 +29,22 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import "./admin2-operations.css";
 
+// Canonical Account Phone Domain — the SAME authority Mobile (Complete
+// Profile / Edit Profile) and the backend use (see
+// lib/api-zod/src/phoneDomain.ts). Empty/omitted leaves the phone
+// untouched server-side; a non-empty value must be a real Egyptian mobile
+// number, and the form always submits the canonical form.
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Valid email required"),
-  phone: z.string().nullish(),
+  phone: z.string().nullish().refine(
+    (value) => !value || !value.trim() || validateAccountPhone(value).ok,
+    "Please enter a valid Egyptian mobile number.",
+  ).transform((value) => {
+    if (!value || !value.trim()) return value;
+    const validation = validateAccountPhone(value);
+    return validation.ok ? validation.canonical : value;
+  }),
   notes: z.string().nullish(),
 });
 
@@ -109,6 +123,7 @@ export default function Students() {
   const paginationPages = paginationRange(currentPage, totalPages);
   const updateStudent = useUpdateStudent();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
 
@@ -123,7 +138,9 @@ export default function Students() {
 
   const openEdit = (s: Student) => {
     setEditing(s);
-    form.reset({ name: s.name, email: s.email, phone: s.phone ?? "", notes: s.notes ?? "" });
+    // API returns the canonical "20XXXXXXXXXX" form — show the familiar
+    // local "01..." form in the edit field.
+    form.reset({ name: s.name, email: s.email, phone: formatAccountPhoneLocal(s.phone), notes: s.notes ?? "" });
     setOpen(true);
   };
 
@@ -134,7 +151,20 @@ export default function Students() {
     if (!editing) return;
     const parsed = formSchema.parse(values);
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey() }); setOpen(false); };
-    updateStudent.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
+    updateStudent.mutate(
+      { id: editing.id, data: parsed },
+      {
+        onSuccess: invalidate,
+        onError: (error: unknown) => {
+          const err = error as { data?: { error?: string }; message?: string };
+          toast({
+            title: "Failed to update student",
+            description: err?.data?.error ?? err?.message ?? "Something went wrong",
+            variant: "destructive",
+          });
+        },
+      },
+    );
   };
 
   return (

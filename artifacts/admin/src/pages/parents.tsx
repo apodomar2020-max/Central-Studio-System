@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListStudents, useUpdateStudent, getListStudentsQueryKey } from "@workspace/api-client-react";
+import { formatAccountPhoneLocal, validateAccountPhone } from "@workspace/api-zod";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Link } from "wouter";
@@ -30,10 +31,20 @@ import "./admin2-operations.css";
  * `users.edit`) for parent accounts, so this reuses useUpdateStudent as-is.
  * Same safe fields as the Students edit dialog.
  */
+// Canonical Account Phone Domain — the SAME authority Mobile (Complete
+// Profile / Edit Profile), Students (this table's own sibling edit dialog),
+// and the backend use (see lib/api-zod/src/phoneDomain.ts).
 const editFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Valid email required"),
-  phone: z.string().nullish(),
+  phone: z.string().nullish().refine(
+    (value) => !value || !value.trim() || validateAccountPhone(value).ok,
+    "Please enter a valid Egyptian mobile number.",
+  ).transform((value) => {
+    if (!value || !value.trim()) return value;
+    const validation = validateAccountPhone(value);
+    return validation.ok ? validation.canonical : value;
+  }),
   notes: z.string().nullish(),
 });
 
@@ -117,10 +128,12 @@ export default function ParentsPage() {
 
   const openEdit = (parent: ParentRow) => {
     setEditing(parent);
+    // API returns the canonical "20XXXXXXXXXX" form — show the familiar
+    // local "01..." form in the edit field.
     form.reset({
       name: parent.name,
       email: parent.email,
-      phone: parent.phone ?? "",
+      phone: formatAccountPhoneLocal(parent.phone),
       notes: parent.notes ?? "",
     });
   };
