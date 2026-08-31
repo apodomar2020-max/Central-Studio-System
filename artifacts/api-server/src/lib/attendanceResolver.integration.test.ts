@@ -46,17 +46,28 @@ interface AccountFixture {
 // accumulate colliding phone numbers across runs — the exact bug that
 // first surfaced here when combined with other test files in one process.
 function uniquePhone(seed: number): string {
-  // "01" + 9 digits = 11 digits total, matching normalizePhone's
-  // 01-prefix/11-digit Egyptian-local-format branch exactly.
-  const suffix = String(Date.now() % 10_000_000).padStart(7, "0") + String(seed).padStart(2, "0");
-  return `01${suffix}`;
+  // "010" + 8 digits = 11 digits total, matching normalizePhone's
+  // 01-prefix/11-digit Egyptian-local-format branch exactly. Canonical
+  // Account Phone Domain (migration 0125) additionally requires the
+  // operator digit right after "01" to be one of 0/1/2/5 — fixed to "0"
+  // here so every generated fixture always satisfies
+  // students_phone_canonical_check, regardless of the random seed/time.
+  const suffix = String(Date.now() % 100_000).padStart(6, "0") + String(seed).padStart(2, "0");
+  return `010${suffix}`;
 }
 
 async function insertAccount(label: string, phone: string): Promise<AccountFixture> {
   const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // Canonical Account Phone Domain (migration 0125): students.phone must
+  // already be canonical "20XXXXXXXXXX" at rest (DB CHECK constraint) — a
+  // real write path would normalize before persisting, so this fixture
+  // does the same. `phone` (the local "01..." form) is still returned and
+  // used below to derive the local/+20/0020 SEARCH QUERY variants the
+  // tests exercise; only the stored value changes.
+  const canonicalPhone = `20${phone.slice(1)}`;
   const row = await pool.query(
     `INSERT INTO students (name, email, phone, account_type) VALUES ($1, $2, $3, 'parent') RETURNING id, qr_token`,
-    [`Resolver Test ${label}`, `resolver-${label}-${run}@example.com`, phone],
+    [`Resolver Test ${label}`, `resolver-${label}-${run}@example.com`, canonicalPhone],
   );
   return { studentId: row.rows[0].id, qrToken: row.rows[0].qr_token, phone, email: `resolver-${label}-${run}@example.com` };
 }

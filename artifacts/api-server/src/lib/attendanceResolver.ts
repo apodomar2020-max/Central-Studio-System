@@ -142,7 +142,6 @@ export interface AttendanceResolverResult {
 }
 
 const MAX_ACCOUNTS = 10;
-const MAX_PHONE_SCAN_ROWS = 5000;
 const MIN_NAME_QUERY_LENGTH = 2;
 const MAX_NAME_MATCH_ROWS = 50;
 
@@ -248,19 +247,28 @@ export async function resolveAccountIdsFromQr(rawPayload: string): Promise<numbe
   return student ? [student.id] : [];
 }
 
-/** Mirrors marketing.ts's resolveRecipients() pattern: bounded fetch, exact
- *  normalized-form comparison in application code (no stored normalized-phone
- *  column on students, no substring/LIKE matching). */
+/** Canonical Account Phone Domain (migration 0125): students.phone is now
+ *  guaranteed to be either NULL or exactly the canonical "20XXXXXXXXXX"
+ *  form (DB CHECK constraint) with at most one account per value (partial
+ *  UNIQUE index) — so a search query only needs to be normalized to that
+ *  same form and compared directly via the indexed column. This replaces
+ *  the previous bounded-scan-and-normalize-every-row approach (which
+ *  existed only because stored values could not be trusted to already be
+ *  canonical) and also removes the previous "malformed stored value
+ *  normalizes to null, so that account was invisible to search" failure
+ *  mode entirely — a value violating the CHECK constraint can no longer
+ *  exist in the column at all. Search input itself stays fully flexible —
+ *  normalizePhone() still accepts every form Attendance staff might type
+ *  (010.../+20.../0020.../20...). */
 export async function resolveAccountIdsFromPhone(rawPhone: string): Promise<number[]> {
   const target = normalizePhone(rawPhone);
   if (!target) return [];
   const rows = await db
-    .select({ id: studentsTable.id, phone: studentsTable.phone })
+    .select({ id: studentsTable.id })
     .from(studentsTable)
-    .where(sql`${studentsTable.phone} is not null`)
-    .limit(MAX_PHONE_SCAN_ROWS);
-  const matches = rows.filter((row) => normalizePhone(row.phone) === target).map((row) => row.id);
-  return matches.slice(0, MAX_ACCOUNTS);
+    .where(eq(studentsTable.phone, target))
+    .limit(MAX_ACCOUNTS);
+  return rows.map((row) => row.id);
 }
 
 /** Name is discovery-only — never an identity. Returns candidate ACCOUNTS to
