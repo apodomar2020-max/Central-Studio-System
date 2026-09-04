@@ -1,146 +1,85 @@
-import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import type { AssessmentScheduleOption, BalletPackageOption } from "@/services/balletAssessmentService";
+import ParticipantAvatar from "@/components/ParticipantAvatar";
+import { BookingCalendarIcon } from "@/components/BookingDetailsIcons";
 import type { ChildProfile } from "@/contexts/AppContext";
-import { BA, BA_RADIUS } from "./assessmentTokens";
+import type { AssessmentScheduleOption } from "@/services/balletAssessmentService";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
+import BalletAssessmentIcon from "./BalletAssessmentIcon";
+import { BA } from "./assessmentTokens";
 
-type SectionKey = "child" | "appointment" | "package";
+type SectionKey = "child" | "appointment";
 
-function formatDate(value?: string) {
-  if (!value) return "—";
-  const date = new Date(`${value}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long" });
+function assessmentLabel(appointment: AssessmentScheduleOption) {
+  const date = new Date(`${appointment.date}T12:00:00Z`);
+  const dateLabel = Number.isNaN(date.getTime())
+    ? appointment.date
+    : date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "long", timeZone: "UTC" });
+  return `${(appointment.startTime || appointment.time).slice(0, 5)} - ${dateLabel}`.toUpperCase();
 }
 
-function Section({
-  title,
-  icon,
-  children,
-  onEdit,
-}: {
-  title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  children: React.ReactNode;
+function ReviewRow({ eyebrow, value, icon, onEdit, last }: {
+  eyebrow: string;
+  value: string;
+  icon: React.ReactNode;
   onEdit?: () => void;
+  last?: boolean;
 }) {
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={styles.titleRow}>
-          <Ionicons name={icon} size={17} color={BA.cyan400} />
-          <Text style={styles.sectionTitle}>{title}</Text>
+    <View>
+      <View style={styles.row}>
+        <View style={styles.icon}>{icon}</View>
+        <View style={styles.copy}>
+          <Text style={styles.eyebrow}>{eyebrow}</Text>
+          <Text style={styles.value} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>{value}</Text>
         </View>
         {onEdit ? (
-          <TouchableOpacity onPress={onEdit} activeOpacity={0.75}>
-            <Text style={styles.editText}>Edit</Text>
+          <TouchableOpacity onPress={onEdit} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={`Edit ${eyebrow}`}>
+            <BalletAssessmentIcon name="edit" size={27} />
           </TouchableOpacity>
-        ) : null}
+        ) : <View style={styles.editSpacer} />}
       </View>
-      {children}
+      {!last ? <View style={styles.divider} /> : null}
     </View>
   );
 }
 
-export default function BalletAssessmentSummaryCard({
-  child,
-  appointment,
-  pkg,
-  paymentLabel,
-  assessmentFeeEgp,
-  onEdit,
-}: {
+export default function BalletAssessmentSummaryCard({ child, appointment, paymentLabel, assessmentFeeEgp, onEdit }: {
   child: ChildProfile;
   appointment: AssessmentScheduleOption;
-  pkg: BalletPackageOption;
   paymentLabel: string;
   assessmentFeeEgp?: number | null;
   onEdit: (section: SectionKey) => void;
 }) {
-  const hasFee = assessmentFeeEgp != null && assessmentFeeEgp > 0;
-
   return (
     <View style={styles.card}>
-      <Section title="Child" icon="happy-outline" onEdit={() => onEdit("child")}>
-        <Text style={styles.primary}>{child.fullName}</Text>
-        <Text style={styles.secondary}>Age {child.age || "—"} Years</Text>
-      </Section>
-      <Section title="Assessment" icon="calendar-outline" onEdit={() => onEdit("appointment")}>
-        <Text style={styles.primary}>{appointment.className}</Text>
-        <Text style={styles.secondary}>{formatDate(appointment.date)}</Text>
-        <Text style={styles.secondary}>{appointment.time}</Text>
-      </Section>
-      <Section title="Preferred Package" icon="pricetag-outline" onEdit={() => onEdit("package")}>
-        <Text style={styles.primary}>{pkg.name} ({pkg.priceEgp.toLocaleString("en-US")} EGP/mo)</Text>
-        <Text style={styles.disclaimerText}>Preference only — Payment arranged after assessment approval.</Text>
-      </Section>
-      <Section title="Assessment Fee" icon="cash-outline">
-        <Text style={styles.primary}>
-          {hasFee ? `${assessmentFeeEgp?.toLocaleString("en-US")} EGP` : "Free / No Fee"}
-        </Text>
-        <Text style={styles.secondary}>
-          {hasFee ? "Payable at studio during assessment appointment" : "No assessment fee required"}
-        </Text>
-      </Section>
-      <Section title="Payment Method" icon="card-outline">
-        <Text style={styles.primary}>{paymentLabel}</Text>
-      </Section>
+      <ReviewRow
+        eyebrow="Child"
+        value={child.fullName.toUpperCase()}
+        icon={<ParticipantAvatar type="child" name={child.fullName} gender={child.gender} size={38} />}
+        onEdit={() => onEdit("child")}
+      />
+      <ReviewRow
+        eyebrow="Assessment"
+        value={assessmentLabel(appointment)}
+        icon={<BookingCalendarIcon size={29} />}
+        onEdit={() => onEdit("appointment")}
+      />
+      <ReviewRow eyebrow="Ballet Plan" value="ARRANGED AFTER ASSESSMENT" icon={<BalletAssessmentIcon name="price" size={29} />} />
+      <ReviewRow eyebrow="Assessment Fee" value={assessmentFeeEgp != null ? `${assessmentFeeEgp.toLocaleString("en-US")} EGP` : "SET BY THE STUDIO"} icon={<BalletAssessmentIcon name="price" size={29} />} />
+      <ReviewRow eyebrow="Payment Method" value={paymentLabel.toUpperCase()} icon={<BalletAssessmentIcon name="payment" size={31} />} last />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: BA_RADIUS.xl,
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.28)",
-    backgroundColor: BA.ink800,
-    paddingHorizontal: 16,
-    paddingVertical: 2,
-  },
-  section: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.07)",
-    gap: 4,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 2,
-  },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: 7 },
-  sectionTitle: {
-    color: BA.ink300,
-    fontFamily: "SpaceMono_700Bold",
-    fontSize: 10,
-    letterSpacing: 0.9,
-    textTransform: "uppercase",
-  },
-  editText: {
-    color: BA.cyan400,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 12.5,
-  },
-  primary: {
-    color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 15,
-  },
-  secondary: {
-    color: BA.ink300,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  disclaimerText: {
-    color: BA.cyan400,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 2,
-  },
+  card: { width: "100%", paddingHorizontal: 10 },
+  row: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 8, paddingVertical: 10 },
+  icon: { width: 39, alignItems: "center", justifyContent: "center" },
+  copy: { flex: 1, minWidth: 0, justifyContent: "center" },
+  eyebrow: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 13, lineHeight: 16 },
+  value: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 23, lineHeight: 27, textTransform: "uppercase", ...iosDisplayTextStyle(23, 27) },
+  editSpacer: { width: 27 },
+  divider: { height: 1, marginHorizontal: 8, borderTopWidth: 1, borderStyle: "dashed", borderColor: "rgba(255,255,255,0.38)" },
 });

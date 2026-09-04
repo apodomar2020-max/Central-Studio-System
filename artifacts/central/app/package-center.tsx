@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -25,6 +25,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { formatApiDate, isApiDatePast } from "@/utils/dateTime";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
+import { parsePackageAgeBand } from "@/utils/packageAgeBands";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CYAN = "#00B6D7";
@@ -241,6 +242,7 @@ function StatusSkeleton() {
 
 export default function PackageCenterScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ ageBand?: string | string[] }>();
   const alert = useCentralAlert();
   const { cancelPackage, user } = useAppContext();
   const [refreshing, setRefreshing] = useState(false);
@@ -250,6 +252,7 @@ export default function PackageCenterScreen() {
   const scrollX = useRef(new Animated.Value(0)).current;
   const { data, isLoading, isError, refetch } = useGetMyPackages();
   const hiddenPackagesStorageKey = `package-center:hidden:${user?.id ?? "guest"}`;
+  const requestedAgeBand = parsePackageAgeBand(Array.isArray(params.ageBand) ? params.ageBand[0] : params.ageBand);
 
   useEffect(() => {
     let active = true;
@@ -443,6 +446,7 @@ export default function PackageCenterScreen() {
 
         <AvailablePackagesSection
           mode="packageCenter"
+          initialAgeFilter={requestedAgeBand ?? undefined}
           onPurchased={async () => { await refetch(); }}
         />
       </ScrollView>

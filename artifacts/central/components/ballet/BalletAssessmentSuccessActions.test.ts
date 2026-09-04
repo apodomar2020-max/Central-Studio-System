@@ -3,117 +3,121 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 
-// This is a source-string structural test suite, matching the established
-// pattern in BalletStudentPreviewCard.test.ts: there is no runtime React
-// Native component-rendering framework in this repo (no jest,
-// react-test-renderer, or @testing-library/react-native — confirmed by
-// inspecting package.json), so JSX/style structure is verified against the
-// component source directly. Behavioral/state-transition logic (submission,
-// eligibility, snapshots) is covered separately and exhaustively with real
-// function-call tests in balletAssessmentStateModel.test.ts — this file
-// only verifies UI structure and wiring, not state transitions.
-
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 const actionsSource = read("artifacts/central/components/ballet/BalletAssessmentSuccessActions.tsx");
-const headerSource = read("artifacts/central/components/ballet/BalletAssessmentHeader.tsx");
+const packageCardSource = read("artifacts/central/components/ballet/BalletAssessmentPackageCard.tsx");
+const iconSource = read("artifacts/central/components/ballet/BalletAssessmentIcon.tsx");
+const childCardSource = read("artifacts/central/components/ballet/BalletAssessmentChildCard.tsx");
+const appointmentCardSource = read("artifacts/central/components/ballet/BalletAssessmentAppointmentCard.tsx");
+const summarySource = read("artifacts/central/components/ballet/BalletAssessmentSummaryCard.tsx");
 const assessmentSource = read("artifacts/central/app/ballet/assessment.tsx");
+const bookingFlowSource = read("artifacts/central/app/booking/flow.tsx");
 
-const buttonStyleSource = actionsSource.slice(
-  actionsSource.indexOf("  button: {"),
-  actionsSource.indexOf("  primary:"),
-);
-const wrapStyleSource = actionsSource.slice(
-  actionsSource.indexOf("  wrap: {"),
-  actionsSource.indexOf("  mainActions:"),
-);
-const mainActionsStyleSource = actionsSource.slice(
-  actionsSource.indexOf("  mainActions: {"),
-  actionsSource.indexOf("  button: {"),
-);
-const cancelActionStyleSource = actionsSource.slice(
-  actionsSource.indexOf("  cancelAction: {"),
-  actionsSource.indexOf("  cancelText:"),
-);
-
-// ── 1 & 3: Home replaces Back only on the success screen ───────────────────
-
-test("the success screen shows a compact Home action in the top-left, calling the existing Go To Home destination", () => {
-  assert.match(assessmentSource, /<BalletAssessmentHeader onBack={goBack} homeAction={\(\) => router\.replace\("\/" as never\)} \/>/);
-  assert.match(headerSource, /homeAction\?: \(\) => void/);
-  assert.match(headerSource, /isHome \? "home-outline" : "chevron-back"/);
-  assert.match(headerSource, /isHome \? "Home" : "Back"/);
+test("the Child step keeps the top Back control while later steps use their footer Back button", () => {
+  const usages = assessmentSource.match(/<BalletAssessmentHeader onBack=\{goBack\} showBack=\{step === "child"\} \/>/g) ?? [];
+  assert.equal(usages.length, 1);
 });
 
-test("normal assessment steps still render the standard Back header, unaffected by the success-screen Home mode", () => {
-  assert.match(assessmentSource, /<BalletAssessmentHeader onBack={goBack} \/>/);
-  // The default (non-success) header usage must not pass homeAction, so it
-  // falls through to the original Back behavior.
-  const normalHeaderUsages = assessmentSource.match(/<BalletAssessmentHeader onBack={goBack} \/>/g) ?? [];
-  assert.equal(normalHeaderUsages.length, 1);
+test("the success screen is one responsive scroll surface, including its action panel", () => {
+  const successStart = assessmentSource.indexOf("if (submittedApplicationId != null && submittedSnapshot)");
+  const successEnd = assessmentSource.indexOf("\n  return (\n    <View style={[styles.container", successStart);
+  const successSource = assessmentSource.slice(successStart, successEnd);
+  assert.match(successSource, /<ScrollView[\s\S]*<BalletAssessmentSuccessSummaryCard[\s\S]*<View style=\{styles\.successClosingCard\}>[\s\S]*<BalletAssessmentSuccessActions[\s\S]*<\/ScrollView>/);
+  assert.match(successSource, /paddingBottom: Math\.max\(insets\.bottom, 12\) \+ 20/);
+  assert.doesNotMatch(assessmentSource, /successFooter/);
 });
 
-// ── 2: no large Go To Home button remains ───────────────────────────────────
-
-test("the large Go To Home button is fully removed from the success actions component", () => {
-  assert.doesNotMatch(actionsSource, /Go To Home/);
-  assert.doesNotMatch(actionsSource, /onHome/);
-  assert.doesNotMatch(actionsSource, /home-outline/);
+test("success preserves the shared celebration animation and submission pop", () => {
+  assert.match(assessmentSource, /<SuccessConfetti \/>/);
+  assert.match(assessmentSource, /transform: \[\{ scale: successScale \}\]/);
+  assert.match(assessmentSource, /successScale\.setValue\(0\)/);
+  assert.match(assessmentSource, /Haptics\.notificationAsync\(Haptics\.NotificationFeedbackType\.Success\)/);
 });
 
-// ── 4, 5, 6: Modify and Apply Another Child are equal, full-width buttons ──
-
-test("Modify Application and Apply For Another Child are both rendered from the same full-width, equal-height button style", () => {
-  assert.match(actionsSource, /styles\.button, styles\.primary/);
-  assert.match(actionsSource, /styles\.button, styles\.secondary/);
-  assert.match(buttonStyleSource, /width: "100%"/);
-  assert.match(buttonStyleSource, /minHeight: 54/);
-  // Only one minHeight declaration exists for these two buttons — proof
-  // neither has a per-button size override.
-  const minHeightDeclarations = actionsSource.match(/minHeight: \d+/g) ?? [];
-  assert.equal(minHeightDeclarations.length, 1);
+test("all children stay visible while existing Ballet applicants are disabled", () => {
+  assert.match(assessmentSource, /applicationsState === "ready" && children\.map\(\(child\) =>/);
+  assert.match(assessmentSource, /const disabled = outsideRoutedSelection \|\| \(status != null && BLOCKING_CHILD_APPLICATION_STATUSES\.has\(status\)\)/);
+  assert.match(assessmentSource, /disabled=\{disabled\}/);
+  assert.match(assessmentSource, /if \(disabled \|\| lockedOut\) return/);
 });
 
-test("the two main actions render as a full-width column, not a row", () => {
-  assert.match(mainActionsStyleSource, /width: "100%"/);
-  assert.doesNotMatch(mainActionsStyleSource, /flexDirection: "row"/);
+test("a blocking application wins over terminal history for the same child", () => {
+  assert.match(assessmentSource, /matching\.find\(\(app\) => BLOCKING_CHILD_APPLICATION_STATUSES\.has\(app\.status\)\)\?\.status/);
 });
 
-// ── 7, 8: Cancel Application is a plain text action ─────────────────────────
-
-test("Cancel Application renders as a text action, not a button", () => {
-  assert.match(actionsSource, /style={styles\.cancelAction}/);
-  assert.doesNotMatch(actionsSource, /onPress={onCancel}[\s\S]{0,80}style={\[styles\.button/);
+test("success actions match the reference destinations", () => {
+  assert.match(actionsSource, /onModify: \(\) => void/);
+  assert.match(actionsSource, /onRemind: \(\) => void/);
+  assert.match(actionsSource, /onHome: \(\) => void/);
+  assert.match(actionsSource, />Modify<\/Text>/);
+  assert.match(actionsSource, />Remind Me<\/Text>/);
+  assert.match(actionsSource, />Back to home<\/Text>/);
+  assert.match(assessmentSource, /onHome=\{\(\) => router\.replace\("\/\(tabs\)\/" as never\)\}/);
+  assert.match(assessmentSource, /calendar\.google\.com\/calendar\/render/);
 });
 
-test("the Cancel action has no filled background and no border", () => {
-  assert.doesNotMatch(cancelActionStyleSource, /backgroundColor/);
-  assert.doesNotMatch(cancelActionStyleSource, /borderWidth/);
-  assert.doesNotMatch(cancelActionStyleSource, /borderColor/);
+test("Ballet cancellation remains admin and system only", () => {
+  assert.doesNotMatch(actionsSource, /Cancel Application|Cancel Program|onCancel|cancelLoading/);
+  assert.doesNotMatch(assessmentSource, /cancelBalletApplication|requestBalletEnrollmentCancellation|submitCancelApplication/);
 });
 
-// ── 9, 10: Cancel still calls the existing confirmation workflow and blocks repeat taps ──
-
-test("Cancel still calls the existing confirmation workflow via the unchanged onCancel handler", () => {
-  assert.match(actionsSource, /onPress={onCancel}/);
-  assert.match(assessmentSource, /onCancel={confirmCancel}/);
+test("Modify restores only the submitted child and appointment before returning to Review", () => {
+  assert.match(assessmentSource, /setEditingApplicationId\(submittedApplicationId\);\s*setSelectedChild\(submittedSnapshot\.child\);\s*setSelectedAppointment\(submittedSnapshot\.appointment\);\s*setSubmittedApplicationId\(null\);\s*setSubmittedSnapshot\(null\);\s*setStep\("review"\);/);
+  assert.doesNotMatch(assessmentSource, /setSelectedPackage/);
 });
 
-test("cancellation loading disables the action to prevent repeated taps", () => {
-  assert.match(actionsSource, /disabled={cancelLoading}/);
-  assert.match(actionsSource, /cancelLoading \? "Cancelling…" : "Cancel Application"/);
+test("plans are informational carousel cards and cannot be selected", () => {
+  assert.match(packageCardSource, /return \(\s*<View style=\{styles\.card\}/);
+  assert.doesNotMatch(packageCardSource, /TouchableOpacity|Pressable|onPress|selected/);
+  assert.match(assessmentSource, /<ScrollView horizontal[\s\S]*packages\.map\(\(pkg\) => <BalletAssessmentPackageCard key=\{pkg\.id\} pkg=\{pkg\} \/>\)/);
+  assert.doesNotMatch(assessmentSource, /selectedPackage|setSelectedPackage/);
 });
 
-// ── 11: root cause of the clipping is fixed ─────────────────────────────────
-
-test("the success footer no longer inherits the row layout meant for the two-button step footer", () => {
-  assert.match(assessmentSource, /successFooter: {\s*flexDirection: "column",?\s*}/);
-  assert.match(assessmentSource, /styles\.footer, styles\.successFooter/);
-  assert.match(wrapStyleSource, /width: "100%"/);
+test("Ballet step headings use the regular class-booking title scale and readable supporting copy", () => {
+  assert.match(bookingFlowSource, /stepTitle: \{ fontSize: 22, fontFamily: "Archivo_700Bold"/);
+  assert.match(assessmentSource, /stepTitle: \{[\s\S]*?fontFamily: "Archivo_700Bold",[\s\S]*?fontSize: 22,/);
+  assert.match(assessmentSource, /stepSubtitle: \{[\s\S]*?fontSize: 14,[\s\S]*?lineHeight: 18,/);
 });
 
-// ── 12: submission / success-state logic is untouched ──────────────────────
+test("Ballet plan cards share the regular package dimensions and use the artwork as the card background", () => {
+  assert.match(packageCardSource, /PACKAGE_CARD_HEIGHT, PACKAGE_CARD_WIDTH/);
+  assert.match(packageCardSource, /style=\{StyleSheet\.absoluteFill\} contentFit="cover"/);
+  assert.match(packageCardSource, /backgroundColor: "transparent"/);
+  assert.doesNotMatch(packageCardSource, /colors=\{\["#050607", "#060708"\]\}/);
+});
 
-test("the Modify handler still restores the exact submitted snapshot fields before returning to Review, unchanged", () => {
-  assert.match(assessmentSource, /setEditingApplicationId\(submittedApplicationId\);\s*setSelectedChild\(submittedSnapshot\.child\);\s*setSelectedAppointment\(submittedSnapshot\.appointment\);\s*setSelectedPackage\(submittedSnapshot\.pkg\);\s*setSubmittedApplicationId\(null\);\s*setSubmittedSnapshot\(null\);\s*setStep\("review"\);/);
-  assert.match(assessmentSource, /onAnotherChild={resetForAnotherChild}/);
+test("the supplied Ballet assessment SVG set replaces generic review icons", () => {
+  for (const name of ["edit", "info", "payment", "price", "shoes"]) {
+    assert.match(iconSource, new RegExp(`ballet-assessment-${name}\\.svg`));
+  }
+  assert.match(summarySource, /BalletAssessmentIcon name="edit"/);
+  assert.match(summarySource, /BalletAssessmentIcon name="payment"/);
+  assert.match(summarySource, /BalletAssessmentIcon name="price"/);
+  assert.doesNotMatch(summarySource, /create-outline|pricetag-outline|card-outline/);
+  assert.match(assessmentSource, /BalletAssessmentIcon name="shoes"/);
+  assert.match(assessmentSource, /BalletAssessmentIcon name="info"/);
+});
+
+test("small Ballet assessment copy is raised to readable mobile sizes", () => {
+  assert.match(childCardSource, /name: \{[^\n]*fontSize: 20, lineHeight: 23/);
+  assert.match(childCardSource, /age: \{[^\n]*fontSize: 13, lineHeight: 16/);
+  assert.match(appointmentCardSource, /level: \{[^\n]*fontSize: 21, lineHeight: 25/);
+  assert.match(appointmentCardSource, /meta: \{[^\n]*fontSize: 13, lineHeight: 17/);
+  assert.match(assessmentSource, /addChildHint: \{[^\n]*fontSize: 12\.5, lineHeight: 16/);
+  assert.match(assessmentSource, /noteText: \{[^\n]*fontSize: 13, lineHeight: 18/);
+  assert.match(assessmentSource, /assessmentFeeDescription: \{[^\n]*fontSize: 12, lineHeight: 16/);
+});
+
+test("no preferred package is sent during assessment submission or editing", () => {
+  const updateStart = assessmentSource.indexOf("await updateBalletApplication");
+  const updateEnd = assessmentSource.indexOf("});", updateStart) + 3;
+  const submitStart = assessmentSource.indexOf("const result = await submitBalletApplication");
+  const submitEnd = assessmentSource.indexOf("});", submitStart) + 3;
+  assert.doesNotMatch(assessmentSource.slice(updateStart, updateEnd), /preferredPackageId/);
+  assert.doesNotMatch(assessmentSource.slice(submitStart, submitEnd), /preferredPackageId/);
+});
+
+test("success buttons use reference-like fully rounded sizing", () => {
+  assert.match(actionsSource, /outlineButton: \{[^}]*height: 50[^}]*borderRadius: 25/);
+  assert.match(actionsSource, /homeButton: \{[^}]*height: 52[^}]*borderRadius: 26/);
 });

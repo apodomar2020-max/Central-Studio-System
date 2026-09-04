@@ -118,6 +118,8 @@ export interface AssessmentScheduleOption {
   time: string;
   startTime: string;
   endTime: string;
+  branchName?: string | null;
+  roomName?: string | null;
 }
 
 export interface BalletPackageOption {

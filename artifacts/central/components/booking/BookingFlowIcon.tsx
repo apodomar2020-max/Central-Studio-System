@@ -8,6 +8,7 @@ const SOURCES = {
   online: require("@/assets/icons/booking-online.svg"),
   location: require("@/assets/icons/booking-location.svg"),
   promo: require("@/assets/icons/booking-promo.svg"),
+  route: require("@/assets/icons/booking-route.svg"),
 } as const;
 
 export type BookingFlowIconName = keyof typeof SOURCES;

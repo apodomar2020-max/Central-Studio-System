@@ -234,28 +234,24 @@ test("the non-routed flow never triggers eligibility reconciliation", () => {
 // ── computeReviewMissingStep (Part D) ───────────────────────────────────────
 
 test("Review without a selected child recovers to Child, never a blank body", () => {
-  assert.equal(computeReviewMissingStep({ step: "review", hasChild: false, hasAppointment: true, hasPackage: true }), "child");
+  assert.equal(computeReviewMissingStep({ step: "review", hasChild: false, hasAppointment: true }), "child");
 });
 
 test("Review without a selected appointment recovers to Appointment", () => {
-  assert.equal(computeReviewMissingStep({ step: "review", hasChild: true, hasAppointment: false, hasPackage: true }), "appointment");
+  assert.equal(computeReviewMissingStep({ step: "review", hasChild: true, hasAppointment: false }), "appointment");
 });
 
-test("Review without a selected package recovers to Package", () => {
-  assert.equal(computeReviewMissingStep({ step: "review", hasChild: true, hasAppointment: true, hasPackage: false }), "package");
-});
-
-test("Review with everything present needs no recovery", () => {
-  assert.equal(computeReviewMissingStep({ step: "review", hasChild: true, hasAppointment: true, hasPackage: true }), null);
+test("Review needs no package selection because Plans is informational", () => {
+  assert.equal(computeReviewMissingStep({ step: "review", hasChild: true, hasAppointment: true }), null);
 });
 
 test("non-Review steps never trigger the recovery check", () => {
-  assert.equal(computeReviewMissingStep({ step: "child", hasChild: false, hasAppointment: false, hasPackage: false }), null);
+  assert.equal(computeReviewMissingStep({ step: "child", hasChild: false, hasAppointment: false }), null);
 });
 
 // ── canSubmitAssessment (Part E) ─────────────────────────────────────────────
 
-const baseSubmit = { hasUser: true, hasChild: true, hasAppointment: true, hasPackage: true, isSubmitting: false, hasSubmittedSnapshot: false };
+const baseSubmit = { hasUser: true, hasChild: true, hasAppointment: true, isSubmitting: false, hasSubmittedSnapshot: false };
 
 test("submission is allowed once every required selection is present", () => {
   assert.equal(canSubmitAssessment(baseSubmit), true);
@@ -272,7 +268,6 @@ test("a tap after a submission has already produced a snapshot is rejected", () 
 test("submission is rejected when any required selection is missing", () => {
   assert.equal(canSubmitAssessment({ ...baseSubmit, hasChild: false }), false);
   assert.equal(canSubmitAssessment({ ...baseSubmit, hasAppointment: false }), false);
-  assert.equal(canSubmitAssessment({ ...baseSubmit, hasPackage: false }), false);
   assert.equal(canSubmitAssessment({ ...baseSubmit, hasUser: false }), false);
 });
 
@@ -281,17 +276,14 @@ test("submission is rejected when any required selection is missing", () => {
 test("the submission draft is captured before the async request and captures exactly the validated identity", () => {
   const childRef = { id: "9", fullName: "Nour Ali" };
   const appointmentRef = { scheduleId: 4, date: "2026-08-01", time: "10:00" };
-  const packageRef = { id: 2, name: "Standard" };
   const draft = buildAssessmentSubmissionDraft({
     child: childRef,
     appointment: appointmentRef,
-    pkg: packageRef,
     paymentLabel: "Pay at Studio",
   });
   assert.deepEqual(draft, {
     child: childRef,
     appointment: appointmentRef,
-    pkg: packageRef,
     paymentLabel: "Pay at Studio",
   });
 });
@@ -300,14 +292,12 @@ test("finalizing only adds the server-returned identity onto the existing draft"
   const draft = buildAssessmentSubmissionDraft({
     child: { id: "9" },
     appointment: { scheduleId: 4, date: "2026-08-01" },
-    pkg: { id: 2 },
     paymentLabel: "Pay at Studio",
   });
   const snapshot = finalizeAssessmentSubmissionSnapshot(draft, { applicationId: 71, status: "pending" });
   assert.deepEqual(snapshot, {
     child: { id: "9" },
     appointment: { scheduleId: 4, date: "2026-08-01" },
-    pkg: { id: 2 },
     paymentLabel: "Pay at Studio",
     applicationId: 71,
     status: "pending",
@@ -325,7 +315,6 @@ test("mutable selection changing while the request is pending does not alter the
   const draft = buildAssessmentSubmissionDraft({
     child: selectedChild,
     appointment: { scheduleId: 1, date: "2026-08-01" },
-    pkg: { id: 1 },
     paymentLabel: "Pay at Studio",
   });
 
@@ -342,7 +331,6 @@ test("the finalized snapshot is immune to the live selection state being cleared
   const draft = buildAssessmentSubmissionDraft({
     child: selectedChild,
     appointment: { scheduleId: 1, date: "2026-08-01" },
-    pkg: { id: 1 },
     paymentLabel: "Pay at Studio",
   });
   selectedChild = null; // simulates a later eligibility reconciliation pass

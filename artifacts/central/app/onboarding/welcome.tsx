@@ -8,16 +8,14 @@
  *                        requests are simply sent without an Authorization header.
  *   [Sign Up]          — ghost button — routes to /auth/register
  *   [Sign In]          — ghost button — routes to /auth/login
- *
- * "Already a member? Sign In →" text link kept below the ghost row.
  */
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React from "react";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CS, Divider, Eyebrow, GhostBtn, PrimaryCTA, StageVideo } from "@/components/signup/SignupKit";
+import { CS, Eyebrow, GhostBtn, PrimaryCTA, StageVideo } from "@/components/signup/SignupKit";
 import { useAppContext } from "@/contexts/AppContext";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
@@ -79,10 +77,6 @@ export default function WelcomeScreen() {
           />
         </View>
 
-        <Divider label="Already a member?" />
-        <TouchableOpacity onPress={goToSignIn} style={styles.signIn}>
-          <Text style={styles.signInText}>Sign In →</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -97,6 +91,4 @@ const styles = StyleSheet.create({
   sub: { fontFamily: "Archivo_400Regular", fontSize: 14, color: "rgba(255,255,255,0.50)", lineHeight: 22, maxWidth: 270 },
   footer: { paddingHorizontal: 24, paddingTop: 12, gap: 10 },
   socialRow: { flexDirection: "row", gap: 10 },
-  signIn: { alignItems: "center", paddingVertical: 6 },
-  signInText: { fontFamily: "Archivo_700Bold", fontSize: 14, color: CS.cyan400 },
 });

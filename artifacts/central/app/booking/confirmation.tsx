@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View, Animated } from "react-native";
+import { Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Animated } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
@@ -97,7 +97,11 @@ export default function ConfirmationScreen(): React.ReactElement {
       <LinearGradient colors={["#17191B", BLACK]} style={StyleSheet.absoluteFill} />
       <LinearGradient colors={["rgba(0,182,215,0.50)", "rgba(0,182,215,0.03)", "transparent"]} start={{ x: 1, y: 0 }} end={{ x: 0.05, y: 0.75 }} style={styles.topGlow} />
       <SuccessConfetti />
-      <View style={[styles.canvas, { paddingTop: (Platform.OS === "web" ? 42 : insets.top) + 6, paddingBottom: Math.max(insets.bottom, 10) }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        bounces
+        contentContainerStyle={[styles.canvas, { paddingTop: (Platform.OS === "web" ? 42 : insets.top) + 6, paddingBottom: Math.max(insets.bottom, 10) }]}
+      >
         <Animated.View style={[styles.successIcon, { transform: [{ scale: pop }] }]}><Ionicons name="checkmark" size={28} color={BLACK} /></Animated.View>
         <Text style={styles.titleWhite}>BOOKING</Text>
         <Text style={styles.titleCyan}>SUBMITTED</Text>
@@ -148,7 +152,7 @@ export default function ConfirmationScreen(): React.ReactElement {
           </View>
           <TouchableOpacity style={styles.homeButton} onPress={() => router.replace("/(tabs)/" as never)}><BookingSuccessActionIcon name="home" size={23} /><Text style={styles.homeText}>Back to home</Text></TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -156,7 +160,7 @@ export default function ConfirmationScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BLACK },
   topGlow: { position: "absolute", top: -45, right: -10, width: "90%", height: 180, transform: [{ rotate: "-9deg" }] },
-  canvas: { flex: 1, paddingHorizontal: 15 },
+  canvas: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 15 },
   successIcon: { alignSelf: "center", width: 50, height: 50, borderRadius: 25, backgroundColor: CYAN, alignItems: "center", justifyContent: "center", marginBottom: 7 },
   titleWhite: { alignSelf: "center", fontSize: 36, lineHeight: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", ...iosDisplayTextStyle(36, 36) },
   titleCyan: { alignSelf: "center", marginTop: -3, fontSize: 36, lineHeight: 36, fontFamily: "Anton_400Regular", color: CYAN, ...iosDisplayTextStyle(36, 36) },
@@ -166,13 +170,13 @@ const styles = StyleSheet.create({
   referenceTextRight: { textAlign: "right" },
   referenceLabel: { fontSize: 15, lineHeight: 18, fontFamily: "Archivo_500Medium", color: "#FFFFFF" },
   referenceValue: { fontSize: 20, lineHeight: 23, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
-  summaryCard: { flex: 1, minHeight: 0, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.55)", padding: 9, backgroundColor: "rgba(1,35,41,0.62)" },
+  summaryCard: { borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.55)", padding: 9, backgroundColor: "rgba(1,35,41,0.62)" },
   typeRow: { minHeight: 70, borderRadius: 12, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   typeCopy: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }, typeTitle: { fontSize: 22, fontFamily: "Anton_400Regular", color: "#FFFFFF" }, typeSub: { fontSize: 11, fontFamily: "Archivo_500Medium", color: "#FFFFFF" },
   tags: { flexDirection: "row", alignItems: "center", gap: 5 }, tag: { paddingHorizontal: 12, height: 28, borderRadius: 14, justifyContent: "center" }, tagText: { fontSize: 11, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
-  primaryGrid: { marginTop: 6, flex: 1.08, minHeight: 0, flexDirection: "row", gap: 6 }, timeTile: { flex: 1.08, minHeight: 0, borderRadius: 13, padding: 13 }, studentTile: { flex: 1, minHeight: 0, borderRadius: 13, padding: 13 },
+  primaryGrid: { marginTop: 6, minHeight: 127, flexDirection: "row", gap: 6 }, timeTile: { flex: 1.08, borderRadius: 13, padding: 13 }, studentTile: { flex: 1, borderRadius: 13, padding: 13 },
   tileHeading: { flexDirection: "row", alignItems: "center", gap: 8 }, tileTitle: { fontSize: 18, fontFamily: "Archivo_700Bold", color: "#FFFFFF" }, tileDate: { marginTop: 12, fontSize: 14, fontFamily: "Archivo_500Medium", color: "#FFFFFF" }, tileTime: { fontSize: 34, lineHeight: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", ...iosDisplayTextStyle(34, 36) }, tileMeta: { fontSize: 13, fontFamily: "Archivo_500Medium", color: "#FFFFFF" }, studentName: { marginTop: 18, fontSize: 32, lineHeight: 31, fontFamily: "Anton_400Regular", color: "#FFFFFF", ...iosDisplayTextStyle(32, 31) },
-  secondaryGrid: { marginTop: 6, flex: 1, minHeight: 0, flexDirection: "row", gap: 6 }, smallTile: { flex: 1, minHeight: 0, borderRadius: 13, paddingVertical: 12, paddingHorizontal: 6, alignItems: "center", justifyContent: "space-between" }, smallLabel: { fontSize: 11, lineHeight: 13, fontFamily: "Archivo_700Bold", color: "#FFFFFF", textAlign: "center" }, smallValue: { fontSize: 20, lineHeight: 22, fontFamily: "Anton_400Regular", color: "#FFFFFF", textAlign: "center", ...iosDisplayTextStyle(20, 22) },
+  secondaryGrid: { marginTop: 6, minHeight: 129, flexDirection: "row", gap: 6 }, smallTile: { flex: 1, borderRadius: 13, paddingVertical: 12, paddingHorizontal: 6, alignItems: "center", justifyContent: "space-between" }, smallLabel: { fontSize: 11, lineHeight: 13, fontFamily: "Archivo_700Bold", color: "#FFFFFF", textAlign: "center" }, smallValue: { fontSize: 20, lineHeight: 22, fontFamily: "Anton_400Regular", color: "#FFFFFF", textAlign: "center", ...iosDisplayTextStyle(20, 22) },
   closingCard: { marginTop: 8, borderRadius: 40, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14, backgroundColor: CARD }, closingTitle: { fontSize: 28, fontFamily: "Anton_400Regular", color: "#FFFFFF", textAlign: "center", ...iosDisplayTextStyle(28, 32) }, closingText: { marginTop: 3, marginBottom: 12, fontSize: 13, lineHeight: 17, fontFamily: "Archivo_400Regular", color: "#FFFFFF", textAlign: "center" },
   actionRow: { flexDirection: "row", gap: 10 }, outlineButton: { flex: 1, height: 50, borderRadius: 25, borderWidth: 1, borderColor: CYAN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, outlineText: { fontSize: 15, fontFamily: "Archivo_600SemiBold", color: CYAN }, homeButton: { marginTop: 10, height: 52, borderRadius: 26, backgroundColor: CYAN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, homeText: { fontSize: 16, fontFamily: "Archivo_600SemiBold", color: "#FFFFFF" },
 });

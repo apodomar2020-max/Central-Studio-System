@@ -1,20 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { GlassView } from "expo-glass-effect";
-import * as Haptics from "expo-haptics";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -24,11 +20,8 @@ import Svg, { Path } from "react-native-svg";
 import AppButton from "@/components/AppButton";
 import CentralBackButton from "@/components/CentralBackButton";
 import OfflineState from "@/components/OfflineState";
-import { useCentralAlert } from "@/hooks/useCentralAlert";
 import {
   ACTIVE_APPLICATION_STATUSES,
-  CANCELLABLE_APPLICATION_STATUSES,
-  cancelBalletApplication,
   fetchBalletApplicationDetail,
   fetchBalletClasses,
   fetchBalletGroups,
@@ -36,8 +29,6 @@ import {
   fetchMyApplications,
   groupBalletSchedulesByGroupId,
   isOfflineError,
-  requestBalletEnrollmentCancellation,
-  withdrawBalletEnrollmentCancellationRequest,
   type BalletApplication,
   type BalletApplicationDetail,
   type BalletClassSchedule,
@@ -169,12 +160,9 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 export default function ApplicationStatusScreen() {
   const insets = useSafeAreaInsets();
-  const alert = useCentralAlert();
-  const params = useLocalSearchParams<{ id?: string | string[]; action?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
   const requestedApplicationIdParam = Array.isArray(params.id) ? params.id[0] : params.id;
-  const actionParam = Array.isArray(params.action) ? params.action[0] : params.action;
   const requestedApplicationId = Number(requestedApplicationIdParam);
-  const autoActionHandled = useRef(false);
 
   const [loadState, setLoadState] = useState<"loading" | "success" | "empty" | "offline" | "error">("loading");
   const [application, setApplication] = useState<BalletApplication | null>(null);
@@ -184,12 +172,6 @@ export default function ApplicationStatusScreen() {
   const [levelNameById, setLevelNameById] = useState<Map<number, string>>(new Map());
   const [groupNameById, setGroupNameById] = useState<Map<number, string>>(new Map());
   const [schedulesByGroupId, setSchedulesByGroupId] = useState<Map<number, BalletClassSchedule[]>>(new Map());
-  const [cancelling, setCancelling] = useState(false);
-  const [requestingCancellation, setRequestingCancellation] = useState(false);
-  const [reasonModal, setReasonModal] = useState<null | { kind: "cancelApplication" | "requestEnrollmentCancellation"; requestedTiming?: "immediate" | "endOfPeriod"; requestRefund?: boolean }>(null);
-  const [reasonText, setReasonText] = useState("");
-  const trimmedReason = reasonText.trim();
-  const reasonError = trimmedReason.length === 0 ? "Reason is required." : trimmedReason.length < 5 ? "Reason must be at least 5 characters." : trimmedReason.length > 500 ? "Reason must be at most 500 characters." : null;
 
   useFocusEffect(useCallback(() => {
     const controller = new AbortController();
@@ -252,147 +234,6 @@ export default function ApplicationStatusScreen() {
     return () => controller.abort();
   }, [load]);
 
-  function openReasonModal(next: NonNullable<typeof reasonModal>) {
-    setReasonText("");
-    setReasonModal(next);
-  }
-
-  function closeReasonModal() {
-    if (cancelling || requestingCancellation) return;
-    setReasonModal(null);
-    setReasonText("");
-  }
-
-  function promptCancel() {
-    if (!application || !hasExplicitApplicationContext) return;
-    alert.show({
-      tone: "destructive",
-      title: `Cancel ${application.childName}'s Application?`,
-      message: `This will cancel only ${application.childName}'s Ballet application. You can submit a new application afterwards.`,
-      actions: [
-        { label: "Keep Application", tone: "neutral" },
-        { label: "Yes, Cancel", tone: "danger", onPress: () => openReasonModal({ kind: "cancelApplication" }) },
-      ],
-    });
-  }
-
-  function requestCancellationFlow() {
-    if (!application || !hasExplicitApplicationContext || !applicationDetail?.activeAssignment || requestingCancellation) return;
-    alert.show({
-      tone: "destructive",
-      title: `Cancel ${application.childName}'s Ballet Program?`,
-      message: `When should ${application.childName}'s enrollment cancellation take effect?`,
-      actions: [
-        { label: "Keep Enrollment", tone: "neutral" },
-        { label: "End of Period", tone: "primary", onPress: () => confirmCancellationRefund("endOfPeriod") },
-        { label: "Immediate", tone: "danger", onPress: () => confirmCancellationRefund("immediate") },
-      ],
-    });
-  }
-
-  function confirmCancellationRefund(requestedTiming: "immediate" | "endOfPeriod") {
-    const payment = applicationDetail?.currentPayment;
-    const canRequestRefund = payment?.status === "paid" && payment.paymentMethod === "inPerson" && Boolean(payment.paidAt);
-    if (!canRequestRefund) {
-      openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false });
-      return;
-    }
-    alert.show({
-      title: "Request Cash Refund?",
-      message: "You may ask the studio to review a cash refund. The studio confirms the eligible amount.",
-      actions: [
-        { label: "No Refund", tone: "primary", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: false }) },
-        { label: "Request Refund", tone: "primary", onPress: () => openReasonModal({ kind: "requestEnrollmentCancellation", requestedTiming, requestRefund: true }) },
-      ],
-    });
-  }
-
-  async function doCancel(reason: string) {
-    if (!application || !hasExplicitApplicationContext || cancelling) return;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setCancelling(true);
-    try {
-      const fresh = await fetchBalletApplicationDetail(application.id);
-      if (!CANCELLABLE_APPLICATION_STATUSES.has(fresh.application.status)) {
-        await load();
-        alert.show({ tone: "warning", title: "Application Changed", message: `${application.childName}'s application is no longer eligible for cancellation. Nothing was cancelled.` });
-        return;
-      }
-      await cancelBalletApplication(fresh.application.id, { reason });
-      setReasonModal(null);
-      setReasonText("");
-      await load();
-      alert.show({ tone: "success", title: "Application Cancelled", message: `${application.childName}'s Ballet application has been cancelled.` });
-    } catch (error) {
-      const message = (error as { data?: { error?: string }; message?: string })?.data?.error ?? (error as { message?: string })?.message ?? "Unable to cancel. Please try again.";
-      alert.show({ tone: "error", title: isOfflineError(error) ? "No Connection" : "Error", message });
-    } finally {
-      setCancelling(false);
-    }
-  }
-
-  async function submitCancellationRequest(requestedTiming: "immediate" | "endOfPeriod", requestRefund: boolean, reason: string) {
-    if (!application || !hasExplicitApplicationContext || requestingCancellation) return;
-    const expectedAssignmentId = applicationDetail?.activeAssignment?.id;
-    if (!expectedAssignmentId) return;
-    setRequestingCancellation(true);
-    try {
-      const fresh = await fetchBalletApplicationDetail(application.id);
-      if (fresh.application.status !== "active" || fresh.activeAssignment?.status !== "active" || fresh.activeAssignment.id !== expectedAssignmentId || fresh.openCancellationRequest) {
-        await load();
-        alert.show({ tone: "warning", title: "Enrollment Changed", message: `${application.childName}'s enrollment is no longer eligible for this request. Nothing was cancelled.` });
-        return;
-      }
-      await requestBalletEnrollmentCancellation(expectedAssignmentId, { requestedTiming, requestRefund, reason });
-      setReasonModal(null);
-      setReasonText("");
-      await load();
-      alert.show({ tone: "success", title: "Request Submitted", message: "Your Ballet cancellation request has been sent to the studio." });
-    } catch (error) {
-      const message = (error as { data?: { error?: string }; message?: string })?.data?.error ?? (error as { message?: string })?.message ?? "Unable to submit cancellation request.";
-      alert.show({ tone: "error", title: isOfflineError(error) ? "No Connection" : "Error", message });
-    } finally {
-      setRequestingCancellation(false);
-    }
-  }
-
-  async function withdrawCancellationRequest() {
-    const requestId = applicationDetail?.openCancellationRequest?.id;
-    if (!requestId || requestingCancellation) return;
-    setRequestingCancellation(true);
-    try {
-      await withdrawBalletEnrollmentCancellationRequest(requestId);
-      await load();
-      alert.show({ tone: "success", title: "Request Withdrawn", message: "Your cancellation request has been withdrawn." });
-    } catch (error) {
-      const message = (error as { data?: { error?: string }; message?: string })?.data?.error ?? (error as { message?: string })?.message ?? "Unable to withdraw cancellation request.";
-      alert.show({ tone: "error", title: isOfflineError(error) ? "No Connection" : "Error", message });
-    } finally {
-      setRequestingCancellation(false);
-    }
-  }
-
-  async function submitReasonModal() {
-    if (!reasonModal || reasonError) return;
-    if (reasonModal.kind === "cancelApplication") {
-      await doCancel(trimmedReason);
-    } else if (reasonModal.requestedTiming) {
-      await submitCancellationRequest(reasonModal.requestedTiming, reasonModal.requestRefund === true, trimmedReason);
-    }
-  }
-
-  useEffect(() => {
-    if (actionParam !== "cancel" || loadState !== "success" || !application || !hasExplicitApplicationContext || autoActionHandled.current) return;
-    if (application.status === "active" && !applicationDetail) return;
-    autoActionHandled.current = true;
-    const timer = setTimeout(() => {
-      if (application.status === "active") requestCancellationFlow();
-      else if (CANCELLABLE_APPLICATION_STATUSES.has(application.status)) promptCancel();
-      else alert.show({ tone: "warning", title: "Cancellation unavailable", message: "This application can no longer be cancelled." });
-    }, 180);
-    return () => clearTimeout(timer);
-  }, [actionParam, application, applicationDetail, hasExplicitApplicationContext, loadState]);
-
   const paddingTop = Platform.OS === "web" ? 18 : insets.top;
 
   if (loadState === "loading") return <View style={styles.stateScreen}><ActivityIndicator size="large" color={CYAN} /><Text style={styles.stateText}>Loading application…</Text></View>;
@@ -413,8 +254,6 @@ export default function ApplicationStatusScreen() {
   const locations = [...new Set(schedules.map((schedule) => scheduleLocationLabel({ branch: schedule.branch, room: schedule.room })).filter((value): value is string => Boolean(value)))];
   const attendance = application.attendanceSummary;
   const openCancellationRequest = applicationDetail?.openCancellationRequest;
-  const canCancelApplication = hasExplicitApplicationContext && CANCELLABLE_APPLICATION_STATUSES.has(application.status);
-  const canCancelProgram = hasExplicitApplicationContext && application.status === "active" && applicationDetail?.activeAssignment?.status === "active" && !openCancellationRequest;
   const isTerminal = !ACTIVE_APPLICATION_STATUSES.has(application.status);
   const attendanceAvailable = application.status === "active";
 
@@ -454,7 +293,7 @@ export default function ApplicationStatusScreen() {
             {!hasExplicitApplicationContext ? (
               <View style={styles.contextWarning}>
                 <Text style={styles.contextWarningTitle}>Choose the child first</Text>
-                <Text style={styles.contextWarningText}>Use Manage Enrollment on the Ballet Program page to select the exact child before cancelling.</Text>
+                <Text style={styles.contextWarningText}>Open a student from the Ballet Program page to view the correct application.</Text>
               </View>
             ) : null}
 
@@ -504,7 +343,6 @@ export default function ApplicationStatusScreen() {
                 <View style={styles.requestBox}>
                   <Text style={styles.requestTitle}>Cancellation Request: {openCancellationRequest.status}</Text>
                   <Text style={styles.requestCopy}>Timing: {openCancellationRequest.approvedTiming ?? openCancellationRequest.requestedTiming}</Text>
-                  {openCancellationRequest.status === "pendingReview" ? <TouchableOpacity disabled={requestingCancellation} onPress={() => void withdrawCancellationRequest()}><Text style={styles.withdrawText}>{requestingCancellation ? "Withdrawing…" : "Withdraw request"}</Text></TouchableOpacity> : null}
                 </View>
               ) : null}
             </View>
@@ -517,26 +355,8 @@ export default function ApplicationStatusScreen() {
           </View>
         </View>
 
-        {canCancelApplication || canCancelProgram ? (
-          <TouchableOpacity disabled={cancelling || requestingCancellation} onPress={canCancelProgram ? requestCancellationFlow : promptCancel} style={styles.cancelButton} activeOpacity={0.84}>
-            <Text style={styles.cancelText}>{cancelling || requestingCancellation ? "Please Wait…" : canCancelProgram ? "Cancel Program" : "Cancel Application"}</Text>
-          </TouchableOpacity>
-        ) : null}
-        {isTerminal ? <TouchableOpacity onPress={() => router.replace("/ballet/assessment" as never)} style={[styles.cancelButton, styles.newApplicationButton]}><Text style={styles.cancelText}>Submit New Application</Text></TouchableOpacity> : null}
+        {isTerminal ? <TouchableOpacity onPress={() => router.replace("/ballet/assessment" as never)} style={styles.primaryFooterButton}><Text style={styles.primaryFooterText}>Submit New Application</Text></TouchableOpacity> : null}
       </ScrollView>
-
-      <Modal visible={reasonModal != null} transparent animationType="fade" onRequestClose={closeReasonModal}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
-          <View style={styles.reasonSheet}>
-            <Text style={styles.reasonTitle}>{reasonModal?.kind === "cancelApplication" ? `Cancel ${application.childName}'s Application` : `Cancel ${application.childName}'s Ballet Program`}</Text>
-            <Text style={styles.reasonSubtitle}>Please tell the studio why you are making this request.</Text>
-            <Text style={styles.reasonLabel}>Reason <Text style={{ color: "#EF4444" }}>*</Text></Text>
-            <TextInput value={reasonText} onChangeText={(value) => setReasonText(value.slice(0, 500))} placeholder="Write your reason…" placeholderTextColor="#64717A" multiline textAlignVertical="top" style={styles.reasonInput} editable={!cancelling && !requestingCancellation} maxLength={500} />
-            <View style={styles.reasonMeta}><Text style={[styles.reasonHint, reasonError && trimmedReason.length > 0 && styles.reasonError]}>{trimmedReason.length === 0 ? "Minimum 5 characters." : reasonError ?? "Looks good."}</Text><Text style={styles.reasonHint}>{reasonText.length}/500</Text></View>
-            <View style={styles.reasonActions}><AppButton title="Close" variant="ghost" onPress={closeReasonModal} disabled={cancelling || requestingCancellation} style={{ flex: 1 }} /><AppButton title={cancelling || requestingCancellation ? "Submitting…" : "Submit"} onPress={() => void submitReasonModal()} disabled={Boolean(reasonError) || cancelling || requestingCancellation} style={{ flex: 1, backgroundColor: CYAN }} /></View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </View>
   );
 }
@@ -585,18 +405,6 @@ const styles = StyleSheet.create({
   contextWarningText: { color: "#C7D4D6", fontFamily: "Archivo_400Regular", fontSize: 11.5, lineHeight: 17, marginTop: 4 },
   requestTitle: { color: AMBER, fontFamily: "Archivo_700Bold", fontSize: 12.5, textTransform: "capitalize" },
   requestCopy: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 12, marginTop: 5 },
-  withdrawText: { color: "#FF7A7A", fontFamily: "Archivo_700Bold", fontSize: 12, marginTop: 9 },
-  cancelButton: { height: 51, borderRadius: 999, marginHorizontal: 20, marginTop: 14, backgroundColor: "#B40006", alignItems: "center", justifyContent: "center" },
-  cancelText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 15 },
-  newApplicationButton: { backgroundColor: CYAN },
-  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.74)", padding: 16 },
-  reasonSheet: { borderRadius: 24, borderWidth: 1, borderColor: "#16434A", backgroundColor: "#071416", padding: 20, gap: 12 },
-  reasonTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 20 },
-  reasonSubtitle: { color: "#AEBFC1", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 19 },
-  reasonLabel: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 12, textTransform: "uppercase" },
-  reasonInput: { minHeight: 125, borderRadius: 16, borderWidth: 1, borderColor: "#23444A", backgroundColor: "#02090A", padding: 14, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20 },
-  reasonMeta: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
-  reasonHint: { color: "#7E9497", fontFamily: "Archivo_400Regular", fontSize: 11.5 },
-  reasonError: { color: "#EF4444" },
-  reasonActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  primaryFooterButton: { height: 51, borderRadius: 999, marginHorizontal: 20, marginTop: 14, backgroundColor: CYAN, alignItems: "center", justifyContent: "center" },
+  primaryFooterText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 15 },
 });

@@ -261,10 +261,8 @@ function BookingDetailOverlay({
   /** Reuses the SAME cancellation operation BookingCard's Cancel action
    *  calls (PATCH /api/bookings/:id/cancel via cancelBooking) — this is
    *  the same capability shown from a second surface, not a second
-   *  implementation. Undefined for a Ballet item: Ballet cancellation is
-   *  a separate, already-existing flow (enrolment cancellation requests
-   *  via BalletProgramDangerZone) with its own contract, out of scope
-   *  for this correction. */
+   *  implementation. Undefined for a Ballet item because Ballet
+   *  cancellation is handled only by the studio system. */
   onCancel?: () => void;
 }) {
   const isBallet = item.kind === "ballet";
@@ -426,18 +424,7 @@ function BookingDetailOverlay({
             <SBI name="cancel" size={16} stroke={2.2} color="#FF3B47" />
             <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#FF3B47" }}>Cancel Booking</Text>
           </TouchableOpacity>
-        ) : (
-          // Ballet: no generic cancel here — a Ballet application/enrolment
-          // is cancelled through its own existing flow (the Danger Zone on
-          // the application-status screen), which this control must not
-          // duplicate or bypass.
-          !isPast && !isCancelled && isBallet && (
-            <View style={{ flex: 1, height: 48, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, opacity: 0.6 }}>
-              <SBI name="cancel" size={16} stroke={2.2} color="#6B747F" />
-              <Text style={{ fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" }}>Cancel (Soon)</Text>
-            </View>
-          )
-        )}
+        ) : null}
         {(isPast || b.paymentStatus === "paid") && (
           <View style={{ flex: 1, height: 48, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, opacity: 0.6 }}>
             <SBI name="download" size={16} stroke={2.2} color="#6B747F" />

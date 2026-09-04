@@ -119,11 +119,6 @@ export default function BalletProgramScreen() {
     router.push({ pathname: "/ballet/application-status" as never, params: { id: String(student.applicationId) } });
   }
 
-  function handleCancelStudent(student: BalletStudentPreview) {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({ pathname: "/ballet/application-status" as never, params: { id: String(student.applicationId), action: "cancel" } });
-  }
-
   return <View style={styles.screen}>
     <View style={[styles.fixedHero, { height: heroHeight }]}>
       <ImageBackground source={heroImageSource} style={StyleSheet.absoluteFill} imageStyle={styles.heroImage} onError={() => setHeroImageFailed(true)} />
@@ -140,7 +135,7 @@ export default function BalletProgramScreen() {
     </View>
 
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      {user?.accountType === "parent" ? <BalletStudentPreviewSection students={balletStudents} loading={balletStudentsLoading} eligibleChildCount={eligibleBalletChildIds.length} onAddAnotherChild={handleAddAnotherChild} onOpenStudent={handleOpenStudent} onCancelStudent={handleCancelStudent} /> : <TouchableOpacity style={styles.applyButton} onPress={handleApply}><Text style={styles.applyText}>Apply Now</Text></TouchableOpacity>}
+      {user?.accountType === "parent" ? <BalletStudentPreviewSection students={balletStudents} loading={balletStudentsLoading} eligibleChildCount={eligibleBalletChildIds.length} onAddAnotherChild={handleAddAnotherChild} onOpenStudent={handleOpenStudent} /> : <TouchableOpacity style={styles.applyButton} onPress={handleApply}><Text style={styles.applyText}>Apply Now</Text></TouchableOpacity>}
       <View style={styles.menuSection}>
         <Text style={styles.menuHeading}>Ballet Menu</Text>
         <View style={[styles.menuRow, { height: primaryRowHeight }]}><MenuTile kind="classes" title={"Ballet\nClasses"} route="/ballet/classes" width={primaryWideWidth} height={primaryRowHeight} /><MenuTile kind="levels" title={"Ballet\nLevels"} route="/ballet/levels" width={primaryNarrowWidth} height={primaryRowHeight} /></View>

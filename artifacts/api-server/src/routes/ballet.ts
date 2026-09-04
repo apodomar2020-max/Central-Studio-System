@@ -165,6 +165,8 @@ export type AssessmentOccurrence = {
   time: string;
   startTime: string;
   endTime: string;
+  branchName: string | null;
+  roomName: string | null;
   capacity?: number | null;
 };
 
@@ -238,6 +240,8 @@ export async function listAvailableAssessmentSchedules(
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
       capacity:   balletSchedulesTable.capacity,
+      branchName: studioBranchesTable.name,
+      roomName:   studioRoomsTable.name,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
@@ -255,6 +259,8 @@ export async function listAvailableAssessmentSchedules(
         sql<number>`coalesce(${balletClassesTable.levelId}, ${balletClassLevelsTable.levelId})`,
       ),
     )
+    .leftJoin(studioBranchesTable, eq(studioBranchesTable.id, balletSchedulesTable.branchId))
+    .leftJoin(studioRoomsTable, eq(studioRoomsTable.id, balletSchedulesTable.roomId))
     .where(and(
       eq(balletSchedulesTable.status, "active"),
       eq(balletClassesTable.isActive, true),
@@ -331,6 +337,8 @@ export async function listAvailableAssessmentSchedules(
         time:       normalizeTimeLabel(row.startTime),
         startTime:  row.startTime,
         endTime:    row.endTime,
+        branchName: row.branchName ?? null,
+        roomName:   row.roomName ?? null,
         capacity:   row.capacity,
       });
     }
@@ -377,6 +385,8 @@ export async function resolveAssessmentOccurrence(scheduleId: number, assessment
       ageMin:     balletLevelsTable.ageMin,
       ageMax:     balletLevelsTable.ageMax,
       capacity:   balletSchedulesTable.capacity,
+      branchName: studioBranchesTable.name,
+      roomName:   studioRoomsTable.name,
     })
     .from(balletSchedulesTable)
     .innerJoin(balletClassesTable, eq(balletClassesTable.id, balletSchedulesTable.classId))
@@ -394,6 +404,8 @@ export async function resolveAssessmentOccurrence(scheduleId: number, assessment
         sql<number>`coalesce(${balletClassesTable.levelId}, ${balletClassLevelsTable.levelId})`,
       ),
     )
+    .leftJoin(studioBranchesTable, eq(studioBranchesTable.id, balletSchedulesTable.branchId))
+    .leftJoin(studioRoomsTable, eq(studioRoomsTable.id, balletSchedulesTable.roomId))
     .where(and(
       eq(balletSchedulesTable.id, scheduleId),
       eq(balletSchedulesTable.status, "active"),
@@ -423,6 +435,8 @@ export async function resolveAssessmentOccurrence(scheduleId: number, assessment
       time:       normalizeTimeLabel(row.startTime),
       startTime:  row.startTime,
       endTime:    row.endTime,
+      branchName: row.branchName ?? null,
+      roomName:   row.roomName ?? null,
       capacity:   row.capacity,
     };
   }

@@ -2,14 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import ParticipantAvatar from "@/components/ParticipantAvatar";
 import type { ChildProfile } from "@/contexts/AppContext";
-import { BA, BA_RADIUS } from "./assessmentTokens";
+import { BA } from "./assessmentTokens";
 
-function formatBirthday(value?: string) {
-  if (!value) return "Birthday not set";
-  const date = new Date(`${value}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+function SelectionRadio({ selected }: { selected: boolean }) {
+  return (
+    <View style={[styles.radio, selected && styles.radioSelected]}>
+      {selected ? <View style={styles.radioFill} /> : null}
+    </View>
+  );
 }
 
 export default function BalletAssessmentChildCard({
@@ -27,79 +29,49 @@ export default function BalletAssessmentChildCard({
   unavailableLabel?: string;
   onPress: () => void;
 }) {
+  const unavailable = disabled || locked;
   return (
     <TouchableOpacity
       onPress={onPress}
-      disabled={disabled || locked}
+      disabled={unavailable}
       activeOpacity={0.82}
-      style={[
-        styles.card,
-        selected && styles.cardSelected,
-        disabled && styles.cardDisabled,
-      ]}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: selected === true, disabled: unavailable === true }}
+      style={[styles.card, selected && styles.cardSelected, unavailable && styles.cardDisabled]}
     >
-      <View style={styles.avatar}>
-        <Ionicons name="happy-outline" size={22} color={disabled ? BA.ink400 : BA.cyan400} />
-      </View>
+      <ParticipantAvatar type="child" name={child.fullName} gender={child.gender} size={46} selected={selected} />
       <View style={styles.content}>
-        <Text style={[styles.name, disabled && styles.disabledText]}>{child.fullName}</Text>
-        <Text style={styles.meta}>Age: {child.age || "—"} Years</Text>
-        <Text style={styles.meta}>Birthday: {formatBirthday(child.birthday)}</Text>
-        {unavailableLabel ? <Text style={styles.unavailable}>{unavailableLabel}</Text> : null}
+        <Text style={[styles.name, selected && styles.nameSelected]} numberOfLines={1} ellipsizeMode="tail">
+          {child.fullName}
+        </Text>
+        <Text style={[styles.age, selected && styles.ageSelected]} numberOfLines={1}>
+          {child.age || "—"} YEARS
+        </Text>
       </View>
-      {selected ? (
-        <Ionicons name="checkmark-circle" size={24} color={BA.cyan500} />
-      ) : disabled ? (
-        <Ionicons name="lock-closed-outline" size={20} color={BA.ink400} />
-      ) : null}
+      {unavailable ? (
+        <View style={styles.unavailableWrap}>
+          {unavailableLabel ? <Text style={styles.unavailable} numberOfLines={1}>{unavailableLabel}</Text> : null}
+          <Ionicons name="lock-closed" size={18} color="#809096" />
+        </View>
+      ) : (
+        <SelectionRadio selected={selected === true} />
+      )}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: BA_RADIUS.lg,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.10)",
-    backgroundColor: BA.ink800,
-  },
-  cardSelected: {
-    borderColor: BA.cyan500,
-    backgroundColor: "rgba(0,182,215,0.12)",
-  },
-  cardDisabled: {
-    opacity: 0.62,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,182,215,0.12)",
-  },
-  content: { flex: 1, gap: 2 },
-  name: {
-    color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 16,
-  },
-  disabledText: { color: "rgba(255,255,255,0.62)" },
-  meta: {
-    color: BA.ink300,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 12.5,
-  },
-  unavailable: {
-    color: BA.amber,
-    fontFamily: "SpaceMono_700Bold",
-    fontSize: 10,
-    letterSpacing: 0.7,
-    marginTop: 4,
-    textTransform: "uppercase",
-  },
+  card: { minHeight: 64, borderRadius: 32, paddingHorizontal: 14, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 11, backgroundColor: "#003741" },
+  cardSelected: { backgroundColor: BA.cyan500 },
+  cardDisabled: { opacity: 0.48 },
+  content: { flex: 1, minWidth: 0, justifyContent: "center", gap: 0 },
+  name: { color: BA.cyan500, fontFamily: "Anton_400Regular", fontSize: 20, lineHeight: 23, textTransform: "uppercase" },
+  nameSelected: { color: "#FFFFFF" },
+  age: { color: BA.cyan500, fontFamily: "Archivo_500Medium", fontSize: 13, lineHeight: 16 },
+  ageSelected: { color: "#005464", fontFamily: "Archivo_700Bold" },
+  unavailableWrap: { maxWidth: 118, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 5 },
+  unavailable: { flexShrink: 1, color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 11, lineHeight: 14, textTransform: "uppercase", textAlign: "right" },
+  radio: { width: 23, height: 23, borderRadius: 12, borderWidth: 1.5, borderColor: BA.cyan500, alignItems: "center", justifyContent: "center" },
+  radioSelected: { borderColor: "#FFFFFF" },
+  radioFill: { width: 14, height: 14, borderRadius: 7, backgroundColor: "#FFFFFF" },
 });

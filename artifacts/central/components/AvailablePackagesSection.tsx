@@ -1,6 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { useListPricePackages } from "@workspace/api-client-react";
@@ -15,6 +16,11 @@ import { useAppContext } from "@/contexts/AppContext";
 import type { PackageParticipantSelection } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import {
+  PACKAGE_AGE_BAND_LABELS,
+  packageMatchesAgeBand,
+  type PackageAgeBand,
+} from "@/utils/packageAgeBands";
 
 const CYAN = "#00B6D7";
 const INK_900 = "#0A0B0D";
@@ -23,8 +29,11 @@ const INK_300 = "#8E97A2";
 
 type AvailablePackagesSectionProps = {
   mode?: "home" | "packageCenter";
+  initialAgeFilter?: PackageAgeBand;
   onPurchased?: () => void | Promise<void>;
 };
+
+const PACKAGE_FILTERS: PackageAgeBand[] = ["adults", "teens", "kids"];
 
 /**
  * The single catalogue presentation shared by Home and Package Center.
@@ -33,6 +42,7 @@ type AvailablePackagesSectionProps = {
  */
 export default function AvailablePackagesSection({
   mode = "home",
+  initialAgeFilter,
   onPurchased,
 }: AvailablePackagesSectionProps) {
   const { user, purchasePackage } = useAppContext();
@@ -40,10 +50,21 @@ export default function AvailablePackagesSection({
   const { data: raw, isLoading, isError } = useListPricePackages();
   const [detailsPkg, setDetailsPkg] = useState<PricePackage | null>(null);
   const [purchasing, setPurchasing] = useState(false);
+  const [ageFilter, setAgeFilter] = useState<PackageAgeBand>(initialAgeFilter ?? "adults");
+
+  useEffect(() => {
+    if (initialAgeFilter) setAgeFilter(initialAgeFilter);
+  }, [initialAgeFilter]);
 
   const packages = useMemo(
     () => (raw ?? []).filter((pkg: PricePackage) => pkg.isActive !== false),
     [raw],
+  );
+  const visiblePackages = useMemo(
+    () => mode === "packageCenter"
+      ? packages.filter((pkg) => packageMatchesAgeBand(pkg, ageFilter))
+      : packages,
+    [ageFilter, mode, packages],
   );
 
   const handleOpenDetails = useCallback((pkg: PricePackage) => {
@@ -123,7 +144,31 @@ export default function AvailablePackagesSection({
   return (
     <View style={[styles.section, packageCenter && styles.centerSection]}>
       {packageCenter ? (
-        <PackageCenterHeading />
+        <>
+          <PackageCenterHeading />
+          <View style={styles.ageFilters} accessibilityRole="tablist">
+            {PACKAGE_FILTERS.map((filter) => {
+              const selected = filter === ageFilter;
+              return (
+                <TouchableOpacity
+                  key={filter}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  activeOpacity={0.84}
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    setAgeFilter(filter);
+                  }}
+                  style={[styles.ageFilterButton, selected && styles.ageFilterButtonSelected]}
+                >
+                  <Text style={[styles.ageFilterText, selected && styles.ageFilterTextSelected]}>
+                    {PACKAGE_AGE_BAND_LABELS[filter]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
       ) : (
         <View style={styles.homeHeader}>
           <View>
@@ -141,9 +186,14 @@ export default function AvailablePackagesSection({
         <View style={[styles.skeletonRow, packageCenter && styles.centerSkeletonRow]}>
           {[1, 2].map((item) => <View key={item} style={styles.skeleton} />)}
         </View>
+      ) : packageCenter && visiblePackages.length === 0 ? (
+        <View style={styles.ageFilterEmpty}>
+          <Text style={styles.ageFilterEmptyTitle}>NO {PACKAGE_AGE_BAND_LABELS[ageFilter].toUpperCase()} PACKAGES YET</Text>
+          <Text style={styles.ageFilterEmptyText}>Choose another category or check again soon.</Text>
+        </View>
       ) : (
         <FlatList
-          data={packages}
+          data={visiblePackages}
           keyExtractor={(pkg) => String(pkg.id)}
           renderItem={({ item }) => <PackageVisualCard pkg={item} onPress={handleOpenDetails} />}
           horizontal
@@ -215,6 +265,32 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 1,
   },
+  ageFilters: { flexDirection: "row", gap: 8, paddingHorizontal: 22, marginBottom: 16 },
+  ageFilterButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: "rgba(0,182,215,0.58)",
+    backgroundColor: "#012C31",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  ageFilterButtonSelected: { borderColor: CYAN, backgroundColor: CYAN },
+  ageFilterText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 14 },
+  ageFilterTextSelected: { color: INK_900 },
+  ageFilterEmpty: {
+    minHeight: 170,
+    marginHorizontal: 22,
+    borderRadius: 18,
+    backgroundColor: "#012C31",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  ageFilterEmptyTitle: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 29, textAlign: "center" },
+  ageFilterEmptyText: { marginTop: 5, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 18, textAlign: "center" },
   listContent: { paddingLeft: 20, paddingRight: 20, gap: 12 },
   centerListContent: { paddingLeft: 22, paddingRight: 22, gap: 8, paddingTop: 28 },
   skeletonRow: { paddingLeft: 20, flexDirection: "row", gap: 12 },

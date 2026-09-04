@@ -315,7 +315,7 @@ test("no eligible child hides the CTA card", () => {
   assert.equal(shouldShowAddBalletChildCard(2, 1), false);
 });
 
-test("one routed eligible child is preselected and locked in the existing assessment flow", () => {
+test("one routed eligible child is preselected while every other displayed child is locked", () => {
   assert.deepEqual(parseEligibleBalletChildIds("9"), [9]);
   assert.equal(shouldLockSingleRoutedBalletChild({
     hasRoutedAllowList: true,
@@ -325,7 +325,8 @@ test("one routed eligible child is preselected and locked in the existing assess
   }), true);
   assert.match(assessmentSource, /decideChildEligibilityAction\(\{/);
   assert.match(assessmentSource, /action\.type === "preselect"/);
-  assert.match(assessmentSource, /locked=\{routedChildLocked\}/);
+  assert.match(assessmentSource, /const lockedOut = routedChildLocked && selectedChild\?\.id !== child\.id/);
+  assert.match(assessmentSource, /locked=\{lockedOut\}/);
   assert.match(landingSource, /pathname: "\/ballet\/assessment"/);
 });
 

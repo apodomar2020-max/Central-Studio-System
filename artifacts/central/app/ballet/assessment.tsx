@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Animated,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -17,18 +18,19 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import BalletAssessmentAppointmentCard from "@/components/ballet/BalletAssessmentAppointmentCard";
 import BalletAssessmentChildCard from "@/components/ballet/BalletAssessmentChildCard";
 import BalletAssessmentHeader from "@/components/ballet/BalletAssessmentHeader";
+import BalletAssessmentIcon from "@/components/ballet/BalletAssessmentIcon";
 import BalletAssessmentPackageCard from "@/components/ballet/BalletAssessmentPackageCard";
 import BalletAssessmentSuccessActions from "@/components/ballet/BalletAssessmentSuccessActions";
 import BalletAssessmentSuccessSummaryCard from "@/components/ballet/BalletAssessmentSuccessSummaryCard";
 import BalletAssessmentSummaryCard from "@/components/ballet/BalletAssessmentSummaryCard";
 import BalletStepIndicator from "@/components/ballet/BalletStepIndicator";
 import { BA, BA_RADIUS } from "@/components/ballet/assessmentTokens";
+import { SuccessConfetti } from "@/components/success/SuccessCelebration";
 import {
   buildEffectiveEligibleBalletChildIds,
   parseEligibleBalletChildIds,
@@ -54,8 +56,6 @@ import {
   AssessmentScheduleOption,
   BalletApplication,
   BalletPackageOption,
-  cancelBalletApplication,
-  fetchBalletApplicationDetail,
   fetchAvailableAssessmentSchedules,
   fetchBalletPackages,
   fetchBalletSettings,
@@ -74,7 +74,7 @@ const BLOCKING_CHILD_APPLICATION_STATUSES = new Set([
 ]);
 
 const CANONICAL_PAYMENT_METHOD = "inPerson" as const;
-const CANONICAL_PAYMENT_LABEL = "Pay at Studio";
+const CANONICAL_PAYMENT_LABEL = "Cash";
 
 type Step = "child" | "appointment" | "package" | "review";
 
@@ -104,15 +104,25 @@ function formatDisplayDate(value?: string | null, withWeekday = false) {
   });
 }
 
+function appointmentLocation(appointment: AssessmentScheduleOption): string {
+  return appointment.branchName?.trim() || appointment.roomName?.trim() || "Central Studio";
+}
+
+function calendarStamp(date: string, time: string): string {
+  return `${date.replaceAll("-", "")}T${time.slice(0, 5).replace(":", "")}00`;
+}
+
 function getChildApplicationStatus(child: ChildProfile, applications: BalletApplication[]) {
   const childId = Number(child.id);
-  const matching = applications.find((app) => {
+  const matching = applications.filter((app) => {
     if (!Number.isNaN(childId) && app.childId === childId) return true;
     const sameName = app.childName.trim().toLowerCase() === child.fullName.trim().toLowerCase();
     const sameBirthday = !!child.birthday && app.childBirthday === child.birthday;
     return sameName && sameBirthday;
   });
-  return matching?.status ?? null;
+  return matching.find((app) => BLOCKING_CHILD_APPLICATION_STATUSES.has(app.status))?.status
+    ?? matching[0]?.status
+    ?? null;
 }
 
 function Field({
@@ -188,7 +198,6 @@ export default function BalletAssessmentScreen() {
   const [step, setStep] = useState<Step>("child");
   const [selectedChild, setSelectedChild] = useState<ChildProfile | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<AssessmentScheduleOption | null>(null);
-  const [selectedPackage, setSelectedPackage] = useState<BalletPackageOption | null>(null);
   const [applications, setApplications] = useState<BalletApplication[]>([]);
   const [applicationsState, setApplicationsState] = useState<LoadState>("loading");
   const [appointments, setAppointments] = useState<AssessmentScheduleOption[]>([]);
@@ -198,12 +207,9 @@ export default function BalletAssessmentScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submittedApplicationId, setSubmittedApplicationId] = useState<number | null>(null);
   const [submittedSnapshot, setSubmittedSnapshot] = useState<
-    AssessmentSubmissionSnapshot<ChildProfile, AssessmentScheduleOption, BalletPackageOption> | null
+    AssessmentSubmissionSnapshot<ChildProfile, AssessmentScheduleOption> | null
   >(null);
   const [editingApplicationId, setEditingApplicationId] = useState<number | null>(null);
-  const [cancelLoading, setCancelLoading] = useState(false);
-  const [cancelReasonOpen, setCancelReasonOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
   const [addChildOpen, setAddChildOpen] = useState(false);
   const [newChildName, setNewChildName] = useState("");
   const [newChildDay, setNewChildDay] = useState("");
@@ -217,14 +223,6 @@ export default function BalletAssessmentScreen() {
   const parentPromptShownRef = useRef(false);
   const submittingRef = useRef(false);
   const successScale = useRef(new Animated.Value(0)).current;
-  const trimmedCancelReason = cancelReason.trim();
-  const cancelReasonError = trimmedCancelReason.length === 0
-    ? "Reason is required."
-    : trimmedCancelReason.length < 5
-      ? "Reason must be at least 5 characters."
-      : trimmedCancelReason.length > 500
-        ? "Reason must be at most 500 characters."
-        : null;
 
   const settingsQuery = useQuery({
     queryKey: ["ballet-settings"],
@@ -293,7 +291,6 @@ export default function BalletAssessmentScreen() {
       const childName = selectedChild?.fullName ?? "This child";
       setSelectedChild(null);
       setSelectedAppointment(null);
-      setSelectedPackage(null);
       setStep("child");
       alert.show({
         tone: "warning",
@@ -308,9 +305,8 @@ export default function BalletAssessmentScreen() {
       step,
       hasChild: selectedChild != null,
       hasAppointment: selectedAppointment != null,
-      hasPackage: selectedPackage != null,
     });
-  }, [step, selectedChild, selectedAppointment, selectedPackage]);
+  }, [step, selectedChild, selectedAppointment]);
 
   useEffect(() => {
     if (reviewMissingStep != null) setStep(reviewMissingStep);
@@ -406,6 +402,7 @@ export default function BalletAssessmentScreen() {
 
   useEffect(() => {
     if (submittedApplicationId == null) return;
+    successScale.setValue(0);
     Animated.spring(successScale, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }).start();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [submittedApplicationId, successScale]);
@@ -429,10 +426,6 @@ export default function BalletAssessmentScreen() {
     }
     if (step === "appointment" && !selectedAppointment) {
       alert.show({ tone: "warning", title: "Select Appointment", message: "Choose an available assessment appointment." });
-      return;
-    }
-    if (step === "package" && !selectedPackage) {
-      alert.show({ tone: "warning", title: "Select Package", message: "Choose a Ballet package." });
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -486,14 +479,13 @@ export default function BalletAssessmentScreen() {
     // 1. reject if already submitting
     if (submittingRef.current) return;
 
-    // 2. validate child, appointment, package, and payment method (a fixed
+    // 2. validate child, appointment, and payment method (a fixed
     // canonical constant in this flow — never user-selected, so always
     // valid once reached).
     if (!canSubmitAssessment({
       hasUser: !!user,
       hasChild: !!selectedChild,
       hasAppointment: !!selectedAppointment,
-      hasPackage: !!selectedPackage,
       isSubmitting: submitting,
       hasSubmittedSnapshot: submittedSnapshot != null,
     })) {
@@ -503,7 +495,6 @@ export default function BalletAssessmentScreen() {
     const user_ = user!;
     const selectedChild_ = selectedChild!;
     const selectedAppointment_ = selectedAppointment!;
-    const selectedPackage_ = selectedPackage!;
     const selectedChildId = parseCanonicalChildId(selectedChild_.id);
     if (selectedChildId == null) {
       alert.show({ tone: "warning", title: "Invalid Child", message: "Please select a saved child profile before submitting." });
@@ -517,7 +508,6 @@ export default function BalletAssessmentScreen() {
     const draftSnapshot = buildAssessmentSubmissionDraft({
       child: selectedChild_,
       appointment: selectedAppointment_,
-      pkg: selectedPackage_,
       paymentLabel: CANONICAL_PAYMENT_LABEL,
     });
 
@@ -530,7 +520,6 @@ export default function BalletAssessmentScreen() {
         await updateBalletApplication(editingApplicationId, {
           assessmentScheduleId: selectedAppointment_.scheduleId,
           assessmentDate: selectedAppointment_.date,
-          preferredPackageId: selectedPackage_.id,
           preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
         });
         // 6. finalize the submitted snapshot by adding the returned
@@ -559,7 +548,6 @@ export default function BalletAssessmentScreen() {
         assessmentScheduleId: selectedAppointment_.scheduleId,
         assessmentDate: selectedAppointment_.date,
         preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
-        preferredPackageId: selectedPackage_.id,
         childId: selectedChildId,
       });
       // 6. finalize the submitted snapshot from the draft + server response
@@ -592,7 +580,7 @@ export default function BalletAssessmentScreen() {
           notes: null,
           assessmentScheduleId: selectedAppointment_.scheduleId,
           assessmentDate: selectedAppointment_.date,
-          preferredPackageId: selectedPackage_.id,
+          preferredPackageId: null,
           preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
           status: result.application.status,
           adminNotes: null,
@@ -613,7 +601,6 @@ export default function BalletAssessmentScreen() {
         alert.show({ tone: "warning", title: "Already Applied", message: typed.data?.error ?? "This child already has a Ballet application." });
         setSelectedChild(null);
         setSelectedAppointment(null);
-        setSelectedPackage(null);
         setStep("child");
         await loadApplications();
         return;
@@ -629,62 +616,24 @@ export default function BalletAssessmentScreen() {
     }
   }
 
-  function resetForAnotherChild() {
-    setSubmittedApplicationId(null);
-    setSubmittedSnapshot(null);
-    setEditingApplicationId(null);
-    setSelectedChild(null);
-    setSelectedAppointment(null);
-    setSelectedPackage(null);
-    setStep("child");
-    loadApplications();
-  }
-
-  function confirmCancel() {
-    if (submittedApplicationId == null || !submittedSnapshot) return;
-    const childName = submittedSnapshot.child.fullName;
-    alert.show({
-      tone: "destructive",
-      title: `Cancel ${childName}'s Application?`,
-      message: `This cancels only ${childName}'s submitted Ballet Assessment application. You can apply again afterwards.`,
-      actions: [
-        { label: "Keep Application", tone: "neutral" },
-        {
-          label: "Cancel Application",
-          tone: "danger",
-          onPress: () => {
-            setCancelReason("");
-            setCancelReasonOpen(true);
-          },
-        },
-      ],
+  async function addAssessmentReminder() {
+    if (!submittedSnapshot) return;
+    const appointment = submittedSnapshot.appointment;
+    const start = calendarStamp(appointment.date, appointment.startTime || appointment.time);
+    const end = calendarStamp(appointment.date, appointment.endTime || appointment.startTime || appointment.time);
+    const params = new URLSearchParams({
+      action: "TEMPLATE",
+      text: "Ballet Assessment",
+      dates: `${start}/${end}`,
+      details: `Central Studio Ballet application #${submittedSnapshot.applicationId}`,
+      location: appointmentLocation(appointment),
+      ctz: "Africa/Cairo",
     });
-  }
-
-  async function submitCancelApplication() {
-    if (submittedApplicationId == null || cancelReasonError) return;
-    setCancelLoading(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      const latest = await fetchBalletApplicationDetail(submittedApplicationId);
-      if (!["pending", "needsFollowUp", "accepted", "assignedToLevel"].includes(latest.application.status)) {
-        alert.show({
-          tone: "warning",
-          title: "Cannot Cancel Here",
-          message: latest.application.status === "active"
-            ? "This application is now an active enrollment. Please use Request Ballet Cancellation from the application status screen."
-            : "This application can no longer be cancelled from this screen.",
-        });
-        router.replace("/ballet/application-status" as any);
-        return;
-      }
-      await cancelBalletApplication(submittedApplicationId, { reason: trimmedCancelReason });
-      alert.show({ tone: "success", title: "Application Cancelled", message: "The application has been cancelled." });
-      setCancelReasonOpen(false);
-      resetForAnotherChild();
-    } catch (err) {
-      alert.show({ tone: "error", title: "Could Not Cancel", message: err instanceof Error ? err.message : "Please try again." });
-    } finally {
-      setCancelLoading(false);
+      await Linking.openURL(`https://calendar.google.com/calendar/render?${params.toString()}`);
+    } catch {
+      alert.show({ tone: "error", title: "Couldn't open your calendar", message: "Please add the assessment appointment to your calendar manually." });
     }
   }
 
@@ -694,78 +643,53 @@ export default function BalletAssessmentScreen() {
 
   if (submittedApplicationId != null && submittedSnapshot) {
     return (
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
-        <LinearGradient colors={["#04161B", BA.ink900]} style={StyleSheet.absoluteFill} />
-        <BalletAssessmentHeader onBack={goBack} homeAction={() => router.replace("/" as never)} />
+      <View style={styles.container}>
+        <LinearGradient colors={["#17191B", "#050607"]} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={["rgba(0,182,215,0.50)", "rgba(0,182,215,0.03)", "transparent"]} start={{ x: 1, y: 0 }} end={{ x: 0.05, y: 0.75 }} style={styles.successGlow} />
+        <SuccessConfetti />
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.successScroll, { paddingTop: 20 }]}
+          bounces
+          contentContainerStyle={[styles.successScroll, {
+            paddingTop: (Platform.OS === "web" ? 54 : insets.top) + 72,
+            paddingBottom: Math.max(insets.bottom, 12) + 20,
+          }]}
         >
-          <Animated.View style={[styles.successIcon, { transform: [{ scale: successScale }] }]}>
-            <Svg width={38} height={38} viewBox="0 0 24 24" fill="none">
-              <Path d="M20 6 9 17l-5-5" stroke={BA.ink900} strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" />
-            </Svg>
+          <Animated.View style={[styles.successHeading, { transform: [{ scale: successScale }] }]}>
+            <Text style={styles.successTitleWhite}>APPLICATION</Text>
+            <Text style={styles.successTitleCyan}>SUBMITTED</Text>
           </Animated.View>
-          <Text style={styles.successTitle}>Application Submitted Successfully</Text>
+          <View style={styles.applicationReference}>
+            <Text style={styles.applicationReferenceLabel}>App Ref</Text>
+            <Text style={styles.applicationReferenceValue}>#{String(submittedApplicationId).padStart(3, "0")}</Text>
+          </View>
           <BalletAssessmentSuccessSummaryCard
             childName={submittedSnapshot.child.fullName}
+            childGender={submittedSnapshot.child.gender}
             assessmentDateLabel={formatDisplayDate(submittedSnapshot.appointment.date, true)}
             assessmentTimeLabel={submittedSnapshot.appointment.time}
             paymentLabel={submittedSnapshot.paymentLabel}
+            locationLabel={appointmentLocation(submittedSnapshot.appointment)}
+            assessmentFeeEgp={assessmentFeeEgp}
             statusLabel="Pending Review"
           />
-        </ScrollView>
-        <View style={[styles.footer, styles.successFooter, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
-          <BalletAssessmentSuccessActions
-            onModify={() => {
-              setEditingApplicationId(submittedApplicationId);
-              setSelectedChild(submittedSnapshot.child);
-              setSelectedAppointment(submittedSnapshot.appointment);
-              setSelectedPackage(submittedSnapshot.pkg);
-              setSubmittedApplicationId(null);
-              setSubmittedSnapshot(null);
-              setStep("review");
-            }}
-            onAnotherChild={resetForAnotherChild}
-            onCancel={confirmCancel}
-            cancelLoading={cancelLoading}
-          />
-        </View>
-        <Modal visible={cancelReasonOpen} animationType="slide" transparent onRequestClose={() => !cancelLoading && setCancelReasonOpen(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalSheet}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Cancel Application</Text>
-                <TouchableOpacity onPress={() => !cancelLoading && setCancelReasonOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close" size={22} color={BA.ink300} />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.modalHelper}>Please tell the studio why you are cancelling this application.</Text>
-              <Field
-                label="Reason *"
-                value={cancelReason}
-                onChangeText={(value) => setCancelReason(value.slice(0, 500))}
-                placeholder="Write your reason…"
-                multiline
-                style={{ minHeight: 120 }}
-              />
-              <View style={styles.reasonMetaRow}>
-                <Text style={[styles.reasonValidation, !cancelReasonError || trimmedCancelReason.length === 0 ? styles.reasonHint : null]}>
-                  {trimmedCancelReason.length === 0 ? "Minimum 5 characters." : cancelReasonError ?? "Looks good."}
-                </Text>
-                <Text style={styles.reasonCount}>{cancelReason.length}/500</Text>
-              </View>
-              <TouchableOpacity
-                onPress={submitCancelApplication}
-                activeOpacity={0.86}
-                disabled={Boolean(cancelReasonError) || cancelLoading}
-                style={[styles.primaryButton, { minHeight: 50 }, (Boolean(cancelReasonError) || cancelLoading) && { opacity: 0.5 }]}
-              >
-                {cancelLoading ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Submit Cancellation</Text>}
-              </TouchableOpacity>
-            </View>
+          <View style={styles.successClosingCard}>
+            <Text style={styles.successClosingTitle}>See You On The Floor,</Text>
+            <Text style={styles.successClosingText}>Your application has been sent to the studio team.{"\n"}You will be notified once it is reviewed.</Text>
+            <BalletAssessmentSuccessActions
+              onModify={() => {
+                setEditingApplicationId(submittedApplicationId);
+                setSelectedChild(submittedSnapshot.child);
+                setSelectedAppointment(submittedSnapshot.appointment);
+                setSubmittedApplicationId(null);
+                setSubmittedSnapshot(null);
+                setStep("review");
+              }}
+              onRemind={() => { void addAssessmentReminder(); }}
+              onHome={() => router.replace("/(tabs)/" as never)}
+            />
           </View>
-        </Modal>
+        </ScrollView>
       </View>
     );
   }
@@ -773,88 +697,78 @@ export default function BalletAssessmentScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       <LinearGradient
-        colors={["rgba(0,182,215,0.18)", "rgba(0,182,215,0.04)", "transparent"]}
-        locations={[0, 0.42, 1]}
+        colors={["rgba(0,182,215,0.42)", "rgba(0,182,215,0.04)", "transparent"]}
+        locations={[0, 0.46, 1]}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.06, y: 0.9 }}
         style={styles.glow}
         pointerEvents="none"
       />
-      <BalletAssessmentHeader onBack={goBack} />
+      <BalletAssessmentHeader onBack={goBack} showBack={step === "child"} />
       <BalletStepIndicator currentIndex={stepIndex} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: 124 }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: step === "child" ? 90 : 20 }]}
         keyboardShouldPersistTaps="handled"
       >
         {step === "child" && (
           <View style={styles.section}>
             <ScreenTitle title="Select Child" subtitle="Choose the child applying for Ballet Assessment" />
+            <Text style={styles.groupLabel}>My Childs</Text>
             {applicationsState === "loading" ? <LoadingCards /> : null}
             {applicationsState === "offline" ? <OfflineState variant="compact" onRetry={() => loadApplications()} /> : null}
             {applicationsState === "error" ? <ErrorState variant="compact" message="Couldn't load existing applications." onRetry={() => loadApplications()} /> : null}
-            {applicationsState === "ready" && visibleChildren.length === 0 ? (
+            {applicationsState === "ready" && children.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyTitle}>{routedEligibleChildIds == null ? "No children found" : "No eligible children found"}</Text>
-                <Text style={styles.emptyText}>
-                  {routedEligibleChildIds == null
-                    ? "Add a child profile before starting the Ballet Assessment application."
-                    : "Each selected child already has an open Ballet application."}
-                </Text>
+                <Text style={styles.emptyTitle}>No children found</Text>
+                <Text style={styles.emptyText}>Add a child profile before starting the Ballet Assessment application.</Text>
               </View>
             ) : null}
-            {applicationsState === "ready" && visibleChildren.map((child) => {
+            {applicationsState === "ready" && children.map((child) => {
               const status = getChildApplicationStatus(child, applications);
-              const disabled = status != null && BLOCKING_CHILD_APPLICATION_STATUSES.has(status);
+              const childId = Number(child.id);
+              const outsideRoutedSelection = effectiveEligibleChildIds != null && !effectiveEligibleChildIds.has(childId);
+              const disabled = outsideRoutedSelection || (status != null && BLOCKING_CHILD_APPLICATION_STATUSES.has(status));
+              const lockedOut = routedChildLocked && selectedChild?.id !== child.id;
               const label = status === "pending" || status === "needsFollowUp"
                 ? "Application Pending"
-                : disabled
+                : status != null && BLOCKING_CHILD_APPLICATION_STATUSES.has(status)
                   ? "Already Applied"
-                  : undefined;
+                  : outsideRoutedSelection
+                    ? "Not Available"
+                    : undefined;
               return (
                 <BalletAssessmentChildCard
                   key={child.id}
                   child={child}
                   selected={selectedChild?.id === child.id}
                   disabled={disabled}
-                  locked={routedChildLocked}
+                  locked={lockedOut}
                   unavailableLabel={label}
                   onPress={() => {
-                    if (disabled || routedChildLocked) return;
+                    if (disabled || lockedOut) return;
                     Haptics.selectionAsync();
                     setSelectedChild(child);
                   }}
                 />
               );
             })}
-            <TouchableOpacity
-              style={styles.addChildButton}
-              onPress={() => {
-                setAddChildErrors({});
-                setAddChildOpen(true);
-              }}
-              activeOpacity={0.82}
-            >
-              <Ionicons name="add-circle-outline" size={19} color={BA.cyan500} />
-              <Text style={styles.addChildText}>+ Add New Child</Text>
+            <View style={styles.orDivider}><View style={styles.orLine} /><Text style={styles.orText}>OR</Text><View style={styles.orLine} /></View>
+            <TouchableOpacity style={styles.addChildButton} onPress={() => { setAddChildErrors({}); setAddChildOpen(true); }} activeOpacity={0.82}>
+              <View style={styles.addIcon}><Ionicons name="add" size={24} color="#FFFFFF" /></View>
+              <View style={styles.addChildCopy}>
+                <Text style={styles.addChildText}>Add Another Child</Text>
+                <Text style={styles.addChildHint}>Start a ballet application for another child</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={31} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         )}
 
         {step === "appointment" && selectedChild && (
           <View style={styles.section}>
-            <ScreenTitle title="Select Assessment Appointment" subtitle="Choose an age-eligible assessment appointment." />
-            <View style={styles.infoBanner}>
-              <Ionicons name="information-circle-outline" size={18} color={BA.cyan400} />
-              <Text style={styles.infoText}>This appointment is for your Ballet Assessment, not your weekly Ballet class.</Text>
-            </View>
-            {assessmentFeeEgp != null && assessmentFeeEgp > 0 ? (
-              <View style={styles.infoBanner}>
-                <Ionicons name="cash-outline" size={18} color={BA.cyan400} />
-                <Text style={styles.infoText}>
-                  Ballet Assessment Fee: {assessmentFeeEgp.toLocaleString("en-US")} EGP (Payable at studio during appointment)
-                </Text>
-              </View>
-            ) : null}
+            <ScreenTitle title="Select Assessment Appointment" subtitle="Choose an age-eligible assessment appointment" />
             {appointmentsState === "loading" ? <LoadingCards /> : null}
             {appointmentsState === "offline" ? <OfflineState variant="compact" onRetry={() => loadAppointments(selectedChild)} /> : null}
             {appointmentsState === "error" ? <ErrorState variant="compact" message="Couldn't load assessment appointments." onRetry={() => loadAppointments(selectedChild)} /> : null}
@@ -870,6 +784,7 @@ export default function BalletAssessmentScreen() {
               <BalletAssessmentAppointmentCard
                 key={`${appointment.scheduleId}-${appointment.date}`}
                 appointment={appointment}
+                assessmentFeeEgp={assessmentFeeEgp}
                 selected={selectedAppointment?.scheduleId === appointment.scheduleId && selectedAppointment.date === appointment.date}
                 onPress={() => {
                   Haptics.selectionAsync();
@@ -883,15 +798,9 @@ export default function BalletAssessmentScreen() {
         {step === "package" && (
           <View style={styles.section}>
             <ScreenTitle
-              title="Select Preferred Package"
-              subtitle="Package preference only. You are not paying for this package today. Package payment will be arranged after assessment approval."
+              title="Explore Ballet Plans"
+              subtitle="View the available plans. Your plan will be arranged after the assessment is approved"
             />
-            <View style={styles.infoBanner}>
-              <Ionicons name="information-circle-outline" size={18} color={BA.cyan400} />
-              <Text style={styles.infoText}>
-                This selection indicates your preferred subscription plan. No package payment is collected during assessment submission.
-              </Text>
-            </View>
             {packagesState === "loading" ? <LoadingCards /> : null}
             {packagesState === "offline" ? <OfflineState variant="compact" onRetry={() => loadPackages()} /> : null}
             {packagesState === "error" ? <ErrorState variant="compact" message="Couldn't load Ballet packages." onRetry={() => loadPackages()} /> : null}
@@ -901,31 +810,37 @@ export default function BalletAssessmentScreen() {
                 <Text style={styles.emptyText}>The studio has not published active Ballet packages yet.</Text>
               </View>
             ) : null}
-            {packagesState === "ready" && packages.map((pkg) => (
-              <BalletAssessmentPackageCard
-                key={pkg.id}
-                pkg={pkg}
-                selected={selectedPackage?.id === pkg.id}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setSelectedPackage(pkg);
-                }}
-              />
-            ))}
+            {packagesState === "ready" ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.packagesCarousel}>
+                {packages.map((pkg) => <BalletAssessmentPackageCard key={pkg.id} pkg={pkg} />)}
+              </ScrollView>
+            ) : null}
+            <View style={styles.assessmentFeeCard}>
+              <View style={styles.assessmentFeeHeader}>
+                <BalletAssessmentIcon name="shoes" size={32} />
+                <View style={styles.assessmentFeeCopy}>
+                  <Text style={styles.assessmentFeeTitle}>ASSESSMENT FEE</Text>
+                  <Text style={styles.assessmentFeeDescription}>This is a separate assessment fee, paid at the studio on your appointment date.</Text>
+                </View>
+              </View>
+              <View style={styles.assessmentFeeValueRow}>
+                <Text style={styles.assessmentFeeValue}>{assessmentFeeEgp != null ? assessmentFeeEgp.toLocaleString("en-US") : "TBC"}</Text>
+                {assessmentFeeEgp != null ? <Text style={styles.assessmentFeeCurrency}>EGP</Text> : null}
+              </View>
+            </View>
           </View>
         )}
 
-        {step === "review" && reviewMissingStep == null && selectedChild && selectedAppointment && selectedPackage && (
+        {step === "review" && reviewMissingStep == null && selectedChild && selectedAppointment && (
           <View style={styles.section}>
-            <ScreenTitle title="Review Application" subtitle="Confirm every detail before submitting." />
+            <ScreenTitle title="Review Application" subtitle="Confirm every detail before submitting" />
             <BalletAssessmentSummaryCard
               child={selectedChild}
               appointment={selectedAppointment}
-              pkg={selectedPackage}
               paymentLabel={CANONICAL_PAYMENT_LABEL}
               assessmentFeeEgp={assessmentFeeEgp}
               onEdit={(section) => {
-                const target: Step = section === "child" ? "child" : section === "appointment" ? "appointment" : "package";
+                const target: Step = section === "child" ? "child" : "appointment";
                 setStep(target);
               }}
             />
@@ -939,26 +854,39 @@ export default function BalletAssessmentScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
-        {stepIndex > 0 ? (
-          <TouchableOpacity style={[styles.footerButton, styles.secondaryButton]} onPress={goBack} activeOpacity={0.86}>
-            <Text style={styles.secondaryButtonText}>Back</Text>
-          </TouchableOpacity>
+      <View style={[styles.footer, stepIndex > 0 && styles.footerPanel, { paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 14 }]}>
+        {step === "appointment" || step === "package" ? (
+          <View style={styles.noteBlock}>
+              <View style={styles.noteHeading}><BalletAssessmentIcon name="info" size={22} /><Text style={styles.noteTitle}>Be Noted</Text></View>
+            {step === "appointment" ? (
+              <>
+                <Text style={styles.noteText}>• This appointment is for your ballet assessment, not your weekly ballet class.</Text>
+                <Text style={styles.noteText}>• The assessment fee is separate from class packages and is non-refundable after acceptance.</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.noteText}>• These plans are shown for information only; no plan is selected during this application.</Text>
+                <Text style={styles.noteText}>• The studio will arrange your plan after the assessment is approved.</Text>
+              </>
+            )}
+          </View>
         ) : null}
-        {step === "review" ? (
-          <TouchableOpacity
-            style={[styles.footerButton, styles.primaryButton, (submitting || reviewMissingStep != null) && { opacity: 0.6 }]}
-            onPress={handleSubmit}
-            disabled={submitting || reviewMissingStep != null}
-            activeOpacity={0.86}
-          >
-            {submitting ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Submit Application</Text>}
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={[styles.footerButton, styles.primaryButton]} onPress={goNext} activeOpacity={0.86}>
-            <Text style={styles.primaryButtonText}>Continue</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.footerActions}>
+          {stepIndex > 0 ? (
+            <TouchableOpacity style={[styles.footerButton, styles.secondaryButton]} onPress={goBack} activeOpacity={0.86}>
+              <Text style={styles.secondaryButtonText}>Back</Text>
+            </TouchableOpacity>
+          ) : null}
+          {step === "review" ? (
+            <TouchableOpacity style={[styles.footerButton, styles.primaryButton, (submitting || reviewMissingStep != null) && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting || reviewMissingStep != null} activeOpacity={0.86}>
+              {submitting ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Submit</Text>}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={[styles.footerButton, styles.primaryButton]} onPress={goNext} activeOpacity={0.86}>
+              <Text style={styles.primaryButtonText}>Continue</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <Modal visible={addChildOpen} animationType="slide" transparent onRequestClose={() => setAddChildOpen(false)}>
@@ -1039,21 +967,22 @@ export default function BalletAssessmentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BA.ink900 },
-  glow: { position: "absolute", left: 0, right: 0, top: 0, height: 260 },
-  scroll: { paddingHorizontal: 20, paddingTop: 2 },
-  section: { gap: 12 },
-  stepIntro: { gap: 6, marginBottom: 4 },
+  container: { flex: 1, backgroundColor: "#101214" },
+  glow: { position: "absolute", top: -25, right: -10, width: "86%", height: 190, transform: [{ rotate: "-8deg" }] },
+  scroll: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 30, paddingTop: 0 },
+  section: { gap: 9 },
+  stepIntro: { gap: 1, marginBottom: 9 },
   stepTitle: {
     color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 24,
+    fontFamily: "Archivo_700Bold",
+    fontSize: 22,
+    lineHeight: 26,
   },
   stepSubtitle: {
-    color: BA.ink300,
+    color: BA.white,
     fontFamily: "Archivo_400Regular",
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   skeletonCard: {
     flexDirection: "row",
@@ -1085,59 +1014,55 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   addChildButton: {
-    minHeight: 48,
-    borderRadius: BA_RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.32)",
-    backgroundColor: "rgba(0,182,215,0.08)",
+    minHeight: 64,
+    borderRadius: 32,
+    borderWidth: 1.5,
+    borderColor: "rgba(0,182,215,0.58)",
+    backgroundColor: "#003741",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  addChildText: {
-    color: BA.cyan400,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 14,
-  },
-  infoBanner: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    paddingHorizontal: 14,
     gap: 9,
-    padding: 12,
-    borderRadius: BA_RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(0,182,215,0.24)",
-    backgroundColor: "rgba(0,182,215,0.08)",
   },
-  infoText: {
-    flex: 1,
-    color: BA.ink300,
-    fontFamily: "Archivo_600SemiBold",
-    fontSize: 12.5,
-    lineHeight: 18,
+  addIcon: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  addChildCopy: { flex: 1, minWidth: 0 },
+  addChildText: {
+    color: "#FFFFFF",
+    fontFamily: "Anton_400Regular",
+    fontSize: 20,
+    lineHeight: 23,
   },
+  addChildHint: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 12.5, lineHeight: 16 },
+  orDivider: { flexDirection: "row", alignItems: "center", gap: 18, paddingHorizontal: 41, marginVertical: 6 },
+  orLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.78)" },
+  orText: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 20, lineHeight: 23 },
+  packagesCarousel: { gap: 11, paddingRight: 20, paddingVertical: 4 },
+  assessmentFeeCard: { minHeight: 160, marginTop: 10, borderRadius: 27, paddingHorizontal: 18, paddingVertical: 16, justifyContent: "space-between", backgroundColor: "#F4F4F4" },
+  assessmentFeeHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  assessmentFeeCopy: { flex: 1, minWidth: 0 },
+  assessmentFeeTitle: { color: BA.cyan500, fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 28 },
+  assessmentFeeDescription: { color: BA.cyan500, fontFamily: "Archivo_600SemiBold", fontSize: 12, lineHeight: 16, textTransform: "uppercase" },
+  assessmentFeeValueRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingLeft: 25 },
+  assessmentFeeValue: { color: BA.cyan500, fontFamily: "Anton_400Regular", fontSize: 72, lineHeight: 72, ...iosDisplayTextStyle(72, 72) },
+  assessmentFeeCurrency: { color: BA.cyan500, fontFamily: "Anton_400Regular", fontSize: 19, lineHeight: 24, marginBottom: 5 },
   footer: {
+    width: "100%",
+    maxWidth: 430,
+    alignSelf: "center",
     paddingHorizontal: 20,
     paddingTop: 12,
-    backgroundColor: BA.ink900,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
-    flexDirection: "row",
-    gap: 10,
+    backgroundColor: "#101214",
   },
-  // The success screen's action stack is a single column of full-width
-  // actions, not a row-paired Back/Continue pair — reusing `footer`
-  // unmodified previously left its lone child sized to its own intrinsic
-  // (shrink-to-fit) content width instead of the available screen width,
-  // which is what made the buttons look clipped/cramped.
-  successFooter: {
-    flexDirection: "column",
-  },
+  footerPanel: { borderTopLeftRadius: 42, borderTopRightRadius: 42, backgroundColor: "#003741", paddingHorizontal: 32, paddingTop: 18 },
+  footerActions: { flexDirection: "row", gap: 8 },
+  noteBlock: { marginBottom: 17 },
+  noteHeading: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 6 },
+  noteTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 20, lineHeight: 24 },
+  noteText: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 18, paddingLeft: 4 },
   footerButton: {
     flex: 1,
     minHeight: 52,
-    borderRadius: BA_RADIUS.md,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1145,7 +1070,7 @@ const styles = StyleSheet.create({
     backgroundColor: BA.cyan500,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: BA_RADIUS.md,
+    borderRadius: 999,
   },
   primaryButtonText: {
     color: BA.ink900,
@@ -1153,9 +1078,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   secondaryButton: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: BA.cyan500,
   },
   secondaryButtonText: {
     color: BA.white,
@@ -1187,12 +1112,6 @@ const styles = StyleSheet.create({
     color: BA.white,
     fontFamily: "Archivo_800ExtraBold",
     fontSize: 18,
-  },
-  modalHelper: {
-    color: BA.ink300,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 13,
-    lineHeight: 19,
   },
   modalScroll: { flexGrow: 0 },
   modalForm: { paddingHorizontal: 20, gap: 18 },
@@ -1226,7 +1145,8 @@ const styles = StyleSheet.create({
   groupLabel: {
     color: BA.white,
     fontFamily: "Archivo_700Bold",
-    fontSize: 13,
+    fontSize: 15,
+    lineHeight: 19,
   },
   birthRow: { flexDirection: "row", gap: 8 },
   birthField: { flex: 1, minWidth: 0 },
@@ -1252,54 +1172,15 @@ const styles = StyleSheet.create({
   },
   genderTextSelected: { color: BA.cyan400 },
   saveChildButton: { minHeight: 50, marginTop: 2 },
-  reasonMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  reasonValidation: {
-    flex: 1,
-    color: BA.danger,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 12,
-  },
-  reasonHint: {
-    color: BA.ink300,
-  },
-  reasonCount: {
-    color: BA.ink400,
-    fontFamily: "Archivo_400Regular",
-    fontSize: 12,
-  },
-  successScroll: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    alignItems: "center",
-  },
-  successIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: BA.cyan500,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-    shadowColor: BA.cyan500,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  successTitle: {
-    color: BA.white,
-    fontFamily: "Anton_400Regular",
-    fontSize: 27,
-    lineHeight: 30,
-    textTransform: "uppercase",
-    textAlign: "center",
-    ...iosDisplayTextStyle(27, 30),
-    marginBottom: 26,
-    paddingHorizontal: 6,
-  },
+  successGlow: { position: "absolute", top: -45, right: -10, width: "90%", height: 180, transform: [{ rotate: "-9deg" }] },
+  successScroll: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 15 },
+  successHeading: { alignItems: "center", marginBottom: 27 },
+  successTitleWhite: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 39, lineHeight: 39, ...iosDisplayTextStyle(39, 39) },
+  successTitleCyan: { marginTop: -4, color: BA.cyan500, fontFamily: "Anton_400Regular", fontSize: 39, lineHeight: 39, ...iosDisplayTextStyle(39, 39) },
+  applicationReference: { marginBottom: 10, paddingHorizontal: 14 },
+  applicationReferenceLabel: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 14, lineHeight: 17 },
+  applicationReferenceValue: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 20, lineHeight: 23 },
+  successClosingCard: { marginTop: 12, borderRadius: 42, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14, backgroundColor: "#003741" },
+  successClosingTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 28, lineHeight: 33, textAlign: "center", ...iosDisplayTextStyle(28, 33) },
+  successClosingText: { marginTop: 3, marginBottom: 12, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 17, textAlign: "center" },
 });

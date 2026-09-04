@@ -7,6 +7,9 @@ import { FALLBACK_PROMO_ERROR, getFriendlyPromoError } from "../../components/bo
 const flow = readFileSync(new URL("../../app/booking/flow.tsx", import.meta.url), "utf8");
 const confirmation = readFileSync(new URL("../../app/booking/confirmation.tsx", import.meta.url), "utf8");
 const participantAvatar = readFileSync(new URL("../../components/ParticipantAvatar.tsx", import.meta.url), "utf8");
+const bookingFlowIcon = readFileSync(new URL("../../components/booking/BookingFlowIcon.tsx", import.meta.url), "utf8");
+const packageCenter = readFileSync(new URL("../../app/package-center.tsx", import.meta.url), "utf8");
+const availablePackages = readFileSync(new URL("../../components/AvailablePackagesSection.tsx", import.meta.url), "utf8");
 
 test("technical promo validation payloads are never shown to the customer", () => {
   const message = getFriendlyPromoError({
@@ -46,9 +49,28 @@ test("selected participant and package-credit controls keep the same visible cya
   assert.match(participantAvatar, /borderColor: genderColor/);
 });
 
-test("booking success is a fixed canvas and uses the supplied action icons", () => {
-  assert.doesNotMatch(confirmation, /<ScrollView/);
-  assert.match(confirmation, /<View style=\{\[styles\.canvas,/);
+test("customers without package credit get a Package Center shortcut instead of a hidden credit row", () => {
+  assert.match(flow, /const shouldShowBuyCredits = packageCreditsRemaining <= 0;/);
+  assert.match(flow, /shouldShowBuyCredits \? \([\s\S]*>BUY CREDIT<\/Text>/);
+  assert.match(flow, /No Credits Available\. Buy A Package For \{classPackageAgeLabel\} To Book This Class/);
+  assert.match(flow, /accessibilityLabel="Buy credits from Package Center"/);
+  assert.match(flow, /router\.push\(\{ pathname: "\/package-center", params: \{ ageBand: classPackageAgeBand \} \} as never\)/);
+  assert.match(flow, /BookingFlowIcon name="route" size=\{22\}/);
+  assert.match(bookingFlowIcon, /route: require\("@\/assets\/icons\/booking-route\.svg"\)/);
+});
+
+test("Package Center opens the requested class age category and exposes Adults, Teens, and Kids filters", () => {
+  assert.match(packageCenter, /useLocalSearchParams<\{ ageBand\?: string \| string\[\] \}>/);
+  assert.match(packageCenter, /initialAgeFilter=\{requestedAgeBand \?\? undefined\}/);
+  assert.match(availablePackages, /const PACKAGE_FILTERS: PackageAgeBand\[\] = \["adults", "teens", "kids"\]/);
+  assert.match(availablePackages, /packages\.filter\(\(pkg\) => packageMatchesAgeBand\(pkg, ageFilter\)\)/);
+  assert.match(availablePackages, /accessibilityRole="tab"/);
+});
+
+test("booking success is a responsive scroll surface and uses the supplied action icons", () => {
+  assert.match(confirmation, /<ScrollView[\s\S]*contentContainerStyle=\{\[styles\.canvas,/);
+  assert.match(confirmation, /canvas: \{ width: "100%", maxWidth: 430/);
+  assert.doesNotMatch(confirmation, /canvas: \{ flex: 1/);
   for (const name of ["bell", "calendar", "home"]) {
     assert.match(confirmation, new RegExp(`BookingSuccessActionIcon name="${name}"`));
   }

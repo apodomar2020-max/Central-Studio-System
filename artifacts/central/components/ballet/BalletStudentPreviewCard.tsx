@@ -41,14 +41,12 @@ function AddIcon() {
   );
 }
 
-function StudentCard({ student, width, onOpen, onCancel }: {
+function StudentCard({ student, width, onOpen }: {
   student: BalletStudentPreview;
   width: number;
   onOpen?: (student: BalletStudentPreview) => void;
-  onCancel?: (student: BalletStudentPreview) => void;
 }) {
   const statusColor = STATUS_COLORS[student.statusTone];
-  const isPending = student.applicationStatus !== "active";
   const content = (
     <>
       <ExpoImage source={BALLERINA_ARTWORK} style={styles.avatar} contentFit="cover" contentPosition="top" />
@@ -59,18 +57,6 @@ function StudentCard({ student, width, onOpen, onCancel }: {
           <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={1}>{student.statusLabel.replace("Application ", "")}</Text>
         </View>
       </View>
-      <TouchableOpacity
-        accessibilityRole="button"
-        accessibilityLabel={isPending ? `Cancel ${student.childName}'s application` : `Cancel ${student.childName}'s program`}
-        activeOpacity={0.82}
-        onPress={(event) => {
-          event.stopPropagation();
-          onCancel?.(student);
-        }}
-        style={styles.deleteButton}
-      >
-        <Ionicons name="trash-outline" color="#FFFFFF" size={24} />
-      </TouchableOpacity>
     </>
   );
 
@@ -106,14 +92,12 @@ export function BalletStudentPreviewSection({
   eligibleChildCount,
   onAddAnotherChild,
   onOpenStudent,
-  onCancelStudent,
 }: {
   students: BalletStudentPreview[];
   loading: boolean;
   eligibleChildCount: number;
   onAddAnotherChild: () => void;
   onOpenStudent?: (student: BalletStudentPreview) => void;
-  onCancelStudent?: (student: BalletStudentPreview) => void;
 }) {
   const { width: viewportWidth } = useWindowDimensions();
   const cardWidth = Math.min(Math.max(viewportWidth * 0.68, 264), 300);
@@ -142,7 +126,7 @@ export function BalletStudentPreviewSection({
             data={items}
             keyExtractor={(item) => item.key}
             renderItem={({ item }) => item.kind === "student"
-              ? <StudentCard student={item.student} width={cardWidth} onOpen={onOpenStudent} onCancel={onCancelStudent} />
+              ? <StudentCard student={item.student} width={cardWidth} onOpen={onOpenStudent} />
               : <AddChildCard width={cardWidth} onPress={onAddAnotherChild} />}
             contentContainerStyle={styles.carouselContent}
             ItemSeparatorComponent={() => <View style={{ width: CARD_GAP }} />}
@@ -174,7 +158,6 @@ const styles = StyleSheet.create({
   statusPill: { alignSelf: "flex-start", maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginTop: 2 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { flexShrink: 1, fontFamily: "Archivo_600SemiBold", fontSize: 8.5, lineHeight: 11 },
-  deleteButton: { width: 42, height: 42, borderRadius: 12, backgroundColor: "#FF0A13", alignItems: "center", justifyContent: "center", marginLeft: 3 },
   addCard: { height: CARD_HEIGHT, borderRadius: 20, borderWidth: 1.25, borderColor: CYAN, backgroundColor: "#042F34", paddingHorizontal: 18, flexDirection: "row", alignItems: "center", gap: 10 },
   addCopy: { flex: 1, minWidth: 0 },
   addTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 17, lineHeight: 22 },

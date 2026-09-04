@@ -1,33 +1,17 @@
-import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
-import { BA } from "./assessmentTokens";
 import CentralBackButton from "@/components/CentralBackButton";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 
-export default function BalletAssessmentHeader({
-  title = "Ballet Assessment",
-  onBack,
-  homeAction,
-}: {
+export default function BalletAssessmentHeader({ title = "Ballet Assessment", onBack, showBack = true }: {
   title?: string;
   onBack: () => void;
-  /** When provided, replaces the Back action with a compact Home action —
-   *  used only on the submitted-success screen, which must never expose
-   *  both Back and Home at once. */
-  homeAction?: () => void;
+  showBack?: boolean;
 }) {
-  const isHome = homeAction != null;
   return (
     <View style={styles.header}>
-      {isHome ? (
-        <TouchableOpacity onPress={homeAction} style={styles.backButton} activeOpacity={0.75}>
-          <Ionicons name="home-outline" size={20} color={BA.cyan500} />
-          <Text style={styles.backText}>Home</Text>
-        </TouchableOpacity>
-      ) : (
-        <CentralBackButton onPress={onBack} style={styles.backButton} />
-      )}
+      {showBack ? <CentralBackButton onPress={onBack} style={styles.backButton} /> : <View style={styles.spacer} />}
       <Text style={styles.title}>{title}</Text>
       <View style={styles.spacer} />
     </View>
@@ -35,29 +19,8 @@ export default function BalletAssessmentHeader({
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-  },
-  backButton: {
-    minWidth: 72,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 6,
-  },
-  backText: {
-    color: BA.cyan500,
-    fontFamily: "Archivo_700Bold",
-    fontSize: 14,
-  },
-  title: {
-    color: BA.white,
-    fontFamily: "Archivo_800ExtraBold",
-    fontSize: 16,
-  },
-  spacer: { width: 72 },
+  header: { width: "100%", maxWidth: 430, minHeight: 54, alignSelf: "center", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 15, paddingBottom: 8, zIndex: 3 },
+  backButton: { width: 40, height: 40 },
+  title: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 22, lineHeight: 27, textTransform: "uppercase", letterSpacing: 0.15, ...iosDisplayTextStyle(22, 27) },
+  spacer: { width: 40 },
 });

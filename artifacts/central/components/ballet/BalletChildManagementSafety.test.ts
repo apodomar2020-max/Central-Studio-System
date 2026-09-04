@@ -91,7 +91,7 @@ test("one eligible Cancel Program target retains exact application and assignmen
 test("child-specific confirmation copy is used for application and program cancellation", () => {
   assert.match(dangerSource, /Cancel \$\{target\.childName\}'s Application\?/);
   assert.match(dangerSource, /Cancel \$\{target\.childName\}'s Ballet Program\?/);
-  assert.match(statusSource, /Cancel \$\{application\.childName\}'s Application\?/);
+  assert.doesNotMatch(statusSource, /Cancel \$\{application\.childName\}/);
 });
 
 test("multiple eligible targets open a selector rather than choosing one", () => {
@@ -158,7 +158,13 @@ test("fresh-target lookup keeps application and assignment identity coupled", ()
 
 test("generic application status is read-only when a multi-application route has no explicit id", () => {
   assert.match(statusSource, /setHasExplicitApplicationContext\(requested != null \|\| onlyApplication != null\)/);
-  assert.match(statusSource, /Use Manage Enrollment on the Ballet Program page to select the exact child/);
+  assert.match(statusSource, /Open a student from the Ballet Program page to view the correct application/);
+});
+
+test("mobile Ballet application details expose no cancellation controls or mutation endpoints", () => {
+  assert.doesNotMatch(statusSource, /cancelBalletApplication|requestBalletEnrollmentCancellation|withdrawBalletEnrollmentCancellationRequest/);
+  assert.doesNotMatch(statusSource, /Cancel Program|Cancel Application|Withdraw request/);
+  assert.doesNotMatch(statusSource, /action\?: string|action=cancel/);
 });
 
 test("an unknown explicit application id does not fall back to another child", () => {
@@ -166,11 +172,11 @@ test("an unknown explicit application id does not fall back to another child", (
   assert.match(statusSource, /setHasExplicitApplicationContext\(false\)/);
 });
 
-test("Add New Child is visible without routed ids", () => {
-  assert.match(assessmentSource, /<Text style=\{styles\.addChildText\}>\+ Add New Child<\/Text>/);
+test("Add Another Child is visible without routed ids", () => {
+  assert.match(assessmentSource, /<Text style=\{styles\.addChildText\}>Add Another Child<\/Text>/);
 });
 
-test("Add New Child is not conditional on routed eligible ids", () => {
+test("Add Another Child is not conditional on routed eligible ids", () => {
   const area = assessmentSource.slice(assessmentSource.indexOf("styles.addChildButton") - 180, assessmentSource.indexOf("styles.addChildText") + 160);
   assert.doesNotMatch(area, /routedEligibleChildIds\s*==\s*null/);
 });
@@ -219,7 +225,7 @@ test("excluded existing children remain outside the effective route allow-list",
   assert.equal(buildEffectiveEligibleBalletChildIds([7], new Set([19]))!.has(8), false);
 });
 
-test("Add New Child modal uses keyboard avoidance and a scrollable form", () => {
+test("Add Child modal uses keyboard avoidance and a scrollable form", () => {
   assert.match(assessmentSource, /<KeyboardAvoidingView[\s\S]*style=\{styles\.modalOverlay\}/);
   assert.match(assessmentSource, /<ScrollView[\s\S]*style=\{styles\.modalScroll\}[\s\S]*keyboardShouldPersistTaps="handled"/);
 });
@@ -244,6 +250,9 @@ test("gender controls render below date of birth and Save Child stays in the scr
 });
 
 test("the repaired child form has no absolute positioning or negative margins", () => {
-  const modalStyles = assessmentSource.slice(assessmentSource.indexOf("modalOverlay:"), assessmentSource.indexOf("reasonMetaRow:"));
+  const modalStyles = assessmentSource.slice(
+    assessmentSource.indexOf("modalOverlay:"),
+    assessmentSource.indexOf("successGlow:"),
+  );
   assert.doesNotMatch(modalStyles, /position:\s*"absolute"|margin(?:Top|Bottom|Left|Right)?:\s*-/);
 });

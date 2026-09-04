@@ -139,7 +139,7 @@ export function decideChildEligibilityAction(input: {
   // appointment / package / review — never silently clear in place. If the
   // selected child is no longer eligible, the only allowed action is an
   // explicit bounce back to the Child step (clearing the dependent
-  // Date/Package selections along with it), never a bare clear that leaves
+  // Date selection along with it), never a bare clear that leaves
   // the current step rendering with missing data.
   if (selectedChildId != null && !visibleChildIds.includes(selectedChildId)) {
     return { type: "bounceToChild" };
@@ -153,12 +153,10 @@ export function computeReviewMissingStep(input: {
   step: AssessmentStep;
   hasChild: boolean;
   hasAppointment: boolean;
-  hasPackage: boolean;
 }): AssessmentStep | null {
   if (input.step !== "review") return null;
   if (!input.hasChild) return "child";
   if (!input.hasAppointment) return "appointment";
-  if (!input.hasPackage) return "package";
   return null;
 }
 
@@ -168,7 +166,6 @@ export function canSubmitAssessment(input: {
   hasUser: boolean;
   hasChild: boolean;
   hasAppointment: boolean;
-  hasPackage: boolean;
   isSubmitting: boolean;
   hasSubmittedSnapshot: boolean;
 }): boolean {
@@ -176,7 +173,6 @@ export function canSubmitAssessment(input: {
     input.hasUser
     && input.hasChild
     && input.hasAppointment
-    && input.hasPackage
     && !input.isSubmitting
     && !input.hasSubmittedSnapshot
   );
@@ -185,7 +181,7 @@ export function canSubmitAssessment(input: {
 // ─── Part C — immutable submission snapshot ────────────────────────────────
 //
 // A plain reference capture (not a deep clone) is sufficient: nothing in
-// this screen ever mutates selectedChild/selectedAppointment/selectedPackage
+// this screen ever mutates selectedChild/selectedAppointment
 // in place — they are always replaced wholesale via their setters — so
 // capturing the references at submit time is enough to make the snapshot
 // immune to those state variables later being set to null or reassigned.
@@ -196,37 +192,35 @@ export function canSubmitAssessment(input: {
 //      the POST is awaited, from the already-validated local variables.
 //   2. finalizeAssessmentSubmissionSnapshot — called on success, and does
 //      nothing but ADD the server-returned applicationId/status onto the
-//      existing draft. It never re-reads child/appointment/package from
+//      existing draft. It never re-reads child/appointment from
 //      anywhere — it can't, because they aren't inputs to this function —
 //      so it is structurally impossible for it to rebuild the identity
 //      portion from (possibly since-changed) live state after the await.
 
-export interface AssessmentSubmissionDraft<TChild, TAppointment, TPackage> {
+export interface AssessmentSubmissionDraft<TChild, TAppointment> {
   child: TChild;
   appointment: TAppointment;
-  pkg: TPackage;
   paymentLabel: string;
 }
 
-export function buildAssessmentSubmissionDraft<TChild, TAppointment, TPackage>(input: {
+export function buildAssessmentSubmissionDraft<TChild, TAppointment>(input: {
   child: TChild;
   appointment: TAppointment;
-  pkg: TPackage;
   paymentLabel: string;
-}): AssessmentSubmissionDraft<TChild, TAppointment, TPackage> {
+}): AssessmentSubmissionDraft<TChild, TAppointment> {
   return { ...input };
 }
 
-export interface AssessmentSubmissionSnapshot<TChild, TAppointment, TPackage>
-  extends AssessmentSubmissionDraft<TChild, TAppointment, TPackage> {
+export interface AssessmentSubmissionSnapshot<TChild, TAppointment>
+  extends AssessmentSubmissionDraft<TChild, TAppointment> {
   applicationId: number;
   status: string | null;
 }
 
-export function finalizeAssessmentSubmissionSnapshot<TChild, TAppointment, TPackage>(
-  draft: AssessmentSubmissionDraft<TChild, TAppointment, TPackage>,
+export function finalizeAssessmentSubmissionSnapshot<TChild, TAppointment>(
+  draft: AssessmentSubmissionDraft<TChild, TAppointment>,
   result: { applicationId: number; status: string | null },
-): AssessmentSubmissionSnapshot<TChild, TAppointment, TPackage> {
+): AssessmentSubmissionSnapshot<TChild, TAppointment> {
   return { ...draft, ...result };
 }
 

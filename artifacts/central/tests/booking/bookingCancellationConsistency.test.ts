@@ -8,10 +8,8 @@
  * confirmCancelBooking() closure — no second cancellation contract, no
  * cancellation policy (window/fee/refund) introduced.
  *
- * Ballet items are explicitly excluded: Ballet cancellation is a
- * separate, already-existing flow (BalletProgramDangerZone /
- * enrolment-cancellation requests) with a different contract, and this
- * correction must not create a second implementation of it.
+ * Ballet items are explicitly excluded: Ballet cancellation is controlled
+ * by the studio system and is not exposed as a customer action.
  *
  * app/(tabs)/bookings.tsx is an Expo Router screen (JSX, react-native
  * imports) that cannot be imported into a plain Node test process — this
@@ -59,14 +57,9 @@ test("the overlay's cancellability check mirrors BookingCard's isUpcomingActive 
   );
 });
 
-test("the overlay no longer shows a working-looking 'Cancel (Soon)' placeholder for a cancellable general booking", () => {
-  // The remaining "Cancel (Soon)" placeholder must be reachable ONLY for
-  // an active Ballet item — never for a cancellable general booking.
-  const placeholderBlock = source.slice(
-    source.indexOf('!isPast && !isCancelled && isBallet && ('),
-    source.indexOf('Cancel (Soon)</Text>') + 30,
-  );
-  assert.match(placeholderBlock, /isBallet/, "the disabled placeholder must be gated to isBallet only");
+test("the overlay exposes no cancellation action or placeholder for Ballet items", () => {
+  assert.match(source, /const canCancel = !isBallet/);
+  assert.doesNotMatch(source, /Cancel \(Soon\)/);
 });
 
 test("the working Cancel Booking button is present and reuses onCancel, not a new backend call", () => {

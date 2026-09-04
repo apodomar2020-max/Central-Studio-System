@@ -36,6 +36,7 @@ import { getBookingErrorMessage } from "@/services/bookingErrorMessages";
 import DiscoveryClassCard from "@/components/DiscoveryClassCard";
 import BookingFlowIcon from "@/components/booking/BookingFlowIcon";
 import { getFriendlyPromoError } from "@/components/booking/promoError";
+import { PACKAGE_AGE_BAND_LABELS, parsePackageAgeBand } from "@/utils/packageAgeBands";
 
 type PaymentMethod = "online" | "cash" | "packageCredit";
 type ParticipantCandidate = {
@@ -271,6 +272,9 @@ export default function BookingFlowScreen() {
   const packageCreditsRemaining = activePackages.reduce((sum, pkg) => sum + pkg.remainingCredits, 0);
   const selectedPackage = activePackages[0];
   const canUsePackageCredits = schedulePackageEligible && packageCreditsRemaining > 0;
+  const shouldShowBuyCredits = packageCreditsRemaining <= 0;
+  const classPackageAgeBand = parsePackageAgeBand(cls?.ageGroup) ?? "adults";
+  const classPackageAgeLabel = PACKAGE_AGE_BAND_LABELS[classPackageAgeBand];
   const isPackageMode = paymentMethod === "packageCredit" && canUsePackageCredits;
   const grossPrice = cls?.price ?? 0;
   const finalPrice = isPackageMode ? 0 : (promoQuote?.finalSubtotal ?? grossPrice);
@@ -949,6 +953,25 @@ export default function BookingFlowScreen() {
                   ]}>Use 1 Active Package Credit For This Class</Text>
                 </View>
                 <SelectionRadio selected={paymentMethod === "packageCredit"} />
+              </TouchableOpacity>
+            ) : null}
+
+            {shouldShowBuyCredits ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Buy credits from Package Center"
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push({ pathname: "/package-center", params: { ageBand: classPackageAgeBand } } as never);
+                }}
+                style={styles.paymentOption}
+              >
+                <BookingFlowIcon name="credit" size={42} />
+                <View style={styles.paymentOptionCopy}>
+                  <Text style={[styles.paymentOptionTitle, styles.creditTitle]}>BUY CREDIT</Text>
+                  <Text style={[styles.paymentOptionDesc, styles.creditDesc]}>No Credits Available. Buy A Package For {classPackageAgeLabel} To Book This Class</Text>
+                </View>
+                <BookingFlowIcon name="route" size={22} />
               </TouchableOpacity>
             ) : null}
 
