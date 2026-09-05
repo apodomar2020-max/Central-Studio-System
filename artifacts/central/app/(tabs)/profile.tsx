@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useState } from "react";
 import {
@@ -791,8 +792,8 @@ export default function ProfileScreen() {
             Sign in to book classes, manage your account, and track your progress.
           </Text>
           <View style={{ gap: 10, width: "100%", marginTop: 8 }}>
-            <AppButton title="Sign In" onPress={() => router.push("/auth/login")} fullWidth />
-            <AppButton title="Create Account" onPress={() => router.push("/auth/register")} variant="ghost" fullWidth />
+            <AppButton title="Sign In" onPress={() => pushOnce("/auth/login")} fullWidth />
+            <AppButton title="Create Account" onPress={() => pushOnce("/auth/register")} variant="ghost" fullWidth />
           </View>
         </View>
       </View>
@@ -858,7 +859,7 @@ export default function ProfileScreen() {
                 if (navigatingRef.current) return;
                 navigatingRef.current = true;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push("/my-qr");
+                pushOnce("/my-qr");
               }}
             >
               <Image source={PROFILE_MEMBER_PASS_ICON} style={styles.memberPassIcon} contentFit="contain" transition={0} />
@@ -915,7 +916,7 @@ export default function ProfileScreen() {
 
         <Text style={styles.sectionEyebrow}>ACCOUNT</Text>
         <View style={styles.menuContainer}>
-          <TouchableOpacity onPress={() => router.push("/edit-profile")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/edit-profile")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: colors.studio.primary + "15" }]}>
               <PIcon name="edit" size={19} stroke={2.1} color={colors.studio.primary} />
             </View>
@@ -926,7 +927,7 @@ export default function ProfileScreen() {
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.push("/(tabs)/bookings")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/(tabs)/bookings")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#FFB02E15" }]}>
               <PIcon name="bookings" size={19} stroke={2.1} color="#FFB02E" />
             </View>
@@ -938,7 +939,7 @@ export default function ProfileScreen() {
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.push("/package-center")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/package-center")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#7C3AED15" }]}>
               <PIcon name="package" size={19} stroke={2.1} color="#7C3AED" />
             </View>
@@ -950,7 +951,7 @@ export default function ProfileScreen() {
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.push("/credit-history")} style={styles.menuItem} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/credit-history")} style={styles.menuItem} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: colors.studio.primary + "15" }]}>
               <PIcon name="history" size={19} stroke={2.1} color={colors.studio.primary} />
             </View>
@@ -964,7 +965,7 @@ export default function ProfileScreen() {
 
         <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
           <Text style={[styles.sectionEyebrow, { marginBottom: 0 }]}>ATTENDANCE HISTORY</Text>
-          <TouchableOpacity onPress={() => router.push("/attendance-history")} activeOpacity={0.75}>
+          <TouchableOpacity onPress={() => pushOnce("/attendance-history")} activeOpacity={0.75}>
             <Text style={styles.seeMoreText}>See More</Text>
           </TouchableOpacity>
         </View>
@@ -1061,7 +1062,7 @@ export default function ProfileScreen() {
 
         <Text style={[styles.sectionEyebrow, { marginTop: 24 }]}>ACTIVITY & SUPPORT</Text>
         <View style={styles.menuContainer}>
-          <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/notifications")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#FF2E7E15" }]}>
               <PIcon name="bell" size={19} stroke={2.1} color="#FF2E7E" />
             </View>
@@ -1076,7 +1077,7 @@ export default function ProfileScreen() {
             )}
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/help-support")} style={styles.menuItem} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/help-support")} style={styles.menuItem} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#9CA3AF15" }]}>
               <PIcon name="help" size={19} stroke={2.1} color="#9CA3AF" />
             </View>
@@ -1090,7 +1091,7 @@ export default function ProfileScreen() {
 
         <Text style={[styles.sectionEyebrow, { marginTop: 24 }]}>PRIVACY & SECURITY</Text>
         <View style={styles.menuContainer}>
-          <TouchableOpacity onPress={() => router.push("/change-password")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/change-password")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#9CA3AF15" }]}>
               <PIcon name="lock" size={19} stroke={2.1} color="#9CA3AF" />
             </View>
@@ -1099,7 +1100,7 @@ export default function ProfileScreen() {
             </View>
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/privacy-policy")} style={styles.menuItem} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => pushOnce("/privacy-policy")} style={styles.menuItem} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#9CA3AF15" }]}>
               <PIcon name="privacy" size={19} stroke={2.1} color="#9CA3AF" />
             </View>

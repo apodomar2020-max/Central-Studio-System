@@ -42,7 +42,7 @@ test("glass panel stays a single clipped surface with only a restrained lower hi
 
 test("booking details navigation ignores repeated taps until the list regains focus", () => {
   assert.match(bookingsSource, /if \(bookingNavigationLockedRef\.current\) return;/);
-  assert.match(bookingsSource, /bookingNavigationLockedRef\.current = true;[\s\S]*router\.push\(\{ pathname: "\/booking\/\[id\]"/);
+  assert.match(bookingsSource, /bookingNavigationLockedRef\.current = true;[\s\S]*pushOnce\(\{ pathname: "\/booking\/\[id\]"/);
   assert.match(bookingsSource, /bookingNavigationLockedRef\.current = false;/);
   assert.match(bookingsSource, /onPress=\{\(\) => openBookingDetails\(item\.data\.id\)\}/);
 });

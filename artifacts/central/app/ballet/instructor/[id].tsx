@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
 import { router, useLocalSearchParams } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -171,8 +172,8 @@ export default function BalletInstructorDetailScreen() {
       classes={cards}
       refreshing={isRefreshing}
       onRefresh={() => void load(undefined, true)}
-      onSelectClass={() => router.push("/ballet/classes" as any)}
-      onBookClass={() => router.push("/ballet/classes" as any)}
+      onSelectClass={() => pushOnce("/ballet/classes" as any)}
+      onBookClass={() => pushOnce("/ballet/classes" as any)}
     />
   );
 }

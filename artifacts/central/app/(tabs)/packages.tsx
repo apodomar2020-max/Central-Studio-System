@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Platform,
@@ -197,7 +198,7 @@ export default function PackagesScreen() {
         paymentMode: "pay_at_studio",
       });
       setConfirmPkg(null);
-      router.push("/package-center");
+      pushOnce("/package-center");
       alert.show({
         tone: "success",
         title: "Request Submitted!",
@@ -225,7 +226,7 @@ export default function PackagesScreen() {
       <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}>
         <Text style={styles.title}>Packages</Text>
         <TouchableOpacity
-          onPress={() => router.push("/package-center")}
+          onPress={() => pushOnce("/package-center")}
           style={styles.centerShortcut}
           activeOpacity={0.85}
         >
@@ -255,7 +256,7 @@ export default function PackagesScreen() {
         {missingDob ? (
           <TouchableOpacity
             style={[styles.infoBanner, { borderColor: "#F59E0B60" }]}
-            onPress={() => router.push("/edit-profile")}
+            onPress={() => pushOnce("/edit-profile")}
           >
             <Ionicons name="calendar-outline" size={18} color="#F59E0B" />
             <Text style={styles.infoBannerText}>

@@ -11,7 +11,7 @@ const header = profile.slice(headerStart, accountStart);
 test("the compact Member Pass sits in the profile header and preserves QR navigation", () => {
   assert.match(header, /testID="profile-member-pass"/);
   assert.match(header, /PROFILE_MEMBER_PASS_ICON/);
-  assert.match(header, /router\.push\("\/my-qr"\)/);
+  assert.match(header, /pushOnce\("\/my-qr"\)/);
   assert.doesNotMatch(header, /MY STUDIO PASS|styles\.qrCard|<QRCode/);
 });
 

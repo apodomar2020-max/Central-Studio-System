@@ -13,6 +13,7 @@ import { normalizeMediaUrl } from "@workspace/api-client-react";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -64,7 +65,7 @@ function BalletInstructorCard({
       activeOpacity={0.86}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.push(`/ballet/instructor/${instructor.id}` as any);
+        pushOnce(`/ballet/instructor/${instructor.id}` as any);
       }}
     >
       {photoUrl && !imgFailed ? (

@@ -26,7 +26,7 @@ import {
 import Svg, { Defs, RadialGradient, Rect as SvgRect, Stop } from "react-native-svg";
 
 import { useAppContext } from "@/contexts/AppContext";
-import { isSafeAppRoute, safePush } from "@/utils/navigation";
+import { isSafeAppRoute, pushOnce, safePush } from "@/utils/navigation";
 import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import CsIcon from "@/components/CsIcon";
 import { DanceClass, Instructor } from "@/data/mockData";
@@ -413,7 +413,7 @@ function InstructorCard({ instructor }: { instructor: Instructor }) {
       activeOpacity={0.85}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.push({ pathname: "/instructor/[id]", params: { id: instructor.id } });
+        pushOnce({ pathname: "/instructor/[id]", params: { id: instructor.id } });
       }}
     >
       {instructor.photoUrl && !imgFailed ? (
@@ -490,7 +490,7 @@ function ClassCard({
       activeOpacity={0.88}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.push({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
+        pushOnce({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
       }}
     >
       {/* ── Image header ────────────────────────────────────────────────────── */}
@@ -576,7 +576,7 @@ function ClassCard({
               return;
             }
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
+            pushOnce({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
           }}
           disabled={!isBookable}
           style={[
@@ -817,10 +817,10 @@ export default function StudioHomeScreen() {
         />
         <View style={s.headerRight}>
           {/* Bell */}
-          <BellButton unreadCount={totalUnread} onPress={() => router.push("/notifications")} />
+          <BellButton unreadCount={totalUnread} onPress={() => pushOnce("/notifications")} />
           {/* Avatar */}
           <TouchableOpacity
-            onPress={() => router.push(user ? "/(tabs)/profile" : "/auth/login")}
+            onPress={() => pushOnce(user ? "/(tabs)/profile" : "/auth/login")}
             style={s.avatarBtn}
             activeOpacity={0.82}
           >
@@ -844,7 +844,7 @@ export default function StudioHomeScreen() {
         {showCompletionBanner && user?.profileCompletion && (
           <ProfileCompletionBanner
             completion={user.profileCompletion}
-            onContinue={() => router.push(nextStepRoute(user.profileCompletion!.nextStep) as never)}
+            onContinue={() => pushOnce(nextStepRoute(user.profileCompletion!.nextStep) as never)}
             onDismiss={() => setCompletionBannerDismissed(true)}
           />
         )}
@@ -871,11 +871,11 @@ export default function StudioHomeScreen() {
             homeCardImageUrl={balletSettings?.homeCardImageUrl ?? null}
             onView={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push("/ballet" as any);
+              pushOnce("/ballet" as any);
             }}
             onApply={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push("/ballet/assessment" as any);
+              pushOnce("/ballet/assessment" as any);
             }}
           />
         </View>
@@ -887,7 +887,7 @@ export default function StudioHomeScreen() {
               <Text style={s.eyebrow}>DON'T MISS OUT</Text>
               <Text style={s.sectionTitle}>Upcoming classes</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/classes")} style={s.seeAllRow}>
+            <TouchableOpacity onPress={() => pushOnce("/(tabs)/classes")} style={s.seeAllRow}>
               <Text style={s.seeAllText}>See all</Text>
               <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
             </TouchableOpacity>

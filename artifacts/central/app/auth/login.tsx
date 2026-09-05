@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -181,7 +182,7 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.forgotBtn} onPress={() => router.push("/auth/forgot-password")}>
+          <TouchableOpacity style={styles.forgotBtn} onPress={() => pushOnce("/auth/forgot-password")}>
             <Text style={[styles.forgotText, { color: colors.studio.primary }]}>Forgot password?</Text>
           </TouchableOpacity>
 

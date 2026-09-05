@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import LottieView from "lottie-react-native";
@@ -517,7 +518,7 @@ export default function BookingsScreen() {
     if (bookingNavigationLockedRef.current) return;
     bookingNavigationLockedRef.current = true;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: "/booking/[id]", params: { id: String(bookingId) } });
+    pushOnce({ pathname: "/booking/[id]", params: { id: String(bookingId) } });
   }, []);
 
   const mergedBookings = useMemo(() => {
@@ -621,7 +622,7 @@ export default function BookingsScreen() {
           title="Sign in to view bookings"
           description="Log in to track your classes and booking history"
           actionLabel="Sign In"
-          onAction={() => router.push("/auth/login")}
+          onAction={() => pushOnce("/auth/login")}
         />
       </View>
     );
@@ -725,7 +726,7 @@ export default function BookingsScreen() {
               </View>
               <Text style={styles.emptyTitle}>No upcoming bookings</Text>
               <Text style={styles.emptySub}>Your next dance adventure is waiting for you.</Text>
-              <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push("/(tabs)/classes")}>
+              <TouchableOpacity style={styles.emptyBtn} onPress={() => pushOnce("/(tabs)/classes")}>
                 <Text style={styles.emptyBtnText}>Book a Class</Text>
               </TouchableOpacity>
             </View>

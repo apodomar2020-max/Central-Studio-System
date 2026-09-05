@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -18,7 +19,7 @@ export default function CategoryCard({ item, onPress }: CategoryCardProps) {
   function handlePress() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (onPress) onPress();
-    else router.push({ pathname: "/(tabs)/classes", params: { categoryId: item.id } });
+    else pushOnce({ pathname: "/(tabs)/classes", params: { categoryId: item.id } });
   }
 
   return (

@@ -54,7 +54,7 @@ test("customers without package credit get a Package Center shortcut instead of 
   assert.match(flow, /shouldShowBuyCredits \? \([\s\S]*>BUY CREDIT<\/Text>/);
   assert.match(flow, /No Credits Available\. Buy A Package For \{classPackageAgeLabel\} To Book This Class/);
   assert.match(flow, /accessibilityLabel="Buy credits from Package Center"/);
-  assert.match(flow, /router\.push\(\{ pathname: "\/package-center", params: \{ ageBand: classPackageAgeBand \} \} as never\)/);
+  assert.match(flow, /pushOnce\(\{ pathname: "\/package-center", params: \{ ageBand: classPackageAgeBand \} \} as never\)/);
   assert.match(flow, /BookingFlowIcon name="route" size=\{22\}/);
   assert.match(bookingFlowIcon, /route: require\("@\/assets\/icons\/booking-route\.svg"\)/);
 });

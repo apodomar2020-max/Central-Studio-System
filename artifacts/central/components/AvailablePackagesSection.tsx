@@ -1,6 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -90,7 +91,7 @@ export default function AvailablePackagesSection({
       const packageName = detailsPkg.name;
       setDetailsPkg(null);
       await onPurchased?.();
-      if (mode === "home") router.push("/package-center");
+      if (mode === "home") pushOnce("/package-center");
       alert.show({
         tone: "success",
         title: "Request Submitted!",
@@ -132,7 +133,7 @@ export default function AvailablePackagesSection({
             </Text>
           </View>
           {!packageCenter ? (
-            <TouchableOpacity onPress={() => router.push("/package-center")} style={styles.promoButton}>
+            <TouchableOpacity onPress={() => pushOnce("/package-center")} style={styles.promoButton}>
               <Text style={styles.promoButtonText}>View</Text>
             </TouchableOpacity>
           ) : null}
@@ -175,7 +176,7 @@ export default function AvailablePackagesSection({
             <Text style={styles.eyebrow}>SAVE MORE, DANCE MORE</Text>
             <Text style={styles.homeTitle}>Packages</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push("/package-center")} style={styles.manageRow}>
+          <TouchableOpacity onPress={() => pushOnce("/package-center")} style={styles.manageRow}>
             <Text style={styles.manageText}>Manage</Text>
             <CsIcon name="chevron" size={15} stroke={2.4} color={INK_300} />
           </TouchableOpacity>

@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -369,7 +370,7 @@ export default function BookingFlowScreen() {
         <Text style={styles.centeredDesc}>Finish setting up your profile to book classes.</Text>
         <AppButton
           title="Complete Profile"
-          onPress={() => router.push(nextStepRoute(user.profileCompletion!.nextStep) as never)}
+          onPress={() => pushOnce(nextStepRoute(user.profileCompletion!.nextStep) as never)}
         />
       </View>
     );
@@ -823,7 +824,7 @@ export default function BookingFlowScreen() {
             {!children.length ? (
               <AppButton
                 title="Add Child Profile"
-                onPress={() => router.push("/(tabs)/profile" as any)}
+                onPress={() => pushOnce("/(tabs)/profile" as any)}
                 variant="ghost"
                 fullWidth
               />
@@ -962,7 +963,7 @@ export default function BookingFlowScreen() {
                 accessibilityLabel="Buy credits from Package Center"
                 onPress={() => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push({ pathname: "/package-center", params: { ageBand: classPackageAgeBand } } as never);
+                  pushOnce({ pathname: "/package-center", params: { ageBand: classPackageAgeBand } } as never);
                 }}
                 style={styles.paymentOption}
               >

@@ -2,6 +2,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from "react-native";
 
@@ -61,7 +62,7 @@ export default function ClassCard({
 
   function handlePress() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
+    pushOnce({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
   }
 
   const statusConfig = getStatusConfig(item.status);
@@ -268,7 +269,7 @@ export default function ClassCard({
                   return;
                 }
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
+                pushOnce({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId, usePackage: "true" } });
               }}
               disabled={!isBookable}
               style={[
@@ -291,7 +292,7 @@ export default function ClassCard({
                 return;
               }
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
+              pushOnce({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } });
             }}
             disabled={!isBookable}
             style={[

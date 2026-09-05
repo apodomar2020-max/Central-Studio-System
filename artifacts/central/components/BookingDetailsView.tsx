@@ -2,6 +2,7 @@ import * as Haptics from "expo-haptics";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useMemo, useState } from "react";
 import {
@@ -227,7 +228,7 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
   function openInstructor() {
     if (!instructorId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: "/instructor/[id]", params: { id: String(instructorId) } });
+    pushOnce({ pathname: "/instructor/[id]", params: { id: String(instructorId) } });
   }
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;

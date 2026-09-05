@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, ImageBackground, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,7 +36,7 @@ function MenuTile({ kind, title, route, width, height }: MenuTileProps) {
   const [firstLine, secondLine] = title.split("\n");
   const isCentered = kind === "levels" || kind === "instructors" || kind === "faq";
   const isBottom = kind === "levels" || kind === "faq" || kind === "requirements";
-  return <TouchableOpacity onPress={() => { void Haptics.selectionAsync(); router.push(route as never); }} style={[styles.menuTile, { width, height }]} activeOpacity={0.85}>
+  return <TouchableOpacity onPress={() => { void Haptics.selectionAsync(); pushOnce(route as never); }} style={[styles.menuTile, { width, height }]} activeOpacity={0.85}>
     <View pointerEvents="none" style={styles.menuClip}>
       <Image source={MENU_ART[kind]} style={styles.menuBackground} resizeMode="stretch" />
       <View style={[styles.menuTitleBlock, isCentered && styles.menuTitleCentered, isBottom && styles.menuTitleBottom, kind === "instructors" && styles.menuTitleInstructors, kind === "requirements" && styles.menuTitleRequirements]}>
@@ -105,18 +106,18 @@ export default function BalletProgramScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (!user) return showAuthRequiredPrompt();
     if (user.accountType !== "parent") return showParentAccountRequiredPrompt();
-    router.push((hasActiveApplication ? "/ballet/application-status" : "/ballet/assessment") as never);
+    pushOnce((hasActiveApplication ? "/ballet/application-status" : "/ballet/assessment") as never);
   }
 
   function handleAddAnotherChild() {
-    router.push(eligibleBalletChildIds.length
+    pushOnce(eligibleBalletChildIds.length
       ? { pathname: "/ballet/assessment" as never, params: { eligibleChildIds: eligibleBalletChildIds.join(",") } }
       : "/ballet/assessment" as never);
   }
 
   function handleOpenStudent(student: BalletStudentPreview) {
     void Haptics.selectionAsync();
-    router.push({ pathname: "/ballet/application-status" as never, params: { id: String(student.applicationId) } });
+    pushOnce({ pathname: "/ballet/application-status" as never, params: { id: String(student.applicationId) } });
   }
 
   return <View style={styles.screen}>

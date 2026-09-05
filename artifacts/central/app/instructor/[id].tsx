@@ -8,6 +8,7 @@ import {
   useListSchedules,
 } from "@workspace/api-client-react";
 import { router, useLocalSearchParams } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useMemo } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -115,7 +116,7 @@ export default function InstructorDetailScreen() {
   };
 
   const selectClass = (item: DanceClass) => {
-    router.push({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
+    pushOnce({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
   };
 
   const bookClass = (item: DanceClass) => {
@@ -124,7 +125,7 @@ export default function InstructorDetailScreen() {
       showAuthRequiredPrompt();
       return;
     }
-    router.push({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } } as any);
+    pushOnce({ pathname: "/booking/flow", params: { classId: item.id, scheduleId: item.scheduleId } } as any);
   };
 
   if (instructorQuery.isLoading || classesQuery.isLoading || schedulesQuery.isLoading) return <DetailSkeleton />;

@@ -10,6 +10,7 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -61,7 +62,7 @@ export default function MyQRScreen() {
           <Text style={styles.emptyTitle}>Complete your profile first</Text>
           <Text style={styles.emptyDesc}>Finish setting up your profile to receive your QR membership.</Text>
           <TouchableOpacity
-            onPress={() => router.push(nextStepRoute(user.profileCompletion!.nextStep) as never)}
+            onPress={() => pushOnce(nextStepRoute(user.profileCompletion!.nextStep) as never)}
             style={[styles.backBtnStatic, { marginTop: 16 }]}
             activeOpacity={0.85}
           >

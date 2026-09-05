@@ -14,6 +14,7 @@ import * as Haptics from "expo-haptics";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -325,13 +326,13 @@ export default function ClassDetailScreen() {
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({ pathname: "/booking/flow", params: { classId: cls.id, scheduleId: cls.scheduleId } });
+    pushOnce({ pathname: "/booking/flow", params: { classId: cls.id, scheduleId: cls.scheduleId } });
   }
 
   function openInstructor() {
     if (!instructorId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: "/instructor/[id]", params: { id: String(instructorId) } });
+    pushOnce({ pathname: "/instructor/[id]", params: { id: String(instructorId) } });
   }
 
   const ctaLabel = shouldCancel

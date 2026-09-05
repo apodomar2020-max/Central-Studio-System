@@ -20,6 +20,7 @@ import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { router, Stack, usePathname, useRootNavigationState, useSegments } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import * as SplashScreen from "expo-splash-screen";
 import * as Sentry from "@sentry/react-native";
 import * as Updates from "expo-updates";
@@ -200,7 +201,7 @@ function NotificationRoutingGate() {
     const route = pendingRouteRef.current;
     pendingRouteRef.current = null;
     setTimeout(() => {
-      router.push(route as never);
+      pushOnce(route as never);
     }, 0);
   }, [canNavigateToNotificationTarget]);
 

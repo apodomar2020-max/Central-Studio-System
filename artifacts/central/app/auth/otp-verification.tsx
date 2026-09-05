@@ -2,6 +2,7 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -74,7 +75,7 @@ export default function OtpVerificationScreen(): React.ReactElement {
         return;
       }
       storePasswordResetGrant({ email: targetEmail, resetToken: result.resetToken });
-      router.push("/auth/reset-password");
+      pushOnce("/auth/reset-password");
     } catch (err: unknown) {
       const apiError = toApiErrorLike(err);
       setError(apiError

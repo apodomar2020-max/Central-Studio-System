@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import LottieView from "lottie-react-native";
 import { router, useFocusEffect } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -144,10 +145,10 @@ export default function BalletClassesScreen() {
   );
 
   const runEmptyAction = useCallback((copy: EmptyStateCopy, child: BalletMyClassesChild | null) => {
-    if (copy.action === "login") router.push("/auth/login");
-    else if (copy.action === "apply") router.push("/ballet/assessment" as any);
+    if (copy.action === "login") pushOnce("/auth/login");
+    else if (copy.action === "apply") pushOnce("/ballet/assessment" as any);
     else if (copy.action === "status" && child?.applicationId != null) {
-      router.push({ pathname: "/ballet/application-status" as any, params: { id: String(child.applicationId) } });
+      pushOnce({ pathname: "/ballet/application-status" as any, params: { id: String(child.applicationId) } });
     }
   }, []);
 

@@ -2,6 +2,7 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useState } from "react";
 import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -79,7 +80,7 @@ export default function ChangePasswordScreen(): React.ReactElement {
     try {
       await customFetch("/api/auth/forgot-password", { method: "POST", auth: "omit", body: JSON.stringify(buildForgotPasswordPayload(email, botToken)) });
       forgotPasswordOutcome();
-      router.push({ pathname: "/auth/otp-verification", params: { email } });
+      pushOnce({ pathname: "/auth/otp-verification", params: { email } });
     } catch (err: unknown) {
       const apiError = toApiErrorLike(err);
       if (!apiError) {

@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, {
   useCallback, useMemo, useRef, useState,
   useEffect,
@@ -1011,7 +1012,7 @@ export default function ClassesScreen() {
 
   function handleSelectClass(c: DanceClass) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: "/class/[id]", params: { id: c.id, scheduleId: c.scheduleId } });
+    pushOnce({ pathname: "/class/[id]", params: { id: c.id, scheduleId: c.scheduleId } });
   }
 
   function handleBook(c: DanceClass, method: "package" | "cash") {
@@ -1021,7 +1022,7 @@ export default function ClassesScreen() {
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({
+    pushOnce({
       pathname: "/booking/flow",
       params: {
         classId: c.id,

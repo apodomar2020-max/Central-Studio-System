@@ -2,6 +2,7 @@ import * as Haptics from "expo-haptics";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useMemo } from "react";
 import {
   Image,
@@ -106,7 +107,7 @@ export default function DiscoveryClassCard({ item, instructor, styleIcon, onSele
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
+    pushOnce({ pathname: "/class/[id]", params: { id: item.id, scheduleId: item.scheduleId } });
   };
 
   const ageLabel = item.ageRangeLabel || item.ageGroup;

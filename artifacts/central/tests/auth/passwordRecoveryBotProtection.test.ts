@@ -29,7 +29,7 @@ test("OTP entry and new-password entry remain separate responsive steps", () => 
   assert.match(otpVerification, /Array\.from\(\{ length: 6 \}/);
   assert.match(otpVerification, /customFetch<\{ resetToken: string \}>\("\/api\/auth\/verify-reset-otp"/);
   assert.match(otpVerification, /storePasswordResetGrant\(\{ email: targetEmail, resetToken: result\.resetToken \}\)/);
-  assert.match(otpVerification, /router\.push\("\/auth\/reset-password"\)/);
+  assert.match(otpVerification, /pushOnce\("\/auth\/reset-password"\)/);
   assert.match(resetPassword, /buildResetPasswordWithGrantPayload\(resetGrant\.email, resetGrant\.resetToken, newPassword\)/);
 });
 

@@ -14,6 +14,7 @@ import { normalizeMediaUrl } from "@workspace/api-client-react";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -208,9 +209,9 @@ export default function BalletLevelsScreen() {
       return;
     }
     if (hasActiveApplication) {
-      router.push("/ballet/application-status" as any);
+      pushOnce("/ballet/application-status" as any);
     } else {
-      router.push("/ballet/assessment" as any);
+      pushOnce("/ballet/assessment" as any);
     }
   }
 

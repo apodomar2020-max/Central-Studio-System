@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { pushOnce } from "@/utils/navigation";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
@@ -172,7 +173,7 @@ export default function BalletProgramDangerZone({
 
   function continueWithTarget(kind: BalletCancellationSelectionKind, target: BalletCancellationTarget) {
     if (kind === "viewRequest") {
-      router.push({
+      pushOnce({
         pathname: "/ballet/application-status" as never,
         params: { id: String(target.applicationId) },
       });
