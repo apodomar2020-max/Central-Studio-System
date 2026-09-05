@@ -236,7 +236,7 @@ export default function PackagesScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 120 : 90 }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 120 : 90 + insets.bottom }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}

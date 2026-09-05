@@ -1084,7 +1084,7 @@ export default function ClassesScreen() {
             refreshControl={
               <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={CYAN} colors={[CYAN]} />
             }
-            contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 100 }}
+            contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 100 + insets.bottom }}
           >
             <View style={s.classListSection}>
               {displayedClasses.length === 0 ? (

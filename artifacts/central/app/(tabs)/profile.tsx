@@ -820,7 +820,7 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scroll,
-          { paddingBottom: Platform.OS === "web" ? 140 : 120, paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 },
+          { paddingBottom: Platform.OS === "web" ? 140 : 120 + insets.bottom, paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 },
         ]}
       >
         <View style={styles.profileCard}>

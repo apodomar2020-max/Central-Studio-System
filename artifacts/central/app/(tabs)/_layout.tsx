@@ -22,6 +22,7 @@ import { Tabs } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { useTabVisibility } from "@/contexts/TabVisibilityContext";
@@ -100,6 +101,8 @@ function NativeTabLayout({ hidden }: { hidden: boolean }) {
 function ClassicTabLayout({ hidden }: { hidden: boolean }) {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const insets = useSafeAreaInsets();
+  const bottomInset = isWeb ? 0 : insets.bottom;
 
   return (
     <Tabs
@@ -115,7 +118,12 @@ function ClassicTabLayout({ hidden }: { hidden: boolean }) {
           // Design: no top border — gradient transition only
           borderTopWidth: 0,
           elevation: 0,
-          height: TAB_HEIGHT,
+          // Preserve the 60px design area, then reserve only the space the
+          // current device reports for Android navigation buttons / gestures
+          // or the iOS home indicator. A device with no bottom inset remains
+          // exactly 60px high and stays flush with the bottom edge.
+          height: TAB_HEIGHT + bottomInset,
+          paddingBottom: bottomInset,
         },
         tabBarBackground: () =>
           isWeb ? (

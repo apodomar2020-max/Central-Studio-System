@@ -832,7 +832,7 @@ export default function StudioHomeScreen() {
       {/* ── Scroll ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 110 : 84 }}
+        contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 110 : 84 + insets.bottom }}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={CYAN} colors={[CYAN]} />
         }
