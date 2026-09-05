@@ -26,6 +26,7 @@ import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { formatApiDate, isApiDatePast } from "@/utils/dateTime";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import { parsePackageAgeBand } from "@/utils/packageAgeBands";
+import { presentUserFacingError } from "@/utils/userFacingError";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CYAN = "#00B6D7";
@@ -350,7 +351,7 @@ export default function PackageCenterScreen() {
               alert.show({
                 tone: "error",
                 title: "Couldn't cancel",
-                message: error instanceof Error ? error.message : "Please try again.",
+                message: presentUserFacingError(error, "We couldn’t cancel this package request. Please try again."),
               });
             } finally {
               setCancellingId(null);

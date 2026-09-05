@@ -39,6 +39,7 @@ import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 import { bookingOccurrenceStartMs, isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
 import { isVisibleUpcomingMyBooking } from "@/utils/myBookingsVisibility";
+import { presentUserFacingError } from "@/utils/userFacingError";
 
 const EMPTY_BOOKINGS_ANIMATION = require("@/assets/animations/calendar-error.json");
 
@@ -480,7 +481,7 @@ export default function BookingsScreen() {
               alert.show({
                 tone: "error",
                 title: "Couldn't cancel",
-                message: e instanceof Error ? e.message : "Please try again.",
+                message: presentUserFacingError(e, "We couldn’t cancel this booking. Please try again."),
               });
             }
           },

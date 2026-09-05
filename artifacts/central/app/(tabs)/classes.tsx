@@ -56,6 +56,7 @@ import {
 import { useAppContext } from "@/contexts/AppContext";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { presentUserFacingError } from "@/utils/userFacingError";
 
 /* ─── Design tokens ─────────────────────────────────────────────── */
 const INK_900 = "#0A0B0D";
@@ -530,7 +531,7 @@ function ExploreClassCard({
               await queryClient.invalidateQueries({ queryKey: getListSchedulesQueryKey() });
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (e) {
-              alert.show({ tone: "error", title: "Couldn't cancel", message: e instanceof Error ? e.message : "Please try again." });
+              alert.show({ tone: "error", title: "Couldn't cancel", message: presentUserFacingError(e, "We couldn’t cancel this booking. Please try again.") });
             }
           },
         },

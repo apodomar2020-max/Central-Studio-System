@@ -32,6 +32,7 @@ import { useAppContext, type User } from "@/contexts/AppContext";
 import { iosTextInputStyle } from "@/utils/iosTypography";
 import { mapStudentToUser, type AccountType, type AuthStudent } from "@/services/authProfile";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { presentProfileSaveError, profileSaveErrorCode } from "@/utils/profileSaveError";
 
 const ACCOUNT_TYPES: { value: AccountType; label: string; icon: React.ComponentProps<typeof Ionicons>["name"] }[] = [
   { value: "student", label: "Student", icon: "person-outline" },
@@ -206,20 +207,15 @@ export default function EditProfileScreen() {
         actions: [{ label: "OK", tone: "primary", onPress: () => router.replace("/(tabs)/profile" as never) }],
       });
     } catch (err) {
-      const errorData = (err as { data?: { code?: string } })?.data;
-      if (errorData?.code === "PHONE_ALREADY_IN_USE") {
-        setError("This phone number is already associated with another account.");
-      } else if (errorData?.code === "ACCOUNT_TYPE_CHANGE_LOCKED") {
+      if (profileSaveErrorCode(err) === "ACCOUNT_TYPE_CHANGE_LOCKED") {
         setAccountType(user?.accountType ?? null);
         setAccountTypePolicy({
           locked: true,
           reasons: [],
           message: "Account type cannot be changed while this account has child class or ballet activity.",
         });
-        setError("Account type cannot be changed while this account has child class or ballet activity.");
-      } else {
-        setError(err instanceof Error ? err.message : "Could not save your profile.");
       }
+      setError(presentProfileSaveError(err));
     } finally {
       setLoading(false);
     }

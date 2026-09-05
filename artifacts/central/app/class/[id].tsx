@@ -39,6 +39,7 @@ import ErrorState from "@/components/ErrorState";
 import OfflineState from "@/components/OfflineState";
 import SBI from "@/components/SbIcon";
 import { DetailSkeleton } from "@/components/SkeletonLoader";
+import { presentUserFacingError } from "@/utils/userFacingError";
 import { useAppContext, type Booking } from "@/contexts/AppContext";
 import {
   compareSchedulesByNextOccurrence,
@@ -257,7 +258,7 @@ export default function ClassDetailScreen() {
               await schedulesQuery.refetch();
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (error) {
-              alert.show({ tone: "error", title: "Couldn't cancel", message: error instanceof Error ? error.message : "Please try again." });
+              alert.show({ tone: "error", title: "Couldn't cancel", message: presentUserFacingError(error, "We couldn’t cancel this booking. Please try again.") });
             }
           },
         },

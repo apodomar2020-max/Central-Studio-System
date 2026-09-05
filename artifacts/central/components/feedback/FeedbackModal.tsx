@@ -21,6 +21,7 @@ import type { RequiredFeedbackItem } from "@/services/feedbackService";
 import { formatApiDate, formatApiTime } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import CentralBackButton from "@/components/CentralBackButton";
+import { presentUserFacingError } from "@/utils/userFacingError";
 
 const RATING_LABELS: Record<number, string> = {
   0: "Tap a star to rate",
@@ -88,7 +89,7 @@ export default function FeedbackModal({
       const result = await onSubmit({ rating, comment: comment.trim(), tags });
       setStage(result === "queued" ? "offline" : "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't submit feedback.");
+      setError(presentUserFacingError(err, "We couldn’t submit your feedback. Please try again."));
       setStage("error");
     }
   }

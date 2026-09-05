@@ -7,6 +7,7 @@ import BookingDetailsView from "@/components/BookingDetailsView";
 import CentralBackButton from "@/components/CentralBackButton";
 import { useAppContext } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { presentUserFacingError } from "@/utils/userFacingError";
 
 const INK = "#050607";
 const CYAN = "#00B6D7";
@@ -51,7 +52,7 @@ export default function BookingDetailsScreen() {
               alert.show({
                 tone: "error",
                 title: "Couldn't cancel",
-                message: error instanceof Error ? error.message : "Please try again.",
+                message: presentUserFacingError(error, "We couldn’t cancel this booking. Please try again."),
               });
             }
           },

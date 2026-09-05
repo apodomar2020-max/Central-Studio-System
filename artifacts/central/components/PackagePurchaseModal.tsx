@@ -7,6 +7,7 @@ import AppButton from "@/components/AppButton";
 import colors from "@/constants/colors";
 import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useAppContext, type PackageParticipantSelection } from "@/contexts/AppContext";
+import { presentUserFacingError } from "@/utils/userFacingError";
 import {
   buildPackageParticipantOptions,
   participantSelectionFor,
@@ -88,7 +89,7 @@ export default function PackagePurchaseModal({
       }
     } catch (err) {
       setPreview(null);
-      setPromoError(err instanceof Error ? err.message : "Could not apply promo code.");
+      setPromoError(presentUserFacingError(err, "We couldn’t apply this promo code. Please try again."));
     } finally {
       setApplying(false);
     }

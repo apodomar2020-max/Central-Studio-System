@@ -36,7 +36,7 @@
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
 import {
@@ -63,6 +63,7 @@ import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService"
 import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middlewares/authRateLimit";
 import { requireBotToken } from "../middlewares/botProtection";
 import { signPasswordResetGrant, verifyPasswordResetGrant } from "../lib/passwordResetGrant";
+import { isPostgresConstraintViolation } from "../lib/postgresConstraint";
 
 const router: IRouter = Router();
 
@@ -436,6 +437,21 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
       return;
     }
     nextPhone = phoneValidation.canonical;
+
+    // Return a readable conflict for an ordinary duplicate before writing.
+    // The unique constraint catch below remains authoritative for races.
+    const [phoneOwner] = await db
+      .select({ id: studentsTable.id })
+      .from(studentsTable)
+      .where(and(eq(studentsTable.phone, nextPhone), ne(studentsTable.id, existing.id)))
+      .limit(1);
+    if (phoneOwner) {
+      res.status(409).json({
+        error: "This phone number is already associated with another account.",
+        code: "PHONE_ALREADY_IN_USE",
+      });
+      return;
+    }
   }
   const nextAccountType = parsed.data.accountType ?? existing.accountType;
   const nextGender = parsed.data.gender ?? existing.gender;
@@ -517,10 +533,7 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
     // migration 0125) — this catches both an ordinary duplicate submission
     // and two concurrent requests racing for the same phone. Never leaks
     // which other account holds the number.
-    const isPhoneUniqueViolation =
-      typeof err === "object" && err !== null &&
-      (err as { code?: string }).code === "23505" &&
-      (err as { constraint?: string }).constraint === "uniq_students_phone";
+    const isPhoneUniqueViolation = isPostgresConstraintViolation(err, "uniq_students_phone");
     if (isPhoneUniqueViolation) {
       res.status(409).json({
         error: "This phone number is already associated with another account.",

@@ -50,6 +50,7 @@ import {
 } from "../lib/studentDeletionPreparation";
 import * as zod from "zod";
 import { validateAccountPhone } from "@workspace/api-zod";
+import { isPostgresConstraintViolation } from "../lib/postgresConstraint";
 
 const router: IRouter = Router();
 
@@ -1188,10 +1189,7 @@ router.patch("/students/:id", blockStudentJwt, requireAdminAuth, async (req: Adm
   } catch (err) {
     // PostgreSQL is the final race-condition authority (uniq_students_phone,
     // migration 0125). Never leaks which other account holds the number.
-    const isPhoneUniqueViolation =
-      typeof err === "object" && err !== null &&
-      (err as { code?: string }).code === "23505" &&
-      (err as { constraint?: string }).constraint === "uniq_students_phone";
+    const isPhoneUniqueViolation = isPostgresConstraintViolation(err, "uniq_students_phone");
     if (isPhoneUniqueViolation) {
       res.status(409).json({
         error: "This phone number is already associated with another account.",

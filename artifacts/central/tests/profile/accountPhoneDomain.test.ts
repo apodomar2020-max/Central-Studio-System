@@ -33,10 +33,9 @@ for (const path of [COMPLETE_PROFILE_SCREEN, EDIT_PROFILE_SCREEN]) {
     assert.match(source, /phone:\s*phoneValidation\.canonical/, "expected the PATCH body to send phoneValidation.canonical");
   });
 
-  test(`${path}: a PHONE_ALREADY_IN_USE conflict is caught and surfaced with the approved message`, () => {
+  test(`${path}: profile-save failures go through the safe user-facing presenter`, () => {
     const source = read(path);
-    assert.match(source, /PHONE_ALREADY_IN_USE/);
-    assert.match(source, /This phone number is already associated with another account\./);
+    assert.match(source, /presentProfileSaveError/);
   });
 }
 

@@ -17,6 +17,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import type { PackageParticipantSelection } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
+import { presentUserFacingError } from "@/utils/userFacingError";
 import {
   PACKAGE_AGE_BAND_LABELS,
   packageMatchesAgeBand,
@@ -101,7 +102,7 @@ export default function AvailablePackagesSection({
       alert.show({
         tone: "error",
         title: "Request Failed",
-        message: `Could not submit your request.\n\n${error instanceof Error ? error.message : "Unknown error"}\n\nPlease check your connection and try again.`,
+        message: presentUserFacingError(error, "We couldn’t submit your package request. Please try again."),
       });
     } finally {
       setPurchasing(false);

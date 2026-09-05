@@ -44,6 +44,7 @@ import {
   type SignupIconName,
 } from "@/components/signup/SignupKit";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { presentProfileSaveError } from "@/utils/profileSaveError";
 
 interface ProfileResponse {
   student: AuthStudent;
@@ -230,12 +231,7 @@ export default function CompleteProfileScreen() {
       }
       router.replace(destination as never);
     } catch (err) {
-      const errorData = (err as { data?: { code?: string } })?.data;
-      if (errorData?.code === "PHONE_ALREADY_IN_USE") {
-        setApiError("This phone number is already associated with another account.");
-      } else {
-        setApiError(err instanceof Error ? err.message : "Could not save your profile.");
-      }
+      setApiError(presentProfileSaveError(err));
     } finally {
       setLoading(false);
     }
