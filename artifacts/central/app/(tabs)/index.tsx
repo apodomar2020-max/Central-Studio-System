@@ -603,8 +603,9 @@ function PackagesSection() {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 /** Header bell with the design's periodic ring wobble (bellRing keyframes, every 5s). */
-function BellButton({ hasUnread, onPress }: { hasUnread: boolean; onPress: () => void }) {
+function BellButton({ unreadCount, onPress }: { unreadCount: number; onPress: () => void }) {
   const ring = useRef(new Animated.Value(0)).current;
+  const badgeLabel = unreadCount > 99 ? "99+" : String(unreadCount);
   useEffect(() => {
     function wobble() {
       ring.setValue(0);
@@ -628,7 +629,11 @@ function BellButton({ hasUnread, onPress }: { hasUnread: boolean; onPress: () =>
         <Animated.View style={{ transform: [{ rotate }] }}>
           <CsIcon name="bell" size={21} color={INK_200} />
         </Animated.View>
-        {hasUnread && <View style={s.badge} />}
+        {unreadCount > 0 && (
+          <View style={s.badge}>
+            <Text style={s.badgeText}>{badgeLabel}</Text>
+          </View>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -672,7 +677,6 @@ export default function StudioHomeScreen() {
     return () => { active = false; };
   }, []));
   const totalUnread = unreadNotifications + apiUnread;
-  const badgeLabel  = totalUnread > 99 ? "99+" : String(totalUnread);
 
   // ── Hero items ────────────────────────────────────────────────────────────
   const { data: allHero, refetch: refetchHero, isLoading: heroLoading, isError: heroError, error: heroErr } = useListHeroItems();
@@ -813,7 +817,7 @@ export default function StudioHomeScreen() {
         />
         <View style={s.headerRight}>
           {/* Bell */}
-          <BellButton hasUnread={totalUnread > 0} onPress={() => router.push("/notifications")} />
+          <BellButton unreadCount={totalUnread} onPress={() => router.push("/notifications")} />
           {/* Avatar */}
           <TouchableOpacity
             onPress={() => router.push(user ? "/(tabs)/profile" : "/auth/login")}
@@ -994,15 +998,18 @@ const s = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     overflow: "hidden",
   },
-  // Design: top:9, right:10, width:8, height:8 — INSIDE the 42×42 button
+  // Keep the unread badge centered at the original dot position while making
+  // just enough room for a readable count (capped at 99+).
   badge: {
-    position: "absolute", top: 9, right: 10,
-    width: 8, height: 8, borderRadius: 4,
+    position: "absolute", top: 6, right: 7,
+    minWidth: 14, height: 14, borderRadius: 7,
+    paddingHorizontal: 2,
     backgroundColor: MAGENTA,
     zIndex: 10,
-    borderWidth: 2, borderColor: INK_900,
+    borderWidth: 1.5, borderColor: INK_900,
+    alignItems: "center", justifyContent: "center",
   },
-  badgeText: { fontSize: 8, fontFamily: "Archivo_700Bold", color: "#fff" },
+  badgeText: { fontSize: 8, lineHeight: 10, fontFamily: "Archivo_700Bold", color: "#fff", textAlign: "center" },
   // Design: 42×42, boxShadow 0 0 0 2px cyan → borderWidth: 2, borderColor: CYAN
   avatarBtn: {
     width: 42, height: 42, borderRadius: 21,
