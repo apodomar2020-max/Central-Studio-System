@@ -10,6 +10,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -42,6 +43,7 @@ const CYAN = "#00B6D7";
 const INK_200 = "#D1D5DB";
 const INK_400 = "#6B7280";
 const R_MD = 12;
+const EMPTY_CLASSES_ANIMATION = require("@/assets/animations/calendar-error.json");
 
 
 type EmptyStateCopy = { title: string; body: string; actionLabel?: string; action: "login" | "apply" | "status" | null };
@@ -272,14 +274,14 @@ export default function BalletClassesScreen() {
             </View>
           ) : visibleSchedules.length === 0 ? (
             <View style={s.empty}>
-              <View style={s.emptyIcon}>
-                <Ionicons name="calendar-outline" size={28} color={INK_400} />
+              <View accessible accessibilityRole="image" accessibilityLabel="No Ballet classes" style={s.emptyAnimation}>
+                <LottieView source={EMPTY_CLASSES_ANIMATION} autoPlay loop style={StyleSheet.absoluteFill} />
               </View>
               <Text style={s.emptyTitle}>{emptyCopy.title}</Text>
               <Text style={s.emptyDesc}>{emptyCopy.body}</Text>
               {emptyCopy.actionLabel ? (
-                <TouchableOpacity onPress={() => runEmptyAction(emptyCopy, selectedChild)} style={s.retryButton} activeOpacity={0.82}>
-                  <Text style={s.retryText}>{emptyCopy.actionLabel}</Text>
+                <TouchableOpacity onPress={() => runEmptyAction(emptyCopy, selectedChild)} style={s.emptyActionButton} activeOpacity={0.82}>
+                  <Text style={s.emptyActionText}>{emptyCopy.actionLabel}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -380,6 +382,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 14,
   },
+  emptyAnimation: { width: 140, height: 140, marginBottom: 8 },
   emptyTitle: {
     fontSize: 18,
     fontFamily: "Archivo_700Bold",
@@ -407,5 +410,17 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Archivo_700Bold",
     color: CYAN,
+  },
+  emptyActionButton: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 13,
+    borderRadius: 24,
+    backgroundColor: CYAN,
+  },
+  emptyActionText: {
+    fontSize: 14,
+    fontFamily: "Archivo_800ExtraBold",
+    color: BASE,
   },
 });

@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
@@ -37,6 +38,8 @@ import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 import { bookingOccurrenceStartMs, isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
 import { isVisibleUpcomingMyBooking } from "@/utils/myBookingsVisibility";
+
+const EMPTY_BOOKINGS_ANIMATION = require("@/assets/animations/calendar-error.json");
 
 const BALLET_COLOR = "#A78BFA";
 type BalletStatusInfo = { label: string; color: string; icon: any };
@@ -717,8 +720,8 @@ export default function BookingsScreen() {
         ListEmptyComponent={
           !refreshing ? (
             <View style={styles.emptyWrap}>
-              <View style={styles.emptyIconWrap}>
-                <SBI name="cal" size={34} stroke={1.6} color="#00B6D7" />
+              <View accessible accessibilityRole="image" accessibilityLabel="No upcoming bookings" style={styles.emptyAnimation}>
+                <LottieView source={EMPTY_BOOKINGS_ANIMATION} autoPlay loop style={StyleSheet.absoluteFill} />
               </View>
               <Text style={styles.emptyTitle}>No upcoming bookings</Text>
               <Text style={styles.emptySub}>Your next dance adventure is waiting for you.</Text>
@@ -761,7 +764,7 @@ const styles = StyleSheet.create({
   filterChipText: { fontFamily: "Archivo_700Bold", fontSize: 13, color: "#6B747F" },
   filterChipTextActive: { color: "#FFFFFF" },
   emptyWrap: { alignItems: "center", paddingVertical: 60, paddingHorizontal: 30 },
-  emptyIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(0,182,215,0.10)", alignItems: "center", justifyContent: "center", marginBottom: 18 },
+  emptyAnimation: { width: 140, height: 140, marginBottom: 8 },
   emptyTitle: { fontFamily: "Archivo_800ExtraBold", fontSize: 21, color: "#FFFFFF", marginBottom: 8, textAlign: "center" },
   emptySub: { fontFamily: "Archivo_400Regular", fontSize: 14, color: "#8E97A2", textAlign: "center", maxWidth: 230, lineHeight: 21, marginBottom: 20 },
   emptyBtn: { paddingHorizontal: 24, paddingVertical: 13, borderRadius: 24, backgroundColor: "#00B6D7" },
