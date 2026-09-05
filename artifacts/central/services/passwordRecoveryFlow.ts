@@ -50,6 +50,51 @@ export function forgotPasswordOutcome(): { action: "continue-to-reset" } {
   return { action: "continue-to-reset" };
 }
 
+/**
+ * Builds the protected forgot-password request body. Keeping this in one
+ * shared helper prevents authenticated recovery (Change Password) and public
+ * recovery (Forgot Password) from drifting apart again: the API requires the
+ * short-lived Turnstile token for both entry points.
+ */
+export function buildForgotPasswordPayload(email: string, botToken: string): {
+  email: string;
+  botToken: string;
+} {
+  return { email: email.trim(), botToken };
+}
+
+export function buildVerifyResetOtpPayload(email: string, code: string): {
+  email: string;
+  code: string;
+} {
+  return { email: email.trim(), code: code.trim() };
+}
+
+export type VerifyResetOtpOutcome =
+  | { kind: "invalid"; message: string }
+  | { kind: "locked"; message: string }
+  | { kind: "unavailable"; message: string };
+
+/** Never expose authorization, routing, infrastructure, or database details
+ * returned by this public recovery endpoint. */
+export function verifyResetOtpErrorOutcome(error: ApiErrorLike): VerifyResetOtpOutcome {
+  if (error.status === 429) {
+    return { kind: "locked", message: "Too many incorrect attempts. Please request a new code." };
+  }
+  if (error.status === 400) {
+    return { kind: "invalid", message: "This code is invalid or has expired. Please try again or request a new one." };
+  }
+  return { kind: "unavailable", message: "We couldn't verify the code right now. Please try again." };
+}
+
+export function buildResetPasswordWithGrantPayload(email: string, resetToken: string, newPassword: string): {
+  email: string;
+  resetToken: string;
+  newPassword: string;
+} {
+  return { email: email.trim(), resetToken, newPassword };
+}
+
 export type ResetPasswordOutcome =
   | { kind: "success" }
   | { kind: "locked"; message: string }

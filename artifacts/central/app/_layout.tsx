@@ -138,6 +138,7 @@ const ANDROID_HARDWARE_BACK_PROTECTED_ROUTES = new Set([
   "auth/register",
   "auth/complete-profile",
   "auth/forgot-password",
+  "auth/otp-verification",
   "auth/reset-password",
   "verify-email",
   "onboarding/children",
@@ -246,6 +247,10 @@ function RootLayoutNav() {
         <Stack.Screen
           name="auth/forgot-password"
           options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="auth/otp-verification"
+          options={{ presentation: "modal", animation: "slide_from_right", gestureEnabled: false }}
         />
         <Stack.Screen
           name="auth/reset-password"

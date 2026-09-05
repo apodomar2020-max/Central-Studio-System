@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   forgotPasswordOutcome,
+  buildForgotPasswordPayload,
+  buildVerifyResetOtpPayload,
+  buildResetPasswordWithGrantPayload,
+  verifyResetOtpErrorOutcome,
   resetPasswordOutcome,
   changePasswordOutcome,
   buildResetPasswordPayload,
@@ -20,6 +24,35 @@ test("forgotPasswordOutcome always continues to reset — it takes no response b
   // proves the client cannot distinguish the two cases.
   assert.deepEqual(forgotPasswordOutcome(), { action: "continue-to-reset" });
   assert.deepEqual(forgotPasswordOutcome(), forgotPasswordOutcome());
+});
+
+test("buildForgotPasswordPayload includes the short-lived bot token for every recovery entry point", () => {
+  const payload = buildForgotPasswordPayload(" user@example.com ", "turnstile-token");
+  assert.deepEqual(payload, { email: "user@example.com", botToken: "turnstile-token" });
+  assert.deepEqual(Object.keys(payload).sort(), ["botToken", "email"]);
+});
+
+test("OTP verification and password submission use separate secure contracts", () => {
+  assert.deepEqual(buildVerifyResetOtpPayload(" user@example.com ", " 123456 "), {
+    email: "user@example.com",
+    code: "123456",
+  });
+  const reset = buildResetPasswordWithGrantPayload(" user@example.com ", "signed-reset-grant", "Password123");
+  assert.deepEqual(reset, { email: "user@example.com", resetToken: "signed-reset-grant", newPassword: "Password123" });
+  assert.equal("code" in reset, false, "the consumed OTP must not be reused after verification");
+});
+
+test("OTP verification never exposes technical backend errors", () => {
+  assert.deepEqual(verifyResetOtpErrorOutcome({ status: 403, data: { error: "Students are not permitted to call this endpoint" } }), {
+    kind: "unavailable",
+    message: "We couldn't verify the code right now. Please try again.",
+  });
+  assert.deepEqual(verifyResetOtpErrorOutcome({ status: 500, data: { error: "database connection failed" } }), {
+    kind: "unavailable",
+    message: "We couldn't verify the code right now. Please try again.",
+  });
+  assert.equal(verifyResetOtpErrorOutcome({ status: 400, data: { error: "internal detail" } }).kind, "invalid");
+  assert.equal(verifyResetOtpErrorOutcome({ status: 429, data: { error: "internal detail" } }).kind, "locked");
 });
 
 // ─── Reset Password: request shape ───────────────────────────────────────────

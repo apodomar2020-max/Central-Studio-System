@@ -1,114 +1,47 @@
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
+import React, { useRef, useState } from "react";
+import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useEffect, useRef, useState } from "react";
-import {
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
 
 import { customFetch } from "@workspace/api-client-react";
-import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
-import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
-import { passwordPolicyError } from "@/utils/passwordPolicy";
-import { buildResetPasswordPayload, resetPasswordOutcome, toApiErrorLike, forgotPasswordOutcome } from "@/services/passwordRecoveryFlow";
+import CentralBackButton from "@/components/CentralBackButton";
 import { useAppContext } from "@/contexts/AppContext";
 import { enterApp } from "@/services/authProfile";
+import { buildResetPasswordWithGrantPayload, resetPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
+import { clearPasswordResetGrant, getPasswordResetGrant } from "@/services/passwordResetGrantStore";
+import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { resetPasswordPolicyError } from "@/utils/passwordPolicy";
 
-const RESEND_COOLDOWN_SECONDS = 60;
+const RESET_ARTWORK = require("@/assets/images/enter-otp-amico.svg");
+const CYAN = "#00B6D7";
+const SCREEN = "#101112";
 
-export default function ResetPasswordScreen() {
-  const insets = useSafeAreaInsets();
-  const { email } = useLocalSearchParams<{ email: string }>();
-  // Navigation-only distinction (Phase 6/7): whether the user is already
-  // authenticated when they land here — read from actual AppContext state,
-  // never a client-settable route param. This never affects whether the
-  // reset itself succeeds (that's entirely gated server-side by OTP
-  // verification, below) — it only decides where "success" sends them.
+export default function ResetPasswordScreen(): React.ReactElement {
   const { user } = useAppContext();
-
-  const [code, setCode] = useState("");
+  const insets = useSafeAreaInsets();
+  const safeTop = Platform.OS === "web" ? 67 : insets.top;
+  const safeBottom = Math.max(insets.bottom, 18);
+  const confirmRef = useRef<TextInput>(null);
+  const resetGrantRef = useRef(getPasswordResetGrant());
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  // Resend: a code was already sent by the previous screen (Forgot Password
-  // or Change Password's "Send Code") moments before this screen was
-  // reached, so the countdown starts already running — not at 0 — to
-  // accurately reflect that a real server-side cooldown is already in
-  // effect. This is UX guidance only; the server remains the sole
-  // authority on cooldown/hourly/daily limits regardless of what this
-  // timer shows.
-  const [resendCountdown, setResendCountdown] = useState(RESEND_COOLDOWN_SECONDS);
-  const [resendPending, setResendPending] = useState(false);
-  const [resendMessage, setResendMessage] = useState("");
-
-  const codeRef = useRef<TextInput>(null);
-  const newPwRef = useRef<TextInput>(null);
-  const confirmPwRef = useRef<TextInput>(null);
-
-  useEffect(() => {
-    if (resendCountdown <= 0) return;
-    const t = setInterval(() => setResendCountdown((c) => c - 1), 1000);
-    return () => clearInterval(t);
-  }, [resendCountdown]);
-
-  async function handleResend() {
-    if (resendCountdown > 0 || resendPending) return; // prevent duplicate/early taps
-    const targetEmail = email?.trim();
-    if (!targetEmail) {
-      setResendMessage("");
-      setError("Something went wrong. Please start over from Forgot Password.");
+  async function handleReset(): Promise<void> {
+    if (loading) return;
+    const resetGrant = resetGrantRef.current;
+    if (!resetGrant) {
+      setError("Your verification session is incomplete. Please return and enter the code again.");
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setResendPending(true);
-    setError("");
-    setResendMessage("");
-    try {
-      await customFetch("/api/auth/forgot-password", {
-        method: "POST",
-        body: JSON.stringify({ email: targetEmail }),
-      });
-      forgotPasswordOutcome();
-      setResendPending(false);
-      setResendCountdown(RESEND_COOLDOWN_SECONDS);
-      // Deliberately neutral: this endpoint returns the same generic 2xx
-      // response whether or not a new OTP was actually issued (it may have
-      // been silently throttled by cooldown/hourly/daily limits) — never
-      // claim a new code was definitely sent, and never claim an earlier
-      // code stopped working, since neither is something the client
-      // actually knows here.
-      setResendMessage("Check your inbox for the most recent code.");
-    } catch (err: unknown) {
-      setResendPending(false);
-      const apiError = toApiErrorLike(err);
-      if (!apiError) {
-        setError("Network error. Please check your connection.");
-        return;
-      }
-      setError("Something went wrong. Please try again.");
-    }
-  }
-
-  async function handleReset() {
-    if (loading) return; // prevent duplicate submissions
-    if (!code.trim() || code.length !== 6) {
-      setError("Please enter the 6-digit code from your email.");
-      return;
-    }
-    const policyError = passwordPolicyError(newPassword);
+    const policyError = resetPasswordPolicyError(newPassword);
     if (policyError) {
       setError(policyError);
       return;
@@ -117,22 +50,19 @@ export default function ResetPasswordScreen() {
       setError("Passwords don't match.");
       return;
     }
-
     setError("");
     setLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await customFetch("/api/auth/reset-password", {
         method: "POST",
-        body: JSON.stringify(buildResetPasswordPayload(email ?? "", code, newPassword)),
+        auth: "omit",
+        body: JSON.stringify(buildResetPasswordWithGrantPayload(resetGrant.email, resetGrant.resetToken, newPassword)),
       });
-
-      setLoading(false);
+      clearPasswordResetGrant();
       setSuccess(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: unknown) {
-      setLoading(false);
       const apiError = toApiErrorLike(err);
       if (!apiError) {
         setError("Network error. Please check your connection.");
@@ -140,289 +70,81 @@ export default function ResetPasswordScreen() {
       }
       const outcome = resetPasswordOutcome(apiError);
       setError(outcome.kind === "success" ? "" : outcome.message);
+    } finally {
+      setLoading(false);
     }
   }
 
   if (success) {
-    return (
-      <View style={[styles.container, styles.centeredContainer]}>
-        <LinearGradient
-          colors={[colors.studio.primary, "#007A91"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.successBadge}
-        >
-          <Ionicons name="checkmark" size={36} color="#000" />
-        </LinearGradient>
-        <Text style={styles.successTitle}>Password Updated!</Text>
-        <Text style={styles.successBody}>
-          {user
-            ? "Your password has been reset successfully. You're all set."
-            : "Your password has been reset successfully. Sign in with your new password."}
-        </Text>
-        <AppButton
-          title={user ? "Continue" : "Sign In"}
-          onPress={() => (user ? void enterApp() : router.replace("/auth/login"))}
-          fullWidth
-          size="lg"
-        />
+    return <View style={styles.screen}>
+      <PasswordBackdrop />
+      <View style={styles.successWrap}>
+        <View style={styles.successMark}><Text style={styles.successMarkText}>✓</Text></View>
+        <Text style={styles.successTitle}>Password Updated</Text>
+        <Text style={styles.successDescription}>{user ? "Your password has been reset successfully. You're all set." : "Your password has been reset successfully. Sign in with your new password."}</Text>
+        <AppButton title={user ? "Continue" : "Sign In"} onPress={() => (user ? void enterApp() : router.replace("/auth/login"))} fullWidth size="lg" style={styles.primaryButton} />
       </View>
-    );
+    </View>;
   }
 
-  return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
-      {/* Background radial glow */}
-      <LinearGradient
-        colors={["rgba(0,182,215,0.08)", "transparent"]}
-        style={[StyleSheet.absoluteFillObject, { height: 400 }]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-      />
-      <TouchableOpacity
-        onPress={() => router.replace("/auth/login")}
-        style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
-      >
-        <Ionicons name="close" size={22} color="#9CA3AF" />
-      </TouchableOpacity>
-
-      <KeyboardAwareScrollView
-        showsVerticalScrollIndicator={false}
-        bottomOffset={20}
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 60 },
-        ]}
-      >
-        <LinearGradient
-          colors={[colors.studio.primary, "#007A91"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.logoBadge}
-        >
-          <Ionicons name="key-outline" size={28} color="#000" />
-        </LinearGradient>
-
-        <Text style={styles.title}>Reset Password</Text>
-        {email ? (
-          <Text style={styles.subtitle}>
-            We sent a code to{"\n"}
-            <Text style={{ color: colors.studio.primary }}>{email}</Text>
-          </Text>
-        ) : (
-          <Text style={styles.subtitle}>Enter the 6-digit code from your email.</Text>
-        )}
-
-        {error !== "" && (
-          <View
-            style={[
-              styles.errorBanner,
-              { backgroundColor: colors.error + "20", borderColor: colors.error + "50" },
-            ]}
-          >
-            <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-            <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
-          </View>
-        )}
-
-        <View style={styles.form}>
-          {/* 6-digit code */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Verification Code</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="shield-checkmark-outline" size={18} color="#6B7280" />
-              <TextInput
-                ref={codeRef}
-                value={code}
-                onChangeText={(t) => setCode(t.replace(/\D/g, "").slice(0, 6))}
-                placeholder="123456"
-                placeholderTextColor="#6B7280"
-                keyboardType="number-pad"
-                maxLength={6}
-                returnKeyType="next"
-                onSubmitEditing={() => newPwRef.current?.focus()}
-                style={[styles.input, styles.codeInput]}
-              />
-            </View>
-          </View>
-
-          {/* New password */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>New Password</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B7280" />
-              <TextInput
-                ref={newPwRef}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="At least 6 characters"
-                placeholderTextColor="#6B7280"
-                secureTextEntry={!showPw}
-                returnKeyType="next"
-                onSubmitEditing={() => confirmPwRef.current?.focus()}
-                style={styles.input}
-              />
-              <TouchableOpacity onPress={() => setShowPw(!showPw)}>
-                <Ionicons
-                  name={showPw ? "eye-off-outline" : "eye-outline"}
-                  size={18}
-                  color="#6B7280"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Confirm password */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm Password</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B7280" />
-              <TextInput
-                ref={confirmPwRef}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Repeat new password"
-                placeholderTextColor="#6B7280"
-                secureTextEntry={!showPw}
-                returnKeyType="done"
-                onSubmitEditing={handleReset}
-                style={styles.input}
-              />
-            </View>
-          </View>
-
-          <AppButton
-            title="Reset Password"
-            onPress={handleReset}
-            loading={loading}
-            fullWidth
-            size="lg"
-          />
-        </View>
-
-        {/* Resend */}
-        <View style={styles.resendRow}>
-          <Text style={styles.resendNote}>Didn't get the code?</Text>
-          <TouchableOpacity onPress={handleResend} disabled={resendCountdown > 0 || resendPending}>
-            {resendCountdown > 0 ? (
-              <Text style={styles.resendLink}>
-                {" "}Resend in <Text style={{ color: colors.studio.primary }}>{resendCountdown}s</Text>
-              </Text>
-            ) : (
-              <Text style={[styles.resendLink, { color: colors.studio.primary }]}>
-                {" "}{resendPending ? "Sending..." : "Resend"}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-        {resendMessage !== "" && (
-          <Text style={styles.resendMessage}>{resendMessage}</Text>
-        )}
-      </KeyboardAwareScrollView>
+  return <View style={styles.screen}>
+    <PasswordBackdrop />
+    <View style={[styles.header, { paddingTop: safeTop + 10 }]}>
+      <CentralBackButton />
+      <Text style={styles.headerTitle}>RESET PASSWORD</Text>
+      <View style={styles.headerSpacer} />
     </View>
-  );
+    <KeyboardAwareScrollView showsVerticalScrollIndicator={false} bottomOffset={28} contentContainerStyle={[styles.scroll, { paddingBottom: safeBottom + 18 }]}>
+      <View style={styles.content}>
+        <Image source={RESET_ARTWORK} style={styles.artwork} contentFit="contain" transition={0} />
+        <Text style={styles.title}>Reset Password</Text>
+        <Text style={styles.description}>Please enter your new password. It must be different from your current password.</Text>
+        {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View> : null}
+        <View style={styles.fields}>
+          <TextInput value={newPassword} onChangeText={(value) => { setNewPassword(value); if (error) setError(""); }} placeholder="New password" placeholderTextColor="#E4E4E4" secureTextEntry autoCapitalize="none" returnKeyType="next" onSubmitEditing={() => confirmRef.current?.focus()} style={styles.input} />
+          <TextInput ref={confirmRef} value={confirmPassword} onChangeText={(value) => { setConfirmPassword(value); if (error) setError(""); }} placeholder="Retype new password" placeholderTextColor="#E4E4E4" secureTextEntry autoCapitalize="none" returnKeyType="done" onSubmitEditing={() => void handleReset()} style={styles.input} />
+        </View>
+        <View style={styles.requirements}>
+          <Text style={styles.requirementsTitle}>Minimum requirements:</Text>
+          <Text style={styles.requirement}>•  12 Characters</Text>
+          <Text style={styles.requirement}>•  At least 1 Letter in password</Text>
+          <Text style={styles.requirement}>•  At least 1 Number in password</Text>
+          <Text style={styles.requirement}>•  1 Special Character</Text>
+        </View>
+      </View>
+      <AppButton title="Change Password" onPress={handleReset} loading={loading} fullWidth size="lg" style={styles.primaryButton} />
+    </KeyboardAwareScrollView>
+  </View>;
+}
+
+function PasswordBackdrop(): React.ReactElement {
+  return <>
+    <LinearGradient colors={["#17191B", SCREEN]} style={StyleSheet.absoluteFill} />
+    <LinearGradient pointerEvents="none" colors={["rgba(0,182,215,0.62)", "rgba(0,182,215,0.08)", "transparent"]} locations={[0, 0.3, 0.72]} start={{ x: 1, y: 0 }} end={{ x: 0.08, y: 0.62 }} style={StyleSheet.absoluteFill} />
+  </>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0B0D" },
-  centeredContainer: { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 },
-  successBadge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
-  },
-  successTitle: { fontSize: 32, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", ...iosDisplayTextStyle(32, 38) },
-  successBody: {
-    fontSize: 15,
-    fontFamily: "Archivo_400Regular",
-    color: "#9CA3AF",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 32,
-    lineHeight: 22,
-  },
-  closeBtn: {
-    position: "absolute",
-    right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-  scroll: { paddingHorizontal: 24, paddingBottom: 60, alignItems: "center", gap: 16 },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  title: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", lineHeight: 40, ...iosDisplayTextStyle(36, 40), marginBottom: -iosCapGuard(36, 40) },
-  subtitle: {
-    fontSize: 14,
-    fontFamily: "Archivo_400Regular",
-    color: "#9CA3AF",
-    textAlign: "center",
-    marginTop: 4,
-    lineHeight: 20,
-  },
-  errorBanner: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  errorText: { fontSize: 13, fontFamily: "Archivo_400Regular", flex: 1 },
-  form: { width: "100%", gap: 14 },
-  inputGroup: { gap: 6 },
-  label: {
-    fontSize: 11,
-    fontFamily: "Archivo_700Bold",
-    color: "#9CA3AF",
-    paddingLeft: 2,
-    letterSpacing: 0.66,
-    textTransform: "uppercase",
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
-    height: 50,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  input: {
-    flex: 1,
-    color: "#FFFFFF",
-    fontFamily: "Archivo_400Regular",
-    fontSize: 15,
-    ...iosTextInputStyle(15, 18),
-  },
-  codeInput: {
-    fontSize: 20,
-    fontFamily: "SpaceMono_700Bold",
-    letterSpacing: 4,
-    color: colors.studio.primary,
-  },
-  resendRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  resendNote: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
-  resendLink: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: "rgba(255,255,255,0.42)" },
-  resendMessage: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF", marginTop: 6, textAlign: "center" },
+  screen: { flex: 1, backgroundColor: SCREEN },
+  header: { minHeight: 92, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 14, zIndex: 2 },
+  headerTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 21, lineHeight: 27, letterSpacing: 0.2, ...iosDisplayTextStyle(21, 27) },
+  headerSpacer: { width: 34, height: 34 },
+  scroll: { flexGrow: 1, justifyContent: "space-between", paddingHorizontal: 18, gap: 36 },
+  content: { width: "100%", alignItems: "center" },
+  artwork: { width: "68%", maxWidth: 270, aspectRatio: 1.22 },
+  title: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 24, lineHeight: 30, textAlign: "center", marginTop: 6 },
+  description: { maxWidth: 350, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 18, textAlign: "center", marginTop: 8 },
+  fields: { width: "100%", gap: 10, marginTop: 12 },
+  input: { width: "100%", height: 48, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.075)", color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 14, paddingHorizontal: 14, ...iosTextInputStyle(14, 18) },
+  requirements: { width: "100%", marginTop: 12 },
+  requirementsTitle: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 13, lineHeight: 18, marginBottom: 2 },
+  requirement: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 13, lineHeight: 18, paddingLeft: 7 },
+  primaryButton: { borderRadius: 28 },
+  errorBanner: { width: "100%", borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,73,92,0.45)", backgroundColor: "rgba(255,73,92,0.10)", paddingHorizontal: 13, paddingVertical: 10, marginTop: 14 },
+  errorText: { color: "#FF6B79", fontFamily: "Archivo_500Medium", fontSize: 13, lineHeight: 18, textAlign: "center" },
+  successWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, gap: 14 },
+  successMark: { width: 82, height: 82, borderRadius: 41, backgroundColor: "rgba(0,182,215,0.15)", alignItems: "center", justifyContent: "center" },
+  successMarkText: { color: CYAN, fontFamily: "Archivo_800ExtraBold", fontSize: 42 },
+  successTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 30, ...iosDisplayTextStyle(30, 36) },
+  successDescription: { color: "#B8BCC1", fontFamily: "Archivo_400Regular", fontSize: 14, textAlign: "center", marginBottom: 14 },
 });

@@ -36,7 +36,7 @@
  */
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
 import {
@@ -62,6 +62,7 @@ import { getAccountTypeChangePolicy } from "../lib/accountTypeChangeEligibility"
 import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middlewares/authRateLimit";
 import { requireBotToken } from "../middlewares/botProtection";
+import { signPasswordResetGrant, verifyPasswordResetGrant } from "../lib/passwordResetGrant";
 
 const router: IRouter = Router();
 
@@ -629,12 +630,56 @@ router.post("/auth/forgot-password", forgotPasswordIpLimiter, requireBotToken("f
   res.json(GENERIC_RESET_RESPONSE);
 });
 
-// ─── POST /api/auth/reset-password ───────────────────────────────────────────
-const ResetPasswordBody = z.object({
+// ─── POST /api/auth/verify-reset-otp ─────────────────────────────────────────
+const VerifyResetOtpBody = z.object({
   email: z.string().email("Invalid email address"),
   code: z.string().length(6, "Code must be exactly 6 digits"),
-  newPassword: PasswordSchema,
 });
+
+const ResetPasswordValueSchema = z.string()
+  .min(12, "Password must be at least 12 characters")
+  .regex(/[A-Za-z]/, "Password must include at least one letter")
+  .regex(/[0-9]/, "Password must include at least one number")
+  .regex(/[^A-Za-z0-9]/, "Password must include at least one special character");
+
+router.post("/auth/verify-reset-otp", resetPasswordIpLimiter, resetPasswordAccountLimiter, async (req, res): Promise<void> => {
+  const parsed = VerifyResetOtpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+
+  const normalizedEmail = normalizeEmail(parsed.data.email);
+  const [student] = await db.select().from(studentsTable).where(eq(studentsTable.email, normalizedEmail));
+  if (!student) {
+    passwordResetFailure(res);
+    return;
+  }
+
+  const result = await verifyOtpCode(normalizedEmail, parsed.data.code, "reset");
+  if (result.status !== "ok") {
+    if (result.status === "locked") {
+      res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
+      return;
+    }
+    passwordResetFailure(res);
+    return;
+  }
+
+  const resetToken = signPasswordResetGrant(student.id, normalizedEmail, student.tokenVersion);
+  res.json({ resetToken });
+});
+
+// ─── POST /api/auth/reset-password ───────────────────────────────────────────
+// `code` remains accepted for compatibility with already-installed clients.
+// New clients verify first and submit the short-lived, single-use-by-version
+// reset grant instead.
+const ResetPasswordBody = z.object({
+  email: z.string().email("Invalid email address"),
+  code: z.string().length(6, "Code must be exactly 6 digits").optional(),
+  resetToken: z.string().min(1).optional(),
+  newPassword: ResetPasswordValueSchema,
+}).refine((body) => Boolean(body.code) !== Boolean(body.resetToken), { message: "A verification code or reset token is required" });
 
 router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccountLimiter, async (req, res): Promise<void> => {
   const parsed = ResetPasswordBody.safeParse(req.body);
@@ -643,7 +688,7 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
     return;
   }
 
-  const { email, code, newPassword } = parsed.data;
+  const { email, code, resetToken, newPassword } = parsed.data;
   const normalizedEmail = normalizeEmail(email);
   const now = new Date().toISOString();
 
@@ -656,13 +701,31 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
     return;
   }
 
-  const result = await verifyOtpCode(normalizedEmail, code, "reset");
-  if (result.status !== "ok") {
-    if (result.status === "locked") {
-      res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
+  const grant = resetToken ? verifyPasswordResetGrant(resetToken) : null;
+  if (resetToken) {
+    if (
+      !grant
+      || grant.sub !== student.id
+      || grant.email !== normalizedEmail
+      || grant.tokenVersion !== student.tokenVersion
+    ) {
+      passwordResetFailure(res, "Your verification session has expired. Please request a new code.");
       return;
     }
-    passwordResetFailure(res);
+  } else {
+    const result = await verifyOtpCode(normalizedEmail, code!, "reset");
+    if (result.status !== "ok") {
+      if (result.status === "locked") {
+        res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
+        return;
+      }
+      passwordResetFailure(res);
+      return;
+    }
+  }
+
+  if (await bcrypt.compare(newPassword, student.passwordHash)) {
+    res.status(400).json({ error: "Your new password must be different from your current password." });
     return;
   }
 
@@ -684,7 +747,7 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
   // this moment, on every device, on its next request. No replacement token
   // is issued here — the product contract for reset-password has never
   // included one; the user re-authenticates via /auth/login as before.
-  await db
+  const updated = await db
     .update(studentsTable)
     .set({
       passwordHash,
@@ -692,7 +755,15 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
       updatedAt: now,
       tokenVersion: sql`${studentsTable.tokenVersion} + 1`,
     })
-    .where(eq(studentsTable.id, student.id));
+    .where(grant
+      ? and(eq(studentsTable.id, student.id), eq(studentsTable.tokenVersion, grant.tokenVersion))
+      : eq(studentsTable.id, student.id))
+    .returning({ id: studentsTable.id });
+
+  if (!updated[0]) {
+    passwordResetFailure(res, "Your verification session has expired. Please request a new code.");
+    return;
+  }
 
   await invalidateOtpCodes(normalizedEmail, "reset");
   logPasswordSecurityEvent(student.id, "password_reset");

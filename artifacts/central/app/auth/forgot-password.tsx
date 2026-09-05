@@ -1,278 +1,130 @@
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import React, { useState } from "react";
+import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
-import {
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
 
 import { customFetch } from "@workspace/api-client-react";
-import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
-import CentralBackButton from "@/components/CentralBackButton";
-import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
-import { forgotPasswordOutcome, toApiErrorLike } from "@/services/passwordRecoveryFlow";
 import BotChallenge from "@/components/BotChallenge";
+import CentralBackButton from "@/components/CentralBackButton";
+import {
+  buildForgotPasswordPayload,
+  forgotPasswordOutcome,
+  toApiErrorLike,
+} from "@/services/passwordRecoveryFlow";
+import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
-export default function ForgotPasswordScreen() {
+const OTP_ARTWORK = require("@/assets/images/enter-otp-amico.svg");
+const CYAN = "#00B6D7";
+const SCREEN = "#101112";
+
+export default function ForgotPasswordScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
+  const safeTop = Platform.OS === "web" ? 67 : insets.top;
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [sent, setSent] = useState(false);
-  // Security Wave — Bot Protection. In-memory only.
   const [botToken, setBotToken] = useState<string | null>(null);
   const [challengeResetKey, setChallengeResetKey] = useState(0);
 
-  async function handleSend() {
-    if (loading) return; // prevent duplicate submissions
+  async function handleSend(): Promise<void> {
+    if (loading) return;
     if (!email.trim()) {
       setError("Please enter your email address.");
       return;
     }
     if (!botToken) {
-      setError("Please complete verification below before continuing.");
+      setError("Please complete the verification before continuing.");
       return;
     }
     setError("");
     setLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      // Response body is intentionally never read here — the backend always
-      // returns the same generic 2xx response whether or not an account
-      // exists for this email (account-enumeration protection). Any
-      // successful request continues to the same next step; see
-      // forgotPasswordOutcome()'s doc comment.
       await customFetch("/api/auth/forgot-password", {
         method: "POST",
-        body: JSON.stringify({ email: email.trim(), botToken }),
+        auth: "omit",
+        body: JSON.stringify(buildForgotPasswordPayload(email, botToken)),
       });
-
       forgotPasswordOutcome();
-      setLoading(false);
-      setSent(true);
+      router.replace({ pathname: "/auth/otp-verification", params: { email: email.trim() } });
     } catch (err: unknown) {
-      setLoading(false);
       const apiError = toApiErrorLike(err);
       const data = apiError?.data;
-      const code = data && typeof data === "object" && "code" in data
-        ? String((data as { code?: unknown }).code ?? "")
-        : "";
+      const code = data && typeof data === "object" && "code" in data ? String((data as { code?: unknown }).code ?? "") : "";
       if (code === "BOT_VERIFICATION_FAILED" || code === "BOT_VERIFICATION_UNAVAILABLE") {
         setBotToken(null);
-        setChallengeResetKey((k) => k + 1);
+        setChallengeResetKey((value) => value + 1);
       }
-      const message = data && typeof data === "object" && "error" in data
-        ? String((data as { error?: unknown }).error ?? "")
-        : "";
-      setError(message || "Something went wrong. Please try again.");
+      const message = data && typeof data === "object" && "error" in data ? String((data as { error?: unknown }).error ?? "") : "";
+      setError(message || (apiError ? "Something went wrong. Please try again." : "Please check your connection and try again."));
+    } finally {
+      setLoading(false);
     }
   }
 
-  if (sent) {
-    return (
-      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
-        <TouchableOpacity
-          onPress={() => router.replace("/auth/login")}
-          style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
-        >
-          <Ionicons name="close" size={22} color="#9CA3AF" />
-        </TouchableOpacity>
-        <View style={styles.centeredMsg}>
-          <Ionicons name="mail-open-outline" size={48} color={colors.studio.primary} />
-          <Text style={styles.msgTitle}>Check your email</Text>
-          <Text style={styles.msgBody}>
-            If an account exists for {email.trim()}, we've sent a 6-digit code. Check your inbox (and spam folder).
-          </Text>
-          <AppButton
-            title="Enter Code"
-            onPress={() => router.push({ pathname: "/auth/reset-password", params: { email: email.trim() } })}
-            fullWidth
-            size="lg"
-          />
-          <TouchableOpacity onPress={() => router.replace("/auth/login")} style={styles.backToLogin}>
-            <Text style={[styles.backToLoginText, { color: colors.studio.primary }]}>Back to Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+  return <View style={styles.screen}>
+    <LinearGradient colors={["#17191B", SCREEN]} style={StyleSheet.absoluteFill} />
+    <LinearGradient pointerEvents="none" colors={["rgba(0,182,215,0.62)", "rgba(0,182,215,0.08)", "transparent"]} locations={[0, 0.3, 0.72]} start={{ x: 1, y: 0 }} end={{ x: 0.08, y: 0.62 }} style={styles.topGlow} />
 
-  return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : 0 }]}>
-      {/* Background radial glow */}
-      <LinearGradient
-        colors={["rgba(0,182,215,0.08)", "transparent"]}
-        style={[StyleSheet.absoluteFillObject, { height: 400 }]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-      />
-      <TouchableOpacity
-        onPress={() => router.replace("/auth/login")}
-        style={[styles.closeBtn, { top: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
-      >
-        <Ionicons name="close" size={22} color="#9CA3AF" />
-      </TouchableOpacity>
-
-      <KeyboardAwareScrollView
-        showsVerticalScrollIndicator={false}
-        bottomOffset={20}
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 60 },
-        ]}
-      >
-        <LinearGradient
-          colors={[colors.studio.primary, "#007A91"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.logoBadge}
-        >
-          <Ionicons name="lock-open-outline" size={28} color="#000" />
-        </LinearGradient>
-
-        <Text style={styles.title}>Forgot Password?</Text>
-        <Text style={styles.subtitle}>
-          Enter your email and we'll send you a reset code.
-        </Text>
-
-        {error !== "" && (
-          <View
-            style={[
-              styles.errorBanner,
-              { backgroundColor: colors.error + "20", borderColor: colors.error + "50" },
-            ]}
-          >
-            <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-            <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
-          </View>
-        )}
-
-        <View style={styles.form}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email Address</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="mail-outline" size={18} color="#6B7280" />
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                placeholderTextColor="#6B7280"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-              />
-            </View>
-          </View>
-
-          <BotChallenge action="forgot_password" resetKey={challengeResetKey} onToken={(token) => setBotToken(token)} />
-
-          <AppButton
-            title="Send Reset Code"
-            onPress={handleSend}
-            loading={loading}
-            fullWidth
-            size="lg"
-          />
-        </View>
-
-        <CentralBackButton
-          onPress={() => router.replace("/auth/login")}
-          style={styles.backBtn}
-        />
-      </KeyboardAwareScrollView>
+    <View style={[styles.header, { paddingTop: safeTop + 10 }]}>
+      <CentralBackButton onPress={() => router.replace("/auth/login")} />
+      <Text style={styles.headerTitle}>FORGOT PASSWORD</Text>
+      <View style={styles.headerSpacer} />
     </View>
-  );
+
+    <KeyboardAwareScrollView
+      showsVerticalScrollIndicator={false}
+      bottomOffset={24}
+      contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(insets.bottom, 18) + 24 }]}
+    >
+      <Image source={OTP_ARTWORK} style={styles.artwork} contentFit="contain" transition={0} />
+
+      <Text style={styles.title}>Forgot Your Password?</Text>
+      <Text style={styles.description}>Enter your email address and we’ll send you a verification code.</Text>
+      <View style={styles.form}>
+        {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View> : null}
+        <TextInput
+          value={email}
+          onChangeText={(value) => { setEmail(value); if (error) setError(""); }}
+          placeholder="Email address"
+          placeholderTextColor="#B8BCC1"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={() => void handleSend()}
+          style={styles.input}
+        />
+        <BotChallenge action="forgot_password" resetKey={challengeResetKey} onToken={setBotToken} />
+        <AppButton title="Send Verification Code" onPress={handleSend} loading={loading} disabled={!botToken} fullWidth size="lg" style={styles.primaryButton} />
+      </View>
+      <TouchableOpacity onPress={() => router.replace("/auth/login")} style={styles.textAction}>
+        <Text style={styles.textActionLabel}>Back to Sign In</Text>
+      </TouchableOpacity>
+    </KeyboardAwareScrollView>
+  </View>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0B0D" },
-  centeredMsg: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 12 },
-  msgTitle: { fontSize: 32, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", ...iosDisplayTextStyle(32, 38) },
-  msgBody: { fontSize: 15, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 22 },
-  backToLogin: { marginTop: 24, paddingVertical: 12 },
-  backToLoginText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold" },
-  closeBtn: {
-    position: "absolute",
-    right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-  scroll: { paddingHorizontal: 24, paddingBottom: 60, alignItems: "center", gap: 16 },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  title: { fontSize: 36, fontFamily: "Anton_400Regular", color: "#FFFFFF", textTransform: "uppercase", lineHeight: 40, ...iosDisplayTextStyle(36, 40), marginBottom: -iosCapGuard(36, 40) },
-  subtitle: {
-    fontSize: 14,
-    fontFamily: "Archivo_400Regular",
-    color: "#9CA3AF",
-    textAlign: "center",
-    marginTop: 4,
-  },
-  errorBanner: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  errorText: { fontSize: 13, fontFamily: "Archivo_400Regular", flex: 1 },
-  form: { width: "100%", gap: 14 },
-  inputGroup: { gap: 6 },
-  label: {
-    fontSize: 11,
-    fontFamily: "Archivo_700Bold",
-    color: "#9CA3AF",
-    paddingLeft: 2,
-    letterSpacing: 0.66,
-    textTransform: "uppercase",
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
-    height: 50,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  input: {
-    flex: 1,
-    color: "#FFFFFF",
-    fontFamily: "Archivo_400Regular",
-    fontSize: 15,
-    ...iosTextInputStyle(15, 18),
-  },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 8,
-  },
-  backText: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#6B7280" },
+  screen: { flex: 1, backgroundColor: SCREEN },
+  topGlow: { ...StyleSheet.absoluteFillObject },
+  header: { minHeight: 92, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 14, zIndex: 2 },
+  headerTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 21, lineHeight: 27, letterSpacing: 0.2, ...iosDisplayTextStyle(21, 27) },
+  headerSpacer: { width: 34, height: 34 },
+  scroll: { flexGrow: 1, alignItems: "center", paddingHorizontal: 18, paddingTop: 4 },
+  artwork: { width: "72%", maxWidth: 285, aspectRatio: 1.22 },
+  title: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 25, lineHeight: 31, textAlign: "center", marginTop: 4 },
+  description: { maxWidth: 330, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20, textAlign: "center", marginTop: 9 },
+  form: { width: "100%", marginTop: 24, alignItems: "center", gap: 12 },
+  input: { width: "100%", height: 50, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.075)", color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 14, paddingHorizontal: 14, ...iosTextInputStyle(14, 18) },
+  errorBanner: { width: "100%", borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,73,92,0.45)", backgroundColor: "rgba(255,73,92,0.10)", paddingHorizontal: 13, paddingVertical: 10 },
+  errorText: { color: "#FF6B79", fontFamily: "Archivo_500Medium", fontSize: 13, lineHeight: 18, textAlign: "center" },
+  primaryButton: { borderRadius: 28 },
+  textAction: { paddingVertical: 14, paddingHorizontal: 18 },
+  textActionLabel: { color: CYAN, fontFamily: "Archivo_400Regular", fontSize: 13 },
 });
