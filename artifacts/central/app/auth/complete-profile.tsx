@@ -22,10 +22,17 @@ import {
   View,
 } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
-import { validateAccountPhone } from "@workspace/api-zod";
+import {
+  PROFILE_CITIES,
+  PROFILE_NATIONALITIES,
+  ProfileCitySchema,
+  ProfileNationalitySchema,
+  validateAccountPhone,
+} from "@workspace/api-zod";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import ProgressDots from "@/components/ProgressDots";
+import ProfileSelectField from "@/components/ProfileSelectField";
 import { useAppContext, type User } from "@/contexts/AppContext";
 import { mapStudentToUser, postAuthDestination, type AccountType, type AuthStudent } from "@/services/authProfile";
 import {
@@ -147,8 +154,8 @@ export default function CompleteProfileScreen() {
     accountType &&
     gender &&
     dob &&
-    city.trim() &&
-    nationality.trim() &&
+    ProfileCitySchema.safeParse(city).success &&
+    ProfileNationalitySchema.safeParse(nationality).success &&
     hearAboutUs &&
     policiesAccepted
   );
@@ -182,8 +189,8 @@ export default function CompleteProfileScreen() {
     if (!accountType) { setApiError("Please choose your account type."); return; }
     if (!gender) { setApiError("Please select your gender."); return; }
     if (!dob) { setApiError("Please select your date of birth."); return; }
-    if (!city.trim()) { setApiError("City is required."); return; }
-    if (!nationality.trim()) { setApiError("Nationality is required."); return; }
+    if (!ProfileCitySchema.safeParse(city).success) { setApiError("Please select your city from the list."); return; }
+    if (!ProfileNationalitySchema.safeParse(nationality).success) { setApiError("Please select your nationality from the list."); return; }
     if (!hearAboutUs) { setApiError("Please tell us how you heard about us."); return; }
     if (!policiesAccepted) { setApiError("Please accept our policies to continue."); return; }
     setApiError("");
@@ -197,8 +204,8 @@ export default function CompleteProfileScreen() {
           accountType,
           gender,
           dateOfBirth: dob,
-          city: city.trim(),
-          nationality: nationality.trim(),
+          city,
+          nationality,
           howDidYouHearAboutUs: hearAboutUs,
           policiesAccepted: true,
         }),
@@ -348,21 +355,25 @@ export default function CompleteProfileScreen() {
 
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <SignupTextInput
+                <ProfileSelectField
+                  title="Select City"
                   placeholder="City"
                   value={city}
-                  onChangeText={setCity}
-                  icon="lock"
-                  autoCapitalize="words"
+                  options={PROFILE_CITIES}
+                  onSelect={setCity}
+                  icon="location-outline"
+                  testID="complete-profile-city-select"
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <SignupTextInput
+                <ProfileSelectField
+                  title="Select Nationality"
                   placeholder="Nationality"
                   value={nationality}
-                  onChangeText={setNationality}
-                  icon="user"
-                  autoCapitalize="words"
+                  options={PROFILE_NATIONALITIES}
+                  onSelect={setNationality}
+                  icon="flag-outline"
+                  testID="complete-profile-nationality-select"
                 />
               </View>
             </View>

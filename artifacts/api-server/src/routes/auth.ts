@@ -39,7 +39,11 @@ import bcrypt from "bcryptjs";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable, studentDanceInterestsTable, danceTypesTable } from "@workspace/db";
-import { validateAccountPhone } from "@workspace/api-zod";
+import {
+  ProfileCitySchema,
+  ProfileNationalitySchema,
+  validateAccountPhone,
+} from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentAccountStatus";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
@@ -54,6 +58,7 @@ import {
 } from "../lib/authHelpers";
 import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfileResponse";
 import { validateProfileAge } from "../lib/eligibility/profileAgeValidation";
+import { getAccountTypeChangePolicy } from "../lib/accountTypeChangeEligibility";
 import { openInitialProvenanceInterval } from "../lib/studentEmailChangeService";
 import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middlewares/authRateLimit";
 import { requireBotToken } from "../middlewares/botProtection";
@@ -139,8 +144,8 @@ const ProfileBody = z.object({
   // Profile Completion Engine (Phase 4)
   gender: z.enum(GENDERS).optional(),
   dateOfBirth: z.string().min(1).optional(),
-  city: z.string().min(1).optional(),
-  nationality: z.string().min(1).optional(),
+  city: ProfileCitySchema.optional(),
+  nationality: ProfileNationalitySchema.optional(),
   howDidYouHearAboutUs: z.string().min(1).optional(),
   policiesAccepted: z.boolean().optional(),
 });
@@ -393,6 +398,10 @@ router.get("/auth/me", requireStudentAuth, async (req, res): Promise<void> => {
   res.json({ student: await publicStudent(student), requiresOtp: !student.emailVerified });
 });
 
+router.get("/auth/account-type-change-policy", requireStudentAuth, async (req, res): Promise<void> => {
+  res.json(await getAccountTypeChangePolicy(req.studentId!));
+});
+
 // ─── PATCH /api/auth/profile ─────────────────────────────────────────────────
 // Updates the authenticated student's studio profile. Email and avatar are not
 // changed here; avatar upload can remain a separate explicit flow.
@@ -438,6 +447,18 @@ router.patch("/auth/profile", requireStudentAuth, async (req, res): Promise<void
     : parsed.data.policiesAccepted === false
       ? null
       : existing.policiesAcceptedAt;
+
+  if (parsed.data.accountType !== undefined && parsed.data.accountType !== existing.accountType) {
+    const policy = await getAccountTypeChangePolicy(existing.id);
+    if (policy.locked) {
+      res.status(409).json({
+        error: policy.message,
+        code: "ACCOUNT_TYPE_CHANGE_LOCKED",
+        reasons: policy.reasons,
+      });
+      return;
+    }
+  }
 
   // Phase A: DOB/Parent-age validation is authoritative at the profile
   // boundary, while missing DOB remains a valid partial-onboarding state.

@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useState } from "react";
@@ -16,7 +15,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import { Image } from "expo-image";
 import { customFetch } from "@workspace/api-client-react";
@@ -38,6 +36,10 @@ import {
   type AppContactLink,
   type ContactLinkType,
 } from "@/utils/contactLinks";
+
+const PROFILE_MEMBER_PASS_ICON = require("@/assets/icons/profile-member-pass.svg");
+const PROFILE_CALENDAR_ICON = require("@/assets/icons/profile-calendar.svg");
+const PROFILE_LOCATION_ICON = require("@/assets/icons/profile-location.svg");
 
 /**
  * PIcon — exact replica of the design's `PIcon` (home-profile.jsx) rendered
@@ -238,6 +240,19 @@ function formatAttendanceDate(value?: string | null): string {
 
 function formatAttendanceTime(value?: string | null): string {
   return formatApiTime(value, "", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatProfileDateOfBirth(value?: string | null): string {
+  return formatApiDate(value, "Date not added", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatProfileLocation(city?: string | null, nationality?: string | null): string {
+  return [city?.trim(), nationality?.trim()].filter(Boolean).join(", ") || "Location not added";
 }
 
 function attendanceBadge(record: MyAttendanceRecord): { text: string; color: string } {
@@ -785,6 +800,8 @@ export default function ProfileScreen() {
   }
 
   const initials = user.fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+  const dateOfBirthLabel = formatProfileDateOfBirth(user.dateOfBirth || user.birthday);
+  const locationLabel = formatProfileLocation(user.city, user.nationality);
 
   return (
     <View style={styles.container}>
@@ -807,64 +824,80 @@ export default function ProfileScreen() {
         ]}
       >
         <View style={styles.profileCard}>
-          <View style={styles.avatarGlowWrap}>
-            <View style={styles.avatarWrap}>
-              {user.avatarUrl ? (
-                <Image
-                  source={{ uri: user.avatarUrl }}
-                  style={styles.avatarImage}
-                  contentFit="cover"
-                  transition={150}
-                />
-              ) : (
-                <View style={[styles.avatarCircle, { backgroundColor: colors.studio.primary + "30" }]}>
-                  <Text style={[styles.avatarInitials, { color: colors.studio.primary }]}>{initials}</Text>
-                </View>
-              )}
-              {/* Profile Completion Engine (Phase 4): verified badge requires
-                  BOTH email verification AND a 100%-complete profile — not
-                  just emailVerified alone. */}
-              {user.emailVerified && user.profileCompletion?.isComplete && (
-                <View style={styles.avatarVerifiedBadge}>
-                  <PIcon name="check" size={14} stroke={3} color="#0A0B0D" />
-                </View>
-              )}
-            </View>
-          </View>
-          <Text style={styles.fullName}>{user.fullName}</Text>
-          <View style={styles.contactBlock}>
-            <View style={styles.contactRow}>
-              <PIcon name="mail" size={15} color="#6B747F" />
-              <Text style={styles.contactText}>{user.email}</Text>
-            </View>
-            {user.phone ? (
-              <View style={styles.contactRow}>
-                <PIcon name="phone" size={15} color="#6B747F" />
-                <Text style={styles.contactText}>{user.phone}</Text>
+          <View style={styles.profileTopRow}>
+            <View style={styles.avatarGlowWrap}>
+              <View style={styles.avatarWrap}>
+                {user.avatarUrl ? (
+                  <Image
+                    source={{ uri: user.avatarUrl }}
+                    style={styles.avatarImage}
+                    contentFit="cover"
+                    transition={150}
+                  />
+                ) : (
+                  <View style={[styles.avatarCircle, { backgroundColor: colors.studio.primary + "30" }]}>
+                    <Text style={[styles.avatarInitials, { color: colors.studio.primary }]}>{initials}</Text>
+                  </View>
+                )}
+                {/* Profile Completion Engine (Phase 4): verified badge requires
+                    BOTH email verification AND a 100%-complete profile — not
+                    just emailVerified alone. */}
+                {user.emailVerified && user.profileCompletion?.isComplete && (
+                  <View style={styles.avatarVerifiedBadge}>
+                    <PIcon name="check" size={14} stroke={3} color="#0A0B0D" />
+                  </View>
+                )}
               </View>
-            ) : null}
+            </View>
+
+            <TouchableOpacity
+              testID="profile-member-pass"
+              style={styles.memberPassButton}
+              activeOpacity={0.78}
+              onPress={() => {
+                if (navigatingRef.current) return;
+                navigatingRef.current = true;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/my-qr");
+              }}
+            >
+              <Image source={PROFILE_MEMBER_PASS_ICON} style={styles.memberPassIcon} contentFit="contain" transition={0} />
+              <Text style={styles.memberPassLabel}>Member Pass</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.accountTypePill}>
-            <Text style={styles.accountTypeRole}>
-              {user.accountType === "parent" ? "PARENT" : "STUDENT"}
+          <View style={styles.identityRow}>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.fullName}>
+              {user.fullName}
             </Text>
-            <View style={styles.accountTypeDot} />
-            <Text style={styles.accountTypeProvider}>
-              {user.authProvider ? `${user.authProvider} account` : "Local account"}
-            </Text>
+            <View style={styles.accountTypePill}>
+              <Text style={styles.accountTypeRole}>
+                {user.accountType === "parent" ? "PARENT" : "STUDENT"}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.profileMetaRow}>
+            <View style={styles.profileMetaItem}>
+              <Image source={PROFILE_CALENDAR_ICON} style={styles.profileCalendarIcon} contentFit="contain" transition={0} />
+              <Text style={styles.profileMetaText}>{dateOfBirthLabel}</Text>
+            </View>
+            <View style={[styles.profileMetaItem, styles.profileLocationItem]}>
+              <Image source={PROFILE_LOCATION_ICON} style={styles.profileLocationIcon} contentFit="contain" transition={0} />
+              <Text numberOfLines={1} style={styles.profileMetaText}>{locationLabel}</Text>
+            </View>
           </View>
         </View>
 
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, styles.statCardDivider]}>
             <View style={styles.statIconWrap}>
               <PIcon name="credits" size={18} stroke={2.2} color="#2DCDEC" />
             </View>
             <Text style={styles.statValue}>{totalCredits}</Text>
             <Text style={styles.statLabel}>Credits</Text>
           </View>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, styles.statCardDivider]}>
             <View style={styles.statIconWrap}>
               <PIcon name="bookings" size={18} stroke={2.2} color="#FFB02E" />
             </View>
@@ -879,38 +912,6 @@ export default function ProfileScreen() {
             <Text style={styles.statLabel}>Attended</Text>
           </View>
         </View>
-
-        <Text style={styles.sectionEyebrow}>MY STUDIO PASS</Text>
-        <TouchableOpacity
-          style={styles.qrCard}
-          activeOpacity={0.85}
-          onPress={() => {
-            if (navigatingRef.current) return;
-            navigatingRef.current = true;
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push("/my-qr");
-          }}
-        >
-          <LinearGradient
-            colors={["rgba(0,182,215,0.16)", "rgba(0,182,215,0.12)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <View style={styles.qrCardLeft}>
-            <QRCode value={user.id || "central-studio-pass"} size={104} color="#000000" backgroundColor="transparent" />
-          </View>
-          <View style={styles.qrCardRight}>
-            <Text style={styles.qrCardEyebrow}>MEMBER PASS</Text>
-            <Text style={styles.qrCardTitle}>{user.fullName}</Text>
-            <Text style={styles.qrCardDesc}>Show at reception to check in</Text>
-            <View style={styles.qrExpandBtn}>
-              <PIcon name="expand" size={14} stroke={2.4} color="#0A0B0D" />
-              <Text style={styles.qrExpandText}>Full screen</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
 
         <Text style={styles.sectionEyebrow}>ACCOUNT</Text>
         <View style={styles.menuContainer}>
@@ -1193,7 +1194,8 @@ const styles = StyleSheet.create({
   guestTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
   guestSubtitle: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#9CA3AF", textAlign: "center", lineHeight: 20 },
 
-  profileCard: { alignItems: "center", paddingTop: Platform.OS === "ios" ? 4 : 8, paddingBottom: Platform.OS === "ios" ? 10 : 22, gap: Platform.OS === "ios" ? 6 : 14 },
+  profileCard: { paddingTop: Platform.OS === "ios" ? 4 : 8, paddingBottom: 16, gap: 14 },
+  profileTopRow: { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 },
   // avatar: 92×92 image (design) with a 3px cyan ring outside (→98 wrap) + soft cyan glow (design boxShadow 0 0 28px rgba(0,182,215,0.4))
   avatarWrap: {
     position: "relative", width: 98, height: 98, borderRadius: 49, alignItems: "center", justifyContent: "center",
@@ -1207,33 +1209,30 @@ const styles = StyleSheet.create({
   avatarVerifiedBadge: { position: "absolute", bottom: 2, right: 2, width: 26, height: 26, borderRadius: 13, backgroundColor: "#00B6D7", alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#0A0B0D" },
   // Display/title face (Anton, uppercase) like the main page titles, sized for the
   // profile header. lineHeight 32 keeps the iOS cap-guard tiny so it never clips.
-  fullName: { fontSize: 28, fontFamily: "Anton_400Regular", textTransform: "uppercase", color: "#FFFFFF", letterSpacing: 0, ...iosDisplayTextStyle(28, 32, "anton"), marginTop: Platform.OS === "ios" ? 2 : 0, marginBottom: Platform.OS === "ios" ? 2 : 0 },
-  contactBlock: { alignItems: "center", gap: Platform.OS === "ios" ? 3 : 5 },
-  contactRow: { flexDirection: "row", alignItems: "center", gap: 7 },
-  contactText: { fontSize: 14, fontFamily: "Archivo_400Regular", color: "#8E97A2" },
-  accountTypePill: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.06)" },
-  accountTypeRole: { fontSize: 12.5, fontFamily: "Archivo_800ExtraBold", color: "#2DCDEC", letterSpacing: 0.7, textTransform: "uppercase" },
-  accountTypeDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "#4C545E" },
-  accountTypeProvider: { fontSize: 12.5, fontFamily: "Archivo_400Regular", color: "#8E97A2" },
+  memberPassButton: { minWidth: 96, minHeight: 94, alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 8, paddingVertical: 6 },
+  memberPassIcon: { width: 54, height: 54 },
+  memberPassLabel: { fontSize: 13.5, lineHeight: 18, fontFamily: "Archivo_500Medium", color: "#FFFFFF" },
+  identityRow: { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 2 },
+  fullName: { flex: 1, minWidth: 0, marginRight: 14, fontSize: 28, fontFamily: "Anton_400Regular", textTransform: "uppercase", color: "#FFFFFF", letterSpacing: 0, ...iosDisplayTextStyle(28, 32, "anton"), marginTop: Platform.OS === "ios" ? 2 : 0, marginBottom: Platform.OS === "ios" ? 2 : 0 },
+  accountTypePill: { flexShrink: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 14, paddingVertical: 3, borderRadius: 999, backgroundColor: "#003741" },
+  accountTypeRole: { fontSize: 12.5, lineHeight: 15, fontFamily: "Archivo_800ExtraBold", color: "#2DCDEC", letterSpacing: 0.7, textTransform: "uppercase" },
+  profileMetaRow: { width: "100%", flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 18, rowGap: 9, paddingHorizontal: 2 },
+  profileMetaItem: { flexDirection: "row", alignItems: "center", gap: 7 },
+  profileLocationItem: { minWidth: 0, flexShrink: 1 },
+  profileCalendarIcon: { width: 21, height: 21 },
+  profileLocationIcon: { width: 17, height: 21 },
+  profileMetaText: { flexShrink: 1, fontSize: 13.5, lineHeight: 19, fontFamily: "Archivo_400Regular", color: "#F4F5F6" },
 
-  statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
-  statCard: { flex: 1, paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12, alignItems: "center", backgroundColor: "#15171B", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
-  statIconWrap: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 8, backgroundColor: "rgba(255,255,255,0.06)" },
+  statsRow: { flexDirection: "row", marginBottom: 16, paddingVertical: 10 },
+  statCard: { flex: 1, paddingVertical: 6, paddingHorizontal: 8, alignItems: "center" },
+  statCardDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(255,255,255,0.16)" },
+  statIconWrap: { height: 24, alignItems: "center", justifyContent: "center", marginBottom: 5 },
   statValue: { fontSize: 26, lineHeight: 24, ...iosDisplayTextStyle(26, 24), fontFamily: "Anton_400Regular", color: "#FFFFFF", marginTop: Platform.OS === "ios" ? -2 : 0, marginBottom: Platform.OS === "ios" ? -5 : 0 },
   statLabel: { fontSize: 11.5, fontFamily: "Archivo_400Regular", color: "#6B747F", marginTop: 3 },
 
   sectionEyebrow: { fontSize: 12, fontFamily: "SpaceMono_700Bold", color: "#6B747F", letterSpacing: 1.9, marginBottom: 10, textTransform: "uppercase", marginLeft: 4 },
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, marginLeft: 4, marginRight: 4 },
   seeMoreText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: colors.studio.primary },
-
-  qrCard: { flexDirection: "row", backgroundColor: "#15171B", borderRadius: 16, overflow: "hidden", marginBottom: 24, borderWidth: 1, borderColor: "rgba(0,182,215,0.4)", alignItems: "center", padding: 18, gap: 16 },
-  qrCardLeft: { backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", padding: 8, borderRadius: 10 },
-  qrCardRight: { flex: 1, justifyContent: "center" },
-  qrCardEyebrow: { fontSize: 11, fontFamily: "SpaceMono_700Bold", color: "#2DCDEC", letterSpacing: 1.7, marginBottom: 6, textTransform: "uppercase" },
-  qrCardTitle: { fontSize: 16, fontFamily: "Archivo_800ExtraBold", color: "#FFFFFF" },
-  qrCardDesc: { fontSize: 12.5, fontFamily: "Archivo_400Regular", color: "#8E97A2", marginTop: 2, marginBottom: 12 },
-  qrExpandBtn: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#00B6D7", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
-  qrExpandText: { fontSize: 12.5, fontFamily: "Archivo_800ExtraBold", color: "#0A0B0D" },
 
   menuContainer: { backgroundColor: "#15171B", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.04)", overflow: "hidden" },
   menuItem: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, paddingHorizontal: 16 },
