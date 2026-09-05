@@ -444,6 +444,7 @@ export default function BookingsScreen() {
   const insets = useSafeAreaInsets();
   const [studentFilter, setStudentFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const bookingNavigationLockedRef = React.useRef(false);
   const classPhotoById = useMemo(() => {
     const photos = new Map<string, string>();
     (bookingClasses ?? []).forEach((danceClass) => {
@@ -501,9 +502,20 @@ export default function BookingsScreen() {
   // attended) and check-ins are reflected without a manual pull-to-refresh.
   useFocusEffect(
     useCallback(() => {
+      bookingNavigationLockedRef.current = false;
       if (user) refreshBookings?.();
+      return () => {
+        bookingNavigationLockedRef.current = true;
+      };
     }, [user, refreshBookings]),
   );
+
+  const openBookingDetails = useCallback((bookingId: Booking["id"]) => {
+    if (bookingNavigationLockedRef.current) return;
+    bookingNavigationLockedRef.current = true;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({ pathname: "/booking/[id]", params: { id: String(bookingId) } });
+  }, []);
 
   const mergedBookings = useMemo(() => {
     return localBookings.map((b) => {
@@ -697,7 +709,7 @@ export default function BookingsScreen() {
           ) : (
             <BookingCard
               item={item.data}
-              onPress={() => router.push({ pathname: "/booking/[id]", params: { id: String(item.data.id) } })}
+              onPress={() => openBookingDetails(item.data.id)}
               classPhotoUrl={item.data.classPhotoUrl ?? classPhotoById.get(item.data.classId)}
             />
           )

@@ -7,6 +7,10 @@ import Svg, { Circle, Path } from "react-native-svg";
 import { PriceTagIcon } from "@/components/DiscoveryClassCard";
 import type { Booking } from "@/contexts/AppContext";
 import { bookingOccurrenceStartMs } from "@/utils/bookingCancellationEligibility";
+import {
+  BOOKING_CARD_MAX_WIDTH,
+  bookingCardHeightForWidth,
+} from "@/utils/bookingCardLayout";
 
 interface BookingCardProps {
   item: Booking;
@@ -145,6 +149,7 @@ export function paymentStatusConfig(status: Booking["paymentStatus"]) {
 
 export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCardProps) {
   const [now, setNow] = useState(() => Date.now());
+  const [cardWidth, setCardWidth] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
@@ -157,8 +162,16 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
   const date = useMemo(() => dateParts(item.occurrenceDate ?? item.date), [item.occurrenceDate, item.date]);
   const countdown = useMemo(() => countdownLabel(item, now), [item.occurrenceDate, item.date, item.scheduleStartTime, now]);
   const time = twentyFourHourTime(item.scheduleStartTime, item.time);
+  const cardHeight = bookingCardHeightForWidth(cardWidth);
   return (
-    <View style={[styles.rail, { backgroundColor: payment.color }]}>
+    <View
+      testID="my-booking-card"
+      style={[styles.rail, { height: cardHeight, backgroundColor: payment.color }]}
+      onLayout={(event) => {
+        const nextWidth = Math.round(event.nativeEvent.layout.width);
+        setCardWidth((currentWidth) => currentWidth === nextWidth ? currentWidth : nextWidth);
+      }}
+    >
       <View pointerEvents="none" style={styles.paymentRailContent}>
         <View style={styles.paymentRailInner}>
           <PriceTagIcon />
@@ -187,7 +200,9 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
 
         <View style={[styles.countdownPill, { backgroundColor: payment.color }]}>
           <CountdownIcon />
-          <Text style={styles.countdownText} numberOfLines={1}>{countdown} · {date.date.replace(/\s\d{4}$/, "")}</Text>
+          <Text style={styles.countdownText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+            {countdown} · {date.date.replace(/\s\d{4}$/, "")}
+          </Text>
         </View>
 
         <View style={styles.panelShell}>
@@ -217,8 +232,8 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
                 <Text style={styles.classTime} numberOfLines={1} adjustsFontSizeToFit>{time}</Text>
               </View>
             </View>
-
           </View>
+          <View pointerEvents="none" style={styles.panelBottomHighlight} />
         </View>
       </TouchableOpacity>
     </View>
@@ -226,32 +241,33 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
 }
 
 const styles = StyleSheet.create({
-  rail: { width: "100%", height: 270, borderRadius: 17, marginBottom: 12, position: "relative", overflow: "hidden" },
-  paymentRailContent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 31, alignItems: "center", justifyContent: "center" },
-  paymentRailInner: { width: 176, height: 24, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, transform: [{ rotate: "-90deg" }] },
-  paymentRailText: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 10.5, textTransform: "uppercase" },
-  card: { position: "absolute", top: 0, right: 0, bottom: 0, left: 27, borderRadius: 17, overflow: "hidden", backgroundColor: "#050607", borderWidth: 1, borderColor: "rgba(255,255,255,0.88)", shadowColor: "#000", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.38, shadowRadius: 9, elevation: 6 },
-  imageArea: { width: "100%", height: 160, backgroundColor: "#17191D" },
-  statusPill: { position: "absolute", top: 10, right: 10, zIndex: 8, flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
-  statusDot: { width: 5, height: 5, borderRadius: 3 },
-  statusText: { fontFamily: "Archivo_700Bold", fontSize: 10.5 },
-  countdownPill: { position: "absolute", top: 118, left: "50%", width: 246, height: 26, marginLeft: -123, zIndex: 6, borderTopLeftRadius: 10, borderTopRightRadius: 10, borderBottomLeftRadius: 4, borderBottomRightRadius: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 16, shadowColor: "#000000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 5, elevation: 3 },
-  countdownText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 11, lineHeight: 14 },
-  panelShell: { position: "absolute", left: 12, right: 12, bottom: 10, height: 116, zIndex: 7, borderRadius: 15, overflow: "hidden", backgroundColor: "transparent" },
-  glassBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(1,8,10,0.48)" },
-  panelContent: { flex: 1, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
+  rail: { width: "100%", maxWidth: BOOKING_CARD_MAX_WIDTH, alignSelf: "center", borderRadius: 17, marginBottom: 12, position: "relative", overflow: "hidden" },
+  paymentRailContent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 26, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  paymentRailInner: { width: 176, height: 26, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, transform: [{ rotate: "-90deg" }] },
+  paymentRailText: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 12, lineHeight: 15, textTransform: "uppercase" },
+  card: { position: "absolute", top: 0, right: 0, bottom: 0, left: 26, borderRadius: 17, overflow: "hidden", backgroundColor: "#050607", borderWidth: 1, borderColor: "rgba(255,255,255,0.88)", shadowColor: "#000", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.38, shadowRadius: 9, elevation: 6 },
+  imageArea: { width: "100%", height: "61%", backgroundColor: "#17191D" },
+  statusPill: { position: "absolute", top: 11, right: 11, zIndex: 8, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontFamily: "Archivo_700Bold", fontSize: 12, lineHeight: 15 },
+  countdownPill: { position: "absolute", left: "8%", right: "8%", bottom: 10, height: 30, zIndex: 9, borderTopLeftRadius: 15, borderTopRightRadius: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, paddingHorizontal: 14, shadowColor: "#000000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 5, elevation: 3 },
+  countdownText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 13, lineHeight: 16 },
+  panelShell: { position: "absolute", left: 12, right: 12, bottom: 10, height: "52%", zIndex: 7, borderRadius: 15, overflow: "hidden", backgroundColor: "rgba(2,25,29,0.62)" },
+  glassBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "transparent" },
+  panelBottomHighlight: { position: "absolute", left: 14, right: 14, bottom: 0, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(255,255,255,0.16)" },
+  panelContent: { flex: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 32 },
   upperRow: { flex: 1, minHeight: 0, flexDirection: "row" },
-  classInfoColumn: { width: "54%", minWidth: 0, paddingRight: 7 },
-  className: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 28, marginBottom: 3 },
-  personRow: { flexDirection: "row", alignItems: "center", minHeight: 32 },
-  venueRow: { flexDirection: "row", alignItems: "center", minHeight: 32 },
-  avatar: { width: 27, height: 27, borderRadius: 13.5, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,182,215,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.42)" },
-  initial: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 11 },
-  locationIconSlot: { width: 27, height: 27, alignItems: "center", justifyContent: "center" },
-  personCopy: { flex: 1, minWidth: 0, marginLeft: 7 },
-  personLabel: { color: "#AEB5BE", fontFamily: "SpaceMono_400Regular", fontSize: 8.5, lineHeight: 10, textTransform: "uppercase" },
-  personName: { color: "#FFFFFF", fontFamily: "Archivo_600SemiBold", fontSize: 11.5, lineHeight: 14 },
-  timeColumn: { flex: 1, minWidth: 0, alignItems: "flex-end", justifyContent: "flex-start", paddingLeft: 5 },
-  classDate: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 15, lineHeight: 19, textAlign: "right", width: "100%" },
-  classTime: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 57, lineHeight: 61, textAlign: "right", width: "100%" },
+  classInfoColumn: { width: "56%", minWidth: 0, paddingRight: 8 },
+  className: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 27, lineHeight: 31, marginBottom: 7 },
+  personRow: { flexDirection: "row", alignItems: "center", minHeight: 27 },
+  venueRow: { flexDirection: "row", alignItems: "center", minHeight: 27 },
+  avatar: { width: 25, height: 25, borderRadius: 12.5, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,182,215,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.42)" },
+  initial: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 12 },
+  locationIconSlot: { width: 25, height: 25, alignItems: "center", justifyContent: "center" },
+  personCopy: { flex: 1, minWidth: 0, marginLeft: 8 },
+  personLabel: { color: "#AEB5BE", fontFamily: "SpaceMono_400Regular", fontSize: 9.5, lineHeight: 11, textTransform: "uppercase" },
+  personName: { color: "#FFFFFF", fontFamily: "Archivo_600SemiBold", fontSize: 13, lineHeight: 15 },
+  timeColumn: { flex: 1, minWidth: 0, alignItems: "flex-end", justifyContent: "flex-start", paddingLeft: 6 },
+  classDate: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 16, lineHeight: 20, textAlign: "right", width: "100%" },
+  classTime: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 56, lineHeight: 60, textAlign: "right", width: "100%" },
 });
