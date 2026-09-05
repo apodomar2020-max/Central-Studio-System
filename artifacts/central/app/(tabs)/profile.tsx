@@ -5,6 +5,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useCallback, useState } from "react";
 import {
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -29,6 +30,14 @@ import { formatApiDate, formatApiTime, parseApiDate } from "@/utils/dateTime";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { isVisibleUpcomingMyBooking } from "@/utils/myBookingsVisibility";
+import {
+  getContactHref,
+  isDirectContactLink,
+  isSocialContactLink,
+  visibleContactLinks,
+  type AppContactLink,
+  type ContactLinkType,
+} from "@/utils/contactLinks";
 
 /**
  * PIcon — exact replica of the design's `PIcon` (home-profile.jsx) rendered
@@ -127,6 +136,36 @@ function PIcon({
       {name === "logout" && <Path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" {...sp} />}
     </Svg>
   );
+}
+
+function ContactIcon({ type, size = 23 }: { type: ContactLinkType; size?: number }) {
+  const iconName = (() => {
+    switch (type) {
+      case "whatsapp": return "logo-whatsapp";
+      case "facebook": return "logo-facebook";
+      case "instagram": return "logo-instagram";
+      case "tiktok": return "logo-tiktok";
+      case "youtube": return "logo-youtube";
+      case "website": return "globe-outline";
+      case "phone": return "call-outline";
+      case "email": return "mail-outline";
+    }
+  })();
+
+  return <Ionicons name={iconName} size={size} color={colors.studio.primary} />;
+}
+
+async function fetchProfileContactLinks(): Promise<AppContactLink[]> {
+  try {
+    const response = await customFetch<{ contacts?: AppContactLink[] }>("/api/content/help-support");
+    return visibleContactLinks(response.contacts ?? []);
+  } catch {
+    // Newer API versions expose Contact Links independently from the Help
+    // page. This fallback keeps the profile working during backend rollouts
+    // and when the Help & Support page itself is temporarily disabled.
+    const links = await customFetch<AppContactLink[]>("/api/content/contact-links");
+    return visibleContactLinks(links);
+  }
 }
 
 function ChildCard({
@@ -612,6 +651,7 @@ export default function ProfileScreen() {
   const [editingChild, setEditingChild] = useState<ChildProfile | undefined>(undefined);
   const [serverAttendedCount, setServerAttendedCount] = useState<number | null>(null);
   const [recentAttendance, setRecentAttendance] = useState<MyAttendanceRecord[]>([]);
+  const [contactLinks, setContactLinks] = useState<AppContactLink[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -640,6 +680,14 @@ export default function ProfileScreen() {
             setServerAttendedCount(null);
             setRecentAttendance([]);
           }
+        });
+
+      fetchProfileContactLinks()
+        .then((links) => {
+          if (active) setContactLinks(links);
+        })
+        .catch(() => {
+          if (active) setContactLinks([]);
         });
 
       return () => {
@@ -686,6 +734,22 @@ export default function ProfileScreen() {
         },
       ],
     });
+  }
+
+  async function handleContactPress(link: AppContactLink) {
+    const href = getContactHref(link);
+    if (!href) return;
+
+    try {
+      await Linking.openURL(href);
+    } catch {
+      alert.show({
+        tone: "destructive",
+        title: "Contact option unavailable",
+        message: "This contact option could not be opened on your device. Please try another one.",
+        actions: [{ label: "OK", tone: "neutral" }],
+      });
+    }
   }
 
   function handleDeleteChild(id: string) {
@@ -1046,6 +1110,48 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        {contactLinks.length > 0 ? (
+          <>
+            <Text style={[styles.sectionEyebrow, { marginTop: 24 }]}>CONTACT US</Text>
+            <View style={styles.contactUsCard}>
+              {contactLinks.some(isSocialContactLink) ? (
+                <View style={styles.contactSocialRow}>
+                  {contactLinks.filter(isSocialContactLink).map((link) => (
+                    <TouchableOpacity
+                      key={link.id}
+                      onPress={() => { void handleContactPress(link); }}
+                      style={styles.contactSocialButton}
+                      activeOpacity={0.72}
+                      accessibilityRole="link"
+                      accessibilityLabel={link.label}
+                    >
+                      <ContactIcon type={link.type} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+
+              {contactLinks.some(isDirectContactLink) ? (
+                <View style={styles.contactActionRow}>
+                  {contactLinks.filter(isDirectContactLink).map((link) => (
+                    <TouchableOpacity
+                      key={link.id}
+                      onPress={() => { void handleContactPress(link); }}
+                      style={styles.contactActionButton}
+                      activeOpacity={0.78}
+                      accessibilityRole="button"
+                      accessibilityLabel={link.label}
+                    >
+                      <ContactIcon type={link.type} size={20} />
+                      <Text style={styles.contactActionLabel} numberOfLines={1}>{link.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          </>
+        ) : null}
+
         <TouchableOpacity onPress={handleLogout} style={[styles.menuContainer, { marginTop: 24, marginBottom: 24 }]} activeOpacity={0.8}>
           <View style={styles.menuItem}>
             <View style={[styles.menuIcon, { backgroundColor: "#EF444415" }]}>
@@ -1139,6 +1245,13 @@ const styles = StyleSheet.create({
   menuTrailingText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: "#9CA3AF", marginRight: 4 },
   notificationBadge: { backgroundColor: "#FF2E7E", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginRight: 4 },
   notificationBadgeText: { fontSize: 12, fontFamily: "Archivo_700Bold", color: "#FFFFFF" },
+
+  contactUsCard: { gap: 14 },
+  contactSocialRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 12 },
+  contactSocialButton: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,182,215,0.09)", borderWidth: 1, borderColor: "rgba(0,182,215,0.34)" },
+  contactActionRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  contactActionButton: { flexGrow: 1, flexBasis: 130, minHeight: 50, borderRadius: 999, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, paddingHorizontal: 16, backgroundColor: "#012C31", borderWidth: 1, borderColor: "rgba(0,182,215,0.42)" },
+  contactActionLabel: { maxWidth: 120, color: "#FFFFFF", fontSize: 14, fontFamily: "Archivo_700Bold" },
 
   attendanceItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 16 },
   attendanceDot: { width: 8, height: 8, borderRadius: 4 },

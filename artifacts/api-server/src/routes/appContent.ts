@@ -90,6 +90,16 @@ const UpsertContactLinkBody = z.object({
   isActive: z.boolean().default(true),
 });
 
+router.get("/content/contact-links", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select()
+    .from(appContactLinksTable)
+    .where(eq(appContactLinksTable.isActive, true))
+    .orderBy(asc(appContactLinksTable.sortOrder), asc(appContactLinksTable.id));
+
+  res.json(rows);
+});
+
 router.get("/content/help-support", async (_req, res): Promise<void> => {
   const [[page], faqRows, contacts, faqCategories] = await Promise.all([
     db
