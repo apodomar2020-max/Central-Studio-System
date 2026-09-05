@@ -1,11 +1,9 @@
-import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -23,7 +21,6 @@ import type { DanceClass, Instructor } from "@/data/mockData";
 
 const CYAN = "#00B6D7";
 const BLACK = "#000000";
-const STUDIO_LOGO = require("@/assets/images/central_studio_logo_transparent.png");
 
 export type InstructorScheduleCard = {
   item: DanceClass;
@@ -65,25 +62,6 @@ function AchievementIcon() {
 function splitName(name: string) {
   const words = name.trim().split(/\s+/).filter(Boolean);
   return { first: words[0] || "Instructor", rest: words.slice(1).join(" ") };
-}
-
-function StatCard({ label, value }: { label: string; value: number | string }) {
-  return (
-    <View style={styles.statCard}>
-      <GlassView
-        glassEffectStyle="clear"
-        tintColor="rgba(255,255,255,0.13)"
-        colorScheme="dark"
-        pointerEvents="none"
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.statContent}>
-        <Text style={styles.statLabel}>{label}</Text>
-        <View style={styles.statRule} />
-        <Text style={styles.statValue}>{value}</Text>
-      </View>
-    </View>
-  );
 }
 
 export default function InstructorProfileView({
@@ -134,7 +112,6 @@ export default function InstructorProfileView({
 
           <View style={[styles.nav, { top: topPad }]}>
             <CentralBackButton />
-            <Image source={STUDIO_LOGO} resizeMode="contain" style={styles.logo} />
           </View>
 
           <Text style={styles.name} numberOfLines={2} adjustsFontSizeToFit>
@@ -142,11 +119,6 @@ export default function InstructorProfileView({
             {name.rest ? <Text style={styles.lastName}> {name.rest}</Text> : null}
           </Text>
 
-          <View style={styles.statsRow}>
-            <StatCard label="Experience" value={profile.experienceYears} />
-            <StatCard label="Classes" value={profile.classCount} />
-            <StatCard label="Students" value={profile.studentCount} />
-          </View>
         </View>
 
         <View style={styles.bioCard}>
@@ -165,7 +137,7 @@ export default function InstructorProfileView({
 
         {bulletItems.length > 0 ? (
           <View style={styles.plainSection}>
-            <Text style={styles.sectionTitle}>Achievements</Text>
+            <Text style={styles.sectionTitle}>Experiences</Text>
             {bulletItems.map((item, index) => (
               <View key={`${item}-${index}`} style={styles.bulletRow}>
                 <Text style={styles.bullet}>•</Text>
@@ -221,19 +193,12 @@ export default function InstructorProfileView({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BLACK },
-  hero: { height: 500, backgroundColor: BLACK },
-  nav: { position: "absolute", left: 16, right: 28, flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 5 },
-  logo: { width: 66, height: 45 },
-  name: { position: "absolute", left: "9%", right: "8%", bottom: 103, fontFamily: "Anton_400Regular", fontSize: 38, lineHeight: 42, textTransform: "uppercase" },
+  hero: { height: 455, backgroundColor: BLACK },
+  nav: { position: "absolute", left: 16, top: 0, zIndex: 5 },
+  name: { position: "absolute", left: "8%", right: "8%", bottom: 18, fontFamily: "Anton_400Regular", fontSize: 38, lineHeight: 42, textTransform: "uppercase" },
   firstName: { color: CYAN },
   lastName: { color: "#FFFFFF" },
-  statsRow: { position: "absolute", left: "9%", right: "9%", bottom: -56, height: 142, zIndex: 4, flexDirection: "row", gap: 9 },
-  statCard: { flex: 1, borderRadius: 16, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.08)" },
-  statContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 7 },
-  statLabel: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 15, lineHeight: 18, textTransform: "uppercase", textAlign: "center" },
-  statRule: { width: "72%", height: 1, backgroundColor: "rgba(255,255,255,0.84)", marginTop: 17, marginBottom: 17 },
-  statValue: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, textAlign: "center" },
-  bioCard: { width: "88%", alignSelf: "center", minHeight: 250, borderRadius: 18, backgroundColor: CYAN, paddingHorizontal: 18, paddingTop: 76, paddingBottom: 23 },
+  bioCard: { width: "91%", alignSelf: "center", borderRadius: 18, backgroundColor: CYAN, paddingHorizontal: 18, paddingTop: 17, paddingBottom: 21 },
   bioTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 17, lineHeight: 21 },
   bio: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 13.5, lineHeight: 17, marginTop: 6 },
   specialtiesTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 17, lineHeight: 21, marginTop: 18 },
