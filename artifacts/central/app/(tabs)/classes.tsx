@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { pushOnce } from "@/utils/navigation";
@@ -74,6 +75,7 @@ const BORDER  = "rgba(255,255,255,0.08)";
 const R_MD = 12;
 const R_LG = 16;
 const R_PILL = 999;
+const EMPTY_CLASSES_ANIMATION = require("@/assets/animations/empty-performance.json");
 
 /* ─── Category accent colors (rgb triplets) ──────────────────────── */
 const CAT_RGB: Record<string, string> = {
@@ -1091,9 +1093,13 @@ export default function ClassesScreen() {
             <View style={s.classListSection}>
               {displayedClasses.length === 0 ? (
                 <View style={s.emptyState}>
-                  <View style={s.emptyIcon}>
-                    <XI name="search" size={30} stroke={1.6} color="#4C545E" />
-                  </View>
+                  <LottieView
+                    source={EMPTY_CLASSES_ANIMATION}
+                    autoPlay
+                    loop
+                    speed={0.65}
+                    style={s.emptyAnimation}
+                  />
                   <Text style={s.emptyTitle}>No classes found</Text>
                   <Text style={s.emptyDesc}>Try different keywords or clear your filters.</Text>
                   <TouchableOpacity
@@ -1455,17 +1461,14 @@ const s = StyleSheet.create({
 
   /* empty state */
   emptyState: { alignItems: "center", paddingVertical: 56, paddingHorizontal: 30 },
-  emptyIcon: {
-    width: 68, height: 68, borderRadius: 34,
-    backgroundColor: "rgba(255,255,255,0.05)", alignItems: "center", justifyContent: "center", marginBottom: 14,
-  },
+  emptyAnimation: { width: 92, height: 92, marginBottom: 10 },
   emptyTitle: { fontSize: 20, fontFamily: "Archivo_700Bold", color: "#fff", marginBottom: 8 },
   emptyDesc: { fontSize: 13, fontFamily: "Archivo_400Regular", color: INK_400, textAlign: "center", maxWidth: 230, marginBottom: 20 },
   clearBtn: {
-    paddingHorizontal: 20, paddingVertical: 10, borderRadius: R_MD,
-    backgroundColor: "rgba(0,182,215,0.12)", borderWidth: 1, borderColor: "rgba(0,182,215,0.38)",
+    paddingHorizontal: 24, paddingVertical: 13, borderRadius: 24,
+    backgroundColor: CYAN,
   },
-  clearBtnText: { fontSize: 13, fontFamily: "Archivo_700Bold", color: CYAN },
+  clearBtnText: { fontSize: 14, fontFamily: "Archivo_800ExtraBold", color: INK_900 },
 
   scheduleTile: {
     flex: 1, paddingVertical: 12, paddingHorizontal: 10,
