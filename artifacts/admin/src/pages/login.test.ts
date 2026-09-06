@@ -22,9 +22,17 @@ test("the page remains fixed to the viewport while the card adapts at narrow and
   assert.match(styles, /\.admin-login-page[\s\S]{0,180}height: 100vh;[\s\S]{0,60}height: 100dvh;[\s\S]{0,60}overflow: hidden/);
   assert.match(styles, /width: min\(42\.36vw, 732px\)/);
   assert.match(styles, /@media \(max-width: 1050px\)/);
+  assert.match(styles, /@media \(max-height: 1050px\)/);
   assert.match(styles, /@media \(max-height: 860px\)/);
   assert.match(styles, /@media \(max-width: 640px\)/);
   assert.match(styles, /@media \(max-height: 680px\)/);
+});
+
+test("the submit action and security notice participate in card flow instead of overlapping", () => {
+  assert.match(styles, /\.admin-login-card[\s\S]{0,120}display: flex;[\s\S]{0,60}flex-direction: column/);
+  assert.match(styles, /\.admin-login-footer[\s\S]{0,220}margin-top: auto/);
+  assert.doesNotMatch(styles, /\.admin-login-footer\s*\{[^}]*position:\s*absolute/);
+  assert.doesNotMatch(styles, /\.admin-login-submit\s*\{[^}]*position:\s*absolute/);
 });
 
 test("sign-in logic still submits through AdminAuthContext", () => {
