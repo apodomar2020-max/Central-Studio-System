@@ -29,8 +29,8 @@ test("the page remains fixed to the viewport while the card adapts at narrow and
 });
 
 test("the submit action and security notice participate in card flow instead of overlapping", () => {
-  assert.match(styles, /\.admin-login-card[\s\S]{0,120}display: flex;[\s\S]{0,60}flex-direction: column/);
-  assert.match(styles, /\.admin-login-footer[\s\S]{0,220}margin-top: auto/);
+  assert.match(styles, /\.admin-login-card[\s\S]{0,160}display: flex;[\s\S]{0,60}flex-direction: column;[\s\S]{0,60}justify-content: center/);
+  assert.match(styles, /\.admin-login-footer[\s\S]{0,300}border-top: 1px solid rgba\(255, 255, 255, 0\.12\)/);
   assert.doesNotMatch(styles, /\.admin-login-footer\s*\{[^}]*position:\s*absolute/);
   assert.doesNotMatch(styles, /\.admin-login-submit\s*\{[^}]*position:\s*absolute/);
 });
