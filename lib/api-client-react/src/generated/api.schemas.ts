@@ -2141,6 +2141,15 @@ export interface WebsitePerformance {
   updatedAt: string;
 }
 
+export interface PublicWebsiteBranch {
+  id: number;
+  name: string;
+  /** @nullable */
+  address: string | null;
+  /** @nullable */
+  googleMapsLink: string | null;
+}
+
 export type PublicWebsitePerformanceListItemBadgeVariant =
   (typeof PublicWebsitePerformanceListItemBadgeVariant)[keyof typeof PublicWebsitePerformanceListItemBadgeVariant];
 

@@ -59,6 +59,7 @@ import adminRoomReservationsRouter from "./adminRoomReservations";
 import websiteBackgroundsRouter from "./websiteBackgrounds";
 import websiteNewsRouter from "./websiteNews";
 import websitePerformancesRouter from "./websitePerformances";
+import websiteBranchesRouter from "./websiteBranches";
 
 const router: IRouter = Router();
 
@@ -123,6 +124,8 @@ router.use(websiteBackgroundsRouter);
 router.use(websiteNewsRouter);
 // Website CMS Wave 3 — Performance.
 router.use(websitePerformancesRouter);
+// Public Website branch directory (footer) — unauthenticated read.
+router.use(websiteBranchesRouter);
 // Finance Department (Phase 1) — read-only aggregation over the existing
 // operational tables. Registered last; it adds no mutation routes.
 router.use(financeRouter);
