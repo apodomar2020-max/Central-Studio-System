@@ -2822,6 +2822,19 @@ export const DeleteHeroItemParams = zod.object({
 export const DeleteHeroItemResponse = zod.void();
 
 /**
+ * @summary List public studio branches (active only, id ASC, public projection)
+ */
+export const ListPublicWebsiteBranchesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  address: zod.string().nullable(),
+  googleMapsLink: zod.string().url().nullable(),
+});
+export const ListPublicWebsiteBranchesResponse = zod.array(
+  ListPublicWebsiteBranchesResponseItem,
+);
+
+/**
  * @summary List public website background media (public projection only)
  */
 export const ListPublicWebsiteBackgroundsResponseItem = zod.object({

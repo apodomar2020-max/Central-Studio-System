@@ -94,6 +94,7 @@ import type {
   PackageRefundReview,
   PricePackage,
   PublicWebsiteBackgroundSetting,
+  PublicWebsiteBranch,
   PublicWebsiteNewsDetail,
   PublicWebsiteNewsListItem,
   PublicWebsitePerformanceDetail,
@@ -5944,6 +5945,82 @@ export const useDeleteHeroItem = <
 > => {
   return useMutation(getDeleteHeroItemMutationOptions(options));
 };
+
+export const getListPublicWebsiteBranchesUrl = () => {
+  return `/api/website/branches`;
+};
+
+/**
+ * @summary List public studio branches (active only, id ASC, public projection)
+ */
+export const listPublicWebsiteBranches = async (
+  options?: RequestInit,
+): Promise<PublicWebsiteBranch[]> => {
+  return customFetch<PublicWebsiteBranch[]>(getListPublicWebsiteBranchesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPublicWebsiteBranchesQueryKey = () => {
+  return [`/api/website/branches`] as const;
+};
+
+export const getListPublicWebsiteBranchesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPublicWebsiteBranches>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteBranches>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListPublicWebsiteBranchesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPublicWebsiteBranches>>
+  > = ({ signal }) => listPublicWebsiteBranches({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteBranches>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPublicWebsiteBranchesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPublicWebsiteBranches>>
+>;
+export type ListPublicWebsiteBranchesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List public studio branches (active only, id ASC, public projection)
+ */
+
+export function useListPublicWebsiteBranches<
+  TData = Awaited<ReturnType<typeof listPublicWebsiteBranches>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPublicWebsiteBranches>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPublicWebsiteBranchesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListPublicWebsiteBackgroundsUrl = () => {
   return `/api/website/backgrounds`;

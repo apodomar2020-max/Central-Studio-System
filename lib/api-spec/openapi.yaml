@@ -1558,6 +1558,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # Public Website branch directory — active branches only, id ASC, a fixed
+  # presentation-only projection. Read-only, unauthenticated, no admin
+  # permission; admin branch CRUD stays under /admin/branches.
+  /website/branches:
+    get:
+      operationId: listPublicWebsiteBranches
+      tags: [websiteBranches]
+      summary: List public studio branches (active only, id ASC, public projection)
+      responses:
+        "200":
+          description: Active branches, id ASC, presentation fields only
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicWebsiteBranch"
+
   # Website CMS Wave 1 — Backgrounds only. No News/Performance paths in this
   # wave (see the Wave 1 report). Fixed set of 8 section keys — there is
   # deliberately no POST (create) or DELETE path: rows are seeded once
@@ -4316,6 +4334,18 @@ components:
         updatedByAdminId: { type: ["integer", "null"] }
         createdAt: { type: string }
         updatedAt: { type: string }
+
+    # Public studio branch — presentation projection of studio_branches for
+    # the marketing website footer. No code / isActive / roomCount / rooms /
+    # timestamps.
+    PublicWebsiteBranch:
+      type: object
+      required: [id, name, address, googleMapsLink]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        address: { type: ["string", "null"] }
+        googleMapsLink: { type: ["string", "null"], format: uri }
 
     PublicWebsitePerformanceListItem:
       type: object
