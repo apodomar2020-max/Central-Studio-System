@@ -97,7 +97,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className={`admin-login-submit${username.trim() && password ? " is-visible" : ""}`}
+              className="admin-login-submit"
               disabled={!canSubmit}
               aria-busy={loading}
             >

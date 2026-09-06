@@ -39,4 +39,7 @@ test("sign-in logic still submits through AdminAuthContext", () => {
   assert.match(page, /await login\(username\.trim\(\)\.toLowerCase\(\), password\)/);
   assert.match(page, /<form className="admin-login-form" onSubmit=\{handleSubmit\}/);
   assert.match(page, /type="submit"/);
+  assert.match(page, /className="admin-login-submit"/);
+  assert.match(page, /disabled=\{!canSubmit\}/);
+  assert.doesNotMatch(page, /admin-login-submit\$\{username/);
 });
