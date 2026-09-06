@@ -21,9 +21,16 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
-import { db, childrenTable, studentsTable } from "@workspace/db";
+import {
+  balletApplicationsTable,
+  bookingsTable,
+  childrenTable,
+  db,
+  packageOrdersTable,
+  studentsTable,
+} from "@workspace/db";
 import { insertChildSchema, updateChildSchema } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
@@ -41,6 +48,40 @@ async function stampLastCompletionStep(studentId: number, step: "children" | "me
 
 const router: IRouter = Router();
 
+type ChildDateOfBirthLockReason = "class_booking" | "package_subscription" | "ballet_application";
+
+type ChildDateOfBirthLockPolicy = {
+  locked: boolean;
+  reasons: ChildDateOfBirthLockReason[];
+};
+
+async function childDateOfBirthLockPolicies(childIds: number[]): Promise<Map<number, ChildDateOfBirthLockPolicy>> {
+  const policies = new Map<number, ChildDateOfBirthLockPolicy>();
+  for (const childId of childIds) policies.set(childId, { locked: false, reasons: [] });
+  if (childIds.length === 0) return policies;
+
+  const [bookingRows, packageRows, balletRows] = await Promise.all([
+    db.select({ childId: bookingsTable.participantChildId }).from(bookingsTable)
+      .where(inArray(bookingsTable.participantChildId, childIds)),
+    db.select({ childId: packageOrdersTable.participantChildId }).from(packageOrdersTable)
+      .where(inArray(packageOrdersTable.participantChildId, childIds)),
+    db.select({ childId: balletApplicationsTable.childId }).from(balletApplicationsTable)
+      .where(inArray(balletApplicationsTable.childId, childIds)),
+  ]);
+
+  const addReason = (childId: number | null, reason: ChildDateOfBirthLockReason) => {
+    if (childId == null) return;
+    const policy = policies.get(childId);
+    if (!policy || policy.reasons.includes(reason)) return;
+    policy.locked = true;
+    policy.reasons.push(reason);
+  };
+  for (const row of bookingRows) addReason(row.childId, "class_booking");
+  for (const row of packageRows) addReason(row.childId, "package_subscription");
+  for (const row of balletRows) addReason(row.childId, "ballet_application");
+  return policies;
+}
+
 // All routes in this file require a verified student JWT (and a verified email).
 // X-Student-Id is NOT consulted — identity comes from the signed token only.
 router.use("/children", requireStudentAuth, requireVerifiedStudent);
@@ -57,7 +98,12 @@ router.get("/children", async (req, res): Promise<void> => {
     .orderBy(asc(childrenTable.fullName));
 
   // Strip qrToken — it is internal and must never be returned to clients.
-  const safe = rows.map(({ qrToken: _qt, ...rest }) => rest);
+  const policies = await childDateOfBirthLockPolicies(rows.map((row) => row.id));
+  const safe = rows.map(({ qrToken: _qt, ...rest }) => ({
+    ...rest,
+    dateOfBirthLocked: policies.get(rest.id)?.locked ?? false,
+    dateOfBirthLockReasons: policies.get(rest.id)?.reasons ?? [],
+  }));
 
   res.json({ children: safe });
 });
@@ -118,6 +164,37 @@ router.patch("/children/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  const [existing] = await db
+    .select()
+    .from(childrenTable)
+    .where(and(eq(childrenTable.id, childId), eq(childrenTable.parentId, studentId)))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Child not found" });
+    return;
+  }
+
+  const currentDateOfBirth = existing.dateOfBirth ?? existing.birthday ?? null;
+  const requestedDateOfBirth = parsed.data.dateOfBirth !== undefined
+    ? parsed.data.dateOfBirth
+    : parsed.data.birthday !== undefined
+      ? parsed.data.birthday
+      : currentDateOfBirth;
+  const changesDateOfBirth = requestedDateOfBirth !== currentDateOfBirth;
+  const changesAge = parsed.data.age !== undefined && parsed.data.age !== existing.age;
+
+  if (changesDateOfBirth || changesAge) {
+    const policy = (await childDateOfBirthLockPolicies([childId])).get(childId)!;
+    if (policy.locked) {
+      res.status(409).json({
+        error: "Date of birth cannot be changed after this child has a class booking, package, or Ballet application.",
+        code: "CHILD_DATE_OF_BIRTH_LOCKED",
+        reasons: policy.reasons,
+      });
+      return;
+    }
+  }
+
   // The AND condition enforces ownership: a student cannot update
   // a child that belongs to a different parent even if they know the ID.
   const [row] = await db
@@ -142,7 +219,12 @@ router.patch("/children/:id", async (req, res): Promise<void> => {
   }
 
   const { qrToken: _qt, ...safe } = row;
-  res.json({ child: safe });
+  const policy = (await childDateOfBirthLockPolicies([row.id])).get(row.id)!;
+  res.json({ child: {
+    ...safe,
+    dateOfBirthLocked: policy.locked,
+    dateOfBirthLockReasons: policy.reasons,
+  } });
 });
 
 // ─── DELETE /api/children/:id ─────────────────────────────────────────────────

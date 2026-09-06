@@ -7,6 +7,7 @@ import type { PricePackage } from "@workspace/api-client-react";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
 import CsIcon from "@/components/CsIcon";
 import { iosDisplayTextStyle } from "@/utils/iosTypography";
+import { withMediaRevision } from "@/utils/mediaRevision";
 
 const INK_900 = "#0A0B0D";
 const INK_800 = "#15171B";
@@ -34,15 +35,17 @@ const ARTWORK_BLEED = 30;
  */
 export default function PackageVisualCard({
   pkg,
+  imageRevision,
   onPress,
 }: {
   pkg: PricePackage;
+  imageRevision?: number;
   onPress: (pkg: PricePackage) => void;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => setImgFailed(false), [pkg.cardImageUrl]);
 
-  const uri = normalizeMediaUrl(pkg.cardImageUrl);
+  const uri = normalizeMediaUrl(withMediaRevision(pkg.cardImageUrl, imageRevision ?? 0));
   const hasImage = Boolean(uri && !imgFailed);
   const unlimited = pkg.sessions == null;
 

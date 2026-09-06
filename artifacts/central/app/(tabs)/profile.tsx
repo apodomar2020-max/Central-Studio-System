@@ -464,6 +464,7 @@ function AddChildModal({
   }, [initial, visible]);
 
   const calculatedAge = calculateAgeFromBirthday(birthday);
+  const dateOfBirthLocked = initial?.dateOfBirthLocked === true;
 
   function handleSave() {
     if (!fullName.trim()) {
@@ -510,14 +511,23 @@ function AddChildModal({
                 <Text style={styles.fieldLabel}>Date of Birth *</Text>
                 <TouchableOpacity
                   onPress={() => setShowDatePicker(true)}
-                  style={[styles.input, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+                  disabled={dateOfBirthLocked}
+                  accessibilityState={{ disabled: dateOfBirthLocked }}
+                  style={[
+                    styles.input,
+                    { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+                    dateOfBirthLocked && styles.lockedChildField,
+                  ]}
                   activeOpacity={0.8}
                 >
                   <Text style={{ color: birthday ? "#FFFFFF" : "#4B5563", fontFamily: "Inter_400Regular", fontSize: 14 }}>
                     {birthday ? birthday : "Select DOB"}
                   </Text>
-                  <Ionicons name="calendar-outline" size={16} color={colors.studio.primary} />
+                  <Ionicons name={dateOfBirthLocked ? "lock-closed" : "calendar-outline"} size={16} color={dateOfBirthLocked ? "#6B7280" : colors.studio.primary} />
                 </TouchableOpacity>
+                {dateOfBirthLocked ? (
+                  <Text style={styles.lockedChildHint}>Locked because this child already has class, package, or Ballet activity.</Text>
+                ) : null}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Calculated Age</Text>
@@ -935,7 +945,7 @@ export default function ProfileScreen() {
               <Text style={styles.menuLabel}>My Bookings</Text>
               <Text style={styles.menuSubtitle}>Upcoming & past classes</Text>
             </View>
-            <Text style={styles.menuTrailingText}>{bookings.length > 0 ? bookings.length.toString() : ""}</Text>
+            <Text style={styles.menuTrailingText}>{upcoming > 0 ? upcoming.toString() : ""}</Text>
             <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
           </TouchableOpacity>
 
@@ -1271,6 +1281,8 @@ const styles = StyleSheet.create({
   childGenderTag: { fontSize: 10, fontFamily: "Archivo_800ExtraBold", letterSpacing: 1 },
   childMeta: { fontSize: 13, fontFamily: "Archivo_400Regular", color: "#9CA3AF" },
   childAction: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" },
+  lockedChildField: { backgroundColor: "#111319", borderColor: "rgba(107,114,128,0.28)", opacity: 0.72 },
+  lockedChildHint: { marginTop: 6, color: "#8E97A2", fontSize: 10.5, lineHeight: 14, fontFamily: "Archivo_400Regular" },
 
   addChildTextBtn: { width: "100%", flexDirection: "row", gap: 6, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
   addChildTextBtnDivider: { borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.06)" },

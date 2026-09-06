@@ -19,3 +19,8 @@ test("bell icon size and surrounding button dimensions stay unchanged", () => {
   assert.match(source, /<CsIcon name="bell" size=\{21\} color=\{INK_200\} \/>/);
   assert.match(source, /headerBtn: \{[\s\S]{0,100}width: 42, height: 42, borderRadius: 21,/);
 });
+
+test("only the unread counter is enlarged enough to remain legible", () => {
+  assert.match(source, /badge: \{[\s\S]{0,120}minWidth: 18, height: 18, borderRadius: 9,/);
+  assert.match(source, /badgeText: \{ fontSize: 10, lineHeight: 12,/);
+});

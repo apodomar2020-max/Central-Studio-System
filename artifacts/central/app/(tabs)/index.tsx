@@ -36,6 +36,11 @@ import {
   useListSchedules,
   useListClasses,
   useListDanceTypes,
+  getListHeroItemsQueryKey,
+  getListInstructorsQueryKey,
+  getListSchedulesQueryKey,
+  getListClassesQueryKey,
+  getListDanceTypesQueryKey,
   customFetch,
   normalizeMediaUrl,
 } from "@workspace/api-client-react";
@@ -66,6 +71,7 @@ import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/se
 import { ACTIVE_APPLICATION_STATUSES, fetchBalletSettings, fetchMyApplications } from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
+import { withMediaRevision } from "@/utils/mediaRevision";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -318,14 +324,22 @@ function AutoReelCard({ reel, onPress }: { reel: InstagramReel; onPress: () => v
 }
 
 function ReelsSection() {
-  const { data, isLoading, isError } = useQuery<{ reels: InstagramReel[] }>({
+  const { data, dataUpdatedAt, isLoading, isError, isFetchedAfterMount } = useQuery<{ reels: InstagramReel[] }>({
     queryKey: ["instagram-reels"],
     queryFn: async () => (await customFetch("/api/instagram/reels")) as { reels: InstagramReel[] },
     staleTime: 60 * 60 * 1000,
+    refetchOnMount: "always",
     retry: 1,
   });
 
-  const reels = data?.reels ?? [];
+  const reels = React.useMemo(() => isFetchedAfterMount
+    ? (data?.reels ?? []).map((reel) => ({
+        ...reel,
+        media_url: withMediaRevision(reel.media_url, dataUpdatedAt) ?? undefined,
+        thumbnail_url: withMediaRevision(reel.thumbnail_url, dataUpdatedAt) ?? undefined,
+      }))
+    : [], [data, dataUpdatedAt, isFetchedAfterMount]);
+  const effectiveLoading = isLoading || !isFetchedAfterMount;
   const [autoPlay, setAutoPlay] = useState(false);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -337,7 +351,7 @@ function ReelsSection() {
     return () => { if (autoTimer.current) clearTimeout(autoTimer.current); };
   }, [reels.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isError || (!isLoading && reels.length === 0)) return null;
+  if (isFetchedAfterMount && (isError || (!isLoading && reels.length === 0))) return null;
 
   return (
     <View style={[s.section, { marginBottom: 12 }]}>
@@ -358,7 +372,7 @@ function ReelsSection() {
         </TouchableOpacity>
       </View>
 
-      {isLoading ? (
+      {effectiveLoading ? (
         <FlatList
           data={[1, 2, 3, 4]}
           keyExtractor={(i) => String(i)}
@@ -597,7 +611,7 @@ function ClassCard({
 // ─── Package cards ────────────────────────────────────────────────────────────
 
 function PackagesSection() {
-  return <AvailablePackagesSection mode="home" />;
+  return <AvailablePackagesSection mode="home" requireFreshData />;
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -679,9 +693,23 @@ export default function StudioHomeScreen() {
   const totalUnread = unreadNotifications + apiUnread;
 
   // ── Hero items ────────────────────────────────────────────────────────────
-  const { data: allHero, refetch: refetchHero, isLoading: heroLoading, isError: heroError, error: heroErr } = useListHeroItems();
+  const {
+    data: allHero,
+    dataUpdatedAt: heroUpdatedAt,
+    refetch: refetchHero,
+    isLoading: heroLoading,
+    isError: heroError,
+    error: heroErr,
+    isFetchedAfterMount: heroFresh,
+  } = useListHeroItems({ query: { queryKey: getListHeroItemsQueryKey(), refetchOnMount: "always" } });
   const heroItems: HeroItem[] = React.useMemo(
-    () => (allHero ?? []).filter((i) => i.isActive), [allHero],
+    () => heroFresh
+      ? (allHero ?? []).filter((i) => i.isActive).map((item) => ({
+          ...item,
+          imageUrl: withMediaRevision(item.imageUrl, heroUpdatedAt) ?? item.imageUrl,
+        }))
+      : [],
+    [allHero, heroFresh, heroUpdatedAt],
   );
 
   // ── Ballet application status ────────────────────────────────────────────
@@ -689,33 +717,60 @@ export default function StudioHomeScreen() {
     data: balletApplications,
     refetch: refetchBalletApplications,
     isRefetching: refetchingBalletApplications,
+    isFetchedAfterMount: balletApplicationsFresh,
+    isError: balletApplicationsError,
   } = useQuery({
     queryKey: ["ballet-applications-my"],
     queryFn: ({ signal }) => fetchMyApplications(signal),
     enabled: Boolean(user),
     staleTime: 60 * 1000,
+    refetchOnMount: "always",
     retry: false,
   });
   const balletStatus = React.useMemo(() => {
-    const apps = balletApplications ?? [];
+    const apps = !user || balletApplicationsFresh ? (balletApplications ?? []) : [];
     const active = apps.find((a) => ACTIVE_APPLICATION_STATUSES.has(a.status));
     return active?.status ?? apps[0]?.status ?? null;
-  }, [balletApplications]);
+  }, [balletApplications, balletApplicationsFresh, user]);
   const {
     data: balletSettings,
+    dataUpdatedAt: balletSettingsUpdatedAt,
     refetch: refetchBalletSettings,
     isRefetching: refetchingBalletSettings,
+    isFetchedAfterMount: balletSettingsFresh,
+    isError: balletSettingsError,
   } = useQuery({
     queryKey: ["ballet-settings"],
     queryFn: ({ signal }) => fetchBalletSettings(signal),
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: "always",
     retry: false,
   });
+  const balletCardFresh = balletSettingsFresh && (!user || balletApplicationsFresh);
+  const balletCardError = balletSettingsError || (Boolean(user) && balletApplicationsError);
 
   // ── Instructors ───────────────────────────────────────────────────────────
-  const { data: apiInst, refetch: refetchInst, isRefetching: refetchingInst, isLoading: instLoading, isError: instError, error: instErr } = useListInstructors();
+  const {
+    data: apiInst,
+    dataUpdatedAt: instructorsUpdatedAt,
+    refetch: refetchInst,
+    isRefetching: refetchingInst,
+    isLoading: instLoading,
+    isError: instError,
+    error: instErr,
+    isFetchedAfterMount: instructorsFresh,
+  } = useListInstructors({ query: { queryKey: getListInstructorsQueryKey(), refetchOnMount: "always" } });
   const instructors: Instructor[] = React.useMemo(
-    () => (apiInst ?? []).filter((i) => i.isActive).map(mapApiInstructorToMobile), [apiInst],
+    () => instructorsFresh
+      ? (apiInst ?? []).filter((i) => i.isActive).map((item) => {
+          const mapped = mapApiInstructorToMobile(item);
+          return {
+            ...mapped,
+            photoUrl: withMediaRevision(mapped.photoUrl, instructorsUpdatedAt) ?? undefined,
+          };
+        })
+      : [],
+    [apiInst, instructorsFresh, instructorsUpdatedAt],
   );
   const instructorMap = React.useMemo(() => {
     const m = new Map<string, Instructor>();
@@ -723,38 +778,52 @@ export default function StudioHomeScreen() {
     return m;
   }, [instructors]);
 
-  const { data: danceTypesRaw } = useListDanceTypes();
+  const {
+    data: danceTypesRaw,
+    dataUpdatedAt: danceTypesUpdatedAt,
+    isFetchedAfterMount: danceTypesFresh,
+  } = useListDanceTypes({ query: { queryKey: getListDanceTypesQueryKey(), refetchOnMount: "always" } });
   const danceTypeIcons = React.useMemo(() => {
     const byId = new Map<number, NonNullable<typeof danceTypesRaw>[number]>();
     const byName = new Map<string, NonNullable<typeof danceTypesRaw>[number]>();
-    (danceTypesRaw ?? []).forEach((danceType) => {
-      byId.set(danceType.id, danceType);
-      byName.set(normalizeStyleName(danceType.name), danceType);
-      byName.set(normalizeStyleName(danceType.slug), danceType);
+    (danceTypesFresh ? (danceTypesRaw ?? []) : []).forEach((danceType) => {
+      const freshDanceType = {
+        ...danceType,
+        iconUrl: withMediaRevision(danceType.iconUrl, danceTypesUpdatedAt),
+      };
+      byId.set(freshDanceType.id, freshDanceType);
+      byName.set(normalizeStyleName(freshDanceType.name), freshDanceType);
+      byName.set(normalizeStyleName(freshDanceType.slug), freshDanceType);
     });
     return { byId, byName };
-  }, [danceTypesRaw]);
+  }, [danceTypesFresh, danceTypesRaw, danceTypesUpdatedAt]);
 
   // ── Schedules + classes ───────────────────────────────────────────────────
-  const { data: apiScheds, refetch: refetchScheds, isRefetching: refetchingScheds, isLoading: schedsLoading, isError: schedsError, error: schedsErr } = useListSchedules();
-  const { data: apiClasses, refetch: refetchClasses, isRefetching: refetchingClasses, isLoading: classesLoading } = useListClasses();
-  const pricingQuery = useQuery({ queryKey: ["class-pricing"], queryFn: fetchClassPricing, staleTime: 5 * 60 * 1000 });
-  const classCapacityQuery = useQuery({ queryKey: ["class-capacity"], queryFn: fetchClassCapacitySettings, staleTime: 60 * 1000 });
+  const { data: apiScheds, refetch: refetchScheds, isRefetching: refetchingScheds, isLoading: schedsLoading, isError: schedsError, error: schedsErr, isFetchedAfterMount: schedulesFresh } = useListSchedules(undefined, { query: { queryKey: getListSchedulesQueryKey(), refetchOnMount: "always" } });
+  const { data: apiClasses, dataUpdatedAt: classesUpdatedAt, refetch: refetchClasses, isRefetching: refetchingClasses, isLoading: classesLoading, isFetchedAfterMount: classesFresh, isError: classesError } = useListClasses({ query: { queryKey: getListClassesQueryKey(), refetchOnMount: "always" } });
+  const pricingQuery = useQuery({ queryKey: ["class-pricing"], queryFn: fetchClassPricing, staleTime: 5 * 60 * 1000, refetchOnMount: "always" });
+  const classCapacityQuery = useQuery({ queryKey: ["class-capacity"], queryFn: fetchClassCapacitySettings, staleTime: 60 * 1000, refetchOnMount: "always" });
+  const homeClassesFresh = schedulesFresh
+    && classesFresh
+    && pricingQuery.isFetchedAfterMount
+    && classCapacityQuery.isFetchedAfterMount;
+  const homeClassesError = schedsError || classesError || pricingQuery.isError || classCapacityQuery.isError;
   const classCapacityEnabled = classCapacityQuery.data?.classCapacityEnabled ?? DEFAULT_CLASS_CAPACITY_ENABLED;
 
   const weekClasses = React.useMemo<DanceClass[]>(() => {
-    if (!apiScheds?.length || !apiClasses?.length) return [];
+    if (!homeClassesFresh || !apiScheds?.length || !apiClasses?.length) return [];
     const classMap = new Map(apiClasses.map((c) => [c.id, c]));
 
     const result = [...apiScheds]
       .filter(isMobileVisibleSchedule)
       .sort((a, b) => compareSchedulesByNextOccurrence(a, b))
-      .map((sched) => {
+      .map((sched): DanceClass | null => {
         const cls = classMap.get(sched.classId);
         if (!cls || !cls.isActive) return null;
         const mapped = mapApiClassWithScheduleToMobile(cls, sched, pricingQuery.data, classCapacityEnabled);
         if (mapped.isBallet) return null;
-        return mapped;
+        const revisedPhotoUrl = withMediaRevision(mapped.photoUrl, classesUpdatedAt);
+        return revisedPhotoUrl ? { ...mapped, photoUrl: revisedPhotoUrl } : mapped;
       })
       .filter((i): i is DanceClass => i !== null);
 
@@ -777,7 +846,7 @@ export default function StudioHomeScreen() {
     return deduped.sort((a, b) =>
       a.date !== b.date ? a.date.localeCompare(b.date) : parseTime(a.startTime) - parseTime(b.startTime),
     ).slice(0, 5);
-  }, [apiScheds, apiClasses, pricingQuery.data, classCapacityEnabled]);
+  }, [apiScheds, apiClasses, pricingQuery.data, classCapacityEnabled, classesUpdatedAt, homeClassesFresh]);
 
   const isRefreshing = refetchingInst || refetchingScheds || refetchingClasses || refetchingBalletApplications || refetchingBalletSettings;
   const onRefresh = useCallback(() => {
@@ -852,7 +921,7 @@ export default function StudioHomeScreen() {
         {/* Hero */}
         <HeroCarousel
           items={heroItems}
-          isLoading={heroLoading}
+          isLoading={heroLoading || !heroFresh}
           isError={heroError}
           error={heroErr}
           onRetry={refetchHero}
@@ -866,18 +935,29 @@ export default function StudioHomeScreen() {
               <Text style={s.sectionTitle}>Ballet Program</Text>
             </View>
           </View>
-          <BalletFeaturedProgramCard
-            balletStatus={balletStatus}
-            homeCardImageUrl={balletSettings?.homeCardImageUrl ?? null}
-            onView={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              pushOnce("/ballet" as any);
-            }}
-            onApply={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              pushOnce("/ballet/assessment" as any);
-            }}
-          />
+          {balletCardError ? (
+            <ErrorState
+              variant="compact"
+              message="Couldn't load the Ballet program."
+              onRetry={() => {
+                refetchBalletSettings();
+                if (user) refetchBalletApplications();
+              }}
+            />
+          ) : balletCardFresh ? (
+            <BalletFeaturedProgramCard
+              balletStatus={balletStatus}
+              homeCardImageUrl={withMediaRevision(balletSettings?.homeCardImageUrl, balletSettingsUpdatedAt)}
+              onView={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                pushOnce("/ballet" as any);
+              }}
+              onApply={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                pushOnce("/ballet/assessment" as any);
+              }}
+            />
+          ) : <View style={s.balletCardSkeleton} />}
         </View>
 
         {/* Upcoming Classes */}
@@ -893,11 +973,11 @@ export default function StudioHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {schedsLoading || classesLoading ? (
+          {!homeClassesFresh || schedsLoading || classesLoading ? (
             <View style={{ paddingHorizontal: 20, gap: 12 }}>
               {[1, 2, 3].map((i) => <ClassListCardSkeleton key={i} />)}
             </View>
-          ) : schedsError ? (
+          ) : homeClassesError ? (
             isOfflineError(schedsErr)
               ? <OfflineState variant="compact" onRetry={() => { refetchScheds(); refetchClasses(); }} />
               : <ErrorState variant="compact" onRetry={() => { refetchScheds(); refetchClasses(); }} message="Couldn't load upcoming classes." />
@@ -943,7 +1023,7 @@ export default function StudioHomeScreen() {
               <Text style={s.sectionTitle}>Instructors</Text>
             </View>
           </View>
-          {instLoading ? (
+          {!instructorsFresh || instLoading ? (
             <FlatList
               data={[1, 2, 3, 4]} keyExtractor={(i) => String(i)}
               renderItem={() => <InstructorCardSkeleton />}
@@ -1001,15 +1081,15 @@ const s = StyleSheet.create({
   // Keep the unread badge centered at the original dot position while making
   // just enough room for a readable count (capped at 99+).
   badge: {
-    position: "absolute", top: 6, right: 7,
-    minWidth: 14, height: 14, borderRadius: 7,
-    paddingHorizontal: 2,
+    position: "absolute", top: 3, right: 4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    paddingHorizontal: 3,
     backgroundColor: MAGENTA,
     zIndex: 10,
     borderWidth: 1.5, borderColor: INK_900,
     alignItems: "center", justifyContent: "center",
   },
-  badgeText: { fontSize: 8, lineHeight: 10, fontFamily: "Archivo_700Bold", color: "#fff", textAlign: "center" },
+  badgeText: { fontSize: 10, lineHeight: 12, fontFamily: "Archivo_700Bold", color: "#fff", textAlign: "center" },
   // Design: 42×42, boxShadow 0 0 0 2px cyan → borderWidth: 2, borderColor: CYAN
   avatarBtn: {
     width: 42, height: 42, borderRadius: 21,
@@ -1034,6 +1114,14 @@ const s = StyleSheet.create({
   },
   // Fix Pack 2: Archivo_800ExtraBold (was 700Bold), letterSpacing -0.24 (was -0.3)
   sectionTitle: { fontSize: 24, fontFamily: "Archivo_800ExtraBold", color: "#fff", letterSpacing: -0.24, lineHeight: 28 },
+  balletCardSkeleton: {
+    height: 216,
+    marginHorizontal: 20,
+    borderRadius: R_LG,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
   seeAllRow: { flexDirection: "row", alignItems: "center", gap: 2 },
   seeAllText: { fontSize: 13, fontFamily: "Archivo_600SemiBold", color: INK_300 },
 

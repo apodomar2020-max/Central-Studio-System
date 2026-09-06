@@ -32,3 +32,9 @@ test("profile statistics remain below the header without card or icon boxes", ()
   assert.equal((header.match(/styles\.statCardDivider/g) ?? []).length, 2);
   assert.match(profile, /borderRightWidth: StyleSheet\.hairlineWidth/);
 });
+
+test("My Bookings menu count uses only the same visible upcoming set as the profile statistic", () => {
+  assert.match(profile, /const upcoming = bookings\.filter\(\(booking\) => isVisibleUpcomingMyBooking\(booking\)\)\.length;/);
+  assert.match(profile, /<Text style=\{styles\.menuTrailingText\}>\{upcoming > 0 \? upcoming\.toString\(\) : ""\}<\/Text>/);
+  assert.doesNotMatch(profile, /menuTrailingText\}>\{bookings\.length\}/);
+});

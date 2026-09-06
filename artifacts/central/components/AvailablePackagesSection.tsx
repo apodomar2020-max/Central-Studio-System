@@ -5,7 +5,7 @@ import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { useListPricePackages } from "@workspace/api-client-react";
+import { getListPricePackagesQueryKey, useListPricePackages } from "@workspace/api-client-react";
 import type { PricePackage } from "@workspace/api-client-react";
 import CsIcon from "@/components/CsIcon";
 import PackageDetailsSheet from "@/components/PackageDetailsSheet";
@@ -33,6 +33,7 @@ type AvailablePackagesSectionProps = {
   mode?: "home" | "packageCenter";
   initialAgeFilter?: PackageAgeBand;
   onPurchased?: () => void | Promise<void>;
+  requireFreshData?: boolean;
 };
 
 const PACKAGE_FILTERS: PackageAgeBand[] = ["adults", "teens", "kids"];
@@ -46,10 +47,24 @@ export default function AvailablePackagesSection({
   mode = "home",
   initialAgeFilter,
   onPurchased,
+  requireFreshData = false,
 }: AvailablePackagesSectionProps) {
   const { user, purchasePackage } = useAppContext();
   const alert = useCentralAlert();
-  const { data: raw, isLoading, isError } = useListPricePackages();
+  const {
+    data: raw,
+    isLoading,
+    isError,
+    isFetchedAfterMount,
+    dataUpdatedAt,
+  } = useListPricePackages({
+    query: {
+      queryKey: getListPricePackagesQueryKey(),
+      refetchOnMount: requireFreshData ? "always" : true,
+    },
+  });
+  const dataReady = !requireFreshData || isFetchedAfterMount;
+  const effectiveLoading = isLoading || !dataReady;
   const [detailsPkg, setDetailsPkg] = useState<PricePackage | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [ageFilter, setAgeFilter] = useState<PackageAgeBand>(initialAgeFilter ?? "adults");
@@ -59,8 +74,10 @@ export default function AvailablePackagesSection({
   }, [initialAgeFilter]);
 
   const packages = useMemo(
-    () => (raw ?? []).filter((pkg: PricePackage) => pkg.isActive !== false),
-    [raw],
+    () => dataReady
+      ? (raw ?? []).filter((pkg: PricePackage) => pkg.isActive !== false)
+      : [],
+    [dataReady, raw],
   );
   const visiblePackages = useMemo(
     () => mode === "packageCenter"
@@ -111,7 +128,7 @@ export default function AvailablePackagesSection({
 
   const packageCenter = mode === "packageCenter";
 
-  if (isError || (!isLoading && packages.length === 0)) {
+  if (dataReady && (isError || (!isLoading && packages.length === 0))) {
     return (
       <View style={[
         styles.section,
@@ -184,7 +201,7 @@ export default function AvailablePackagesSection({
         </View>
       )}
 
-      {isLoading ? (
+      {effectiveLoading ? (
         <View style={[styles.skeletonRow, packageCenter && styles.centerSkeletonRow]}>
           {[1, 2].map((item) => <View key={item} style={styles.skeleton} />)}
         </View>
@@ -197,7 +214,13 @@ export default function AvailablePackagesSection({
         <FlatList
           data={visiblePackages}
           keyExtractor={(pkg) => String(pkg.id)}
-          renderItem={({ item }) => <PackageVisualCard pkg={item} onPress={handleOpenDetails} />}
+          renderItem={({ item }) => (
+            <PackageVisualCard
+              pkg={item}
+              imageRevision={requireFreshData ? dataUpdatedAt : undefined}
+              onPress={handleOpenDetails}
+            />
+          )}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={[styles.listContent, packageCenter && styles.centerListContent]}

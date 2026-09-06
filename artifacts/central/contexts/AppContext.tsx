@@ -16,6 +16,7 @@ import {
 import { createLogoutCoordinator } from "@/services/logoutCoordinator";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/services/secureTokenStorage";
 import { stripSensitiveChildFields } from "@/services/childProfilePrivacy";
+import { presentUserFacingError } from "@/utils/userFacingError";
 
 /** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
 export type ProfileCompletionStep = "email" | "profile" | "children" | "medical" | "styles";
@@ -69,6 +70,8 @@ export interface ChildProfile {
   medicalNotes?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  dateOfBirthLocked?: boolean;
+  dateOfBirthLockReasons?: Array<"class_booking" | "package_subscription" | "ballet_application">;
 }
 
 export interface Booking {
@@ -460,9 +463,9 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
    * local state.
    *
    * Server rows ALWAYS win: admin status changes (pending → confirmed →
-   * attended / rejected / cancelled) are reflected after the next fetch. Local
-   * optimistic rows are only kept while the server hasn't returned them yet
-   * (the brief window right after creating a booking, or while offline).
+   * attended / rejected / cancelled) are reflected after the next fetch. A
+   * booking is created on the server before addBooking mirrors it locally, so
+   * rows absent from a successful response are stale and must be removed.
    */
   async function fetchAndSetBookings() {
     try {
@@ -470,14 +473,8 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       const serverBookings: Booking[] = res.data.map(mapMyBookingToLocal);
 
       if (!isMountedRef.current) return;
-      setBookings((prev) => {
-        const serverIds = new Set(serverBookings.map((b) => b.id));
-        // Keep only local optimistic rows the server doesn't know about yet.
-        const localOnly = prev.filter((b) => !serverIds.has(b.id));
-        const merged = [...serverBookings, ...localOnly];
-        AsyncStorage.setItem("bookings", JSON.stringify(merged));
-        return merged;
-      });
+      setBookings(serverBookings);
+      await AsyncStorage.setItem("bookings", JSON.stringify(serverBookings));
     } catch {
       // Offline or backend unavailable — keep the cached local bookings.
     }
@@ -496,6 +493,8 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         medicalNotes: c.medicalNotes || undefined,
         emergencyContactName: c.emergencyName || undefined,
         emergencyContactPhone: c.emergencyPhone || undefined,
+        dateOfBirthLocked: c.dateOfBirthLocked === true,
+        dateOfBirthLockReasons: c.dateOfBirthLockReasons ?? [],
       }));
 
       if (isMountedRef.current) {
@@ -662,6 +661,8 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         medicalNotes: c.medicalNotes || undefined,
         emergencyContactName: c.emergencyName || undefined,
         emergencyContactPhone: c.emergencyPhone || undefined,
+        dateOfBirthLocked: c.dateOfBirthLocked === true,
+        dateOfBirthLockReasons: c.dateOfBirthLockReasons ?? [],
       };
       setChildren((prev) => {
         const next = [...prev, mappedChild];
@@ -674,7 +675,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       alert.show({
         tone: "error",
         title: "Error",
-        message: err instanceof Error ? err.message : "Failed to add child profile. Please check your connection.",
+        message: presentUserFacingError(err, "We couldn’t add this child profile. Please try again."),
         actions: [{ label: "OK", tone: "primary" }],
       });
       return null;
@@ -718,6 +719,8 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         medicalNotes: c.medicalNotes || undefined,
         emergencyContactName: c.emergencyName || undefined,
         emergencyContactPhone: c.emergencyPhone || undefined,
+        dateOfBirthLocked: c.dateOfBirthLocked === true,
+        dateOfBirthLockReasons: c.dateOfBirthLockReasons ?? [],
       };
       setChildren((prev) => {
         const next = prev.map((item) => (item.id === mappedChild.id ? mappedChild : item));
@@ -729,7 +732,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       alert.show({
         tone: "error",
         title: "Error",
-        message: err instanceof Error ? err.message : "Failed to update child profile. Please check your connection.",
+        message: presentUserFacingError(err, "We couldn’t update this child profile. Please try again."),
         actions: [{ label: "OK", tone: "primary" }],
       });
     }
@@ -754,7 +757,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       alert.show({
         tone: "error",
         title: "Error",
-        message: err instanceof Error ? err.message : "Failed to delete child profile. Please check your connection.",
+        message: presentUserFacingError(err, "We couldn’t delete this child profile. Please try again."),
         actions: [{ label: "OK", tone: "primary" }],
       });
     }
