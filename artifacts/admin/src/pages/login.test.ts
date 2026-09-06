@@ -24,6 +24,7 @@ test("the page remains fixed to the viewport while the card adapts at narrow and
   assert.match(styles, /@media \(max-width: 1050px\)/);
   assert.match(styles, /@media \(max-height: 860px\)/);
   assert.match(styles, /@media \(max-width: 640px\)/);
+  assert.match(styles, /@media \(max-height: 680px\)/);
 });
 
 test("sign-in logic still submits through AdminAuthContext", () => {

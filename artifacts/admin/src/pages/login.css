@@ -138,23 +138,18 @@
 .admin-login-password-toggle img { display: block; width: 23px; max-height: 21px; }
 
 .admin-login-feedback {
-  position: absolute;
-  top: 213px;
-  left: 0;
   width: 100%;
-  min-height: 24px;
+  min-height: 20px;
   color: #ff8f97;
   font-size: 13px;
   line-height: 1.4;
   text-align: center;
 }
 
+.admin-login-feedback:empty { display: none; }
 .admin-login-feedback p { margin: 0; }
 
 .admin-login-submit {
-  position: absolute;
-  top: 246px;
-  left: 0;
   width: 100%;
   height: 58px;
   transform: translateY(7px);
@@ -211,13 +206,18 @@
 
 @media (max-height: 860px) {
   .admin-login-card { top: 20px; height: calc(100dvh - 40px); min-height: 0; }
-  .admin-login-content { padding-top: 18px; }
-  .admin-login-logo { width: 230px; height: 230px; flex-basis: 230px; }
-  .admin-login-content h1 { font-size: 44px; }
-  .admin-login-description { font-size: 19px; }
-  .admin-login-form { margin-top: 24px; }
-  .admin-login-field { height: 72px; }
-  .admin-login-footer { bottom: 24px; }
+  .admin-login-content { padding-top: 14px; }
+  .admin-login-logo { width: 200px; height: 200px; flex-basis: 200px; }
+  .admin-login-content h1 { font-size: 38px; }
+  .admin-login-description { margin-top: 5px; font-size: 16px; }
+  .admin-login-form { gap: 18px; margin-top: 18px; }
+  .admin-login-field { height: 62px; }
+  .admin-login-field-icon { left: 32px; transform: scale(0.88); }
+  .admin-login-field input { padding-left: 72px; font-size: 18px; }
+  .admin-login-password-toggle { right: 24px; }
+  .admin-login-submit { height: 50px; }
+  .admin-login-footer { bottom: 18px; font-size: 13px; }
+  .admin-login-footer img { width: 18px; height: 18px; flex-basis: 18px; }
 }
 
 @media (max-width: 640px) {
@@ -231,19 +231,18 @@
   .admin-login-field-icon { left: 22px; transform: scale(0.84); }
   .admin-login-field input { padding-right: 58px; padding-left: 62px; font-size: 17px; }
   .admin-login-password-toggle { right: 14px; }
-  .admin-login-feedback { top: 157px; }
-  .admin-login-submit { top: 190px; height: 52px; }
+  .admin-login-submit { height: 52px; }
   .admin-login-footer { bottom: 23px; gap: 7px; font-size: 12px; }
 }
 
-@media (max-height: 620px) {
+@media (max-height: 680px) {
+  .admin-login-content { padding-top: 10px; }
   .admin-login-logo { width: 155px; height: 155px; flex-basis: 155px; }
   .admin-login-content h1 { font-size: 34px; }
   .admin-login-description { margin-top: 3px; font-size: 14px; }
   .admin-login-form { gap: 12px; margin-top: 14px; }
   .admin-login-field { height: 56px; }
-  .admin-login-feedback { top: 129px; }
-  .admin-login-submit { top: 155px; height: 45px; }
+  .admin-login-submit { height: 45px; }
   .admin-login-footer { bottom: 10px; }
 }
 
