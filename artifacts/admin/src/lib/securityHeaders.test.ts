@@ -81,3 +81,15 @@ test("the surrounding browser-hardening headers from the same wave are unaffecte
   assert.equal(byKey.get("X-Frame-Options"), "DENY", "X-Frame-Options must be unchanged");
   assert.equal(byKey.get("X-Content-Type-Options"), "nosniff", "X-Content-Type-Options must be unchanged");
 });
+
+test("the login background video is allowed only from the configured Cloudinary media host", () => {
+  const raw = readFileSync(resolve(process.cwd(), VERCEL_CONFIG_PATH), "utf8");
+  const config = JSON.parse(raw) as {
+    headers?: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
+  };
+  const catchAll = config.headers?.find((entry) => entry.source === "/(.*)");
+  const csp = catchAll?.headers.find((header) => header.key === "Content-Security-Policy")?.value;
+
+  assert.match(csp ?? "", /media-src 'self' https:\/\/res\.cloudinary\.com blob:/);
+  assert.doesNotMatch(csp ?? "", /media-src[^;]*https:\s/);
+});
