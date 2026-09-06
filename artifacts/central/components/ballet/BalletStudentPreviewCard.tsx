@@ -27,6 +27,13 @@ const STATUS_COLORS = {
   progress: CYAN,
   active: "#22C55E",
 } as const;
+const COMPACT_STATUS_LABELS: Record<BalletStudentPreview["statusTone"], string> = {
+  pending: "Pending",
+  warning: "Follow-Up",
+  accepted: "Accepted",
+  progress: "In Progress",
+  active: "Active",
+};
 
 type CarouselItem =
   | { kind: "student"; key: string; student: BalletStudentPreview }
@@ -52,10 +59,10 @@ function StudentCard({ student, width, onOpen }: {
       <ExpoImage source={BALLERINA_ARTWORK} style={styles.avatar} contentFit="cover" contentPosition="top" />
       <View style={styles.identityCopy}>
         <Text style={styles.studentName} numberOfLines={1}>{student.childName}</Text>
-        <View style={[styles.statusPill, { backgroundColor: `${statusColor}28` }]}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={1}>{student.statusLabel.replace("Application ", "")}</Text>
-        </View>
+      </View>
+      <View style={[styles.statusPill, { backgroundColor: `${statusColor}28` }]}>
+        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+        <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={1}>{COMPACT_STATUS_LABELS[student.statusTone]}</Text>
       </View>
     </>
   );
@@ -154,10 +161,10 @@ const styles = StyleSheet.create({
   studentCard: { height: CARD_HEIGHT, borderRadius: 20, backgroundColor: "#031416", paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 9 },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#08343E", borderWidth: 1, borderColor: "rgba(3,182,215,0.34)" },
   identityCopy: { flex: 1, minWidth: 0 },
-  studentName: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 22 },
-  statusPill: { alignSelf: "flex-start", maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginTop: 2 },
+  studentName: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 22, flexShrink: 1 },
+  statusPill: { flexShrink: 0, maxWidth: "42%", flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { flexShrink: 1, fontFamily: "Archivo_600SemiBold", fontSize: 8.5, lineHeight: 11 },
+  statusText: { flexShrink: 1, fontFamily: "Archivo_600SemiBold", fontSize: 10, lineHeight: 12 },
   addCard: { height: CARD_HEIGHT, borderRadius: 20, borderWidth: 1.25, borderColor: CYAN, backgroundColor: "#042F34", paddingHorizontal: 18, flexDirection: "row", alignItems: "center", gap: 10 },
   addCopy: { flex: 1, minWidth: 0 },
   addTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 17, lineHeight: 22 },

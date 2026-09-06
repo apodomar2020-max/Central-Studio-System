@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -38,6 +39,7 @@ const INK_400 = "#6B7280";
 const R_MD = 12;
 
 const FALLBACK_IMAGE = require("@/assets/images/ballet_hero.png");
+const EMPTY_PERFORMANCE_ANIMATION = require("@/assets/animations/empty-performance.json");
 
 function performanceImageUri(performance: BalletPerformance): string | null {
   return normalizeMediaUrl(performance.imageUrl, "image")?.trim() || null;
@@ -261,9 +263,12 @@ export default function BalletPerformancesScreen() {
             </View>
           ) : performances.length === 0 ? (
             <View style={s.empty}>
-              <View style={s.emptyIcon}>
-                <Ionicons name="sparkles-outline" size={28} color={INK_400} />
-              </View>
+              <LottieView
+                source={EMPTY_PERFORMANCE_ANIMATION}
+                autoPlay
+                loop
+                style={s.emptyAnimation}
+              />
               <Text style={s.emptyTitle}>No performances scheduled yet</Text>
               <Text style={s.emptyDesc}>Upcoming showcases and competitions will appear here.</Text>
             </View>
@@ -482,6 +487,11 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
+  },
+  emptyAnimation: {
+    width: 92,
+    height: 92,
+    marginBottom: 10,
   },
   emptyTitle: {
     fontSize: 18,
