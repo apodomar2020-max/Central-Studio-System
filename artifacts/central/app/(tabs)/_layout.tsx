@@ -19,7 +19,13 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
+
+// SDK 55: `Icon` / `Label` are no longer top-level exports of
+// `expo-router/unstable-native-tabs` — they are namespaced under
+// `NativeTabs.Trigger`. Aliased here so the JSX below is unchanged.
+const Icon = NativeTabs.Trigger.Icon;
+const Label = NativeTabs.Trigger.Label;
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

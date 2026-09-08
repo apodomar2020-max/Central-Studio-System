@@ -110,7 +110,7 @@ export default function LoginScreen() {
         style={StyleSheet.absoluteFill}
         contentFit="cover"
         nativeControls={false}
-        allowsFullscreen={false}
+        fullscreenOptions={{ enable: false }}
       />
       {/* Dark gradient overlay so the form stays legible */}
       <LinearGradient
