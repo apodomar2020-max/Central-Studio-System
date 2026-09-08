@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   countdownPill: { position: "absolute", left: "8%", right: "8%", bottom: 10, height: 30, zIndex: 9, borderTopLeftRadius: 15, borderTopRightRadius: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, paddingHorizontal: 14, shadowColor: "#000000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 5, elevation: 3 },
   countdownText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 13, lineHeight: 16 },
   panelShell: { position: "absolute", left: 12, right: 12, bottom: 10, height: "52%", zIndex: 7, borderRadius: 15, overflow: "hidden", backgroundColor: "rgba(2,25,29,0.62)" },
-  glassBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "transparent" },
+  glassBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "transparent" },
   panelBottomHighlight: { position: "absolute", left: 14, right: 14, bottom: 0, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(255,255,255,0.16)" },
   panelContent: { flex: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 32 },
   upperRow: { flex: 1, minHeight: 0, flexDirection: "row" },

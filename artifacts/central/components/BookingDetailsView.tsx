@@ -342,7 +342,7 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
 }
 
 const styles = StyleSheet.create({
-  screen: { ...StyleSheet.absoluteFillObject, zIndex: 100, backgroundColor: INK },
+  screen: { ...StyleSheet.absoluteFill, zIndex: 100, backgroundColor: INK },
   fixedContent: { flex: 1, minHeight: 0 },
   hero: { height: 210, position: "relative", backgroundColor: "#17191D" },
   back: { position: "absolute", left: 16, zIndex: 10 },

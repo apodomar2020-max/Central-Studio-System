@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   glassBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(1,8,10,0.48)",
   },
   copyColumn: { width: "62%", minHeight: 82 },

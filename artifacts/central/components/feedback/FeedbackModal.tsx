@@ -357,7 +357,7 @@ function OfflineMark() {
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end" },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(4,5,7,0.68)" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(4,5,7,0.68)" },
   sheet: {
     minHeight: "88%",
     maxHeight: "92%",

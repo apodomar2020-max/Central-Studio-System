@@ -200,7 +200,7 @@ export default function ChangePasswordScreen(): React.ReactElement {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: SCREEN },
-  topGlow: { ...StyleSheet.absoluteFillObject },
+  topGlow: { ...StyleSheet.absoluteFill },
   header: { minHeight: 92, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 14, zIndex: 2 },
   headerTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 21, lineHeight: 27, letterSpacing: 0.2, ...iosDisplayTextStyle(21, 27) },
   headerSpacer: { width: 34, height: 34 },

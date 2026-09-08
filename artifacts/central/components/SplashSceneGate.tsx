@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#060C10",
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "#060C10",
     zIndex: 999999,
     justifyContent: "center",

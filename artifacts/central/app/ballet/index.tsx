@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   menuHeading: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 16, lineHeight: 20, marginBottom: 1 },
   menuRow: { flexDirection: "row", gap: 9 },
   menuTile: { borderRadius: 10, overflow: "hidden", position: "relative", backgroundColor: "transparent", flexGrow: 0, flexShrink: 0 },
-  menuClip: { ...StyleSheet.absoluteFillObject, borderRadius: 10, overflow: "hidden" },
+  menuClip: { ...StyleSheet.absoluteFill, borderRadius: 10, overflow: "hidden" },
   menuBackground: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" },
   menuTitleBlock: { position: "absolute", left: 15, top: 25, zIndex: 2, alignItems: "flex-start" },
   menuTitleCentered: { left: 0, right: 0, alignItems: "center" },

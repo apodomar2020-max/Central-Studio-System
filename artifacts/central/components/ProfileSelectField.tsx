@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
   value: { flex: 1, color: "#FFFFFF", fontSize: 15, fontFamily: "Archivo_500Medium" },
   placeholder: { color: "rgba(255,255,255,0.38)", fontFamily: "Archivo_400Regular" },
   overlay: { flex: 1, justifyContent: "flex-end" },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.76)" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.76)" },
   sheet: {
     maxHeight: "76%",
     minHeight: 390,
