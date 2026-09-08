@@ -18,7 +18,12 @@ import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/spac
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
+// Type-only: erased at compile time, so this never pulls the native
+// `expo-notifications` module into the startup bundle. In stock Expo Go
+// (SDK 53+) that module's require throws during evaluation — see
+// services/notificationsRuntime.ts. All runtime access goes through the
+// import-safe lazy loader below.
+import type { NotificationResponse } from "expo-notifications";
 import { router, Stack, usePathname, useRootNavigationState, useSegments } from "expo-router";
 import { pushOnce } from "@/utils/navigation";
 import * as SplashScreen from "expo-splash-screen";
@@ -42,6 +47,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
 import { CentralAlertProvider } from "@/providers/CentralAlertProvider";
 import { NotificationRoute, resolveNotificationRoute } from "@/services/notificationNavigation";
+import { ensureNotificationHandler, loadExpoNotifications } from "@/services/notificationsRuntime";
 import { useAndroidHardwareBackGuard } from "@/hooks/useAndroidHardwareBackGuard";
 import { useOAuthFlowState } from "@/services/oauthFlowState";
 import { getStudentToken } from "@/services/secureTokenStorage";
@@ -64,14 +70,11 @@ const updateGroup = updatesManifest?.metadata?.updateGroup;
 const expoOwner = updatesManifest?.extra?.expoClient?.owner ?? Constants.expoConfig?.owner;
 const expoSlug = updatesManifest?.extra?.expoClient?.slug ?? Constants.expoConfig?.slug;
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// The foreground-presentation handler used to be installed here at module
+// scope via a static `expo-notifications` import — the exact call that
+// crashed stock Expo Go. It now runs from NotificationRoutingGate's effect
+// through the import-safe lazy loader (no-op in Expo Go, unchanged in EAS
+// builds).
 
 Sentry.init({
   dsn: sentryDsn,
@@ -152,7 +155,7 @@ function routeKeyFromSegments(segments: string[]) {
   return segments.join("/") || "index";
 }
 
-function notificationResponseKey(response: Notifications.NotificationResponse): string {
+function notificationResponseKey(response: NotificationResponse): string {
   const notificationId = response.notification.request.identifier;
   const action = response.actionIdentifier;
   const appNotificationId = response.notification.request.content.data?.notificationId;
@@ -167,32 +170,53 @@ function NotificationRoutingGate() {
   const navigationReady = Boolean(navigationState?.key);
   const canNavigateToNotificationTarget = navigationReady && !isLoading && Boolean(user?.id) && user?.emailVerified === true;
 
-  const queueResponse = useCallback((response: Notifications.NotificationResponse | null) => {
-    if (!response?.notification) return;
-    const key = notificationResponseKey(response);
-    if (processedResponsesRef.current.has(key)) return;
-    processedResponsesRef.current.add(key);
-    pendingRouteRef.current = resolveNotificationRoute(response.notification.request.content.data);
-    try {
-      Notifications.clearLastNotificationResponse();
-    } catch {
-      // Older native modules may not expose this; the local processed set still dedupes.
-    }
-  }, []);
+  const queueResponse = useCallback(
+    (
+      Notifications: Awaited<ReturnType<typeof loadExpoNotifications>>,
+      response: NotificationResponse | null,
+    ) => {
+      if (!response?.notification) return;
+      const key = notificationResponseKey(response);
+      if (processedResponsesRef.current.has(key)) return;
+      processedResponsesRef.current.add(key);
+      pendingRouteRef.current = resolveNotificationRoute(response.notification.request.content.data);
+      try {
+        Notifications?.clearLastNotificationResponse();
+      } catch {
+        // Older native modules may not expose this; the local processed set still dedupes.
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    try {
-      queueResponse(Notifications.getLastNotificationResponse());
-    } catch {
-      // Notification response retrieval is best-effort and must not block launch.
-    }
+    let cancelled = false;
+    let subscription: { remove: () => void } | undefined;
 
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      queueResponse(response);
-    });
+    void (async () => {
+      // Foreground presentation handler — real builds only, once. No-op in Expo Go.
+      await ensureNotificationHandler();
+
+      // Expo Go (SDK 53+) has no expo-notifications native module: the loader
+      // returns null and notification listeners / response replay are skipped.
+      // Notification-history UI and every other route still render normally.
+      const Notifications = await loadExpoNotifications();
+      if (cancelled || !Notifications) return;
+
+      try {
+        queueResponse(Notifications, Notifications.getLastNotificationResponse());
+      } catch {
+        // Notification response retrieval is best-effort and must not block launch.
+      }
+
+      subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        queueResponse(Notifications, response);
+      });
+    })();
 
     return () => {
-      subscription.remove();
+      cancelled = true;
+      subscription?.remove();
     };
   }, [queueResponse]);
 

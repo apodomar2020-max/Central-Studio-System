@@ -5,6 +5,15 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { customFetch } from "@workspace/api-client-react";
 import { retryPendingInstallation } from "./installationUnregisterRetry";
+import {
+  isExpoGo,
+  loadExpoNotifications,
+  type ExpoNotificationsModule,
+} from "./notificationsRuntime";
+
+// Re-exported so existing importers (`components/PushRegistrationGate.tsx` and
+// its tests) keep importing `isExpoGo` from here unchanged.
+export { isExpoGo };
 
 const DEVICE_ID_KEY = "notificationDeviceId";
 const PENDING_UNREGISTER_KEY = "notificationPendingUnregister";
@@ -12,7 +21,6 @@ const UNREGISTER_SECRET_KEY = "notificationUnregisterSecret";
 const ANDROID_NOTIFICATION_CHANNEL_ID = "central-default-v1";
 const ANDROID_NOTIFICATION_SOUND = "central_notification.wav";
 
-type ExpoNotificationsModule = typeof import("expo-notifications");
 type DevicePushToken = Awaited<ReturnType<ExpoNotificationsModule["getDevicePushTokenAsync"]>>;
 
 const REDACTED = "[REDACTED]";
@@ -84,15 +92,6 @@ function androidPackageId(): string | null {
 function isPhysicalDevice(): boolean | null {
   const constants = Constants as typeof Constants & { isDevice?: boolean };
   return typeof constants.isDevice === "boolean" ? constants.isDevice : null;
-}
-
-export function isExpoGo(): boolean {
-  return Constants.appOwnership === "expo";
-}
-
-async function loadNotifications(): Promise<ExpoNotificationsModule | null> {
-  if (isExpoGo()) return null;
-  return import("expo-notifications");
 }
 
 function getProjectId(): string | undefined {
@@ -279,7 +278,7 @@ async function registerPushNotifications(): Promise<void> {
 
   let Notifications: ExpoNotificationsModule | null = null;
   try {
-    Notifications = await loadNotifications();
+    Notifications = await loadExpoNotifications();
   } catch (error) {
     pushDiag("register skipped", {
       reason: "notifications_module_error",
